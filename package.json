@@ -1,6 +1,6 @@
 {
   "name": "localbooru",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Local image library with auto-tagging and federation support",
   "main": "electron/main.js",
   "scripts": {
@@ -18,9 +18,10 @@
     "dist": "electron-builder",
     "postinstall": "electron-builder install-app-deps"
   },
+  "author": "Your Name",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/localbooru.git"
+    "url": "git+https://github.com/DonutsDelivery/LocalBooru.git"
   },
   "keywords": [
     "booru",
@@ -28,7 +29,6 @@
     "tagger",
     "electron"
   ],
-  "author": "Your Name",
   "license": "MIT",
   "devDependencies": {
     "electron": "^33.0.0",
