@@ -96,6 +96,29 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.get("/debug/paths")
+async def debug_paths():
+    """Debug endpoint to check file paths"""
+    import os
+    from pathlib import Path
+
+    cwd = os.getcwd()
+    tagger_base = settings.tagger_base_path
+    tagger_full = Path(cwd) / tagger_base / "vit-v3"
+    model_path = tagger_full / "model.onnx"
+    tags_path = tagger_full / "selected_tags.csv"
+
+    return {
+        "cwd": cwd,
+        "tagger_base_path": tagger_base,
+        "tagger_full_path": str(tagger_full),
+        "model_exists": model_path.exists(),
+        "tags_exists": tags_path.exists(),
+        "tagger_dir_contents": os.listdir(str(tagger_full)) if tagger_full.exists() else "DIR NOT FOUND",
+        "resources_contents": os.listdir(cwd) if os.path.isdir(cwd) else "NOT A DIR"
+    }
+
+
 # Serve frontend static files
 if FRONTEND_DIR.exists():
     # Mount assets directory
