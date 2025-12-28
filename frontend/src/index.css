@@ -81,6 +81,9 @@ html, body {
   border-radius: var(--window-radius);
   overflow: hidden;
   border: 1px solid var(--border);
+  /* Ensure corners are clipped on all platforms */
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  mask-image: radial-gradient(white, black);
 }
 
 a {
