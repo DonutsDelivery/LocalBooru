@@ -166,6 +166,24 @@ jobs:
           & "$BUNDLE_DIR\python.exe" "$BUNDLE_DIR\get-pip.py"
           Remove-Item "$BUNDLE_DIR\get-pip.py"
 
+          Write-Host "Downloading Visual C++ Runtime DLLs..."
+          # Download VC++ runtime DLLs needed by onnxruntime
+          $vcRuntimeUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+          Invoke-WebRequest -Uri $vcRuntimeUrl -OutFile "$BUNDLE_DIR\vc_redist.x64.exe"
+          # Extract DLLs using 7z or just copy from system after silent install
+          Start-Process -FilePath "$BUNDLE_DIR\vc_redist.x64.exe" -ArgumentList "/install", "/quiet", "/norestart" -Wait -NoNewWindow
+          Remove-Item "$BUNDLE_DIR\vc_redist.x64.exe" -ErrorAction SilentlyContinue
+
+          # Copy VC++ runtime DLLs to python-embed folder
+          $systemDlls = @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140_1.dll", "msvcp140_2.dll")
+          foreach ($dll in $systemDlls) {
+            $sourcePath = "C:\Windows\System32\$dll"
+            if (Test-Path $sourcePath) {
+              Copy-Item $sourcePath "$BUNDLE_DIR\" -Force
+              Write-Host "Copied $dll"
+            }
+          }
+
           Write-Host "Installing dependencies..."
           # Install most dependencies (skip insightface which requires C++ build tools)
           & "$BUNDLE_DIR\python.exe" -m pip install fastapi uvicorn[standard] sqlalchemy aiosqlite pillow imagehash onnxruntime opencv-python-headless numpy pydantic pydantic-settings python-multipart httpx watchdog --no-warn-script-location
