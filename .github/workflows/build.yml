@@ -6,110 +6,20 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  # NOTE: Linux and Mac builds temporarily disabled for faster Windows debugging
+  # build-linux:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #     ... (disabled)
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install frontend dependencies
-        run: cd frontend && npm ci
-
-      - name: Build frontend
-        run: npm run build:frontend
-
-      - name: Download ML models
-        run: |
-          rm -rf tagger  # Remove any symlink/file that might exist
-          mkdir -p tagger/vit-v3
-
-          echo "Downloading tagger model (vit-v3)..."
-          curl -L -o tagger/vit-v3/model.onnx \
-            "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx"
-          curl -L -o tagger/vit-v3/selected_tags.csv \
-            "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv"
-
-          echo "Downloading YOLOv8n model..."
-          curl -L -o yolov8n.pt \
-            "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt"
-
-          ls -la tagger/vit-v3/ yolov8n.pt
-
-      - name: Build Linux packages
-        run: npx electron-builder --linux --publish never
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-builds
-          path: |
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.rpm
-            dist/*.zip
-            dist/latest-linux.yml
-          if-no-files-found: warn
-
-  build-mac:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install frontend dependencies
-        run: cd frontend && npm ci
-
-      - name: Build frontend
-        run: npm run build:frontend
-
-      - name: Download ML models
-        run: |
-          rm -rf tagger  # Remove any symlink/file that might exist
-          mkdir -p tagger/vit-v3
-
-          echo "Downloading tagger model (vit-v3)..."
-          curl -L -o tagger/vit-v3/model.onnx \
-            "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx"
-          curl -L -o tagger/vit-v3/selected_tags.csv \
-            "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv"
-
-          echo "Downloading YOLOv8n model..."
-          curl -L -o yolov8n.pt \
-            "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt"
-
-          ls -la tagger/vit-v3/ yolov8n.pt
-
-      - name: Build Mac packages
-        run: npx electron-builder --mac --publish never
-
-      - name: Upload Mac artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac-builds
-          path: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.blockmap
-            dist/latest-mac.yml
-          if-no-files-found: warn
+  # build-mac:
+  #   runs-on: macos-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #     ... (disabled)
 
   build-windows:
     runs-on: windows-latest
@@ -238,7 +148,7 @@ jobs:
           if-no-files-found: warn
 
   release:
-    needs: [build-linux, build-mac, build-windows]
+    needs: [build-windows]  # Temporarily only Windows for debugging
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -256,8 +166,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            artifacts/linux-builds/*
-            artifacts/mac-builds/*
             artifacts/windows-builds/*
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
