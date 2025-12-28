@@ -34,14 +34,12 @@ jobs:
         run: |
           mkdir -p tagger/model
 
-          # Download WD Tagger model from HuggingFace
           echo "Downloading tagger model..."
           curl -L -o tagger/model/model.onnx \
             "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx"
           curl -L -o tagger/model/selected_tags.csv \
             "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv"
 
-          # Download YOLOv8n model from Ultralytics
           echo "Downloading YOLOv8n model..."
           curl -L -o yolov8n.pt \
             "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt"
@@ -61,7 +59,61 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/*.rpm
-            dist/*.tar.gz
+            dist/*.zip
+            dist/latest-linux.yml
+          if-no-files-found: warn
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Build frontend
+        run: npm run build:frontend
+
+      - name: Download ML models
+        run: |
+          mkdir -p tagger/model
+
+          echo "Downloading tagger model..."
+          curl -L -o tagger/model/model.onnx \
+            "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx"
+          curl -L -o tagger/model/selected_tags.csv \
+            "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv"
+
+          echo "Downloading YOLOv8n model..."
+          curl -L -o yolov8n.pt \
+            "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt"
+
+          ls -la tagger/model/ yolov8n.pt
+
+      - name: Build Mac packages
+        run: npx electron-builder --mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Mac artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-builds
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.blockmap
+            dist/latest-mac.yml
           if-no-files-found: warn
 
   build-windows:
@@ -123,8 +175,8 @@ jobs:
           & "$BUNDLE_DIR\python.exe" -m pip install -r requirements.txt --no-warn-script-location
 
           Write-Host "Cleaning up..."
-          Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
-          Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -File -Filter "*.pyc" | Remove-Item -Force
+          Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -File -Filter "*.pyc" | Remove-Item -Force -ErrorAction SilentlyContinue
 
           Write-Host "Python bundle ready!"
           $size = (Get-ChildItem -Path $BUNDLE_DIR -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
@@ -156,10 +208,13 @@ jobs:
           name: windows-builds
           path: |
             dist/*.exe
-          if-no-files-found: error
+            dist/*.appx
+            dist/*.blockmap
+            dist/latest.yml
+          if-no-files-found: warn
 
   release:
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-mac, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -170,11 +225,15 @@ jobs:
         with:
           path: artifacts
 
+      - name: List artifacts
+        run: find artifacts -type f | head -50
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             artifacts/linux-builds/*
+            artifacts/mac-builds/*
             artifacts/windows-builds/*
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}

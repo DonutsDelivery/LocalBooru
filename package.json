@@ -65,11 +65,11 @@
         "AppImage",
         "deb",
         "rpm",
-        "tar.gz"
+        "zip"
       ],
       "icon": "assets/icon.png",
       "category": "Graphics",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}.${ext}"
     },
     "deb": {
       "depends": ["python3", "python3-pip"],
@@ -84,14 +84,20 @@
         "zip"
       ],
       "icon": "assets/icon.icns",
-      "category": "public.app-category.photography"
+      "category": "public.app-category.photography",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "win": {
       "target": [
         "nsis",
-        "portable"
+        "portable",
+        "appx"
       ],
       "icon": "assets/icon.ico",
+      "artifactName": "${productName}-${version}.${ext}",
       "extraResources": [
         {
           "from": "python-embed",
@@ -106,10 +112,22 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "perMachine": false,
-      "artifactName": "${productName}-${version}-Setup.${ext}"
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-Portable.${ext}"
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    },
+    "appx": {
+      "artifactName": "${productName}-Store-${version}.${ext}",
+      "displayName": "LocalBooru",
+      "identityName": "LocalBooru",
+      "publisher": "CN=DonutsDelivery",
+      "publisherDisplayName": "DonutsDelivery"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "DonutsDelivery",
+      "repo": "LocalBooru"
     },
     "extraResources": [
       {
