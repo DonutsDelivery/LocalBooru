@@ -8,7 +8,7 @@ import MasonryGrid from './components/MasonryGrid'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
 import TitleBar from './components/TitleBar'
-import { fetchImages, fetchTags, getLibraryStats } from './api'
+import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents } from './api'
 import './App.css'
 
 
@@ -503,6 +503,19 @@ function Gallery() {
   useEffect(() => {
     getLibraryStats().then(setStats).catch(console.error)
   }, [])
+
+  // Subscribe to real-time library events
+  useEffect(() => {
+    const unsubscribe = subscribeToLibraryEvents((event) => {
+      if (event.type === 'image_added') {
+        // Refresh the first page to show new images
+        loadImages(1, false)
+        // Update stats
+        getLibraryStats().then(setStats).catch(console.error)
+      }
+    })
+    return unsubscribe
+  }, [loadImages])
 
   const handleLoadMore = () => {
     if (!loading && hasMore) {

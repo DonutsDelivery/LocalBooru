@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import Image, ImageFile, Tag, image_tags, TaskType
 from ..config import get_settings
 from .task_queue import enqueue_task
+from .events import library_events, EventType
 
 settings = get_settings()
 
@@ -203,6 +204,13 @@ async def import_image(
             priority=1,  # New imports get priority
             db=db
         )
+
+    # Broadcast new image event
+    await library_events.broadcast(EventType.IMAGE_ADDED, {
+        'image_id': image.id,
+        'filename': filename,
+        'thumbnail': f"/thumbnails/{file_hash[:16]}.webp"
+    })
 
     return {
         'status': 'imported',

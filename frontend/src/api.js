@@ -205,3 +205,27 @@ export function isAnimated(filename) {
   const ext = filename.split('.').pop()?.toLowerCase()
   return ['gif', 'apng', 'webp'].includes(ext)
 }
+
+// Subscribe to library events via Server-Sent Events
+export function subscribeToLibraryEvents(onEvent) {
+  const apiUrl = getApiUrl()
+  const eventSource = new EventSource(`${apiUrl}/library/events`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      onEvent(data)
+    } catch (e) {
+      console.error('[SSE] Failed to parse event:', e)
+    }
+  }
+
+  eventSource.onerror = (error) => {
+    console.error('[SSE] Connection error:', error)
+  }
+
+  // Return cleanup function
+  return () => {
+    eventSource.close()
+  }
+}

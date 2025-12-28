@@ -2,6 +2,7 @@
 Library router - library-wide operations and statistics
 """
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +11,7 @@ from ..models import (
     Image, Tag, ImageFile, WatchDirectory, TaskQueue,
     TaskStatus, TaskType, Rating
 )
+from ..services.events import library_events
 
 router = APIRouter()
 
@@ -349,3 +351,24 @@ async def mark_file_missing(request: FileMissingRequest, db: AsyncSession = Depe
 
     await mark_file_missing(request.file_path, db)
     return {"marked_missing": True}
+
+
+@router.get("/events")
+async def library_events_stream():
+    """Server-Sent Events stream for real-time library updates"""
+    async def event_generator():
+        # Send initial connection message
+        yield "data: {\"type\": \"connected\"}\n\n"
+        # Stream events
+        async for event in library_events.subscribe():
+            yield event
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
