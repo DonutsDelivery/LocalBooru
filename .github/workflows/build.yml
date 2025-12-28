@@ -29,6 +29,7 @@ jobs:
 
       - name: Download ML models
         run: |
+          rm -rf tagger  # Remove any symlink/file that might exist
           mkdir -p tagger/model
 
           echo "Downloading tagger model..."
@@ -83,6 +84,7 @@ jobs:
 
       - name: Download ML models
         run: |
+          rm -rf tagger  # Remove any symlink/file that might exist
           mkdir -p tagger/model
 
           echo "Downloading tagger model..."
@@ -172,12 +174,15 @@ jobs:
           # Install most dependencies (skip insightface which requires C++ build tools)
           & "$BUNDLE_DIR\python.exe" -m pip install fastapi uvicorn[standard] sqlalchemy aiosqlite pillow imagehash onnxruntime opencv-python-headless numpy pydantic pydantic-settings python-multipart httpx watchdog --no-warn-script-location
 
-          # Try to install insightface (may fail on some systems)
+          # Try to install insightface (may fail on some systems, that's OK)
           Write-Host "Attempting to install insightface..."
-          & "$BUNDLE_DIR\python.exe" -m pip install insightface --no-warn-script-location 2>$null
-          if ($LASTEXITCODE -ne 0) {
+          try {
+            & "$BUNDLE_DIR\python.exe" -m pip install insightface --no-warn-script-location 2>&1 | Out-Null
+          } catch {
             Write-Host "Note: insightface installation skipped (face detection will be unavailable)"
           }
+          # Reset error state
+          $LASTEXITCODE = 0
 
           Write-Host "Cleaning up..."
           Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
@@ -190,6 +195,8 @@ jobs:
       - name: Download ML models
         shell: pwsh
         run: |
+          # Remove any existing tagger symlink/file
+          if (Test-Path "tagger") { Remove-Item -Recurse -Force "tagger" }
           New-Item -ItemType Directory -Force -Path "tagger/model"
 
           Write-Host "Downloading tagger model..."

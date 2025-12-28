@@ -38,3 +38,4 @@ npm-debug.log*
 # ML Models (downloaded during CI build)
 tagger/
 yolov8n.pt
+tagger
