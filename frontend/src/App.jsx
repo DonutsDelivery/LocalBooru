@@ -250,9 +250,18 @@ function SettingsPage() {
                   <button
                     onClick={async () => {
                       if (!confirm('Install age detection dependencies?\n\nThis will download ~2GB of data and may take several minutes.')) return
-                      const { installAgeDetection } = await import('./api')
-                      await installAgeDetection()
-                      refreshAgeDetectionStatus()
+                      try {
+                        const { installAgeDetection } = await import('./api')
+                        const result = await installAgeDetection()
+                        console.log('Install result:', result)
+                        if (!result.success) {
+                          alert(result.error || 'Failed to start installation')
+                        }
+                        refreshAgeDetectionStatus()
+                      } catch (e) {
+                        console.error('Install error:', e)
+                        alert('Failed to start installation: ' + e.message)
+                      }
                     }}
                     className="install-btn"
                   >

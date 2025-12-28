@@ -1,7 +1,7 @@
 """
 Settings router - app configuration and optional features
 """
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
@@ -174,8 +174,10 @@ async def install_age_detection_deps_task():
 
 
 @router.post("/age-detection/install")
-async def install_age_detection(background_tasks: BackgroundTasks):
+async def install_age_detection():
     """Start installing age detection dependencies (runs in background)"""
+    import asyncio
+
     # Check if already installing
     if await get_setting(AGE_DETECTION_INSTALLING, "false") == "true":
         return {"success": False, "error": "Installation already in progress"}
@@ -185,8 +187,8 @@ async def install_age_detection(background_tasks: BackgroundTasks):
     if all(deps.values()):
         return {"success": True, "message": "Dependencies already installed"}
 
-    # Start background installation
-    background_tasks.add_task(install_age_detection_deps_task)
+    # Start background installation using asyncio.create_task
+    asyncio.create_task(install_age_detection_deps_task())
 
     return {
         "success": True,
