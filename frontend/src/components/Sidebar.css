@@ -43,15 +43,15 @@
   margin-top: 4px;
 }
 
-/* Version Info - Fixed overlay in corner */
+/* Version Info - Fixed at bottom of sidebar */
 .version-info {
   position: fixed;
-  top: calc(var(--title-bar-height, 0px) + 4px);
-  left: 4px;
+  bottom: 8px;
+  left: 8px;
   display: flex;
   align-items: center;
   gap: 6px;
-  z-index: 1000;
+  z-index: 950;
   padding: 2px 6px;
   background: rgba(0, 0, 0, 0.4);
   border-radius: 4px;
