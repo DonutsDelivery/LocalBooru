@@ -1,18 +1,56 @@
 """
 Settings router - app configuration and optional features
+Uses JSON file for settings to avoid database migration issues
 """
 from fastapi import APIRouter
-from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
 import subprocess
 import sys
 import os
+import json
+from pathlib import Path
 
-from ..database import AsyncSessionLocal
-from ..models import Settings
+from ..database import get_data_dir
 
 router = APIRouter()
+
+
+# Settings file path
+def get_settings_file() -> Path:
+    return get_data_dir() / 'settings.json'
+
+
+def load_settings() -> dict:
+    """Load settings from JSON file"""
+    settings_file = get_settings_file()
+    if settings_file.exists():
+        try:
+            with open(settings_file, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+
+def save_settings(settings: dict):
+    """Save settings to JSON file"""
+    settings_file = get_settings_file()
+    with open(settings_file, 'w') as f:
+        json.dump(settings, f, indent=2)
+
+
+def get_setting(key: str, default: str = None) -> Optional[str]:
+    """Get a setting value"""
+    settings = load_settings()
+    return settings.get(key, default)
+
+
+def set_setting(key: str, value: str):
+    """Set a setting value"""
+    settings = load_settings()
+    settings[key] = value
+    save_settings(settings)
 
 
 # Settings keys
@@ -20,26 +58,6 @@ AGE_DETECTION_ENABLED = "age_detection_enabled"
 AGE_DETECTION_INSTALLED = "age_detection_installed"
 AGE_DETECTION_INSTALLING = "age_detection_installing"
 AGE_DETECTION_INSTALL_PROGRESS = "age_detection_install_progress"
-
-
-async def get_setting(key: str, default: str = None) -> Optional[str]:
-    """Get a setting value from database"""
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Settings).where(Settings.key == key))
-        setting = result.scalar_one_or_none()
-        return setting.value if setting else default
-
-
-async def set_setting(key: str, value: str):
-    """Set a setting value in database"""
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Settings).where(Settings.key == key))
-        setting = result.scalar_one_or_none()
-        if setting:
-            setting.value = value
-        else:
-            db.add(Settings(key=key, value=value))
-        await db.commit()
 
 
 def check_age_detection_deps() -> dict:
@@ -79,17 +97,17 @@ def check_age_detection_deps() -> dict:
 
 
 @router.get("")
-async def get_settings():
+async def get_all_settings():
     """Get all app settings"""
     deps = check_age_detection_deps()
     all_installed = all(deps.values())
 
     return {
         "age_detection": {
-            "enabled": await get_setting(AGE_DETECTION_ENABLED, "false") == "true",
+            "enabled": get_setting(AGE_DETECTION_ENABLED, "false") == "true",
             "installed": all_installed,
-            "installing": await get_setting(AGE_DETECTION_INSTALLING, "false") == "true",
-            "install_progress": await get_setting(AGE_DETECTION_INSTALL_PROGRESS, ""),
+            "installing": get_setting(AGE_DETECTION_INSTALLING, "false") == "true",
+            "install_progress": get_setting(AGE_DETECTION_INSTALL_PROGRESS, ""),
             "dependencies": deps
         }
     }
@@ -111,15 +129,15 @@ async def toggle_age_detection(data: AgeDetectionToggle):
                 "dependencies": deps
             }
 
-    await set_setting(AGE_DETECTION_ENABLED, "true" if data.enabled else "false")
+    set_setting(AGE_DETECTION_ENABLED, "true" if data.enabled else "false")
     return {"success": True, "enabled": data.enabled}
 
 
-async def install_age_detection_deps_task():
-    """Background task to install age detection dependencies"""
+def install_age_detection_deps_sync():
+    """Synchronous function to install age detection dependencies"""
     try:
-        await set_setting(AGE_DETECTION_INSTALLING, "true")
-        await set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Starting installation...")
+        set_setting(AGE_DETECTION_INSTALLING, "true")
+        set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Starting installation...")
 
         # Get Python executable
         python_exe = sys.executable
@@ -133,8 +151,8 @@ async def install_age_detection_deps_task():
         ]
 
         for name, package in packages:
-            await set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Installing {name}...")
-            print(f"[AgeDetection] Installing {name}...")
+            set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Installing {name}...")
+            print(f"[AgeDetection] Installing {name}...", flush=True)
 
             try:
                 # Use subprocess to install
@@ -146,40 +164,41 @@ async def install_age_detection_deps_task():
                 )
 
                 if result.returncode != 0:
-                    print(f"[AgeDetection] Failed to install {name}: {result.stderr}")
-                    await set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Failed to install {name}")
+                    print(f"[AgeDetection] Failed to install {name}: {result.stderr}", flush=True)
+                    set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Failed to install {name}")
                 else:
-                    print(f"[AgeDetection] Installed {name}")
+                    print(f"[AgeDetection] Installed {name}", flush=True)
 
             except subprocess.TimeoutExpired:
-                print(f"[AgeDetection] Timeout installing {name}")
-                await set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Timeout installing {name}")
+                print(f"[AgeDetection] Timeout installing {name}", flush=True)
+                set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Timeout installing {name}")
             except Exception as e:
-                print(f"[AgeDetection] Error installing {name}: {e}")
+                print(f"[AgeDetection] Error installing {name}: {e}", flush=True)
 
         # Check final status
         deps = check_age_detection_deps()
         if all(deps.values()):
-            await set_setting(AGE_DETECTION_INSTALLED, "true")
-            await set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Installation complete!")
+            set_setting(AGE_DETECTION_INSTALLED, "true")
+            set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Installation complete!")
         else:
             missing = [k for k, v in deps.items() if not v]
-            await set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Some packages failed: {', '.join(missing)}")
+            set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Some packages failed: {', '.join(missing)}")
 
     except Exception as e:
-        print(f"[AgeDetection] Installation error: {e}")
-        await set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Error: {str(e)}")
+        print(f"[AgeDetection] Installation error: {e}", flush=True)
+        set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Error: {str(e)}")
     finally:
-        await set_setting(AGE_DETECTION_INSTALLING, "false")
+        set_setting(AGE_DETECTION_INSTALLING, "false")
 
 
 @router.post("/age-detection/install")
 async def install_age_detection():
     """Start installing age detection dependencies (runs in background)"""
     import asyncio
+    import threading
 
     # Check if already installing
-    if await get_setting(AGE_DETECTION_INSTALLING, "false") == "true":
+    if get_setting(AGE_DETECTION_INSTALLING, "false") == "true":
         return {"success": False, "error": "Installation already in progress"}
 
     # Check if already installed
@@ -187,8 +206,9 @@ async def install_age_detection():
     if all(deps.values()):
         return {"success": True, "message": "Dependencies already installed"}
 
-    # Start background installation using asyncio.create_task
-    asyncio.create_task(install_age_detection_deps_task())
+    # Start background installation in a thread (avoids async issues)
+    thread = threading.Thread(target=install_age_detection_deps_sync, daemon=True)
+    thread.start()
 
     return {
         "success": True,
@@ -202,9 +222,9 @@ async def get_age_detection_status():
     deps = check_age_detection_deps()
 
     return {
-        "enabled": await get_setting(AGE_DETECTION_ENABLED, "false") == "true",
+        "enabled": get_setting(AGE_DETECTION_ENABLED, "false") == "true",
         "installed": all(deps.values()),
-        "installing": await get_setting(AGE_DETECTION_INSTALLING, "false") == "true",
-        "progress": await get_setting(AGE_DETECTION_INSTALL_PROGRESS, ""),
+        "installing": get_setting(AGE_DETECTION_INSTALLING, "false") == "true",
+        "progress": get_setting(AGE_DETECTION_INSTALL_PROGRESS, ""),
         "dependencies": deps
     }

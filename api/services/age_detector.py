@@ -287,11 +287,11 @@ def _estimate_age_gender_mivolo(face_crop, mivolo_model, mivolo_processor, body_
     return age, gender
 
 
-async def is_age_detection_enabled() -> bool:
+def is_age_detection_enabled() -> bool:
     """Check if age detection is enabled in settings"""
     try:
         from ..routers.settings import get_setting, AGE_DETECTION_ENABLED, check_age_detection_deps
-        enabled = await get_setting(AGE_DETECTION_ENABLED, "false") == "true"
+        enabled = get_setting(AGE_DETECTION_ENABLED, "false") == "true"
         if not enabled:
             return False
         # Also check dependencies are installed
@@ -314,7 +314,7 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
         AgeDetectionResult with detected faces, or None if detection fails
     """
     # Check if age detection is enabled
-    if not await is_age_detection_enabled():
+    if not is_age_detection_enabled():
         logger.debug("Age detection is disabled")
         return None
 
