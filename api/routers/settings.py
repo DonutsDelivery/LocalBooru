@@ -108,13 +108,23 @@ def are_required_deps_installed() -> bool:
 async def get_all_settings():
     """Get all app settings"""
     deps = check_age_detection_deps()
+    installed = are_required_deps_installed()
+    progress = get_setting(AGE_DETECTION_INSTALL_PROGRESS, "")
+
+    # Clear stale "failed" progress message if required deps are actually installed
+    if installed and "failed" in progress.lower():
+        if deps.get("insightface", False):
+            progress = "Installation complete!"
+        else:
+            progress = "Installation complete (using OpenCV fallback)"
+        set_setting(AGE_DETECTION_INSTALL_PROGRESS, progress)
 
     return {
         "age_detection": {
             "enabled": get_setting(AGE_DETECTION_ENABLED, "false") == "true",
-            "installed": are_required_deps_installed(),
+            "installed": installed,
             "installing": get_setting(AGE_DETECTION_INSTALLING, "false") == "true",
-            "install_progress": get_setting(AGE_DETECTION_INSTALL_PROGRESS, ""),
+            "install_progress": progress,
             "dependencies": deps
         }
     }
@@ -182,13 +192,20 @@ def install_age_detection_deps_sync():
             except Exception as e:
                 print(f"[AgeDetection] Error installing {name}: {e}", flush=True)
 
-        # Check final status
+        # Check final status - only required deps matter
         deps = check_age_detection_deps()
-        if all(deps.values()):
+        required = ["torch", "transformers", "ultralytics"]
+        required_installed = all(deps.get(r, False) for r in required)
+
+        if required_installed:
             set_setting(AGE_DETECTION_INSTALLED, "true")
-            set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Installation complete!")
+            if deps.get("insightface", False):
+                set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Installation complete!")
+            else:
+                # insightface is optional - OpenCV fallback works fine
+                set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Installation complete (using OpenCV fallback)")
         else:
-            missing = [k for k, v in deps.items() if not v]
+            missing = [k for k in required if not deps.get(k, False)]
             set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Some packages failed: {', '.join(missing)}")
 
     except Exception as e:
