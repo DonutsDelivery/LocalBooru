@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Donut base -->
+  <circle cx="32" cy="32" r="26" fill="#1e1e1e" stroke="#00FFA3" stroke-width="2"/>
+  <circle cx="32" cy="32" r="10" fill="#141414" stroke="#00FFA3" stroke-width="2"/>
+
+  <!-- Frosting/glaze with image frame pattern -->
+  <path d="M32 8c13.255 0 24 10.745 24 24s-10.745 24-24 24S8 45.255 8 32 18.745 8 32 8z" fill="none" stroke="#00FFA3" stroke-width="1" stroke-dasharray="4 2"/>
+
+  <!-- Image icon in the donut ring -->
+  <g transform="translate(20, 20)">
+    <rect x="1" y="3" width="22" height="18" rx="2" fill="#282828" stroke="#00FFA3" stroke-width="1.5"/>
+    <circle cx="8" cy="10" r="3" fill="#00FFA3" opacity="0.6"/>
+    <path d="M4 18l5-6 3 3 6-7 5 10H4z" fill="#00FFA3" opacity="0.8"/>
+  </g>
+</svg>

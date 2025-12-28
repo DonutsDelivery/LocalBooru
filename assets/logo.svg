@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Background -->
+  <rect x="2" y="2" width="60" height="60" rx="12" fill="#1e1e1e"/>
+
+  <!-- Image frame -->
+  <rect x="10" y="10" width="44" height="44" rx="6" fill="#282828" stroke="#00FFA3" stroke-width="2.5"/>
+
+  <!-- Sun/circle element -->
+  <circle cx="22" cy="22" r="6" fill="#00FFA3"/>
+
+  <!-- Mountain/landscape -->
+  <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="#00FFA3" opacity="0.85"/>
+
+  <!-- Accent highlight -->
+  <rect x="10" y="10" width="44" height="44" rx="6" fill="none" stroke="#00FFA3" stroke-width="1" opacity="0.3"/>
+</svg>

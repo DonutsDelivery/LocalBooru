@@ -53,10 +53,10 @@ export default function TitleBar() {
     <div className="title-bar">
       <div className="title-bar-drag">
         <div className="title-bar-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
+          <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
+            <rect x="10" y="10" width="44" height="44" rx="6" fill="var(--bg-tertiary)" stroke="currentColor" strokeWidth="3"/>
+            <circle cx="22" cy="22" r="6" fill="currentColor"/>
+            <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="currentColor" opacity="0.85"/>
           </svg>
         </div>
         <span className="title-bar-title">LocalBooru</span>

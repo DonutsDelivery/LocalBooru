@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Folder back -->
+  <path d="M6 16c0-2.2 1.8-4 4-4h14l4 6h26c2.2 0 4 1.8 4 4v30c0 2.2-1.8 4-4 4H10c-2.2 0-4-1.8-4-4V16z" fill="#1e1e1e" stroke="#00FFA3" stroke-width="2"/>
+
+  <!-- Image thumbnails inside -->
+  <g transform="translate(12, 26)">
+    <!-- Thumbnail 1 -->
+    <rect x="0" y="0" width="16" height="12" rx="2" fill="#282828" stroke="#00FFA3" stroke-width="1"/>
+    <circle cx="5" cy="4" r="2" fill="#00FFA3" opacity="0.5"/>
+    <path d="M2 10l3-4 2 2 4-5 3 7H2z" fill="#00FFA3" opacity="0.7"/>
+  </g>
+
+  <g transform="translate(32, 26)">
+    <!-- Thumbnail 2 -->
+    <rect x="0" y="0" width="16" height="12" rx="2" fill="#282828" stroke="#FF62A4" stroke-width="1"/>
+    <circle cx="5" cy="4" r="2" fill="#FF62A4" opacity="0.5"/>
+    <path d="M2 10l3-4 2 2 4-5 3 7H2z" fill="#FF62A4" opacity="0.7"/>
+  </g>
+
+  <g transform="translate(22, 40)">
+    <!-- Thumbnail 3 -->
+    <rect x="0" y="0" width="16" height="12" rx="2" fill="#282828" stroke="#00FFA3" stroke-width="1"/>
+    <path d="M2 10l4-5 3 3 5-6 2 8H2z" fill="#00FFA3" opacity="0.7"/>
+  </g>
+</svg>
