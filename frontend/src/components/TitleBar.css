@@ -11,6 +11,7 @@
   background: var(--glass-bg);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--glass-border);
+  border-radius: var(--window-radius) var(--window-radius) 0 0;
   z-index: 1000;
   user-select: none;
 }
@@ -73,6 +74,10 @@
 }
 
 /* Close button special styling */
+.title-bar-btn.close {
+  border-radius: 0 var(--window-radius) 0 0;
+}
+
 .title-bar-btn.close:hover {
   background: var(--accent-secondary);
   color: white;

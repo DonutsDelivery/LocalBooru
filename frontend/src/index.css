@@ -31,6 +31,10 @@
   --glass-bg: rgba(30, 30, 30, 0.8);
   --glass-border: rgba(255, 255, 255, 0.08);
 
+  /* Window chrome */
+  --window-radius: 12px;
+  --title-bar-height: 0px;
+
   /* Rating colors */
   --rating-safe: #00FFA3;
   --rating-questionable: #ff9800;
@@ -63,15 +67,20 @@
   padding: 0;
 }
 
-body {
+html, body {
   min-height: 100vh;
   overflow-x: hidden;
+  background: transparent;
 }
 
 #root {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background: var(--bg-primary);
+  border-radius: var(--window-radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
 }
 
 a {

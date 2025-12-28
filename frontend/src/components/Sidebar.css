@@ -8,6 +8,7 @@
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-right: 1px solid var(--glass-border);
+  border-radius: 0 0 0 var(--window-radius);
   display: flex;
   flex-direction: column;
   transition: transform 0.3s ease, opacity 0.3s ease;
