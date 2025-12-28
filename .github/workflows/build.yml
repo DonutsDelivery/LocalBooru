@@ -45,7 +45,7 @@ jobs:
           ls -la tagger/model/ yolov8n.pt
 
       - name: Build Linux packages
-        run: npm run build:linux
+        run: npx electron-builder --linux --publish never
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -98,7 +98,7 @@ jobs:
           ls -la tagger/model/ yolov8n.pt
 
       - name: Build Mac packages
-        run: npx electron-builder --mac
+        run: npx electron-builder --mac --publish never
 
       - name: Upload Mac artifacts
         uses: actions/upload-artifact@v4
@@ -206,7 +206,7 @@ jobs:
           Get-ChildItem "yolov8n.pt"
 
       - name: Build Windows packages
-        run: npm run build:win
+        run: npx electron-builder --win --publish never
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
