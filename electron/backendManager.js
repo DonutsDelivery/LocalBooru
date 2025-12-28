@@ -9,7 +9,7 @@ const http = require('http');
 const { app } = require('electron');
 
 class BackendManager {
-  constructor(port = 8787) {
+  constructor(port = 8790) {
     this.port = port;
     this.process = null;
     this.healthCheckInterval = null;
@@ -69,9 +69,11 @@ class BackendManager {
 
       if (app.isPackaged || fs.existsSync(path.join(pythonDir, 'python.exe'))) {
         // Using bundled Python
+        // Add onnxruntime capi folder to PATH for DLL loading
+        const onnxCapi = path.join(pythonDir, 'Lib', 'site-packages', 'onnxruntime', 'capi');
         return {
           ...baseEnv,
-          PATH: `${pythonDir};${path.join(pythonDir, 'Scripts')};${process.env.PATH}`,
+          PATH: `${onnxCapi};${pythonDir};${path.join(pythonDir, 'Scripts')};${process.env.PATH}`,
           PYTHONHOME: pythonDir,
           PYTHONPATH: this.getWorkingDirectory()
         };

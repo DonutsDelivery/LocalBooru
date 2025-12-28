@@ -283,10 +283,11 @@ function SettingsPage() {
                         type="checkbox"
                         checked={ageDetection.enabled}
                         onChange={async (e) => {
+                          const newValue = e.target.checked
                           const { toggleAgeDetection } = await import('./api')
-                          const result = await toggleAgeDetection(e.target.checked)
+                          const result = await toggleAgeDetection(newValue)
                           if (result.success) {
-                            setAgeDetection(prev => ({ ...prev, enabled: e.target.checked }))
+                            setAgeDetection(prev => ({ ...prev, enabled: newValue }))
                           } else {
                             alert(result.error || 'Failed to toggle')
                           }

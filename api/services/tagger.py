@@ -195,7 +195,7 @@ def load_model(model_type: TaggerModel = None):
 
     import onnxruntime as ort
 
-    # Load ONNX model
+    # Load ONNX model - try CUDA first, fall back to CPU
     model = ort.InferenceSession(
         model_path,
         providers=['CUDAExecutionProvider', 'CPUExecutionProvider']

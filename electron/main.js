@@ -15,7 +15,7 @@ let backendManager = null;
 let directoryWatcher = null;
 
 const isDev = process.env.NODE_ENV === 'development';
-const API_PORT = 8787;
+const API_PORT = 8790;
 
 /**
  * Create the main application window

@@ -226,17 +226,25 @@ async def update_directory(
 @router.delete("/{directory_id}")
 async def remove_directory(
     directory_id: int,
-    remove_images: bool = False,
+    keep_images: bool = False,
     db: AsyncSession = Depends(get_db)
 ):
-    """Remove a watch directory"""
+    """Remove a watch directory. Images are removed from library by default (files on disk are never touched)."""
     directory = await db.get(WatchDirectory, directory_id)
     if not directory:
         raise HTTPException(status_code=404, detail="Directory not found")
 
-    if remove_images:
-        # Delete all images from this directory
-        # This will cascade to ImageFile records
+    if keep_images:
+        # Just unlink the files from this directory (keep in library)
+        from sqlalchemy import update
+        await db.execute(
+            update(ImageFile)
+            .where(ImageFile.watch_directory_id == directory_id)
+            .values(watch_directory_id=None)
+        )
+        images_removed = False
+    else:
+        # Remove images from library (default) - files on disk are NOT touched
         from ..models import Image
         file_query = select(ImageFile.image_id).where(
             ImageFile.watch_directory_id == directory_id
@@ -247,15 +255,13 @@ async def remove_directory(
         for image_id in image_ids:
             image = await db.get(Image, image_id)
             if image:
+                # Delete thumbnails
+                from ..database import get_data_dir
+                thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+                if thumbnail_path.exists():
+                    thumbnail_path.unlink()
                 await db.delete(image)
-    else:
-        # Just unlink the files from this directory
-        from sqlalchemy import update
-        await db.execute(
-            update(ImageFile)
-            .where(ImageFile.watch_directory_id == directory_id)
-            .values(watch_directory_id=None)
-        )
+        images_removed = True
 
     await db.delete(directory)
     await db.commit()
@@ -264,7 +270,7 @@ async def remove_directory(
     from ..services.directory_watcher import directory_watcher
     await directory_watcher.remove_directory(directory_id)
 
-    return {"deleted": True, "images_removed": remove_images}
+    return {"deleted": True, "images_removed": images_removed}
 
 
 @router.post("/{directory_id}/scan")

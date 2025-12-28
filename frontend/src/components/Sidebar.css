@@ -102,7 +102,6 @@
   display: flex;
   flex-direction: column;
   padding: 12px;
-  border-bottom: 1px solid var(--border);
   gap: 4px;
 }
 
@@ -959,29 +958,29 @@
 /* Rating buttons */
 .rating-buttons {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  gap: 4px;
   margin-bottom: 12px;
 }
 
 .rating-group {
   display: flex;
-  gap: 6px;
+  gap: 4px;
 }
 
 .rating-btn {
   flex: 1;
-  padding: 10px 6px;
+  padding: 6px 4px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.8rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
   background: var(--bg-primary);
   color: var(--text-muted);
   letter-spacing: 0.02em;
-  min-height: 44px;
+  min-height: 32px;
 }
 
 .rating-btn:hover {
@@ -1122,11 +1121,27 @@
 }
 
 .age-slider-min {
-  z-index: 2;
+  z-index: 1;
 }
 
 .age-slider-max {
-  z-index: 1;
+  z-index: 2;
+}
+
+/* Make max slider track transparent so min slider track shows through */
+.age-slider-max::-webkit-slider-runnable-track {
+  background: transparent;
+}
+
+.age-slider-max::-moz-range-track {
+  background: transparent;
+}
+
+/* Whichever slider is being interacted with should be on top */
+.age-slider:hover,
+.age-slider:active,
+.age-slider:focus {
+  z-index: 3;
 }
 
 .age-quick-buttons {

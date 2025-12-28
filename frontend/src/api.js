@@ -7,7 +7,7 @@ import axios from 'axios'
 function getApiUrl() {
   // In dev mode with vite, use explicit URL
   if (import.meta.env.DEV) {
-    return import.meta.env.VITE_API_URL || 'http://127.0.0.1:8787'
+    return import.meta.env.VITE_API_URL || 'http://127.0.0.1:8790'
   }
   // In production, frontend is served from backend - use same origin
   return ''

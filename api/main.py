@@ -58,9 +58,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",  # Vite dev
-        "http://localhost:8787",
+        "http://localhost:8790",
         "http://127.0.0.1:5173",
-        "http://127.0.0.1:8787",
+        "http://127.0.0.1:8790",
         "app://.",  # Electron
     ],
     allow_credentials=True,

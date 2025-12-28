@@ -12,7 +12,7 @@ const VIDEO_EXTENSIONS = new Set(['.webm', '.mp4', '.mov']);
 const ALL_EXTENSIONS = new Set([...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS]);
 
 class DirectoryWatcher {
-  constructor(apiPort = 8787) {
+  constructor(apiPort = 8790) {
     this.apiPort = apiPort;
     this.watchers = new Map(); // path -> { watcher, directoryId }
     this.pendingFiles = new Set(); // Debounce rapid changes

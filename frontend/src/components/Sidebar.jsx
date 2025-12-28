@@ -285,7 +285,7 @@ function Sidebar({
               <div className="age-filter-header">
                 <span className="age-filter-label">Age Range:</span>
                 <span className="age-filter-value">
-                  {minAge || MIN_AGE_LIMIT} - {maxAge || MAX_AGE_LIMIT}
+                  {minAge || MIN_AGE_LIMIT} - {maxAge ? maxAge : '80+'}
                 </span>
               </div>
               <div className="age-slider-container">

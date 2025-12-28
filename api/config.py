@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # Server
     host: str = "127.0.0.1"  # Localhost only for security
-    port: int = 8787
+    port: int = 8790
     debug: bool = False
 
     # Task queue
