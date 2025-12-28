@@ -26,6 +26,7 @@ function createWindow() {
     height: 900,
     minWidth: 800,
     minHeight: 600,
+    frame: false,  // Custom title bar
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -182,6 +183,28 @@ function setupIPC() {
   // Show file in folder
   ipcMain.handle('show-in-folder', (event, filePath) => {
     shell.showItemInFolder(filePath);
+  });
+
+  // Window control handlers for custom title bar
+  ipcMain.handle('minimize-window', () => {
+    mainWindow?.minimize();
+  });
+
+  ipcMain.handle('maximize-window', () => {
+    if (mainWindow?.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow?.maximize();
+    }
+    return mainWindow?.isMaximized();
+  });
+
+  ipcMain.handle('close-window', () => {
+    mainWindow?.close();
+  });
+
+  ipcMain.handle('is-maximized', () => {
+    return mainWindow?.isMaximized() ?? false;
   });
 }
 

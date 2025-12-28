@@ -1,6 +1,6 @@
 .sidebar {
   position: fixed;
-  top: 0;
+  top: var(--title-bar-height, 0px);
   left: 0;
   bottom: 0;
   width: 280px;
@@ -46,7 +46,7 @@
 /* Version Info - Fixed overlay in corner */
 .version-info {
   position: fixed;
-  top: 4px;
+  top: calc(var(--title-bar-height, 0px) + 4px);
   left: 4px;
   display: flex;
   align-items: center;

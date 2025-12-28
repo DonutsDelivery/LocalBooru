@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, useSearchParams } from 'react-router-dom'
 import MasonryGrid from './components/MasonryGrid'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
+import TitleBar from './components/TitleBar'
 import { fetchImages, fetchTags, getLibraryStats } from './api'
 import './App.css'
 
@@ -636,13 +637,16 @@ function Gallery() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Gallery />} />
-        <Route path="/directories" element={<DirectoriesPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Routes>
-    </BrowserRouter>
+    <>
+      <TitleBar />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Gallery />} />
+          <Route path="/directories" element={<DirectoriesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Routes>
+      </BrowserRouter>
+    </>
   )
 }
 

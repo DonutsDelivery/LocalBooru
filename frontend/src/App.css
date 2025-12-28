@@ -327,6 +327,7 @@
   flex: 1;
   min-width: 0;
   padding: 20px;
+  padding-top: calc(var(--title-bar-height, 0px) + 20px);
   transition: margin-left 0.3s ease;
 }
 
@@ -392,8 +393,9 @@
     display: block;
     position: fixed;
     inset: 0;
+    top: var(--title-bar-height, 0px);
     background: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
+    z-index: 850;
     animation: fadeIn 0.2s ease;
   }
 
