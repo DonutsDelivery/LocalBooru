@@ -30,19 +30,19 @@ jobs:
       - name: Download ML models
         run: |
           rm -rf tagger  # Remove any symlink/file that might exist
-          mkdir -p tagger/model
+          mkdir -p tagger/vit-v3
 
-          echo "Downloading tagger model..."
-          curl -L -o tagger/model/model.onnx \
+          echo "Downloading tagger model (vit-v3)..."
+          curl -L -o tagger/vit-v3/model.onnx \
             "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx"
-          curl -L -o tagger/model/selected_tags.csv \
+          curl -L -o tagger/vit-v3/selected_tags.csv \
             "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv"
 
           echo "Downloading YOLOv8n model..."
           curl -L -o yolov8n.pt \
             "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt"
 
-          ls -la tagger/model/ yolov8n.pt
+          ls -la tagger/vit-v3/ yolov8n.pt
 
       - name: Build Linux packages
         run: npx electron-builder --linux --publish never
@@ -83,19 +83,19 @@ jobs:
       - name: Download ML models
         run: |
           rm -rf tagger  # Remove any symlink/file that might exist
-          mkdir -p tagger/model
+          mkdir -p tagger/vit-v3
 
-          echo "Downloading tagger model..."
-          curl -L -o tagger/model/model.onnx \
+          echo "Downloading tagger model (vit-v3)..."
+          curl -L -o tagger/vit-v3/model.onnx \
             "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx"
-          curl -L -o tagger/model/selected_tags.csv \
+          curl -L -o tagger/vit-v3/selected_tags.csv \
             "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv"
 
           echo "Downloading YOLOv8n model..."
           curl -L -o yolov8n.pt \
             "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt"
 
-          ls -la tagger/model/ yolov8n.pt
+          ls -la tagger/vit-v3/ yolov8n.pt
 
       - name: Build Mac packages
         run: npx electron-builder --mac --publish never
@@ -193,16 +193,16 @@ jobs:
         run: |
           # Remove any existing tagger symlink/file
           if (Test-Path "tagger") { Remove-Item -Recurse -Force "tagger" }
-          New-Item -ItemType Directory -Force -Path "tagger/model"
+          New-Item -ItemType Directory -Force -Path "tagger/vit-v3"
 
-          Write-Host "Downloading tagger model..."
-          Invoke-WebRequest -Uri "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx" -OutFile "tagger/model/model.onnx"
-          Invoke-WebRequest -Uri "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv" -OutFile "tagger/model/selected_tags.csv"
+          Write-Host "Downloading tagger model (vit-v3)..."
+          Invoke-WebRequest -Uri "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx" -OutFile "tagger/vit-v3/model.onnx"
+          Invoke-WebRequest -Uri "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv" -OutFile "tagger/vit-v3/selected_tags.csv"
 
           Write-Host "Downloading YOLOv8n model..."
           Invoke-WebRequest -Uri "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt" -OutFile "yolov8n.pt"
 
-          Get-ChildItem "tagger/model/"
+          Get-ChildItem "tagger/vit-v3/"
           Get-ChildItem "yolov8n.pt"
 
       - name: Build Windows packages
