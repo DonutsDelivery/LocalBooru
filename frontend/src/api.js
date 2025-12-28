@@ -117,8 +117,8 @@ export async function updateDirectory(id, updates) {
   return response.data
 }
 
-export async function removeDirectory(id, removeImages = false) {
-  const response = await api.delete(`/directories/${id}?remove_images=${removeImages}`)
+export async function removeDirectory(id, keepImages = false) {
+  const response = await api.delete(`/directories/${id}?keep_images=${keepImages}`)
   return response.data
 }
 

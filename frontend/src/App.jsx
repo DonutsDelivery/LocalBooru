@@ -61,7 +61,7 @@ function DirectoriesPage() {
   }
 
   const handleRemove = async (dirId, dirName) => {
-    if (!confirm(`Remove "${dirName}" from watch list?\n\nThis will NOT delete the actual files.`)) {
+    if (!confirm(`Remove "${dirName}" from watch list?\n\nImages will be removed from library.\nActual files on disk will NOT be deleted.`)) {
       return
     }
     try {
