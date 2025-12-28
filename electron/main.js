@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell } = require('elec
 const path = require('path');
 const BackendManager = require('./backendManager');
 const DirectoryWatcher = require('./directoryWatcher');
+const { initUpdater } = require('./updater');
 
 // Keep references to prevent garbage collection
 let mainWindow = null;
@@ -190,6 +191,11 @@ app.whenReady().then(async () => {
   await initializeApp();
   createWindow();
   createTray();
+
+  // Initialize auto-updater
+  if (mainWindow) {
+    initUpdater(mainWindow);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

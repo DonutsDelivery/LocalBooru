@@ -24,6 +24,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Show file in native file explorer
   showInFolder: (filePath) => ipcRenderer.invoke('show-in-folder', filePath),
 
+  // Auto-updater
+  checkForUpdate: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  getVersion: () => ipcRenderer.invoke('updater:get-version'),
+  onUpdaterStatus: (callback) => {
+    const handler = (_, data) => callback(data);
+    ipcRenderer.on('updater:status', handler);
+    return () => ipcRenderer.removeListener('updater:status', handler);
+  },
+
   // Platform info
   platform: process.platform,
   isElectron: true

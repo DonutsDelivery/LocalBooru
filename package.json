@@ -35,7 +35,8 @@
     "electron-builder": "^25.0.0"
   },
   "dependencies": {
-    "chokidar": "^3.6.0"
+    "chokidar": "^3.6.0",
+    "electron-updater": "^6.6.2"
   },
   "build": {
     "appId": "com.localbooru.app",
@@ -72,11 +73,17 @@
       "artifactName": "${productName}-${version}.${ext}"
     },
     "deb": {
-      "depends": ["python3", "python3-pip"],
+      "depends": [
+        "python3",
+        "python3-pip"
+      ],
       "category": "Graphics"
     },
     "rpm": {
-      "depends": ["python3", "python3-pip"]
+      "depends": [
+        "python3",
+        "python3-pip"
+      ]
     },
     "mac": {
       "target": [
@@ -102,7 +109,11 @@
         {
           "from": "python-embed",
           "to": "python-embed",
-          "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
+          "filter": [
+            "**/*",
+            "!**/__pycache__/**",
+            "!**/*.pyc"
+          ]
         }
       ]
     },
@@ -133,7 +144,10 @@
       {
         "from": "tagger",
         "to": "tagger",
-        "filter": ["**/*", "!**/__pycache__/**"]
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**"
+        ]
       },
       {
         "from": "yolov8n.pt",
