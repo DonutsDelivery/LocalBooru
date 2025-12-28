@@ -7,5 +7,6 @@ if command -v pyenv &> /dev/null; then
     eval "$(pyenv init -)"
 fi
 
-# Start Electron app (which manages backend automatically)
+# Start Electron app in production mode (uses backend server, not Vite dev server)
+export NODE_ENV=production
 exec npm start

@@ -49,6 +49,8 @@ function Sidebar({
   const [suggestionIndex, setSuggestionIndex] = useState(-1)
   const [directories, setDirectories] = useState([])
   const [selectedDirectory, setSelectedDirectory] = useState(initialDirectoryId || null)
+  const [appVersion, setAppVersion] = useState(null)
+  const [updateStatus, setUpdateStatus] = useState(null)
   const [selectedRatings, setSelectedRatings] = useState(() => {
     if (initialRating) {
       let ratings = initialRating.split(',').filter(r => ALL_RATINGS.includes(r))
@@ -66,6 +68,17 @@ function Sidebar({
     fetchDirectories().then(data => {
       setDirectories(data.directories || [])
     }).catch(console.error)
+  }, [])
+
+  // Get app version and listen for updates (Electron only)
+  useEffect(() => {
+    if (window.electronAPI) {
+      window.electronAPI.getVersion().then(setAppVersion).catch(console.error)
+      const unsubscribe = window.electronAPI.onUpdaterStatus((status) => {
+        setUpdateStatus(status)
+      })
+      return () => unsubscribe?.()
+    }
   }, [])
 
   useEffect(() => {
@@ -162,6 +175,34 @@ function Sidebar({
       <div className="sidebar-content">
         {/* Logo and Navigation */}
         <div className="sidebar-header">
+          {appVersion && (
+            <div className="version-info">
+              <span className="version-number">v{appVersion}</span>
+              {updateStatus?.status === 'available' && (
+                <button
+                  className="update-badge"
+                  onClick={() => window.electronAPI?.downloadUpdate()}
+                  title={`Update to v${updateStatus.version}`}
+                >
+                  Update
+                </button>
+              )}
+              {updateStatus?.status === 'downloading' && (
+                <span className="update-badge downloading">
+                  {Math.round(updateStatus.progress || 0)}%
+                </span>
+              )}
+              {updateStatus?.status === 'downloaded' && (
+                <button
+                  className="update-badge ready"
+                  onClick={() => window.electronAPI?.installUpdate()}
+                  title="Click to restart and install"
+                >
+                  Restart
+                </button>
+              )}
+            </div>
+          )}
           <NavLink to="/" className="sidebar-logo">
             LocalBooru
           </NavLink>
