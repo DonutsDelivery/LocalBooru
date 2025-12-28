@@ -172,7 +172,15 @@ jobs:
           Remove-Item "$BUNDLE_DIR\get-pip.py"
 
           Write-Host "Installing dependencies..."
-          & "$BUNDLE_DIR\python.exe" -m pip install -r requirements.txt --no-warn-script-location
+          # Install most dependencies (skip insightface which requires C++ build tools)
+          & "$BUNDLE_DIR\python.exe" -m pip install fastapi uvicorn[standard] sqlalchemy aiosqlite pillow imagehash onnxruntime opencv-python-headless numpy pydantic pydantic-settings python-multipart httpx watchdog --no-warn-script-location
+
+          # Try to install insightface (may fail on some systems)
+          Write-Host "Attempting to install insightface..."
+          & "$BUNDLE_DIR\python.exe" -m pip install insightface --no-warn-script-location 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Note: insightface installation skipped (face detection will be unavailable)"
+          }
 
           Write-Host "Cleaning up..."
           Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
