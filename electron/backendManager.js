@@ -47,7 +47,11 @@ class BackendManager {
    */
   getWorkingDirectory() {
     if (app.isPackaged) {
-      // In packaged app, api folder is in resources/app
+      if (process.platform === 'win32') {
+        // Windows: api folder is extracted to resources/
+        return process.resourcesPath;
+      }
+      // Linux/macOS: api folder is in resources/app
       return path.join(process.resourcesPath, 'app');
     }
     return path.join(__dirname, '..');
