@@ -158,14 +158,22 @@ def install_age_detection_deps_sync():
 
         # Get Python executable
         python_exe = sys.executable
+        is_windows = sys.platform == "win32"
 
         # Install packages one by one for progress tracking
+        # numpy<2 required for insightface compatibility
         packages = [
+            ("numpy", "numpy<2"),
             ("torch", "torch torchvision --index-url https://download.pytorch.org/whl/cpu"),
             ("transformers", "transformers"),
             ("ultralytics", "ultralytics"),
-            ("insightface", "insightface")
         ]
+
+        # insightface on Windows needs pre-built wheel (PyPI only has source requiring C++ compiler)
+        if is_windows:
+            packages.append(("insightface", "https://github.com/cobanov/insightface_windows/raw/main/whls/insightface-0.7.3-cp311-cp311-win_amd64.whl"))
+        else:
+            packages.append(("insightface", "insightface"))
 
         for name, package in packages:
             set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Installing {name}...")
