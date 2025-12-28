@@ -1,6 +1,6 @@
 {
   "name": "localbooru",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Local image library with auto-tagging and federation support",
   "main": "electron/main.js",
   "scripts": {
@@ -122,6 +122,13 @@
             "**/*",
             "!**/__pycache__/**",
             "!**/*.pyc"
+          ]
+        },
+        {
+          "from": "frontend/dist",
+          "to": "frontend/dist",
+          "filter": [
+            "**/*"
           ]
         }
       ]
