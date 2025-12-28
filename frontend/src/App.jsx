@@ -175,16 +175,42 @@ function SettingsPage() {
   const [queueStatus, setQueueStatus] = useState(null)
   const [stats, setStats] = useState(null)
   const [dumpsterPath, setDumpsterPath] = useState('')
+  const [ageDetection, setAgeDetection] = useState({
+    enabled: false,
+    installed: false,
+    installing: false,
+    progress: '',
+    dependencies: {}
+  })
+
+  const refreshAgeDetectionStatus = async () => {
+    try {
+      const { getAgeDetectionStatus } = await import('./api')
+      const status = await getAgeDetectionStatus()
+      setAgeDetection(status)
+    } catch (e) {
+      console.error('Failed to get age detection status:', e)
+    }
+  }
 
   useEffect(() => {
     import('./api').then(({ getQueueStatus }) => {
       getQueueStatus().then(setQueueStatus).catch(console.error)
     })
     getLibraryStats().then(setStats).catch(console.error)
+    refreshAgeDetectionStatus()
     // Load saved dumpster path
     const saved = localStorage.getItem('localbooru_dumpster_path')
     if (saved) setDumpsterPath(saved)
   }, [])
+
+  // Poll for installation progress
+  useEffect(() => {
+    if (ageDetection.installing) {
+      const interval = setInterval(refreshAgeDetectionStatus, 2000)
+      return () => clearInterval(interval)
+    }
+  }, [ageDetection.installing])
 
   const handleDumpsterPathChange = (e) => {
     const path = e.target.value
@@ -203,6 +229,66 @@ function SettingsPage() {
         <main className="content with-sidebar">
           <div className="page settings-page">
             <h1>Settings</h1>
+
+            <section>
+              <h2>Age Detection (Optional)</h2>
+              <p className="setting-description">
+                Detect faces and estimate ages in images. Requires ~2GB of additional dependencies (PyTorch, etc).
+              </p>
+
+              <div className="age-detection-status">
+                <div className="deps-status">
+                  <strong>Dependencies:</strong>
+                  {Object.entries(ageDetection.dependencies || {}).map(([dep, installed]) => (
+                    <span key={dep} className={`dep-badge ${installed ? 'installed' : 'missing'}`}>
+                      {dep}: {installed ? '✓' : '✗'}
+                    </span>
+                  ))}
+                </div>
+
+                {!ageDetection.installed && !ageDetection.installing && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Install age detection dependencies?\n\nThis will download ~2GB of data and may take several minutes.')) return
+                      const { installAgeDetection } = await import('./api')
+                      await installAgeDetection()
+                      refreshAgeDetectionStatus()
+                    }}
+                    className="install-btn"
+                  >
+                    Install Dependencies (~2GB)
+                  </button>
+                )}
+
+                {ageDetection.installing && (
+                  <div className="install-progress">
+                    <span className="spinner"></span>
+                    <span>{ageDetection.progress || 'Installing...'}</span>
+                  </div>
+                )}
+
+                {ageDetection.installed && (
+                  <div className="toggle-setting">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={ageDetection.enabled}
+                        onChange={async (e) => {
+                          const { toggleAgeDetection } = await import('./api')
+                          const result = await toggleAgeDetection(e.target.checked)
+                          if (result.success) {
+                            setAgeDetection(prev => ({ ...prev, enabled: e.target.checked }))
+                          } else {
+                            alert(result.error || 'Failed to toggle')
+                          }
+                        }}
+                      />
+                      Enable age detection on new images
+                    </label>
+                  </div>
+                )}
+              </div>
+            </section>
 
             <section>
               <h2>Dumpster Location</h2>

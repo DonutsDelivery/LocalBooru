@@ -74,12 +74,13 @@ thumbnails_dir.mkdir(exist_ok=True)
 app.mount("/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
 
 # Include routers
-from .routers import images, tags, directories, library
+from .routers import images, tags, directories, library, settings
 
 app.include_router(images.router, prefix="/images", tags=["Images"])
 app.include_router(tags.router, prefix="/tags", tags=["Tags"])
 app.include_router(directories.router, prefix="/directories", tags=["Watch Directories"])
 app.include_router(library.router, prefix="/library", tags=["Library"])
+app.include_router(settings.router, prefix="/settings", tags=["Settings"])
 
 
 @app.get("/api")

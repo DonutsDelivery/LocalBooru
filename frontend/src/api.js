@@ -165,6 +165,27 @@ export async function clearPendingTasks() {
   return response.data
 }
 
+// Settings API
+export async function getSettings() {
+  const response = await api.get('/settings')
+  return response.data
+}
+
+export async function getAgeDetectionStatus() {
+  const response = await api.get('/settings/age-detection/status')
+  return response.data
+}
+
+export async function toggleAgeDetection(enabled) {
+  const response = await api.post('/settings/age-detection/toggle', { enabled })
+  return response.data
+}
+
+export async function installAgeDetection() {
+  const response = await api.post('/settings/age-detection/install')
+  return response.data
+}
+
 // Utility functions
 export function getMediaUrl(path) {
   if (!path) return ''
