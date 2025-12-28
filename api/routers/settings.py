@@ -194,7 +194,6 @@ def install_age_detection_deps_sync():
 @router.post("/age-detection/install")
 async def install_age_detection():
     """Start installing age detection dependencies (runs in background)"""
-    import asyncio
     import threading
 
     # Check if already installing
@@ -206,12 +205,17 @@ async def install_age_detection():
     if all(deps.values()):
         return {"success": True, "message": "Dependencies already installed"}
 
-    # Start background installation in a thread (avoids async issues)
+    # Set installing flag BEFORE starting thread (avoid race condition)
+    set_setting(AGE_DETECTION_INSTALLING, "true")
+    set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Starting installation...")
+
+    # Start background installation in a thread
     thread = threading.Thread(target=install_age_detection_deps_sync, daemon=True)
     thread.start()
 
     return {
         "success": True,
+        "installing": True,
         "message": "Installation started in background. This may take several minutes."
     }
 
