@@ -1,0 +1,255 @@
+"""
+LocalBooru database models - simplified single-user version of DonutBooru
+"""
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Table, Enum
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from .database import Base
+import enum
+
+
+class Rating(str, enum.Enum):
+    """5-tier rating system"""
+    pg = "pg"           # Child-friendly, fully clothed
+    pg13 = "pg13"       # Dresses, sportswear, shows skin
+    r = "r"             # Cleavage, underwear, swimsuits
+    x = "x"             # Nudity, visible nipples/genitals
+    xxx = "xxx"         # Explicit sexual content
+
+
+class TagCategory(str, enum.Enum):
+    general = "general"
+    character = "character"
+    copyright = "copyright"
+    artist = "artist"
+    meta = "meta"
+
+
+class TaggerModel(str, enum.Enum):
+    vit_v3 = "vit-v3"              # Fastest, good quality
+    eva02_large_v3 = "eva02-large-v3"  # Slowest, most tags
+    swinv2_v3 = "swinv2-v3"        # Medium speed
+
+
+class TaskStatus(str, enum.Enum):
+    pending = "pending"
+    processing = "processing"
+    completed = "completed"
+    failed = "failed"
+
+
+class TaskType(str, enum.Enum):
+    tag = "tag"
+    scan_directory = "scan_directory"
+    verify_files = "verify_files"
+    upload = "upload"
+    age_detect = "age_detect"
+
+
+class UploadStatus(str, enum.Enum):
+    pending = "pending"
+    uploaded = "uploaded"
+    failed = "failed"
+    deleted = "deleted"
+
+
+# Association table for image-tag many-to-many relationship
+image_tags = Table(
+    "image_tags",
+    Base.metadata,
+    Column("image_id", Integer, ForeignKey("images.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+    Column("confidence", Float, nullable=True),  # AI confidence score
+    Column("is_manual", Boolean, default=False)  # User-added vs AI-generated
+)
+
+
+class Image(Base):
+    """Core image model - simplified for single user local storage"""
+    __tablename__ = "images"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)  # Stored filename (hash-based)
+    original_filename = Column(String(255), nullable=True)  # Original upload name
+    file_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA256
+    perceptual_hash = Column(String(16), nullable=True, index=True)  # pHash for visual duplicate detection
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    file_size = Column(Integer, nullable=True)
+    duration = Column(Float, nullable=True)  # Video duration in seconds
+    rating = Column(Enum(Rating), default=Rating.pg, index=True)
+
+    # AI generation metadata
+    prompt = Column(Text, nullable=True)
+    negative_prompt = Column(Text, nullable=True)
+    model_name = Column(String(255), nullable=True)
+    sampler = Column(String(100), nullable=True)
+    seed = Column(String(50), nullable=True)
+    steps = Column(Integer, nullable=True)
+    cfg_scale = Column(Float, nullable=True)
+
+    # Source URL (if from Civitai, etc.)
+    source_url = Column(Text, nullable=True)
+
+    # Age detection results (for realistic/photorealistic images)
+    num_faces = Column(Integer, nullable=True)  # Number of detected faces
+    min_detected_age = Column(Integer, nullable=True, index=True)  # Youngest face
+    max_detected_age = Column(Integer, nullable=True, index=True)  # Oldest face
+    detected_ages = Column(Text, nullable=True)  # JSON: [25, 32, 8]
+    age_detection_data = Column(Text, nullable=True)  # Full JSON with all face data
+
+    # Local library features
+    is_favorite = Column(Boolean, default=False, index=True)
+    import_source = Column(String(500), nullable=True)  # Directory path or "manual"
+
+    # View tracking
+    view_count = Column(Integer, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    file_created_at = Column(DateTime(timezone=True), nullable=True, index=True)  # File creation time
+    file_modified_at = Column(DateTime(timezone=True), nullable=True, index=True)  # File modification time
+
+    # Relationships
+    tags = relationship("Tag", secondary=image_tags, back_populates="images")
+    files = relationship("ImageFile", back_populates="image", cascade="all, delete-orphan")
+    external_uploads = relationship("ExternalUpload", back_populates="image", cascade="all, delete-orphan")
+
+    @property
+    def url(self):
+        """Get URL to serve the image"""
+        # For reference-based storage, we serve from original path via API
+        return f"/images/{self.id}/file"
+
+    @property
+    def thumbnail_url(self):
+        """Get thumbnail URL"""
+        return f"/images/{self.id}/thumbnail"
+
+
+class FileStatus(str, enum.Enum):
+    """File availability status"""
+    available = "available"      # File exists and is accessible
+    missing = "missing"          # File was deleted/moved (confirmed)
+    drive_offline = "drive_offline"  # Parent drive/directory is unavailable
+    unknown = "unknown"          # Not yet verified
+
+
+class ImageFile(Base):
+    """Track original file locations (reference, not copy)"""
+    __tablename__ = "image_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
+    original_path = Column(Text, nullable=False, unique=True, index=True)  # Absolute path to original file
+    file_exists = Column(Boolean, default=True, index=True)  # Legacy - kept for compatibility
+    file_status = Column(Enum(FileStatus), default=FileStatus.available, index=True)
+    last_verified_at = Column(DateTime(timezone=True), nullable=True)
+    watch_directory_id = Column(Integer, ForeignKey("watch_directories.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    image = relationship("Image", back_populates="files")
+    watch_directory = relationship("WatchDirectory", back_populates="image_files")
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    category = Column(Enum(TagCategory), default=TagCategory.general, index=True)
+    post_count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    images = relationship("Image", secondary=image_tags, back_populates="tags")
+    aliases = relationship("TagAlias", back_populates="target_tag")
+
+
+class TagAlias(Base):
+    __tablename__ = "tag_aliases"
+
+    alias = Column(String(100), primary_key=True)
+    target_tag_id = Column(Integer, ForeignKey("tags.id"), nullable=False)
+
+    # Relationships
+    target_tag = relationship("Tag", back_populates="aliases")
+
+
+class WatchDirectory(Base):
+    """Directories to watch for new images"""
+    __tablename__ = "watch_directories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    path = Column(Text, nullable=False, unique=True)
+    name = Column(String(255), nullable=True)  # User-friendly name
+    enabled = Column(Boolean, default=True)
+    recursive = Column(Boolean, default=True)  # Scan subdirectories
+    auto_tag = Column(Boolean, default=True)  # Auto-tag imported images
+    last_scanned_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    image_files = relationship("ImageFile", back_populates="watch_directory")
+
+
+class BooruInstance(Base):
+    """Federated booru instances for uploads"""
+    __tablename__ = "booru_instances"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    base_url = Column(String(500), nullable=False)  # e.g., "https://donutbooru.com"
+    instance_type = Column(String(50), default="donutbooru")  # donutbooru, danbooru, gelbooru, etc.
+    auth_method = Column(String(50), default="discord")  # discord, api_key, none
+    auth_token = Column(Text, nullable=True)  # Encrypted token/API key
+    is_enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    uploads = relationship("ExternalUpload", back_populates="booru")
+
+
+class ExternalUpload(Base):
+    """Track uploads to external boorus"""
+    __tablename__ = "external_uploads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
+    booru_id = Column(Integer, ForeignKey("booru_instances.id", ondelete="CASCADE"), nullable=False)
+    external_id = Column(String(100), nullable=True)  # ID on remote booru
+    external_url = Column(Text, nullable=True)  # URL on external booru
+    uploaded_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(Enum(UploadStatus), default=UploadStatus.pending)
+    error_message = Column(Text, nullable=True)
+
+    # Relationships
+    image = relationship("Image", back_populates="external_uploads")
+    booru = relationship("BooruInstance", back_populates="uploads")
+
+
+class TaskQueue(Base):
+    """Background task queue"""
+    __tablename__ = "task_queue"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_type = Column(Enum(TaskType), nullable=False, index=True)
+    payload = Column(Text, nullable=True)  # JSON payload
+    status = Column(Enum(TaskStatus), default=TaskStatus.pending, index=True)
+    priority = Column(Integer, default=0)  # Higher = more urgent
+    attempts = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class Settings(Base):
+    """App settings stored in database"""
+    __tablename__ = "settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

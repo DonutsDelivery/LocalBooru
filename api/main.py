@@ -1,0 +1,135 @@
+"""
+LocalBooru API - Simplified single-user local image library
+"""
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from contextlib import asynccontextmanager
+from pathlib import Path
+import os
+
+from .config import get_settings
+from .database import init_db, close_db, get_data_dir
+
+settings = get_settings()
+
+# Frontend dist directory
+FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events."""
+    # Startup
+    print("Starting LocalBooru API...")
+    await init_db()
+
+    # Ensure directories exist
+    data_dir = get_data_dir()
+    os.makedirs(data_dir / 'thumbnails', exist_ok=True)
+
+    # Start background task worker
+    from .services.task_queue import task_queue
+    await task_queue.start()
+
+    # Start directory watcher
+    from .services.directory_watcher import directory_watcher
+    await directory_watcher.start()
+
+    yield
+
+    # Shutdown
+    print("Shutting down LocalBooru API...")
+    await directory_watcher.stop()
+    await task_queue.stop()
+    await close_db()
+
+
+app = FastAPI(
+    title="LocalBooru",
+    description="Local image library with auto-tagging",
+    version="0.1.0",
+    lifespan=lifespan
+)
+
+# CORS middleware - localhost only
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",  # Vite dev
+        "http://localhost:8787",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8787",
+        "app://.",  # Electron
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount static files for thumbnails
+thumbnails_dir = get_data_dir() / 'thumbnails'
+thumbnails_dir.mkdir(exist_ok=True)
+app.mount("/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
+
+# Include routers
+from .routers import images, tags, directories, library
+
+app.include_router(images.router, prefix="/images", tags=["Images"])
+app.include_router(tags.router, prefix="/tags", tags=["Tags"])
+app.include_router(directories.router, prefix="/directories", tags=["Watch Directories"])
+app.include_router(library.router, prefix="/library", tags=["Library"])
+
+
+@app.get("/api")
+async def api_root():
+    return {
+        "name": "LocalBooru",
+        "version": "0.1.0",
+        "status": "running"
+    }
+
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
+
+# Serve frontend static files
+if FRONTEND_DIR.exists():
+    # Mount assets directory
+    assets_dir = FRONTEND_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="frontend_assets")
+
+    # Serve static files from frontend root (icon.png, etc)
+    @app.get("/icon.png")
+    async def serve_icon():
+        icon_path = FRONTEND_DIR / "icon.png"
+        if icon_path.exists():
+            return FileResponse(icon_path)
+        return {"error": "not found"}
+
+    # Catch-all route for SPA - must be last
+    @app.get("/{full_path:path}")
+    async def serve_spa(request: Request, full_path: str):
+        # Don't serve SPA for API routes
+        if full_path.startswith(("images/", "tags/", "directories/", "library/", "thumbnails/")):
+            return {"error": "not found"}
+
+        # Return index.html for SPA routing
+        index_path = FRONTEND_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        return {"error": "frontend not built"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "api.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=settings.debug
+    )

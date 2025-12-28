@@ -1,0 +1,183 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Build frontend
+        run: npm run build:frontend
+
+      - name: Download ML models
+        run: |
+          mkdir -p tagger/model
+
+          # Download WD Tagger model from HuggingFace
+          echo "Downloading tagger model..."
+          curl -L -o tagger/model/model.onnx \
+            "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx"
+          curl -L -o tagger/model/selected_tags.csv \
+            "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv"
+
+          # Download YOLOv8n model from Ultralytics
+          echo "Downloading YOLOv8n model..."
+          curl -L -o yolov8n.pt \
+            "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt"
+
+          ls -la tagger/model/ yolov8n.pt
+
+      - name: Build Linux packages
+        run: npm run build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-builds
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
+          if-no-files-found: warn
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Build frontend
+        run: npm run build:frontend
+
+      - name: Prepare Python bundle
+        shell: pwsh
+        run: |
+          $PYTHON_VERSION = "3.11.9"
+          $BUNDLE_DIR = "python-embed"
+
+          Write-Host "Creating Python bundle directory..."
+          New-Item -ItemType Directory -Force -Path $BUNDLE_DIR
+
+          Write-Host "Downloading Python embeddable..."
+          $pythonUrl = "https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-embed-amd64.zip"
+          Invoke-WebRequest -Uri $pythonUrl -OutFile "$BUNDLE_DIR\python.zip"
+
+          Write-Host "Extracting Python..."
+          Expand-Archive -Path "$BUNDLE_DIR\python.zip" -DestinationPath $BUNDLE_DIR -Force
+          Remove-Item "$BUNDLE_DIR\python.zip"
+
+          Write-Host "Enabling pip..."
+          $pthFile = "$BUNDLE_DIR\python311._pth"
+          $content = Get-Content $pthFile -Raw
+          $content = $content -replace '#import site', 'import site'
+          $content += "`nLib\site-packages`n"
+          Set-Content -Path $pthFile -Value $content
+
+          Write-Host "Installing pip..."
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$BUNDLE_DIR\get-pip.py"
+          & "$BUNDLE_DIR\python.exe" "$BUNDLE_DIR\get-pip.py"
+          Remove-Item "$BUNDLE_DIR\get-pip.py"
+
+          Write-Host "Installing dependencies..."
+          & "$BUNDLE_DIR\python.exe" -m pip install -r requirements.txt --no-warn-script-location
+
+          Write-Host "Cleaning up..."
+          Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+          Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -File -Filter "*.pyc" | Remove-Item -Force
+
+          Write-Host "Python bundle ready!"
+          $size = (Get-ChildItem -Path $BUNDLE_DIR -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+          Write-Host "Bundle size: $([math]::Round($size, 2)) MB"
+
+      - name: Download ML models
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "tagger/model"
+
+          Write-Host "Downloading tagger model..."
+          Invoke-WebRequest -Uri "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx" -OutFile "tagger/model/model.onnx"
+          Invoke-WebRequest -Uri "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv" -OutFile "tagger/model/selected_tags.csv"
+
+          Write-Host "Downloading YOLOv8n model..."
+          Invoke-WebRequest -Uri "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt" -OutFile "yolov8n.pt"
+
+          Get-ChildItem "tagger/model/"
+          Get-ChildItem "yolov8n.pt"
+
+      - name: Build Windows packages
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-builds
+          path: |
+            dist/*.exe
+          if-no-files-found: error
+
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/linux-builds/*
+            artifacts/windows-builds/*
+          draft: false
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

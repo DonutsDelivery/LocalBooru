@@ -1,0 +1,126 @@
+{
+  "name": "localbooru",
+  "version": "0.1.0",
+  "description": "Local image library with auto-tagging and federation support",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "uvicorn api.main:app --reload --port 8787",
+    "build": "npm run build:frontend && npm run build:electron",
+    "build:frontend": "cd frontend && npm run build",
+    "build:electron": "electron-builder",
+    "build:linux": "npm run build:frontend && electron-builder --linux",
+    "build:win": "npm run build:frontend && electron-builder --win",
+    "prepare:python:win": "node scripts/prepare-python-bundle.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/localbooru.git"
+  },
+  "keywords": [
+    "booru",
+    "image-gallery",
+    "tagger",
+    "electron"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0"
+  },
+  "build": {
+    "appId": "com.localbooru.app",
+    "productName": "LocalBooru",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "frontend/dist/**/*",
+      "api/**/*",
+      "tagger/**/*",
+      "assets/**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm",
+        "tar.gz"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Graphics",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "deb": {
+      "depends": ["python3", "python3-pip"],
+      "category": "Graphics"
+    },
+    "rpm": {
+      "depends": ["python3", "python3-pip"]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.photography"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "python-embed",
+          "to": "python-embed",
+          "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "perMachine": false,
+      "artifactName": "${productName}-${version}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-Portable.${ext}"
+    },
+    "extraResources": [
+      {
+        "from": "tagger",
+        "to": "tagger",
+        "filter": ["**/*", "!**/__pycache__/**"]
+      },
+      {
+        "from": "yolov8n.pt",
+        "to": "yolov8n.pt"
+      }
+    ]
+  }
+}

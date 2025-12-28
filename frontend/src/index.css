@@ -1,0 +1,129 @@
+:root {
+  /* Dark grey theme (ComfyUI style) */
+  --bg-primary: #141414;
+  --bg-secondary: #1e1e1e;
+  --bg-tertiary: #282828;
+  --bg-elevated: #303030;
+  --text-primary: #f0f0f0;
+  --text-secondary: #a8a8a8;
+  --text-muted: #686868;
+
+  /* Accent colors */
+  --accent: #00FFA3;
+  --accent-hover: #84FFD3;
+  --accent-glow: rgba(0, 255, 163, 0.15);
+  --accent-secondary: #FF62A4;
+  --accent-secondary-hover: #FF8FBD;
+  --accent-secondary-glow: rgba(255, 98, 164, 0.15);
+  --accent-alt: #FA00FF;
+  --accent-alt-glow: rgba(250, 0, 255, 0.15);
+
+  /* Borders & Shadows */
+  --border: #3a3a3a;
+  --border-light: #454545;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow-accent: 0 0 20px rgba(0, 255, 163, 0.2);
+  --shadow-glow-pink: 0 0 20px rgba(255, 98, 164, 0.2);
+
+  /* Glass effect */
+  --glass-bg: rgba(30, 30, 30, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  /* Rating colors */
+  --rating-safe: #00FFA3;
+  --rating-questionable: #ff9800;
+  --rating-explicit: #FF62A4;
+
+  /* Tag category colors */
+  --tag-general: #00FFA3;
+  --tag-artist: #FF62A4;
+  --tag-character: #84FFD3;
+  --tag-copyright: #FA00FF;
+  --tag-meta: #78909c;
+  --tag-uploader: #E040FB;
+
+  /* Typography */
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+input, select {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-light);
+}
+
+/* Selection */
+::selection {
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+
+/* Focus outline */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
