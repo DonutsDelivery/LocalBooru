@@ -24,18 +24,28 @@ def get_models():
     if _models_loaded:
         return _face_detector, _body_detector, _mivolo_model, _mivolo_processor
 
+    # Try InsightFace first (best quality), fall back to OpenCV (no compilation needed)
     try:
-        # Load InsightFace for face detection only
         from insightface.app import FaceAnalysis
         _face_detector = FaceAnalysis(
             name='buffalo_l',
             providers=['CPUExecutionProvider']
         )
         _face_detector.prepare(ctx_id=-1, det_size=(640, 640))
+        _face_detector._detector_type = 'insightface'
         logger.info("InsightFace face detector loaded (CPU mode)")
     except Exception as e:
-        logger.error(f"Failed to load InsightFace: {e}")
-        _face_detector = None
+        logger.warning(f"InsightFace not available ({e}), using OpenCV face detection")
+        # Fall back to OpenCV Haar Cascade (built-in, no compilation needed)
+        try:
+            import cv2
+            cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            _face_detector = cv2.CascadeClassifier(cascade_path)
+            _face_detector._detector_type = 'opencv'
+            logger.info("OpenCV Haar Cascade face detector loaded")
+        except Exception as e2:
+            logger.error(f"Failed to load any face detector: {e2}")
+            _face_detector = None
 
     try:
         # Load YOLO for body/person detection
@@ -290,13 +300,12 @@ def _estimate_age_gender_mivolo(face_crop, mivolo_model, mivolo_processor, body_
 def is_age_detection_enabled() -> bool:
     """Check if age detection is enabled in settings"""
     try:
-        from ..routers.settings import get_setting, AGE_DETECTION_ENABLED, check_age_detection_deps
+        from ..routers.settings import get_setting, AGE_DETECTION_ENABLED, are_required_deps_installed
         enabled = get_setting(AGE_DETECTION_ENABLED, "false") == "true"
         if not enabled:
             return False
-        # Also check dependencies are installed
-        deps = check_age_detection_deps()
-        return all(deps.values())
+        # Also check required dependencies are installed
+        return are_required_deps_installed()
     except Exception as e:
         logger.warning(f"Failed to check age detection setting: {e}")
         return False
@@ -354,18 +363,32 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
             except Exception as e:
                 logger.warning(f"YOLO body detection failed: {e}")
 
-        # Detect faces using InsightFace
-        faces = face_detector.get(img)
+        # Detect faces using available detector
+        detector_type = getattr(face_detector, '_detector_type', 'unknown')
 
-        if not faces:
-            logger.debug(f"No faces detected in {image_path}")
-            return AgeDetectionResult([])
+        if detector_type == 'insightface':
+            faces = face_detector.get(img)
+            if not faces:
+                logger.debug(f"No faces detected in {image_path}")
+                return AgeDetectionResult([])
+            # Convert InsightFace results to common format
+            face_boxes = [(face.bbox.astype(int), float(face.det_score), face) for face in faces]
+        elif detector_type == 'opencv':
+            # OpenCV Haar Cascade detection
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            detections = face_detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+            if len(detections) == 0:
+                logger.debug(f"No faces detected in {image_path}")
+                return AgeDetectionResult([])
+            # Convert to common format: (bbox, confidence, original_face)
+            face_boxes = [((x, y, x+w, y+h), 0.9, None) for (x, y, w, h) in detections]
+        else:
+            logger.warning(f"Unknown face detector type: {detector_type}")
+            return None
 
         face_infos = []
-        for face in faces:
-            bbox = face.bbox.astype(int)
-            x1, y1, x2, y2 = bbox
-            confidence = float(face.det_score)
+        for bbox_tuple, confidence, original_face in face_boxes:
+            x1, y1, x2, y2 = bbox_tuple
 
             # Expand face bbox slightly for better context
             pad_x = int((x2 - x1) * 0.1)
@@ -390,7 +413,7 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
                 if body_crop.size == 0:
                     body_crop = None
 
-            # Use MiVOLO for age/gender if available, fall back to InsightFace
+            # Use MiVOLO for age/gender if available
             if mivolo_model is not None and mivolo_processor is not None:
                 try:
                     age, gender = _estimate_age_gender_mivolo(
@@ -399,13 +422,24 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
                     if body_crop is not None:
                         logger.debug(f"MiVOLO used face+body for age estimation")
                 except Exception as e:
-                    logger.warning(f"MiVOLO failed, falling back to InsightFace: {e}")
-                    age = int(face.age)
-                    gender = 'M' if face.gender == 1 else 'F'
-            else:
+                    logger.warning(f"MiVOLO failed: {e}")
+                    # Fall back to InsightFace if available
+                    if original_face is not None and hasattr(original_face, 'age'):
+                        age = int(original_face.age)
+                        gender = 'M' if original_face.gender == 1 else 'F'
+                    else:
+                        # No age estimation available with OpenCV
+                        age = 25  # Default estimate
+                        gender = 'M'
+            elif original_face is not None and hasattr(original_face, 'age'):
                 # Fall back to InsightFace age/gender
-                age = int(face.age)
-                gender = 'M' if face.gender == 1 else 'F'
+                age = int(original_face.age)
+                gender = 'M' if original_face.gender == 1 else 'F'
+            else:
+                # OpenCV doesn't provide age/gender, MiVOLO not available
+                logger.warning("No age estimation model available")
+                age = 25  # Default estimate
+                gender = 'M'
 
             face_infos.append(FaceInfo(
                 age=age,

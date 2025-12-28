@@ -66,7 +66,7 @@ def check_age_detection_deps() -> dict:
         "torch": False,
         "transformers": False,
         "ultralytics": False,
-        "insightface": False
+        "insightface": False  # Optional - OpenCV fallback available
     }
 
     try:
@@ -96,16 +96,23 @@ def check_age_detection_deps() -> dict:
     return deps
 
 
+def are_required_deps_installed() -> bool:
+    """Check if required (non-optional) dependencies are installed"""
+    deps = check_age_detection_deps()
+    # insightface is optional - OpenCV fallback is available
+    required = ["torch", "transformers", "ultralytics"]
+    return all(deps.get(r, False) for r in required)
+
+
 @router.get("")
 async def get_all_settings():
     """Get all app settings"""
     deps = check_age_detection_deps()
-    all_installed = all(deps.values())
 
     return {
         "age_detection": {
             "enabled": get_setting(AGE_DETECTION_ENABLED, "false") == "true",
-            "installed": all_installed,
+            "installed": are_required_deps_installed(),
             "installing": get_setting(AGE_DETECTION_INSTALLING, "false") == "true",
             "install_progress": get_setting(AGE_DETECTION_INSTALL_PROGRESS, ""),
             "dependencies": deps
@@ -121,11 +128,11 @@ class AgeDetectionToggle(BaseModel):
 async def toggle_age_detection(data: AgeDetectionToggle):
     """Enable/disable age detection (requires dependencies to be installed)"""
     if data.enabled:
-        deps = check_age_detection_deps()
-        if not all(deps.values()):
+        if not are_required_deps_installed():
+            deps = check_age_detection_deps()
             return {
                 "success": False,
-                "error": "Dependencies not installed. Install them first.",
+                "error": "Required dependencies not installed. Install them first.",
                 "dependencies": deps
             }
 
@@ -200,10 +207,9 @@ async def install_age_detection():
     if get_setting(AGE_DETECTION_INSTALLING, "false") == "true":
         return {"success": False, "error": "Installation already in progress"}
 
-    # Check if already installed
-    deps = check_age_detection_deps()
-    if all(deps.values()):
-        return {"success": True, "message": "Dependencies already installed"}
+    # Check if required deps already installed
+    if are_required_deps_installed():
+        return {"success": True, "message": "Required dependencies already installed"}
 
     # Set installing flag BEFORE starting thread (avoid race condition)
     set_setting(AGE_DETECTION_INSTALLING, "true")
@@ -227,7 +233,7 @@ async def get_age_detection_status():
 
     return {
         "enabled": get_setting(AGE_DETECTION_ENABLED, "false") == "true",
-        "installed": all(deps.values()),
+        "installed": are_required_deps_installed(),
         "installing": get_setting(AGE_DETECTION_INSTALLING, "false") == "true",
         "progress": get_setting(AGE_DETECTION_INSTALL_PROGRESS, ""),
         "dependencies": deps

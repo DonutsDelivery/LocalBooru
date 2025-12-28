@@ -108,6 +108,19 @@ jobs:
           # Reset error state
           $LASTEXITCODE = 0
 
+          # Copy VC++ DLLs to onnxruntime capi folder (where the native DLL is)
+          Write-Host "Copying VC++ DLLs to onnxruntime..."
+          $onnxCapi = "$BUNDLE_DIR\Lib\site-packages\onnxruntime\capi"
+          if (Test-Path $onnxCapi) {
+            foreach ($dll in $systemDlls) {
+              $sourcePath = "C:\Windows\System32\$dll"
+              if (Test-Path $sourcePath) {
+                Copy-Item $sourcePath "$onnxCapi\" -Force
+                Write-Host "Copied $dll to onnxruntime/capi"
+              }
+            }
+          }
+
           Write-Host "Cleaning up..."
           Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
           Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -File -Filter "*.pyc" | Remove-Item -Force -ErrorAction SilentlyContinue
