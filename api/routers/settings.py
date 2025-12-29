@@ -100,29 +100,31 @@ def check_age_detection_deps() -> dict:
     if not is_windows:
         deps["insightface"] = False
 
+    # Catch OSError too - Windows throws this when VC++ redistributable is missing
     try:
         import torch
         deps["torch"] = True
-    except ImportError:
-        pass
+    except (ImportError, OSError) as e:
+        if isinstance(e, OSError):
+            deps["torch_error"] = "Missing Visual C++ Redistributable. Install from: https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
     try:
         import transformers
         deps["transformers"] = True
-    except ImportError:
+    except (ImportError, OSError):
         pass
 
     try:
         import ultralytics
         deps["ultralytics"] = True
-    except ImportError:
+    except (ImportError, OSError):
         pass
 
     if not is_windows:
         try:
             import insightface
             deps["insightface"] = True
-        except ImportError:
+        except (ImportError, OSError):
             pass
 
     return deps
@@ -192,6 +194,46 @@ def install_age_detection_deps_sync():
         python_exe = sys.executable
         is_windows = sys.platform == "win32"
         packages_dir = get_packages_dir()
+
+        # On Windows, install VC++ Redistributable if needed (required for PyTorch)
+        if is_windows:
+            try:
+                # Check if VC++ is installed by trying to load a simple DLL
+                import ctypes
+                try:
+                    ctypes.CDLL("vcruntime140.dll")
+                except OSError:
+                    set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Installing Visual C++ Redistributable...")
+                    print("[AgeDetection] Installing VC++ Redistributable...", flush=True)
+
+                    import urllib.request
+                    import tempfile
+
+                    # Download VC++ redistributable
+                    vc_url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                    vc_path = Path(tempfile.gettempdir()) / "vc_redist.x64.exe"
+
+                    urllib.request.urlretrieve(vc_url, vc_path)
+
+                    # Install silently
+                    result = subprocess.run(
+                        [str(vc_path), "/install", "/quiet", "/norestart"],
+                        capture_output=True,
+                        timeout=300
+                    )
+
+                    if result.returncode == 0:
+                        print("[AgeDetection] VC++ Redistributable installed", flush=True)
+                    else:
+                        print(f"[AgeDetection] VC++ install returned {result.returncode}", flush=True)
+
+                    # Clean up
+                    try:
+                        vc_path.unlink()
+                    except:
+                        pass
+            except Exception as e:
+                print(f"[AgeDetection] VC++ check/install error: {e}", flush=True)
 
         # Add packages dir to path so we can check for already-installed packages
         ensure_packages_in_path()

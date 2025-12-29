@@ -256,12 +256,17 @@ function SettingsPage() {
               <div className="age-detection-status">
                 <div className="deps-status">
                   <strong>Dependencies:</strong>
-                  {Object.entries(ageDetection.dependencies || {}).map(([dep, installed]) => (
+                  {Object.entries(ageDetection.dependencies || {}).filter(([dep]) => !dep.endsWith('_error')).map(([dep, installed]) => (
                     <span key={dep} className={`dep-badge ${installed ? 'installed' : 'missing'}`}>
                       {dep}: {installed ? '✓' : '✗'}
                     </span>
                   ))}
                 </div>
+                {ageDetection.dependencies?.torch_error && (
+                  <p className="error-message" style={{color: '#ff6b6b', marginTop: '8px', fontSize: '0.9em'}}>
+                    {ageDetection.dependencies.torch_error}
+                  </p>
+                )}
 
                 {!ageDetection.installed && !ageDetection.installing && (
                   <button
