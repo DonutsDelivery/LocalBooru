@@ -379,6 +379,13 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
         logger.warning("Face detector not available")
         return None
 
+    # If using OpenCV face detection (no InsightFace), we NEED MiVOLO for age estimation
+    # Otherwise we'd just save fake data
+    if detector_type == 'opencv' and mivolo_model is None:
+        print("[AgeDetector] MiVOLO not available with OpenCV detector, skipping age detection", flush=True)
+        logger.warning("MiVOLO not available, cannot estimate ages with OpenCV detector")
+        return None
+
     try:
         # Load image with OpenCV
         image_path = Path(image_path)
@@ -477,10 +484,10 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
                 gender = 'M' if original_face.gender == 1 else 'F'
             else:
                 # OpenCV doesn't provide age/gender, MiVOLO not available
-                print("[AgeDetector] WARNING: No age model available, using default age 25", flush=True)
-                logger.warning("No age estimation model available")
-                age = 25  # Default estimate
-                gender = 'U'
+                # Skip this face - don't save fake data
+                print("[AgeDetector] WARNING: No age model available, skipping face", flush=True)
+                logger.warning("No age estimation model available, skipping face")
+                continue
 
             face_infos.append(FaceInfo(
                 age=age,
