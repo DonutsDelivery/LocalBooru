@@ -98,9 +98,11 @@ def get_models():
             # Add to Python path so custom model code can be imported
             if hf_cache not in sys.path:
                 sys.path.insert(0, hf_cache)
+            print(f"[AgeDetector] HF cache set to: {hf_cache}", flush=True)
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if device == "cuda" else torch.float32
+        print(f"[AgeDetector] Loading MiVOLO on {device}...", flush=True)
 
         _mivolo_model = AutoModelForImageClassification.from_pretrained(
             "iitolstykh/mivolo_v2",
@@ -112,11 +114,13 @@ def get_models():
             "iitolstykh/mivolo_v2",
             trust_remote_code=True
         )
+        print(f"[AgeDetector] MiVOLO v2 loaded successfully!", flush=True)
         logger.info(f"MiVOLO v2 model loaded ({device})")
     except Exception as e:
-        logger.error(f"Failed to load MiVOLO: {e}")
+        print(f"[AgeDetector] ERROR loading MiVOLO: {e}", flush=True)
         import traceback
         traceback.print_exc()
+        logger.error(f"Failed to load MiVOLO: {e}")
         _mivolo_model = None
         _mivolo_processor = None
 
@@ -473,6 +477,7 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
                 gender = 'M' if original_face.gender == 1 else 'F'
             else:
                 # OpenCV doesn't provide age/gender, MiVOLO not available
+                print("[AgeDetector] WARNING: No age model available, using default age 25", flush=True)
                 logger.warning("No age estimation model available")
                 age = 25  # Default estimate
                 gender = 'U'
