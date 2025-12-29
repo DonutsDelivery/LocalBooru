@@ -8,7 +8,7 @@ import MasonryGrid from './components/MasonryGrid'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
 import TitleBar from './components/TitleBar'
-import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents } from './api'
+import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory } from './api'
 import './App.css'
 
 
@@ -135,10 +135,11 @@ function DirectoriesPage() {
                           <input
                             type="checkbox"
                             checked={dir.auto_age_detect || false}
-                            onChange={async (e) => {
-                              const { updateDirectory } = await import('./api')
-                              await updateDirectory(dir.id, { auto_age_detect: e.target.checked })
-                              refreshDirectories()
+                            onChange={(e) => {
+                              const newValue = e.target.checked
+                              updateDirectory(dir.id, { auto_age_detect: newValue })
+                                .then(() => refreshDirectories())
+                                .catch(err => alert('Failed: ' + err.message))
                             }}
                           />
                           Age Detect
