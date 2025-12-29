@@ -17,8 +17,16 @@ router = APIRouter()
 
 
 def get_packages_dir() -> Path:
-    """Get persistent packages directory that survives updates"""
-    packages_dir = get_data_dir() / 'packages'
+    """Get persistent packages directory that survives updates.
+
+    Uses LOCALBOORU_PACKAGES_DIR env var if set by Electron,
+    otherwise falls back to data_dir/packages.
+    """
+    # Check for Electron-provided path first (ensures consistency)
+    if os.environ.get('LOCALBOORU_PACKAGES_DIR'):
+        packages_dir = Path(os.environ['LOCALBOORU_PACKAGES_DIR'])
+    else:
+        packages_dir = get_data_dir() / 'packages'
     packages_dir.mkdir(parents=True, exist_ok=True)
     return packages_dir
 

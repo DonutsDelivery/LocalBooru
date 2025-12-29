@@ -22,7 +22,12 @@ def get_data_dir() -> Path:
 
 
 def get_packages_dir() -> Path:
-    """Get persistent packages directory."""
+    """Get persistent packages directory.
+
+    Uses LOCALBOORU_PACKAGES_DIR env var if set by Electron.
+    """
+    if os.environ.get('LOCALBOORU_PACKAGES_DIR'):
+        return Path(os.environ['LOCALBOORU_PACKAGES_DIR'])
     return get_data_dir() / 'packages'
 
 
