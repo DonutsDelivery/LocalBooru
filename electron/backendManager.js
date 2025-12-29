@@ -29,21 +29,51 @@ class BackendManager {
    * Kill any zombie processes on our port
    */
   async killZombieProcesses() {
-    // Skip on Windows - too many edge cases cause hangs
-    // If there's a port conflict, uvicorn will fail and we'll restart
-    if (process.platform === 'win32') {
-      console.log('[Backend] Skipping zombie check on Windows');
-      return;
+    console.log('[Backend] Checking for zombie processes on port', this.port);
+
+    try {
+      if (process.platform === 'win32') {
+        // Windows: synchronously find and kill processes on port
+        // Using netstat output parsing
+        try {
+          const output = execSync(
+            `netstat -ano | findstr :${this.port} | findstr LISTENING`,
+            { encoding: 'utf-8', timeout: 5000, windowsHide: true }
+          );
+          // Parse PIDs from output (last column)
+          const pids = new Set();
+          for (const line of output.trim().split('\n')) {
+            const parts = line.trim().split(/\s+/);
+            const pid = parts[parts.length - 1];
+            if (pid && /^\d+$/.test(pid) && pid !== '0') {
+              pids.add(pid);
+            }
+          }
+          for (const pid of pids) {
+            console.log(`[Backend] Killing zombie process ${pid}`);
+            try {
+              execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 3000, windowsHide: true });
+            } catch (e) {
+              // Process may already be dead
+            }
+          }
+        } catch (e) {
+          // No process on port (findstr returns error if no match)
+        }
+      } else {
+        // Linux/macOS: use fuser (fast and simple)
+        try {
+          execSync(`fuser -k ${this.port}/tcp 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
+        } catch (e) {
+          // Ignore - no process on port or fuser not available
+        }
+      }
+    } catch (e) {
+      console.log('[Backend] Zombie check error:', e.message);
     }
 
-    console.log('[Backend] Checking for zombie processes on port', this.port);
-    try {
-      // Linux/macOS: use fuser (fast and simple)
-      spawn('fuser', ['-k', `${this.port}/tcp`], { stdio: 'ignore' });
-    } catch (e) {
-      // Ignore - no process on port or fuser not available
-    }
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Wait for port to be released
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
 
   /**
