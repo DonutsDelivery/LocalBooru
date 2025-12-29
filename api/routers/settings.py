@@ -169,10 +169,9 @@ def install_age_detection_deps_sync():
             ("ultralytics", "ultralytics"),
         ]
 
-        # insightface on Windows needs pre-built wheel (PyPI only has source requiring C++ compiler)
-        if is_windows:
-            packages.append(("insightface", "https://github.com/cobanov/insightface_windows/raw/main/whls/insightface-0.7.3-cp311-cp311-win_amd64.whl"))
-        else:
+        # insightface is optional - OpenCV fallback works fine for face detection
+        # Skip on Windows as it requires specific Python version wheels or C++ compiler
+        if not is_windows:
             packages.append(("insightface", "insightface"))
 
         for name, package in packages:
