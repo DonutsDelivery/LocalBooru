@@ -6,20 +6,73 @@ on:
   workflow_dispatch:
 
 jobs:
-  # NOTE: Linux and Mac builds temporarily disabled for faster Windows debugging
-  # build-linux:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
-  #     ... (disabled)
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  # build-mac:
-  #   runs-on: macos-latest
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
-  #     ... (disabled)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Build frontend
+        run: npm run build:frontend
+
+      - name: Build Linux packages
+        run: npx electron-builder --linux --publish never
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-builds
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.zip
+          if-no-files-found: warn
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Build frontend
+        run: npm run build:frontend
+
+      - name: Build macOS packages
+        run: npx electron-builder --mac --publish never
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-builds
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: warn
 
   build-windows:
     runs-on: windows-latest
@@ -130,7 +183,6 @@ jobs:
           Write-Host "Bundle size: $([math]::Round($size, 2)) MB"
 
       # ML models are now downloaded on-demand by the app
-      # This reduces installer size from ~856MB to ~670MB
       - name: Create empty model directories
         shell: pwsh
         run: |
@@ -173,7 +225,7 @@ jobs:
           if-no-files-found: warn
 
   release:
-    needs: [build-windows]  # Temporarily only Windows for debugging
+    needs: [build-linux, build-mac, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -191,6 +243,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
+            artifacts/linux-builds/*
+            artifacts/mac-builds/*
             artifacts/windows-builds/*
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
