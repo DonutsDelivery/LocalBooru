@@ -210,7 +210,7 @@ def patch_mivolo_for_timm_compat(packages_dir: Path):
     if not mivolo_dir.exists():
         return
 
-    print("[AgeDetection] Patching mivolo for timm compatibility...", flush=True)
+    patched_any = False
 
     # Patch create_timm_model.py
     create_timm_path = mivolo_dir / "create_timm_model.py"
@@ -248,7 +248,8 @@ except ImportError:
 
             if modified:
                 create_timm_path.write_text(content, encoding="utf-8")
-                print("[AgeDetection] Patched create_timm_model.py", flush=True)
+                print("[AgeDetection] Patched mivolo/create_timm_model.py for timm compatibility", flush=True)
+                patched_any = True
         except Exception as e:
             print(f"[AgeDetection] Failed to patch create_timm_model.py: {e}", flush=True)
 
@@ -309,9 +310,12 @@ except ImportError:
             if old_super in content:
                 content = content.replace(old_super, new_super)
                 model_path.write_text(content, encoding="utf-8")
-                print("[AgeDetection] Patched mivolo_model.py", flush=True)
+                print("[AgeDetection] Patched mivolo/mivolo_model.py for timm compatibility", flush=True)
+                patched_any = True
         except Exception as e:
             print(f"[AgeDetection] Failed to patch mivolo_model.py: {e}", flush=True)
+
+    return patched_any
 
 
 def install_age_detection_deps_sync():

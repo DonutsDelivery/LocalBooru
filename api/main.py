@@ -25,8 +25,14 @@ async def lifespan(app: FastAPI):
     print("Starting LocalBooru API...")
 
     # Add persistent packages directory to path (for age detection deps that survive updates)
-    from .routers.settings import ensure_packages_in_path, set_setting, AGE_DETECTION_INSTALLING
+    from .routers.settings import (
+        ensure_packages_in_path, set_setting, AGE_DETECTION_INSTALLING,
+        get_packages_dir, patch_mivolo_for_timm_compat
+    )
     ensure_packages_in_path()
+
+    # Apply mivolo patches for timm compatibility (for existing installs)
+    patch_mivolo_for_timm_compat(get_packages_dir())
 
     # Clear stuck "installing" flag from previous crash (thread won't survive restart)
     set_setting(AGE_DETECTION_INSTALLING, "false")
