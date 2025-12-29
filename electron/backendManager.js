@@ -26,60 +26,24 @@ class BackendManager {
   }
 
   /**
-   * Kill any zombie processes on our port (with hard timeout)
+   * Kill any zombie processes on our port
    */
   async killZombieProcesses() {
+    // Skip on Windows - too many edge cases cause hangs
+    // If there's a port conflict, uvicorn will fail and we'll restart
+    if (process.platform === 'win32') {
+      console.log('[Backend] Skipping zombie check on Windows');
+      return;
+    }
+
     console.log('[Backend] Checking for zombie processes on port', this.port);
-
-    // Wrap entire operation in a timeout to prevent hangs
-    const timeoutPromise = new Promise(resolve => setTimeout(() => {
-      console.log('[Backend] Zombie check timed out, continuing anyway');
-      resolve();
-    }, 3000));
-
-    const killPromise = new Promise(resolve => {
-      try {
-        if (process.platform === 'win32') {
-          // Windows: use taskkill directly with port filter (simpler, faster)
-          try {
-            // Just try to kill any python process on our port
-            spawn('cmd', ['/c', `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${this.port}') do taskkill /PID %a /F 2>nul`], {
-              stdio: 'ignore',
-              shell: true,
-              windowsHide: true
-            });
-          } catch (e) {
-            // Ignore errors
-          }
-        } else {
-          // Linux/macOS: use fuser (simpler than lsof)
-          try {
-            spawn('fuser', ['-k', `${this.port}/tcp`], { stdio: 'ignore' });
-          } catch (e) {
-            // Try lsof as fallback
-            try {
-              const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 2000 });
-              const pids = output.trim().split('\n').filter(p => p);
-              for (const pid of pids) {
-                spawn('kill', ['-9', pid], { stdio: 'ignore' });
-              }
-            } catch (e2) {
-              // No process on port
-            }
-          }
-        }
-      } catch (e) {
-        // Ignore all errors
-      }
-      // Don't wait for spawn to complete, just schedule and move on
-      setTimeout(resolve, 200);
-    });
-
-    await Promise.race([killPromise, timeoutPromise]);
-
-    // Brief wait for port release
+    try {
+      // Linux/macOS: use fuser (fast and simple)
+      spawn('fuser', ['-k', `${this.port}/tcp`], { stdio: 'ignore' });
+    } catch (e) {
+      // Ignore - no process on port or fuser not available
+    }
     await new Promise(resolve => setTimeout(resolve, 200));
-    console.log('[Backend] Zombie check done');
   }
 
   /**
