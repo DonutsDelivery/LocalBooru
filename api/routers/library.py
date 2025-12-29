@@ -247,7 +247,7 @@ async def detect_ages_retrospective(db: AsyncSession = Depends(get_db)):
         if image_file:
             await enqueue_task(
                 TaskType.age_detect,
-                {"image_id": image.id, "file_path": image_file.original_path},
+                {"image_id": image.id, "image_path": image_file.original_path},
                 priority=0,  # Low priority
                 db=db
             )

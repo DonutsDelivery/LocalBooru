@@ -204,10 +204,20 @@ async def download_model(
                                     progress_callback(filename, bytes_downloaded, total_size)
 
                     # Move temp file to final location
-                    # On Windows, rename fails if target exists - delete first
-                    if file_path.exists():
-                        file_path.unlink()
-                    temp_path.rename(file_path)
+                    # On Windows, use shutil.move which handles existing files
+                    import shutil
+                    import time
+                    for attempt in range(3):
+                        try:
+                            if file_path.exists():
+                                file_path.unlink()
+                                time.sleep(0.1)  # Brief wait for Windows to release
+                            shutil.move(str(temp_path), str(file_path))
+                            break
+                        except OSError as move_error:
+                            if attempt == 2:
+                                raise move_error
+                            time.sleep(0.5)
                     print(f"[ModelDownloader] Downloaded {filename} to {file_path}")
 
             print(f"[ModelDownloader] {model_name} download complete at {model_dir}")
