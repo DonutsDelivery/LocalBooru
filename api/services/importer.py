@@ -105,7 +105,11 @@ async def import_image(
         existing_image = existing_image_check.scalar_one_or_none()
 
         if existing_image and existing_image.file_hash == file_hash:
-            # Same file, no changes needed
+            # Same file - update directory association if needed
+            if watch_directory_id and existing_file.watch_directory_id != watch_directory_id:
+                existing_file.watch_directory_id = watch_directory_id
+                existing_file.file_exists = True
+                await db.commit()
             return {
                 'status': 'duplicate',
                 'image_id': existing_image.id,

@@ -84,12 +84,47 @@ async def scan_directory(
         'found': 0,
         'imported': 0,
         'duplicates': 0,
-        'errors': 0
+        'errors': 0,
+        'cleaned': 0
     }
 
     path = Path(directory_path)
     if not path.exists() or not path.is_dir():
         raise ValueError(f"Directory does not exist: {directory_path}")
+
+    # First, clean up stale ImageFile entries for this directory
+    # (files that no longer exist on disk)
+    stale_query = select(ImageFile).where(ImageFile.watch_directory_id == directory_id)
+    stale_result = await db.execute(stale_query)
+    stale_files = stale_result.scalars().all()
+
+    for image_file in stale_files:
+        if not Path(image_file.original_path).exists():
+            # Check if the image has other valid file references
+            other_files_query = select(ImageFile).where(
+                ImageFile.image_id == image_file.image_id,
+                ImageFile.id != image_file.id,
+                ImageFile.file_exists == True
+            )
+            other_result = await db.execute(other_files_query)
+            has_other_files = other_result.scalar_one_or_none() is not None
+
+            if has_other_files:
+                # Just delete this file reference, keep the image
+                await db.delete(image_file)
+            else:
+                # No other references - delete the image too
+                image = await db.get(Image, image_file.image_id)
+                if image:
+                    from ..database import get_data_dir
+                    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+                    if thumbnail_path.exists():
+                        thumbnail_path.unlink()
+                    await db.delete(image)
+            stats['cleaned'] += 1
+
+    if stats['cleaned'] > 0:
+        await db.commit()
 
     # Get iterator based on recursive setting
     if recursive:
