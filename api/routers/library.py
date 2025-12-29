@@ -146,6 +146,50 @@ async def clear_pending_tasks(db: AsyncSession = Depends(get_db)):
     return {"cleared": result.rowcount}
 
 
+@router.post("/clean-missing")
+async def clean_missing_files(db: AsyncSession = Depends(get_db)):
+    """Remove all images with missing files from the library"""
+    from pathlib import Path
+    from ..database import get_data_dir
+
+    cleaned = 0
+
+    # Find all ImageFile entries
+    query = select(ImageFile)
+    result = await db.execute(query)
+    all_files = result.scalars().all()
+
+    for image_file in all_files:
+        if not Path(image_file.original_path).exists():
+            # Check if image has other valid file references
+            other_query = select(ImageFile).where(
+                ImageFile.image_id == image_file.image_id,
+                ImageFile.id != image_file.id
+            )
+            other_result = await db.execute(other_query)
+            other_files = other_result.scalars().all()
+
+            # Check if any other reference exists
+            has_valid_ref = any(Path(f.original_path).exists() for f in other_files)
+
+            if has_valid_ref:
+                # Just delete this stale reference
+                await db.delete(image_file)
+            else:
+                # No valid references - delete the image too
+                image = await db.get(Image, image_file.image_id)
+                if image:
+                    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+                    if thumbnail_path.exists():
+                        thumbnail_path.unlink()
+                    await db.delete(image)
+
+            cleaned += 1
+
+    await db.commit()
+    return {"cleaned": cleaned}
+
+
 @router.post("/verify-files")
 async def verify_all_files(db: AsyncSession = Depends(get_db)):
     """Queue a file verification task"""

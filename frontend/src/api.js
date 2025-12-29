@@ -200,6 +200,11 @@ export async function clearPendingTasks() {
   return response.data
 }
 
+export async function cleanMissingFiles() {
+  const response = await api.post('/library/clean-missing')
+  return response.data
+}
+
 // Settings API
 export async function getSettings() {
   const response = await api.get('/settings')

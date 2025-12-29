@@ -352,6 +352,16 @@ function SettingsPage() {
               </button>
 
               <button onClick={async () => {
+                if (!confirm('Remove all images with missing files from the library?\n\nThis will NOT delete any actual files on disk.')) return
+                const { cleanMissingFiles } = await import('./api')
+                const result = await cleanMissingFiles()
+                alert(`Cleaned ${result.cleaned} missing file entries`)
+                getLibraryStats().then(setStats).catch(console.error)
+              }} className="danger-btn">
+                Clean Missing Files
+              </button>
+
+              <button onClick={async () => {
                 if (!confirm('Clear all pending tasks from the queue?')) return
                 const { clearPendingTasks } = await import('./api')
                 const result = await clearPendingTasks()

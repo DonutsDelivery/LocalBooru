@@ -182,6 +182,26 @@ def get_model_path(model_type: TaggerModel) -> str:
     return os.path.join(base_path, model_dir)
 
 
+async def ensure_model_downloaded(model_type: TaggerModel = None):
+    """Ensure the tagger model is downloaded before use."""
+    if model_type is None:
+        model_type = DEFAULT_MODEL
+
+    from .model_downloader import is_model_available, download_model
+
+    model_dir = MODEL_DIRS.get(model_type, MODEL_DIRS[DEFAULT_MODEL])
+    model_name = f"tagger/{model_dir}"
+
+    if not is_model_available(model_name):
+        print(f"[Tagger] Model {model_name} not found, downloading...")
+        try:
+            await download_model(model_name)
+            print(f"[Tagger] Model {model_name} downloaded successfully")
+        except Exception as e:
+            print(f"[Tagger] Failed to download model: {e}")
+            raise FileNotFoundError(f"Failed to download model '{model_type.value}': {e}")
+
+
 def load_model(model_type: TaggerModel = None):
     """Load a specific ONNX model and tags data."""
     global _models, _tags_data_cache
@@ -198,10 +218,10 @@ def load_model(model_type: TaggerModel = None):
     tags_path = os.path.join(model_base, "selected_tags.csv")
 
     if not os.path.exists(model_path) or not os.path.exists(tags_path):
-        # Model not available - needs to be downloaded
+        # Model not available - should have been downloaded
         raise FileNotFoundError(
-            f"Model '{model_type.value}' not found. "
-            f"Please download it from Settings > Models."
+            f"Model '{model_type.value}' not found at {model_base}. "
+            f"Download may have failed."
         )
 
     import onnxruntime as ort
@@ -348,6 +368,9 @@ async def tag_image(image_path: str, db: AsyncSession, image_id: int = None, mod
     """
     if model_type is None:
         model_type = DEFAULT_MODEL
+
+    # Ensure model is downloaded (auto-download if needed)
+    await ensure_model_downloaded(model_type)
 
     # Preprocess and run inference
     image_array = preprocess_image(image_path)
