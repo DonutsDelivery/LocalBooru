@@ -198,6 +198,122 @@ async def toggle_age_detection(data: AgeDetectionToggle):
     return {"success": True, "enabled": data.enabled}
 
 
+def patch_mivolo_for_timm_compat(packages_dir: Path):
+    """Patch mivolo to work with timm 0.9.x+ API changes.
+
+    MiVOLO was written for older timm (~0.6.x-0.8.x). Newer timm versions have:
+    - Renamed remap_checkpoint to remap_state_dict (with swapped args)
+    - Moved split_model_name_tag from _pretrained to _registry
+    - Added pos_drop_rate parameter to VOLO (breaks positional args)
+    """
+    mivolo_dir = packages_dir / "mivolo" / "model"
+    if not mivolo_dir.exists():
+        return
+
+    print("[AgeDetection] Patching mivolo for timm compatibility...", flush=True)
+
+    # Patch create_timm_model.py
+    create_timm_path = mivolo_dir / "create_timm_model.py"
+    if create_timm_path.exists():
+        try:
+            content = create_timm_path.read_text(encoding="utf-8")
+            modified = False
+
+            # Fix remap_checkpoint import
+            old_import = "from timm.models._helpers import load_state_dict, remap_checkpoint"
+            new_import = """from timm.models._helpers import load_state_dict
+try:
+    from timm.models._helpers import remap_checkpoint
+except ImportError:
+    # timm 0.9.x renamed remap_checkpoint to remap_state_dict with swapped args
+    from timm.models._helpers import remap_state_dict
+    def remap_checkpoint(model, state_dict, allow_reshape=True):
+        return remap_state_dict(state_dict, model, allow_reshape)"""
+
+            if old_import in content:
+                content = content.replace(old_import, new_import)
+                modified = True
+
+            # Fix split_model_name_tag import location
+            if "from timm.models._pretrained import PretrainedCfg, split_model_name_tag" in content:
+                content = content.replace(
+                    "from timm.models._pretrained import PretrainedCfg, split_model_name_tag",
+                    "from timm.models._pretrained import PretrainedCfg"
+                )
+                content = content.replace(
+                    "from timm.models._registry import is_model, model_entrypoint",
+                    "from timm.models._registry import is_model, model_entrypoint, split_model_name_tag"
+                )
+                modified = True
+
+            if modified:
+                create_timm_path.write_text(content, encoding="utf-8")
+                print("[AgeDetection] Patched create_timm_model.py", flush=True)
+        except Exception as e:
+            print(f"[AgeDetection] Failed to patch create_timm_model.py: {e}", flush=True)
+
+    # Patch mivolo_model.py - fix super().__init__() positional args
+    model_path = mivolo_dir / "mivolo_model.py"
+    if model_path.exists():
+        try:
+            content = model_path.read_text(encoding="utf-8")
+
+            old_super = """super().__init__(
+            layers,
+            img_size,
+            in_chans,
+            num_classes,
+            global_pool,
+            patch_size,
+            stem_hidden_dim,
+            embed_dims,
+            num_heads,
+            downsamples,
+            outlook_attention,
+            mlp_ratio,
+            qkv_bias,
+            drop_rate,
+            attn_drop_rate,
+            drop_path_rate,
+            norm_layer,
+            post_layers,
+            use_aux_head,
+            use_mix_token,
+            pooling_scale,
+        )"""
+
+            new_super = """super().__init__(
+            layers,
+            img_size=img_size,
+            in_chans=in_chans,
+            num_classes=num_classes,
+            global_pool=global_pool,
+            patch_size=patch_size,
+            stem_hidden_dim=stem_hidden_dim,
+            embed_dims=embed_dims,
+            num_heads=num_heads,
+            downsamples=downsamples,
+            outlook_attention=outlook_attention,
+            mlp_ratio=mlp_ratio,
+            qkv_bias=qkv_bias,
+            drop_rate=drop_rate,
+            attn_drop_rate=attn_drop_rate,
+            drop_path_rate=drop_path_rate,
+            norm_layer=norm_layer,
+            post_layers=post_layers,
+            use_aux_head=use_aux_head,
+            use_mix_token=use_mix_token,
+            pooling_scale=pooling_scale,
+        )"""
+
+            if old_super in content:
+                content = content.replace(old_super, new_super)
+                model_path.write_text(content, encoding="utf-8")
+                print("[AgeDetection] Patched mivolo_model.py", flush=True)
+        except Exception as e:
+            print(f"[AgeDetection] Failed to patch mivolo_model.py: {e}", flush=True)
+
+
 def install_age_detection_deps_sync():
     """Synchronous function to install age detection dependencies"""
     try:
@@ -253,15 +369,18 @@ def install_age_detection_deps_sync():
         ensure_packages_in_path()
 
         # Install packages one by one for progress tracking
-        # numpy<2 required for insightface compatibility
+        # Note: numpy<2 required for insightface compatibility on non-Windows
         packages = [
-            ("numpy", "numpy<2"),
             ("torch", "torch torchvision --index-url https://download.pytorch.org/whl/cpu"),
             ("transformers", "transformers"),
             ("ultralytics", "ultralytics"),
             ("timm", "timm"),  # Required by mivolo
-            ("mivolo", "https://github.com/WildChlamydia/MiVOLO/archive/refs/heads/main.zip --no-deps"),  # Not on PyPI, --no-deps to avoid ultralytics version conflict
+            ("mivolo", "https://github.com/WildChlamydia/MiVOLO/archive/refs/heads/main.zip --no-deps"),  # Age/gender detection (MIT license), --no-deps to avoid conflicts
         ]
+
+        # Add numpy<2 for insightface compatibility (only on non-Windows where insightface is used)
+        if not is_windows:
+            packages.insert(0, ("numpy", "numpy<2"))
 
         # insightface is optional - OpenCV fallback works fine for face detection
         # Skip on Windows as it requires specific Python version wheels or C++ compiler
@@ -307,6 +426,10 @@ def install_age_detection_deps_sync():
                 set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Timeout installing {name}")
             except Exception as e:
                 print(f"[AgeDetection] Error installing {name}: {e}", flush=True)
+
+        # Apply runtime patches for mivolo/timm compatibility
+        set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Applying compatibility patches...")
+        patch_mivolo_for_timm_compat(packages_dir)
 
         # Check final status - only required deps matter
         deps = check_age_detection_deps()
