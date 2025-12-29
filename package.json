@@ -1,6 +1,6 @@
 {
   "name": "localbooru",
-  "version": "0.1.50",
+  "version": "0.1.51",
   "description": "Local image library with automatic tagging",
   "main": "electron/main.js",
   "scripts": {
@@ -140,7 +140,7 @@
       "createStartMenuShortcut": true,
       "perMachine": false,
       "artifactName": "${productName}-Setup-${version}.${ext}",
-      "differentialPackage": false
+      "differentialPackage": true
     },
     "compression": "normal",
     "portable": {
