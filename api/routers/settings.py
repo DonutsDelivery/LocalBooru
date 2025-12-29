@@ -260,7 +260,7 @@ def install_age_detection_deps_sync():
             ("transformers", "transformers"),
             ("ultralytics", "ultralytics"),
             ("timm", "timm"),  # Required by mivolo
-            ("mivolo", "https://github.com/WildChlamydia/MiVOLO/archive/refs/heads/main.zip"),  # Not on PyPI, install from zip
+            ("mivolo", "https://github.com/WildChlamydia/MiVOLO/archive/refs/heads/main.zip --no-deps"),  # Not on PyPI, --no-deps to avoid ultralytics version conflict
         ]
 
         # insightface is optional - OpenCV fallback works fine for face detection
