@@ -5,7 +5,7 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "NODE_ENV=development electron .",
+    "dev": "LOCALBOORU_DEV=true electron .",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "uvicorn api.main:app --reload --port 8787",
     "build": "npm run build:frontend && npm run build:electron",

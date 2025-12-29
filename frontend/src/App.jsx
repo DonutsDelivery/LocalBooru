@@ -363,6 +363,18 @@ function SettingsPage() {
                 Clear Pending Queue
               </button>
             </section>
+
+            {window.electronAPI?.isElectron && (
+              <section>
+                <h2>Application</h2>
+                <button onClick={() => {
+                  if (!confirm('Quit LocalBooru completely?\n\nThis will stop the background server and close the application.')) return
+                  window.electronAPI.quitApp()
+                }} className="danger-btn">
+                  Quit Application
+                </button>
+              </section>
+            )}
           </div>
         </main>
       </div>

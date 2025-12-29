@@ -19,6 +19,41 @@ const api = axios.create({
   timeout: 30000
 })
 
+// Add response interceptor to show errors as popups
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const url = error.config?.url || 'unknown'
+    const method = error.config?.method?.toUpperCase() || 'UNKNOWN'
+    const status = error.response?.status || 'Network Error'
+    const data = error.response?.data
+
+    let message = `API Error: ${method} ${url}\n\nStatus: ${status}`
+
+    if (data) {
+      if (typeof data === 'string') {
+        message += `\n\nResponse: ${data.substring(0, 500)}`
+      } else if (data.detail) {
+        message += `\n\nDetail: ${JSON.stringify(data.detail, null, 2)}`
+      } else if (data.message) {
+        message += `\n\nMessage: ${data.message}`
+      } else {
+        message += `\n\nResponse: ${JSON.stringify(data, null, 2).substring(0, 500)}`
+      }
+    }
+
+    if (error.message && !error.response) {
+      message += `\n\nError: ${error.message}`
+    }
+
+    // Show popup with error details
+    alert(message)
+
+    // Still reject so calling code can handle it
+    return Promise.reject(error)
+  }
+)
+
 // Images API
 export async function fetchImages({
   tags,

@@ -32,20 +32,21 @@ let tray = null;
 let backendManager = null;
 let directoryWatcher = null;
 
-const isDev = process.env.NODE_ENV === 'development';
+// Only enable dev mode when explicitly set via LOCALBOORU_DEV
+// This avoids issues with NODE_ENV being set in the shell environment
+const isDev = process.env.LOCALBOORU_DEV === 'true';
 const API_PORT = 8790;
 
 /**
  * Create the main application window
  */
 function createWindow() {
-  const windowOptions = {
+  mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
     minHeight: 600,
     frame: false,  // Custom title bar
-    backgroundColor: '#141414',  // Match --bg-primary
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -53,25 +54,11 @@ function createWindow() {
     },
     icon: path.join(__dirname, '../assets/icon.png'),
     show: false // Show when ready
-  };
-
-  // Windows 11: Use Mica material for native rounded corners + blur effect
-  if (process.platform === 'win32') {
-    windowOptions.backgroundMaterial = 'mica';
-    windowOptions.roundedCorners = true;
-  }
-
-  // macOS: Native rounded corners work automatically with frameless
-  if (process.platform === 'darwin') {
-    windowOptions.roundedCorners = true;
-    windowOptions.vibrancy = 'window';
-  }
-
-  mainWindow = new BrowserWindow(windowOptions);
+  });
 
   // Load the frontend from backend server (same as browser access)
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL('http://localhost:5174');
     mainWindow.webContents.openDevTools();
   } else {
     // Load from backend - synced with browser access
@@ -241,9 +228,7 @@ function setupIPC() {
     app.quit();
   });
 
-  ipcMain.handle('check-for-updates', () => {
-    autoUpdater.checkForUpdatesAndNotify();
-  });
+  // Note: check-for-updates is handled by updater.js as 'updater:check'
 
   ipcMain.handle('is-maximized', () => {
     return mainWindow?.isMaximized() ?? false;

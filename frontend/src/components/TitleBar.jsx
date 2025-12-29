@@ -36,7 +36,7 @@ export default function TitleBar() {
     if (!isElectron) return;
 
     const handleFocus = () => {
-      window.electronAPI.checkForUpdates?.();
+      window.electronAPI.checkForUpdate?.();
     };
 
     window.addEventListener('focus', handleFocus);

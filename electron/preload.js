@@ -46,8 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isMaximized: () => ipcRenderer.invoke('is-maximized'),
 
   // App lifecycle
-  quitApp: () => ipcRenderer.invoke('quit-app'),
-  checkForUpdates: () => ipcRenderer.invoke('check-for-updates')
+  quitApp: () => ipcRenderer.invoke('quit-app')
 });
 
 // Log that preload script loaded
