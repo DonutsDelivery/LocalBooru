@@ -85,6 +85,7 @@ def get_models():
 
     try:
         # Load MiVOLO v2 for age/gender estimation
+        import sys
         import torch
         from transformers import AutoModelForImageClassification, AutoImageProcessor
         import os
