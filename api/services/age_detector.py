@@ -84,22 +84,39 @@ def get_models():
         _body_detector = None
 
     try:
-        # Load ViT age classifier (simpler, no custom code needed)
+        # Load MiVOLO v2 for age/gender estimation
         import torch
-        from transformers import ViTForImageClassification, ViTImageProcessor
+        from transformers import AutoModelForImageClassification, AutoImageProcessor
+        import os
+
+        # Set HuggingFace cache to our packages dir so custom code is found
+        packages_dir = os.environ.get('LOCALBOORU_PACKAGES_DIR')
+        if packages_dir:
+            hf_cache = os.path.join(packages_dir, 'huggingface')
+            os.environ['HF_HOME'] = hf_cache
+            os.environ['TRANSFORMERS_CACHE'] = hf_cache
+            # Add to Python path so custom model code can be imported
+            if hf_cache not in sys.path:
+                sys.path.insert(0, hf_cache)
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float16 if device == "cuda" else torch.float32
 
-        _mivolo_model = ViTForImageClassification.from_pretrained(
-            "nateraw/vit-age-classifier"
+        _mivolo_model = AutoModelForImageClassification.from_pretrained(
+            "iitolstykh/mivolo_v2",
+            trust_remote_code=True,
+            torch_dtype=dtype
         ).to(device).eval()
 
-        _mivolo_processor = ViTImageProcessor.from_pretrained(
-            "nateraw/vit-age-classifier"
+        _mivolo_processor = AutoImageProcessor.from_pretrained(
+            "iitolstykh/mivolo_v2",
+            trust_remote_code=True
         )
-        logger.info(f"ViT age classifier loaded ({device})")
+        logger.info(f"MiVOLO v2 model loaded ({device})")
     except Exception as e:
-        logger.error(f"Failed to load age classifier: {e}")
+        logger.error(f"Failed to load MiVOLO: {e}")
+        import traceback
+        traceback.print_exc()
         _mivolo_model = None
         _mivolo_processor = None
 
@@ -279,35 +296,45 @@ def should_detect_age(tags: list[str]) -> bool:
     return bool(tag_names & REALISTIC_TAGS)
 
 
-def _estimate_age_vit(face_crop, model, processor):
-    """Use ViT age classifier to estimate age from face crop."""
+def _estimate_age_gender_mivolo(face_crop, mivolo_model, mivolo_processor, body_crop=None):
+    """Use MiVOLO to estimate age and gender from face (and optionally body) crop."""
     import torch
-    from PIL import Image
 
-    # Convert BGR numpy array to RGB PIL Image
+    # Convert BGR to RGB numpy array (MiVOLO expects list of numpy arrays)
     if isinstance(face_crop, np.ndarray):
-        face_rgb = face_crop[:, :, ::-1]  # BGR to RGB
-        face_pil = Image.fromarray(face_rgb)
+        face_rgb = face_crop[:, :, ::-1].copy()  # BGR to RGB
     else:
-        face_pil = face_crop
+        face_rgb = np.array(face_crop)
 
-    # Process face
-    device = model.device
-    inputs = processor(images=face_pil, return_tensors="pt")
-    inputs = {k: v.to(device) for k, v in inputs.items()}
+    # Process face with MiVOLO processor - expects list of numpy arrays
+    device = mivolo_model.device
+    dtype = mivolo_model.dtype
+
+    faces_input = mivolo_processor(images=[face_rgb])["pixel_values"]
+    faces_input = faces_input.to(dtype=dtype, device=device)
+
+    # Process body if provided, otherwise use zeros placeholder
+    # MiVOLO requires both face and body inputs (concatenates them)
+    if body_crop is not None:
+        if isinstance(body_crop, np.ndarray):
+            body_rgb = body_crop[:, :, ::-1].copy()  # BGR to RGB
+        else:
+            body_rgb = np.array(body_crop)
+        body_input = mivolo_processor(images=[body_rgb])["pixel_values"]
+        body_input = body_input.to(dtype=dtype, device=device)
+    else:
+        # Create zero tensor as placeholder when no body detected
+        body_input = torch.zeros_like(faces_input)
 
     with torch.no_grad():
-        outputs = model(**inputs)
+        outputs = mivolo_model(faces_input=faces_input, body_input=body_input)
 
-    # Get predicted class (age bracket)
-    predicted_class = outputs.logits.argmax(-1).item()
+    # Extract age and gender from outputs
+    # MiVOLO v2 uses age_output and gender_class_idx
+    age = int(round(outputs.age_output[0].item()))
+    gender = 'M' if outputs.gender_class_idx[0].item() == 1 else 'F'
 
-    # ViT age classifier classes: 0-2, 3-9, 10-19, 20-29, 30-39, 40-49, 50-59, 60-69, 70+
-    age_brackets = [1, 6, 15, 25, 35, 45, 55, 65, 75]
-    age = age_brackets[predicted_class] if predicted_class < len(age_brackets) else 75
-
-    # This model doesn't predict gender, return 'U' for unknown
-    return age, 'U'
+    return age, gender
 
 
 def is_age_detection_enabled() -> bool:
@@ -424,12 +451,14 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
                 if body_crop.size == 0:
                     body_crop = None
 
-            # Use ViT age classifier if available
+            # Use MiVOLO for age/gender if available
             if mivolo_model is not None and mivolo_processor is not None:
                 try:
-                    age, gender = _estimate_age_vit(face_crop, mivolo_model, mivolo_processor)
+                    age, gender = _estimate_age_gender_mivolo(
+                        face_crop, mivolo_model, mivolo_processor, body_crop=body_crop
+                    )
                 except Exception as e:
-                    logger.warning(f"ViT age classifier failed: {e}")
+                    logger.warning(f"MiVOLO failed: {e}")
                     # Fall back to InsightFace if available
                     if original_face is not None and hasattr(original_face, 'age'):
                         age = int(original_face.age)
@@ -443,7 +472,7 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
                 age = int(original_face.age)
                 gender = 'M' if original_face.gender == 1 else 'F'
             else:
-                # OpenCV doesn't provide age/gender, ViT not available
+                # OpenCV doesn't provide age/gender, MiVOLO not available
                 logger.warning("No age estimation model available")
                 age = 25  # Default estimate
                 gender = 'U'
@@ -540,9 +569,11 @@ async def detect_ages_from_array(img_array: np.ndarray) -> Optional[AgeDetection
 
             if mivolo_model is not None and mivolo_processor is not None:
                 try:
-                    age, gender = _estimate_age_vit(face_crop, mivolo_model, mivolo_processor)
+                    age, gender = _estimate_age_gender_mivolo(
+                        face_crop, mivolo_model, mivolo_processor, body_crop=body_crop
+                    )
                 except Exception as e:
-                    logger.warning(f"ViT age classifier failed: {e}")
+                    logger.warning(f"MiVOLO failed: {e}")
                     age = int(face.age)
                     gender = 'M' if face.gender == 1 else 'F'
             else:
