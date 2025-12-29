@@ -1,6 +1,7 @@
 """
 LocalBooru database layer - SQLite for single-user local storage
 """
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from pathlib import Path
