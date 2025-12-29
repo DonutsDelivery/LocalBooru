@@ -296,6 +296,22 @@ function SettingsPage() {
                       />
                       Enable age detection on new images
                     </label>
+                    {ageDetection.enabled && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const { detectAgesRetrospective } = await import('./api')
+                            const result = await detectAgesRetrospective()
+                            alert(result.message || `Queued ${result.queued} images for age detection`)
+                          } catch (e) {
+                            alert('Failed: ' + e.message)
+                          }
+                        }}
+                        style={{ marginLeft: '1rem' }}
+                      >
+                        Run on existing images
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

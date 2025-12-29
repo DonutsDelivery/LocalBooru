@@ -224,6 +224,11 @@ export async function cleanMissingFiles() {
   return response.data
 }
 
+export async function detectAgesRetrospective() {
+  const response = await api.post('/library/detect-ages')
+  return response.data
+}
+
 // Settings API
 export async function getSettings() {
   const response = await api.get('/settings')
