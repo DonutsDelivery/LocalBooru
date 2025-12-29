@@ -346,18 +346,35 @@ async def detect_ages_on_realistic(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/tag-untagged")
-async def tag_untagged_images(db: AsyncSession = Depends(get_db)):
-    """Queue tagging for all untagged images"""
+async def tag_untagged_images(
+    directory_id: int = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Queue tagging for all untagged images.
+
+    Optionally filter by directory_id.
+    """
     import json
-    from ..models import image_tags
+    from ..models import image_tags, FileStatus
     from ..services.task_queue import enqueue_task
 
-    # Get untagged images
+    # Get untagged images (no entries in image_tags)
     subq = select(image_tags.c.image_id).distinct()
+
+    # Build query - exclude images with file_status=missing
     untagged_query = (
         select(Image)
-        .where(Image.id.not_in(subq))
+        .join(ImageFile, ImageFile.image_id == Image.id)
+        .where(
+            Image.id.not_in(subq),
+            ImageFile.file_status != FileStatus.missing
+        )
     )
+
+    # Filter by directory if specified
+    if directory_id is not None:
+        untagged_query = untagged_query.where(ImageFile.watch_directory_id == directory_id)
+
     result = await db.execute(untagged_query)
     images = result.scalars().all()
 
