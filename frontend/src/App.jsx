@@ -507,10 +507,11 @@ function Gallery() {
 
   // Subscribe to real-time library events (debounced refresh)
   // Waits 2s after last image added, then refreshes once
+  // Works for live updates AND backlog when returning from background
   useEffect(() => {
     const unsubscribe = subscribeToLibraryEvents((event) => {
       if (event.type === 'image_added') {
-        // Clear existing timer
+        // Clear existing timer - reset the debounce
         if (statsUpdateTimeout.current) {
           clearTimeout(statsUpdateTimeout.current)
         }
