@@ -26,66 +26,60 @@ class BackendManager {
   }
 
   /**
-   * Kill any zombie processes on our port
+   * Kill any zombie processes on our port (with hard timeout)
    */
   async killZombieProcesses() {
     console.log('[Backend] Checking for zombie processes on port', this.port);
 
-    try {
-      if (process.platform === 'win32') {
-        // Windows: use netstat to find PID, then taskkill (faster than PowerShell)
-        try {
-          const output = execSync(
-            `netstat -ano | findstr :${this.port}`,
-            { encoding: 'utf-8', timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] }
-          );
-          // Parse output to find PIDs (last column)
-          const lines = output.trim().split('\n');
-          const pids = new Set();
-          for (const line of lines) {
-            const parts = line.trim().split(/\s+/);
-            if (parts.length >= 5) {
-              const pid = parts[parts.length - 1];
-              if (pid && pid !== '0' && /^\d+$/.test(pid)) {
-                pids.add(pid);
-              }
-            }
-          }
-          for (const pid of pids) {
-            try {
-              execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore', timeout: 2000 });
-              console.log(`[Backend] Killed zombie process ${pid}`);
-            } catch (e) {
-              // Process may already be dead
-            }
-          }
-        } catch (e) {
-          // No process on port or command failed, that's fine
-        }
-      } else {
-        // Linux/macOS: use lsof and kill
-        try {
-          const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 5000 });
-          const pids = output.trim().split('\n').filter(p => p);
-          for (const pid of pids) {
-            try {
-              execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
-              console.log(`[Backend] Killed zombie process ${pid}`);
-            } catch (e) {
-              // Process may already be dead
-            }
-          }
-        } catch (e) {
-          // No process on port, that's fine
-        }
-      }
-    } catch (e) {
-      // Port not in use or command failed, that's fine
-      console.log('[Backend] Zombie check completed (no issues)');
-    }
+    // Wrap entire operation in a timeout to prevent hangs
+    const timeoutPromise = new Promise(resolve => setTimeout(() => {
+      console.log('[Backend] Zombie check timed out, continuing anyway');
+      resolve();
+    }, 3000));
 
-    // Wait a moment for port to be released
-    await new Promise(resolve => setTimeout(resolve, 300));
+    const killPromise = new Promise(resolve => {
+      try {
+        if (process.platform === 'win32') {
+          // Windows: use taskkill directly with port filter (simpler, faster)
+          try {
+            // Just try to kill any python process on our port
+            spawn('cmd', ['/c', `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${this.port}') do taskkill /PID %a /F 2>nul`], {
+              stdio: 'ignore',
+              shell: true,
+              windowsHide: true
+            });
+          } catch (e) {
+            // Ignore errors
+          }
+        } else {
+          // Linux/macOS: use fuser (simpler than lsof)
+          try {
+            spawn('fuser', ['-k', `${this.port}/tcp`], { stdio: 'ignore' });
+          } catch (e) {
+            // Try lsof as fallback
+            try {
+              const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 2000 });
+              const pids = output.trim().split('\n').filter(p => p);
+              for (const pid of pids) {
+                spawn('kill', ['-9', pid], { stdio: 'ignore' });
+              }
+            } catch (e2) {
+              // No process on port
+            }
+          }
+        }
+      } catch (e) {
+        // Ignore all errors
+      }
+      // Don't wait for spawn to complete, just schedule and move on
+      setTimeout(resolve, 200);
+    });
+
+    await Promise.race([killPromise, timeoutPromise]);
+
+    // Brief wait for port release
+    await new Promise(resolve => setTimeout(resolve, 200));
+    console.log('[Backend] Zombie check done');
   }
 
   /**
