@@ -33,11 +33,35 @@ class BackendManager {
 
     try {
       if (process.platform === 'win32') {
-        // Windows: find and kill process on port
-        execSync(
-          `powershell -Command "Get-NetTCPConnection -LocalPort ${this.port} -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"`,
-          { stdio: 'ignore', timeout: 5000 }
-        );
+        // Windows: use netstat to find PID, then taskkill (faster than PowerShell)
+        try {
+          const output = execSync(
+            `netstat -ano | findstr :${this.port}`,
+            { encoding: 'utf-8', timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] }
+          );
+          // Parse output to find PIDs (last column)
+          const lines = output.trim().split('\n');
+          const pids = new Set();
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 5) {
+              const pid = parts[parts.length - 1];
+              if (pid && pid !== '0' && /^\d+$/.test(pid)) {
+                pids.add(pid);
+              }
+            }
+          }
+          for (const pid of pids) {
+            try {
+              execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore', timeout: 2000 });
+              console.log(`[Backend] Killed zombie process ${pid}`);
+            } catch (e) {
+              // Process may already be dead
+            }
+          }
+        } catch (e) {
+          // No process on port or command failed, that's fine
+        }
       } else {
         // Linux/macOS: use lsof and kill
         try {
@@ -57,10 +81,11 @@ class BackendManager {
       }
     } catch (e) {
       // Port not in use or command failed, that's fine
+      console.log('[Backend] Zombie check completed (no issues)');
     }
 
     // Wait a moment for port to be released
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 300));
   }
 
   /**
