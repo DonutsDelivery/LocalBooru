@@ -31,6 +31,18 @@ export default function TitleBar() {
     checkMaximized();
   }, [isElectron]);
 
+  // Check for updates when window gains focus
+  useEffect(() => {
+    if (!isElectron) return;
+
+    const handleFocus = () => {
+      window.electronAPI.checkForUpdates?.();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [isElectron]);
+
   // Only render in Electron
   if (!isElectron) {
     return null;
@@ -49,6 +61,10 @@ export default function TitleBar() {
     window.electronAPI.closeWindow();
   };
 
+  const handleQuit = () => {
+    window.electronAPI.quitApp();
+  };
+
   return (
     <div className="title-bar">
       <div className="title-bar-drag">
@@ -64,9 +80,19 @@ export default function TitleBar() {
 
       <div className="title-bar-controls">
         <button
+          className="title-bar-btn quit"
+          onClick={handleQuit}
+          title="Quit (fully exit app)"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12">
+            <path d="M6 1v5M3 3.5A4.5 4.5 0 1 0 9 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none"/>
+          </svg>
+        </button>
+
+        <button
           className="title-bar-btn minimize"
           onClick={handleMinimize}
-          title="Minimize"
+          title="Minimize to tray"
         >
           <svg width="12" height="12" viewBox="0 0 12 12">
             <rect x="2" y="5.5" width="8" height="1" fill="currentColor"/>

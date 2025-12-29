@@ -73,6 +73,16 @@
   background: var(--bg-elevated);
 }
 
+/* Quit button - power icon */
+.title-bar-btn.quit:hover {
+  background: var(--accent-secondary);
+  color: white;
+}
+
+.title-bar-btn.quit:active {
+  background: #e0527a;
+}
+
 /* Close button special styling */
 .title-bar-btn.close {
   border-radius: 0 var(--window-radius) 0 0;

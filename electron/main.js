@@ -230,6 +230,15 @@ function setupIPC() {
     mainWindow?.close();
   });
 
+  ipcMain.handle('quit-app', () => {
+    app.isQuitting = true;
+    app.quit();
+  });
+
+  ipcMain.handle('check-for-updates', () => {
+    autoUpdater.checkForUpdatesAndNotify();
+  });
+
   ipcMain.handle('is-maximized', () => {
     return mainWindow?.isMaximized() ?? false;
   });
