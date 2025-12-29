@@ -359,22 +359,30 @@ async def tag_untagged_images(
     from ..models import image_tags, FileStatus
     from ..services.task_queue import enqueue_task
 
-    # Get untagged images (no entries in image_tags)
-    subq = select(image_tags.c.image_id).distinct()
+    # Debug: count total images
+    total_images = await db.execute(select(func.count(Image.id)))
+    total = total_images.scalar()
 
-    # Build query - exclude images with file_status=missing
+    # Debug: count images with tags
+    tagged_subq = select(image_tags.c.image_id).distinct()
+    tagged_count = await db.execute(
+        select(func.count(Image.id)).where(Image.id.in_(tagged_subq))
+    )
+    tagged = tagged_count.scalar()
+
+    # Get untagged images - simpler query without file_status filter first
     untagged_query = (
         select(Image)
-        .join(ImageFile, ImageFile.image_id == Image.id)
-        .where(
-            Image.id.not_in(subq),
-            ImageFile.file_status != FileStatus.missing
-        )
+        .where(Image.id.not_in(tagged_subq))
     )
 
     # Filter by directory if specified
     if directory_id is not None:
-        untagged_query = untagged_query.where(ImageFile.watch_directory_id == directory_id)
+        untagged_query = (
+            untagged_query
+            .join(ImageFile, ImageFile.image_id == Image.id)
+            .where(ImageFile.watch_directory_id == directory_id)
+        )
 
     result = await db.execute(untagged_query)
     images = result.scalars().all()
@@ -397,14 +405,15 @@ async def tag_untagged_images(
             pass
 
     queued = 0
-    skipped = 0
+    skipped_queued = 0
+    skipped_no_file = 0
     for image in images:
         # Skip if already queued
         if image.id in already_queued:
-            skipped += 1
+            skipped_queued += 1
             continue
 
-        # Get file path
+        # Get file path - any existing file
         file_query = select(ImageFile).where(
             ImageFile.image_id == image.id,
             ImageFile.file_exists == True
@@ -423,8 +432,19 @@ async def tag_untagged_images(
                 db=db
             )
             queued += 1
+        else:
+            skipped_no_file += 1
 
-    return {"queued": queued, "skipped_already_queued": skipped}
+    return {
+        "queued": queued,
+        "skipped_already_queued": skipped_queued,
+        "skipped_no_file": skipped_no_file,
+        "debug": {
+            "total_images": total,
+            "tagged_images": tagged,
+            "untagged_found": len(images)
+        }
+    }
 
 
 # Endpoints for directory watcher integration
