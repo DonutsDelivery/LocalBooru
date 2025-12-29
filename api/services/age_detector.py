@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Global model cache
 _face_detector = None
+_face_detector_type = None  # 'insightface' or 'opencv'
 _body_detector = None
 _mivolo_model = None
 _mivolo_processor = None
@@ -19,10 +20,10 @@ _models_loaded = False
 
 def get_models():
     """Get or initialize the face detector, body detector, and MiVOLO model (lazy loading)."""
-    global _face_detector, _body_detector, _mivolo_model, _mivolo_processor, _models_loaded
+    global _face_detector, _face_detector_type, _body_detector, _mivolo_model, _mivolo_processor, _models_loaded
 
     if _models_loaded:
-        return _face_detector, _body_detector, _mivolo_model, _mivolo_processor
+        return _face_detector, _face_detector_type, _body_detector, _mivolo_model, _mivolo_processor
 
     # Try InsightFace first (best quality), fall back to OpenCV (no compilation needed)
     try:
@@ -32,7 +33,7 @@ def get_models():
             providers=['CPUExecutionProvider']
         )
         _face_detector.prepare(ctx_id=-1, det_size=(640, 640))
-        _face_detector._detector_type = 'insightface'
+        _face_detector_type = 'insightface'
         logger.info("InsightFace face detector loaded (CPU mode)")
     except Exception as e:
         logger.warning(f"InsightFace not available ({e}), using OpenCV face detection")
@@ -41,11 +42,12 @@ def get_models():
             import cv2
             cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
             _face_detector = cv2.CascadeClassifier(cascade_path)
-            _face_detector._detector_type = 'opencv'
+            _face_detector_type = 'opencv'
             logger.info("OpenCV Haar Cascade face detector loaded")
         except Exception as e2:
             logger.error(f"Failed to load any face detector: {e2}")
             _face_detector = None
+            _face_detector_type = None
 
     try:
         # Load YOLO for body/person detection
@@ -106,7 +108,7 @@ def get_models():
         _mivolo_processor = None
 
     _models_loaded = True
-    return _face_detector, _body_detector, _mivolo_model, _mivolo_processor
+    return _face_detector, _face_detector_type, _body_detector, _mivolo_model, _mivolo_processor
 
 
 def _get_body_for_face(face_bbox, bodies, img_shape):
@@ -354,7 +356,7 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
 
     import cv2
 
-    face_detector, body_detector, mivolo_model, mivolo_processor = get_models()
+    face_detector, detector_type, body_detector, mivolo_model, mivolo_processor = get_models()
 
     if face_detector is None:
         logger.warning("Face detector not available")
@@ -389,8 +391,6 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
                 logger.warning(f"YOLO body detection failed: {e}")
 
         # Detect faces using available detector
-        detector_type = getattr(face_detector, '_detector_type', 'unknown')
-
         if detector_type == 'insightface':
             faces = face_detector.get(img)
             if not faces:
@@ -501,9 +501,10 @@ async def detect_ages_from_array(img_array: np.ndarray) -> Optional[AgeDetection
     Returns:
         AgeDetectionResult with detected faces, or None if detection fails
     """
-    face_detector, body_detector, mivolo_model, mivolo_processor = get_models()
+    face_detector, detector_type, body_detector, mivolo_model, mivolo_processor = get_models()
 
-    if face_detector is None:
+    if face_detector is None or detector_type != 'insightface':
+        # This function uses InsightFace-specific API (face_detector.get)
         return None
 
     try:

@@ -94,6 +94,7 @@ def check_age_detection_deps() -> dict:
         "torch": False,
         "transformers": False,
         "ultralytics": False,
+        "mivolo": False,
     }
 
     # Only include insightface on non-Windows (it's skipped on Windows)
@@ -120,6 +121,12 @@ def check_age_detection_deps() -> dict:
     except (ImportError, OSError):
         pass
 
+    try:
+        import mivolo
+        deps["mivolo"] = True
+    except (ImportError, OSError):
+        pass
+
     if not is_windows:
         try:
             import insightface
@@ -134,7 +141,7 @@ def are_required_deps_installed() -> bool:
     """Check if required (non-optional) dependencies are installed"""
     deps = check_age_detection_deps()
     # insightface is optional - OpenCV fallback is available
-    required = ["torch", "transformers", "ultralytics"]
+    required = ["torch", "transformers", "ultralytics", "mivolo"]
     return all(deps.get(r, False) for r in required)
 
 
@@ -240,11 +247,13 @@ def install_age_detection_deps_sync():
 
         # Install packages one by one for progress tracking
         # numpy<2 required for insightface compatibility
+        # mivolo is needed for the HuggingFace MiVOLO model's trust_remote_code
         packages = [
             ("numpy", "numpy<2"),
             ("torch", "torch torchvision --index-url https://download.pytorch.org/whl/cpu"),
             ("transformers", "transformers"),
             ("ultralytics", "ultralytics"),
+            ("mivolo", "mivolo"),
         ]
 
         # insightface is optional - OpenCV fallback works fine for face detection
@@ -280,7 +289,7 @@ def install_age_detection_deps_sync():
 
         # Check final status - only required deps matter
         deps = check_age_detection_deps()
-        required = ["torch", "transformers", "ultralytics"]
+        required = ["torch", "transformers", "ultralytics", "mivolo"]
         required_installed = all(deps.get(r, False) for r in required)
 
         if required_installed:
