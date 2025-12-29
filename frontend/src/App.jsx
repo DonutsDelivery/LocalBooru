@@ -506,19 +506,36 @@ function Gallery() {
     getLibraryStats().then(setStats).catch(console.error)
   }, [])
 
-  // Subscribe to real-time library events (batched updates)
+  // Subscribe to real-time library events (smart batching)
+  // Small batches (1-3 images): auto-refresh after 2s delay
+  // Large batches (4+ images): show notification banner
+  const pendingCountRef = useRef(0)
+  const AUTO_REFRESH_THRESHOLD = 3
+
   useEffect(() => {
     const unsubscribe = subscribeToLibraryEvents((event) => {
       if (event.type === 'image_added') {
-        // Batch new images instead of refreshing on each one
-        setNewImagesCount(prev => prev + 1)
+        pendingCountRef.current += 1
 
-        // Debounce stats update (wait for batch to complete)
+        // Clear existing timer
         if (statsUpdateTimeout.current) {
           clearTimeout(statsUpdateTimeout.current)
         }
+
+        // Wait for batch to complete (2s after last image)
         statsUpdateTimeout.current = setTimeout(() => {
+          const count = pendingCountRef.current
+          pendingCountRef.current = 0
+
+          // Update stats
           getLibraryStats().then(setStats).catch(console.error)
+
+          // Small batch: auto-refresh, Large batch: show notification
+          if (count <= AUTO_REFRESH_THRESHOLD) {
+            loadImages(1, false)
+          } else {
+            setNewImagesCount(prev => prev + count)
+          }
         }, 2000)
       }
     })
@@ -528,7 +545,7 @@ function Gallery() {
         clearTimeout(statsUpdateTimeout.current)
       }
     }
-  }, [])
+  }, [loadImages])
 
   // Load new images when user clicks the notification
   const handleLoadNewImages = useCallback(() => {
