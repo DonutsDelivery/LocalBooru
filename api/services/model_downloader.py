@@ -23,7 +23,7 @@ MODELS = {
             {
                 "url": "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv",
                 "filename": "selected_tags.csv",
-                "size_mb": 1
+                "size_mb": 0.1  # ~300KB actual
             }
         ],
         "description": "ViT Tagger V3 - Fast auto-tagging model"
@@ -38,7 +38,7 @@ MODELS = {
             {
                 "url": "https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3/resolve/main/selected_tags.csv",
                 "filename": "selected_tags.csv",
-                "size_mb": 1
+                "size_mb": 0.1  # ~300KB actual
             }
         ],
         "description": "EVA02-Large Tagger V3 - More accurate, slower"
@@ -53,7 +53,7 @@ MODELS = {
             {
                 "url": "https://huggingface.co/SmilingWolf/wd-swinv2-tagger-v3/resolve/main/selected_tags.csv",
                 "filename": "selected_tags.csv",
-                "size_mb": 1
+                "size_mb": 0.1  # ~300KB actual
             }
         ],
         "description": "SwinV2 Tagger V3 - Balanced speed/accuracy"
