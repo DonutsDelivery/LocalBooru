@@ -262,6 +262,14 @@ def install_age_detection_deps_sync():
             packages.append(("insightface", "insightface"))
 
         for name, package in packages:
+            # Check if already installed
+            try:
+                __import__(name)
+                print(f"[AgeDetection] {name} already installed, skipping", flush=True)
+                continue
+            except ImportError:
+                pass
+
             set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Installing {name}...")
             print(f"[AgeDetection] Installing {name} to {packages_dir}...", flush=True)
 
