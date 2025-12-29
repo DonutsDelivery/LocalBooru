@@ -167,18 +167,25 @@ async def scan_directory(
 
 
 async def verify_file_locations(db: AsyncSession, batch_size: int = 100) -> dict:
-    """Verify files still exist at their recorded locations"""
+    """Verify files still exist at their recorded locations.
+
+    - If file exists: mark as available
+    - If file deleted (parent exists): DELETE from DB
+    - If drive offline: mark as drive_offline (keep in DB)
+    """
+    from ..database import get_data_dir
+
     stats = {
         'verified': 0,
-        'missing': 0,
+        'deleted': 0,
         'drive_offline': 0,
         'relocated': 0
     }
 
-    # Get files that aren't already marked as missing (skip confirmed missing)
+    # Get files that aren't already marked as drive offline
     query = (
         select(ImageFile)
-        .where(ImageFile.file_status != FileStatus.missing)
+        .where(ImageFile.file_status != FileStatus.drive_offline)
         .limit(batch_size)
     )
     result = await db.execute(query)
@@ -192,30 +199,46 @@ async def verify_file_locations(db: AsyncSession, batch_size: int = 100) -> dict
             image_file.file_exists = True
             stats['verified'] += 1
         elif status == FileStatus.drive_offline:
-            # Drive is offline - don't mark as missing, just update status
+            # Drive is offline - keep in DB, mark as offline
             image_file.file_status = FileStatus.drive_offline
-            # Keep file_exists True since file might still exist when drive comes back
+            image_file.last_verified_at = datetime.now()
             stats['drive_offline'] += 1
         else:
-            # File is confirmed missing - try to relocate by hash
+            # File is confirmed deleted (parent dir exists but file doesn't)
+            # Try to relocate by hash first
             image = await db.get(Image, image_file.image_id)
+            relocated = False
+
             if image:
                 new_path = await find_file_by_hash(image.file_hash, db)
                 if new_path:
                     image_file.original_path = new_path
                     image_file.file_status = FileStatus.available
                     image_file.file_exists = True
+                    image_file.last_verified_at = datetime.now()
                     stats['relocated'] += 1
-                else:
-                    image_file.file_status = FileStatus.missing
-                    image_file.file_exists = False
-                    stats['missing'] += 1
-            else:
-                image_file.file_status = FileStatus.missing
-                image_file.file_exists = False
-                stats['missing'] += 1
+                    relocated = True
 
-        image_file.last_verified_at = datetime.now()
+            if not relocated:
+                # Can't relocate - delete entry (and image if no other references)
+                other_files = await db.execute(
+                    select(ImageFile).where(
+                        ImageFile.image_id == image_file.image_id,
+                        ImageFile.id != image_file.id
+                    )
+                )
+                has_other_refs = other_files.scalar_one_or_none() is not None
+
+                await db.delete(image_file)
+
+                if not has_other_refs and image:
+                    # No other file references - delete image and thumbnail
+                    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+                    if thumbnail_path.exists():
+                        thumbnail_path.unlink()
+                    await db.delete(image)
+
+                stats['deleted'] += 1
 
     await db.commit()
     return stats
@@ -255,13 +278,42 @@ async def find_file_by_hash(file_hash: str, db: AsyncSession) -> str | None:
 
 
 async def mark_file_missing(file_path: str, db: AsyncSession):
-    """Mark a file as missing (called when file watcher detects deletion)"""
-    query = (
-        update(ImageFile)
-        .where(ImageFile.original_path == file_path)
-        .values(file_exists=False, last_verified_at=datetime.now())
+    """Handle file deletion (called when file watcher detects deletion).
+
+    Deletes the ImageFile entry. If no other references exist, deletes the Image too.
+    """
+    from ..database import get_data_dir
+
+    # Find the ImageFile entry
+    query = select(ImageFile).where(ImageFile.original_path == file_path)
+    result = await db.execute(query)
+    image_file = result.scalar_one_or_none()
+
+    if not image_file:
+        return
+
+    image_id = image_file.image_id
+
+    # Check for other file references
+    other_query = select(ImageFile).where(
+        ImageFile.image_id == image_id,
+        ImageFile.id != image_file.id
     )
-    await db.execute(query)
+    other_result = await db.execute(other_query)
+    has_other_refs = other_result.scalar_one_or_none() is not None
+
+    # Delete this file reference
+    await db.delete(image_file)
+
+    if not has_other_refs:
+        # No other references - delete the image and thumbnail
+        image = await db.get(Image, image_id)
+        if image:
+            thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+            if thumbnail_path.exists():
+                thumbnail_path.unlink()
+            await db.delete(image)
+
     await db.commit()
 
 
