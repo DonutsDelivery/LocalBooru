@@ -20,7 +20,13 @@ router = APIRouter()
 
 
 async def get_image_file_status(image: Image, db: AsyncSession) -> dict:
-    """Get the file availability status for an image"""
+    """Get the file availability status for an image.
+
+    If file is confirmed deleted (parent exists but file doesn't),
+    deletes the database entry.
+    """
+    from ..database import get_data_dir
+
     # Get the primary file for this image
     query = select(ImageFile).where(ImageFile.image_id == image.id).limit(1)
     result = await db.execute(query)
@@ -32,10 +38,33 @@ async def get_image_file_status(image: Image, db: AsyncSession) -> dict:
     # Check actual file availability
     status = check_file_availability(image_file.original_path)
 
-    # Update database if status changed
+    if status == FileStatus.missing:
+        # File confirmed deleted (parent dir exists) - remove from database
+        # Check for other file references first
+        other_query = select(ImageFile).where(
+            ImageFile.image_id == image.id,
+            ImageFile.id != image_file.id
+        )
+        other_result = await db.execute(other_query)
+        has_other_refs = other_result.scalar_one_or_none() is not None
+
+        await db.delete(image_file)
+
+        if not has_other_refs:
+            # No other references - delete the image and thumbnail
+            thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+            if thumbnail_path.exists():
+                thumbnail_path.unlink()
+            await db.delete(image)
+
+        await db.commit()
+        return {"status": "deleted", "path": image_file.original_path}
+
+    # Update database if status changed (for drive_offline)
     if image_file.file_status != status:
         image_file.file_status = status
         image_file.file_exists = (status == FileStatus.available)
+        await db.commit()
 
     return {
         "status": status.value,
@@ -62,6 +91,13 @@ async def list_images(
     query = select(Image).options(selectinload(Image.tags), selectinload(Image.files))
 
     filters = []
+
+    # Exclude images where all files are confirmed missing
+    # (drive_offline is OK to show, only exclude "missing" status)
+    has_non_missing_file = select(ImageFile.image_id).where(
+        ImageFile.file_status != FileStatus.missing
+    )
+    filters.append(Image.id.in_(has_non_missing_file))
 
     # Favorites filter
     if favorites_only:
