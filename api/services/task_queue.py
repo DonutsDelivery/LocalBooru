@@ -24,6 +24,17 @@ class BackgroundTaskQueue:
 
     async def start(self):
         """Start the background worker"""
+        # Reset any tasks stuck in 'processing' from previous crash
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                update(TaskQueue)
+                .where(TaskQueue.status == TaskStatus.processing)
+                .values(status=TaskStatus.pending)
+            )
+            if result.rowcount > 0:
+                await db.commit()
+                print(f"[TaskQueue] Reset {result.rowcount} stuck tasks from previous session")
+
         self.running = True
         self.worker_task = asyncio.create_task(self._worker_loop())
         print(f"Task queue started with concurrency={self.concurrency}")
