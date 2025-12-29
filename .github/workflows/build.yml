@@ -129,22 +129,34 @@ jobs:
           $size = (Get-ChildItem -Path $BUNDLE_DIR -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
           Write-Host "Bundle size: $([math]::Round($size, 2)) MB"
 
-      - name: Download ML models
+      # ML models are now downloaded on-demand by the app
+      # This reduces installer size from ~856MB to ~670MB
+      - name: Create empty model directories
         shell: pwsh
         run: |
-          # Remove any existing tagger symlink/file
+          # Create empty tagger directory (models downloaded on first use)
           if (Test-Path "tagger") { Remove-Item -Recurse -Force "tagger" }
-          New-Item -ItemType Directory -Force -Path "tagger/vit-v3"
+          New-Item -ItemType Directory -Force -Path "tagger"
 
-          Write-Host "Downloading tagger model (vit-v3)..."
-          Invoke-WebRequest -Uri "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/model.onnx" -OutFile "tagger/vit-v3/model.onnx"
-          Invoke-WebRequest -Uri "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/selected_tags.csv" -OutFile "tagger/vit-v3/selected_tags.csv"
+          # Create a readme explaining the on-demand download
+          @"
+          # ML Models
 
-          Write-Host "Downloading YOLOv8n model..."
-          Invoke-WebRequest -Uri "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt" -OutFile "yolov8n.pt"
+          Models are downloaded automatically on first use.
+          This keeps the installer small and fast.
 
-          Get-ChildItem "tagger/vit-v3/"
-          Get-ChildItem "yolov8n.pt"
+          Supported models:
+          - tagger/vit-v3 (default, ~180MB)
+          - tagger/eva02-large-v3 (~400MB)
+          - tagger/swinv2-v3 (~180MB)
+          - yolov8n (~6MB)
+
+          Models are stored in:
+          - Windows: %APPDATA%\.localbooru\models\
+          - Linux/Mac: ~/.localbooru/models/
+          "@ | Out-File -FilePath "tagger\README.txt" -Encoding UTF8
+
+          Write-Host "ML models will be downloaded on-demand (saves ~186MB in installer)"
 
       - name: Build Windows packages
         run: npx electron-builder --win --publish never

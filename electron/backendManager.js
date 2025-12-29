@@ -18,6 +18,52 @@ class BackendManager {
   }
 
   /**
+   * Get persistent packages directory for pip packages
+   */
+  getPackagesDir() {
+    const dataDir = app.getPath('userData');
+    return path.join(dataDir, 'packages');
+  }
+
+  /**
+   * Kill any zombie processes on our port
+   */
+  async killZombieProcesses() {
+    console.log('[Backend] Checking for zombie processes on port', this.port);
+
+    try {
+      if (process.platform === 'win32') {
+        // Windows: find and kill process on port
+        execSync(
+          `powershell -Command "Get-NetTCPConnection -LocalPort ${this.port} -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"`,
+          { stdio: 'ignore', timeout: 5000 }
+        );
+      } else {
+        // Linux/macOS: use lsof and kill
+        try {
+          const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 5000 });
+          const pids = output.trim().split('\n').filter(p => p);
+          for (const pid of pids) {
+            try {
+              execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
+              console.log(`[Backend] Killed zombie process ${pid}`);
+            } catch (e) {
+              // Process may already be dead
+            }
+          }
+        } catch (e) {
+          // No process on port, that's fine
+        }
+      }
+    } catch (e) {
+      // Port not in use or command failed, that's fine
+    }
+
+    // Wait a moment for port to be released
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  /**
    * Get the Python executable path based on platform
    */
   getPythonPath() {
@@ -62,6 +108,12 @@ class BackendManager {
    */
   getPythonEnv() {
     const baseEnv = { ...process.env, PYTHONUNBUFFERED: '1' };
+    const packagesDir = this.getPackagesDir();
+
+    // Ensure packages directory exists
+    if (!fs.existsSync(packagesDir)) {
+      fs.mkdirSync(packagesDir, { recursive: true });
+    }
 
     if (process.platform === 'win32') {
       const pythonPath = this.getPythonPath();
@@ -70,12 +122,17 @@ class BackendManager {
       if (app.isPackaged || fs.existsSync(path.join(pythonDir, 'python.exe'))) {
         // Using bundled Python
         // Add onnxruntime capi folder to PATH for DLL loading
-        const onnxCapi = path.join(pythonDir, 'Lib', 'site-packages', 'onnxruntime', 'capi');
+        const onnxCapi = path.join(packagesDir, 'onnxruntime', 'capi');
+        const bundledOnnxCapi = path.join(pythonDir, 'Lib', 'site-packages', 'onnxruntime', 'capi');
         return {
           ...baseEnv,
-          PATH: `${onnxCapi};${pythonDir};${path.join(pythonDir, 'Scripts')};${process.env.PATH}`,
+          // Add persistent packages to PATH first (for DLLs), then bundled, then system
+          PATH: `${onnxCapi};${bundledOnnxCapi};${pythonDir};${path.join(pythonDir, 'Scripts')};${process.env.PATH}`,
           PYTHONHOME: pythonDir,
-          PYTHONPATH: this.getWorkingDirectory()
+          // Persistent packages first, then working directory, then bundled site-packages
+          PYTHONPATH: `${packagesDir};${this.getWorkingDirectory()};${path.join(pythonDir, 'Lib', 'site-packages')}`,
+          LOCALBOORU_PACKAGED: '1',
+          LOCALBOORU_PACKAGES_DIR: packagesDir
         };
       }
     } else {
@@ -84,7 +141,10 @@ class BackendManager {
       const pyenvPath = `${homeDir}/.pyenv/shims:${homeDir}/.pyenv/bin`;
       return {
         ...baseEnv,
-        PATH: `${pyenvPath}:${process.env.PATH}`
+        PATH: `${pyenvPath}:${process.env.PATH}`,
+        PYTHONPATH: `${packagesDir}:${this.getWorkingDirectory()}`,
+        LOCALBOORU_PACKAGED: app.isPackaged ? '1' : '',
+        LOCALBOORU_PACKAGES_DIR: packagesDir
       };
     }
 
@@ -99,6 +159,9 @@ class BackendManager {
       console.log('[Backend] Already running');
       return;
     }
+
+    // Kill any zombie processes first
+    await this.killZombieProcesses();
 
     console.log('[Backend] Starting server on port', this.port);
 

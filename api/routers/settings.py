@@ -263,3 +263,90 @@ async def get_age_detection_status():
         "progress": get_setting(AGE_DETECTION_INSTALL_PROGRESS, ""),
         "dependencies": deps
     }
+
+
+# =============================================================================
+# Model Management Endpoints
+# =============================================================================
+
+@router.get("/models")
+async def get_models_status():
+    """Get status of all ML models"""
+    from ..services.model_downloader import get_all_models_status
+    return {
+        "models": get_all_models_status()
+    }
+
+
+class ModelDownloadRequest(BaseModel):
+    model_name: str
+
+
+@router.post("/models/download")
+async def download_model(request: ModelDownloadRequest):
+    """Start downloading a model"""
+    import asyncio
+    from ..services.model_downloader import (
+        MODELS, is_model_available, download_model as do_download,
+        get_download_progress
+    )
+
+    model_name = request.model_name
+
+    if model_name not in MODELS:
+        return {"success": False, "error": f"Unknown model: {model_name}"}
+
+    if is_model_available(model_name):
+        return {"success": True, "message": "Model already available"}
+
+    # Check if already downloading
+    progress = get_download_progress(model_name)
+    if progress and progress.get("status") == "downloading":
+        return {
+            "success": True,
+            "message": "Download already in progress",
+            "progress": progress
+        }
+
+    # Start download in background
+    async def download_task():
+        try:
+            await do_download(model_name)
+        except Exception as e:
+            print(f"[Models] Download failed for {model_name}: {e}")
+
+    asyncio.create_task(download_task())
+
+    return {
+        "success": True,
+        "message": "Download started",
+        "model": model_name
+    }
+
+
+@router.get("/models/{model_name}/progress")
+async def get_model_progress(model_name: str):
+    """Get download progress for a model"""
+    from ..services.model_downloader import (
+        get_download_progress, is_model_available
+    )
+
+    # URL decode the model name (slashes are encoded)
+    model_name = model_name.replace("%2F", "/")
+
+    if is_model_available(model_name):
+        return {
+            "status": "complete",
+            "available": True,
+            "percent": 100
+        }
+
+    progress = get_download_progress(model_name)
+    if progress:
+        return progress
+
+    return {
+        "status": "not_started",
+        "available": False,
+        "percent": 0
+    }

@@ -167,7 +167,17 @@ def adjust_rating_by_tags(base_rating: "Rating", tag_names: list[str]) -> "Ratin
 
 def get_model_path(model_type: TaggerModel) -> str:
     """Get the directory path for a specific model."""
+    from .model_downloader import resolve_model_path
+
     model_dir = MODEL_DIRS.get(model_type, MODEL_DIRS[DEFAULT_MODEL])
+    model_name = f"tagger/{model_dir}"
+
+    # Try to resolve from bundled or user data
+    resolved = resolve_model_path(model_name)
+    if resolved:
+        return str(resolved)
+
+    # Fallback to legacy path
     base_path = getattr(settings, 'tagger_base_path', None) or os.path.dirname(settings.tagger_model_path)
     return os.path.join(base_path, model_dir)
 
@@ -187,11 +197,12 @@ def load_model(model_type: TaggerModel = None):
     model_path = os.path.join(model_base, "model.onnx")
     tags_path = os.path.join(model_base, "selected_tags.csv")
 
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model not found at {model_path}. Download from HuggingFace.")
-
-    if not os.path.exists(tags_path):
-        raise FileNotFoundError(f"Tags file not found at {tags_path}")
+    if not os.path.exists(model_path) or not os.path.exists(tags_path):
+        # Model not available - needs to be downloaded
+        raise FileNotFoundError(
+            f"Model '{model_type.value}' not found. "
+            f"Please download it from Settings > Models."
+        )
 
     import onnxruntime as ort
 
