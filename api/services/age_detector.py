@@ -50,7 +50,32 @@ def get_models():
     try:
         # Load YOLO for body/person detection
         from ultralytics import YOLO
-        _body_detector = YOLO('yolov8n.pt')  # Nano model for speed
+        from .model_downloader import get_model_path, is_model_available, download_model
+        import asyncio
+
+        # Get the model path from our model storage
+        yolo_model_path = get_model_path("yolov8n") / "yolov8n.pt"
+
+        # If not available, try to download synchronously
+        if not is_model_available("yolov8n"):
+            logger.info("YOLO model not found, downloading...")
+            try:
+                # Run async download in sync context
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # We're already in an async context, schedule it
+                    asyncio.create_task(download_model("yolov8n"))
+                    # Fall back to ultralytics download for now
+                    _body_detector = YOLO('yolov8n.pt')
+                else:
+                    loop.run_until_complete(download_model("yolov8n"))
+                    _body_detector = YOLO(str(yolo_model_path))
+            except Exception as download_error:
+                logger.warning(f"Failed to download YOLO via model_downloader: {download_error}, falling back to ultralytics")
+                _body_detector = YOLO('yolov8n.pt')  # Let ultralytics handle download
+        else:
+            _body_detector = YOLO(str(yolo_model_path))
+
         logger.info("YOLO body detector loaded")
     except Exception as e:
         logger.error(f"Failed to load YOLO: {e}")
