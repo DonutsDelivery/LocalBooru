@@ -267,7 +267,13 @@ def install_age_detection_deps_sync():
                 __import__(name)
                 print(f"[AgeDetection] {name} already installed, skipping", flush=True)
                 continue
+            except OSError:
+                # OSError means package IS installed but has DLL issues (e.g. missing VC++)
+                # Reinstalling won't help, skip it
+                print(f"[AgeDetection] {name} installed but has DLL issues, skipping", flush=True)
+                continue
             except ImportError:
+                # Package not installed, proceed to install
                 pass
 
             set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Installing {name}...")

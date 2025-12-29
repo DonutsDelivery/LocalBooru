@@ -25,8 +25,11 @@ async def lifespan(app: FastAPI):
     print("Starting LocalBooru API...")
 
     # Add persistent packages directory to path (for age detection deps that survive updates)
-    from .routers.settings import ensure_packages_in_path
+    from .routers.settings import ensure_packages_in_path, set_setting, AGE_DETECTION_INSTALLING
     ensure_packages_in_path()
+
+    # Clear stuck "installing" flag from previous crash (thread won't survive restart)
+    set_setting(AGE_DETECTION_INSTALLING, "false")
 
     await init_db()
 
