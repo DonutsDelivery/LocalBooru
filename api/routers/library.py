@@ -161,12 +161,8 @@ async def clean_missing_files(db: AsyncSession = Depends(get_db)):
     result = await db.execute(query)
     all_files = result.scalars().all()
 
-    print(f"[CleanMissing] Checking {len(all_files)} image files...")
-
     for image_file in all_files:
-        file_exists = Path(image_file.original_path).exists()
-        if not file_exists:
-            print(f"[CleanMissing] Missing: {image_file.original_path}")
+        if not Path(image_file.original_path).exists():
             # Check if image has other valid file references
             other_query = select(ImageFile).where(
                 ImageFile.image_id == image_file.image_id,
@@ -206,7 +202,6 @@ async def clean_missing_files(db: AsyncSession = Depends(get_db)):
             payload = json.loads(task.payload)
             file_path = payload.get('image_path') or payload.get('file_path')
             if file_path and not Path(file_path).exists():
-                print(f"[CleanMissing] Removing task {task.id} for missing file: {file_path}")
                 await db.delete(task)
                 tasks_cleaned += 1
         except Exception:
