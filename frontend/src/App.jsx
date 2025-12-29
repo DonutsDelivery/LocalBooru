@@ -131,6 +131,18 @@ function DirectoriesPage() {
                         <span className="diagnostic" title="Favorited images">
                           Favorites: {dir.favorited_count}
                         </span>
+                        <label className="diagnostic toggle" title="Run age detection on images in this directory">
+                          <input
+                            type="checkbox"
+                            checked={dir.auto_age_detect || false}
+                            onChange={async (e) => {
+                              const { updateDirectory } = await import('./api')
+                              await updateDirectory(dir.id, { auto_age_detect: e.target.checked })
+                              refreshDirectories()
+                            }}
+                          />
+                          Age Detect
+                        </label>
                       </div>
                     </div>
                     <div className="directory-actions">

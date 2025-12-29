@@ -23,6 +23,7 @@ class DirectoryCreate(BaseModel):
     name: Optional[str] = None
     recursive: bool = True
     auto_tag: bool = True
+    auto_age_detect: bool = False
 
 
 class DirectoryUpdate(BaseModel):
@@ -30,6 +31,7 @@ class DirectoryUpdate(BaseModel):
     enabled: Optional[bool] = None
     recursive: Optional[bool] = None
     auto_tag: Optional[bool] = None
+    auto_age_detect: Optional[bool] = None
 
 
 @router.get("")
@@ -93,6 +95,7 @@ async def list_directories(db: AsyncSession = Depends(get_db)):
             "enabled": d.enabled,
             "recursive": d.recursive,
             "auto_tag": d.auto_tag,
+            "auto_age_detect": d.auto_age_detect,
             "image_count": image_count,
             "age_detected_count": age_detected_count,
             "age_detected_pct": round(age_detected_count / image_count * 100, 1) if image_count > 0 else 0,
@@ -131,6 +134,7 @@ async def add_directory(data: DirectoryCreate, db: AsyncSession = Depends(get_db
         name=data.name or path.name,
         recursive=data.recursive,
         auto_tag=data.auto_tag,
+        auto_age_detect=data.auto_age_detect,
         enabled=True
     )
     db.add(directory)
@@ -181,6 +185,7 @@ async def get_directory(directory_id: int, db: AsyncSession = Depends(get_db)):
         "enabled": directory.enabled,
         "recursive": directory.recursive,
         "auto_tag": directory.auto_tag,
+        "auto_age_detect": directory.auto_age_detect,
         "image_count": image_count,
         "path_exists": Path(directory.path).exists(),
         "last_scanned_at": directory.last_scanned_at.isoformat() if directory.last_scanned_at else None,
@@ -207,6 +212,8 @@ async def update_directory(
         directory.recursive = data.recursive
     if data.auto_tag is not None:
         directory.auto_tag = data.auto_tag
+    if data.auto_age_detect is not None:
+        directory.auto_age_detect = data.auto_age_detect
 
     await db.commit()
 
@@ -219,7 +226,8 @@ async def update_directory(
         "name": directory.name,
         "enabled": directory.enabled,
         "recursive": directory.recursive,
-        "auto_tag": directory.auto_tag
+        "auto_tag": directory.auto_tag,
+        "auto_age_detect": directory.auto_age_detect
     }
 
 

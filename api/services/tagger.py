@@ -469,12 +469,28 @@ async def _run_age_detection_if_realistic(
     tag_names: list[str],
     db: AsyncSession
 ) -> dict | None:
-    """Run age detection if image has realistic/photorealistic tags."""
+    """Run age detection if directory has auto_age_detect enabled."""
     import json
-    from .age_detector import should_detect_age, detect_ages, REALISTIC_TAGS
+    from .age_detector import detect_ages, is_age_detection_enabled
 
-    # Check if image has realistic tags
-    if not should_detect_age(tag_names):
+    # Check if age detection is enabled globally first
+    if not is_age_detection_enabled():
+        return None
+
+    # Check if the image's directory has auto_age_detect enabled
+    from ..models import ImageFile, WatchDirectory
+    file_query = select(ImageFile).where(ImageFile.image_id == image.id).limit(1)
+    file_result = await db.execute(file_query)
+    image_file = file_result.scalar_one_or_none()
+
+    if not image_file or not image_file.watch_directory_id:
+        return None
+
+    dir_query = select(WatchDirectory).where(WatchDirectory.id == image_file.watch_directory_id)
+    dir_result = await db.execute(dir_query)
+    directory = dir_result.scalar_one_or_none()
+
+    if not directory or not directory.auto_age_detect:
         return None
 
     try:

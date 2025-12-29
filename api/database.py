@@ -54,9 +54,17 @@ async def get_db():
 
 
 async def init_db():
-    """Create all tables."""
+    """Create all tables and run migrations."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # Run migrations for new columns (ignore if already exists)
+        try:
+            await conn.execute(text(
+                "ALTER TABLE watch_directories ADD COLUMN auto_age_detect BOOLEAN DEFAULT 0"
+            ))
+        except Exception:
+            pass  # Column already exists
 
 
 async def close_db():

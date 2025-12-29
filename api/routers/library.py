@@ -207,31 +207,29 @@ async def verify_all_files(db: AsyncSession = Depends(get_db)):
 
 @router.post("/detect-ages")
 async def detect_ages_retrospective(db: AsyncSession = Depends(get_db)):
-    """Queue age detection for realistic images missing age data"""
-    from ..services.age_detector import REALISTIC_TAGS, is_age_detection_enabled
+    """Queue age detection for images in directories with auto_age_detect enabled"""
+    from ..services.age_detector import is_age_detection_enabled
 
     if not is_age_detection_enabled():
         return {"error": "Age detection is not enabled", "queued": 0}
 
-    # Find images with realistic tags but no age detection data
-    from ..models import image_tags
-    realistic_tag_names = list(REALISTIC_TAGS)
-
-    # Get images that have realistic tags
-    realistic_images_query = (
+    # Find images in directories with auto_age_detect enabled that don't have age data
+    images_query = (
         select(Image)
-        .join(image_tags, Image.id == image_tags.c.image_id)
-        .join(Tag, Tag.id == image_tags.c.tag_id)
-        .where(Tag.name.in_(realistic_tag_names))
-        .where(Image.age_detection_data.is_(None))  # No age data yet
+        .join(ImageFile, ImageFile.image_id == Image.id)
+        .join(WatchDirectory, WatchDirectory.id == ImageFile.watch_directory_id)
+        .where(
+            WatchDirectory.auto_age_detect == True,
+            Image.age_detection_data.is_(None)  # No age data yet
+        )
         .distinct()
     )
 
-    result = await db.execute(realistic_images_query)
+    result = await db.execute(images_query)
     images = result.scalars().all()
 
     if not images:
-        return {"message": "No images need age detection", "queued": 0}
+        return {"message": "No images need age detection (check directory settings)", "queued": 0}
 
     # Queue age detection tasks
     from ..services.task_queue import enqueue_task
@@ -239,11 +237,14 @@ async def detect_ages_retrospective(db: AsyncSession = Depends(get_db)):
     queued = 0
     for image in images:
         # Get file path
-        file_query = select(ImageFile).where(ImageFile.image_id == image.id).limit(1)
+        file_query = select(ImageFile).where(
+            ImageFile.image_id == image.id,
+            ImageFile.file_exists == True
+        ).limit(1)
         file_result = await db.execute(file_query)
         image_file = file_result.scalar_one_or_none()
 
-        if image_file and image_file.file_exists:
+        if image_file:
             await enqueue_task(
                 TaskType.age_detect,
                 {"image_id": image.id, "file_path": image_file.original_path},
