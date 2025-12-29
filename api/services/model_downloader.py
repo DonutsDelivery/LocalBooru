@@ -73,7 +73,7 @@ MODELS = {
 
 # Download state
 _download_progress: dict[str, dict] = {}
-_download_locks: dict[str, asyncio.Lock] = {}
+_download_lock = asyncio.Lock()  # Single global lock for all downloads
 
 
 def get_models_dir() -> Path:
@@ -144,16 +144,17 @@ async def download_model(
         raise ValueError(f"Unknown model: {model_name}")
 
     if is_model_available(model_name):
+        print(f"[ModelDownloader] {model_name} already available")
         return True
 
-    # Get or create lock for this model
-    if model_name not in _download_locks:
-        _download_locks[model_name] = asyncio.Lock()
-
-    async with _download_locks[model_name]:
-        # Check again in case another task downloaded it
+    print(f"[ModelDownloader] Acquiring download lock for {model_name}...")
+    async with _download_lock:
+        # Check again in case another task downloaded it while we waited
         if is_model_available(model_name):
+            print(f"[ModelDownloader] {model_name} was downloaded while waiting for lock")
             return True
+
+        print(f"[ModelDownloader] Starting download of {model_name}")
 
         model_dir = get_model_path(model_name)
         model_dir.mkdir(parents=True, exist_ok=True)
@@ -191,31 +192,42 @@ async def download_model(
                                 f.write(chunk)
                                 bytes_downloaded += len(chunk)
 
-                                # Update progress
+                                # Update progress (with safety check)
                                 percent = int(bytes_downloaded * 100 / total_size) if total_size > 0 else 0
-                                _download_progress[model_name].update({
-                                    "bytes_downloaded": bytes_downloaded,
-                                    "percent": percent
-                                })
+                                if model_name in _download_progress:
+                                    _download_progress[model_name].update({
+                                        "bytes_downloaded": bytes_downloaded,
+                                        "percent": percent
+                                    })
 
                                 if progress_callback:
                                     progress_callback(filename, bytes_downloaded, total_size)
 
                     # Move temp file to final location
+                    # On Windows, rename fails if target exists - delete first
+                    if file_path.exists():
+                        file_path.unlink()
                     temp_path.rename(file_path)
+                    print(f"[ModelDownloader] Downloaded {filename} to {file_path}")
 
-            _download_progress[model_name]["status"] = "complete"
+            print(f"[ModelDownloader] {model_name} download complete at {model_dir}")
+            if model_name in _download_progress:
+                _download_progress[model_name]["status"] = "complete"
             return True
 
         except Exception as e:
-            _download_progress[model_name]["status"] = "error"
-            _download_progress[model_name]["error"] = str(e)
+            if model_name in _download_progress:
+                _download_progress[model_name]["status"] = "error"
+                _download_progress[model_name]["error"] = str(e)
 
             # Clean up partial downloads
             for file_info in model_info["files"]:
                 temp_path = model_dir / (file_info["filename"] + ".tmp")
                 if temp_path.exists():
-                    temp_path.unlink()
+                    try:
+                        temp_path.unlink()
+                    except Exception:
+                        pass
 
             raise
         finally:

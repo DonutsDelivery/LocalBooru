@@ -167,7 +167,7 @@ def adjust_rating_by_tags(base_rating: "Rating", tag_names: list[str]) -> "Ratin
 
 def get_model_path(model_type: TaggerModel) -> str:
     """Get the directory path for a specific model."""
-    from .model_downloader import resolve_model_path
+    from .model_downloader import resolve_model_path, get_model_path as get_downloader_path
 
     model_dir = MODEL_DIRS.get(model_type, MODEL_DIRS[DEFAULT_MODEL])
     model_name = f"tagger/{model_dir}"
@@ -177,7 +177,12 @@ def get_model_path(model_type: TaggerModel) -> str:
     if resolved:
         return str(resolved)
 
-    # Fallback to legacy path
+    # Check user data directory directly (file might exist but fail size check)
+    user_path = get_downloader_path(model_name)
+    if (user_path / "model.onnx").exists() and (user_path / "selected_tags.csv").exists():
+        return str(user_path)
+
+    # Fallback to legacy path (for dev environments with local models)
     base_path = getattr(settings, 'tagger_base_path', None) or os.path.dirname(settings.tagger_model_path)
     return os.path.join(base_path, model_dir)
 
