@@ -506,21 +506,34 @@ function Gallery() {
   }, [])
 
   // Subscribe to real-time library events (debounced refresh)
-  // Waits 2s after last image added, then refreshes once
+  // Waits 2s after last event, then refreshes once
   // Works for live updates AND backlog when returning from background
+  const triggerDebouncedRefresh = useCallback(() => {
+    if (statsUpdateTimeout.current) {
+      clearTimeout(statsUpdateTimeout.current)
+    }
+    statsUpdateTimeout.current = setTimeout(() => {
+      getLibraryStats().then(setStats).catch(console.error)
+      loadImages(1, false)
+    }, 2000)
+  }, [loadImages])
+
+  // On visibility change, start debounce - backlog events will keep resetting it
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        triggerDebouncedRefresh()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [triggerDebouncedRefresh])
+
+  // SSE events also trigger the same debounce
   useEffect(() => {
     const unsubscribe = subscribeToLibraryEvents((event) => {
       if (event.type === 'image_added') {
-        // Clear existing timer - reset the debounce
-        if (statsUpdateTimeout.current) {
-          clearTimeout(statsUpdateTimeout.current)
-        }
-
-        // Wait for batch to complete (2s after last image), then refresh once
-        statsUpdateTimeout.current = setTimeout(() => {
-          getLibraryStats().then(setStats).catch(console.error)
-          loadImages(1, false)
-        }, 2000)
+        triggerDebouncedRefresh()
       }
     })
     return () => {
@@ -529,7 +542,7 @@ function Gallery() {
         clearTimeout(statsUpdateTimeout.current)
       }
     }
-  }, [loadImages])
+  }, [triggerDebouncedRefresh])
 
   const handleLoadMore = () => {
     if (!loading && hasMore) {
