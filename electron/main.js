@@ -45,8 +45,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     frame: false,  // Custom title bar
-    transparent: true,  // Required for rounded corners
-    backgroundColor: '#00000000',
+    backgroundColor: '#141414',  // Match --bg-primary
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -56,9 +55,16 @@ function createWindow() {
     show: false // Show when ready
   };
 
-  // Windows-specific: use native rounded corners on Windows 11
+  // Windows 11: Use Mica material for native rounded corners + blur effect
   if (process.platform === 'win32') {
+    windowOptions.backgroundMaterial = 'mica';
     windowOptions.roundedCorners = true;
+  }
+
+  // macOS: Native rounded corners work automatically with frameless
+  if (process.platform === 'darwin') {
+    windowOptions.roundedCorners = true;
+    windowOptions.vibrancy = 'window';
   }
 
   mainWindow = new BrowserWindow(windowOptions);
