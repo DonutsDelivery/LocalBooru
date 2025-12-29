@@ -131,19 +131,22 @@ function DirectoriesPage() {
                         <span className="diagnostic" title="Favorited images">
                           Favorites: {dir.favorited_count}
                         </span>
-                        <label className="diagnostic toggle" title="Run age detection on images in this directory">
-                          <input
-                            type="checkbox"
-                            checked={dir.auto_age_detect || false}
-                            onChange={(e) => {
-                              const newValue = e.target.checked
-                              updateDirectory(dir.id, { auto_age_detect: newValue })
-                                .then(() => refreshDirectories())
-                                .catch(err => alert('Failed: ' + err.message))
-                            }}
-                          />
-                          Age Detect
-                        </label>
+                        <button
+                          className="diagnostic toggle-btn"
+                          onClick={() => {
+                            const newValue = !dir.auto_age_detect
+                            setDirectories(dirs => dirs.map(d =>
+                              d.id === dir.id ? {...d, auto_age_detect: newValue} : d
+                            ))
+                            updateDirectory(dir.id, { auto_age_detect: newValue })
+                              .catch(err => {
+                                console.error('Failed to update:', err)
+                                refreshDirectories()
+                              })
+                          }}
+                        >
+                          {dir.auto_age_detect ? '☑' : '☐'} Age Detect
+                        </button>
                       </div>
                     </div>
                     <div className="directory-actions">
