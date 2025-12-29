@@ -80,12 +80,17 @@ def check_age_detection_deps() -> dict:
     # Ensure persistent packages directory is in path
     ensure_packages_in_path()
 
+    is_windows = sys.platform == "win32"
+
     deps = {
         "torch": False,
         "transformers": False,
         "ultralytics": False,
-        "insightface": False  # Optional - OpenCV fallback available
     }
+
+    # Only include insightface on non-Windows (it's skipped on Windows)
+    if not is_windows:
+        deps["insightface"] = False
 
     try:
         import torch
@@ -105,11 +110,12 @@ def check_age_detection_deps() -> dict:
     except ImportError:
         pass
 
-    try:
-        import insightface
-        deps["insightface"] = True
-    except ImportError:
-        pass
+    if not is_windows:
+        try:
+            import insightface
+            deps["insightface"] = True
+        except ImportError:
+            pass
 
     return deps
 
