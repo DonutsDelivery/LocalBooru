@@ -16,6 +16,21 @@ from ..database import get_data_dir
 router = APIRouter()
 
 
+def get_packages_dir() -> Path:
+    """Get persistent packages directory that survives updates"""
+    packages_dir = get_data_dir() / 'packages'
+    packages_dir.mkdir(parents=True, exist_ok=True)
+    return packages_dir
+
+
+def ensure_packages_in_path():
+    """Add persistent packages directory to Python path"""
+    packages_dir = get_packages_dir()
+    packages_str = str(packages_dir)
+    if packages_str not in sys.path:
+        sys.path.insert(0, packages_str)
+
+
 # Settings file path
 def get_settings_file() -> Path:
     return get_data_dir() / 'settings.json'
@@ -62,6 +77,9 @@ AGE_DETECTION_INSTALL_PROGRESS = "age_detection_install_progress"
 
 def check_age_detection_deps() -> dict:
     """Check if age detection dependencies are installed"""
+    # Ensure persistent packages directory is in path
+    ensure_packages_in_path()
+
     deps = {
         "torch": False,
         "transformers": False,
@@ -156,9 +174,13 @@ def install_age_detection_deps_sync():
         set_setting(AGE_DETECTION_INSTALLING, "true")
         set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Starting installation...")
 
-        # Get Python executable
+        # Get Python executable and persistent packages directory
         python_exe = sys.executable
         is_windows = sys.platform == "win32"
+        packages_dir = get_packages_dir()
+
+        # Add packages dir to path so we can check for already-installed packages
+        ensure_packages_in_path()
 
         # Install packages one by one for progress tracking
         # numpy<2 required for insightface compatibility
@@ -176,12 +198,13 @@ def install_age_detection_deps_sync():
 
         for name, package in packages:
             set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Installing {name}...")
-            print(f"[AgeDetection] Installing {name}...", flush=True)
+            print(f"[AgeDetection] Installing {name} to {packages_dir}...", flush=True)
 
             try:
-                # Use subprocess to install
+                # Install to persistent user directory (survives app updates)
+                cmd = [python_exe, "-m", "pip", "install", "--target", str(packages_dir)] + package.split()
                 result = subprocess.run(
-                    [python_exe, "-m", "pip", "install"] + package.split(),
+                    cmd,
                     capture_output=True,
                     text=True,
                     timeout=600  # 10 minute timeout per package
