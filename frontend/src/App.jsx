@@ -382,7 +382,6 @@ function Gallery() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
   const [stats, setStats] = useState(null)
-  const [newImagesCount, setNewImagesCount] = useState(0)
   const statsUpdateTimeout = useRef(null)
 
   const currentTags = searchParams.get('tags') || ''
@@ -506,36 +505,20 @@ function Gallery() {
     getLibraryStats().then(setStats).catch(console.error)
   }, [])
 
-  // Subscribe to real-time library events (smart batching)
-  // Small batches (1-3 images): auto-refresh after 2s delay
-  // Large batches (4+ images): show notification banner
-  const pendingCountRef = useRef(0)
-  const AUTO_REFRESH_THRESHOLD = 3
-
+  // Subscribe to real-time library events (debounced refresh)
+  // Waits 2s after last image added, then refreshes once
   useEffect(() => {
     const unsubscribe = subscribeToLibraryEvents((event) => {
       if (event.type === 'image_added') {
-        pendingCountRef.current += 1
-
         // Clear existing timer
         if (statsUpdateTimeout.current) {
           clearTimeout(statsUpdateTimeout.current)
         }
 
-        // Wait for batch to complete (2s after last image)
+        // Wait for batch to complete (2s after last image), then refresh once
         statsUpdateTimeout.current = setTimeout(() => {
-          const count = pendingCountRef.current
-          pendingCountRef.current = 0
-
-          // Update stats
           getLibraryStats().then(setStats).catch(console.error)
-
-          // Small batch: auto-refresh, Large batch: show notification
-          if (count <= AUTO_REFRESH_THRESHOLD) {
-            loadImages(1, false)
-          } else {
-            setNewImagesCount(prev => prev + count)
-          }
+          loadImages(1, false)
         }, 2000)
       }
     })
@@ -545,12 +528,6 @@ function Gallery() {
         clearTimeout(statsUpdateTimeout.current)
       }
     }
-  }, [loadImages])
-
-  // Load new images when user clicks the notification
-  const handleLoadNewImages = useCallback(() => {
-    setNewImagesCount(0)
-    loadImages(1, false)
   }, [loadImages])
 
   const handleLoadMore = () => {
@@ -651,11 +628,6 @@ function Gallery() {
         {!sidebarOpen && <div className="swipe-hint" />}
 
         <main className="content with-sidebar">
-          {newImagesCount > 0 && (
-            <button className="new-images-banner" onClick={handleLoadNewImages}>
-              {newImagesCount} new image{newImagesCount !== 1 ? 's' : ''} available — click to refresh
-            </button>
-          )}
           {!loading && images.length === 0 ? (
             <div className="no-results">
               <h2>No images found</h2>
