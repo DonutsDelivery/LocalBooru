@@ -91,16 +91,20 @@ def get_model_path(model_name: str) -> Path:
 def is_model_available(model_name: str) -> bool:
     """Check if all files for a model are downloaded."""
     if model_name not in MODELS:
+        print(f"[ModelCheck] {model_name} not in MODELS")
         return False
 
     model_dir = get_model_path(model_name)
     for file_info in MODELS[model_name]["files"]:
         file_path = model_dir / file_info["filename"]
         if not file_path.exists():
+            print(f"[ModelCheck] {file_path} does not exist")
             return False
         # Check if file is complete (at least 90% of expected size)
         expected_bytes = file_info["size_mb"] * 1024 * 1024
-        if file_path.stat().st_size < expected_bytes * 0.9:
+        actual_size = file_path.stat().st_size
+        if actual_size < expected_bytes * 0.9:
+            print(f"[ModelCheck] {file_path} too small: {actual_size} < {expected_bytes * 0.9}")
             return False
     return True
 
