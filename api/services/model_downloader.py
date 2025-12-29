@@ -180,7 +180,8 @@ async def download_model(
                     file_path = model_dir / filename
                     temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
 
-                    _download_progress[model_name]["current_file"] = filename
+                    if model_name in _download_progress:
+                        _download_progress[model_name]["current_file"] = filename
 
                     # Stream download
                     async with client.stream("GET", url) as response:

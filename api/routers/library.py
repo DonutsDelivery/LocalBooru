@@ -149,18 +149,24 @@ async def clear_pending_tasks(db: AsyncSession = Depends(get_db)):
 @router.post("/clean-missing")
 async def clean_missing_files(db: AsyncSession = Depends(get_db)):
     """Remove all images with missing files from the library"""
+    import json
     from pathlib import Path
     from ..database import get_data_dir
 
     cleaned = 0
+    tasks_cleaned = 0
 
     # Find all ImageFile entries
     query = select(ImageFile)
     result = await db.execute(query)
     all_files = result.scalars().all()
 
+    print(f"[CleanMissing] Checking {len(all_files)} image files...")
+
     for image_file in all_files:
-        if not Path(image_file.original_path).exists():
+        file_exists = Path(image_file.original_path).exists()
+        if not file_exists:
+            print(f"[CleanMissing] Missing: {image_file.original_path}")
             # Check if image has other valid file references
             other_query = select(ImageFile).where(
                 ImageFile.image_id == image_file.image_id,
@@ -186,8 +192,28 @@ async def clean_missing_files(db: AsyncSession = Depends(get_db)):
 
             cleaned += 1
 
+    # Also clean up stuck tasks with missing files
+    from sqlalchemy import delete
+    task_query = select(TaskQueue).where(
+        TaskQueue.task_type.in_([TaskType.tag, TaskType.age_detect]),
+        TaskQueue.status.in_([TaskStatus.pending, TaskStatus.processing, TaskStatus.failed])
+    )
+    task_result = await db.execute(task_query)
+    tasks = task_result.scalars().all()
+
+    for task in tasks:
+        try:
+            payload = json.loads(task.payload)
+            file_path = payload.get('image_path') or payload.get('file_path')
+            if file_path and not Path(file_path).exists():
+                print(f"[CleanMissing] Removing task {task.id} for missing file: {file_path}")
+                await db.delete(task)
+                tasks_cleaned += 1
+        except Exception:
+            pass
+
     await db.commit()
-    return {"cleaned": cleaned}
+    return {"cleaned": cleaned, "tasks_cleaned": tasks_cleaned}
 
 
 @router.post("/verify-files")
