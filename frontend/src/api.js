@@ -19,35 +19,54 @@ const api = axios.create({
   timeout: 30000
 })
 
-// Add response interceptor to show errors as popups
+// Track startup time to suppress errors during initialization
+const startupTime = Date.now()
+const STARTUP_GRACE_PERIOD = 10000 // 10 seconds
+
+// Add response interceptor to show errors as popups (only for real errors)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     const url = error.config?.url || 'unknown'
     const method = error.config?.method?.toUpperCase() || 'UNKNOWN'
-    const status = error.response?.status || 'Network Error'
+    const status = error.response?.status
     const data = error.response?.data
+    const isNetworkError = !error.response
 
-    let message = `API Error: ${method} ${url}\n\nStatus: ${status}`
+    // Skip showing popup for transient/expected errors:
+    // 1. During startup grace period (backend might still be initializing)
+    const duringStartup = Date.now() - startupTime < STARTUP_GRACE_PERIOD
+    // 2. Network errors (connection refused, backend not ready)
+    // 3. 503 Service Unavailable (backend busy)
+    // 4. Timeout errors
+    const isTransient = isNetworkError || status === 503 || error.code === 'ECONNABORTED'
 
-    if (data) {
-      if (typeof data === 'string') {
-        message += `\n\nResponse: ${data.substring(0, 500)}`
-      } else if (data.detail) {
-        message += `\n\nDetail: ${JSON.stringify(data.detail, null, 2)}`
-      } else if (data.message) {
-        message += `\n\nMessage: ${data.message}`
-      } else {
-        message += `\n\nResponse: ${JSON.stringify(data, null, 2).substring(0, 500)}`
+    // Only show popup for real errors after startup
+    if (!duringStartup && !isTransient) {
+      let message = `API Error: ${method} ${url}\n\nStatus: ${status || 'Network Error'}`
+
+      if (data) {
+        if (typeof data === 'string') {
+          message += `\n\nResponse: ${data.substring(0, 500)}`
+        } else if (data.detail) {
+          message += `\n\nDetail: ${JSON.stringify(data.detail, null, 2)}`
+        } else if (data.message) {
+          message += `\n\nMessage: ${data.message}`
+        } else {
+          message += `\n\nResponse: ${JSON.stringify(data, null, 2).substring(0, 500)}`
+        }
       }
-    }
 
-    if (error.message && !error.response) {
-      message += `\n\nError: ${error.message}`
-    }
+      if (error.message && isNetworkError) {
+        message += `\n\nError: ${error.message}`
+      }
 
-    // Show popup with error details
-    alert(message)
+      // Show popup with error details
+      alert(message)
+    } else {
+      // Log transient errors to console instead
+      console.warn(`[API] Transient error (${duringStartup ? 'startup' : 'network'}): ${method} ${url}`, error.message)
+    }
 
     // Still reject so calling code can handle it
     return Promise.reject(error)
