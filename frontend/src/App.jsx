@@ -382,6 +382,8 @@ function Gallery() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
   const [stats, setStats] = useState(null)
+  const [newImagesCount, setNewImagesCount] = useState(0)
+  const statsUpdateTimeout = useRef(null)
 
   const currentTags = searchParams.get('tags') || ''
   const currentRating = searchParams.get('rating') || 'pg,pg13,r,x,xxx'
@@ -504,17 +506,34 @@ function Gallery() {
     getLibraryStats().then(setStats).catch(console.error)
   }, [])
 
-  // Subscribe to real-time library events
+  // Subscribe to real-time library events (batched updates)
   useEffect(() => {
     const unsubscribe = subscribeToLibraryEvents((event) => {
       if (event.type === 'image_added') {
-        // Refresh the first page to show new images
-        loadImages(1, false)
-        // Update stats
-        getLibraryStats().then(setStats).catch(console.error)
+        // Batch new images instead of refreshing on each one
+        setNewImagesCount(prev => prev + 1)
+
+        // Debounce stats update (wait for batch to complete)
+        if (statsUpdateTimeout.current) {
+          clearTimeout(statsUpdateTimeout.current)
+        }
+        statsUpdateTimeout.current = setTimeout(() => {
+          getLibraryStats().then(setStats).catch(console.error)
+        }, 2000)
       }
     })
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      if (statsUpdateTimeout.current) {
+        clearTimeout(statsUpdateTimeout.current)
+      }
+    }
+  }, [])
+
+  // Load new images when user clicks the notification
+  const handleLoadNewImages = useCallback(() => {
+    setNewImagesCount(0)
+    loadImages(1, false)
   }, [loadImages])
 
   const handleLoadMore = () => {
@@ -615,6 +634,11 @@ function Gallery() {
         {!sidebarOpen && <div className="swipe-hint" />}
 
         <main className="content with-sidebar">
+          {newImagesCount > 0 && (
+            <button className="new-images-banner" onClick={handleLoadNewImages}>
+              {newImagesCount} new image{newImagesCount !== 1 ? 's' : ''} available — click to refresh
+            </button>
+          )}
           {!loading && images.length === 0 ? (
             <div className="no-results">
               <h2>No images found</h2>

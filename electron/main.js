@@ -39,7 +39,7 @@ const API_PORT = 8790;
  * Create the main application window
  */
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const windowOptions = {
     width: 1400,
     height: 900,
     minWidth: 800,
@@ -47,7 +47,6 @@ function createWindow() {
     frame: false,  // Custom title bar
     transparent: true,  // Required for rounded corners
     backgroundColor: '#00000000',
-    hasShadow: false,  // Disable shadow for cleaner transparent edges
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -55,7 +54,14 @@ function createWindow() {
     },
     icon: path.join(__dirname, '../assets/icon.png'),
     show: false // Show when ready
-  });
+  };
+
+  // Windows-specific: use native rounded corners on Windows 11
+  if (process.platform === 'win32') {
+    windowOptions.roundedCorners = true;
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
 
   // Load the frontend from backend server (same as browser access)
   if (isDev) {

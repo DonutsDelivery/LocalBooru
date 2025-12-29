@@ -362,6 +362,34 @@
   to { transform: rotate(360deg); }
 }
 
+/* New images notification banner */
+.new-images-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  width: 100%;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, var(--accent) 0%, #6366f1 100%);
+  color: white;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.new-images-banner:hover {
+  background: linear-gradient(135deg, #6366f1 0%, var(--accent) 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.new-images-banner:active {
+  transform: translateY(0);
+}
+
 .no-results {
   text-align: center;
   padding: 60px 20px;
