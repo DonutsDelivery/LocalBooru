@@ -98,9 +98,8 @@ def check_age_detection_deps() -> dict:
         "mivolo": False,
     }
 
-    # Only include insightface on non-Windows (it's skipped on Windows)
-    if not is_windows:
-        deps["insightface"] = False
+    # insightface for better face detection (now supported on Windows via pre-built wheel)
+    deps["insightface"] = False
 
     # Catch OSError too - Windows throws this when VC++ redistributable is missing
     try:
@@ -134,12 +133,11 @@ def check_age_detection_deps() -> dict:
     except (ImportError, OSError):
         pass
 
-    if not is_windows:
-        try:
-            import insightface
-            deps["insightface"] = True
-        except (ImportError, OSError):
-            pass
+    try:
+        import insightface
+        deps["insightface"] = True
+    except (ImportError, OSError):
+        pass
 
     return deps
 
@@ -382,13 +380,15 @@ def install_age_detection_deps_sync():
             ("mivolo", "https://github.com/WildChlamydia/MiVOLO/archive/refs/heads/main.zip --no-deps"),  # Age/gender detection (MIT license), --no-deps to avoid conflicts
         ]
 
-        # Add numpy<2 for insightface compatibility (only on non-Windows where insightface is used)
-        if not is_windows:
-            packages.insert(0, ("numpy", "numpy<2"))
+        # Add numpy<2 for insightface compatibility
+        packages.insert(0, ("numpy", "numpy<2"))
 
-        # insightface is optional - OpenCV fallback works fine for face detection
-        # Skip on Windows as it requires specific Python version wheels or C++ compiler
-        if not is_windows:
+        # insightface for better face detection
+        # Windows needs pre-built wheel (pip install fails without Visual C++ build tools)
+        if is_windows:
+            # Pre-built wheel for Python 3.11 from Gourieff's repo (used by ComfyUI/A1111)
+            packages.append(("insightface", "https://github.com/Gourieff/Assets/raw/main/Insightface/insightface-0.7.3-cp311-cp311-win_amd64.whl"))
+        else:
             packages.append(("insightface", "insightface"))
 
         for name, package in packages:
