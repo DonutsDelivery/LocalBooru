@@ -2,16 +2,7 @@
 
 A local image library with automatic AI tagging, designed for organizing and browsing large image collections.
 
-## Screenshots
-
 ![Gallery View](screenshots/gallery.png)
-*Gallery with masonry layout, rating badges, and tag filtering*
-
-![Watch Directories](screenshots/directories.png)
-*Manage watched folders with progress tracking*
-
-![Settings](screenshots/settings.png)
-*Age detection with dependency management*
 
 ## Features
 
@@ -26,11 +17,15 @@ A local image library with automatic AI tagging, designed for organizing and bro
 - **Favorites** - Mark your best images and filter to show only favorites
 - **Pruning** - Clean up non-favorited images by moving them to a dumpster folder
 
+![Watch Directories](screenshots/directories.png)
+
 ### Modern Interface
 - **Masonry grid** - Beautiful responsive gallery layout
 - **Lightbox viewer** - Full-screen image viewing with keyboard navigation
 - **Dark theme** - Easy on the eyes for extended browsing sessions
 - **Filter sidebar** - Filter by tags, ratings, age range, and directories
+
+![Settings](screenshots/settings.png)
 
 ### Flexible Access
 - **Desktop app** - Native Electron application for Windows, macOS, and Linux
