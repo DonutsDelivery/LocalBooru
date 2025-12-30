@@ -425,8 +425,15 @@ async def detect_ages(image_path: str | Path) -> Optional[AgeDetectionResult]:
             face_boxes = [(face.bbox.astype(int), float(face.det_score), face) for face in faces]
         elif detector_type == 'opencv':
             # OpenCV Haar Cascade detection
+            # Use stricter params to reduce false positives (minNeighbors=8, larger minSize)
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            detections = face_detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+            min_face_size = max(50, min(h, w) // 15)  # At least 50px, or 1/15th of image
+            detections = face_detector.detectMultiScale(
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=8,  # Higher = stricter, fewer false positives
+                minSize=(min_face_size, min_face_size)
+            )
             if len(detections) == 0:
                 logger.debug(f"No faces detected in {image_path}")
                 return AgeDetectionResult([])
