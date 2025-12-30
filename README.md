@@ -2,6 +2,17 @@
 
 A local image library with automatic AI tagging, designed for organizing and browsing large image collections.
 
+## Screenshots
+
+![Gallery View](screenshots/gallery.png)
+*Gallery with masonry layout, rating badges, and tag filtering*
+
+![Watch Directories](screenshots/directories.png)
+*Manage watched folders with progress tracking*
+
+![Settings](screenshots/settings.png)
+*Age detection with dependency management*
+
 ## Features
 
 ### Automatic AI Tagging
