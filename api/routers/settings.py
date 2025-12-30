@@ -377,13 +377,8 @@ def install_age_detection_deps_sync():
             ("mivolo", "https://github.com/WildChlamydia/MiVOLO/archive/refs/heads/main.zip --no-deps"),  # Age/gender detection (MIT license), --no-deps to avoid conflicts
         ]
 
-        # numpy version depends on platform:
-        # - Windows: numpy>=2 required for pre-built insightface wheel
-        # - Linux/Mac: numpy<2 for pip-installed insightface compatibility
-        if is_windows:
-            packages.insert(0, ("numpy", "numpy>=2"))
-        else:
-            packages.insert(0, ("numpy", "numpy<2"))
+        # numpy<2 required for insightface compatibility (both Gourieff wheel and PyPI)
+        packages.insert(0, ("numpy", "numpy<2"))
 
         # insightface for better face detection
         # Windows: pre-built wheel from Gourieff's repo (used by ComfyUI/A1111)
