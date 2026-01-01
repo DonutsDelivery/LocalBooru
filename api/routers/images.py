@@ -52,11 +52,11 @@ async def check_image_public_access(image_id: int, request: Request, db: AsyncSe
     """
     access_level = getattr(request.state, 'access_level', 'localhost')
 
-    # Localhost always has full access
-    if access_level == 'localhost':
+    # Localhost and local_network (same WiFi) have full access
+    if access_level in ('localhost', 'local_network'):
         return True
 
-    # For non-localhost, check if the image is in a public directory
+    # For public internet IPs, check if the image is in a public directory
     query = (
         select(ImageFile)
         .options(selectinload(ImageFile.watch_directory))
@@ -146,9 +146,10 @@ async def list_images(
 
     filters = []
 
-    # Network access filtering: non-localhost can only see images from public directories
+    # Network access filtering: public internet IPs can only see images from public directories
+    # Local network (same WiFi) gets full access like localhost
     access_level = getattr(request.state, 'access_level', 'localhost')
-    if access_level != 'localhost':
+    if access_level == 'public':
         # Get directories with public_access=True
         public_dirs_subq = select(WatchDirectory.id).where(WatchDirectory.public_access == True)
         # Filter to images in those directories

@@ -50,8 +50,8 @@ async def list_directories(request: Request, db: AsyncSession = Depends(get_db))
 
     query = select(WatchDirectory).order_by(WatchDirectory.created_at)
 
-    # Non-localhost users only see public directories
-    if access_level != 'localhost':
+    # Only public internet IPs are filtered - local network gets full access
+    if access_level == 'public':
         query = query.where(WatchDirectory.public_access == True)
 
     result = await db.execute(query)
