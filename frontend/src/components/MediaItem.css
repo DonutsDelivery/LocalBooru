@@ -482,3 +482,68 @@ button.rating-badge.clickable.updating {
   color: #FFD700;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
+
+/* Selection mode styles */
+.media-item.selectable {
+  cursor: pointer;
+}
+
+.media-item.selectable:hover {
+  border-color: var(--accent-secondary);
+}
+
+.media-item.selected {
+  border: 2px solid var(--accent-secondary);
+  box-shadow: 0 0 0 2px rgba(255, 98, 164, 0.3), var(--shadow-md);
+}
+
+.media-item.selected::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 98, 164, 0.15);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.selection-checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 28px;
+  height: 28px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 15;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.selection-checkbox svg {
+  width: 20px;
+  height: 20px;
+  color: white;
+}
+
+.selection-checkbox:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.1);
+}
+
+.media-item.selected .selection-checkbox {
+  background: var(--accent-secondary);
+}
+
+.media-item.selected .selection-checkbox svg {
+  color: white;
+}
+
+/* Move favorite indicator when in selection mode */
+.media-item.selectable .favorite-indicator {
+  right: auto;
+  left: 40px;
+}

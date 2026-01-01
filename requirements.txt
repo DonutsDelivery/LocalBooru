@@ -30,3 +30,6 @@ httpx>=0.27.0
 
 # Filesystem watching
 watchdog>=4.0.0
+
+# UPnP for network port forwarding
+miniupnpc>=2.2.0

@@ -6,6 +6,7 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const os = require('os');
 const { app } = require('electron');
 
 class BackendManager {
@@ -15,6 +16,83 @@ class BackendManager {
     this.healthCheckInterval = null;
     this.restartAttempts = 0;
     this.maxRestartAttempts = 5;
+  }
+
+  /**
+   * Get LocalBooru data directory (matches Python API location)
+   */
+  getDataDir() {
+    // Match Python's get_data_dir() logic for consistency
+    if (process.platform === 'win32') {
+      const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+      return path.join(appData, '.localbooru');
+    }
+    // Linux/Mac
+    return path.join(os.homedir(), '.localbooru');
+  }
+
+  /**
+   * Get settings.json path
+   */
+  getSettingsPath() {
+    return path.join(this.getDataDir(), 'settings.json');
+  }
+
+  /**
+   * Load network settings from settings.json
+   */
+  getNetworkSettings() {
+    const defaults = {
+      local_network_enabled: false,
+      public_network_enabled: false,
+      local_port: 8790,
+      public_port: 8791,
+      auth_required_level: 'none',
+      upnp_enabled: false
+    };
+
+    try {
+      const settingsPath = this.getSettingsPath();
+      if (fs.existsSync(settingsPath)) {
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+        return { ...defaults, ...(settings.network || {}) };
+      }
+    } catch (e) {
+      console.log('[Backend] Error reading settings:', e.message);
+    }
+
+    return defaults;
+  }
+
+  /**
+   * Get the local IP address
+   */
+  getLocalIP() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        // Skip internal/loopback and IPv6
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+    return '127.0.0.1';
+  }
+
+  /**
+   * Determine the host to bind to based on network settings
+   */
+  getBindHost() {
+    const networkSettings = this.getNetworkSettings();
+
+    // If local network or public is enabled, bind to all interfaces
+    if (networkSettings.local_network_enabled || networkSettings.public_network_enabled) {
+      return '0.0.0.0';
+    }
+
+    // Default: localhost only
+    return '127.0.0.1';
   }
 
   /**
@@ -182,14 +260,23 @@ class BackendManager {
     const cwd = this.getWorkingDirectory();
     const env = this.getPythonEnv();
 
+    const bindHost = this.getBindHost();
+    const networkSettings = this.getNetworkSettings();
+
     console.log('[Backend] Python path:', pythonPath);
     console.log('[Backend] Working directory:', cwd);
+    console.log('[Backend] Binding to:', bindHost);
+    if (bindHost === '0.0.0.0') {
+      const localIP = this.getLocalIP();
+      console.log('[Backend] Local network access:', networkSettings.local_network_enabled ? `enabled (http://${localIP}:${this.port})` : 'disabled');
+      console.log('[Backend] Public access:', networkSettings.public_network_enabled ? 'enabled' : 'disabled');
+    }
 
     // Spawn uvicorn via python -m for better compatibility
     this.process = spawn(pythonPath, [
       '-m', 'uvicorn',
       'api.main:app',
-      '--host', '127.0.0.1',
+      '--host', bindHost,
       '--port', String(this.port)
     ], {
       cwd: cwd,

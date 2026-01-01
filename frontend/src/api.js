@@ -5,18 +5,23 @@ import axios from 'axios'
 
 // Get API URL - same origin when served from backend, fallback for dev
 function getApiUrl() {
-  // In dev mode with vite, use explicit URL
-  if (import.meta.env.DEV) {
-    return import.meta.env.VITE_API_URL || 'http://127.0.0.1:8790'
+  // Check if we're running on localhost with Vite dev server (port 5173/5174)
+  const isDevServer = window.location.port === '5173' || window.location.port === '5174'
+
+  if (isDevServer) {
+    // Dev mode - Vite dev server, need to point to backend
+    return 'http://127.0.0.1:8790/api'
   }
-  // In production, frontend is served from backend - use same origin
-  return ''
+
+  // Production - frontend served from backend, use relative URL
+  // This works for both localhost AND network access
+  return '/api'
 }
 
 // Initialize API with base URL
 const api = axios.create({
   baseURL: getApiUrl(),
-  timeout: 30000
+  timeout: 60000  // 60s timeout for busy servers
 })
 
 // Track startup time to suppress errors during initialization
@@ -127,6 +132,37 @@ export async function deleteImage(imageId, deleteFile = false) {
   return response.data
 }
 
+// Batch operations
+export async function batchDeleteImages(imageIds, deleteFiles = false) {
+  const response = await api.post('/images/batch/delete', {
+    image_ids: imageIds,
+    delete_files: deleteFiles
+  })
+  return response.data
+}
+
+export async function batchRetag(imageIds) {
+  const response = await api.post('/images/batch/retag', {
+    image_ids: imageIds
+  })
+  return response.data
+}
+
+export async function batchAgeDetect(imageIds) {
+  const response = await api.post('/images/batch/age-detect', {
+    image_ids: imageIds
+  })
+  return response.data
+}
+
+export async function batchMoveImages(imageIds, targetDirectoryId) {
+  const response = await api.post('/images/batch/move', {
+    image_ids: imageIds,
+    target_directory_id: targetDirectoryId
+  })
+  return response.data
+}
+
 // Tags API
 export async function fetchTags({ q, category, page = 1, per_page = 50, sort = 'count' } = {}) {
   const params = new URLSearchParams()
@@ -160,6 +196,15 @@ export async function addDirectory(path, options = {}) {
   const response = await api.post('/directories', {
     path,
     name: options.name,
+    recursive: options.recursive ?? true,
+    auto_tag: options.auto_tag ?? true
+  })
+  return response.data
+}
+
+export async function addParentDirectory(path, options = {}) {
+  const response = await api.post('/directories/add-parent', {
+    path,
     recursive: options.recursive ?? true,
     auto_tag: options.auto_tag ?? true
   })
@@ -250,6 +295,67 @@ export async function installAgeDetection() {
   return response.data
 }
 
+// Network API
+export async function getNetworkConfig() {
+  const response = await api.get('/network')
+  return response.data
+}
+
+export async function updateNetworkConfig(config) {
+  const response = await api.post('/network', config)
+  return response.data
+}
+
+export async function testPort(port) {
+  const response = await api.post('/network/test-port', { port })
+  return response.data
+}
+
+export async function discoverUPnP() {
+  const response = await api.post('/network/upnp/discover')
+  return response.data
+}
+
+export async function openUPnPPort(externalPort, internalPort = null, description = 'LocalBooru') {
+  const response = await api.post('/network/upnp/open-port', {
+    external_port: externalPort,
+    internal_port: internalPort || externalPort,
+    description
+  })
+  return response.data
+}
+
+export async function closeUPnPPort(externalPort) {
+  const response = await api.delete(`/network/upnp/close-port/${externalPort}`)
+  return response.data
+}
+
+export async function getUPnPMappings() {
+  const response = await api.get('/network/upnp/mappings')
+  return response.data
+}
+
+// Users API
+export async function listUsers() {
+  const response = await api.get('/users')
+  return response.data
+}
+
+export async function createUser(user) {
+  const response = await api.post('/users', user)
+  return response.data
+}
+
+export async function updateUser(id, updates) {
+  const response = await api.patch(`/users/${id}`, updates)
+  return response.data
+}
+
+export async function deleteUser(id) {
+  const response = await api.delete(`/users/${id}`)
+  return response.data
+}
+
 // Utility functions
 export function getMediaUrl(path) {
   if (!path) return ''
@@ -273,6 +379,7 @@ export function isAnimated(filename) {
 // Subscribe to library events via Server-Sent Events
 export function subscribeToLibraryEvents(onEvent) {
   const apiUrl = getApiUrl()
+  // apiUrl already includes /api, so just append the path
   const eventSource = new EventSource(`${apiUrl}/library/events`)
 
   eventSource.onmessage = (event) => {

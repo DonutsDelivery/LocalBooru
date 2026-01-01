@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Task queue
-    task_queue_concurrency: int = 2  # Max concurrent tagging tasks
+    task_queue_concurrency: int = 1  # Max concurrent tagging tasks (keep low to avoid DB locks)
     file_verify_interval: int = 1800  # Verify file locations every 30 minutes
 
     class Config:

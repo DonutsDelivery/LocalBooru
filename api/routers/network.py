@@ -1,0 +1,190 @@
+"""
+Network configuration router - manage local network and public access settings.
+
+All endpoints in this router are localhost-only (enforced by middleware).
+"""
+from fastapi import APIRouter
+from pydantic import BaseModel
+from typing import Optional, Literal
+
+from .settings import get_network_settings, save_network_settings
+from ..services.network import (
+    get_local_ip,
+    get_all_local_ips,
+    test_port_local,
+    upnp_manager
+)
+
+router = APIRouter()
+
+
+class NetworkConfigUpdate(BaseModel):
+    """Request body for updating network configuration"""
+    local_network_enabled: Optional[bool] = None
+    public_network_enabled: Optional[bool] = None
+    local_port: Optional[int] = None
+    public_port: Optional[int] = None
+    auth_required_level: Optional[Literal["none", "public", "local_network", "always"]] = None
+    upnp_enabled: Optional[bool] = None
+
+
+class PortTestRequest(BaseModel):
+    """Request body for port testing"""
+    port: int
+
+
+class UPnPPortRequest(BaseModel):
+    """Request body for UPnP port operations"""
+    external_port: int
+    internal_port: Optional[int] = None  # Defaults to external_port
+    protocol: Optional[Literal["TCP", "UDP"]] = "TCP"
+    description: Optional[str] = "LocalBooru"
+
+
+@router.get("")
+async def get_network_config():
+    """
+    Get current network configuration and status.
+
+    Returns network settings, local IP addresses, and UPnP status.
+    """
+    settings = get_network_settings()
+    local_ip = get_local_ip()
+    all_ips = get_all_local_ips()
+
+    # Build access URLs
+    local_url = None
+    public_url = None
+
+    if local_ip and settings.get("local_network_enabled"):
+        local_port = settings.get("local_port", 8790)
+        local_url = f"http://{local_ip}:{local_port}"
+
+    # Check UPnP status if enabled
+    upnp_status = None
+    if settings.get("upnp_enabled"):
+        external_ip = upnp_manager.get_external_ip()
+        if external_ip and settings.get("public_network_enabled"):
+            public_port = settings.get("public_port", 8791)
+            public_url = f"http://{external_ip}:{public_port}"
+        upnp_status = {
+            "external_ip": external_ip,
+            "gateway_found": upnp_manager._gateway_found
+        }
+
+    return {
+        "settings": settings,
+        "local_ip": local_ip,
+        "all_local_ips": all_ips,
+        "local_url": local_url,
+        "public_url": public_url,
+        "upnp_status": upnp_status
+    }
+
+
+@router.post("")
+async def update_network_config(config: NetworkConfigUpdate):
+    """
+    Update network configuration.
+
+    Note: Changes to ports or enabled status may require a restart to take effect.
+    """
+    current = get_network_settings()
+
+    # Update only provided fields
+    if config.local_network_enabled is not None:
+        current["local_network_enabled"] = config.local_network_enabled
+    if config.public_network_enabled is not None:
+        current["public_network_enabled"] = config.public_network_enabled
+    if config.local_port is not None:
+        current["local_port"] = config.local_port
+    if config.public_port is not None:
+        current["public_port"] = config.public_port
+    if config.auth_required_level is not None:
+        current["auth_required_level"] = config.auth_required_level
+    if config.upnp_enabled is not None:
+        current["upnp_enabled"] = config.upnp_enabled
+
+    save_network_settings(current)
+
+    return {
+        "success": True,
+        "settings": current,
+        "restart_required": True  # Always true for network changes
+    }
+
+
+@router.post("/test-port")
+async def test_port(request: PortTestRequest):
+    """
+    Test if a port is available for binding.
+
+    Returns whether the port can be used by LocalBooru.
+    """
+    result = test_port_local(request.port)
+    return {
+        "port": request.port,
+        "available": result["available"],
+        "error": result["error"]
+    }
+
+
+@router.post("/upnp/discover")
+async def discover_upnp():
+    """
+    Discover UPnP gateway on the network.
+
+    Required before opening ports via UPnP.
+    """
+    result = upnp_manager.discover()
+    return result
+
+
+@router.post("/upnp/open-port")
+async def open_upnp_port(request: UPnPPortRequest):
+    """
+    Open a port on the router via UPnP.
+
+    Maps external_port on router to internal_port on this machine.
+    """
+    internal = request.internal_port or request.external_port
+
+    result = upnp_manager.add_port_mapping(
+        external_port=request.external_port,
+        internal_port=internal,
+        protocol=request.protocol,
+        description=request.description
+    )
+
+    return result
+
+
+@router.delete("/upnp/close-port/{external_port}")
+async def close_upnp_port(external_port: int, protocol: str = "TCP"):
+    """
+    Close a port mapping on the router via UPnP.
+    """
+    result = upnp_manager.remove_port_mapping(
+        external_port=external_port,
+        protocol=protocol
+    )
+
+    return result
+
+
+@router.get("/upnp/mappings")
+async def get_upnp_mappings():
+    """
+    Get all current UPnP port mappings on the router.
+    """
+    mappings = upnp_manager.get_port_mappings()
+    return {"mappings": mappings}
+
+
+@router.get("/upnp/external-ip")
+async def get_external_ip():
+    """
+    Get the external (public) IP address via UPnP.
+    """
+    ip = upnp_manager.get_external_ip()
+    return {"external_ip": ip}

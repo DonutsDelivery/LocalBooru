@@ -5,7 +5,10 @@ Uses ONNX runtime for inference.
 """
 import os
 import csv
+import logging
 import numpy as np
+
+logger = logging.getLogger(__name__)
 from PIL import Image
 from io import BytesIO
 from sqlalchemy.ext.asyncio import AsyncSession

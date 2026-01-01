@@ -137,17 +137,71 @@
   color: #f44336;
 }
 
+/* Mobile favorite button - hidden on desktop */
+.lightbox-mobile-favorite {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .lightbox-content {
     max-width: 100vw;
-    max-height: calc(100vh - 60px);
+    max-height: calc(100vh - 120px);
   }
 
   .lightbox-media {
-    max-height: calc(100vh - 60px);
+    max-height: calc(100vh - 120px);
   }
 
   .lightbox-sidebar-trigger {
     width: 40px;
+  }
+
+  /* Hide toolbar favorite on mobile */
+  .lightbox-toolbar .lightbox-favorite {
+    display: none;
+  }
+
+  /* Large bottom favorite button for mobile */
+  .lightbox-mobile-favorite {
+    display: flex;
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 72px;
+    height: 72px;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.15);
+    border: 3px solid rgba(255, 255, 255, 0.4);
+    border-radius: 50%;
+    color: white;
+    cursor: pointer;
+    z-index: 20;
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .lightbox-mobile-favorite svg {
+    width: 36px;
+    height: 36px;
+  }
+
+  .lightbox-mobile-favorite:active {
+    transform: translateX(-50%) scale(0.9);
+  }
+
+  .lightbox-mobile-favorite.active {
+    color: #ffc107;
+    background: rgba(255, 193, 7, 0.25);
+    border-color: #ffc107;
+  }
+
+  /* Move counter to top to make room for button */
+  .lightbox-counter {
+    bottom: auto;
+    top: 20px;
+    left: 20px;
+    transform: none;
   }
 }

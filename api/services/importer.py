@@ -10,7 +10,7 @@ import imagehash
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Image, ImageFile, Tag, image_tags, TaskType
+from ..models import Image, ImageFile, Tag, image_tags, TaskType, WatchDirectory
 from ..config import get_settings
 from .task_queue import enqueue_task
 from .events import library_events, EventType
@@ -208,6 +208,42 @@ async def import_image(
             priority=1,  # New imports get priority
             db=db
         )
+
+    # Queue metadata extraction task (extracts AI generation prompts)
+    # Get ComfyUI config from watch directory if available
+    comfyui_prompt_node_ids = []
+    comfyui_negative_node_ids = []
+    format_hint = 'auto'
+
+    if watch_directory_id:
+        watch_dir = await db.get(WatchDirectory, watch_directory_id)
+        if watch_dir:
+            import json as json_module
+            if watch_dir.comfyui_prompt_node_ids:
+                try:
+                    comfyui_prompt_node_ids = json_module.loads(watch_dir.comfyui_prompt_node_ids)
+                except Exception:
+                    pass
+            if watch_dir.comfyui_negative_node_ids:
+                try:
+                    comfyui_negative_node_ids = json_module.loads(watch_dir.comfyui_negative_node_ids)
+                except Exception:
+                    pass
+            if watch_dir.metadata_format:
+                format_hint = watch_dir.metadata_format
+
+    await enqueue_task(
+        TaskType.extract_metadata,
+        {
+            'image_id': image.id,
+            'image_path': file_path,
+            'comfyui_prompt_node_ids': comfyui_prompt_node_ids,
+            'comfyui_negative_node_ids': comfyui_negative_node_ids,
+            'format_hint': format_hint
+        },
+        priority=0,  # Lower priority than tagging
+        db=db
+    )
 
     # Broadcast new image event
     await library_events.broadcast(EventType.IMAGE_ADDED, {

@@ -8,7 +8,9 @@ import MasonryGrid from './components/MasonryGrid'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
 import TitleBar from './components/TitleBar'
-import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory } from './api'
+import ComfyUIConfigModal from './components/ComfyUIConfigModal'
+import NetworkSettings from './components/NetworkSettings'
+import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
 import './App.css'
 
 
@@ -18,6 +20,7 @@ function DirectoriesPage() {
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState({})
   const [pruning, setPruning] = useState({})
+  const [comfyuiConfigDir, setComfyuiConfigDir] = useState(null)
   const [stats, setStats] = useState(null)
 
   const refreshDirectories = async () => {
@@ -39,6 +42,20 @@ function DirectoriesPage() {
       if (path) {
         const { addDirectory } = await import('./api')
         await addDirectory(path)
+        await refreshDirectories()
+      }
+    } else {
+      alert('Directory picker only available in Electron app')
+    }
+  }
+
+  const handleAddParentDirectory = async () => {
+    if (window.electronAPI) {
+      const path = await window.electronAPI.addDirectory()
+      if (path) {
+        const { addParentDirectory } = await import('./api')
+        const result = await addParentDirectory(path)
+        alert(result.message)
         await refreshDirectories()
       }
     } else {
@@ -105,9 +122,14 @@ function DirectoriesPage() {
             <h1>Watch Directories</h1>
             <p>Add folders to automatically import and tag images.</p>
 
-            <button onClick={handleAddDirectory} className="add-directory-btn">
-              + Add Directory
-            </button>
+            <div className="directory-buttons">
+              <button onClick={handleAddDirectory} className="add-directory-btn">
+                + Add Directory
+              </button>
+              <button onClick={handleAddParentDirectory} className="add-directory-btn">
+                + Add Parent Directory
+              </button>
+            </div>
 
             {loading ? (
               <p>Loading...</p>
@@ -147,6 +169,23 @@ function DirectoriesPage() {
                         >
                           {dir.auto_age_detect ? '☑' : '☐'} Age Detect
                         </button>
+                        <button
+                          className="diagnostic toggle-btn public-toggle"
+                          onClick={() => {
+                            const newValue = !dir.public_access
+                            setDirectories(dirs => dirs.map(d =>
+                              d.id === dir.id ? {...d, public_access: newValue} : d
+                            ))
+                            updateDirectory(dir.id, { public_access: newValue })
+                              .catch(err => {
+                                console.error('Failed to update:', err)
+                                refreshDirectories()
+                              })
+                          }}
+                          title="Allow public network access to this directory"
+                        >
+                          {dir.public_access ? '☑' : '☐'} Public
+                        </button>
                       </div>
                     </div>
                     <div className="directory-actions">
@@ -166,6 +205,13 @@ function DirectoriesPage() {
                         {pruning[dir.id] ? 'Pruning...' : 'Prune'}
                       </button>
                       <button
+                        className="comfyui-btn"
+                        onClick={() => setComfyuiConfigDir(dir)}
+                        title="Configure ComfyUI metadata extraction"
+                      >
+                        ComfyUI
+                      </button>
+                      <button
                         className="remove-btn"
                         onClick={() => handleRemove(dir.id, dir.name || dir.path)}
                       >
@@ -183,12 +229,23 @@ function DirectoriesPage() {
           </div>
         </main>
       </div>
+
+      {/* ComfyUI Configuration Modal */}
+      {comfyuiConfigDir && (
+        <ComfyUIConfigModal
+          directoryId={comfyuiConfigDir.id}
+          directoryName={comfyuiConfigDir.name || comfyuiConfigDir.path}
+          onClose={() => setComfyuiConfigDir(null)}
+          onSave={refreshDirectories}
+        />
+      )}
     </div>
   )
 }
 
-// Settings page
+// Settings page with tabs
 function SettingsPage() {
+  const [activeTab, setActiveTab] = useState('general')
   const [queueStatus, setQueueStatus] = useState(null)
   const [stats, setStats] = useState(null)
   const [dumpsterPath, setDumpsterPath] = useState('')
@@ -247,6 +304,28 @@ function SettingsPage() {
           <div className="page settings-page">
             <h1>Settings</h1>
 
+            {/* Settings Tabs */}
+            <div className="settings-tabs">
+              <button
+                className={`settings-tab ${activeTab === 'general' ? 'active' : ''}`}
+                onClick={() => setActiveTab('general')}
+              >
+                General
+              </button>
+              <button
+                className={`settings-tab ${activeTab === 'network' ? 'active' : ''}`}
+                onClick={() => setActiveTab('network')}
+              >
+                Network
+              </button>
+            </div>
+
+            {/* Network Tab Content */}
+            {activeTab === 'network' && <NetworkSettings />}
+
+            {/* General Tab Content */}
+            {activeTab === 'general' && (
+            <>
             <section>
               <h2>Age Detection (Optional)</h2>
               <p className="setting-description">
@@ -422,6 +501,8 @@ function SettingsPage() {
                 </button>
               </section>
             )}
+            </>
+            )}
           </div>
         </main>
       </div>
@@ -442,6 +523,16 @@ function Gallery() {
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
   const [stats, setStats] = useState(null)
   const statsUpdateTimeout = useRef(null)
+
+  // Selection mode state
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedImages, setSelectedImages] = useState(new Set())
+  const [batchActionLoading, setBatchActionLoading] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteWithFiles, setDeleteWithFiles] = useState(false)
+  const [showMoveModal, setShowMoveModal] = useState(false)
+  const [moveDirectories, setMoveDirectories] = useState([])
+  const [selectedMoveDir, setSelectedMoveDir] = useState(null)
 
   const currentTags = searchParams.get('tags') || ''
   const currentRating = searchParams.get('rating') || 'pg,pg13,r,x,xxx'
@@ -662,6 +753,110 @@ function Gallery() {
     })
   }
 
+  // Selection mode handlers
+  const toggleSelectionMode = () => {
+    setSelectionMode(prev => !prev)
+    if (selectionMode) {
+      // Exiting selection mode - clear selection
+      setSelectedImages(new Set())
+    }
+  }
+
+  const handleSelectImage = (imageId) => {
+    setSelectedImages(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(imageId)) {
+        newSet.delete(imageId)
+      } else {
+        newSet.add(imageId)
+      }
+      return newSet
+    })
+  }
+
+  const clearSelection = () => {
+    setSelectedImages(new Set())
+  }
+
+  const selectAll = () => {
+    setSelectedImages(new Set(images.map(img => img.id)))
+  }
+
+  // Batch action handlers
+  const handleBatchDelete = async () => {
+    if (selectedImages.size === 0) return
+    setBatchActionLoading(true)
+    try {
+      const result = await batchDeleteImages(Array.from(selectedImages), deleteWithFiles)
+      console.log('Batch delete result:', result)
+      // Refresh the gallery
+      await loadImages(1, false)
+      setSelectedImages(new Set())
+      setShowDeleteConfirm(false)
+      setDeleteWithFiles(false)
+    } catch (error) {
+      console.error('Batch delete failed:', error)
+    }
+    setBatchActionLoading(false)
+  }
+
+  const handleBatchRetag = async () => {
+    if (selectedImages.size === 0) return
+    setBatchActionLoading(true)
+    try {
+      const result = await batchRetag(Array.from(selectedImages))
+      console.log('Batch retag result:', result)
+      alert(`Queued ${result.queued} images for retagging`)
+      setSelectedImages(new Set())
+    } catch (error) {
+      console.error('Batch retag failed:', error)
+    }
+    setBatchActionLoading(false)
+  }
+
+  const handleBatchAgeDetect = async () => {
+    if (selectedImages.size === 0) return
+    setBatchActionLoading(true)
+    try {
+      const result = await batchAgeDetect(Array.from(selectedImages))
+      console.log('Batch age detect result:', result)
+      alert(`Queued ${result.queued} images for age detection`)
+      setSelectedImages(new Set())
+    } catch (error) {
+      console.error('Batch age detect failed:', error)
+    }
+    setBatchActionLoading(false)
+  }
+
+  const openMoveModal = async () => {
+    try {
+      const dirs = await fetchDirectories()
+      setMoveDirectories(dirs)
+      setSelectedMoveDir(null)
+      setShowMoveModal(true)
+    } catch (error) {
+      console.error('Failed to fetch directories:', error)
+    }
+  }
+
+  const handleBatchMove = async () => {
+    if (selectedImages.size === 0 || !selectedMoveDir) return
+    setBatchActionLoading(true)
+    try {
+      const result = await batchMoveImages(Array.from(selectedImages), selectedMoveDir)
+      console.log('Batch move result:', result)
+      alert(`Moved ${result.moved} images`)
+      // Refresh the gallery
+      await loadImages(1, false)
+      setSelectedImages(new Set())
+      setShowMoveModal(false)
+      setSelectedMoveDir(null)
+    } catch (error) {
+      console.error('Batch move failed:', error)
+    }
+    setBatchActionLoading(false)
+  }
+
   return (
     <div
       className={`app gallery-view ${lightboxIndex !== null ? 'lightbox-active' : ''}`}
@@ -714,9 +909,171 @@ function Gallery() {
               loading={loading}
               hasMore={hasMore}
               onImageUpdate={loadImages}
+              isSelectable={selectionMode}
+              selectedImages={selectedImages}
+              onSelectImage={handleSelectImage}
             />
           )}
+
+          {/* Floating select button */}
+          <button
+            className={`floating-select-btn ${selectionMode ? 'active' : ''}`}
+            onClick={toggleSelectionMode}
+            title={selectionMode ? 'Exit selection mode' : 'Enter selection mode'}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              {selectionMode && <path d="M9 12l2 2 4-4"/>}
+            </svg>
+            {selectionMode ? 'Done' : 'Select'}
+          </button>
         </main>
+
+        {/* Batch action bar - shown when images are selected */}
+        {selectionMode && selectedImages.size > 0 && (
+          <div className="batch-action-bar">
+            <div className="batch-action-count">
+              {selectedImages.size} selected
+            </div>
+            <div className="batch-action-buttons">
+              <button
+                className="batch-btn"
+                onClick={handleBatchRetag}
+                disabled={batchActionLoading}
+                title="Re-tag selected images"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                  <line x1="7" y1="7" x2="7.01" y2="7"/>
+                </svg>
+                Retag
+              </button>
+              <button
+                className="batch-btn"
+                onClick={handleBatchAgeDetect}
+                disabled={batchActionLoading}
+                title="Re-detect ages in selected images"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="8" r="5"/>
+                  <path d="M20 21a8 8 0 1 0-16 0"/>
+                </svg>
+                Age Detect
+              </button>
+              <button
+                className="batch-btn"
+                onClick={openMoveModal}
+                disabled={batchActionLoading}
+                title="Move selected images to another directory"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  <path d="M12 11v6"/>
+                  <path d="M9 14l3-3 3 3"/>
+                </svg>
+                Move
+              </button>
+              <button
+                className="batch-btn danger"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={batchActionLoading}
+                title="Delete selected images"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+                Delete
+              </button>
+              <button
+                className="batch-btn secondary"
+                onClick={clearSelection}
+                disabled={batchActionLoading}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Delete confirmation modal */}
+        {showDeleteConfirm && (
+          <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
+            <div className="modal-content delete-confirm-modal" onClick={e => e.stopPropagation()}>
+              <h3>Delete {selectedImages.size} images?</h3>
+              <p>This action cannot be undone.</p>
+              <label className="delete-files-option">
+                <input
+                  type="checkbox"
+                  checked={deleteWithFiles}
+                  onChange={(e) => setDeleteWithFiles(e.target.checked)}
+                />
+                Also delete original files from disk
+              </label>
+              <div className="modal-actions">
+                <button
+                  className="cancel-btn"
+                  onClick={() => {
+                    setShowDeleteConfirm(false)
+                    setDeleteWithFiles(false)
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="danger-btn"
+                  onClick={handleBatchDelete}
+                  disabled={batchActionLoading}
+                >
+                  {batchActionLoading ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Move to directory modal */}
+        {showMoveModal && (
+          <div className="modal-overlay" onClick={() => setShowMoveModal(false)}>
+            <div className="modal-content move-modal" onClick={e => e.stopPropagation()}>
+              <h3>Move {selectedImages.size} images</h3>
+              <p>Select destination directory:</p>
+              <div className="directory-list">
+                {moveDirectories.map(dir => (
+                  <label key={dir.id} className="directory-option">
+                    <input
+                      type="radio"
+                      name="moveDir"
+                      value={dir.id}
+                      checked={selectedMoveDir === dir.id}
+                      onChange={() => setSelectedMoveDir(dir.id)}
+                    />
+                    <span className="dir-name">{dir.name || dir.path.split('/').pop()}</span>
+                    <span className="dir-path">{dir.path}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="cancel-btn"
+                  onClick={() => {
+                    setShowMoveModal(false)
+                    setSelectedMoveDir(null)
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-btn"
+                  onClick={handleBatchMove}
+                  disabled={batchActionLoading || !selectedMoveDir}
+                >
+                  {batchActionLoading ? 'Moving...' : 'Move'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {lightboxIndex !== null && (

@@ -45,6 +45,12 @@
 }
 
 /* Directory list */
+.directory-buttons {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
 .add-directory-btn {
   padding: 12px 24px;
   background: var(--accent);
@@ -54,7 +60,6 @@
   font-weight: 600;
   font-size: 1rem;
   cursor: pointer;
-  margin-bottom: 20px;
 }
 
 .directory-list {
@@ -163,6 +168,16 @@
   cursor: not-allowed;
 }
 
+.comfyui-btn {
+  background: transparent;
+  border: 1px solid #9c27b0;
+  color: #9c27b0;
+}
+
+.comfyui-btn:hover {
+  background: rgba(156, 39, 176, 0.1);
+}
+
 .directory-diagnostics {
   display: flex;
   gap: 12px;
@@ -184,6 +199,15 @@
   cursor: pointer;
 }
 
+.directory-diagnostics .public-toggle {
+  border: 1px solid var(--border);
+}
+
+.directory-diagnostics .public-toggle:hover {
+  border-color: #2196F3;
+  color: #2196F3;
+}
+
 .directory-diagnostics .toggle input[type="checkbox"] {
   width: 14px;
   height: 14px;
@@ -192,6 +216,38 @@
 }
 
 /* Settings */
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+.settings-tab {
+  padding: 12px 24px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: -1px;
+}
+
+.settings-tab:hover {
+  color: var(--text-primary);
+  background: transparent;
+  transform: none;
+}
+
+.settings-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: transparent;
+}
+
 .setting-description {
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -516,5 +572,406 @@
 @media (max-width: 768px) {
   .content {
     padding: 15px;
+  }
+}
+
+/* Gallery toolbar */
+.gallery-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  margin-bottom: 16px;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.selection-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.selection-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.selection-toggle:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--accent-secondary);
+}
+
+.selection-toggle.active {
+  background: var(--accent-secondary);
+  color: white;
+  border-color: var(--accent-secondary);
+}
+
+.select-all-btn {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.select-all-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* Floating select button */
+.floating-select-btn {
+  position: fixed;
+  top: 50px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.floating-select-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.floating-select-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.floating-select-btn.active {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+
+/* Batch action bar */
+.batch-action-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.batch-action-count {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-right: 16px;
+  border-right: 1px solid var(--border);
+}
+
+.batch-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.batch-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.batch-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.batch-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.batch-btn.danger {
+  color: #ef4444;
+}
+
+.batch-btn.danger:hover:not(:disabled) {
+  background: #ef4444;
+  color: white;
+  border-color: #ef4444;
+}
+
+.batch-btn.secondary {
+  color: var(--text-muted);
+}
+
+.batch-btn.secondary:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+/* Delete confirmation modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-content {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: var(--shadow-lg);
+}
+
+.delete-confirm-modal h3 {
+  font-size: 1.2rem;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.delete-confirm-modal p {
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.delete-files-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.delete-files-option input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-secondary);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cancel-btn {
+  padding: 10px 20px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.danger-btn {
+  padding: 10px 20px;
+  background: #ef4444;
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.danger-btn:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.danger-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary-btn {
+  padding: 10px 20px;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: #000;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.primary-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Move modal */
+.move-modal {
+  max-width: 500px;
+}
+
+.move-modal h3 {
+  font-size: 1.2rem;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.move-modal p {
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.move-modal .directory-list {
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.move-modal .directory-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.2s;
+}
+
+.move-modal .directory-option:last-child {
+  border-bottom: none;
+}
+
+.move-modal .directory-option:hover {
+  background: var(--bg-tertiary);
+}
+
+.move-modal .directory-option input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.move-modal .dir-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.move-modal .dir-path {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Responsive batch action bar */
+@media (max-width: 768px) {
+  .batch-action-bar {
+    left: 10px;
+    right: 10px;
+    transform: none;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+
+  .batch-action-count {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding-right: 0;
+    padding-bottom: 10px;
+    text-align: center;
+  }
+
+  .batch-action-buttons {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .batch-btn {
+    flex: 1;
+    min-width: 80px;
+    justify-content: center;
   }
 }

@@ -67,16 +67,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware - localhost only
+# Access control middleware - must be added before CORS
+from .middleware.access_control import AccessControlMiddleware
+app.add_middleware(AccessControlMiddleware)
+
+# CORS middleware - allow network access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev
-        "http://localhost:8790",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:8790",
-        "app://.",  # Electron
-    ],
+    allow_origins=["*"],  # Allow all origins (access control handled by middleware)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,15 +85,17 @@ thumbnails_dir = get_data_dir() / 'thumbnails'
 thumbnails_dir.mkdir(exist_ok=True)
 app.mount("/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
 
-# Include routers
-from .routers import images, tags, directories, library
+# Include routers - all under /api prefix to avoid conflicts with frontend SPA routes
+from .routers import images, tags, directories, library, network, users
 from .routers import settings as settings_router
 
-app.include_router(images.router, prefix="/images", tags=["Images"])
-app.include_router(tags.router, prefix="/tags", tags=["Tags"])
-app.include_router(directories.router, prefix="/directories", tags=["Watch Directories"])
-app.include_router(library.router, prefix="/library", tags=["Library"])
-app.include_router(settings_router.router, prefix="/settings", tags=["Settings"])
+app.include_router(images.router, prefix="/api/images", tags=["Images"])
+app.include_router(tags.router, prefix="/api/tags", tags=["Tags"])
+app.include_router(directories.router, prefix="/api/directories", tags=["Watch Directories"])
+app.include_router(library.router, prefix="/api/library", tags=["Library"])
+app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
+app.include_router(network.router, prefix="/api/network", tags=["Network"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
 
 
 @app.get("/api")
@@ -153,8 +153,8 @@ if FRONTEND_DIR.exists():
     # Catch-all route for SPA - must be last
     @app.get("/{full_path:path}")
     async def serve_spa(request: Request, full_path: str):
-        # Don't serve SPA for API routes
-        if full_path.startswith(("images/", "tags/", "directories/", "library/", "thumbnails/")):
+        # Don't serve SPA for API routes or static assets
+        if full_path.startswith(("api/", "thumbnails/")):
             return {"error": "not found"}
 
         # Return index.html for SPA routing
@@ -162,6 +162,8 @@ if FRONTEND_DIR.exists():
         if index_path.exists():
             return FileResponse(index_path)
         return {"error": "frontend not built"}
+
+
 
 
 if __name__ == "__main__":

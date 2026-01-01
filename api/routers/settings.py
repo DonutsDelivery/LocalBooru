@@ -82,6 +82,31 @@ AGE_DETECTION_INSTALLED = "age_detection_installed"
 AGE_DETECTION_INSTALLING = "age_detection_installing"
 AGE_DETECTION_INSTALL_PROGRESS = "age_detection_install_progress"
 
+# Network settings defaults
+DEFAULT_NETWORK_SETTINGS = {
+    "local_network_enabled": False,
+    "public_network_enabled": False,
+    "local_port": 8790,
+    "public_port": 8791,
+    "auth_required_level": "none",  # none, public, local_network, always
+    "upnp_enabled": False
+}
+
+
+def get_network_settings() -> dict:
+    """Get network settings with defaults"""
+    settings = load_settings()
+    network = settings.get("network", {})
+    # Merge with defaults
+    return {**DEFAULT_NETWORK_SETTINGS, **network}
+
+
+def save_network_settings(network_settings: dict):
+    """Save network settings"""
+    settings = load_settings()
+    settings["network"] = network_settings
+    save_settings(settings)
+
 
 def check_age_detection_deps() -> dict:
     """Check if age detection dependencies are installed"""

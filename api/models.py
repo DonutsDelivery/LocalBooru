@@ -36,6 +36,7 @@ class TaskStatus(str, enum.Enum):
     processing = "processing"
     completed = "completed"
     failed = "failed"
+    cancelled = "cancelled"
 
 
 class TaskType(str, enum.Enum):
@@ -44,6 +45,7 @@ class TaskType(str, enum.Enum):
     verify_files = "verify_files"
     upload = "upload"
     age_detect = "age_detect"
+    extract_metadata = "extract_metadata"  # Extract AI generation metadata
 
 
 class UploadStatus(str, enum.Enum):
@@ -51,6 +53,13 @@ class UploadStatus(str, enum.Enum):
     uploaded = "uploaded"
     failed = "failed"
     deleted = "deleted"
+
+
+class AccessLevel(str, enum.Enum):
+    """Network access levels for authorization"""
+    localhost = "localhost"        # Only from 127.0.0.1 / ::1
+    local_network = "local_network"  # LAN (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+    public = "public"              # Internet / all IPs
 
 
 # Association table for image-tag many-to-many relationship
@@ -120,12 +129,12 @@ class Image(Base):
     def url(self):
         """Get URL to serve the image"""
         # For reference-based storage, we serve from original path via API
-        return f"/images/{self.id}/file"
+        return f"/api/images/{self.id}/file"
 
     @property
     def thumbnail_url(self):
         """Get thumbnail URL"""
-        return f"/images/{self.id}/thumbnail"
+        return f"/api/images/{self.id}/thumbnail"
 
 
 class FileStatus(str, enum.Enum):
@@ -192,6 +201,14 @@ class WatchDirectory(Base):
     last_scanned_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # ComfyUI metadata configuration
+    comfyui_prompt_node_ids = Column(Text, nullable=True)  # JSON: ["272", "15"]
+    comfyui_negative_node_ids = Column(Text, nullable=True)  # JSON: ["273"]
+    metadata_format = Column(String(50), default="auto")  # auto, a1111, comfyui, none
+
+    # Network access control
+    public_access = Column(Boolean, default=False)  # Allow public network access to this directory
+
     # Relationships
     image_files = relationship("ImageFile", back_populates="watch_directory")
 
@@ -254,3 +271,17 @@ class Settings(Base):
     key = Column(String(100), primary_key=True)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class User(Base):
+    """User accounts for network access authentication"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)  # Format: salt:hash (PBKDF2)
+    is_active = Column(Boolean, default=True)
+    access_level = Column(Enum(AccessLevel), default=AccessLevel.local_network)  # Minimum level user can access from
+    can_write = Column(Boolean, default=False)  # Override read-only restriction for remote access
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_login = Column(DateTime(timezone=True), nullable=True)

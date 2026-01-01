@@ -3,6 +3,48 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { fetchDirectories } from '../api'
 import './Sidebar.css'
 
+// Collapsible prompt section with copy button
+function PromptSection({ label, text, isNegative }) {
+  const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const isLong = text.length > 150
+  const displayText = expanded || !isLong ? text : text.slice(0, 150) + '...'
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className={`prompt-section ${isNegative ? 'negative' : 'positive'}`}>
+      <div className="prompt-header">
+        <span className="prompt-label">{label}</span>
+        <button className="copy-btn" onClick={handleCopy} title="Copy to clipboard">
+          {copied ? (
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            </svg>
+          )}
+        </button>
+      </div>
+      <div className={`prompt-text ${expanded ? 'expanded' : ''}`}>
+        {displayText}
+      </div>
+      {isLong && (
+        <button className="expand-btn" onClick={() => setExpanded(!expanded)}>
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // Rating definitions for LocalBooru (all ratings shown)
 const ALL_RATINGS = ['pg', 'pg13', 'r', 'x', 'xxx']
 
@@ -245,11 +287,13 @@ function Sidebar({
                 className="directory-select"
               >
                 <option value="">All Directories</option>
-                {directories.map(dir => (
-                  <option key={dir.id} value={dir.id}>
-                    {dir.name} ({dir.image_count})
-                  </option>
-                ))}
+                {directories
+                  .filter(dir => dir.image_count > 0)
+                  .map(dir => (
+                    <option key={dir.id} value={dir.id}>
+                      {dir.name} ({dir.image_count})
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -452,6 +496,50 @@ function Sidebar({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* AI Generation Prompts */}
+            {(selectedImage.prompt || selectedImage.negative_prompt) && (
+              <div className="image-prompts">
+                <h4>AI Generation</h4>
+
+                {selectedImage.prompt && (
+                  <PromptSection
+                    label="Positive"
+                    text={selectedImage.prompt}
+                    isNegative={false}
+                  />
+                )}
+
+                {selectedImage.negative_prompt && (
+                  <PromptSection
+                    label="Negative"
+                    text={selectedImage.negative_prompt}
+                    isNegative={true}
+                  />
+                )}
+
+                {/* Generation parameters */}
+                {(selectedImage.model_name || selectedImage.seed || selectedImage.steps || selectedImage.cfg_scale || selectedImage.sampler) && (
+                  <div className="prompt-params">
+                    {selectedImage.model_name && (
+                      <span className="param-tag">Model: {selectedImage.model_name}</span>
+                    )}
+                    {selectedImage.seed && (
+                      <span className="param-tag">Seed: {selectedImage.seed}</span>
+                    )}
+                    {selectedImage.steps && (
+                      <span className="param-tag">Steps: {selectedImage.steps}</span>
+                    )}
+                    {selectedImage.cfg_scale && (
+                      <span className="param-tag">CFG: {selectedImage.cfg_scale}</span>
+                    )}
+                    {selectedImage.sampler && (
+                      <span className="param-tag">Sampler: {selectedImage.sampler}</span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

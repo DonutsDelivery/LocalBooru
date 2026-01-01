@@ -1,22 +1,75 @@
 """
 Image router - simplified for local single-user library
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import select, func, desc, asc, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from typing import Optional
+from typing import Optional, List
 from pathlib import Path
+from pydantic import BaseModel
 import os
 import tempfile
 
 from ..database import get_db
-from ..models import Image, Tag, ImageFile, image_tags, Rating, TagCategory, FileStatus
+from ..models import Image, Tag, ImageFile, image_tags, Rating, TagCategory, FileStatus, TaskType, WatchDirectory
 from ..services.importer import import_image
 from ..services.file_tracker import check_file_availability
+from ..services.task_queue import enqueue_task
+
+
+# Request models for batch operations
+class BatchDeleteRequest(BaseModel):
+    image_ids: List[int]
+    delete_files: bool = False
+
+
+class BatchRetagRequest(BaseModel):
+    image_ids: List[int]
+
+
+class BatchAgeDetectRequest(BaseModel):
+    image_ids: List[int]
+
+
+class BatchMetadataExtractRequest(BaseModel):
+    image_ids: List[int]
+
+
+class BatchMoveRequest(BaseModel):
+    image_ids: List[int]
+    target_directory_id: int
+
 
 router = APIRouter()
+
+
+async def check_image_public_access(image_id: int, request: Request, db: AsyncSession) -> bool:
+    """
+    Check if an image is accessible for the current request.
+    Returns True if accessible, False if blocked by public_access settings.
+    """
+    access_level = getattr(request.state, 'access_level', 'localhost')
+
+    # Localhost always has full access
+    if access_level == 'localhost':
+        return True
+
+    # For non-localhost, check if the image is in a public directory
+    query = (
+        select(ImageFile)
+        .options(selectinload(ImageFile.watch_directory))
+        .where(ImageFile.image_id == image_id)
+        .limit(1)
+    )
+    result = await db.execute(query)
+    image_file = result.scalar_one_or_none()
+
+    if not image_file or not image_file.watch_directory:
+        return False
+
+    return image_file.watch_directory.public_access == True
 
 
 async def get_image_file_status(image: Image, db: AsyncSession) -> dict:
@@ -74,6 +127,7 @@ async def get_image_file_status(image: Image, db: AsyncSession) -> dict:
 
 @router.get("")
 async def list_images(
+    request: Request,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
     tags: Optional[str] = None,
@@ -91,6 +145,17 @@ async def list_images(
     query = select(Image).options(selectinload(Image.tags), selectinload(Image.files))
 
     filters = []
+
+    # Network access filtering: non-localhost can only see images from public directories
+    access_level = getattr(request.state, 'access_level', 'localhost')
+    if access_level != 'localhost':
+        # Get directories with public_access=True
+        public_dirs_subq = select(WatchDirectory.id).where(WatchDirectory.public_access == True)
+        # Filter to images in those directories
+        public_images_subq = select(ImageFile.image_id).where(
+            ImageFile.watch_directory_id.in_(public_dirs_subq)
+        )
+        filters.append(Image.id.in_(public_images_subq))
 
     # Exclude images where all files are confirmed missing
     # (drive_offline is OK to show, only exclude "missing" status)
@@ -215,8 +280,12 @@ async def list_images(
 
 
 @router.get("/{image_id}")
-async def get_image(image_id: int, db: AsyncSession = Depends(get_db)):
+async def get_image(request: Request, image_id: int, db: AsyncSession = Depends(get_db)):
     """Get single image details"""
+    # Check public access for non-localhost
+    if not await check_image_public_access(image_id, request, db):
+        raise HTTPException(status_code=403, detail="This image is not available for remote access")
+
     query = (
         select(Image)
         .options(selectinload(Image.tags), selectinload(Image.files))
@@ -274,8 +343,12 @@ async def get_image(image_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{image_id}/file")
-async def get_image_file(image_id: int, db: AsyncSession = Depends(get_db)):
+async def get_image_file(request: Request, image_id: int, db: AsyncSession = Depends(get_db)):
     """Serve the original image file"""
+    # Check public access for non-localhost
+    if not await check_image_public_access(image_id, request, db):
+        raise HTTPException(status_code=403, detail="This image is not available for remote access")
+
     query = select(ImageFile).where(ImageFile.image_id == image_id).limit(1)
     result = await db.execute(query)
     image_file = result.scalar_one_or_none()
@@ -307,8 +380,12 @@ async def get_image_file(image_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{image_id}/thumbnail")
-async def get_image_thumbnail(image_id: int, db: AsyncSession = Depends(get_db)):
+async def get_image_thumbnail(request: Request, image_id: int, db: AsyncSession = Depends(get_db)):
     """Serve the thumbnail"""
+    # Check public access for non-localhost
+    if not await check_image_public_access(image_id, request, db):
+        raise HTTPException(status_code=403, detail="This image is not available for remote access")
+
     from ..database import get_data_dir
 
     query = select(Image).where(Image.id == image_id)
@@ -435,3 +512,309 @@ async def upload_image(
     finally:
         # Clean up temp file
         os.unlink(tmp_path)
+
+
+@router.post("/batch/delete")
+async def batch_delete_images(
+    request: BatchDeleteRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete multiple images from the library (optionally delete files too)"""
+    from ..database import get_data_dir
+
+    deleted = 0
+    errors = []
+
+    for image_id in request.image_ids:
+        try:
+            query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+            result = await db.execute(query)
+            image = result.scalar_one_or_none()
+
+            if not image:
+                errors.append({"id": image_id, "error": "Image not found"})
+                continue
+
+            # Optionally delete the actual file(s)
+            if request.delete_files:
+                for f in image.files:
+                    if os.path.exists(f.original_path):
+                        os.remove(f.original_path)
+
+            # Delete thumbnail
+            thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+            if thumbnail_path.exists():
+                thumbnail_path.unlink()
+
+            # Delete from database (cascades to files, tags, etc.)
+            await db.delete(image)
+            deleted += 1
+
+        except Exception as e:
+            errors.append({"id": image_id, "error": str(e)})
+
+    await db.commit()
+
+    return {
+        "deleted": deleted,
+        "errors": errors,
+        "total_requested": len(request.image_ids)
+    }
+
+
+@router.post("/batch/retag")
+async def batch_retag_images(
+    request: BatchRetagRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Queue retagging for multiple images"""
+    queued = 0
+    errors = []
+
+    for image_id in request.image_ids:
+        try:
+            # Get image with files
+            query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+            result = await db.execute(query)
+            image = result.scalar_one_or_none()
+
+            if not image:
+                errors.append({"id": image_id, "error": "Image not found"})
+                continue
+
+            # Find a valid file path
+            image_file = None
+            for f in image.files:
+                if f.file_exists and os.path.exists(f.original_path):
+                    image_file = f
+                    break
+
+            if not image_file:
+                errors.append({"id": image_id, "error": "No valid file found"})
+                continue
+
+            # Clear existing tags first
+            from sqlalchemy import delete as sql_delete
+            await db.execute(
+                sql_delete(image_tags).where(image_tags.c.image_id == image_id)
+            )
+
+            # Queue tagging task
+            await enqueue_task(
+                TaskType.tag,
+                {"image_id": image_id, "image_path": image_file.original_path},
+                priority=5,  # Higher priority for user-initiated
+                db=db
+            )
+            queued += 1
+
+        except Exception as e:
+            errors.append({"id": image_id, "error": str(e)})
+
+    await db.commit()
+
+    return {
+        "queued": queued,
+        "errors": errors,
+        "total_requested": len(request.image_ids)
+    }
+
+
+@router.post("/batch/age-detect")
+async def batch_age_detect_images(
+    request: BatchAgeDetectRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Queue age detection for multiple images"""
+    from ..services.age_detector import is_age_detection_enabled
+
+    if not is_age_detection_enabled():
+        raise HTTPException(status_code=400, detail="Age detection is not enabled")
+
+    queued = 0
+    errors = []
+
+    for image_id in request.image_ids:
+        try:
+            # Get image with files
+            query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+            result = await db.execute(query)
+            image = result.scalar_one_or_none()
+
+            if not image:
+                errors.append({"id": image_id, "error": "Image not found"})
+                continue
+
+            # Find a valid file path
+            image_file = None
+            for f in image.files:
+                if f.file_exists and os.path.exists(f.original_path):
+                    image_file = f
+                    break
+
+            if not image_file:
+                errors.append({"id": image_id, "error": "No valid file found"})
+                continue
+
+            # Clear existing age detection data
+            image.num_faces = None
+            image.min_detected_age = None
+            image.max_detected_age = None
+            image.detected_ages = None
+            image.age_detection_data = None
+
+            # Queue age detection task
+            await enqueue_task(
+                TaskType.age_detect,
+                {"image_id": image_id, "image_path": image_file.original_path},
+                priority=5,  # Higher priority for user-initiated
+                db=db
+            )
+            queued += 1
+
+        except Exception as e:
+            errors.append({"id": image_id, "error": str(e)})
+
+    await db.commit()
+
+    return {
+        "queued": queued,
+        "errors": errors,
+        "total_requested": len(request.image_ids)
+    }
+
+
+@router.post("/batch/extract-metadata")
+async def batch_extract_metadata(
+    request: BatchMetadataExtractRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Queue metadata extraction for multiple images"""
+    queued = 0
+    errors = []
+
+    for image_id in request.image_ids:
+        try:
+            # Get image with files
+            query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+            result = await db.execute(query)
+            image = result.scalar_one_or_none()
+
+            if not image:
+                errors.append({"id": image_id, "error": "Image not found"})
+                continue
+
+            # Find a valid file path
+            image_file = None
+            for f in image.files:
+                if f.file_exists and os.path.exists(f.original_path):
+                    image_file = f
+                    break
+
+            if not image_file:
+                errors.append({"id": image_id, "error": "No valid file found"})
+                continue
+
+            # Queue metadata extraction task
+            await enqueue_task(
+                TaskType.extract_metadata,
+                {
+                    "image_id": image_id,
+                    "image_path": image_file.original_path,
+                    "comfyui_prompt_node_ids": [],
+                    "comfyui_negative_node_ids": [],
+                    "format_hint": "auto"
+                },
+                priority=5,  # Higher priority for user-initiated
+                db=db
+            )
+            queued += 1
+
+        except Exception as e:
+            errors.append({"id": image_id, "error": str(e)})
+
+    await db.commit()
+
+    return {
+        "queued": queued,
+        "errors": errors,
+        "total_requested": len(request.image_ids)
+    }
+
+
+@router.post("/batch/move")
+async def batch_move_images(
+    request: BatchMoveRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Move multiple images to a different directory"""
+    import shutil
+    from ..models import WatchDirectory
+
+    # Get the target directory
+    dir_query = select(WatchDirectory).where(WatchDirectory.id == request.target_directory_id)
+    dir_result = await db.execute(dir_query)
+    target_dir = dir_result.scalar_one_or_none()
+
+    if not target_dir:
+        raise HTTPException(status_code=404, detail="Target directory not found")
+
+    if not os.path.isdir(target_dir.path):
+        raise HTTPException(status_code=400, detail="Target directory path does not exist on disk")
+
+    moved = 0
+    errors = []
+
+    for image_id in request.image_ids:
+        try:
+            # Get image with files
+            query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+            result = await db.execute(query)
+            image = result.scalar_one_or_none()
+
+            if not image:
+                errors.append({"id": image_id, "error": "Image not found"})
+                continue
+
+            # Skip if already in target directory
+            if image.directory_id == request.target_directory_id:
+                errors.append({"id": image_id, "error": "Already in target directory"})
+                continue
+
+            # Move each file associated with this image
+            for f in image.files:
+                if not os.path.exists(f.original_path):
+                    continue
+
+                # Determine new path
+                filename = os.path.basename(f.original_path)
+                new_path = os.path.join(target_dir.path, filename)
+
+                # Handle filename conflicts
+                if os.path.exists(new_path):
+                    base, ext = os.path.splitext(filename)
+                    counter = 1
+                    while os.path.exists(new_path):
+                        new_path = os.path.join(target_dir.path, f"{base}_{counter}{ext}")
+                        counter += 1
+
+                # Move the file
+                shutil.move(f.original_path, new_path)
+
+                # Update the file path in database
+                f.original_path = new_path
+
+            # Update the image's directory reference
+            image.directory_id = request.target_directory_id
+            moved += 1
+
+        except Exception as e:
+            errors.append({"id": image_id, "error": str(e)})
+
+    await db.commit()
+
+    return {
+        "moved": moved,
+        "errors": errors,
+        "total_requested": len(request.image_ids)
+    }

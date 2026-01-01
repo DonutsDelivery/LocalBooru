@@ -81,6 +81,9 @@ class BackgroundTaskQueue:
                     if isinstance(result, Exception):
                         print(f"[TaskQueue] Task {i} failed: {result}")
 
+                # Small delay between batches to let DB breathe
+                await asyncio.sleep(0.5)
+
             except Exception as e:
                 import traceback
                 print(f"Task queue error: {e}")
@@ -136,6 +139,8 @@ class BackgroundTaskQueue:
                 await self._process_upload_task(task, db)
             elif task.task_type == TaskType.age_detect:
                 await self._process_age_detect_task(task, db)
+            elif task.task_type == TaskType.extract_metadata:
+                await self._process_metadata_task(task, db)
 
             task.status = TaskStatus.completed
             task.completed_at = datetime.now()
@@ -213,6 +218,37 @@ class BackgroundTaskQueue:
                 image.detected_ages = json.dumps(result.ages)
                 image.age_detection_data = json.dumps(result.to_dict())
             await db.commit()
+
+    async def _process_metadata_task(self, task: TaskQueue, db: AsyncSession):
+        """Extract AI generation metadata from an image"""
+        payload = json.loads(task.payload)
+        image_id = payload['image_id']
+        image_path = payload['image_path']
+        comfyui_prompt_node_ids = payload.get('comfyui_prompt_node_ids', [])
+        comfyui_negative_node_ids = payload.get('comfyui_negative_node_ids', [])
+        format_hint = payload.get('format_hint', 'auto')
+        extract_tags = payload.get('extract_tags', True)
+
+        from .metadata_extractor import extract_and_save_metadata_with_tags
+
+        result, added_tags = await extract_and_save_metadata_with_tags(
+            image_path,
+            image_id,
+            db,
+            comfyui_prompt_node_ids,
+            comfyui_negative_node_ids,
+            format_hint,
+            extract_tags
+        )
+
+        # Log result for debugging
+        if result.status == 'success':
+            tag_info = f" (added {len(added_tags)} tags)" if added_tags else ""
+            print(f"[TaskQueue] Metadata extracted for image {image_id}{tag_info}")
+        elif result.status == 'config_mismatch':
+            print(f"[TaskQueue] ComfyUI config mismatch for image {image_id}: {result.message}")
+        elif result.status == 'no_metadata':
+            pass  # Silent - most images won't have metadata
 
 
 # Global task queue instance

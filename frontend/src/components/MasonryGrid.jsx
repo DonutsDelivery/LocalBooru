@@ -21,7 +21,20 @@ const largeBreakpoints = {
   600: 1
 }
 
-function MasonryGrid({ images, onImageClick, onLoadMore, loading, hasMore, user, onImageUpdate, showStatus = false, largeImages = false }) {
+function MasonryGrid({
+  images,
+  onImageClick,
+  onLoadMore,
+  loading,
+  hasMore,
+  user,
+  onImageUpdate,
+  showStatus = false,
+  largeImages = false,
+  isSelectable = false,
+  selectedImages = new Set(),
+  onSelectImage
+}) {
   const breakpointColumns = largeImages ? largeBreakpoints : defaultBreakpoints
   const observerRef = useRef()
   const loadMoreRef = useRef()
@@ -77,6 +90,9 @@ function MasonryGrid({ images, onImageClick, onLoadMore, loading, hasMore, user,
             onRatingChange={onImageUpdate}
             onReject={onImageUpdate}
             showStatus={showStatus}
+            isSelectable={isSelectable}
+            isSelected={selectedImages.has(image.id)}
+            onSelect={onSelectImage}
           />
         ))}
       </Masonry>

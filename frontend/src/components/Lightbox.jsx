@@ -211,6 +211,17 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
       <div className="lightbox-counter">
         {currentIndex + 1} / {images.length}
       </div>
+
+      {/* Mobile favorite button - bottom center like camera shutter */}
+      <button
+        className={`lightbox-mobile-favorite ${isFavorited ? 'active' : ''}`}
+        onClick={handleToggleFavorite}
+        disabled={processing}
+      >
+        <svg viewBox="0 0 24 24" fill={isFavorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+      </button>
     </div>
   )
 }

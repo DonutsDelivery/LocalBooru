@@ -1,15 +1,16 @@
 """
 Watch directories router - manage directories to watch for new images
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 import shutil
 import os
+import json
 
 from ..database import get_db, get_data_dir
 from ..models import WatchDirectory, ImageFile, TaskType, Image, image_tags
@@ -26,18 +27,33 @@ class DirectoryCreate(BaseModel):
     auto_age_detect: bool = False
 
 
+class ParentDirectoryCreate(BaseModel):
+    path: str
+    recursive: bool = True
+    auto_tag: bool = True
+    auto_age_detect: bool = False
+
+
 class DirectoryUpdate(BaseModel):
     name: Optional[str] = None
     enabled: Optional[bool] = None
     recursive: Optional[bool] = None
     auto_tag: Optional[bool] = None
     auto_age_detect: Optional[bool] = None
+    public_access: Optional[bool] = None  # Allow public network access to this directory
 
 
 @router.get("")
-async def list_directories(db: AsyncSession = Depends(get_db)):
+async def list_directories(request: Request, db: AsyncSession = Depends(get_db)):
     """List all watch directories"""
+    access_level = getattr(request.state, 'access_level', 'localhost')
+
     query = select(WatchDirectory).order_by(WatchDirectory.created_at)
+
+    # Non-localhost users only see public directories
+    if access_level != 'localhost':
+        query = query.where(WatchDirectory.public_access == True)
+
     result = await db.execute(query)
     directories = result.scalars().all()
 
@@ -105,7 +121,13 @@ async def list_directories(db: AsyncSession = Depends(get_db)):
             "favorited_pct": round(favorited_count / image_count * 100, 1) if image_count > 0 else 0,
             "path_exists": path_exists,
             "last_scanned_at": d.last_scanned_at.isoformat() if d.last_scanned_at else None,
-            "created_at": d.created_at.isoformat() if d.created_at else None
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            # ComfyUI metadata config
+            "comfyui_prompt_node_ids": json.loads(d.comfyui_prompt_node_ids) if d.comfyui_prompt_node_ids else [],
+            "comfyui_negative_node_ids": json.loads(d.comfyui_negative_node_ids) if d.comfyui_negative_node_ids else [],
+            "metadata_format": d.metadata_format or "auto",
+            # Network access
+            "public_access": d.public_access if hasattr(d, 'public_access') else False
         })
 
     return {"directories": dir_data}
@@ -164,6 +186,75 @@ async def add_directory(data: DirectoryCreate, db: AsyncSession = Depends(get_db
     }
 
 
+@router.post("/add-parent")
+async def add_parent_directory(data: ParentDirectoryCreate, db: AsyncSession = Depends(get_db)):
+    """Add all immediate subdirectories of a parent folder as watch directories"""
+    # Validate parent path exists
+    parent_path = Path(data.path).resolve()
+    if not parent_path.exists():
+        raise HTTPException(status_code=400, detail=f"Path does not exist: {data.path}")
+    if not parent_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"Path is not a directory: {data.path}")
+
+    # Get immediate subdirectories (not recursive)
+    subdirs = [d for d in parent_path.iterdir() if d.is_dir()]
+
+    if not subdirs:
+        raise HTTPException(status_code=400, detail="No subdirectories found in the selected folder")
+
+    added = []
+    skipped = []
+
+    for subdir in sorted(subdirs):
+        # Check for duplicates
+        existing = await db.execute(
+            select(WatchDirectory).where(WatchDirectory.path == str(subdir))
+        )
+        if existing.scalar_one_or_none():
+            skipped.append(str(subdir))
+            continue
+
+        # Create directory record
+        directory = WatchDirectory(
+            path=str(subdir),
+            name=subdir.name,
+            recursive=data.recursive,
+            auto_tag=data.auto_tag,
+            auto_age_detect=data.auto_age_detect,
+            enabled=True
+        )
+        db.add(directory)
+        await db.commit()
+        await db.refresh(directory)
+
+        # Queue initial scan
+        await enqueue_task(
+            TaskType.scan_directory,
+            {
+                'directory_id': directory.id,
+                'directory_path': str(subdir)
+            },
+            priority=2,
+            db=db
+        )
+
+        # Start watching this directory
+        from ..services.directory_watcher import directory_watcher
+        await directory_watcher.add_directory(directory)
+
+        added.append({
+            "id": directory.id,
+            "path": directory.path,
+            "name": directory.name
+        })
+
+    return {
+        "added": added,
+        "skipped": skipped,
+        "message": f"Added {len(added)} directories, skipped {len(skipped)} existing"
+    }
+
+
 @router.get("/{directory_id}")
 async def get_directory(directory_id: int, db: AsyncSession = Depends(get_db)):
     """Get directory details"""
@@ -189,7 +280,13 @@ async def get_directory(directory_id: int, db: AsyncSession = Depends(get_db)):
         "image_count": image_count,
         "path_exists": Path(directory.path).exists(),
         "last_scanned_at": directory.last_scanned_at.isoformat() if directory.last_scanned_at else None,
-        "created_at": directory.created_at.isoformat() if directory.created_at else None
+        "created_at": directory.created_at.isoformat() if directory.created_at else None,
+        # ComfyUI metadata config
+        "comfyui_prompt_node_ids": json.loads(directory.comfyui_prompt_node_ids) if directory.comfyui_prompt_node_ids else [],
+        "comfyui_negative_node_ids": json.loads(directory.comfyui_negative_node_ids) if directory.comfyui_negative_node_ids else [],
+        "metadata_format": directory.metadata_format or "auto",
+        # Network access
+        "public_access": directory.public_access if hasattr(directory, 'public_access') else False
     }
 
 
@@ -214,6 +311,8 @@ async def update_directory(
         directory.auto_tag = data.auto_tag
     if data.auto_age_detect is not None:
         directory.auto_age_detect = data.auto_age_detect
+    if data.public_access is not None:
+        directory.public_access = data.public_access
 
     await db.commit()
 
@@ -227,7 +326,8 @@ async def update_directory(
         "enabled": directory.enabled,
         "recursive": directory.recursive,
         "auto_tag": directory.auto_tag,
-        "auto_age_detect": directory.auto_age_detect
+        "auto_age_detect": directory.auto_age_detect,
+        "public_access": directory.public_access if hasattr(directory, 'public_access') else False
     }
 
 
@@ -415,4 +515,170 @@ async def prune_directory(
         "failed": failed_count,
         "removed_from_library": len(unique_image_ids),
         "dumpster_path": str(dumpster_dir)
+    }
+
+
+class ComfyUIConfigUpdate(BaseModel):
+    comfyui_prompt_node_ids: Optional[List[str]] = None
+    comfyui_negative_node_ids: Optional[List[str]] = None
+    metadata_format: Optional[str] = None  # auto, a1111, comfyui, none
+
+
+@router.get("/{directory_id}/comfyui-nodes")
+async def discover_comfyui_nodes(
+    directory_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Scan sample images in directory to discover ComfyUI node types.
+    Returns list of nodes with text content for configuration.
+    """
+    directory = await db.get(WatchDirectory, directory_id)
+    if not directory:
+        raise HTTPException(status_code=404, detail="Directory not found")
+
+    from ..services.metadata_extractor import discover_comfyui_nodes as discover_nodes
+
+    path = Path(directory.path)
+    if not path.exists():
+        raise HTTPException(status_code=400, detail="Directory path no longer exists")
+
+    discovered_nodes = []
+    scanned_files = 0
+    max_files = 10  # Scan up to 10 files to find examples
+
+    # Scan for PNG/WebP files with ComfyUI metadata
+    patterns = ['*.png', '*.PNG', '*.webp', '*.WEBP']
+    files_to_scan = []
+
+    for pattern in patterns:
+        if directory.recursive:
+            files_to_scan.extend(path.rglob(pattern))
+        else:
+            files_to_scan.extend(path.glob(pattern))
+
+    for img_file in files_to_scan:
+        if scanned_files >= max_files:
+            break
+
+        try:
+            nodes = discover_nodes(str(img_file))
+            if nodes:
+                # Merge with existing nodes (avoid duplicates by node_id)
+                existing_ids = {n['node_id'] for n in discovered_nodes}
+                for node in nodes:
+                    if node['node_id'] not in existing_ids:
+                        discovered_nodes.append(node)
+                        existing_ids.add(node['node_id'])
+                scanned_files += 1
+        except Exception:
+            continue
+
+    # Sort by node type for better UX
+    discovered_nodes.sort(key=lambda n: (n['node_type'], n['node_id']))
+
+    return {
+        "nodes": discovered_nodes,
+        "directory_id": directory_id,
+        "files_scanned": scanned_files,
+        "current_config": {
+            "comfyui_prompt_node_ids": json.loads(directory.comfyui_prompt_node_ids) if directory.comfyui_prompt_node_ids else [],
+            "comfyui_negative_node_ids": json.loads(directory.comfyui_negative_node_ids) if directory.comfyui_negative_node_ids else [],
+            "metadata_format": directory.metadata_format or "auto"
+        }
+    }
+
+
+@router.patch("/{directory_id}/comfyui-config")
+async def update_comfyui_config(
+    directory_id: int,
+    config: ComfyUIConfigUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update ComfyUI metadata extraction configuration for a directory"""
+    directory = await db.get(WatchDirectory, directory_id)
+    if not directory:
+        raise HTTPException(status_code=404, detail="Directory not found")
+
+    if config.comfyui_prompt_node_ids is not None:
+        directory.comfyui_prompt_node_ids = json.dumps(config.comfyui_prompt_node_ids)
+    if config.comfyui_negative_node_ids is not None:
+        directory.comfyui_negative_node_ids = json.dumps(config.comfyui_negative_node_ids)
+    if config.metadata_format is not None:
+        directory.metadata_format = config.metadata_format
+
+    await db.commit()
+
+    return {
+        "id": directory.id,
+        "comfyui_prompt_node_ids": json.loads(directory.comfyui_prompt_node_ids) if directory.comfyui_prompt_node_ids else [],
+        "comfyui_negative_node_ids": json.loads(directory.comfyui_negative_node_ids) if directory.comfyui_negative_node_ids else [],
+        "metadata_format": directory.metadata_format or "auto"
+    }
+
+
+@router.post("/{directory_id}/reextract-metadata")
+async def reextract_directory_metadata(
+    directory_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Re-extract AI generation metadata for all images in this directory.
+    Useful after updating ComfyUI node configuration.
+    """
+    directory = await db.get(WatchDirectory, directory_id)
+    if not directory:
+        raise HTTPException(status_code=404, detail="Directory not found")
+
+    # Get all image files in this directory
+    query = (
+        select(ImageFile)
+        .options(selectinload(ImageFile.image))
+        .where(ImageFile.watch_directory_id == directory_id)
+    )
+    result = await db.execute(query)
+    image_files = result.scalars().all()
+
+    # Get ComfyUI config
+    comfyui_prompt_node_ids = []
+    comfyui_negative_node_ids = []
+    if directory.comfyui_prompt_node_ids:
+        try:
+            comfyui_prompt_node_ids = json.loads(directory.comfyui_prompt_node_ids)
+        except Exception:
+            pass
+    if directory.comfyui_negative_node_ids:
+        try:
+            comfyui_negative_node_ids = json.loads(directory.comfyui_negative_node_ids)
+        except Exception:
+            pass
+
+    queued = 0
+    for image_file in image_files:
+        if not image_file.image:
+            continue
+
+        if not Path(image_file.original_path).exists():
+            continue
+
+        await enqueue_task(
+            TaskType.extract_metadata,
+            {
+                'image_id': image_file.image_id,
+                'image_path': image_file.original_path,
+                'comfyui_prompt_node_ids': comfyui_prompt_node_ids,
+                'comfyui_negative_node_ids': comfyui_negative_node_ids,
+                'format_hint': directory.metadata_format or 'auto'
+            },
+            priority=0,
+            db=db
+        )
+        queued += 1
+
+    await db.commit()
+
+    return {
+        "queued": queued,
+        "directory_id": directory_id,
+        "message": f"Queued metadata re-extraction for {queued} images"
     }

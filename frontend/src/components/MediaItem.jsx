@@ -8,13 +8,31 @@ const isVideo = (filename) => {
   return ['webm', 'mp4', 'mov'].includes(ext)
 }
 
-function MediaItem({ image, onClick }) {
+function MediaItem({ image, onClick, isSelectable = false, isSelected = false, onSelect }) {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
   const [localRating, setLocalRating] = useState(image?.rating)
   const [isShortVideo, setIsShortVideo] = useState(image?.duration != null ? image.duration <= 10 : false)
 
   const videoRef = useRef()
+
+  // Handle click - either select or open lightbox
+  const handleClick = (e) => {
+    if (isSelectable) {
+      e.preventDefault()
+      e.stopPropagation()
+      onSelect?.(image.id)
+    } else {
+      onClick?.()
+    }
+  }
+
+  // Handle checkbox click specifically
+  const handleCheckboxClick = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onSelect?.(image.id)
+  }
 
   // Guard against missing image data
   if (!image || !image.thumbnail_url) {
@@ -96,7 +114,7 @@ function MediaItem({ image, onClick }) {
 
   if (error && fileStatus === 'available') {
     return (
-      <div className="media-item media-error" onClick={onClick}>
+      <div className="media-item media-error" onClick={handleClick}>
         <div className="error-placeholder">Failed to load</div>
       </div>
     )
@@ -104,11 +122,26 @@ function MediaItem({ image, onClick }) {
 
   return (
     <div
-      className={`media-item ${loaded ? 'loaded' : 'loading'} ${fileStatus !== 'available' ? 'unavailable' : ''}`}
-      onClick={onClick}
+      className={`media-item ${loaded ? 'loaded' : 'loading'} ${fileStatus !== 'available' ? 'unavailable' : ''} ${isSelectable ? 'selectable' : ''} ${isSelected ? 'selected' : ''}`}
+      onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Selection checkbox - always visible in selection mode */}
+      {isSelectable && (
+        <div className="selection-checkbox" onClick={handleCheckboxClick}>
+          {isSelected ? (
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            </svg>
+          )}
+        </div>
+      )}
+
       {isVideoFile ? (
         <>
           <video
