@@ -33,3 +33,4 @@ watchdog>=4.0.0
 
 # UPnP for network port forwarding
 miniupnpc>=2.2.0
+xxhash

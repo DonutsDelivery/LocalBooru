@@ -2,6 +2,7 @@
 File tracker service - manages file locations and verification
 """
 import os
+import asyncio
 import hashlib
 from pathlib import Path
 from datetime import datetime
@@ -10,8 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Image, ImageFile, WatchDirectory, TaskQueue, TaskType, TaskStatus, FileStatus
 from ..config import get_settings
+from ..database import AsyncSessionLocal
 
 settings = get_settings()
+
+# Concurrency for imports within a directory scan
+SCAN_CONCURRENCY = 8
+BATCH_SIZE = 100  # Commit every N imports
 
 # Supported image extensions
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'}
@@ -77,7 +83,7 @@ async def scan_directory(
     db: AsyncSession,
     recursive: bool = True
 ) -> dict:
-    """Scan a directory for media files and import them"""
+    """Scan a directory for media files and import them concurrently"""
     from .importer import import_image
 
     stats = {
@@ -92,68 +98,61 @@ async def scan_directory(
     if not path.exists() or not path.is_dir():
         raise ValueError(f"Directory does not exist: {directory_path}")
 
-    # First, clean up stale ImageFile entries for this directory
-    # (files that no longer exist on disk)
-    stale_query = select(ImageFile).where(ImageFile.watch_directory_id == directory_id)
-    stale_result = await db.execute(stale_query)
-    stale_files = stale_result.scalars().all()
-
-    for image_file in stale_files:
-        if not Path(image_file.original_path).exists():
-            # Check if the image has other valid file references
-            other_files_query = select(ImageFile).where(
-                ImageFile.image_id == image_file.image_id,
-                ImageFile.id != image_file.id,
-                ImageFile.file_exists == True
-            )
-            other_result = await db.execute(other_files_query)
-            has_other_files = other_result.scalar_one_or_none() is not None
-
-            if has_other_files:
-                # Just delete this file reference, keep the image
-                await db.delete(image_file)
-            else:
-                # No other references - delete the image too
-                image = await db.get(Image, image_file.image_id)
-                if image:
-                    from ..database import get_data_dir
-                    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
-                    if thumbnail_path.exists():
-                        thumbnail_path.unlink()
-                    await db.delete(image)
-            stats['cleaned'] += 1
-
-    if stats['cleaned'] > 0:
-        await db.commit()
-
-    # Get iterator based on recursive setting
+    # Skip stale file cleanup during scan for speed - do it separately
+    # Collect all media files first
     if recursive:
-        files = path.rglob('*')
+        files = list(path.rglob('*'))
     else:
-        files = path.glob('*')
+        files = list(path.glob('*'))
 
-    for file_path in files:
-        if not file_path.is_file():
-            continue
-        if not is_media_file(file_path):
-            continue
+    media_files = [f for f in files if f.is_file() and is_media_file(f)]
+    stats['found'] = len(media_files)
 
-        stats['found'] += 1
+    # Process in batches with concurrent imports
+    semaphore = asyncio.Semaphore(SCAN_CONCURRENCY)
 
-        try:
-            result = await import_image(
-                str(file_path),
-                db,
-                watch_directory_id=directory_id,
-                auto_tag=True
-            )
-            if result['status'] == 'imported':
-                stats['imported'] += 1
-            elif result['status'] == 'duplicate':
-                stats['duplicates'] += 1
-        except Exception as e:
-            print(f"Error importing {file_path}: {e}")
-            stats['errors'] += 1
+    async def import_one(file_path: Path, session) -> str:
+        async with semaphore:
+            try:
+                result = await import_image(
+                    str(file_path),
+                    session,
+                    watch_directory_id=directory_id,
+                    auto_tag=False,  # Skip auto-tag during bulk import for speed
+                    skip_commit=True  # Batch commits for performance
+                )
+                return result['status']
+            except Exception as e:
+                return 'error'
+
+    for i in range(0, len(media_files), BATCH_SIZE):
+        batch = media_files[i:i + BATCH_SIZE]
+
+        async with AsyncSessionLocal() as session:
+            # Process batch concurrently
+            results = await asyncio.gather(*[import_one(f, session) for f in batch])
+
+            for status in results:
+                if status == 'imported':
+                    stats['imported'] += 1
+                elif status == 'duplicate':
+                    stats['duplicates'] += 1
+                elif status == 'error':
+                    stats['errors'] += 1
+
+            # Commit entire batch at once
+            try:
+                await session.commit()
+            except Exception as e:
+                print(f"[Scan] Batch commit error: {e}")
+                try:
+                    await session.rollback()
+                except:
+                    pass
+
+        # Progress log every batch
+        if stats['found'] > 100:
+            print(f"[Scan] Progress: {i + len(batch)}/{stats['found']} files")
 
     # Update last scanned timestamp
     await db.execute(

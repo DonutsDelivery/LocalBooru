@@ -3,12 +3,16 @@ Image importer service - imports images by reference (no copying)
 """
 import os
 import hashlib
+import asyncio
 from pathlib import Path
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 from PIL import Image as PILImage
 import imagehash
+import xxhash
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import OperationalError
 
 from ..models import Image, ImageFile, Tag, image_tags, TaskType, WatchDirectory
 from ..config import get_settings
@@ -17,14 +21,51 @@ from .events import library_events, EventType
 
 settings = get_settings()
 
+# Thread pool for CPU-bound operations (thumbnails, hashing)
+_executor = ThreadPoolExecutor(max_workers=4)
+
+
+async def safe_enqueue_task(task_type, payload, priority, db, max_retries=3):
+    """Enqueue a task with retry logic for database locks."""
+    for attempt in range(max_retries):
+        try:
+            await enqueue_task(task_type, payload, priority=priority, db=db)
+            return True
+        except OperationalError as e:
+            if "database is locked" in str(e) and attempt < max_retries - 1:
+                await db.rollback()
+                await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
+            else:
+                # Skip task creation on persistent failure - not critical
+                print(f"[Import] Skipping task creation after {max_retries} retries: {e}")
+                try:
+                    await db.rollback()
+                except:
+                    pass
+                return False
+        except Exception as e:
+            print(f"[Import] Error enqueueing task: {e}")
+            try:
+                await db.rollback()
+            except:
+                pass
+            return False
+    return False
+
 
 def calculate_file_hash(file_path: str) -> str:
-    """Calculate SHA256 hash of a file"""
-    sha256_hash = hashlib.sha256()
+    """Calculate xxhash of a file (10x faster than SHA256)"""
+    hasher = xxhash.xxh64()
     with open(file_path, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest()
+        for byte_block in iter(lambda: f.read(65536), b""):  # 64KB chunks
+            hasher.update(byte_block)
+    return hasher.hexdigest()
+
+
+async def calculate_file_hash_async(file_path: str) -> str:
+    """Async wrapper for file hashing"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(_executor, calculate_file_hash, file_path)
 
 
 def calculate_perceptual_hash(file_path: str) -> str | None:
@@ -68,11 +109,18 @@ def generate_thumbnail(file_path: str, output_path: str, size: int = 400) -> boo
         return False
 
 
+async def generate_thumbnail_async(file_path: str, output_path: str, size: int = 400) -> bool:
+    """Async wrapper for thumbnail generation"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(_executor, generate_thumbnail, file_path, output_path, size)
+
+
 async def import_image(
     file_path: str,
     db: AsyncSession,
     watch_directory_id: int = None,
-    auto_tag: bool = True
+    auto_tag: bool = True,
+    skip_commit: bool = False
 ) -> dict:
     """
     Import an image by reference (stores path, doesn't copy file)
@@ -88,8 +136,8 @@ async def import_image(
     if not path.is_file():
         return {'status': 'error', 'message': 'Not a file'}
 
-    # Calculate file hash
-    file_hash = calculate_file_hash(file_path)
+    # Calculate file hash (async for parallel processing)
+    file_hash = await calculate_file_hash_async(file_path)
 
     # Check if this path already exists in the database
     existing_path = await db.execute(
@@ -189,17 +237,18 @@ async def import_image(
     )
     db.add(image_file)
 
-    # Generate thumbnail
+    # Generate thumbnail (async for parallel processing)
     thumbnails_dir = Path(settings.thumbnails_dir)
     thumbnails_dir.mkdir(parents=True, exist_ok=True)
     thumbnail_path = thumbnails_dir / f"{file_hash[:16]}.webp"
-    generate_thumbnail(file_path, str(thumbnail_path))
+    await generate_thumbnail_async(file_path, str(thumbnail_path))
 
-    await db.commit()
+    if not skip_commit:
+        await db.commit()
 
     # Queue tagging task if auto_tag is enabled
     if auto_tag:
-        await enqueue_task(
+        await safe_enqueue_task(
             TaskType.tag,
             {
                 'image_id': image.id,
@@ -232,7 +281,7 @@ async def import_image(
             if watch_dir.metadata_format:
                 format_hint = watch_dir.metadata_format
 
-    await enqueue_task(
+    await safe_enqueue_task(
         TaskType.extract_metadata,
         {
             'image_id': image.id,
