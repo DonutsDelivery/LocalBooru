@@ -481,6 +481,22 @@
   display: none;
 }
 
+/* Lightbox backdrop - always visible regardless of screen size */
+.sidebar-backdrop.lightbox-backdrop {
+  display: block;
+  position: fixed;
+  inset: 0;
+  top: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 2050; /* Above lightbox (2000), below sidebar in lightbox mode (2100) */
+  animation: lightboxFadeIn 0.2s ease;
+}
+
+@keyframes lightboxFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .content.with-sidebar {
@@ -500,11 +516,6 @@
   @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
-  }
-
-  .sidebar-backdrop.lightbox-backdrop {
-    z-index: 2050; /* Above lightbox (2000), below sidebar in lightbox mode (2100) */
-    top: 0;
   }
 }
 

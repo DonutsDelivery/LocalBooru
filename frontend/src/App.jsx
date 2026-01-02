@@ -1154,6 +1154,7 @@ function Gallery() {
           onTagClick={handleTagClick}
           onImageUpdate={handleImageUpdate}
           onSidebarHover={setLightboxSidebarHover}
+          sidebarOpen={lightboxSidebarHover}
           onDelete={handleImageDelete}
         />
       )}

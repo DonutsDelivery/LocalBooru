@@ -8,7 +8,7 @@ const isVideo = (filename) => {
   return ['webm', 'mp4', 'mov'].includes(ext)
 }
 
-function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, onDelete }) {
+function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
   const [processing, setProcessing] = useState(false)
   const [isFavorited, setIsFavorited] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -58,9 +58,13 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 30) {
       touchHandled.current = true
 
+      // If sidebar is open, swipe left closes it
+      if (sidebarOpen && deltaX < 0) {
+        onSidebarHover && onSidebarHover(false)
+      }
       // Swipe from left zone (not extreme edge to avoid browser gesture, but ~20-100px)
       // opens sidebar
-      if (touchStartX.current > 20 && touchStartX.current < 100 && deltaX > 0) {
+      else if (touchStartX.current > 20 && touchStartX.current < 100 && deltaX > 0) {
         onSidebarHover && onSidebarHover(true)
       } else if (deltaX > 0) {
         onNav(-1) // Swipe right = previous
@@ -71,7 +75,7 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
 
     touchStartX.current = null
     touchStartY.current = null
-  }, [onNav, onSidebarHover])
+  }, [onNav, onSidebarHover, sidebarOpen])
 
   // Toggle favorite
   const handleToggleFavorite = useCallback(async () => {
