@@ -108,47 +108,38 @@ async def scan_directory(
     media_files = [f for f in files if f.is_file() and is_media_file(f)]
     stats['found'] = len(media_files)
 
-    # Process in batches with concurrent imports
+    # Process with concurrent imports (each gets its own session to avoid race conditions)
     semaphore = asyncio.Semaphore(SCAN_CONCURRENCY)
 
-    async def import_one(file_path: Path, session) -> str:
+    async def import_one(file_path: Path) -> str:
         async with semaphore:
             try:
-                result = await import_image(
-                    str(file_path),
-                    session,
-                    watch_directory_id=directory_id,
-                    auto_tag=False,  # Skip auto-tag during bulk import for speed
-                    skip_commit=True  # Batch commits for performance
-                )
-                return result['status']
+                async with AsyncSessionLocal() as session:
+                    result = await import_image(
+                        str(file_path),
+                        session,
+                        watch_directory_id=directory_id,
+                        auto_tag=False,  # Skip auto-tag during bulk import for speed
+                        skip_commit=False  # Each import commits individually
+                    )
+                    return result['status']
             except Exception as e:
+                print(f"[Scan] Import error for {file_path.name}: {e}")
                 return 'error'
 
     for i in range(0, len(media_files), BATCH_SIZE):
         batch = media_files[i:i + BATCH_SIZE]
 
-        async with AsyncSessionLocal() as session:
-            # Process batch concurrently
-            results = await asyncio.gather(*[import_one(f, session) for f in batch])
+        # Process batch concurrently (each import has its own session)
+        results = await asyncio.gather(*[import_one(f) for f in batch])
 
-            for status in results:
-                if status == 'imported':
-                    stats['imported'] += 1
-                elif status == 'duplicate':
-                    stats['duplicates'] += 1
-                elif status == 'error':
-                    stats['errors'] += 1
-
-            # Commit entire batch at once
-            try:
-                await session.commit()
-            except Exception as e:
-                print(f"[Scan] Batch commit error: {e}")
-                try:
-                    await session.rollback()
-                except:
-                    pass
+        for status in results:
+            if status == 'imported':
+                stats['imported'] += 1
+            elif status == 'duplicate':
+                stats['duplicates'] += 1
+            elif status == 'error':
+                stats['errors'] += 1
 
         # Progress log every batch
         if stats['found'] > 100:

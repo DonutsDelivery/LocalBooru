@@ -3,11 +3,10 @@ Access control middleware for LocalBooru network security.
 
 Controls access based on client IP address:
 - localhost: Full access (read + write)
-- local_network: Read-only by default (if enabled)
-- public: Read-only by default (if enabled)
+- local_network: Full access (read + write) - same WiFi/LAN
+- public: Read-only (public internet IPs)
 
-Write operations (POST/PUT/PATCH/DELETE) are blocked for non-localhost
-unless the user has explicit can_write permission.
+Settings/admin endpoints are always localhost-only.
 """
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -170,15 +169,13 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
                     }
                 )
 
-        # Block write operations for non-localhost
-        if method in WRITE_METHODS:
-            # TODO: Check user authentication and can_write permission
-            # For now, all writes from non-localhost are blocked
+        # Block write operations for public internet (local network gets full access)
+        if method in WRITE_METHODS and access_level == "public":
             return cors_response(
                 403,
                 {
-                    "error": "Write operations require localhost access",
-                    "detail": "Remote access is read-only. Modifications must be made from the host machine."
+                    "error": "Write operations require local access",
+                    "detail": "Public internet access is read-only. Modifications must be made from localhost or local network."
                 }
             )
 
