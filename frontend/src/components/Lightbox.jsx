@@ -53,23 +53,21 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
     const deltaX = touchEndX - touchStartX.current
     const deltaY = touchEndY - touchStartY.current
 
-    // Require a minimum swipe of 30px (reduced from 50 for easier swiping)
-    // and horizontal movement must be dominant
-    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 30) {
+    // Require a minimum swipe of 50px and horizontal movement must be dominant
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
       touchHandled.current = true
 
-      // If sidebar is open, swipe left closes it
+      // If sidebar is open, any swipe left closes it
       if (sidebarOpen && deltaX < 0) {
         onSidebarHover && onSidebarHover(false)
       }
-      // Swipe from left zone (not extreme edge to avoid browser gesture, but ~20-100px)
-      // opens sidebar
-      else if (touchStartX.current > 20 && touchStartX.current < 100 && deltaX > 0) {
-        onSidebarHover && onSidebarHover(true)
-      } else if (deltaX > 0) {
-        onNav(-1) // Swipe right = previous
-      } else {
-        onNav(1) // Swipe left = next
+      // Normal image navigation (when sidebar closed)
+      else if (!sidebarOpen) {
+        if (deltaX > 0) {
+          onNav(-1) // Swipe right = previous
+        } else {
+          onNav(1) // Swipe left = next
+        }
       }
     }
 
@@ -197,6 +195,17 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
     >
       {/* Top toolbar */}
       <div className="lightbox-toolbar">
+        <button
+          className="lightbox-btn lightbox-menu"
+          onClick={() => onSidebarHover && onSidebarHover(!sidebarOpen)}
+          title="Toggle sidebar"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
         <button
           className={`lightbox-btn lightbox-favorite ${isFavorited ? 'active' : ''}`}
           onClick={handleToggleFavorite}

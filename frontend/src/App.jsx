@@ -926,14 +926,19 @@ function Gallery() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Lightbox backdrop - must be outside main-container for correct z-index stacking */}
+      {lightboxSidebarHover && (
+        <div
+          className="sidebar-backdrop lightbox-backdrop"
+          onClick={() => setLightboxSidebarHover(false)}
+        />
+      )}
+
       <div className="main-container">
-        {(sidebarOpen || lightboxSidebarHover) && (
+        {sidebarOpen && (
           <div
-            className={`sidebar-backdrop ${lightboxSidebarHover ? 'lightbox-backdrop' : ''}`}
-            onClick={() => {
-              setSidebarOpen(false)
-              setLightboxSidebarHover(false)
-            }}
+            className="sidebar-backdrop"
+            onClick={() => setSidebarOpen(false)}
           />
         )}
 
