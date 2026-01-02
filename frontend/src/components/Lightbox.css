@@ -1,6 +1,9 @@
 .lightbox {
   position: fixed;
-  inset: 0;
+  top: var(--title-bar-height, 0);
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: rgba(0, 0, 0, 0.95);
   z-index: 2000;
   display: flex;
@@ -204,4 +207,84 @@
     left: 20px;
     transform: none;
   }
+}
+
+/* Delete button */
+.lightbox-delete:hover {
+  background: rgba(244, 67, 54, 0.3);
+  color: #ff5252;
+}
+
+/* Delete confirmation dialog */
+.lightbox-confirm-overlay {
+  position: fixed;
+  top: var(--title-bar-height, 0);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2100;
+}
+
+.lightbox-confirm-dialog {
+  background: var(--bg-secondary, #1e1e1e);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: calc(100% - 40px);
+  text-align: center;
+}
+
+.lightbox-confirm-dialog h3 {
+  margin: 0 0 12px 0;
+  color: var(--text-primary, #fff);
+  font-size: 1.25rem;
+}
+
+.lightbox-confirm-dialog p {
+  margin: 0 0 24px 0;
+  color: var(--text-secondary, #aaa);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.lightbox-confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.lightbox-confirm-actions button {
+  padding: 10px 24px;
+  border-radius: 8px;
+  border: none;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.lightbox-confirm-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lightbox-confirm-cancel {
+  background: var(--bg-tertiary, #333);
+  color: var(--text-primary, #fff);
+}
+
+.lightbox-confirm-cancel:hover:not(:disabled) {
+  background: var(--bg-hover, #444);
+}
+
+.lightbox-confirm-delete {
+  background: #f44336;
+  color: white;
+}
+
+.lightbox-confirm-delete:hover:not(:disabled) {
+  background: #d32f2f;
 }

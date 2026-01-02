@@ -633,6 +633,28 @@ function Gallery() {
     ))
   }, [])
 
+  // Handle image deletion from lightbox
+  const handleImageDelete = useCallback((imageId) => {
+    setImages(prev => {
+      const newImages = prev.filter(img => img.id !== imageId)
+
+      // Find the current index of the deleted image
+      const deletedIndex = prev.findIndex(img => img.id === imageId)
+
+      // If there are remaining images, navigate to the next one
+      if (newImages.length > 0) {
+        // If we deleted the last image, go to the previous one
+        const nextIndex = deletedIndex >= newImages.length ? newImages.length - 1 : deletedIndex
+        setLightboxIndex(newImages[nextIndex]?.id ?? null)
+      } else {
+        // No images left, close lightbox
+        setLightboxIndex(null)
+      }
+
+      return newImages
+    })
+  }, [])
+
   // Load tags
   const loadTags = useCallback(async () => {
     try {
@@ -739,18 +761,59 @@ function Gallery() {
   }
 
   const handleLightboxClose = () => {
+    // Scroll to the image that was being viewed
+    const imageId = lightboxIndex
     setLightboxIndex(null)
+
+    // Use requestAnimationFrame to scroll after the lightbox closes and DOM updates
+    requestAnimationFrame(() => {
+      const imageElement = document.querySelector(`[data-image-id="${imageId}"]`)
+      if (imageElement) {
+        imageElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    })
   }
 
-  const handleLightboxNav = (direction) => {
-    setLightboxIndex(currentId => {
-      const currentIdx = images.findIndex(img => img.id === currentId)
-      if (currentIdx === -1) return currentId
-      let newIndex = currentIdx + direction
-      if (newIndex < 0) newIndex = images.length - 1
-      if (newIndex >= images.length) newIndex = 0
-      return images[newIndex]?.id ?? currentId
-    })
+  const handleLightboxNav = async (direction) => {
+    const currentIdx = images.findIndex(img => img.id === lightboxIndex)
+    if (currentIdx === -1) return
+
+    let newIndex = currentIdx + direction
+
+    // Navigating past the end - load more if available
+    if (newIndex >= images.length && hasMore && !loading) {
+      // Load more images
+      const nextPage = page + 1
+      try {
+        const result = await fetchImages({
+          tags: currentTags,
+          rating: currentRating,
+          favorites_only: favoritesOnly,
+          directory_id: currentDirectoryId,
+          min_age: currentMinAge,
+          max_age: currentMaxAge,
+          sort: currentSort,
+          page: nextPage,
+          per_page: 50
+        })
+
+        if (result.images.length > 0) {
+          setImages(prev => [...prev, ...result.images])
+          setHasMore(result.images.length === 50)
+          setPage(nextPage)
+          // Navigate to the first image of the new page
+          setLightboxIndex(result.images[0].id)
+          return
+        }
+      } catch (error) {
+        console.error('Failed to load more images:', error)
+      }
+    }
+
+    // Normal navigation within current images
+    if (newIndex < 0) newIndex = images.length - 1
+    if (newIndex >= images.length) newIndex = 0
+    setLightboxIndex(images[newIndex]?.id ?? lightboxIndex)
   }
 
   // Selection mode handlers
@@ -864,8 +927,14 @@ function Gallery() {
       onTouchEnd={handleTouchEnd}
     >
       <div className="main-container">
-        {sidebarOpen && (
-          <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+        {(sidebarOpen || lightboxSidebarHover) && (
+          <div
+            className={`sidebar-backdrop ${lightboxSidebarHover ? 'lightbox-backdrop' : ''}`}
+            onClick={() => {
+              setSidebarOpen(false)
+              setLightboxSidebarHover(false)
+            }}
+          />
         )}
 
         <Sidebar
@@ -1085,6 +1154,7 @@ function Gallery() {
           onTagClick={handleTagClick}
           onImageUpdate={handleImageUpdate}
           onSidebarHover={setLightboxSidebarHover}
+          onDelete={handleImageDelete}
         />
       )}
     </div>

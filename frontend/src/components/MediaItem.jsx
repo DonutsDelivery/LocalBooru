@@ -123,6 +123,7 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
   return (
     <div
       className={`media-item ${loaded ? 'loaded' : 'loading'} ${fileStatus !== 'available' ? 'unavailable' : ''} ${isSelectable ? 'selectable' : ''} ${isSelected ? 'selected' : ''}`}
+      data-image-id={image.id}
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

@@ -269,7 +269,15 @@ async def list_images(
                 "num_faces": img.num_faces,
                 "min_age": img.min_detected_age,
                 "max_age": img.max_detected_age,
-                "created_at": img.created_at.isoformat() if img.created_at else None
+                "created_at": img.created_at.isoformat() if img.created_at else None,
+                # AI generation metadata
+                "prompt": img.prompt,
+                "negative_prompt": img.negative_prompt,
+                "model_name": img.model_name,
+                "sampler": img.sampler,
+                "seed": img.seed,
+                "steps": img.steps,
+                "cfg_scale": img.cfg_scale
             }
             for img in images
         ],

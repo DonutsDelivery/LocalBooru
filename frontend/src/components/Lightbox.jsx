@@ -8,9 +8,10 @@ const isVideo = (filename) => {
   return ['webm', 'mp4', 'mov'].includes(ext)
 }
 
-function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover }) {
+function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, onDelete }) {
   const [processing, setProcessing] = useState(false)
   const [isFavorited, setIsFavorited] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const image = images[currentIndex]
 
@@ -24,10 +25,24 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
   // Touch/swipe handling
   const touchStartX = useRef(null)
   const touchStartY = useRef(null)
+  const touchMoved = useRef(false)
+  const touchHandled = useRef(false)
 
   const handleTouchStart = useCallback((e) => {
     touchStartX.current = e.touches[0].clientX
     touchStartY.current = e.touches[0].clientY
+    touchMoved.current = false
+    touchHandled.current = false
+  }, [])
+
+  const handleTouchMove = useCallback((e) => {
+    if (touchStartX.current === null) return
+    const deltaX = Math.abs(e.touches[0].clientX - touchStartX.current)
+    const deltaY = Math.abs(e.touches[0].clientY - touchStartY.current)
+    // Mark as moved if finger moved more than 10px
+    if (deltaX > 10 || deltaY > 10) {
+      touchMoved.current = true
+    }
   }, [])
 
   const handleTouchEnd = useCallback((e) => {
@@ -38,9 +53,16 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
     const deltaX = touchEndX - touchStartX.current
     const deltaY = touchEndY - touchStartY.current
 
-    // Only trigger if horizontal swipe is dominant and significant
-    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
-      if (deltaX > 0) {
+    // Require a minimum swipe of 30px (reduced from 50 for easier swiping)
+    // and horizontal movement must be dominant
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 30) {
+      touchHandled.current = true
+
+      // Swipe from left zone (not extreme edge to avoid browser gesture, but ~20-100px)
+      // opens sidebar
+      if (touchStartX.current > 20 && touchStartX.current < 100 && deltaX > 0) {
+        onSidebarHover && onSidebarHover(true)
+      } else if (deltaX > 0) {
         onNav(-1) // Swipe right = previous
       } else {
         onNav(1) // Swipe left = next
@@ -49,7 +71,7 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
 
     touchStartX.current = null
     touchStartY.current = null
-  }, [onNav])
+  }, [onNav, onSidebarHover])
 
   // Toggle favorite
   const handleToggleFavorite = useCallback(async () => {
@@ -74,6 +96,28 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
 
     setProcessing(false)
   }, [image, isFavorited, processing, onImageUpdate])
+
+  // Delete image with filesystem deletion
+  const handleDelete = useCallback(async () => {
+    if (processing || !image) return
+    setProcessing(true)
+
+    try {
+      const { deleteImage } = await import('../api')
+      await deleteImage(image.id, true) // true = delete from filesystem
+      setShowDeleteConfirm(false)
+
+      // Notify parent to remove the image and navigate
+      if (onDelete) {
+        onDelete(image.id)
+      }
+    } catch (err) {
+      console.error('Failed to delete image:', err)
+      alert('Failed to delete image: ' + err.message)
+    }
+
+    setProcessing(false)
+  }, [image, processing, onDelete])
 
   // Keyboard navigation
   useEffect(() => {
@@ -109,17 +153,24 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
 
   // Handle click navigation - left side = prev, right side = next
   const handleNavClick = (e) => {
+    // Don't navigate if we handled this as a touch gesture or if touch moved
+    if (touchMoved.current || touchHandled.current) {
+      touchMoved.current = false
+      touchHandled.current = false
+      return
+    }
+
     // Don't navigate if clicking on interactive elements
-    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, video')) return
+    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, video')) return
 
     const rect = e.currentTarget.getBoundingClientRect()
     const clickX = e.clientX - rect.left
     const width = rect.width
 
-    // Left 40% = previous (but not the sidebar hover zone which is ~60px)
+    // Left 40% = previous (but not the sidebar hover zone which is ~100px)
     // Right 40% = next
     // Middle 20% = do nothing (where the image is)
-    if (clickX < width * 0.4 && clickX > 60) {
+    if (clickX < width * 0.4 && clickX > 100) {
       onNav(-1)
     } else if (clickX > width * 0.6) {
       onNav(1)
@@ -137,6 +188,7 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
       className="lightbox"
       onClick={handleNavClick}
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       {/* Top toolbar */}
@@ -149,6 +201,18 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
         >
           <svg viewBox="0 0 24 24" fill={isFavorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+          </svg>
+        </button>
+        <button
+          className="lightbox-btn lightbox-delete"
+          onClick={() => setShowDeleteConfirm(true)}
+          disabled={processing}
+          title="Delete image"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            <line x1="10" y1="11" x2="10" y2="17"/>
+            <line x1="14" y1="11" x2="14" y2="17"/>
           </svg>
         </button>
         <button className="lightbox-btn lightbox-close" onClick={onClose} title="Close (Esc)">
@@ -222,6 +286,32 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
           <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
         </svg>
       </button>
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && (
+        <div className="lightbox-confirm-overlay" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="lightbox-confirm-dialog" onClick={e => e.stopPropagation()}>
+            <h3>Delete Image?</h3>
+            <p>This will permanently delete the file from your filesystem. This action cannot be undone.</p>
+            <div className="lightbox-confirm-actions">
+              <button
+                className="lightbox-confirm-cancel"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={processing}
+              >
+                Cancel
+              </button>
+              <button
+                className="lightbox-confirm-delete"
+                onClick={handleDelete}
+                disabled={processing}
+              >
+                {processing ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
