@@ -679,16 +679,25 @@ function Gallery() {
 
   // Subscribe to real-time library events (debounced refresh)
   // Waits 2s after last event, then refreshes once
-  // Works for live updates AND backlog when returning from background
+  // Only refreshes images when: sorted by newest, scrolled to top, and not in lightbox
   const triggerDebouncedRefresh = useCallback(() => {
     if (statsUpdateTimeout.current) {
       clearTimeout(statsUpdateTimeout.current)
     }
     statsUpdateTimeout.current = setTimeout(() => {
+      // Always update stats
       getLibraryStats().then(setStats).catch(console.error)
-      loadImages(1, false)
+
+      // Only refresh images if sorted by newest, scrolled near top, and not in lightbox
+      const isAtTop = window.scrollY < 200
+      const isNewest = currentSort === 'newest'
+      const isInLightbox = lightboxIndex !== null
+
+      if (isNewest && isAtTop && !isInLightbox) {
+        loadImages(1, false)
+      }
     }, 2000)
-  }, [loadImages])
+  }, [loadImages, currentSort, lightboxIndex])
 
   // On visibility change, start debounce - backlog events will keep resetting it
   useEffect(() => {
@@ -931,6 +940,17 @@ function Gallery() {
         <div
           className="sidebar-backdrop lightbox-backdrop"
           onClick={() => setLightboxSidebarHover(false)}
+          onTouchStart={(e) => {
+            e.currentTarget.dataset.touchStartX = e.touches[0].clientX
+          }}
+          onTouchEnd={(e) => {
+            const startX = parseFloat(e.currentTarget.dataset.touchStartX)
+            const endX = e.changedTouches[0].clientX
+            // Swipe left closes sidebar
+            if (startX - endX > 50) {
+              setLightboxSidebarHover(false)
+            }
+          }}
         />
       )}
 

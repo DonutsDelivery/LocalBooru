@@ -57,17 +57,12 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
       touchHandled.current = true
 
-      // If sidebar is open, any swipe left closes it
-      if (sidebarOpen && deltaX < 0) {
+      // Swipe right = open sidebar, swipe left = close sidebar
+      // Image navigation is done by tapping left/right sides
+      if (deltaX > 0 && !sidebarOpen) {
+        onSidebarHover && onSidebarHover(true)
+      } else if (deltaX < 0 && sidebarOpen) {
         onSidebarHover && onSidebarHover(false)
-      }
-      // Normal image navigation (when sidebar closed)
-      else if (!sidebarOpen) {
-        if (deltaX > 0) {
-          onNav(-1) // Swipe right = previous
-        } else {
-          onNav(1) // Swipe left = next
-        }
       }
     }
 
