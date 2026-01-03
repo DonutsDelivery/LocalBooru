@@ -523,6 +523,12 @@ function Gallery() {
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
   const [stats, setStats] = useState(null)
   const statsUpdateTimeout = useRef(null)
+  const lightboxIndexRef = useRef(null)
+
+  // Keep ref in sync with state (for use in timeouts)
+  useEffect(() => {
+    lightboxIndexRef.current = lightboxIndex
+  }, [lightboxIndex])
 
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false)
@@ -689,15 +695,16 @@ function Gallery() {
       getLibraryStats().then(setStats).catch(console.error)
 
       // Only refresh images if sorted by newest, scrolled near top, and not in lightbox
+      // Use ref for lightbox check since timeout captures stale closure values
       const isAtTop = window.scrollY < 200
       const isNewest = currentSort === 'newest'
-      const isInLightbox = lightboxIndex !== null
+      const isInLightbox = lightboxIndexRef.current !== null
 
       if (isNewest && isAtTop && !isInLightbox) {
         loadImages(1, false)
       }
     }, 2000)
-  }, [loadImages, currentSort, lightboxIndex])
+  }, [loadImages, currentSort])
 
   // On visibility change, start debounce - backlog events will keep resetting it
   useEffect(() => {
