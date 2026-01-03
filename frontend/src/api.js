@@ -88,6 +88,7 @@ export async function fetchImages({
   min_age,
   max_age,
   has_faces,
+  timeframe,
   sort = 'newest',
   page = 1,
   per_page = 50
@@ -101,6 +102,7 @@ export async function fetchImages({
   if (min_age !== undefined && min_age !== null) params.append('min_age', min_age)
   if (max_age !== undefined && max_age !== null) params.append('max_age', max_age)
   if (has_faces !== undefined && has_faces !== null) params.append('has_faces', has_faces)
+  if (timeframe) params.append('timeframe', timeframe)
   params.append('sort', sort)
   params.append('page', page)
   params.append('per_page', per_page)

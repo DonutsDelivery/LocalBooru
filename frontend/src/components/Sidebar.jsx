@@ -62,6 +62,15 @@ const SORT_OPTIONS = [
 const MIN_AGE_LIMIT = 0
 const MAX_AGE_LIMIT = 80
 
+// Timeframe options
+const TIMEFRAME_OPTIONS = [
+  { value: null, label: 'All Time' },
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: 'This Week' },
+  { value: 'month', label: 'This Month' },
+  { value: 'year', label: 'This Year' }
+]
+
 function Sidebar({
   tags,
   onTagClick,
@@ -78,6 +87,7 @@ function Sidebar({
   initialMinAge,
   initialMaxAge,
   initialSort,
+  initialTimeframe,
   total,
   stats,
   lightboxMode,
@@ -104,6 +114,7 @@ function Sidebar({
   const [favoritesOnly, setFavoritesOnly] = useState(initialFavoritesOnly || false)
   const [minAge, setMinAge] = useState(initialMinAge || null)
   const [maxAge, setMaxAge] = useState(initialMaxAge || null)
+  const [timeframe, setTimeframe] = useState(initialTimeframe || null)
 
   // Load directories
   useEffect(() => {
@@ -132,8 +143,9 @@ function Sidebar({
     setSelectedDirectory(initialDirectoryId || null)
     setMinAge(initialMinAge || null)
     setMaxAge(initialMaxAge || null)
+    setTimeframe(initialTimeframe || null)
     if (initialSort) setSortBy(initialSort)
-  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialMinAge, initialMaxAge, initialSort])
+  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe])
 
   const isVisible = !collapsed || hovering || mobileOpen
   const activeTags = currentTags ? currentTags.split(',').map(t => t.trim()) : []
@@ -151,7 +163,7 @@ function Sidebar({
   const handleSearchSubmit = (e) => {
     e.preventDefault()
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
   }
 
   const handleClear = () => {
@@ -162,20 +174,27 @@ function Sidebar({
     setSelectedDirectory(null)
     setMinAge(null)
     setMaxAge(null)
-    onSearch('', ALL_RATINGS.join(','), 'newest', false, null, null, null)
+    setTimeframe(null)
+    onSearch('', ALL_RATINGS.join(','), 'newest', false, null, null, null, null)
   }
 
   const handleSortChange = (newSortBy) => {
     setSortBy(newSortBy)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, newSortBy, favoritesOnly, selectedDirectory, minAge, maxAge)
+    onSearch(currentTags || '', ratingParam, newSortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
   }
 
   const handleDirectoryChange = (dirId) => {
     const newDirId = dirId === '' ? null : parseInt(dirId)
     setSelectedDirectory(newDirId)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, newDirId, minAge, maxAge)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, newDirId, minAge, maxAge, timeframe)
+  }
+
+  const handleTimeframeChange = (newTimeframe) => {
+    setTimeframe(newTimeframe)
+    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, newTimeframe)
   }
 
   const toggleRating = (rating) => {
@@ -194,7 +213,7 @@ function Sidebar({
     const newFavOnly = !favoritesOnly
     setFavoritesOnly(newFavOnly)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, newFavOnly, selectedDirectory, minAge, maxAge)
+    onSearch(currentTags || '', ratingParam, sortBy, newFavOnly, selectedDirectory, minAge, maxAge, timeframe)
   }
 
   return (
@@ -215,52 +234,43 @@ function Sidebar({
       )}
 
       <div className="sidebar-content">
-        {/* Logo and Navigation */}
-        <div className="sidebar-header">
-          {appVersion && (
-            <div className="version-info">
-              <span className="version-number">v{appVersion}</span>
-              {updateStatus?.status === 'available' && (
-                <button
-                  className="update-badge"
-                  onClick={() => window.electronAPI?.downloadUpdate()}
-                  title={`Update to v${updateStatus.version}`}
-                >
-                  Update
-                </button>
-              )}
-              {updateStatus?.status === 'downloading' && (
-                <span className="update-badge downloading">
-                  {Math.round(updateStatus.progress || 0)}%
-                </span>
-              )}
-              {updateStatus?.status === 'downloaded' && (
-                <button
-                  className="update-badge ready"
-                  onClick={() => window.electronAPI?.installUpdate()}
-                  title="Click to restart and install"
-                >
-                  Restart
-                </button>
-              )}
-            </div>
-          )}
-          <NavLink to="/" className="sidebar-logo">
-            LocalBooru
-          </NavLink>
-          {stats && (
-            <span className="sidebar-stats">
-              {stats.total_images} images
-            </span>
-          )}
-        </div>
+        {/* Version info */}
+        {appVersion && (
+          <div className="version-info">
+            <span className="version-number">v{appVersion}</span>
+            {updateStatus?.status === 'available' && (
+              <button
+                className="update-badge"
+                onClick={() => window.electronAPI?.downloadUpdate()}
+                title={`Update to v${updateStatus.version}`}
+              >
+                Update
+              </button>
+            )}
+            {updateStatus?.status === 'downloading' && (
+              <span className="update-badge downloading">
+                {Math.round(updateStatus.progress || 0)}%
+              </span>
+            )}
+            {updateStatus?.status === 'downloaded' && (
+              <button
+                className="update-badge ready"
+                onClick={() => window.electronAPI?.installUpdate()}
+                title="Click to restart and install"
+              >
+                Restart
+              </button>
+            )}
+          </div>
+        )}
 
         <nav className="sidebar-nav">
           <NavLink to="/" end className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>
             </svg>
-            Gallery
+            <span className="nav-text">Gallery</span>
+            {stats && <span className="nav-count">{stats.total_images.toLocaleString()}</span>}
           </NavLink>
           <NavLink to="/directories" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <svg viewBox="0 0 24 24" fill="currentColor">
@@ -345,11 +355,11 @@ function Sidebar({
                   }}
                   onMouseUp={() => {
                     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge)
+                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
                   }}
                   onTouchEnd={() => {
                     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge)
+                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
                   }}
                   className="age-slider age-slider-min"
                 />
@@ -365,40 +375,14 @@ function Sidebar({
                   }}
                   onMouseUp={() => {
                     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge)
+                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
                   }}
                   onTouchEnd={() => {
                     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge)
+                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
                   }}
                   className="age-slider age-slider-max"
                 />
-              </div>
-              <div className="age-quick-buttons">
-                <button
-                  type="button"
-                  className={`age-btn ${!minAge && !maxAge ? 'active' : ''}`}
-                  onClick={() => {
-                    setMinAge(null)
-                    setMaxAge(null)
-                    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, null, null)
-                  }}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  className={`age-btn ${minAge === 18 && !maxAge ? 'active' : ''}`}
-                  onClick={() => {
-                    setMinAge(18)
-                    setMaxAge(null)
-                    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, 18, null)
-                  }}
-                >
-                  18+
-                </button>
               </div>
             </div>
 
@@ -411,6 +395,22 @@ function Sidebar({
                     type="button"
                     className={`sort-btn ${sortBy === option.value ? 'active' : ''}`}
                     onClick={() => handleSortChange(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Timeframe Filter */}
+            <div className="timeframe-filter">
+              <div className="timeframe-buttons">
+                {TIMEFRAME_OPTIONS.map(option => (
+                  <button
+                    key={option.value || 'all'}
+                    type="button"
+                    className={`timeframe-btn ${timeframe === option.value ? 'active' : ''}`}
+                    onClick={() => handleTimeframeChange(option.value)}
                   >
                     {option.label}
                   </button>

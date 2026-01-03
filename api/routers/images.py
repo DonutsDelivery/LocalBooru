@@ -138,6 +138,7 @@ async def list_images(
     min_age: Optional[int] = Query(None, ge=0, le=120, description="Minimum detected age"),
     max_age: Optional[int] = Query(None, ge=0, le=120, description="Maximum detected age"),
     has_faces: Optional[bool] = Query(None, description="Filter to images with detected faces"),
+    timeframe: Optional[str] = Query(None, description="Filter by timeframe: today, week, month, year"),
     sort: str = "newest",
     db: AsyncSession = Depends(get_db)
 ):
@@ -188,6 +189,23 @@ async def list_images(
             filters.append(Image.num_faces > 0)
         else:
             filters.append(or_(Image.num_faces == 0, Image.num_faces.is_(None)))
+
+    # Timeframe filter (based on when image was added to library)
+    if timeframe:
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        if timeframe == 'today':
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            filters.append(Image.created_at >= start)
+        elif timeframe == 'week':
+            start = now - timedelta(days=7)
+            filters.append(Image.created_at >= start)
+        elif timeframe == 'month':
+            start = now - timedelta(days=30)
+            filters.append(Image.created_at >= start)
+        elif timeframe == 'year':
+            start = now - timedelta(days=365)
+            filters.append(Image.created_at >= start)
 
     # Directory filter
     if directory_id is not None:

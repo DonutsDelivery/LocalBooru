@@ -547,6 +547,7 @@ function Gallery() {
   const currentDirectoryId = searchParams.get('directory') ? parseInt(searchParams.get('directory')) : null
   const currentMinAge = searchParams.get('min_age') ? parseInt(searchParams.get('min_age')) : null
   const currentMaxAge = searchParams.get('max_age') ? parseInt(searchParams.get('max_age')) : null
+  const currentTimeframe = searchParams.get('timeframe') || null
 
   // Load saved filters from localStorage on mount
   useEffect(() => {
@@ -613,6 +614,7 @@ function Gallery() {
         directory_id: currentDirectoryId,
         min_age: currentMinAge,
         max_age: currentMaxAge,
+        timeframe: currentTimeframe,
         sort: currentSort,
         page: pageNum,
         per_page: 50
@@ -630,7 +632,7 @@ function Gallery() {
       console.error('Failed to load images:', error)
     }
     setLoading(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe])
 
   // Update a single image in the images array
   const handleImageUpdate = useCallback((imageId, updates) => {
@@ -673,7 +675,7 @@ function Gallery() {
 
   useEffect(() => {
     loadImages(1, false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, loadImages])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, loadImages])
 
   useEffect(() => {
     loadTags()
@@ -759,7 +761,7 @@ function Gallery() {
     setSearchParams(params)
   }
 
-  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge) => {
+  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe) => {
     const params = {}
     if (tags) params.tags = tags
     if (rating && rating !== 'pg,pg13,r,x,xxx') params.rating = rating
@@ -768,6 +770,7 @@ function Gallery() {
     if (directoryId) params.directory = directoryId
     if (minAge !== null && minAge !== undefined) params.min_age = minAge
     if (maxAge !== null && maxAge !== undefined) params.max_age = maxAge
+    if (timeframe) params.timeframe = timeframe
     setSearchParams(params)
   }
 
@@ -987,6 +990,7 @@ function Gallery() {
           initialMinAge={currentMinAge}
           initialMaxAge={currentMaxAge}
           initialSort={currentSort}
+          initialTimeframe={currentTimeframe}
           total={total}
           stats={stats}
           lightboxMode={lightboxIndex !== null}
