@@ -123,7 +123,11 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
 
       switch (e.key) {
         case 'Escape':
-          onClose()
+          if (showDeleteConfirm) {
+            setShowDeleteConfirm(false)
+          } else {
+            onClose()
+          }
           break
         case 'ArrowLeft':
         case 'a':
@@ -136,6 +140,9 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
         case 'f':
           handleToggleFavorite()
           break
+        case 'Delete':
+          setShowDeleteConfirm(true)
+          break
       }
     }
 
@@ -146,7 +153,7 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [onNav, onClose, handleToggleFavorite])
+  }, [onNav, onClose, handleToggleFavorite, showDeleteConfirm])
 
   // Handle click navigation - left side = prev, right side = next
   const handleNavClick = (e) => {
