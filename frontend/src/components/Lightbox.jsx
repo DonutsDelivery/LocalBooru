@@ -12,6 +12,7 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
   const [processing, setProcessing] = useState(false)
   const [isFavorited, setIsFavorited] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [copyFeedback, setCopyFeedback] = useState(null) // 'success' | 'error' | null
 
   const image = images[currentIndex]
 
@@ -116,10 +117,54 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
     setProcessing(false)
   }, [image, processing, onDelete])
 
+  // Copy image to clipboard
+  const handleCopyImage = useCallback(async () => {
+    if (!image) return
+
+    // Don't copy videos
+    if (isVideo(image.original_filename)) {
+      setCopyFeedback('error')
+      setTimeout(() => setCopyFeedback(null), 1500)
+      return
+    }
+
+    try {
+      // Use Electron API if available
+      if (window.electronAPI?.copyImageToClipboard) {
+        const result = await window.electronAPI.copyImageToClipboard(image.url)
+        if (result.success) {
+          setCopyFeedback('success')
+        } else {
+          throw new Error(result.error)
+        }
+      } else {
+        // Fallback for browser - fetch and copy
+        const response = await fetch(image.url)
+        const blob = await response.blob()
+        await navigator.clipboard.write([
+          new ClipboardItem({ [blob.type]: blob })
+        ])
+        setCopyFeedback('success')
+      }
+    } catch (error) {
+      console.error('Failed to copy image:', error)
+      setCopyFeedback('error')
+    }
+
+    setTimeout(() => setCopyFeedback(null), 1500)
+  }, [image])
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+
+      // Ctrl+C to copy image
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        e.preventDefault()
+        handleCopyImage()
+        return
+      }
 
       switch (e.key) {
         case 'Escape':
@@ -153,7 +198,7 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [onNav, onClose, handleToggleFavorite, showDeleteConfirm])
+  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, showDeleteConfirm])
 
   // Handle click navigation - left side = prev, right side = next
   const handleNavClick = (e) => {
@@ -283,6 +328,10 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
             src={image.url}
             alt=""
             className="lightbox-media"
+            onContextMenu={(e) => {
+              e.preventDefault()
+              handleCopyImage()
+            }}
           />
         )}
       </div>
@@ -290,6 +339,13 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
       <div className="lightbox-counter">
         {currentIndex + 1} / {images.length}
       </div>
+
+      {/* Copy feedback toast */}
+      {copyFeedback && (
+        <div className={`lightbox-copy-toast ${copyFeedback}`}>
+          {copyFeedback === 'success' ? 'Copied to clipboard!' : 'Cannot copy this file'}
+        </div>
+      )}
 
       {/* Mobile favorite button - bottom center like camera shutter */}
       <button

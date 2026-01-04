@@ -2,7 +2,7 @@
  * LocalBooru Electron Main Process
  * Manages the app lifecycle, backend server, and directory watcher
  */
-const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell, clipboard, nativeImage } = require('electron');
 const path = require('path');
 const BackendManager = require('./backendManager');
 const DirectoryWatcher = require('./directoryWatcher');
@@ -256,6 +256,28 @@ function setupIPC() {
   ipcMain.handle('quit-app', () => {
     app.isQuitting = true;
     app.quit();
+  });
+
+  // Copy image to clipboard
+  ipcMain.handle('copy-image-to-clipboard', async (event, imageUrl) => {
+    try {
+      // Fetch the image data
+      const response = await fetch(imageUrl);
+      if (!response.ok) throw new Error('Failed to fetch image');
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      // Create native image and copy to clipboard
+      const image = nativeImage.createFromBuffer(buffer);
+      if (image.isEmpty()) throw new Error('Invalid image data');
+
+      clipboard.writeImage(image);
+      return { success: true };
+    } catch (error) {
+      console.error('[Clipboard] Failed to copy image:', error);
+      return { success: false, error: error.message };
+    }
   });
 
   // Note: check-for-updates is handled by updater.js as 'updater:check'
