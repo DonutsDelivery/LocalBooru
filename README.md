@@ -10,7 +10,7 @@ A local image library with automatic AI tagging, designed for organizing and bro
 
 | Platform | Download |
 |----------|----------|
-| **Windows** | [Portable](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Portable.exe) &#124; [Installer](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Setup.exe) |
+| **Windows** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Windows-Portable.zip) &#124; [Installer](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Setup.exe) |
 | **Linux** | [AppImage](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.AppImage) |
 | **macOS** | [Apple Silicon](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.dmg) &#124; [Intel](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-x64.dmg) |
 

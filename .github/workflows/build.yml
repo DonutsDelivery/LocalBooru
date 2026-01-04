@@ -240,6 +240,7 @@ jobs:
           name: windows-builds
           path: |
             dist/*.exe
+            dist/*.zip
             dist/*.appx
             dist/*.blockmap
             dist/latest.yml
