@@ -100,6 +100,27 @@ jobs:
       - name: Build frontend
         run: npm run build:frontend
 
+      - name: Verify frontend build
+        shell: pwsh
+        run: |
+          Write-Host "Frontend build contents:"
+          Get-ChildItem -Path "frontend/dist" -Recurse | Select-Object FullName
+          Write-Host ""
+          Write-Host "Index.html content (first 50 lines):"
+          Get-Content "frontend/dist/index.html" | Select-Object -First 50
+          Write-Host ""
+          Write-Host "Checking for /api in JS bundle:"
+          $jsFile = Get-ChildItem "frontend/dist/assets/*.js" | Select-Object -First 1
+          if ($jsFile) {
+            $content = Get-Content $jsFile.FullName -Raw
+            if ($content -match "return.*/api") {
+              Write-Host "SUCCESS: Found /api return in JS bundle"
+            } else {
+              Write-Host "ERROR: /api return NOT found in JS bundle!"
+              exit 1
+            }
+          }
+
       - name: Prepare Python bundle
         shell: pwsh
         run: |
