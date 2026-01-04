@@ -36,14 +36,17 @@ A local image library with automatic AI tagging, designed for organizing and bro
 - Automatically checks for new versions
 - One-click update installation
 
+## Download
+
+| Platform | Download |
+|----------|----------|
+| **Windows** | [Download Portable](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Portable.exe) &#124; [Download Installer](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Setup.exe) |
+| **Linux** | [Download AppImage](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.AppImage) |
+| **macOS** | [Apple Silicon](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.dmg) &#124; [Intel](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-x64.dmg) |
+
+See all releases: [Releases page](https://github.com/DonutsDelivery/LocalBooru/releases)
+
 ## Installation
-
-### Download
-Get the latest release for your platform from the [Releases](https://github.com/DonutsDelivery/LocalBooru/releases) page:
-
-- **Windows**: `LocalBooru-Setup-x.x.x.exe` (installer) or `LocalBooru-Portable-x.x.x.exe`
-- **macOS**: `LocalBooru-x.x.x-arm64.dmg` (Apple Silicon) or `LocalBooru-x.x.x-x64.dmg` (Intel)
-- **Linux**: `LocalBooru-x.x.x.AppImage`, `.deb`, or `.rpm`
 
 ### Requirements
 - **Windows/macOS**: No additional requirements
