@@ -2,6 +2,8 @@
 
 A local image library with automatic AI tagging, designed for organizing and browsing large image collections.
 
+[![Discord](https://img.shields.io/discord/1324428741582221363?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.gg/ZhvPhXrdZ4) - Help, feature requests, and discussions
+
 ![Gallery View](screenshots/gallery.png)
 
 ## Download
