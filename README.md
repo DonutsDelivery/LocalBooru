@@ -16,14 +16,13 @@ A local image library with automatic AI tagging, designed for organizing and bro
 
 ### USB Portable Mode
 
-For true portability (carry your library on a USB drive):
+The **Portable (ZIP)** version automatically stores all data next to the app - no setup needed:
 
-1. Download the **Portable (ZIP)** version
-2. Extract to your USB drive or any folder
-3. Create a `data` folder next to `LocalBooru.exe`
-4. Run the app - all data stays in that folder
+1. Download and extract to your USB drive or any folder
+2. Run the app - a `data` folder is created automatically
+3. Copy the entire folder to any computer and your library comes with you
 
-Copy the entire folder to any computer and your library comes with you.
+The installer version uses AppData instead (shared across updates).
 
 ## Features
 

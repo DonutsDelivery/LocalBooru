@@ -24,9 +24,9 @@ class BackendManager {
 
   /**
    * Detect if running in portable mode
-   * Portable mode is enabled when:
-   * - A 'data' folder exists next to the app executable, OR
-   * - A '.portable' marker file exists next to the executable
+   * Portable mode is DEFAULT for packaged apps, unless:
+   * - Running from Program Files (Windows installer location)
+   * - A '.use-appdata' marker file exists next to the executable
    */
   detectPortableMode() {
     try {
@@ -36,22 +36,35 @@ class BackendManager {
         // Packaged app: use the directory containing the executable
         appDir = path.dirname(app.getPath('exe'));
       } else {
-        // Development: check project root
-        appDir = path.join(__dirname, '..');
+        // Development: don't use portable mode
+        return;
       }
 
       const portableDataPath = path.join(appDir, 'data');
-      const portableMarker = path.join(appDir, '.portable');
+      const useAppdataMarker = path.join(appDir, '.use-appdata');
 
-      // Check for portable marker or data folder
-      if (fs.existsSync(portableMarker) || fs.existsSync(portableDataPath)) {
-        // Create data folder if it doesn't exist
-        if (!fs.existsSync(portableDataPath)) {
-          fs.mkdirSync(portableDataPath, { recursive: true });
-        }
-        this.portableDataDir = portableDataPath;
-        console.log('[Backend] Portable mode enabled, data:', portableDataPath);
+      // Check if we should use AppData instead of portable mode
+      if (fs.existsSync(useAppdataMarker)) {
+        console.log('[Backend] Found .use-appdata marker, using AppData');
+        return;
       }
+
+      // Check if installed in Program Files (Windows)
+      if (process.platform === 'win32') {
+        const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+        const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+        if (appDir.startsWith(programFiles) || appDir.startsWith(programFilesX86)) {
+          console.log('[Backend] Running from Program Files, using AppData');
+          return;
+        }
+      }
+
+      // Default: use portable mode - create data folder next to exe
+      if (!fs.existsSync(portableDataPath)) {
+        fs.mkdirSync(portableDataPath, { recursive: true });
+      }
+      this.portableDataDir = portableDataPath;
+      console.log('[Backend] Portable mode enabled, data:', portableDataPath);
     } catch (e) {
       console.log('[Backend] Error detecting portable mode:', e.message);
     }
