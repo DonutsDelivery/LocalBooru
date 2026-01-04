@@ -1,6 +1,6 @@
 {
   "name": "localbooru",
-  "version": "0.1.87",
+  "version": "0.1.88",
   "description": "Local image library with automatic tagging",
   "main": "electron/main.js",
   "scripts": {
@@ -70,7 +70,7 @@
       ],
       "icon": "assets/icon.png",
       "category": "Graphics",
-      "artifactName": "${productName}-${version}.${ext}"
+      "artifactName": "${productName}-Linux.${ext}"
     },
     "deb": {
       "depends": [
@@ -92,10 +92,10 @@
       ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.photography",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-macOS-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-macOS-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -104,7 +104,7 @@
         "appx"
       ],
       "icon": "assets/icon.ico",
-      "artifactName": "${productName}-${version}.${ext}",
+      "artifactName": "${productName}-Windows.${ext}",
       "extraResources": [
         {
           "from": "python-embed",
@@ -139,15 +139,15 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "perMachine": false,
-      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "artifactName": "${productName}-Setup.${ext}",
       "differentialPackage": true
     },
     "compression": "normal",
     "portable": {
-      "artifactName": "${productName}-Portable-${version}.${ext}"
+      "artifactName": "${productName}-Portable.${ext}"
     },
     "appx": {
-      "artifactName": "${productName}-Store-${version}.${ext}",
+      "artifactName": "${productName}-Store.${ext}",
       "displayName": "LocalBooru",
       "identityName": "LocalBooru",
       "publisher": "CN=DonutsDelivery",
