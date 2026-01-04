@@ -140,10 +140,18 @@ function createTray() {
   // On other platforms, use default behavior
   if (process.platform === 'win32') {
     tray.on('click', () => {
+      console.log('[Tray] Left-click detected');
       if (mainWindow) {
+        console.log('[Tray] Window exists, showing...');
+        if (mainWindow.isMinimized()) {
+          mainWindow.restore();
+        }
         mainWindow.show();
+        mainWindow.setAlwaysOnTop(true);
         mainWindow.focus();
+        mainWindow.setAlwaysOnTop(false);
       } else {
+        console.log('[Tray] No window, creating...');
         createWindow();
       }
     });
