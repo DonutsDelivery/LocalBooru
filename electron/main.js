@@ -56,6 +56,9 @@ function createWindow() {
     show: false // Show when ready
   });
 
+  // Clear cache to prevent stale HTML after updates
+  mainWindow.webContents.session.clearCache();
+
   // Load the frontend from backend server (same as browser access)
   if (isDev) {
     mainWindow.loadURL('http://localhost:5174');
