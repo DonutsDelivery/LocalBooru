@@ -454,6 +454,51 @@ function Sidebar({
                 {selectedImage.rating}
               </span>
 
+              {selectedImage.created_at && (
+                <>
+                  <span className="info-label">Added</span>
+                  <span className="info-value">
+                    {new Date(selectedImage.created_at).toLocaleDateString()}
+                  </span>
+                </>
+              )}
+
+              {selectedImage.file_size && (
+                <>
+                  <span className="info-label">File Size</span>
+                  <span className="info-value">
+                    {selectedImage.file_size >= 1024 * 1024
+                      ? `${(selectedImage.file_size / (1024 * 1024)).toFixed(1)} MB`
+                      : `${(selectedImage.file_size / 1024).toFixed(0)} KB`}
+                  </span>
+                </>
+              )}
+
+              {selectedImage.file_path && (
+                <>
+                  <span className="info-label">Format</span>
+                  <span className="info-value">
+                    {selectedImage.file_path.split('.').pop()?.toUpperCase()}
+                  </span>
+                </>
+              )}
+
+              {selectedImage.directory_name && (
+                <>
+                  <span className="info-label">Directory</span>
+                  <span className="info-value">{selectedImage.directory_name}</span>
+                </>
+              )}
+
+              {selectedImage.file_path && (
+                <>
+                  <span className="info-label">Path</span>
+                  <span className="info-value file-path" title={selectedImage.file_path}>
+                    {selectedImage.file_path.split('/').pop()}
+                  </span>
+                </>
+              )}
+
               {selectedImage.file_status && selectedImage.file_status !== 'available' && (
                 <>
                   <span className="info-label">Status</span>

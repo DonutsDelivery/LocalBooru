@@ -792,6 +792,12 @@
   text-decoration: underline;
 }
 
+.info-value.file-path {
+  font-size: 0.8rem;
+  word-break: break-all;
+  cursor: help;
+}
+
 .uploader-filter {
   display: flex;
   align-items: center;

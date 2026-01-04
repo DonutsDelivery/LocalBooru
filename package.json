@@ -1,6 +1,6 @@
 {
   "name": "localbooru",
-  "version": "0.1.85",
+  "version": "0.1.87",
   "description": "Local image library with automatic tagging",
   "main": "electron/main.js",
   "scripts": {

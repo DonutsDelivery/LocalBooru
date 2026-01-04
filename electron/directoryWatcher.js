@@ -46,7 +46,7 @@ class DirectoryWatcher {
    */
   async fetchDirectories() {
     return new Promise((resolve, reject) => {
-      http.get(`${this.apiBaseUrl}/directories`, (res) => {
+      http.get(`${this.apiBaseUrl}/api/directories`, (res) => {
         let data = '';
         res.on('data', chunk => data += chunk);
         res.on('end', () => {

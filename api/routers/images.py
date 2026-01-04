@@ -143,7 +143,10 @@ async def list_images(
     db: AsyncSession = Depends(get_db)
 ):
     """List images with filtering and pagination"""
-    query = select(Image).options(selectinload(Image.tags), selectinload(Image.files))
+    query = select(Image).options(
+        selectinload(Image.tags),
+        selectinload(Image.files).selectinload(ImageFile.watch_directory)
+    )
 
     filters = []
 
@@ -288,6 +291,10 @@ async def list_images(
                 "min_age": img.min_detected_age,
                 "max_age": img.max_detected_age,
                 "created_at": img.created_at.isoformat() if img.created_at else None,
+                # File metadata
+                "file_size": img.file_size,
+                "file_path": img.files[0].original_path if img.files else None,
+                "directory_name": img.files[0].watch_directory.name if img.files and img.files[0].watch_directory else None,
                 # AI generation metadata
                 "prompt": img.prompt,
                 "negative_prompt": img.negative_prompt,
