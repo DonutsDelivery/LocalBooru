@@ -14,6 +14,17 @@ A local image library with automatic AI tagging, designed for organizing and bro
 | **Linux** | [AppImage](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.AppImage) |
 | **macOS** | [Apple Silicon](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.dmg) &#124; [Intel](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-x64.dmg) |
 
+### USB Portable Mode
+
+For true portability (carry your library on a USB drive):
+
+1. Download the **Portable (ZIP)** version
+2. Extract to your USB drive or any folder
+3. Create a `data` folder next to `LocalBooru.exe`
+4. Run the app - all data stays in that folder
+
+Copy the entire folder to any computer and your library comes with you.
+
 ## Features
 
 ### Automatic AI Tagging
