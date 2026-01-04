@@ -1,6 +1,6 @@
 {
   "name": "localbooru",
-  "version": "0.1.93",
+  "version": "0.1.94",
   "description": "Local image library with automatic tagging",
   "main": "electron/main.js",
   "scripts": {
@@ -147,9 +147,6 @@
     "portable": {
       "artifactName": "${productName}-Portable.${ext}",
       "unpackDirName": "LocalBooru"
-    },
-    "zip": {
-      "artifactName": "${productName}-Windows-Portable.${ext}"
     },
     "appx": {
       "artifactName": "${productName}-Store.${ext}",
