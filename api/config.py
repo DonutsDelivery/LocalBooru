@@ -8,7 +8,15 @@ import os
 
 
 def get_data_dir() -> Path:
-    """Get LocalBooru data directory"""
+    """Get LocalBooru data directory - portable or roaming"""
+    # Check for portable mode (set by Electron when running from portable folder)
+    portable_data = os.environ.get('LOCALBOORU_PORTABLE_DATA')
+    if portable_data:
+        data_dir = Path(portable_data)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+
+    # Default: AppData (Windows) or home (Linux/Mac)
     if os.name == 'nt':  # Windows
         base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
     else:  # Linux/Mac

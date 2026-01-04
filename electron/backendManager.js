@@ -16,13 +16,64 @@ class BackendManager {
     this.healthCheckInterval = null;
     this.restartAttempts = 0;
     this.maxRestartAttempts = 5;
+    this.portableDataDir = null;
+
+    // Detect portable mode on construction
+    this.detectPortableMode();
+  }
+
+  /**
+   * Detect if running in portable mode
+   * Portable mode is enabled when:
+   * - A 'data' folder exists next to the app executable, OR
+   * - A '.portable' marker file exists next to the executable
+   */
+  detectPortableMode() {
+    try {
+      // Get the directory containing the app
+      let appDir;
+      if (app.isPackaged) {
+        // Packaged app: use the directory containing the executable
+        appDir = path.dirname(app.getPath('exe'));
+      } else {
+        // Development: check project root
+        appDir = path.join(__dirname, '..');
+      }
+
+      const portableDataPath = path.join(appDir, 'data');
+      const portableMarker = path.join(appDir, '.portable');
+
+      // Check for portable marker or data folder
+      if (fs.existsSync(portableMarker) || fs.existsSync(portableDataPath)) {
+        // Create data folder if it doesn't exist
+        if (!fs.existsSync(portableDataPath)) {
+          fs.mkdirSync(portableDataPath, { recursive: true });
+        }
+        this.portableDataDir = portableDataPath;
+        console.log('[Backend] Portable mode enabled, data:', portableDataPath);
+      }
+    } catch (e) {
+      console.log('[Backend] Error detecting portable mode:', e.message);
+    }
+  }
+
+  /**
+   * Check if running in portable mode
+   */
+  isPortable() {
+    return this.portableDataDir !== null;
   }
 
   /**
    * Get LocalBooru data directory (matches Python API location)
    */
   getDataDir() {
-    // Match Python's get_data_dir() logic for consistency
+    // Use portable data directory if in portable mode
+    if (this.portableDataDir) {
+      return this.portableDataDir;
+    }
+
+    // Default: AppData (Windows) or home (Linux/Mac)
     if (process.platform === 'win32') {
       const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
       return path.join(appData, '.localbooru');
@@ -204,6 +255,11 @@ class BackendManager {
     // Ensure packages directory exists
     if (!fs.existsSync(packagesDir)) {
       fs.mkdirSync(packagesDir, { recursive: true });
+    }
+
+    // Add portable data directory if in portable mode
+    if (this.portableDataDir) {
+      baseEnv.LOCALBOORU_PORTABLE_DATA = this.portableDataDir;
     }
 
     if (process.platform === 'win32') {
