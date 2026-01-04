@@ -135,14 +135,33 @@ function createTray() {
   ]);
 
   tray.setToolTip('LocalBooru');
-  tray.setContextMenu(contextMenu);
 
-  tray.on('double-click', () => {
-    if (mainWindow) {
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
+  // On Windows, left-click shows window, right-click shows menu
+  // On other platforms, use default behavior
+  if (process.platform === 'win32') {
+    tray.on('click', () => {
+      if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+      } else {
+        createWindow();
+      }
+    });
+
+    tray.on('right-click', () => {
+      tray.popUpContextMenu(contextMenu);
+    });
+  } else {
+    // macOS/Linux: use standard context menu behavior
+    tray.setContextMenu(contextMenu);
+
+    tray.on('double-click', () => {
+      if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+  }
 }
 
 /**
