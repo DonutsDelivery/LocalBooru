@@ -626,7 +626,8 @@ function Gallery() {
         setImages(result.images)
       }
       setTotal(result.total)
-      setHasMore(result.images.length === 50)
+      const loadedCount = append ? images.length + result.images.length : result.images.length
+      setHasMore(loadedCount < result.total)
       setPage(pageNum)
     } catch (error) {
       console.error('Failed to load images:', error)
@@ -818,7 +819,8 @@ function Gallery() {
 
         if (result.images.length > 0) {
           setImages(prev => [...prev, ...result.images])
-          setHasMore(result.images.length === 50)
+          const newLoadedCount = images.length + result.images.length
+          setHasMore(newLoadedCount < result.total)
           setPage(nextPage)
           // Navigate to the first image of the new page
           setLightboxIndex(result.images[0].id)
@@ -829,9 +831,9 @@ function Gallery() {
       }
     }
 
-    // Normal navigation within current images
-    if (newIndex < 0) newIndex = images.length - 1
-    if (newIndex >= images.length) newIndex = 0
+    // Stay at boundaries - don't wrap
+    if (newIndex < 0) return
+    if (newIndex >= images.length) return
     setLightboxIndex(images[newIndex]?.id ?? lightboxIndex)
   }
 
@@ -1185,6 +1187,7 @@ function Gallery() {
         <Lightbox
           images={images}
           currentIndex={images.findIndex(img => img.id === lightboxIndex)}
+          total={total}
           onClose={handleLightboxClose}
           onNav={handleLightboxNav}
           onTagClick={handleTagClick}

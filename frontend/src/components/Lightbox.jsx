@@ -8,7 +8,7 @@ const isVideo = (filename) => {
   return ['webm', 'mp4', 'mov'].includes(ext)
 }
 
-function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
+function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
   const [processing, setProcessing] = useState(false)
   const [isFavorited, setIsFavorited] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -353,7 +353,7 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
       </div>
 
       <div className="lightbox-counter">
-        {currentIndex + 1} / {images.length}
+        {currentIndex + 1} / {total}
       </div>
 
       {/* Copy feedback toast */}
