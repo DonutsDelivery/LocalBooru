@@ -13,8 +13,36 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [isFavorited, setIsFavorited] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [copyFeedback, setCopyFeedback] = useState(null) // 'success' | 'error' | null
+  const [showUI, setShowUI] = useState(true)
+  const hideUITimeout = useRef(null)
 
   const image = images[currentIndex]
+
+  // Auto-hide UI after inactivity
+  const resetHideTimer = useCallback(() => {
+    setShowUI(true)
+    if (hideUITimeout.current) {
+      clearTimeout(hideUITimeout.current)
+    }
+    hideUITimeout.current = setTimeout(() => {
+      setShowUI(false)
+    }, 3000)
+  }, [])
+
+  // Start hide timer on mount, clear on unmount
+  useEffect(() => {
+    resetHideTimer()
+    return () => {
+      if (hideUITimeout.current) {
+        clearTimeout(hideUITimeout.current)
+      }
+    }
+  }, [resetHideTimer])
+
+  // Handle mouse movement to show UI
+  const handleMouseMove = useCallback(() => {
+    resetHideTimer()
+  }, [resetHideTimer])
 
   // Track favorite state for current image
   useEffect(() => {
@@ -34,7 +62,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     touchStartY.current = e.touches[0].clientY
     touchMoved.current = false
     touchHandled.current = false
-  }, [])
+    resetHideTimer() // Show UI on touch
+  }, [resetHideTimer])
 
   const handleTouchMove = useCallback((e) => {
     if (touchStartX.current === null) return
@@ -234,8 +263,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   return (
     <div
-      className="lightbox"
+      className={`lightbox ${!showUI ? 'ui-hidden' : ''}`}
       onClick={handleNavClick}
+      onMouseMove={handleMouseMove}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}

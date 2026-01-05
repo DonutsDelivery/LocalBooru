@@ -20,6 +20,15 @@
   display: flex;
   gap: 8px;
   z-index: 10;
+  transition: opacity 0.3s ease;
+}
+
+/* Auto-hide UI on inactivity */
+.lightbox.ui-hidden .lightbox-toolbar,
+.lightbox.ui-hidden .lightbox-counter,
+.lightbox.ui-hidden .lightbox-mobile-favorite {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .lightbox-btn {
@@ -102,6 +111,7 @@
   border-radius: 20px;
   color: white;
   font-size: 0.9rem;
+  transition: opacity 0.3s ease;
 }
 
 /* Unavailable file states */
