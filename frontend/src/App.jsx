@@ -621,7 +621,12 @@ function Gallery() {
       })
 
       if (append) {
-        setImages(prev => [...prev, ...result.images])
+        // Deduplicate when appending to avoid showing same image twice
+        setImages(prev => {
+          const existingIds = new Set(prev.map(img => img.id))
+          const newImages = result.images.filter(img => !existingIds.has(img.id))
+          return [...prev, ...newImages]
+        })
       } else {
         setImages(result.images)
       }
@@ -812,19 +817,26 @@ function Gallery() {
           directory_id: currentDirectoryId,
           min_age: currentMinAge,
           max_age: currentMaxAge,
+          timeframe: currentTimeframe,
           sort: currentSort,
           page: nextPage,
           per_page: 50
         })
 
         if (result.images.length > 0) {
-          setImages(prev => [...prev, ...result.images])
-          const newLoadedCount = images.length + result.images.length
-          setHasMore(newLoadedCount < result.total)
-          setPage(nextPage)
-          // Navigate to the first image of the new page
-          setLightboxIndex(result.images[0].id)
-          return
+          // Deduplicate to avoid showing same image twice
+          const existingIds = new Set(images.map(img => img.id))
+          const newImages = result.images.filter(img => !existingIds.has(img.id))
+
+          if (newImages.length > 0) {
+            setImages(prev => [...prev, ...newImages])
+            const newLoadedCount = images.length + newImages.length
+            setHasMore(newLoadedCount < result.total)
+            setPage(nextPage)
+            // Navigate to the first new image
+            setLightboxIndex(newImages[0].id)
+            return
+          }
         }
       } catch (error) {
         console.error('Failed to load more images:', error)
