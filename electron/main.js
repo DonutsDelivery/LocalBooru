@@ -280,6 +280,44 @@ function setupIPC() {
     }
   });
 
+  // Show image context menu
+  ipcMain.handle('show-image-context-menu', async (event, { imageUrl, filePath, isVideo }) => {
+    const menuTemplate = [];
+
+    if (!isVideo) {
+      menuTemplate.push({
+        label: 'Copy Image',
+        click: async () => {
+          try {
+            const response = await fetch(imageUrl);
+            if (!response.ok) throw new Error('Failed to fetch image');
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            const image = nativeImage.createFromBuffer(buffer);
+            if (image.isEmpty()) throw new Error('Invalid image data');
+            clipboard.writeImage(image);
+          } catch (error) {
+            console.error('[Clipboard] Failed to copy image:', error);
+          }
+        }
+      });
+    }
+
+    if (filePath) {
+      menuTemplate.push({
+        label: 'Show in Folder',
+        click: () => {
+          shell.showItemInFolder(filePath);
+        }
+      });
+    }
+
+    if (menuTemplate.length > 0) {
+      const menu = Menu.buildFromTemplate(menuTemplate);
+      menu.popup({ window: mainWindow });
+    }
+  });
+
   // Note: check-for-updates is handled by updater.js as 'updater:check'
 
   ipcMain.handle('is-maximized', () => {

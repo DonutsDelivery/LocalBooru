@@ -321,6 +321,16 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
             autoPlay
             loop
             className="lightbox-media"
+            onContextMenu={(e) => {
+              e.preventDefault()
+              if (window.electronAPI?.showImageContextMenu) {
+                window.electronAPI.showImageContextMenu({
+                  imageUrl: image.url,
+                  filePath: image.file_path,
+                  isVideo: true
+                })
+              }
+            }}
           />
         ) : (
           <img
@@ -330,7 +340,13 @@ function Lightbox({ images, currentIndex, onClose, onNav, onTagClick, onImageUpd
             className="lightbox-media"
             onContextMenu={(e) => {
               e.preventDefault()
-              handleCopyImage()
+              if (window.electronAPI?.showImageContextMenu) {
+                window.electronAPI.showImageContextMenu({
+                  imageUrl: image.url,
+                  filePath: image.file_path,
+                  isVideo: false
+                })
+              }
             }}
           />
         )}

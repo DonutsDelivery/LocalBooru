@@ -49,7 +49,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   quitApp: () => ipcRenderer.invoke('quit-app'),
 
   // Clipboard
-  copyImageToClipboard: (imageUrl) => ipcRenderer.invoke('copy-image-to-clipboard', imageUrl)
+  copyImageToClipboard: (imageUrl) => ipcRenderer.invoke('copy-image-to-clipboard', imageUrl),
+
+  // Context menu for images
+  showImageContextMenu: (options) => ipcRenderer.invoke('show-image-context-menu', options)
 });
 
 // Log that preload script loaded
