@@ -1,7 +1,22 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { fetchDirectories } from '../api'
+import { fetchDirectories, searchTags } from '../api'
 import './Sidebar.css'
+
+// Debounce hook for tag search input
+function useDebounce(value, delay) {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => clearTimeout(handler)
+  }, [value, delay])
+
+  return debouncedValue
+}
 
 // Collapsible prompt section with copy button
 function PromptSection({ label, text, isNegative }) {
@@ -148,15 +163,47 @@ function Sidebar({
   }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe])
 
   const isVisible = !collapsed || hovering || mobileOpen
-  const activeTags = currentTags ? currentTags.split(',').map(t => t.trim()) : []
 
-  // Group tags by category
-  const groupedTags = (tags || []).reduce((acc, tag) => {
+  // Memoize activeTags to prevent unnecessary re-renders and useEffect triggers
+  const activeTags = useMemo(() =>
+    currentTags ? currentTags.split(',').map(t => t.trim()) : []
+  , [currentTags])
+
+  // Debounce tag input for performance (150ms delay)
+  const debouncedTagInput = useDebounce(tagInput, 150)
+
+  // State for API-fetched suggestions
+  const [suggestions, setSuggestions] = useState([])
+
+  // Fetch suggestions from API when debounced input changes
+  useEffect(() => {
+    if (debouncedTagInput.length < 2) {
+      setSuggestions([])
+      return
+    }
+
+    let cancelled = false
+    searchTags(debouncedTagInput, 10).then(results => {
+      if (!cancelled) {
+        // Filter out already active tags
+        const filtered = results.filter(tag => !activeTags.includes(tag.name))
+        setSuggestions(filtered.slice(0, 8))
+      }
+    }).catch(err => {
+      console.error('Tag search failed:', err)
+      if (!cancelled) setSuggestions([])
+    })
+
+    return () => { cancelled = true }
+  }, [debouncedTagInput, activeTags])
+
+  // Group tags by category (memoized)
+  const groupedTags = useMemo(() => (tags || []).reduce((acc, tag) => {
     const category = tag.category || 'general'
     if (!acc[category]) acc[category] = []
     acc[category].push(tag)
     return acc
-  }, {})
+  }, {}), [tags])
 
   const categoryOrder = ['artist', 'character', 'copyright', 'general', 'meta']
 
@@ -607,11 +654,7 @@ function Sidebar({
                     setSuggestionIndex(-1)
                   }}
                   onKeyDown={(e) => {
-                    const suggestions = (tags || []).filter(tag =>
-                      tag.name.toLowerCase().includes(tagInput.toLowerCase()) &&
-                      !activeTags.includes(tag.name)
-                    ).slice(0, 8)
-
+                    // Use API suggestions for keyboard navigation
                     if (e.key === 'ArrowDown') {
                       e.preventDefault()
                       setSuggestionIndex(prev => prev < suggestions.length - 1 ? prev + 1 : 0)
@@ -641,30 +684,23 @@ function Sidebar({
                     </svg>
                   </button>
                 )}
-                {/* Autocomplete suggestions */}
-                {tagInput.length >= 2 && (
+                {/* Autocomplete suggestions from API */}
+                {suggestions.length > 0 && (
                   <div className="tag-suggestions">
-                    {(tags || [])
-                      .filter(tag =>
-                        tag.name.toLowerCase().includes(tagInput.toLowerCase()) &&
-                        !activeTags.includes(tag.name)
-                      )
-                      .slice(0, 8)
-                      .map((tag, index) => (
-                        <button
-                          key={tag.name}
-                          className={`suggestion-item tag-${tag.category} ${index === suggestionIndex ? 'selected' : ''}`}
-                          onClick={() => {
-                            onTagClick(tag.name)
-                            setTagInput('')
-                            setSuggestionIndex(-1)
-                          }}
-                        >
-                          <span className="suggestion-name">{tag.name.replace(/_/g, ' ')}</span>
-                          <span className="suggestion-count">({tag.post_count})</span>
-                        </button>
-                      ))
-                    }
+                    {suggestions.map((tag, index) => (
+                      <button
+                        key={tag.name}
+                        className={`suggestion-item tag-${tag.category} ${index === suggestionIndex ? 'selected' : ''}`}
+                        onClick={() => {
+                          onTagClick(tag.name)
+                          setTagInput('')
+                          setSuggestionIndex(-1)
+                        }}
+                      >
+                        <span className="suggestion-name">{tag.name.replace(/_/g, ' ')}</span>
+                        <span className="suggestion-count">({tag.post_count})</span>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
