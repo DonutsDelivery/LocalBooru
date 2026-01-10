@@ -111,6 +111,26 @@ INNOCENT_CONTEXT_TAGS = {
     "kimono", "yukata", "hanbok", "ao_dai", "cheongsam",
 }
 
+# Pre-compiled lookup dict for O(1) rating indicator checks
+# Maps tag -> highest rating level it indicates (xxx > x > r > pg13)
+_RATING_INDICATOR_LOOKUP = None
+
+def _get_rating_indicator_lookup() -> dict[str, str]:
+    """Get pre-compiled tag -> rating level lookup dict (cached)."""
+    global _RATING_INDICATOR_LOOKUP
+    if _RATING_INDICATOR_LOOKUP is None:
+        _RATING_INDICATOR_LOOKUP = {}
+        # Build in priority order (lowest first, highest overwrites)
+        for tag in PG13_INDICATOR_TAGS:
+            _RATING_INDICATOR_LOOKUP[tag] = 'pg13'
+        for tag in R_INDICATOR_TAGS:
+            _RATING_INDICATOR_LOOKUP[tag] = 'r'
+        for tag in X_INDICATOR_TAGS:
+            _RATING_INDICATOR_LOOKUP[tag] = 'x'
+        for tag in XXX_INDICATOR_TAGS:
+            _RATING_INDICATOR_LOOKUP[tag] = 'xxx'
+    return _RATING_INDICATOR_LOOKUP
+
 
 def adjust_rating_by_tags(base_rating: "Rating", tag_names: list[str]) -> "Rating":
     """
@@ -119,6 +139,9 @@ def adjust_rating_by_tags(base_rating: "Rating", tag_names: list[str]) -> "Ratin
     This allows for more nuanced rating assignment, especially for pg13
     which the tagger cannot directly assign.
 
+    Uses pre-compiled lookup dict for O(1) indicator checks instead of
+    O(n) set intersections.
+
     Args:
         base_rating: The rating from the tagger's probability output
         tag_names: List of detected tag names (lowercase, underscored)
@@ -126,44 +149,40 @@ def adjust_rating_by_tags(base_rating: "Rating", tag_names: list[str]) -> "Ratin
     Returns:
         Adjusted Rating enum value
     """
+    lookup = _get_rating_indicator_lookup()
     tag_set = set(t.lower().replace(" ", "_") for t in tag_names)
 
     # Check for innocent context - don't elevate ratings for these
     has_innocent_context = bool(tag_set & INNOCENT_CONTEXT_TAGS)
 
-    # Check what indicator tags are present
-    has_pg13_indicators = bool(tag_set & PG13_INDICATOR_TAGS)
-    has_r_indicators = bool(tag_set & R_INDICATOR_TAGS)
-    has_x_indicators = bool(tag_set & X_INDICATOR_TAGS)
-    has_xxx_indicators = bool(tag_set & XXX_INDICATOR_TAGS)
+    # Find highest indicator level using pre-compiled lookup (O(n) single pass)
+    # Rating hierarchy: xxx > x > r > pg13 > pg
+    rating_levels = {'pg': 0, 'pg13': 1, 'r': 2, 'x': 3, 'xxx': 4}
+    max_indicator_level = 0
+
+    for tag in tag_set:
+        if tag in lookup:
+            level = rating_levels[lookup[tag]]
+            if level > max_indicator_level:
+                max_indicator_level = level
 
     # Special combination: cleavage + large_breasts -> R
     if "cleavage" in tag_set and "large_breasts" in tag_set:
-        has_r_indicators = True
+        if max_indicator_level < rating_levels['r']:
+            max_indicator_level = rating_levels['r']
 
-    # Start with base rating and adjust upward based on tags
-    # (tags can only increase rating, not decrease it)
+    # Map back to rating
+    base_level = rating_levels.get(base_rating.value, 0)
 
-    if has_xxx_indicators:
+    # Tags can only increase rating, not decrease it
+    if max_indicator_level >= rating_levels['xxx']:
         return Rating.xxx
-
-    if has_x_indicators:
-        # X indicators push to at least X
-        if base_rating in (Rating.pg, Rating.pg13, Rating.r):
-            return Rating.x
-        return base_rating
-
-    if has_r_indicators:
-        # R indicators push to at least R
-        if base_rating in (Rating.pg, Rating.pg13):
-            return Rating.r
-        return base_rating
-
-    if has_pg13_indicators and not has_innocent_context:
-        # PG13 indicators only elevate PG to PG13
-        if base_rating == Rating.pg:
-            return Rating.pg13
-        return base_rating
+    elif max_indicator_level >= rating_levels['x']:
+        return Rating.x if base_level < rating_levels['x'] else base_rating
+    elif max_indicator_level >= rating_levels['r']:
+        return Rating.r if base_level < rating_levels['r'] else base_rating
+    elif max_indicator_level >= rating_levels['pg13'] and not has_innocent_context:
+        return Rating.pg13 if base_level < rating_levels['pg13'] else base_rating
 
     return base_rating
 
@@ -234,11 +253,26 @@ def load_model(model_type: TaggerModel = None):
 
     import onnxruntime as ort
 
-    # Load ONNX model - try CUDA first, fall back to CPU
+    # Load ONNX model - respect GPU settings from config
+    providers = []
+    if settings.use_gpu:
+        providers.append('CUDAExecutionProvider')
+    providers.append('CPUExecutionProvider')  # Always have CPU fallback
+
+    # Session options for better performance
+    sess_options = ort.SessionOptions()
+    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    sess_options.intra_op_num_threads = 4  # Parallel execution within ops
+
     model = ort.InferenceSession(
         model_path,
-        providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+        sess_options=sess_options,
+        providers=providers
     )
+
+    # Log which provider is being used
+    active_provider = model.get_providers()[0] if model.get_providers() else 'Unknown'
+    logger.info(f"[Tagger] Loaded {model_type.value} using {active_provider}")
 
     # Load tags - use row index as the model output index, not tag_id
     tags_data = {"rating": [], "general": [], "character": []}
@@ -268,7 +302,7 @@ def load_model(model_type: TaggerModel = None):
 
 
 def preprocess_image(image_path: str) -> np.ndarray:
-    """Preprocess image for the model."""
+    """Preprocess single image for the model."""
     # Load and resize image
     img = Image.open(image_path).convert("RGB")
 
@@ -283,6 +317,41 @@ def preprocess_image(image_path: str) -> np.ndarray:
     arr = np.expand_dims(arr, axis=0)
 
     return arr
+
+
+def preprocess_images_batch(image_paths: list[str]) -> np.ndarray:
+    """
+    Preprocess multiple images in a batch for more efficient GPU inference.
+    Returns a single array with shape (batch_size, 448, 448, 3).
+    """
+    batch = []
+    for image_path in image_paths:
+        try:
+            img = Image.open(image_path).convert("RGB")
+            img = img.resize((448, 448), Image.Resampling.LANCZOS)
+            arr = np.array(img, dtype=np.float32)
+            arr = arr[:, :, ::-1]  # RGB to BGR
+            batch.append(arr)
+        except Exception as e:
+            logger.warning(f"Failed to preprocess {image_path}: {e}")
+            # Add zero array as placeholder for failed images
+            batch.append(np.zeros((448, 448, 3), dtype=np.float32))
+
+    return np.stack(batch, axis=0)
+
+
+def run_inference_batch(image_arrays: np.ndarray, model_type: TaggerModel = None) -> np.ndarray:
+    """
+    Run model inference on a batch of images.
+    Returns array of shape (batch_size, num_tags).
+    """
+    model, _ = load_model(model_type)
+
+    input_name = model.get_inputs()[0].name
+    output_name = model.get_outputs()[0].name
+
+    outputs = model.run([output_name], {input_name: image_arrays})
+    return outputs[0]  # Return all batch outputs
 
 
 def run_inference(image_array: np.ndarray, model_type: TaggerModel = None) -> np.ndarray:
@@ -400,48 +469,64 @@ async def tag_image(image_path: str, db: AsyncSession, image_id: int = None, mod
             if tag_results["rating"]:
                 image.rating = tag_results["rating"]
 
-            # Add tags to database
-            for tag_data in all_tags:
-                tag_name = tag_data["name"]
-                tag_names.append(tag_name)
+            # Batch tag processing for better performance
+            tag_names = [t["name"] for t in all_tags]
+            tag_confidence_map = {t["name"]: t["confidence"] for t in all_tags}
+            tag_category_map = {t["name"]: t["category"] for t in all_tags}
 
-                # Find or create tag (with race condition handling)
-                tag_result = await db.execute(select(Tag).where(Tag.name == tag_name))
-                tag = tag_result.scalar_one_or_none()
+            # Fetch all existing tags in one query
+            existing_tags_result = await db.execute(
+                select(Tag).where(Tag.name.in_(tag_names))
+            )
+            existing_tags = {t.name: t for t in existing_tags_result.scalars().all()}
 
-                if not tag:
-                    try:
-                        # Use savepoint so IntegrityError only rolls back this insert
-                        async with db.begin_nested():
-                            tag = Tag(
-                                name=tag_name,
-                                category=tag_data["category"]
-                            )
-                            db.add(tag)
-                            await db.flush()
-                    except IntegrityError:
-                        # Race condition: another request created this tag
-                        tag_result = await db.execute(select(Tag).where(Tag.name == tag_name))
-                        tag = tag_result.scalar_one()
+            # Find tags that need to be created
+            missing_tag_names = set(tag_names) - set(existing_tags.keys())
 
-                # Check if association exists
-                existing = await db.execute(
-                    select(image_tags).where(
-                        image_tags.c.image_id == image_id,
-                        image_tags.c.tag_id == tag.id
-                    )
-                )
-
-                if not existing.first():
-                    # Add association with confidence
-                    await db.execute(
-                        image_tags.insert().values(
-                            image_id=image_id,
-                            tag_id=tag.id,
-                            confidence=tag_data["confidence"],
-                            is_manual=False
+            # Batch create missing tags
+            for tag_name in missing_tag_names:
+                try:
+                    async with db.begin_nested():
+                        tag = Tag(
+                            name=tag_name,
+                            category=tag_category_map[tag_name]
                         )
-                    )
+                        db.add(tag)
+                        await db.flush()
+                        existing_tags[tag_name] = tag
+                except IntegrityError:
+                    # Race condition: another request created this tag
+                    tag_result = await db.execute(select(Tag).where(Tag.name == tag_name))
+                    existing_tags[tag_name] = tag_result.scalar_one()
+
+            # Get existing associations in one query
+            tag_ids = [t.id for t in existing_tags.values()]
+            existing_assocs_result = await db.execute(
+                select(image_tags.c.tag_id).where(
+                    image_tags.c.image_id == image_id,
+                    image_tags.c.tag_id.in_(tag_ids)
+                )
+            )
+            existing_assoc_tag_ids = {row[0] for row in existing_assocs_result.all()}
+
+            # Batch insert new associations
+            new_associations = []
+            tags_to_increment = []
+            for tag_name in tag_names:
+                tag = existing_tags[tag_name]
+                if tag.id not in existing_assoc_tag_ids:
+                    new_associations.append({
+                        "image_id": image_id,
+                        "tag_id": tag.id,
+                        "confidence": tag_confidence_map[tag_name],
+                        "is_manual": False
+                    })
+                    tags_to_increment.append(tag)
+
+            if new_associations:
+                await db.execute(image_tags.insert(), new_associations)
+                # Update post counts
+                for tag in tags_to_increment:
                     tag.post_count += 1
 
             await db.commit()

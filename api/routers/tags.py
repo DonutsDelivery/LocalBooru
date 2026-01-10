@@ -82,43 +82,44 @@ async def autocomplete_tags(
     limit: int = Query(10, ge=1, le=50),
     db: AsyncSession = Depends(get_db)
 ):
-    """Autocomplete tag search"""
+    """Autocomplete tag search - optimized single query with prefix priority"""
     search_term = q.lower().replace(" ", "_")
 
-    query = (
-        select(Tag)
+    # Single query with UNION: prefix matches first (priority 0), then contains (priority 1)
+    # This avoids two separate queries and leverages index on tag name
+    from sqlalchemy import literal, union_all
+
+    prefix_query = (
+        select(Tag.id, Tag.name, Tag.category, Tag.post_count, literal(0).label('priority'))
         .where(Tag.name.ilike(f"{search_term}%"))
-        .order_by(desc(Tag.post_count))
+    )
+
+    contains_query = (
+        select(Tag.id, Tag.name, Tag.category, Tag.post_count, literal(1).label('priority'))
+        .where(
+            Tag.name.ilike(f"%{search_term}%"),
+            ~Tag.name.ilike(f"{search_term}%")  # Exclude prefix matches
+        )
+    )
+
+    combined = union_all(prefix_query, contains_query).subquery()
+
+    final_query = (
+        select(combined)
+        .order_by(combined.c.priority, combined.c.post_count.desc())
         .limit(limit)
     )
 
-    result = await db.execute(query)
-    tags = result.scalars().all()
-
-    # Also search for tags containing the term (if we have room)
-    if len(tags) < limit:
-        remaining = limit - len(tags)
-        existing_ids = [t.id for t in tags]
-
-        contains_query = (
-            select(Tag)
-            .where(
-                Tag.name.ilike(f"%{search_term}%"),
-                Tag.id.not_in(existing_ids) if existing_ids else True
-            )
-            .order_by(desc(Tag.post_count))
-            .limit(remaining)
-        )
-        contains_result = await db.execute(contains_query)
-        tags.extend(contains_result.scalars().all())
+    result = await db.execute(final_query)
+    rows = result.all()
 
     return [
         {
-            "name": t.name,
-            "category": t.category.value,
-            "post_count": t.post_count
+            "name": row.name,
+            "category": row.category.value if hasattr(row.category, 'value') else row.category,
+            "post_count": row.post_count
         }
-        for t in tags
+        for row in rows
     ]
 
 

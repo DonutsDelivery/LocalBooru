@@ -3,7 +3,7 @@ Background task queue for LocalBooru - handles tagging, file verification, etc.
 """
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,11 +15,12 @@ settings = get_settings()
 
 
 class BackgroundTaskQueue:
-    """In-process background task processor"""
+    """In-process background task processor with Tag Guardian"""
 
     def __init__(self):
         self.running = False
         self.worker_task = None
+        self.guardian_task = None
         self.concurrency = settings.task_queue_concurrency
 
     async def start(self):
@@ -37,10 +38,12 @@ class BackgroundTaskQueue:
 
         self.running = True
         self.worker_task = asyncio.create_task(self._worker_loop())
+        self.guardian_task = asyncio.create_task(self._tag_guardian_loop())
         print(f"Task queue started with concurrency={self.concurrency}")
+        print(f"Tag Guardian started (interval={settings.tag_guardian_interval}s)")
 
     async def stop(self):
-        """Stop the background worker"""
+        """Stop the background worker and tag guardian"""
         self.running = False
         if self.worker_task:
             self.worker_task.cancel()
@@ -48,7 +51,13 @@ class BackgroundTaskQueue:
                 await self.worker_task
             except asyncio.CancelledError:
                 pass
-        print("Task queue stopped")
+        if self.guardian_task:
+            self.guardian_task.cancel()
+            try:
+                await self.guardian_task
+            except asyncio.CancelledError:
+                pass
+        print("Task queue and Tag Guardian stopped")
 
     async def _worker_loop(self):
         """Main worker loop - processes tasks from the queue"""
@@ -89,6 +98,93 @@ class BackgroundTaskQueue:
                 print(f"Task queue error: {e}")
                 traceback.print_exc()
                 await asyncio.sleep(5)
+
+    async def _tag_guardian_loop(self):
+        """Tag Guardian - periodic loop that catches untagged images and retries failed tasks.
+
+        This ensures no image stays untagged for more than ~10 minutes, even if:
+        - Bulk imports set auto_tag=False
+        - DB locks caused task creation to fail
+        - Tasks failed after 3 retries
+        """
+        # Initial delay to let system settle after startup
+        await asyncio.sleep(60)
+        print("[TagGuardian] Started monitoring for untagged images")
+
+        while self.running:
+            try:
+                async with AsyncSessionLocal() as db:
+                    queued, retried = await self._run_tag_guardian(db)
+                    if queued > 0 or retried > 0:
+                        print(f"[TagGuardian] Queued {queued} untagged images, retried {retried} failed tasks")
+            except Exception as e:
+                print(f"[TagGuardian] Error: {e}")
+
+            await asyncio.sleep(settings.tag_guardian_interval)
+
+    async def _run_tag_guardian(self, db: AsyncSession) -> tuple[int, int]:
+        """Find untagged images and retry old failures.
+
+        Returns (queued_count, retried_count)
+        """
+        from ..models import image_tags
+
+        # 1. Find untagged images (no entries in image_tags, file exists)
+        tagged_subq = select(image_tags.c.image_id).distinct()
+        untagged_query = (
+            select(Image.id, ImageFile.original_path)
+            .join(ImageFile, ImageFile.image_id == Image.id)
+            .where(
+                Image.id.not_in(tagged_subq),
+                ImageFile.file_exists == True
+            )
+            .limit(settings.tag_guardian_batch_size)
+        )
+
+        # 2. Get already-queued image IDs to avoid duplicates
+        pending_query = select(TaskQueue.payload).where(
+            TaskQueue.task_type == TaskType.tag,
+            TaskQueue.status.in_([TaskStatus.pending, TaskStatus.processing])
+        )
+        pending_result = await db.execute(pending_query)
+        already_queued = set()
+        for row in pending_result.scalars():
+            try:
+                already_queued.add(json.loads(row).get('image_id'))
+            except:
+                pass
+
+        # 3. Queue untagged images
+        untagged_result = await db.execute(untagged_query)
+        queued = 0
+        for image_id, image_path in untagged_result:
+            if image_id not in already_queued:
+                task = TaskQueue(
+                    task_type=TaskType.tag,
+                    payload=json.dumps({'image_id': image_id, 'image_path': image_path}),
+                    priority=0,  # Low priority - don't interrupt new imports
+                    status=TaskStatus.pending
+                )
+                db.add(task)
+                queued += 1
+
+        # 4. Retry old failed tasks (older than configured age)
+        retry_cutoff = datetime.now() - timedelta(seconds=settings.tag_guardian_retry_age)
+        retry_result = await db.execute(
+            update(TaskQueue)
+            .where(
+                TaskQueue.task_type == TaskType.tag,
+                TaskQueue.status == TaskStatus.failed,
+                TaskQueue.completed_at < retry_cutoff
+            )
+            .values(status=TaskStatus.pending, attempts=0, error_message=None)
+        )
+        retried = retry_result.rowcount
+
+        if queued > 0 or retried > 0:
+            await db.commit()
+
+        return queued, retried
 
     async def _get_pending_tasks(self, db: AsyncSession, limit: int = 2):
         """Get pending tasks, ordered by priority (high first) and creation time"""
@@ -259,24 +355,105 @@ async def enqueue_task(
     task_type: TaskType,
     payload: dict,
     priority: int = 0,
-    db: AsyncSession = None
-) -> TaskQueue:
-    """Add a task to the queue"""
-    task = TaskQueue(
-        task_type=task_type,
-        payload=json.dumps(payload),
-        priority=priority,
-        status=TaskStatus.pending
-    )
+    db: AsyncSession = None,
+    dedupe_key: str = None
+) -> TaskQueue | None:
+    """Add a task to the queue.
+
+    Args:
+        task_type: Type of task
+        payload: Task payload dict
+        priority: Task priority (higher = processed first)
+        db: Database session (optional)
+        dedupe_key: If provided, skip if a pending/processing task with same
+                    task_type and dedupe_key already exists. For image tasks,
+                    this should be the image_id.
+
+    Returns:
+        TaskQueue object if created, None if skipped due to deduplication
+    """
+    async def _do_enqueue(session: AsyncSession) -> TaskQueue | None:
+        # Check for duplicate pending/processing task
+        if dedupe_key is not None:
+            # Use proper JSON boundary matching to avoid false positives
+            # e.g., image_id: 1 should not match image_id: 10 or 100
+            from sqlalchemy import or_
+            existing = await session.execute(
+                select(TaskQueue.id)
+                .where(
+                    TaskQueue.task_type == task_type,
+                    TaskQueue.status.in_([TaskStatus.pending, TaskStatus.processing]),
+                    or_(
+                        TaskQueue.payload.like(f'%"image_id": {dedupe_key},%'),  # Middle of JSON
+                        TaskQueue.payload.like(f'%"image_id": {dedupe_key}}}%')  # End of JSON
+                    )
+                )
+                .limit(1)
+            )
+            if existing.scalar_one_or_none():
+                return None  # Already queued
+
+        task = TaskQueue(
+            task_type=task_type,
+            payload=json.dumps(payload),
+            priority=priority,
+            status=TaskStatus.pending
+        )
+        session.add(task)
+        await session.commit()
+        await session.refresh(task)
+        return task
 
     if db:
-        db.add(task)
-        await db.commit()
-        await db.refresh(task)
+        return await _do_enqueue(db)
     else:
         async with AsyncSessionLocal() as session:
-            session.add(task)
-            await session.commit()
-            await session.refresh(task)
+            return await _do_enqueue(session)
 
-    return task
+
+async def clear_duplicate_tasks(db: AsyncSession = None) -> int:
+    """Remove duplicate pending tasks, keeping only the oldest one per image_id.
+
+    Returns number of duplicates removed.
+    """
+    async def _do_clear(session: AsyncSession) -> int:
+        # Get all pending tag tasks
+        result = await session.execute(
+            select(TaskQueue)
+            .where(
+                TaskQueue.task_type == TaskType.tag,
+                TaskQueue.status == TaskStatus.pending
+            )
+            .order_by(TaskQueue.created_at)
+        )
+        tasks = result.scalars().all()
+
+        seen_images = set()
+        duplicates = []
+
+        for task in tasks:
+            try:
+                payload = json.loads(task.payload)
+                image_id = payload.get('image_id')
+                if image_id in seen_images:
+                    duplicates.append(task.id)
+                else:
+                    seen_images.add(image_id)
+            except:
+                pass
+
+        if duplicates:
+            await session.execute(
+                update(TaskQueue)
+                .where(TaskQueue.id.in_(duplicates))
+                .values(status=TaskStatus.failed, error_message="Duplicate task removed")
+            )
+            await session.commit()
+
+        return len(duplicates)
+
+    if db:
+        return await _do_clear(db)
+    else:
+        async with AsyncSessionLocal() as session:
+            return await _do_clear(session)

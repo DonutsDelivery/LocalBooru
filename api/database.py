@@ -116,6 +116,28 @@ async def init_db():
         except Exception:
             pass
 
+        # Performance indexes for tagging queries
+        try:
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_image_tags_tag_id ON image_tags(tag_id)"
+            ))
+        except Exception:
+            pass
+
+        try:
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_tag_post_count ON tags(post_count DESC)"
+            ))
+        except Exception:
+            pass
+
+        try:
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_tag_name_post_count ON tags(name, post_count DESC)"
+            ))
+        except Exception:
+            pass
+
 
 async def close_db():
     """Close database connections."""

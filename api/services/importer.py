@@ -27,9 +27,11 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 async def safe_enqueue_task(task_type, payload, priority, db, max_retries=3):
     """Enqueue a task with retry logic for database locks."""
+    # Use image_id as dedupe key to prevent duplicate tasks
+    dedupe_key = payload.get('image_id')
     for attempt in range(max_retries):
         try:
-            await enqueue_task(task_type, payload, priority=priority, db=db)
+            await enqueue_task(task_type, payload, priority=priority, db=db, dedupe_key=dedupe_key)
             return True
         except OperationalError as e:
             if "database is locked" in str(e) and attempt < max_retries - 1:

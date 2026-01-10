@@ -278,6 +278,19 @@ function SettingsPage() {
     if (saved) setDumpsterPath(saved)
   }, [])
 
+  // Live polling for queue status when there's pending work
+  useEffect(() => {
+    const hasPendingWork = queueStatus?.by_status?.pending > 0 || queueStatus?.by_status?.processing > 0
+    if (hasPendingWork) {
+      const interval = setInterval(() => {
+        import('./api').then(({ getQueueStatus }) => {
+          getQueueStatus().then(setQueueStatus).catch(console.error)
+        })
+      }, 2000)  // Poll every 2 seconds
+      return () => clearInterval(interval)
+    }
+  }, [queueStatus?.by_status?.pending, queueStatus?.by_status?.processing])
+
   // Poll for installation progress
   useEffect(() => {
     if (ageDetection.installing) {
@@ -429,66 +442,31 @@ function SettingsPage() {
               />
             </section>
 
-            <section>
-              <h2>Background Tasks</h2>
-              {queueStatus && (
-                <div className="queue-status">
-                  <p>Pending: {queueStatus.by_status?.pending || 0}</p>
-                  <p>Processing: {queueStatus.by_status?.processing || 0}</p>
-                  <p>Completed: {queueStatus.by_status?.completed || 0}</p>
-                  <p>Failed: {queueStatus.by_status?.failed || 0}</p>
+            {/* Tagging Progress - only show if there's pending work */}
+            {queueStatus && (queueStatus.by_status?.pending > 0 || queueStatus.by_status?.processing > 0) && (
+              <section className="tagging-progress-section">
+                <h2>Tagging Progress</h2>
+                <div className="tagging-progress">
+                  <div className="progress-bar-container">
+                    <div
+                      className="progress-bar-fill"
+                      style={{
+                        width: `${Math.round(
+                          ((queueStatus.by_status?.completed || 0) /
+                          ((queueStatus.by_status?.completed || 0) + (queueStatus.by_status?.pending || 0) + (queueStatus.by_status?.processing || 0))) * 100
+                        ) || 0}%`
+                      }}
+                    />
+                  </div>
+                  <div className="progress-text">
+                    {queueStatus.by_status?.processing > 0 && (
+                      <span className="processing-indicator">Processing...</span>
+                    )}
+                    <span>{(queueStatus.by_status?.pending || 0).toLocaleString()} remaining</span>
+                  </div>
                 </div>
-              )}
-            </section>
-
-            <section>
-              <h2>Actions</h2>
-              <button onClick={async () => {
-                const { tagUntagged } = await import('./api')
-                const result = await tagUntagged()
-                alert(`Queued ${result.queued} images for tagging`)
-              }}>
-                Tag Untagged Images
-              </button>
-
-              <button onClick={async () => {
-                const { verifyFiles } = await import('./api')
-                await verifyFiles()
-                alert('File verification queued')
-              }}>
-                Verify File Locations
-              </button>
-
-              <button onClick={async () => {
-                const { retryFailedTasks } = await import('./api')
-                const result = await retryFailedTasks()
-                alert(`Retried ${result.retried} failed tasks`)
-              }}>
-                Retry Failed Tasks
-              </button>
-
-              <button onClick={async () => {
-                if (!confirm('Remove all images with missing files from the library?\n\nThis will NOT delete any actual files on disk.')) return
-                const { cleanMissingFiles } = await import('./api')
-                const result = await cleanMissingFiles()
-                alert(`Cleaned ${result.cleaned} missing file entries`)
-                getLibraryStats().then(setStats).catch(console.error)
-              }} className="danger-btn">
-                Clean Missing Files
-              </button>
-
-              <button onClick={async () => {
-                if (!confirm('Clear all pending tasks from the queue?')) return
-                const { clearPendingTasks } = await import('./api')
-                const result = await clearPendingTasks()
-                alert(`Cleared ${result.cleared} pending tasks`)
-                // Refresh queue status
-                const { getQueueStatus } = await import('./api')
-                getQueueStatus().then(setQueueStatus).catch(console.error)
-              }} className="danger-btn">
-                Clear Pending Queue
-              </button>
-            </section>
+              </section>
+            )}
 
             {window.electronAPI?.isElectron && (
               <section>

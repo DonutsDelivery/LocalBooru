@@ -47,8 +47,20 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Task queue
-    task_queue_concurrency: int = 1  # Max concurrent tagging tasks (keep low to avoid DB locks)
+    # Increased from 1 to 2 for better throughput - SQLite WAL mode handles concurrent writes
+    # Set to 1 if you experience database lock issues
+    task_queue_concurrency: int = 2
     file_verify_interval: int = 1800  # Verify file locations every 30 minutes
+
+    # GPU acceleration (auto-detected, but can be disabled)
+    use_gpu: bool = True  # Set to False to force CPU-only inference
+    gpu_batch_size: int = 4  # Number of images to preprocess in parallel (GPU memory dependent)
+
+    # Tag Guardian - automatic tagging system
+    # Runs periodically to catch untagged images and retry failed tasks
+    tag_guardian_interval: int = 300  # Check every 5 minutes (seconds)
+    tag_guardian_retry_age: int = 3600  # Retry failed tasks after 1 hour (seconds)
+    tag_guardian_batch_size: int = 100  # Max images to queue per run
 
     class Config:
         env_file = ".env"

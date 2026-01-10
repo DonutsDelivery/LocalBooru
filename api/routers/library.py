@@ -1,9 +1,9 @@
 """
 Library router - library-wide operations and statistics
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
@@ -443,16 +443,20 @@ async def tag_untagged_images(
         image_file = file_result.scalar_one_or_none()
 
         if image_file:
-            await enqueue_task(
+            task = await enqueue_task(
                 TaskType.tag,
                 {
                     'image_id': image.id,
                     'image_path': image_file.original_path
                 },
                 priority=0,
-                db=db
+                db=db,
+                dedupe_key=image.id  # Prevent duplicate tasks for same image
             )
-            queued += 1
+            if task:
+                queued += 1
+            else:
+                skipped_queued += 1  # Was duplicate
         else:
             skipped_no_file += 1
 
@@ -466,6 +470,48 @@ async def tag_untagged_images(
             "untagged_found": len(images)
         }
     }
+
+
+@router.post("/clear-duplicate-tasks")
+async def clear_duplicate_tasks_endpoint(db: AsyncSession = Depends(get_db)):
+    """Remove duplicate pending tasks from the queue.
+
+    Keeps the oldest task for each image_id and marks duplicates as failed.
+    """
+    from ..services.task_queue import clear_duplicate_tasks
+    removed = await clear_duplicate_tasks(db)
+    return {"duplicates_removed": removed}
+
+
+@router.delete("/clear-pending-tasks")
+async def clear_pending_tasks(
+    task_type: str = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Clear all pending tasks, optionally filtered by type.
+
+    WARNING: This will cancel all queued work!
+    """
+    from ..models import TaskQueue, TaskStatus, TaskType as TT
+
+    query = (
+        update(TaskQueue)
+        .where(TaskQueue.status == TaskStatus.pending)
+    )
+
+    if task_type:
+        try:
+            tt = TT(task_type)
+            query = query.where(TaskQueue.task_type == tt)
+        except ValueError:
+            raise HTTPException(400, f"Invalid task type: {task_type}")
+
+    query = query.values(status=TaskStatus.failed, error_message="Cancelled by user")
+
+    result = await db.execute(query)
+    await db.commit()
+
+    return {"cancelled": result.rowcount}
 
 
 # Endpoints for directory watcher integration
