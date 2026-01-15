@@ -232,27 +232,37 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [image, adjustments, applyingAdjustments, onImageUpdate])
 
   // Generate CSS filter string for preview
-  // Approximate Gwenview's formulas using CSS filters
+  // Note: CSS doesn't have true gamma, so we use an SVG filter for accurate preview
   const getFilterStyle = () => {
     if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) {
       return {}
     }
-    // Gwenview brightness: value + brightness * 255 / 100
-    // CSS brightness is a multiplier, so we approximate
+    // Brightness: linear offset (CSS brightness is a multiplier, so approximate)
     const cssBrightness = 1 + (adjustments.brightness / 100)
 
-    // Gwenview contrast: ((value - 127) * (contrast + 100) / 100) + 127
-    // CSS contrast is also centered, so this maps reasonably well
+    // Contrast: centered scaling
     const cssContrast = (adjustments.contrast + 100) / 100
 
-    // Gwenview gamma: pow(value/255, 100/(gamma+100)) * 255
-    // gamma=0 -> exponent=1 (no change), gamma=-50 -> exponent=2 (brighter), gamma=50 -> exponent=0.67 (darker)
-    // CSS doesn't have gamma, approximate with brightness
-    const gammaExponent = 100 / (adjustments.gamma + 100)
-    const gammaBrightness = Math.pow(0.5, gammaExponent) / 0.5
+    // Gamma: exponential mapping (same as backend)
+    // slider -100 to +100 → exponent 3.0 to 0.33
+    // We use an SVG filter for accurate gamma preview
+    const gammaExponent = Math.pow(3.0, -adjustments.gamma / 100)
+
+    // Create inline SVG filter for gamma correction
+    // feComponentTransfer with feFuncR/G/B using "gamma" type
+    const svgFilter = adjustments.gamma !== 0
+      ? `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><filter id="g"><feComponentTransfer><feFuncR type="gamma" exponent="${gammaExponent}"/><feFuncG type="gamma" exponent="${gammaExponent}"/><feFuncB type="gamma" exponent="${gammaExponent}"/></feComponentTransfer></filter></svg>#g')`
+      : ''
+
+    // Combine filters: gamma first (via SVG), then brightness/contrast (via CSS)
+    const filters = []
+    if (adjustments.gamma !== 0) filters.push(svgFilter)
+    if (adjustments.brightness !== 0 || adjustments.contrast !== 0) {
+      filters.push(`brightness(${cssBrightness}) contrast(${cssContrast})`)
+    }
 
     return {
-      filter: `brightness(${cssBrightness * gammaBrightness}) contrast(${cssContrast})`
+      filter: filters.join(' ')
     }
   }
 

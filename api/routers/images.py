@@ -942,12 +942,16 @@ async def apply_image_adjustments(
             contrast_factor = (adjustments.contrast + 100) / 100
             img_array = ((img_array - 127) * contrast_factor) + 127
 
-        # Gamma: pow(value / 255, 100 / (gamma + 100)) * 255
+        # Gamma: exponential mapping for proper gamma curve
+        # slider -100 to +100 maps to exponent 3.0 to 0.33
+        # At 0: exponent = 1.0 (no change)
+        # Positive = brighter midtones (exponent < 1, lifts curve)
+        # Negative = darker midtones (exponent > 1, lowers curve)
         if adjustments.gamma != 0:
-            gamma_value = adjustments.gamma + 100
-            if gamma_value > 0:  # Prevent division by zero
-                img_array = np.clip(img_array, 0, 255)  # Clamp before gamma
-                img_array = np.power(img_array / 255.0, 100.0 / gamma_value) * 255
+            import math
+            exponent = math.pow(3.0, -adjustments.gamma / 100.0)
+            img_array = np.clip(img_array, 0, 255)  # Clamp before gamma
+            img_array = np.power(img_array / 255.0, exponent) * 255
 
         # Clamp final values to valid range
         img_array = np.clip(img_array, 0, 255).astype(np.uint8)
