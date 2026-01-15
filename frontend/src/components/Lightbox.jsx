@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useState, useRef } from 'react'
+import { getMediaUrl } from '../api'
 import './Lightbox.css'
 
 // Check if filename is a video
@@ -388,7 +389,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     try {
       // Use Electron API if available
       if (window.electronAPI?.copyImageToClipboard) {
-        const result = await window.electronAPI.copyImageToClipboard(image.url)
+        const result = await window.electronAPI.copyImageToClipboard(getMediaUrl(image.url))
         if (result.success) {
           setCopyFeedback('success')
         } else {
@@ -396,7 +397,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         }
       } else {
         // Fallback for browser - fetch and copy
-        const response = await fetch(image.url)
+        const response = await fetch(getMediaUrl(image.url))
         const blob = await response.blob()
         await navigator.clipboard.write([
           new ClipboardItem({ [blob.type]: blob })
@@ -812,7 +813,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           <video
             key={image.id}
             ref={mediaRef}
-            src={image.url}
+            src={getMediaUrl(image.url)}
             controls
             autoPlay
             loop
@@ -822,7 +823,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               e.preventDefault()
               if (window.electronAPI?.showImageContextMenu) {
                 window.electronAPI.showImageContextMenu({
-                  imageUrl: image.url,
+                  imageUrl: getMediaUrl(image.url),
                   filePath: image.file_path,
                   isVideo: true
                 })
@@ -833,7 +834,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           <img
             key={previewUrl ? `${image.id}-preview` : image.id}
             ref={mediaRef}
-            src={previewUrl || image.url}
+            src={getMediaUrl(previewUrl || image.url)}
             alt=""
             className="lightbox-media"
             style={{ ...(previewUrl ? {} : getFilterStyle()), ...getZoomTransform() }}
@@ -841,7 +842,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               e.preventDefault()
               if (window.electronAPI?.showImageContextMenu) {
                 window.electronAPI.showImageContextMenu({
-                  imageUrl: image.url,
+                  imageUrl: getMediaUrl(image.url),
                   filePath: image.file_path,
                   isVideo: false
                 })

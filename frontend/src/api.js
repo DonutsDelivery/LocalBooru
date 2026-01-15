@@ -450,7 +450,15 @@ export async function deleteUser(id) {
 export function getMediaUrl(path) {
   if (!path) return ''
   if (path.startsWith('http')) return path
-  // API URL will be resolved at runtime
+
+  // On mobile, prepend server URL for relative paths
+  if (isMobileApp() && currentServerUrl) {
+    // Remove leading slash if present to avoid double slashes
+    const cleanPath = path.startsWith('/') ? path : `/${path}`
+    return `${currentServerUrl}${cleanPath}`
+  }
+
+  // On web, relative URLs work fine
   return path
 }
 

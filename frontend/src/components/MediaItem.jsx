@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { getMediaUrl } from '../api'
 import './MediaItem.css'
 
 // Check if filename is a video
@@ -43,7 +44,7 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     )
   }
 
-  const thumbnailUrl = image.thumbnail_url
+  const thumbnailUrl = getMediaUrl(image.thumbnail_url)
   const isVideoFile = isVideo(image.filename)
   const fileStatus = image.file_status || 'available'
 
@@ -147,7 +148,7 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
         <>
           <video
             ref={videoRef}
-            src={image.url}
+            src={getMediaUrl(image.url)}
             poster={thumbnailUrl}
             muted
             loop

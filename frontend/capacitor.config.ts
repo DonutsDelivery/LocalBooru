@@ -5,9 +5,8 @@ const config: CapacitorConfig = {
   appName: 'LocalBooru',
   webDir: 'dist',
   server: {
-    // In development, connect to local server
-    // In production, the app serves its own files
-    androidScheme: 'https',
+    // Use http scheme to allow loading resources from local http servers
+    androidScheme: 'http',
   },
   plugins: {
     Preferences: {
