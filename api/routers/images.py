@@ -953,6 +953,17 @@ async def apply_image_adjustments(
             img_array = np.clip(img_array, 0, 255)  # Clamp before gamma
             img_array = np.power(img_array / 255.0, exponent) * 255
 
+        # Apply dithering to reduce banding artifacts (especially visible after gamma)
+        # Uses random noise scaled to the adjustments applied - more aggressive for gamma
+        # which stretches limited dark values across wider ranges
+        # Standard dithering uses +/-0.5, but gamma lifting needs up to +/-1.0
+        dither_strength = 0.5
+        if adjustments.gamma != 0:
+            # Scale dithering with gamma intensity - more gamma lift = more dithering needed
+            dither_strength = 0.5 + (abs(adjustments.gamma) / 100.0) * 0.5  # 0.5 to 1.0
+        dither_noise = np.random.uniform(-dither_strength, dither_strength, img_array.shape)
+        img_array = img_array + dither_noise
+
         # Clamp final values to valid range
         img_array = np.clip(img_array, 0, 255).astype(np.uint8)
         img = PILImage.fromarray(img_array)
