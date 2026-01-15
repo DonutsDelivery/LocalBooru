@@ -389,17 +389,81 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           </svg>
         </button>
         {!isVideoFile && (
-          <button
-            className={`lightbox-btn lightbox-adjust ${showAdjustments ? 'active' : ''}`}
-            onClick={() => setShowAdjustments(!showAdjustments)}
-            disabled={processing || isUnavailable}
-            title="Adjust image"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-            </svg>
-          </button>
+          <div className="lightbox-adjust-container">
+            <button
+              className={`lightbox-btn lightbox-adjust ${showAdjustments ? 'active' : ''}`}
+              onClick={() => setShowAdjustments(!showAdjustments)}
+              disabled={processing || isUnavailable}
+              title="Adjust image"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+            </button>
+            {/* Image adjustment dropdown */}
+            {showAdjustments && (
+              <div className="lightbox-adjustments" onClick={e => e.stopPropagation()}>
+                <div className="adjustment-slider">
+                  <label>
+                    <span>Brightness</span>
+                    <span className="adjustment-value">{adjustments.brightness > 0 ? '+' : ''}{adjustments.brightness}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="-100"
+                    max="100"
+                    step="1"
+                    value={adjustments.brightness}
+                    onChange={e => setAdjustments(prev => ({ ...prev, brightness: parseInt(e.target.value) }))}
+                  />
+                </div>
+                <div className="adjustment-slider">
+                  <label>
+                    <span>Contrast</span>
+                    <span className="adjustment-value">{adjustments.contrast > 0 ? '+' : ''}{adjustments.contrast}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="-100"
+                    max="100"
+                    step="1"
+                    value={adjustments.contrast}
+                    onChange={e => setAdjustments(prev => ({ ...prev, contrast: parseInt(e.target.value) }))}
+                  />
+                </div>
+                <div className="adjustment-slider">
+                  <label>
+                    <span>Gamma</span>
+                    <span className="adjustment-value">{adjustments.gamma > 0 ? '+' : ''}{adjustments.gamma}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="-100"
+                    max="100"
+                    step="1"
+                    value={adjustments.gamma}
+                    onChange={e => setAdjustments(prev => ({ ...prev, gamma: parseInt(e.target.value) }))}
+                  />
+                </div>
+                <div className="adjustment-actions">
+                  <button
+                    className="adjustment-reset"
+                    onClick={() => setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })}
+                  >
+                    Reset
+                  </button>
+                  <button
+                    className="adjustment-apply"
+                    onClick={handleApplyAdjustments}
+                    disabled={applyingAdjustments || (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0)}
+                  >
+                    {applyingAdjustments ? 'Applying...' : 'Apply'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
         <button className="lightbox-btn lightbox-close" onClick={onClose} title="Close (Esc)">
           <svg viewBox="0 0 24 24" fill="currentColor">
@@ -482,69 +546,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       <div className="lightbox-counter">
         {currentIndex + 1} / {total}
       </div>
-
-      {/* Image adjustment panel - Gwenview-style ranges (all -100 to +100) */}
-      {showAdjustments && (
-        <div className="lightbox-adjustments" onClick={e => e.stopPropagation()}>
-          <div className="adjustment-slider">
-            <label>
-              <span>Brightness</span>
-              <span className="adjustment-value">{adjustments.brightness > 0 ? '+' : ''}{adjustments.brightness}</span>
-            </label>
-            <input
-              type="range"
-              min="-100"
-              max="100"
-              step="1"
-              value={adjustments.brightness}
-              onChange={e => setAdjustments(prev => ({ ...prev, brightness: parseInt(e.target.value) }))}
-            />
-          </div>
-          <div className="adjustment-slider">
-            <label>
-              <span>Contrast</span>
-              <span className="adjustment-value">{adjustments.contrast > 0 ? '+' : ''}{adjustments.contrast}</span>
-            </label>
-            <input
-              type="range"
-              min="-100"
-              max="100"
-              step="1"
-              value={adjustments.contrast}
-              onChange={e => setAdjustments(prev => ({ ...prev, contrast: parseInt(e.target.value) }))}
-            />
-          </div>
-          <div className="adjustment-slider">
-            <label>
-              <span>Gamma</span>
-              <span className="adjustment-value">{adjustments.gamma > 0 ? '+' : ''}{adjustments.gamma}</span>
-            </label>
-            <input
-              type="range"
-              min="-100"
-              max="100"
-              step="1"
-              value={adjustments.gamma}
-              onChange={e => setAdjustments(prev => ({ ...prev, gamma: parseInt(e.target.value) }))}
-            />
-          </div>
-          <div className="adjustment-actions">
-            <button
-              className="adjustment-reset"
-              onClick={() => setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })}
-            >
-              Reset
-            </button>
-            <button
-              className="adjustment-apply"
-              onClick={handleApplyAdjustments}
-              disabled={applyingAdjustments || (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0)}
-            >
-              {applyingAdjustments ? 'Applying...' : 'Apply to File'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Copy feedback toast */}
       {copyFeedback && (
