@@ -4,9 +4,19 @@
  */
 const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell, clipboard, nativeImage } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const BackendManager = require('./backendManager');
 const DirectoryWatcher = require('./directoryWatcher');
 const { initUpdater } = require('./updater');
+
+// Debug logging to file
+const logFile = path.join(app.getPath('userData'), 'debug.log');
+const log = (msg) => {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  console.log(msg);
+  fs.appendFileSync(logFile, line);
+};
+log('=== App starting ===');
 
 // Single instance lock - prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
@@ -40,13 +50,15 @@ const API_PORT = 8790;
 /**
  * Create the main application window
  */
-function createWindow() {
+async function createWindow() {
+  log('[createWindow] Starting...');
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
     minHeight: 600,
     frame: false,  // Custom title bar
+    backgroundColor: '#141414',  // Match --bg-primary to prevent white flash
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -55,21 +67,59 @@ function createWindow() {
     icon: path.join(__dirname, '../assets/icon.png'),
     show: false // Show when ready
   });
-
-  // Clear cache to prevent stale HTML after updates
-  mainWindow.webContents.session.clearCache();
+  log('[createWindow] BrowserWindow created');
 
   // Load the frontend from backend server (same as browser access)
+  const loadWithRetry = async (url, maxRetries = 5) => {
+    for (let i = 0; i < maxRetries; i++) {
+      log(`[Window] Loading URL attempt ${i + 1}: ${url}`);
+      try {
+        await mainWindow.loadURL(url);
+        log('[Window] loadURL completed successfully');
+        return true;
+      } catch (err) {
+        log(`[Window] loadURL failed attempt ${i + 1}: ${err.message}`);
+        if (i < maxRetries - 1) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+    }
+    return false;
+  };
+
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5174');
+    await loadWithRetry('http://localhost:5174');
     mainWindow.webContents.openDevTools();
   } else {
-    // Load from backend - synced with browser access
-    mainWindow.loadURL(`http://127.0.0.1:${API_PORT}`);
+    log(`[Window] Backend should be at http://127.0.0.1:${API_PORT}`);
+    const loaded = await loadWithRetry(`http://127.0.0.1:${API_PORT}`);
+    if (!loaded) {
+      log('[Window] All load attempts failed!');
+    }
   }
 
-  // Show window when ready
+  // Debug: Log page load events
+  mainWindow.webContents.on('did-start-loading', () => {
+    log('[Window] Started loading...');
+  });
+  mainWindow.webContents.on('did-finish-load', () => {
+    log('[Window] Finished loading');
+  });
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    log(`[Window] Failed to load: ${errorCode} ${errorDescription}`);
+  });
+
+  // Show window when ready - but also show after timeout as fallback
+  const showTimeout = setTimeout(() => {
+    log('[Window] Timeout - showing window anyway');
+    if (mainWindow && !mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+  }, 5000);
+
   mainWindow.once('ready-to-show', () => {
+    log('[Window] ready-to-show fired');
+    clearTimeout(showTimeout);
     mainWindow.show();
   });
 
@@ -97,12 +147,12 @@ function createTray() {
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Open LocalBooru',
-      click: () => {
+      click: async () => {
         if (mainWindow) {
           mainWindow.show();
           mainWindow.focus();
         } else {
-          createWindow();
+          await createWindow();
         }
       }
     },
@@ -139,7 +189,7 @@ function createTray() {
   // On Windows, left-click shows window, right-click shows menu
   // On other platforms, use default behavior
   if (process.platform === 'win32') {
-    tray.on('click', () => {
+    tray.on('click', async () => {
       console.log('[Tray] Left-click detected');
       if (mainWindow) {
         console.log('[Tray] Window exists, showing...');
@@ -152,7 +202,7 @@ function createTray() {
         mainWindow.setAlwaysOnTop(false);
       } else {
         console.log('[Tray] No window, creating...');
-        createWindow();
+        await createWindow();
       }
     });
 
@@ -327,19 +377,24 @@ function setupIPC() {
 
 // App event handlers
 app.whenReady().then(async () => {
+  log('[App] whenReady fired');
   setupIPC();
+  log('[App] IPC setup complete');
   await initializeApp();
-  createWindow();
+  log('[App] initializeApp complete');
+  await createWindow();
+  log('[App] createWindow complete');
   createTray();
+  log('[App] createTray complete');
 
   // Initialize auto-updater
   if (mainWindow) {
     initUpdater(mainWindow);
   }
 
-  app.on('activate', () => {
+  app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      await createWindow();
     }
   });
 });

@@ -165,6 +165,15 @@ export async function batchMoveImages(imageIds, targetDirectoryId) {
   return response.data
 }
 
+export async function applyImageAdjustments(imageId, { brightness, contrast, gamma }) {
+  const response = await api.post(`/images/${imageId}/adjust`, {
+    brightness,
+    contrast,
+    gamma
+  })
+  return response.data
+}
+
 // Tags API
 export async function fetchTags({ q, category, page = 1, per_page = 50, sort = 'count' } = {}) {
   const params = new URLSearchParams()
@@ -263,6 +272,21 @@ export async function tagUntagged() {
 
 export async function clearPendingTasks() {
   const response = await api.delete('/library/queue/pending')
+  return response.data
+}
+
+export async function getQueuePaused() {
+  const response = await api.get('/library/queue/paused')
+  return response.data
+}
+
+export async function pauseQueue() {
+  const response = await api.post('/library/queue/pause')
+  return response.data
+}
+
+export async function resumeQueue() {
+  const response = await api.post('/library/queue/resume')
   return response.data
 }
 

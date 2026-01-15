@@ -42,6 +42,13 @@ class BatchMoveRequest(BaseModel):
     target_directory_id: int
 
 
+class ImageAdjustmentRequest(BaseModel):
+    # Gwenview-style ranges (all -100 to +100, 0 = no change)
+    brightness: int = 0
+    contrast: int = 0
+    gamma: int = 0
+
+
 router = APIRouter()
 
 
@@ -852,3 +859,134 @@ async def batch_move_images(
         "errors": errors,
         "total_requested": len(request.image_ids)
     }
+
+
+@router.post("/{image_id}/adjust")
+async def apply_image_adjustments(
+    image_id: int,
+    adjustments: ImageAdjustmentRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Apply brightness, contrast, and gamma adjustments using Gwenview's exact algorithms"""
+    import numpy as np
+    from PIL import Image as PILImage
+    from ..database import get_data_dir
+
+    # Validate adjustment values (all -100 to +100)
+    if not (-100 <= adjustments.brightness <= 100):
+        raise HTTPException(status_code=400, detail="Brightness must be between -100 and +100")
+    if not (-100 <= adjustments.contrast <= 100):
+        raise HTTPException(status_code=400, detail="Contrast must be between -100 and +100")
+    if not (-100 <= adjustments.gamma <= 100):
+        raise HTTPException(status_code=400, detail="Gamma must be between -100 and +100")
+
+    # Check if any adjustment is needed
+    if adjustments.brightness == 0 and adjustments.contrast == 0 and adjustments.gamma == 0:
+        return {"adjusted": False, "message": "No adjustments needed"}
+
+    # Get image and file path
+    query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+    result = await db.execute(query)
+    image = result.scalar_one_or_none()
+
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # Find a valid file path
+    image_file = None
+    for f in image.files:
+        if os.path.exists(f.original_path):
+            image_file = f
+            break
+
+    if not image_file:
+        raise HTTPException(status_code=404, detail="Image file not found on disk")
+
+    file_path = image_file.original_path
+    file_ext = Path(file_path).suffix.lower()
+
+    # Check if it's an editable image format
+    editable_formats = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif']
+    if file_ext not in editable_formats:
+        raise HTTPException(status_code=400, detail=f"Cannot adjust {file_ext} files")
+
+    try:
+        # Open the image
+        img = PILImage.open(file_path)
+
+        # Preserve EXIF data if present
+        exif_data = img.info.get('exif')
+
+        # Convert to RGB if necessary for processing
+        if img.mode in ('RGBA', 'LA', 'P'):
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            alpha = img.split()[-1] if img.mode in ('RGBA', 'LA') else None
+            img = img.convert('RGB')
+        else:
+            alpha = None
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+
+        # Convert to numpy array for processing
+        img_array = np.array(img, dtype=np.float32)
+
+        # Gwenview formulas (applied in order: brightness -> contrast -> gamma)
+
+        # Brightness: value + brightness * 255 / 100
+        if adjustments.brightness != 0:
+            img_array = img_array + (adjustments.brightness * 255 / 100)
+
+        # Contrast: ((value - 127) * (contrast + 100) / 100) + 127
+        if adjustments.contrast != 0:
+            contrast_factor = (adjustments.contrast + 100) / 100
+            img_array = ((img_array - 127) * contrast_factor) + 127
+
+        # Gamma: pow(value / 255, 100 / (gamma + 100)) * 255
+        if adjustments.gamma != 0:
+            gamma_value = adjustments.gamma + 100
+            if gamma_value > 0:  # Prevent division by zero
+                img_array = np.clip(img_array, 0, 255)  # Clamp before gamma
+                img_array = np.power(img_array / 255.0, 100.0 / gamma_value) * 255
+
+        # Clamp final values to valid range
+        img_array = np.clip(img_array, 0, 255).astype(np.uint8)
+        img = PILImage.fromarray(img_array)
+
+        # Restore alpha channel if present
+        if alpha is not None:
+            img = img.convert('RGBA')
+            r, g, b, _ = img.split()
+            img = PILImage.merge('RGBA', (r, g, b, alpha))
+
+        # Save the image back to the same file
+        save_kwargs = {}
+        if file_ext in ['.jpg', '.jpeg']:
+            save_kwargs['quality'] = 95
+            save_kwargs['optimize'] = True
+            if exif_data:
+                save_kwargs['exif'] = exif_data
+        elif file_ext == '.webp':
+            save_kwargs['quality'] = 95
+            save_kwargs['method'] = 6
+        elif file_ext == '.png':
+            save_kwargs['optimize'] = True
+
+        img.save(file_path, **save_kwargs)
+
+        # Regenerate thumbnail
+        from ..services.importer import generate_thumbnail
+        thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+        if thumbnail_path.exists():
+            thumbnail_path.unlink()
+        generate_thumbnail(file_path, str(thumbnail_path))
+
+        return {
+            "adjusted": True,
+            "brightness": adjustments.brightness,
+            "contrast": adjustments.contrast,
+            "gamma": adjustments.gamma
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to apply adjustments: {str(e)}")

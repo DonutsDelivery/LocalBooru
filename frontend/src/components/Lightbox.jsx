@@ -16,7 +16,19 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [showUI, setShowUI] = useState(true)
   const hideUITimeout = useRef(null)
 
+  // Image adjustment state (Gwenview-style ranges)
+  // All sliders: -100 to +100 (0 = no change)
+  const [showAdjustments, setShowAdjustments] = useState(false)
+  const [adjustments, setAdjustments] = useState({ brightness: 0, contrast: 0, gamma: 0 })
+  const [applyingAdjustments, setApplyingAdjustments] = useState(false)
+
   const image = images[currentIndex]
+
+  // Reset adjustments when changing images
+  useEffect(() => {
+    setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
+    setShowAdjustments(false)
+  }, [image?.id])
 
   // Auto-hide UI after inactivity
   const resetHideTimer = useCallback(() => {
@@ -183,6 +195,67 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setTimeout(() => setCopyFeedback(null), 1500)
   }, [image])
 
+  // Apply adjustments to file
+  const handleApplyAdjustments = useCallback(async () => {
+    if (!image || applyingAdjustments) return
+
+    // Check if any adjustments were made
+    if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) {
+      return
+    }
+
+    setApplyingAdjustments(true)
+    try {
+      const { applyImageAdjustments } = await import('../api')
+      const result = await applyImageAdjustments(image.id, {
+        brightness: adjustments.brightness,
+        contrast: adjustments.contrast,
+        gamma: adjustments.gamma
+      })
+
+      // Force reload the image by updating the URL with a cache buster
+      if (onImageUpdate) {
+        onImageUpdate(image.id, {
+          url: `${image.url}?t=${Date.now()}`,
+          thumbnail_url: `${image.thumbnail_url}?t=${Date.now()}`
+        })
+      }
+
+      // Reset adjustments after applying
+      setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
+      setShowAdjustments(false)
+    } catch (err) {
+      console.error('Failed to apply adjustments:', err)
+      alert('Failed to apply adjustments: ' + err.message)
+    }
+    setApplyingAdjustments(false)
+  }, [image, adjustments, applyingAdjustments, onImageUpdate])
+
+  // Generate CSS filter string for preview
+  // Approximate Gwenview's formulas using CSS filters
+  const getFilterStyle = () => {
+    if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) {
+      return {}
+    }
+    // Gwenview brightness: value + brightness * 255 / 100
+    // CSS brightness is a multiplier, so we approximate
+    const cssBrightness = 1 + (adjustments.brightness / 100)
+
+    // Gwenview contrast: ((value - 127) * (contrast + 100) / 100) + 127
+    // CSS contrast is also centered, so this maps reasonably well
+    const cssContrast = (adjustments.contrast + 100) / 100
+
+    // Gwenview gamma: pow(value/255, 100/(gamma+100)) * 255
+    // gamma=0 -> exponent=1 (no change), gamma=-50 -> exponent=2 (brighter), gamma=50 -> exponent=0.67 (darker)
+    // CSS doesn't have gamma, approximate with brightness
+    const gammaExponent = 100 / (adjustments.gamma + 100)
+    const gammaBrightness = Math.pow(0.5, gammaExponent) / 0.5
+
+    return {
+      filter: `brightness(${cssBrightness * gammaBrightness}) contrast(${cssContrast})`
+    }
+  }
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -305,6 +378,19 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <line x1="14" y1="11" x2="14" y2="17"/>
           </svg>
         </button>
+        {!isVideoFile && (
+          <button
+            className={`lightbox-btn lightbox-adjust ${showAdjustments ? 'active' : ''}`}
+            onClick={() => setShowAdjustments(!showAdjustments)}
+            disabled={processing || isUnavailable}
+            title="Adjust image"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
+          </button>
+        )}
         <button className="lightbox-btn lightbox-close" onClick={onClose} title="Close (Esc)">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
@@ -368,6 +454,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             src={image.url}
             alt=""
             className="lightbox-media"
+            style={getFilterStyle()}
             onContextMenu={(e) => {
               e.preventDefault()
               if (window.electronAPI?.showImageContextMenu) {
@@ -385,6 +472,69 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       <div className="lightbox-counter">
         {currentIndex + 1} / {total}
       </div>
+
+      {/* Image adjustment panel - Gwenview-style ranges (all -100 to +100) */}
+      {showAdjustments && (
+        <div className="lightbox-adjustments" onClick={e => e.stopPropagation()}>
+          <div className="adjustment-slider">
+            <label>
+              <span>Brightness</span>
+              <span className="adjustment-value">{adjustments.brightness > 0 ? '+' : ''}{adjustments.brightness}</span>
+            </label>
+            <input
+              type="range"
+              min="-100"
+              max="100"
+              step="1"
+              value={adjustments.brightness}
+              onChange={e => setAdjustments(prev => ({ ...prev, brightness: parseInt(e.target.value) }))}
+            />
+          </div>
+          <div className="adjustment-slider">
+            <label>
+              <span>Contrast</span>
+              <span className="adjustment-value">{adjustments.contrast > 0 ? '+' : ''}{adjustments.contrast}</span>
+            </label>
+            <input
+              type="range"
+              min="-100"
+              max="100"
+              step="1"
+              value={adjustments.contrast}
+              onChange={e => setAdjustments(prev => ({ ...prev, contrast: parseInt(e.target.value) }))}
+            />
+          </div>
+          <div className="adjustment-slider">
+            <label>
+              <span>Gamma</span>
+              <span className="adjustment-value">{adjustments.gamma > 0 ? '+' : ''}{adjustments.gamma}</span>
+            </label>
+            <input
+              type="range"
+              min="-100"
+              max="100"
+              step="1"
+              value={adjustments.gamma}
+              onChange={e => setAdjustments(prev => ({ ...prev, gamma: parseInt(e.target.value) }))}
+            />
+          </div>
+          <div className="adjustment-actions">
+            <button
+              className="adjustment-reset"
+              onClick={() => setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })}
+            >
+              Reset
+            </button>
+            <button
+              className="adjustment-apply"
+              onClick={handleApplyAdjustments}
+              disabled={applyingAdjustments || (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0)}
+            >
+              {applyingAdjustments ? 'Applying...' : 'Apply to File'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Copy feedback toast */}
       {copyFeedback && (
