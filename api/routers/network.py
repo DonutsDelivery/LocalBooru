@@ -82,6 +82,44 @@ async def get_network_config():
     }
 
 
+@router.get("/qr-data")
+async def get_qr_data():
+    """
+    Get data for QR code to connect mobile app.
+
+    Returns server info including local and public URLs for the mobile app to try.
+    """
+    settings = get_network_settings()
+    local_ip = get_local_ip()
+
+    # Build local URL (always include if we have an IP)
+    local_url = None
+    if local_ip:
+        local_port = settings.get("local_port", 8790)
+        local_url = f"http://{local_ip}:{local_port}"
+
+    # Build public URL if UPnP is enabled and has external IP
+    public_url = None
+    if settings.get("upnp_enabled"):
+        external_ip = upnp_manager.get_external_ip()
+        if external_ip and settings.get("public_network_enabled"):
+            public_port = settings.get("public_port", 8791)
+            public_url = f"http://{external_ip}:{public_port}"
+
+    # Check if auth is required
+    auth_level = settings.get("auth_required_level", "none")
+    auth_required = auth_level in ["local_network", "always"]
+
+    return {
+        "type": "localbooru",
+        "version": 1,
+        "name": "LocalBooru",
+        "local": local_url,
+        "public": public_url,
+        "auth": auth_required
+    }
+
+
 @router.post("")
 async def update_network_config(config: NetworkConfigUpdate):
     """

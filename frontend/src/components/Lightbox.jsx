@@ -597,10 +597,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     const clickX = e.clientX - rect.left
     const width = rect.width
 
-    // Left 40% = previous (but not the sidebar hover zone which is ~100px)
-    // Right 40% = next
-    // Middle 20% = do nothing (where the image is)
-    if (clickX < width * 0.4 && clickX > 100) {
+    // Left 40% = previous, right 40% = next, middle 20% = do nothing
+    // On desktop, exclude the sidebar hover zone (~100px). On mobile, the zone is smaller (40px)
+    // and sidebar is controlled by swipe, so we can use a smaller buffer
+    const sidebarBuffer = width > 768 ? 100 : 40
+    if (clickX < width * 0.4 && clickX > sidebarBuffer) {
       onNav(-1)
     } else if (clickX > width * 0.6) {
       onNav(1)

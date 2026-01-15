@@ -10,6 +10,8 @@ import Lightbox from './components/Lightbox'
 import TitleBar from './components/TitleBar'
 import ComfyUIConfigModal from './components/ComfyUIConfigModal'
 import NetworkSettings from './components/NetworkSettings'
+import ServerSettings from './components/ServerSettings'
+import QRConnect from './components/QRConnect'
 import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
 import './App.css'
 
@@ -334,10 +336,28 @@ function SettingsPage() {
               >
                 Network
               </button>
+              <button
+                className={`settings-tab ${activeTab === 'servers' ? 'active' : ''}`}
+                onClick={() => setActiveTab('servers')}
+              >
+                Servers
+              </button>
+              <button
+                className={`settings-tab ${activeTab === 'mobile' ? 'active' : ''}`}
+                onClick={() => setActiveTab('mobile')}
+              >
+                Mobile
+              </button>
             </div>
 
             {/* Network Tab Content */}
             {activeTab === 'network' && <NetworkSettings />}
+
+            {/* Servers Tab Content (for mobile app) */}
+            {activeTab === 'servers' && <ServerSettings />}
+
+            {/* Mobile App QR Code */}
+            {activeTab === 'mobile' && <QRConnect />}
 
             {/* General Tab Content */}
             {activeTab === 'general' && (
@@ -594,13 +614,18 @@ function Gallery() {
 
   const handleTouchEnd = useCallback((e) => {
     if (touchStartX.current === null || window.innerWidth > 1024) return
+    // Don't control gallery sidebar when lightbox is open - it has its own touch handling
+    if (lightboxIndex !== null) {
+      touchStartX.current = null
+      return
+    }
     const deltaX = e.changedTouches[0].clientX - touchStartX.current
     if (Math.abs(deltaX) > 50) {
       if (deltaX > 0 && !sidebarOpen) setSidebarOpen(true)
       if (deltaX < 0 && sidebarOpen) setSidebarOpen(false)
     }
     touchStartX.current = null
-  }, [sidebarOpen])
+  }, [sidebarOpen, lightboxIndex])
 
   // Load images
   const loadImages = useCallback(async (pageNum = 1, append = false) => {
@@ -1213,6 +1238,58 @@ function Gallery() {
 }
 
 function App() {
+  const [mobileReady, setMobileReady] = useState(false)
+  const [showServerSetup, setShowServerSetup] = useState(false)
+
+  // Initialize server configuration for mobile app
+  useEffect(() => {
+    async function initMobile() {
+      const { isMobileApp, getActiveServer } = await import('./serverManager')
+      const { updateServerConfig } = await import('./api')
+
+      if (isMobileApp()) {
+        await updateServerConfig()
+        const server = await getActiveServer()
+        if (!server) {
+          setShowServerSetup(true)
+        }
+      }
+      setMobileReady(true)
+    }
+    initMobile()
+  }, [])
+
+  // Show loading while initializing mobile
+  if (!mobileReady) {
+    return (
+      <div className="app loading-screen">
+        <div className="loading-content">
+          <h1>LocalBooru</h1>
+          <p>Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show server setup for mobile when no server configured
+  if (showServerSetup) {
+    return (
+      <div className="app server-setup-screen">
+        <div className="server-setup-content">
+          <h1>LocalBooru</h1>
+          <p>Connect to a LocalBooru server to get started.</p>
+          <ServerSettings onServerChange={() => {
+            import('./serverManager').then(({ getActiveServer }) => {
+              getActiveServer().then(server => {
+                if (server) setShowServerSetup(false)
+              })
+            })
+          }} />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
       <TitleBar />

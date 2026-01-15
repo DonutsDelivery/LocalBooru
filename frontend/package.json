@@ -6,11 +6,25 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && cp ../assets/icon.png dist/",
+    "build:mobile": "vite build && npx cap sync",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:init": "npx cap add android && npx cap add ios",
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios",
+    "android": "npm run build && npx cap sync android && npx cap open android",
+    "ios": "npm run build && npx cap sync ios && npx cap open ios"
   },
   "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "^8.0.0",
+    "@capacitor/android": "^8.0.1",
+    "@capacitor/cli": "^7.4.5",
+    "@capacitor/core": "^8.0.1",
+    "@capacitor/ios": "^8.0.1",
+    "@capacitor/preferences": "^8.0.0",
     "axios": "^1.13.2",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-masonry-css": "^1.0.16",

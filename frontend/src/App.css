@@ -1045,3 +1045,50 @@
     justify-content: center;
   }
 }
+
+/* Mobile app loading and setup screens */
+.loading-screen,
+.server-setup-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+}
+
+.loading-content,
+.server-setup-content {
+  text-align: center;
+  padding: 32px;
+  max-width: 500px;
+  width: 100%;
+}
+
+.loading-content h1,
+.server-setup-content h1 {
+  font-size: 2rem;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.loading-content p,
+.server-setup-content p {
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.loading-content::after {
+  content: '';
+  display: block;
+  width: 32px;
+  height: 32px;
+  margin: 24px auto 0;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

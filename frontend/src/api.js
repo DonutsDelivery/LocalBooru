@@ -1,10 +1,20 @@
 /**
- * LocalBooru API client - simplified for single-user local use
+ * LocalBooru API client - supports both local and multi-server mode
  */
 import axios from 'axios'
+import { isMobileApp, getActiveServer } from './serverManager'
+
+// Current server config (cached for synchronous access)
+let currentServerUrl = null
+let currentServerAuth = null
 
 // Get API URL - same origin when served from backend, fallback for dev
 function getApiUrl() {
+  // Mobile app mode - use configured server
+  if (isMobileApp() && currentServerUrl) {
+    return `${currentServerUrl}/api`
+  }
+
   // Check if we're running on localhost with Vite dev server (port 5173/5174)
   const isDevServer = window.location.port === '5173' || window.location.port === '5174'
 
@@ -18,10 +28,45 @@ function getApiUrl() {
   return '/api'
 }
 
+// Update the server configuration (call when server changes)
+export async function updateServerConfig() {
+  if (!isMobileApp()) return
+
+  const server = await getActiveServer()
+  if (server) {
+    currentServerUrl = server.url
+    if (server.username && server.password) {
+      currentServerAuth = 'Basic ' + btoa(`${server.username}:${server.password}`)
+    } else {
+      currentServerAuth = null
+    }
+    // Update axios base URL
+    api.defaults.baseURL = `${server.url}/api`
+  } else {
+    currentServerUrl = null
+    currentServerAuth = null
+    api.defaults.baseURL = null
+  }
+}
+
+// Check if connected to a server (for mobile app)
+export function isServerConfigured() {
+  if (!isMobileApp()) return true
+  return currentServerUrl !== null
+}
+
 // Initialize API with base URL
 const api = axios.create({
   baseURL: getApiUrl(),
   timeout: 60000  // 60s timeout for busy servers
+})
+
+// Add request interceptor for auth on mobile
+api.interceptors.request.use((config) => {
+  if (isMobileApp() && currentServerAuth) {
+    config.headers['Authorization'] = currentServerAuth
+  }
+  return config
 })
 
 // Track startup time to suppress errors during initialization
@@ -338,6 +383,11 @@ export async function installAgeDetection() {
 // Network API
 export async function getNetworkConfig() {
   const response = await api.get('/network')
+  return response.data
+}
+
+export async function getQRData() {
+  const response = await api.get('/network/qr-data')
   return response.data
 }
 
