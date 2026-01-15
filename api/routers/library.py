@@ -133,6 +133,29 @@ async def retry_failed_tasks(db: AsyncSession = Depends(get_db)):
     return {"retried": result.rowcount}
 
 
+@router.get("/queue/paused")
+async def get_queue_paused():
+    """Check if the task queue is paused"""
+    from ..services.task_queue import task_queue
+    return {"paused": task_queue.paused}
+
+
+@router.post("/queue/pause")
+async def pause_queue():
+    """Pause the task queue"""
+    from ..services.task_queue import task_queue
+    task_queue.pause()
+    return {"paused": True}
+
+
+@router.post("/queue/resume")
+async def resume_queue():
+    """Resume the task queue"""
+    from ..services.task_queue import task_queue
+    task_queue.resume()
+    return {"paused": False}
+
+
 @router.delete("/queue/pending")
 async def clear_pending_tasks(db: AsyncSession = Depends(get_db)):
     """Clear all pending tasks from the queue"""

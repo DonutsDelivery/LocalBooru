@@ -314,6 +314,36 @@
   50% { opacity: 0.5; }
 }
 
+.paused-indicator {
+  color: #ff9800;
+  font-weight: 600;
+}
+
+.pause-btn {
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.pause-btn:hover {
+  background: var(--border);
+}
+
+.pause-btn.paused {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+}
+
+.pause-btn.paused:hover {
+  background: var(--accent-hover);
+}
+
 /* Age detection settings */
 .age-detection-status {
   display: flex;

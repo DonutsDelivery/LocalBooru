@@ -289,7 +289,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       return {}
     }
     // Brightness: linear offset (CSS brightness is a multiplier, so approximate)
-    const cssBrightness = 1 + (adjustments.brightness / 100)
+    // Extended range -200 to +200, clamp to prevent negative values
+    const cssBrightness = Math.max(0, 1 + (adjustments.brightness / 100))
 
     // Contrast: centered scaling
     const cssContrast = (adjustments.contrast + 100) / 100
@@ -462,8 +463,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   </label>
                   <input
                     type="range"
-                    min="-100"
-                    max="100"
+                    min="-200"
+                    max="200"
                     step="1"
                     value={adjustments.brightness}
                     onChange={e => {

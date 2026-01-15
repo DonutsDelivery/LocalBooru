@@ -43,7 +43,9 @@ class BatchMoveRequest(BaseModel):
 
 
 class ImageAdjustmentRequest(BaseModel):
-    # Gwenview-style ranges (all -100 to +100, 0 = no change)
+    # Adjustment ranges (0 = no change)
+    # Brightness: -200 to +200 (extended range for more control)
+    # Contrast/Gamma: -100 to +100
     brightness: int = 0
     contrast: int = 0
     gamma: int = 0
@@ -878,9 +880,9 @@ async def preview_image_adjustments(
     from ..database import get_data_dir
     import hashlib
 
-    # Validate adjustment values (all -100 to +100)
-    if not (-100 <= adjustments.brightness <= 100):
-        raise HTTPException(status_code=400, detail="Brightness must be between -100 and +100")
+    # Validate adjustment values
+    if not (-200 <= adjustments.brightness <= 200):
+        raise HTTPException(status_code=400, detail="Brightness must be between -200 and +200")
     if not (-100 <= adjustments.contrast <= 100):
         raise HTTPException(status_code=400, detail="Contrast must be between -100 and +100")
     if not (-100 <= adjustments.gamma <= 100):
@@ -1020,9 +1022,9 @@ async def apply_image_adjustments(
     from PIL import Image as PILImage
     from ..database import get_data_dir
 
-    # Validate adjustment values (all -100 to +100)
-    if not (-100 <= adjustments.brightness <= 100):
-        raise HTTPException(status_code=400, detail="Brightness must be between -100 and +100")
+    # Validate adjustment values
+    if not (-200 <= adjustments.brightness <= 200):
+        raise HTTPException(status_code=400, detail="Brightness must be between -200 and +200")
     if not (-100 <= adjustments.contrast <= 100):
         raise HTTPException(status_code=400, detail="Contrast must be between -100 and +100")
     if not (-100 <= adjustments.gamma <= 100):

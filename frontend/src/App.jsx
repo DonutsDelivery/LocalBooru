@@ -247,6 +247,7 @@ function DirectoriesPage() {
 function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
   const [queueStatus, setQueueStatus] = useState(null)
+  const [queuePaused, setQueuePaused] = useState(false)
   const [stats, setStats] = useState(null)
   const [dumpsterPath, setDumpsterPath] = useState('')
   const [ageDetection, setAgeDetection] = useState({
@@ -268,8 +269,9 @@ function SettingsPage() {
   }
 
   useEffect(() => {
-    import('./api').then(({ getQueueStatus }) => {
+    import('./api').then(({ getQueueStatus, getQueuePaused }) => {
       getQueueStatus().then(setQueueStatus).catch(console.error)
+      getQueuePaused().then(data => setQueuePaused(data.paused)).catch(console.error)
     })
     getLibraryStats().then(setStats).catch(console.error)
     refreshAgeDetectionStatus()
@@ -283,8 +285,9 @@ function SettingsPage() {
     const hasPendingWork = queueStatus?.by_status?.pending > 0 || queueStatus?.by_status?.processing > 0
     if (hasPendingWork) {
       const interval = setInterval(() => {
-        import('./api').then(({ getQueueStatus }) => {
+        import('./api').then(({ getQueueStatus, getQueuePaused }) => {
           getQueueStatus().then(setQueueStatus).catch(console.error)
+          getQueuePaused().then(data => setQueuePaused(data.paused)).catch(console.error)
         })
       }, 2000)  // Poll every 2 seconds
       return () => clearInterval(interval)
@@ -459,10 +462,28 @@ function SettingsPage() {
                     />
                   </div>
                   <div className="progress-text">
-                    {queueStatus.by_status?.processing > 0 && (
+                    {queuePaused ? (
+                      <span className="paused-indicator">Paused</span>
+                    ) : queueStatus.by_status?.processing > 0 ? (
                       <span className="processing-indicator">Processing...</span>
-                    )}
+                    ) : null}
                     <span>{(queueStatus.by_status?.pending || 0).toLocaleString()} remaining</span>
+                    <button
+                      className={`pause-btn ${queuePaused ? 'paused' : ''}`}
+                      onClick={async () => {
+                        const { pauseQueue, resumeQueue } = await import('./api')
+                        if (queuePaused) {
+                          await resumeQueue()
+                          setQueuePaused(false)
+                        } else {
+                          await pauseQueue()
+                          setQueuePaused(true)
+                        }
+                      }}
+                      title={queuePaused ? 'Resume processing' : 'Pause processing'}
+                    >
+                      {queuePaused ? '▶ Resume' : '⏸ Pause'}
+                    </button>
                   </div>
                 </div>
               </section>

@@ -19,9 +19,20 @@ class BackgroundTaskQueue:
 
     def __init__(self):
         self.running = False
+        self.paused = False
         self.worker_task = None
         self.guardian_task = None
         self.concurrency = settings.task_queue_concurrency
+
+    def pause(self):
+        """Pause task processing"""
+        self.paused = True
+        print("[TaskQueue] Paused")
+
+    def resume(self):
+        """Resume task processing"""
+        self.paused = False
+        print("[TaskQueue] Resumed")
 
     async def start(self):
         """Start the background worker"""
@@ -65,6 +76,12 @@ class BackgroundTaskQueue:
         loop_count = 0
         while self.running:
             loop_count += 1
+
+            # Check if paused
+            if self.paused:
+                await asyncio.sleep(1)
+                continue
+
             try:
                 # Get pending task IDs (using temporary session)
                 async with AsyncSessionLocal() as db:
@@ -72,7 +89,7 @@ class BackgroundTaskQueue:
                     task_ids = [t.id for t in tasks]
 
                 if loop_count % 10 == 0:
-                    print(f"[TaskQueue] Heartbeat: loop={loop_count}, pending tasks found={len(task_ids)}", flush=True)
+                    print(f"[TaskQueue] Heartbeat: loop={loop_count}, pending tasks found={len(task_ids)}, paused={self.paused}", flush=True)
 
                 if not task_ids:
                     await asyncio.sleep(1)
@@ -112,6 +129,11 @@ class BackgroundTaskQueue:
         print("[TagGuardian] Started monitoring for untagged images")
 
         while self.running:
+            # Skip guardian work when paused
+            if self.paused:
+                await asyncio.sleep(settings.tag_guardian_interval)
+                continue
+
             try:
                 async with AsyncSessionLocal() as db:
                     queued, retried = await self._run_tag_guardian(db)
