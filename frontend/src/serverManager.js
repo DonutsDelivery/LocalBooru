@@ -8,9 +8,9 @@ import { Preferences } from '@capacitor/preferences'
 const SERVERS_KEY = 'localbooru_servers'
 const ACTIVE_SERVER_KEY = 'localbooru_active_server'
 
-// Check if running in Capacitor (mobile app)
+// Check if running in Capacitor native app (not web)
 export function isMobileApp() {
-  return window.Capacitor !== undefined
+  return window.Capacitor?.isNativePlatform?.() === true
 }
 
 // Default server structure
