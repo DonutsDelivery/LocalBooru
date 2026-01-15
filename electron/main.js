@@ -26,12 +26,16 @@ if (!gotTheLock) {
   app.quit();
 } else {
   // This is the primary instance
-  app.on('second-instance', () => {
+  app.on('second-instance', async () => {
     // Someone tried to run a second instance, focus our window
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       if (!mainWindow.isVisible()) mainWindow.show();
       mainWindow.focus();
+    } else {
+      // Window was destroyed, create a new one
+      mainWindow = null;
+      await createWindow();
     }
   });
 }
@@ -69,6 +73,26 @@ async function createWindow() {
   });
   log('[createWindow] BrowserWindow created');
 
+  // Register event listeners BEFORE loading URL to catch all events
+  mainWindow.webContents.on('did-start-loading', () => {
+    log('[Window] Started loading...');
+  });
+  mainWindow.webContents.on('did-finish-load', () => {
+    log('[Window] Finished loading');
+  });
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    log(`[Window] Failed to load: ${errorCode} ${errorDescription}`);
+  });
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    log(`[Window] Render process gone: ${details.reason}`);
+  });
+  mainWindow.webContents.on('unresponsive', () => {
+    log('[Window] Webcontents unresponsive');
+  });
+  mainWindow.webContents.on('responsive', () => {
+    log('[Window] Webcontents responsive again');
+  });
+
   // Load the frontend from backend server (same as browser access)
   const loadWithRetry = async (url, maxRetries = 5) => {
     for (let i = 0; i < maxRetries; i++) {
@@ -88,26 +112,20 @@ async function createWindow() {
   };
 
   if (isDev) {
-    await loadWithRetry('http://localhost:5174');
+    const loaded = await loadWithRetry('http://localhost:5174');
+    if (!loaded) {
+      log('[Window] Dev server load failed, showing error page');
+      mainWindow.loadURL(`data:text/html,<html><body style="background:#141414;color:white;font-family:system-ui;padding:40px;"><h1>Failed to connect</h1><p>Could not connect to dev server at localhost:5174</p><p>Make sure the frontend dev server is running.</p><button onclick="location.reload()" style="padding:10px 20px;cursor:pointer;">Retry</button></body></html>`);
+    }
     mainWindow.webContents.openDevTools();
   } else {
     log(`[Window] Backend should be at http://127.0.0.1:${API_PORT}`);
     const loaded = await loadWithRetry(`http://127.0.0.1:${API_PORT}`);
     if (!loaded) {
-      log('[Window] All load attempts failed!');
+      log('[Window] All load attempts failed, showing error page');
+      mainWindow.loadURL(`data:text/html,<html><body style="background:#141414;color:white;font-family:system-ui;padding:40px;"><h1>Failed to connect</h1><p>Could not connect to backend at 127.0.0.1:${API_PORT}</p><p>The backend server may have failed to start.</p><button onclick="location.href='http://127.0.0.1:${API_PORT}'" style="padding:10px 20px;cursor:pointer;">Retry</button></body></html>`);
     }
   }
-
-  // Debug: Log page load events
-  mainWindow.webContents.on('did-start-loading', () => {
-    log('[Window] Started loading...');
-  });
-  mainWindow.webContents.on('did-finish-load', () => {
-    log('[Window] Finished loading');
-  });
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    log(`[Window] Failed to load: ${errorCode} ${errorDescription}`);
-  });
 
   // Show window when ready - but also show after timeout as fallback
   const showTimeout = setTimeout(() => {
@@ -144,16 +162,44 @@ function createTray() {
   const iconPath = path.join(__dirname, '../assets/tray-icon.png');
   tray = new Tray(iconPath);
 
+  // Helper to safely show or recreate window
+  const showOrCreateWindow = async () => {
+    // Check if window exists and is not destroyed
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      log('[Tray] Window exists, showing...');
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.setAlwaysOnTop(true);
+      mainWindow.focus();
+      mainWindow.setAlwaysOnTop(false);
+
+      // Check if webContents is in a bad state and needs reload
+      const needsReload = mainWindow.webContents.isCrashed() ||
+        mainWindow.webContents.getURL() === '' ||
+        mainWindow.webContents.getURL() === 'about:blank';
+
+      if (needsReload) {
+        log(`[Tray] WebContents needs reload (crashed: ${mainWindow.webContents.isCrashed()}, url: ${mainWindow.webContents.getURL()})`);
+        const url = isDev ? 'http://localhost:5174' : `http://127.0.0.1:${API_PORT}`;
+        mainWindow.loadURL(url);
+      }
+    } else {
+      log('[Tray] No valid window, creating...');
+      // Clear reference if it was destroyed
+      if (mainWindow) {
+        mainWindow = null;
+      }
+      await createWindow();
+    }
+  };
+
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Open LocalBooru',
       click: async () => {
-        if (mainWindow) {
-          mainWindow.show();
-          mainWindow.focus();
-        } else {
-          await createWindow();
-        }
+        await showOrCreateWindow();
       }
     },
     {
@@ -190,20 +236,8 @@ function createTray() {
   // On other platforms, use default behavior
   if (process.platform === 'win32') {
     tray.on('click', async () => {
-      console.log('[Tray] Left-click detected');
-      if (mainWindow) {
-        console.log('[Tray] Window exists, showing...');
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
-        }
-        mainWindow.show();
-        mainWindow.setAlwaysOnTop(true);
-        mainWindow.focus();
-        mainWindow.setAlwaysOnTop(false);
-      } else {
-        console.log('[Tray] No window, creating...');
-        await createWindow();
-      }
+      log('[Tray] Left-click detected');
+      await showOrCreateWindow();
     });
 
     tray.on('right-click', () => {
@@ -213,11 +247,8 @@ function createTray() {
     // macOS/Linux: use standard context menu behavior
     tray.setContextMenu(contextMenu);
 
-    tray.on('double-click', () => {
-      if (mainWindow) {
-        mainWindow.show();
-        mainWindow.focus();
-      }
+    tray.on('double-click', async () => {
+      await showOrCreateWindow();
     });
   }
 }

@@ -6,6 +6,7 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const net = require('net');
 const os = require('os');
 const { app } = require('electron');
 
@@ -203,19 +204,56 @@ class BackendManager {
           // No process on port (findstr returns error if no match)
         }
       } else {
-        // Linux/macOS: use fuser (fast and simple)
+        // Linux/macOS: use lsof + kill (more reliable than fuser)
         try {
+          // First try fuser
           execSync(`fuser -k ${this.port}/tcp 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
         } catch (e) {
-          // Ignore - no process on port or fuser not available
+          // fuser may not be available, try lsof
+          try {
+            const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 5000 });
+            const pids = output.trim().split('\n').filter(p => p && /^\d+$/.test(p));
+            for (const pid of pids) {
+              console.log(`[Backend] Killing zombie process ${pid} via lsof`);
+              try {
+                execSync(`kill -9 ${pid}`, { stdio: 'ignore', timeout: 1000 });
+              } catch (e) {
+                // Process may already be dead
+              }
+            }
+          } catch (e) {
+            // No process on port
+          }
         }
       }
     } catch (e) {
       console.log('[Backend] Zombie check error:', e.message);
     }
 
-    // Wait for port to be released
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Wait for port to be released (increased from 500ms)
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Double-check the port is free
+    const portFree = await this.isPortFree();
+    if (!portFree) {
+      console.log('[Backend] Port still in use after zombie kill, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+
+  /**
+   * Check if port is free
+   */
+  isPortFree() {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      server.once('error', () => resolve(false));
+      server.once('listening', () => {
+        server.close();
+        resolve(true);
+      });
+      server.listen(this.port, '127.0.0.1');
+    });
   }
 
   /**
@@ -437,12 +475,29 @@ class BackendManager {
   }
 
   /**
-   * Check if backend is healthy
+   * Check if backend is healthy and responding with valid content
    */
   healthCheck() {
     return new Promise((resolve) => {
       const req = http.get(`http://127.0.0.1:${this.port}/health`, (res) => {
-        resolve(res.statusCode === 200);
+        if (res.statusCode !== 200) {
+          resolve(false);
+          return;
+        }
+
+        // Read the response body to verify it's our backend
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            // Our health endpoint returns { "status": "healthy" }
+            resolve(json.status === 'healthy');
+          } catch (e) {
+            // Invalid JSON response
+            resolve(false);
+          }
+        });
       });
 
       req.on('error', () => resolve(false));

@@ -24,13 +24,24 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [previewUrl, setPreviewUrl] = useState(null)
   const [generatingPreview, setGeneratingPreview] = useState(false)
 
+  // Zoom state
+  const [zoom, setZoom] = useState({ scale: 1, x: 0, y: 0 })
+  const zoomRef = useRef(zoom) // Ref to always have current zoom in callbacks
+  zoomRef.current = zoom
+  const mediaRef = useRef(null)
+  const containerRef = useRef(null)
+  const isDragging = useRef(false)
+  const dragStart = useRef({ x: 0, y: 0 })
+  const lastPinchDistance = useRef(null)
+
   const image = images[currentIndex]
 
-  // Reset adjustments and preview when changing images
+  // Reset adjustments, preview, and zoom when changing images
   useEffect(() => {
     setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
     setShowAdjustments(false)
     setPreviewUrl(null)
+    setZoom({ scale: 1, x: 0, y: 0 })
   }, [image?.id])
 
   // Auto-hide UI after inactivity
@@ -98,22 +109,224 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     const deltaX = touchEndX - touchStartX.current
     const deltaY = touchEndY - touchStartY.current
 
-    // Require a minimum swipe of 50px and horizontal movement must be dominant
-    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
-      touchHandled.current = true
+    // Only handle swipe for sidebar when not zoomed
+    if (zoom.scale <= 1) {
+      // Require a minimum swipe of 50px and horizontal movement must be dominant
+      if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+        touchHandled.current = true
 
-      // Swipe right = open sidebar, swipe left = close sidebar
-      // Image navigation is done by tapping left/right sides
-      if (deltaX > 0 && !sidebarOpen) {
-        onSidebarHover && onSidebarHover(true)
-      } else if (deltaX < 0 && sidebarOpen) {
-        onSidebarHover && onSidebarHover(false)
+        // Swipe right = open sidebar, swipe left = close sidebar
+        // Image navigation is done by tapping left/right sides
+        if (deltaX > 0 && !sidebarOpen) {
+          onSidebarHover && onSidebarHover(true)
+        } else if (deltaX < 0 && sidebarOpen) {
+          onSidebarHover && onSidebarHover(false)
+        }
       }
     }
 
     touchStartX.current = null
     touchStartY.current = null
-  }, [onNav, onSidebarHover, sidebarOpen])
+  }, [onNav, onSidebarHover, sidebarOpen, zoom.scale])
+
+  // Helper to check if zoom is at default
+  const isZoomDefault = useCallback(() => {
+    return zoom.scale === 1 && zoom.x === 0 && zoom.y === 0
+  }, [zoom])
+
+  // Calculate scale to fill the viewport with the image
+  const calculateFillScale = useCallback(() => {
+    if (!mediaRef.current || !containerRef.current) return null
+
+    const media = mediaRef.current
+    const container = containerRef.current
+    const containerRect = container.getBoundingClientRect()
+
+    // Get natural dimensions (for images) or video dimensions
+    const naturalWidth = media.naturalWidth || media.videoWidth || media.offsetWidth
+    const naturalHeight = media.naturalHeight || media.videoHeight || media.offsetHeight
+
+    if (!naturalWidth || !naturalHeight || !containerRect.width || !containerRect.height) return null
+
+    const containerWidth = containerRect.width
+    const containerHeight = containerRect.height
+    const containerAspect = containerWidth / containerHeight
+    const imageAspect = naturalWidth / naturalHeight
+
+    // With object-fit: contain, calculate displayed size at scale 1
+    let displayedWidth, displayedHeight
+    if (imageAspect > containerAspect) {
+      // Width fills container, height is letterboxed
+      displayedWidth = containerWidth
+      displayedHeight = containerWidth / imageAspect
+    } else {
+      // Height fills container, width is letterboxed
+      displayedHeight = containerHeight
+      displayedWidth = containerHeight * imageAspect
+    }
+
+    // Calculate scale to make both dimensions fill container
+    const scaleForWidth = containerWidth / displayedWidth
+    const scaleForHeight = containerHeight / displayedHeight
+
+    // Return the larger scale (one will be 1.0, the other > 1.0)
+    return Math.max(scaleForWidth, scaleForHeight)
+  }, [])
+
+  // Double-click handler: zoom to fill or reset
+  const handleDoubleClick = useCallback((e) => {
+    // Don't zoom if clicking on interactive elements
+    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-adjustments')) return
+
+    resetHideTimer()
+
+    if (isZoomDefault()) {
+      // Zoom to fill at click position
+      const fillScale = calculateFillScale()
+      if (fillScale === null) {
+        // Image not ready, ignore
+        return
+      }
+      if (fillScale <= 1.05) {
+        // Image already fills or nearly fills, zoom to 2x instead
+        setZoom({ scale: 2, x: 0, y: 0 })
+      } else {
+        setZoom({ scale: fillScale, x: 0, y: 0 })
+      }
+    } else {
+      // Reset zoom
+      setZoom({ scale: 1, x: 0, y: 0 })
+    }
+  }, [isZoomDefault, calculateFillScale, resetHideTimer])
+
+  // Wheel zoom at cursor position
+  const handleWheel = useCallback((e) => {
+    // Don't zoom if over interactive elements
+    if (e.target.closest('.lightbox-toolbar, .lightbox-adjustments, .lightbox-confirm-overlay')) return
+
+    e.preventDefault()
+    resetHideTimer()
+
+    // Use ref to always get current zoom value (avoids stale closure)
+    const currentZoom = zoomRef.current
+
+    // Normalize delta across browsers and input devices
+    // Use sign only, apply consistent zoom step
+    const direction = e.deltaY < 0 ? 1 : -1
+    const zoomStep = 0.05 // 5% zoom per scroll step
+    const newScale = Math.min(Math.max(currentZoom.scale * (1 + direction * zoomStep), 1), 10)
+
+    if (newScale === 1) {
+      // Reset to default when zoomed out fully
+      setZoom({ scale: 1, x: 0, y: 0 })
+      return
+    }
+
+    // Zoom toward cursor position
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect()
+      const cursorX = e.clientX - rect.left - rect.width / 2
+      const cursorY = e.clientY - rect.top - rect.height / 2
+
+      const scaleFactor = newScale / currentZoom.scale
+      const newX = cursorX - (cursorX - currentZoom.x) * scaleFactor
+      const newY = cursorY - (cursorY - currentZoom.y) * scaleFactor
+
+      setZoom({ scale: newScale, x: newX, y: newY })
+    } else {
+      setZoom({ scale: newScale, x: currentZoom.x, y: currentZoom.y })
+    }
+  }, [resetHideTimer]) // Removed zoom from dependencies - using ref instead
+
+  // Mouse drag for panning when zoomed
+  const handleMouseDown = useCallback((e) => {
+    if (zoom.scale <= 1) return
+    if (e.target.closest('.lightbox-toolbar, .lightbox-adjustments, .lightbox-confirm-overlay')) return
+
+    isDragging.current = true
+    dragStart.current = { x: e.clientX - zoom.x, y: e.clientY - zoom.y }
+    e.preventDefault()
+  }, [zoom])
+
+  const handleMouseMoveDrag = useCallback((e) => {
+    if (!isDragging.current) return
+
+    const newX = e.clientX - dragStart.current.x
+    const newY = e.clientY - dragStart.current.y
+    setZoom(prev => ({ ...prev, x: newX, y: newY }))
+  }, [])
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false
+  }, [])
+
+  // Pinch-to-zoom for touch
+  const handleTouchMoveZoom = useCallback((e) => {
+    if (e.touches.length === 2) {
+      // Pinch zoom
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const distance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY)
+
+      if (lastPinchDistance.current !== null) {
+        const delta = (distance - lastPinchDistance.current) * 0.01
+        const newScale = Math.min(Math.max(zoom.scale * (1 + delta), 1), 10)
+
+        if (newScale === 1) {
+          setZoom({ scale: 1, x: 0, y: 0 })
+        } else {
+          // Zoom toward center of pinch
+          if (containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect()
+            const centerX = (touch1.clientX + touch2.clientX) / 2 - rect.left - rect.width / 2
+            const centerY = (touch1.clientY + touch2.clientY) / 2 - rect.top - rect.height / 2
+
+            const scaleFactor = newScale / zoom.scale
+            const newX = centerX - (centerX - zoom.x) * scaleFactor
+            const newY = centerY - (centerY - zoom.y) * scaleFactor
+
+            setZoom({ scale: newScale, x: newX, y: newY })
+          } else {
+            setZoom(prev => ({ ...prev, scale: newScale }))
+          }
+        }
+      }
+
+      lastPinchDistance.current = distance
+      touchHandled.current = true
+      e.preventDefault()
+    } else if (e.touches.length === 1 && zoom.scale > 1) {
+      // Single finger pan when zoomed
+      if (touchStartX.current !== null) {
+        const deltaX = e.touches[0].clientX - touchStartX.current
+        const deltaY = e.touches[0].clientY - touchStartY.current
+
+        if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+          setZoom(prev => ({
+            ...prev,
+            x: prev.x + deltaX,
+            y: prev.y + deltaY
+          }))
+          touchStartX.current = e.touches[0].clientX
+          touchStartY.current = e.touches[0].clientY
+          touchMoved.current = true
+        }
+      }
+    }
+  }, [zoom])
+
+  const handleTouchEndZoom = useCallback(() => {
+    lastPinchDistance.current = null
+  }, [])
+
+  // Attach wheel listener with passive: false
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    container.addEventListener('wheel', handleWheel, { passive: false })
+    return () => container.removeEventListener('wheel', handleWheel)
+  }, [handleWheel])
 
   // Toggle favorite
   const handleToggleFavorite = useCallback(async () => {
@@ -283,34 +496,35 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [image, adjustments, applyingAdjustments, onImageUpdate])
 
   // Generate CSS filter string for preview
-  // Note: CSS doesn't have true gamma, so we use an SVG filter for accurate preview
+  // Uses CSS brightness/contrast + SVG filter for gamma to match backend
   const getFilterStyle = () => {
     if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) {
       return {}
     }
-    // Brightness: linear offset (CSS brightness is a multiplier, so approximate)
-    // Extended range -200 to +200, clamp to prevent negative values
+
+    // Brightness: multiplicative (CSS brightness is a multiplier)
+    // slider -100 to +100 maps to 0.0 to 2.0 multiplier
+    // Extended range -200 to +200 maps to -1.0 to 3.0, clamped to 0
     const cssBrightness = Math.max(0, 1 + (adjustments.brightness / 100))
 
-    // Contrast: centered scaling
+    // Contrast: CSS contrast multiplier
+    // slider -100 to +100 maps to 0.0 to 2.0
     const cssContrast = (adjustments.contrast + 100) / 100
 
     // Gamma: exponential mapping (same as backend)
     // slider -100 to +100 → exponent 3.0 to 0.33
-    // We use an SVG filter for accurate gamma preview
     const gammaExponent = Math.pow(3.0, -adjustments.gamma / 100)
 
-    // Create inline SVG filter for gamma correction
-    // feComponentTransfer with feFuncR/G/B using "gamma" type
-    const svgFilter = adjustments.gamma !== 0
-      ? `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><filter id="g"><feComponentTransfer><feFuncR type="gamma" exponent="${gammaExponent}"/><feFuncG type="gamma" exponent="${gammaExponent}"/><feFuncB type="gamma" exponent="${gammaExponent}"/></feComponentTransfer></filter></svg>#g')`
-      : ''
-
-    // Combine filters: gamma first (via SVG), then brightness/contrast (via CSS)
+    // Build filter string: brightness and contrast via CSS, gamma via SVG
     const filters = []
-    if (adjustments.gamma !== 0) filters.push(svgFilter)
+
     if (adjustments.brightness !== 0 || adjustments.contrast !== 0) {
       filters.push(`brightness(${cssBrightness}) contrast(${cssContrast})`)
+    }
+
+    if (adjustments.gamma !== 0) {
+      const svgFilter = `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><filter id="g"><feComponentTransfer><feFuncR type="gamma" exponent="${gammaExponent}"/><feFuncG type="gamma" exponent="${gammaExponent}"/><feFuncB type="gamma" exponent="${gammaExponent}"/></feComponentTransfer></filter></svg>#g')`
+      filters.push(svgFilter)
     }
 
     return {
@@ -373,6 +587,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       return
     }
 
+    // Don't navigate if zoomed in
+    if (zoom.scale > 1) return
+
     // Don't navigate if clicking on interactive elements
     if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, video')) return
 
@@ -390,6 +607,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
   }
 
+  // Get transform style for zoomed media
+  const getZoomTransform = () => {
+    if (zoom.scale === 1 && zoom.x === 0 && zoom.y === 0) {
+      return {}
+    }
+    return {
+      transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`,
+      cursor: zoom.scale > 1 ? 'grab' : 'default'
+    }
+  }
+
   if (!image) return null
 
   const isVideoFile = isVideo(image.filename)
@@ -398,12 +626,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   return (
     <div
-      className={`lightbox ${!showUI ? 'ui-hidden' : ''}`}
+      className={`lightbox ${!showUI ? 'ui-hidden' : ''} ${zoom.scale > 1 ? 'zoomed' : ''}`}
       onClick={handleNavClick}
-      onMouseMove={handleMouseMove}
+      onDoubleClick={handleDoubleClick}
+      onMouseMove={(e) => { handleMouseMove(); handleMouseMoveDrag(e); }}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
       onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onTouchMove={(e) => { handleTouchMove(e); handleTouchMoveZoom(e); }}
+      onTouchEnd={(e) => { handleTouchEnd(e); handleTouchEndZoom(); }}
+      ref={containerRef}
     >
       {/* Top toolbar */}
       <div className="lightbox-toolbar">
@@ -577,11 +810,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         ) : isVideoFile ? (
           <video
             key={image.id}
+            ref={mediaRef}
             src={image.url}
             controls
             autoPlay
             loop
             className="lightbox-media"
+            style={getZoomTransform()}
             onContextMenu={(e) => {
               e.preventDefault()
               if (window.electronAPI?.showImageContextMenu) {
@@ -596,10 +831,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         ) : (
           <img
             key={previewUrl ? `${image.id}-preview` : image.id}
+            ref={mediaRef}
             src={previewUrl || image.url}
             alt=""
             className="lightbox-media"
-            style={previewUrl ? {} : getFilterStyle()}
+            style={{ ...(previewUrl ? {} : getFilterStyle()), ...getZoomTransform() }}
             onContextMenu={(e) => {
               e.preventDefault()
               if (window.electronAPI?.showImageContextMenu) {

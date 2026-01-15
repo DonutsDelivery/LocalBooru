@@ -937,8 +937,11 @@ async def preview_image_adjustments(
         img_array = np.array(img, dtype=np.float32)
 
         # Apply adjustments (same as apply_image_adjustments)
+        # Brightness: multiplicative (matches CSS brightness filter)
+        # slider -100 to +100 maps to 0.0 to 2.0 multiplier
         if adjustments.brightness != 0:
-            img_array = img_array + (adjustments.brightness * 255 / 100)
+            brightness_factor = 1 + (adjustments.brightness / 100)
+            img_array = img_array * max(0, brightness_factor)
 
         if adjustments.contrast != 0:
             contrast_factor = (adjustments.contrast + 100) / 100
@@ -1081,11 +1084,13 @@ async def apply_image_adjustments(
         # Convert to numpy array for processing
         img_array = np.array(img, dtype=np.float32)
 
-        # Gwenview formulas (applied in order: brightness -> contrast -> gamma)
+        # Adjustments applied in order: brightness -> contrast -> gamma
 
-        # Brightness: value + brightness * 255 / 100
+        # Brightness: multiplicative (matches CSS brightness filter)
+        # slider -100 to +100 maps to 0.0 to 2.0 multiplier
         if adjustments.brightness != 0:
-            img_array = img_array + (adjustments.brightness * 255 / 100)
+            brightness_factor = 1 + (adjustments.brightness / 100)
+            img_array = img_array * max(0, brightness_factor)
 
         # Contrast: ((value - 127) * (contrast + 100) / 100) + 127
         if adjustments.contrast != 0:

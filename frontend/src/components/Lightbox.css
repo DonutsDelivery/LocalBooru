@@ -10,6 +10,8 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  touch-action: none; /* Prevent browser zoom/pan, we handle it ourselves */
+  overflow: hidden;
 }
 
 /* Top toolbar */
@@ -99,6 +101,23 @@
   max-height: calc(100vh - var(--title-bar-height, 0));
   object-fit: contain;
   cursor: default;
+  transition: transform 0.1s ease-out;
+  transform-origin: center center;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* When zoomed, allow overflow and change cursor */
+.lightbox.zoomed {
+  cursor: grab;
+}
+
+.lightbox.zoomed:active {
+  cursor: grabbing;
+}
+
+.lightbox.zoomed .lightbox-content {
+  overflow: visible;
 }
 
 .lightbox-counter {
