@@ -174,6 +174,20 @@ export async function applyImageAdjustments(imageId, { brightness, contrast, gam
   return response.data
 }
 
+export async function previewImageAdjustments(imageId, { brightness, contrast, gamma }) {
+  const response = await api.post(`/images/${imageId}/preview-adjust`, {
+    brightness,
+    contrast,
+    gamma
+  })
+  return response.data
+}
+
+export async function discardImagePreview(imageId) {
+  const response = await api.delete(`/images/${imageId}/preview`)
+  return response.data
+}
+
 // Tags API
 export async function fetchTags({ q, category, page = 1, per_page = 50, sort = 'count' } = {}) {
   const params = new URLSearchParams()

@@ -21,13 +21,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [showAdjustments, setShowAdjustments] = useState(false)
   const [adjustments, setAdjustments] = useState({ brightness: 0, contrast: 0, gamma: 0 })
   const [applyingAdjustments, setApplyingAdjustments] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  const [generatingPreview, setGeneratingPreview] = useState(false)
 
   const image = images[currentIndex]
 
-  // Reset adjustments when changing images
+  // Reset adjustments and preview when changing images
   useEffect(() => {
     setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
     setShowAdjustments(false)
+    setPreviewUrl(null)
   }, [image?.id])
 
   // Auto-hide UI after inactivity
@@ -195,6 +198,46 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setTimeout(() => setCopyFeedback(null), 1500)
   }, [image])
 
+  // Generate preview of adjustments
+  const handleGeneratePreview = useCallback(async () => {
+    if (!image || generatingPreview) return
+
+    // Check if any adjustments were made
+    if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) {
+      return
+    }
+
+    setGeneratingPreview(true)
+    try {
+      const { previewImageAdjustments } = await import('../api')
+      const result = await previewImageAdjustments(image.id, {
+        brightness: adjustments.brightness,
+        contrast: adjustments.contrast,
+        gamma: adjustments.gamma
+      })
+
+      // Add cache buster to prevent browser caching
+      setPreviewUrl(`${result.preview_url}?t=${Date.now()}`)
+    } catch (err) {
+      console.error('Failed to generate preview:', err)
+      alert('Failed to generate preview: ' + err.message)
+    }
+    setGeneratingPreview(false)
+  }, [image, adjustments, generatingPreview])
+
+  // Discard preview and go back to CSS filter mode
+  const handleDiscardPreview = useCallback(async () => {
+    if (!image) return
+
+    try {
+      const { discardImagePreview } = await import('../api')
+      await discardImagePreview(image.id)
+    } catch (err) {
+      console.error('Failed to discard preview:', err)
+    }
+    setPreviewUrl(null)
+  }, [image])
+
   // Apply adjustments to file
   const handleApplyAdjustments = useCallback(async () => {
     if (!image || applyingAdjustments) return
@@ -206,23 +249,31 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
     setApplyingAdjustments(true)
     try {
-      const { applyImageAdjustments } = await import('../api')
+      const { applyImageAdjustments, discardImagePreview } = await import('../api')
       const result = await applyImageAdjustments(image.id, {
         brightness: adjustments.brightness,
         contrast: adjustments.contrast,
         gamma: adjustments.gamma
       })
 
+      // Clean up preview cache
+      try {
+        await discardImagePreview(image.id)
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+
       // Force reload the image by updating the URL with a cache buster
       if (onImageUpdate) {
         onImageUpdate(image.id, {
-          url: `${image.url}?t=${Date.now()}`,
-          thumbnail_url: `${image.thumbnail_url}?t=${Date.now()}`
+          url: `${image.url.split('?')[0]}?t=${Date.now()}`,
+          thumbnail_url: `${image.thumbnail_url.split('?')[0]}?t=${Date.now()}`
         })
       }
 
-      // Reset adjustments after applying
+      // Reset adjustments and preview after applying
       setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
+      setPreviewUrl(null)
       setShowAdjustments(false)
     } catch (err) {
       console.error('Failed to apply adjustments:', err)
@@ -415,7 +466,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     max="100"
                     step="1"
                     value={adjustments.brightness}
-                    onChange={e => setAdjustments(prev => ({ ...prev, brightness: parseInt(e.target.value) }))}
+                    onChange={e => {
+                      setAdjustments(prev => ({ ...prev, brightness: parseInt(e.target.value) }))
+                      if (previewUrl) setPreviewUrl(null) // Clear stale preview
+                    }}
                   />
                 </div>
                 <div className="adjustment-slider">
@@ -429,7 +483,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     max="100"
                     step="1"
                     value={adjustments.contrast}
-                    onChange={e => setAdjustments(prev => ({ ...prev, contrast: parseInt(e.target.value) }))}
+                    onChange={e => {
+                      setAdjustments(prev => ({ ...prev, contrast: parseInt(e.target.value) }))
+                      if (previewUrl) setPreviewUrl(null) // Clear stale preview
+                    }}
                   />
                 </div>
                 <div className="adjustment-slider">
@@ -443,22 +500,35 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     max="100"
                     step="1"
                     value={adjustments.gamma}
-                    onChange={e => setAdjustments(prev => ({ ...prev, gamma: parseInt(e.target.value) }))}
+                    onChange={e => {
+                      setAdjustments(prev => ({ ...prev, gamma: parseInt(e.target.value) }))
+                      if (previewUrl) setPreviewUrl(null) // Clear stale preview
+                    }}
                   />
                 </div>
                 <div className="adjustment-actions">
                   <button
                     className="adjustment-reset"
-                    onClick={() => setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })}
+                    onClick={() => {
+                      setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
+                      if (previewUrl) handleDiscardPreview()
+                    }}
                   >
                     Reset
+                  </button>
+                  <button
+                    className="adjustment-preview"
+                    onClick={previewUrl ? handleDiscardPreview : handleGeneratePreview}
+                    disabled={generatingPreview || (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0)}
+                  >
+                    {generatingPreview ? 'Loading...' : previewUrl ? 'CSS' : 'Preview'}
                   </button>
                   <button
                     className="adjustment-apply"
                     onClick={handleApplyAdjustments}
                     disabled={applyingAdjustments || (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0)}
                   >
-                    {applyingAdjustments ? 'Applying...' : 'Apply'}
+                    {applyingAdjustments ? 'Saving...' : 'Apply'}
                   </button>
                 </div>
               </div>
@@ -524,11 +594,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           />
         ) : (
           <img
-            key={image.id}
-            src={image.url}
+            key={previewUrl ? `${image.id}-preview` : image.id}
+            src={previewUrl || image.url}
             alt=""
             className="lightbox-media"
-            style={getFilterStyle()}
+            style={previewUrl ? {} : getFilterStyle()}
             onContextMenu={(e) => {
               e.preventDefault()
               if (window.electronAPI?.showImageContextMenu) {

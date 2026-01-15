@@ -451,6 +451,7 @@
 }
 
 .adjustment-reset,
+.adjustment-preview,
 .adjustment-apply {
   padding: 4px 10px;
   border-radius: 4px;
@@ -469,6 +470,20 @@
 .adjustment-reset:hover {
   background: rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.9);
+}
+
+.adjustment-preview {
+  background: rgba(156, 39, 176, 0.6);
+  color: #fff;
+}
+
+.adjustment-preview:hover:not(:disabled) {
+  background: rgba(156, 39, 176, 0.8);
+}
+
+.adjustment-preview:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .adjustment-apply {

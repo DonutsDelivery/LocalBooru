@@ -861,6 +861,154 @@ async def batch_move_images(
     }
 
 
+@router.post("/{image_id}/preview-adjust")
+async def preview_image_adjustments(
+    image_id: int,
+    adjustments: ImageAdjustmentRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate a preview of image adjustments without modifying the original file.
+
+    Returns a URL to a cached preview image that shows the adjustments with dithering.
+    The preview is stored in a cache directory and cleaned up when a new preview is
+    generated for the same image or when explicitly discarded.
+    """
+    import numpy as np
+    from PIL import Image as PILImage
+    from ..database import get_data_dir
+    import hashlib
+
+    # Validate adjustment values (all -100 to +100)
+    if not (-100 <= adjustments.brightness <= 100):
+        raise HTTPException(status_code=400, detail="Brightness must be between -100 and +100")
+    if not (-100 <= adjustments.contrast <= 100):
+        raise HTTPException(status_code=400, detail="Contrast must be between -100 and +100")
+    if not (-100 <= adjustments.gamma <= 100):
+        raise HTTPException(status_code=400, detail="Gamma must be between -100 and +100")
+
+    # Get image and file path
+    query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+    result = await db.execute(query)
+    image = result.scalar_one_or_none()
+
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # Find a valid file path
+    image_file = None
+    for f in image.files:
+        if os.path.exists(f.original_path):
+            image_file = f
+            break
+
+    if not image_file:
+        raise HTTPException(status_code=404, detail="Image file not found on disk")
+
+    file_path = image_file.original_path
+
+    # Create preview cache directory
+    preview_cache_dir = get_data_dir() / 'preview_cache'
+    preview_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Clean up any existing preview for this image
+    for old_preview in preview_cache_dir.glob(f"{image_id}_*.webp"):
+        old_preview.unlink()
+
+    # Generate unique filename based on adjustments
+    adj_hash = hashlib.md5(f"{adjustments.brightness}_{adjustments.contrast}_{adjustments.gamma}".encode()).hexdigest()[:8]
+    preview_filename = f"{image_id}_{adj_hash}.webp"
+    preview_path = preview_cache_dir / preview_filename
+
+    try:
+        # Open the image
+        img = PILImage.open(file_path)
+
+        # Convert to RGB for processing
+        if img.mode in ('RGBA', 'LA', 'P'):
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            img = img.convert('RGB')
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        # Convert to numpy array for processing
+        img_array = np.array(img, dtype=np.float32)
+
+        # Apply adjustments (same as apply_image_adjustments)
+        if adjustments.brightness != 0:
+            img_array = img_array + (adjustments.brightness * 255 / 100)
+
+        if adjustments.contrast != 0:
+            contrast_factor = (adjustments.contrast + 100) / 100
+            img_array = ((img_array - 127) * contrast_factor) + 127
+
+        if adjustments.gamma != 0:
+            import math
+            exponent = math.pow(3.0, -adjustments.gamma / 100.0)
+            img_array = np.clip(img_array, 0, 255)
+            img_array = np.power(img_array / 255.0, exponent) * 255
+
+        # Apply dithering
+        dither_strength = 0.5
+        if adjustments.gamma != 0:
+            dither_strength = 0.5 + (abs(adjustments.gamma) / 100.0) * 0.5
+        dither_noise = np.random.uniform(-dither_strength, dither_strength, img_array.shape)
+        img_array = img_array + dither_noise
+
+        # Clamp and convert back
+        img_array = np.clip(img_array, 0, 255).astype(np.uint8)
+        img = PILImage.fromarray(img_array)
+
+        # Save as WebP for efficient serving
+        img.save(preview_path, format='WEBP', quality=90, method=4)
+
+        return {
+            "preview_url": f"/api/images/{image_id}/preview",
+            "adjustments": {
+                "brightness": adjustments.brightness,
+                "contrast": adjustments.contrast,
+                "gamma": adjustments.gamma
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate preview: {str(e)}")
+
+
+@router.get("/{image_id}/preview")
+async def get_preview_image(image_id: int, db: AsyncSession = Depends(get_db)):
+    """Serve the cached preview image for an image."""
+    from ..database import get_data_dir
+
+    preview_cache_dir = get_data_dir() / 'preview_cache'
+
+    # Find the preview file for this image
+    previews = list(preview_cache_dir.glob(f"{image_id}_*.webp"))
+
+    if not previews:
+        raise HTTPException(status_code=404, detail="No preview found for this image")
+
+    # Return the most recent preview
+    preview_path = previews[0]
+
+    return FileResponse(str(preview_path), media_type="image/webp")
+
+
+@router.delete("/{image_id}/preview")
+async def discard_preview(image_id: int, db: AsyncSession = Depends(get_db)):
+    """Discard the cached preview for an image."""
+    from ..database import get_data_dir
+
+    preview_cache_dir = get_data_dir() / 'preview_cache'
+
+    deleted = 0
+    for preview in preview_cache_dir.glob(f"{image_id}_*.webp"):
+        preview.unlink()
+        deleted += 1
+
+    return {"deleted": deleted}
+
+
 @router.post("/{image_id}/adjust")
 async def apply_image_adjustments(
     image_id: int,
