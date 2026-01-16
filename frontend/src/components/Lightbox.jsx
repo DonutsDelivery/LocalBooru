@@ -15,7 +15,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [copyFeedback, setCopyFeedback] = useState(null) // 'success' | 'error' | null
   const [showUI, setShowUI] = useState(true)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const hideUITimeout = useRef(null)
+  const deleteDialogFocusIndex = useRef(0) // 0 = Cancel, 1 = Delete
+  const cancelBtnRef = useRef(null)
+  const deleteBtnRef = useRef(null)
 
   // Image adjustment state (Gwenview-style ranges)
   // All sliders: -100 to +100 (0 = no change)
@@ -70,6 +74,31 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const handleMouseMove = useCallback(() => {
     resetHideTimer()
   }, [resetHideTimer])
+
+  // Fullscreen toggle handler
+  const handleToggleFullscreen = useCallback(async () => {
+    if (!containerRef.current) return
+
+    try {
+      if (!document.fullscreenElement) {
+        await containerRef.current.requestFullscreen()
+      } else {
+        await document.exitFullscreen()
+      }
+    } catch (err) {
+      console.error('Fullscreen error:', err)
+    }
+  }, [])
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
 
   // Track favorite state for current image
   useEffect(() => {
@@ -538,6 +567,37 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
 
+      // Handle delete dialog keyboard navigation
+      if (showDeleteConfirm) {
+        switch (e.key) {
+          case 'Escape':
+            e.preventDefault()
+            setShowDeleteConfirm(false)
+            break
+          case 'Enter':
+            e.preventDefault()
+            if (deleteDialogFocusIndex.current === 0) {
+              // Cancel is focused
+              setShowDeleteConfirm(false)
+            } else {
+              // Delete is focused
+              handleDelete()
+            }
+            break
+          case 'ArrowLeft':
+            e.preventDefault()
+            deleteDialogFocusIndex.current = 0
+            cancelBtnRef.current?.focus()
+            break
+          case 'ArrowRight':
+            e.preventDefault()
+            deleteDialogFocusIndex.current = 1
+            deleteBtnRef.current?.focus()
+            break
+        }
+        return // Don't process other keys when dialog is open
+      }
+
       // Ctrl+C to copy image
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         e.preventDefault()
@@ -547,11 +607,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
       switch (e.key) {
         case 'Escape':
-          if (showDeleteConfirm) {
-            setShowDeleteConfirm(false)
-          } else {
-            onClose()
-          }
+          onClose()
           break
         case 'ArrowLeft':
         case 'a':
@@ -566,6 +622,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           break
         case 'Delete':
           setShowDeleteConfirm(true)
+          deleteDialogFocusIndex.current = 0 // Default focus to Cancel for safety
           break
       }
     }
@@ -577,7 +634,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, showDeleteConfirm])
+  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm])
+
+  // Auto-focus Cancel button when delete dialog opens
+  useEffect(() => {
+    if (showDeleteConfirm) {
+      deleteDialogFocusIndex.current = 0
+      // Focus after a short delay to ensure DOM is ready
+      setTimeout(() => cancelBtnRef.current?.focus(), 10)
+    }
+  }, [showDeleteConfirm])
 
   // Handle click navigation - left side = prev, right side = next
   const handleNavClick = (e) => {
@@ -628,7 +694,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   return (
     <div
-      className={`lightbox ${!showUI ? 'ui-hidden' : ''} ${zoom.scale > 1 ? 'zoomed' : ''}`}
+      className={`lightbox ${!showUI ? 'ui-hidden' : ''} ${zoom.scale > 1 ? 'zoomed' : ''} ${isFullscreen ? 'fullscreen' : ''}`}
       onClick={handleNavClick}
       onDoubleClick={handleDoubleClick}
       onMouseMove={(e) => { handleMouseMove(); handleMouseMoveDrag(e); }}
@@ -771,6 +837,21 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         )}
+        <button
+          className={`lightbox-btn lightbox-fullscreen ${isFullscreen ? 'active' : ''}`}
+          onClick={handleToggleFullscreen}
+          title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        >
+          {isFullscreen ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+            </svg>
+          )}
+        </button>
         <button className="lightbox-btn lightbox-close" onClick={onClose} title="Close (Esc)">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
@@ -882,6 +963,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <p>This will permanently delete the file from your filesystem. This action cannot be undone.</p>
             <div className="lightbox-confirm-actions">
               <button
+                ref={cancelBtnRef}
                 className="lightbox-confirm-cancel"
                 onClick={() => setShowDeleteConfirm(false)}
                 disabled={processing}
@@ -889,6 +971,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 Cancel
               </button>
               <button
+                ref={deleteBtnRef}
                 className="lightbox-confirm-delete"
                 onClick={handleDelete}
                 disabled={processing}

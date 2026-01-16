@@ -531,3 +531,39 @@
     right: -10px;
   }
 }
+
+/* Fullscreen mode - true edge-to-edge display */
+.lightbox.fullscreen {
+  top: 0;
+}
+
+.lightbox.fullscreen .lightbox-content {
+  max-height: 100vh;
+  padding: 0;
+}
+
+.lightbox.fullscreen .lightbox-media {
+  max-height: 100vh;
+}
+
+/* Fullscreen button */
+.lightbox-fullscreen.active {
+  color: #64b5f6;
+  background: rgba(100, 181, 246, 0.2);
+}
+
+.lightbox-fullscreen:hover {
+  background: rgba(100, 181, 246, 0.3);
+}
+
+/* Delete dialog button focus states for keyboard navigation */
+.lightbox-confirm-cancel:focus,
+.lightbox-confirm-delete:focus {
+  outline: 2px solid #64b5f6;
+  outline-offset: 2px;
+}
+
+.lightbox-confirm-cancel:focus:not(:focus-visible),
+.lightbox-confirm-delete:focus:not(:focus-visible) {
+  outline: none;
+}
