@@ -44,6 +44,9 @@ class EventBroadcaster:
 # Global event broadcaster instance
 library_events = EventBroadcaster()
 
+# Migration event broadcaster instance
+migration_events = EventBroadcaster()
+
 
 # Event types
 class EventType:
@@ -51,3 +54,10 @@ class EventType:
     IMAGE_UPDATED = "image_updated"
     IMAGE_DELETED = "image_deleted"
     TASK_COMPLETED = "task_completed"
+
+
+class MigrationEventType:
+    STARTED = "migration_started"
+    PROGRESS = "migration_progress"
+    COMPLETED = "migration_completed"
+    ERROR = "migration_error"

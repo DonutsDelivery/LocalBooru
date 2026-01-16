@@ -11,6 +11,7 @@ import TitleBar from './components/TitleBar'
 import ComfyUIConfigModal from './components/ComfyUIConfigModal'
 import NetworkSettings from './components/NetworkSettings'
 import ServerSettings from './components/ServerSettings'
+import MigrationSettings from './components/MigrationSettings'
 import QRConnect from './components/QRConnect'
 import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
 import './App.css'
@@ -348,10 +349,19 @@ function SettingsPage() {
               >
                 Mobile
               </button>
+              <button
+                className={`settings-tab ${activeTab === 'data' ? 'active' : ''}`}
+                onClick={() => setActiveTab('data')}
+              >
+                Data
+              </button>
             </div>
 
             {/* Network Tab Content */}
             {activeTab === 'network' && <NetworkSettings />}
+
+            {/* Data/Migration Tab Content */}
+            {activeTab === 'data' && <MigrationSettings />}
 
             {/* Servers Tab Content (for mobile app) */}
             {activeTab === 'servers' && <ServerSettings />}

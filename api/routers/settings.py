@@ -607,3 +607,297 @@ async def get_model_progress(model_name: str):
         "available": False,
         "percent": 0
     }
+
+
+# =============================================================================
+# Data Migration Endpoints
+# =============================================================================
+
+# Track ongoing migration state
+_migration_state = {
+    "running": False,
+    "progress": None,
+    "result": None
+}
+
+
+@router.get("/migration")
+async def get_migration_info_endpoint():
+    """Get information about current mode and migration options."""
+    from ..migration import get_migration_info
+    info = await get_migration_info()
+
+    # Include current migration state
+    info["migration_running"] = _migration_state["running"]
+    if _migration_state["progress"]:
+        info["migration_progress"] = {
+            "phase": _migration_state["progress"].phase,
+            "percent": _migration_state["progress"].percent,
+            "current_file": _migration_state["progress"].current_file,
+            "files_copied": _migration_state["progress"].files_copied,
+            "total_files": _migration_state["progress"].total_files,
+        }
+    if _migration_state["result"]:
+        info["last_result"] = {
+            "success": _migration_state["result"].success,
+            "error": _migration_state["result"].error,
+            "files_copied": _migration_state["result"].files_copied,
+            "bytes_copied": _migration_state["result"].bytes_copied,
+        }
+
+    return info
+
+
+class MigrationRequest(BaseModel):
+    mode: str  # "system_to_portable" or "portable_to_system"
+
+
+@router.post("/migration/validate")
+async def validate_migration(request: MigrationRequest):
+    """Validate migration can proceed (dry run)."""
+    from ..migration import migrate_data, MigrationMode
+
+    try:
+        mode = MigrationMode(request.mode)
+    except ValueError:
+        return {
+            "valid": False,
+            "error": f"Invalid mode: {request.mode}. Must be 'system_to_portable' or 'portable_to_system'"
+        }
+
+    result = await migrate_data(mode, dry_run=True)
+
+    return {
+        "valid": result.success,
+        "error": result.error,
+        "source_path": result.source_path,
+        "dest_path": result.dest_path,
+        "files_to_copy": result.files_copied,
+        "bytes_to_copy": result.bytes_copied,
+        "size_mb": round(result.bytes_copied / 1024 / 1024, 1) if result.bytes_copied else 0
+    }
+
+
+@router.post("/migration/start")
+async def start_migration(request: MigrationRequest):
+    """Start data migration (runs in background)."""
+    import asyncio
+    from ..migration import migrate_data, MigrationMode
+    from ..services.events import migration_events, MigrationEventType
+
+    if _migration_state["running"]:
+        return {"success": False, "error": "Migration already in progress"}
+
+    try:
+        mode = MigrationMode(request.mode)
+    except ValueError:
+        return {
+            "success": False,
+            "error": f"Invalid mode: {request.mode}. Must be 'system_to_portable' or 'portable_to_system'"
+        }
+
+    # First validate
+    validation = await migrate_data(mode, dry_run=True)
+    if not validation.success:
+        return {"success": False, "error": validation.error}
+
+    # Reset state
+    _migration_state["running"] = True
+    _migration_state["progress"] = None
+    _migration_state["result"] = None
+
+    def progress_callback(progress):
+        _migration_state["progress"] = progress
+        # Broadcast progress via SSE (fire and forget)
+        asyncio.create_task(migration_events.broadcast(
+            MigrationEventType.PROGRESS,
+            {
+                "phase": progress.phase,
+                "percent": round(progress.percent, 1),
+                "current_file": progress.current_file,
+                "files_copied": progress.files_copied,
+                "total_files": progress.total_files,
+                "bytes_copied": progress.bytes_copied,
+                "total_bytes": progress.total_bytes,
+                "error": progress.error
+            }
+        ))
+
+    async def run_migration():
+        try:
+            # Broadcast start event
+            await migration_events.broadcast(MigrationEventType.STARTED, {"mode": mode.value})
+
+            result = await migrate_data(mode, progress_callback=progress_callback)
+            _migration_state["result"] = result
+
+            # Broadcast completion/error event
+            if result.success:
+                await migration_events.broadcast(MigrationEventType.COMPLETED, {
+                    "files_copied": result.files_copied,
+                    "bytes_copied": result.bytes_copied,
+                    "source_path": result.source_path,
+                    "dest_path": result.dest_path
+                })
+            else:
+                await migration_events.broadcast(MigrationEventType.ERROR, {
+                    "error": result.error,
+                    "files_copied": result.files_copied
+                })
+        except Exception as e:
+            from ..migration import MigrationResult
+            _migration_state["result"] = MigrationResult(
+                success=False,
+                mode=mode,
+                source_path="",
+                dest_path="",
+                files_copied=0,
+                bytes_copied=0,
+                error=str(e)
+            )
+            await migration_events.broadcast(MigrationEventType.ERROR, {"error": str(e)})
+        finally:
+            _migration_state["running"] = False
+
+    # Start background task
+    asyncio.create_task(run_migration())
+
+    return {
+        "success": True,
+        "message": "Migration started. Subscribe to /api/settings/migration/events for real-time progress."
+    }
+
+
+@router.get("/migration/status")
+async def get_migration_status():
+    """Get current migration progress."""
+    response = {
+        "running": _migration_state["running"],
+        "progress": None,
+        "result": None
+    }
+
+    if _migration_state["progress"]:
+        p = _migration_state["progress"]
+        response["progress"] = {
+            "phase": p.phase,
+            "percent": round(p.percent, 1),
+            "current_file": p.current_file,
+            "files_copied": p.files_copied,
+            "total_files": p.total_files,
+            "bytes_copied": p.bytes_copied,
+            "total_bytes": p.total_bytes,
+            "error": p.error
+        }
+
+    if _migration_state["result"]:
+        r = _migration_state["result"]
+        response["result"] = {
+            "success": r.success,
+            "mode": r.mode.value if hasattr(r.mode, 'value') else r.mode,
+            "source_path": r.source_path,
+            "dest_path": r.dest_path,
+            "files_copied": r.files_copied,
+            "bytes_copied": r.bytes_copied,
+            "error": r.error
+        }
+
+    return response
+
+
+@router.post("/migration/cleanup")
+async def cleanup_migration(request: MigrationRequest):
+    """Clean up partially copied data from a failed migration.
+
+    Use this if migration failed and you want to remove incomplete data
+    from the destination before retrying.
+    """
+    from ..migration import cleanup_partial_migration, get_migration_paths, MigrationMode
+    from pathlib import Path
+
+    if _migration_state["running"]:
+        return {"success": False, "error": "Migration is currently running"}
+
+    try:
+        mode = MigrationMode(request.mode)
+        _, dest = get_migration_paths(mode)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+
+    success, message = cleanup_partial_migration(dest)
+    return {"success": success, "message": message}
+
+
+@router.post("/migration/delete-source")
+async def delete_migration_source(request: MigrationRequest):
+    """Delete source data after successful migration.
+
+    WARNING: This permanently deletes data. Only use after verifying
+    migration completed successfully.
+    """
+    from ..migration import delete_source_data, verify_migration, MigrationMode
+
+    if _migration_state["running"]:
+        return {"success": False, "error": "Migration is currently running"}
+
+    try:
+        mode = MigrationMode(request.mode)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+
+    # First verify migration succeeded
+    verified, issues = await verify_migration(mode)
+    if not verified:
+        return {
+            "success": False,
+            "error": "Migration verification failed. Cannot delete source.",
+            "issues": issues
+        }
+
+    success, message = await delete_source_data(mode)
+    return {"success": success, "message": message}
+
+
+@router.post("/migration/verify")
+async def verify_migration_endpoint(request: MigrationRequest):
+    """Verify that migration completed successfully."""
+    from ..migration import verify_migration, MigrationMode
+
+    try:
+        mode = MigrationMode(request.mode)
+    except ValueError as e:
+        return {"success": False, "error": str(e), "issues": []}
+
+    success, issues = await verify_migration(mode)
+    return {"success": success, "issues": issues}
+
+
+@router.get("/migration/events")
+async def migration_events_stream():
+    """Server-Sent Events stream for real-time migration progress.
+
+    Events:
+    - migration_started: Migration has begun
+    - migration_progress: Progress update (phase, percent, current_file, etc.)
+    - migration_completed: Migration finished successfully
+    - migration_error: Migration failed with error
+    """
+    from fastapi.responses import StreamingResponse
+    from ..services.events import migration_events
+
+    async def event_generator():
+        # Send initial connection message
+        yield "data: {\"type\": \"connected\"}\n\n"
+        # Stream events
+        async for event in migration_events.subscribe():
+            yield event
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )

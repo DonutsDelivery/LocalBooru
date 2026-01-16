@@ -498,3 +498,62 @@ export function subscribeToLibraryEvents(onEvent) {
     eventSource.close()
   }
 }
+
+// Migration API
+export async function getMigrationInfo() {
+  const response = await api.get('/settings/migration')
+  return response.data
+}
+
+export async function validateMigration(mode) {
+  const response = await api.post('/settings/migration/validate', { mode })
+  return response.data
+}
+
+export async function startMigration(mode) {
+  const response = await api.post('/settings/migration/start', { mode })
+  return response.data
+}
+
+export async function getMigrationStatus() {
+  const response = await api.get('/settings/migration/status')
+  return response.data
+}
+
+export async function cleanupMigration(mode) {
+  const response = await api.post('/settings/migration/cleanup', { mode })
+  return response.data
+}
+
+export async function deleteSourceData(mode) {
+  const response = await api.post('/settings/migration/delete-source', { mode })
+  return response.data
+}
+
+export async function verifyMigration(mode) {
+  const response = await api.post('/settings/migration/verify', { mode })
+  return response.data
+}
+
+// Subscribe to migration events via Server-Sent Events
+export function subscribeToMigrationEvents(onEvent) {
+  const apiUrl = getApiUrl()
+  const eventSource = new EventSource(`${apiUrl}/settings/migration/events`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      onEvent(data)
+    } catch (e) {
+      console.error('[Migration SSE] Failed to parse event:', e)
+    }
+  }
+
+  eventSource.onerror = (error) => {
+    console.error('[Migration SSE] Connection error:', error)
+  }
+
+  return () => {
+    eventSource.close()
+  }
+}

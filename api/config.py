@@ -7,6 +7,20 @@ from pathlib import Path
 import os
 
 
+def get_system_data_dir() -> Path:
+    r"""Get the system data directory path (always returns system path, ignores portable mode).
+
+    Used by migration to determine target/source directory regardless of current mode.
+    Windows: %APPDATA%\.localbooru
+    Linux/Mac: ~/.localbooru
+    """
+    if os.name == 'nt':  # Windows
+        base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
+    else:  # Linux/Mac
+        base = Path.home()
+    return base / '.localbooru'
+
+
 def get_data_dir() -> Path:
     """Get LocalBooru data directory - portable or roaming"""
     # Check for portable mode (set by Electron when running from portable folder)
@@ -16,13 +30,8 @@ def get_data_dir() -> Path:
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir
 
-    # Default: AppData (Windows) or home (Linux/Mac)
-    if os.name == 'nt':  # Windows
-        base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
-    else:  # Linux/Mac
-        base = Path.home()
-
-    data_dir = base / '.localbooru'
+    # Default: use system data directory
+    data_dir = get_system_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 
