@@ -357,6 +357,8 @@
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar-content::-webkit-scrollbar {
