@@ -355,14 +355,14 @@
   padding-right: 12px;
   flex: 1;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: auto;
   scrollbar-color: var(--border) transparent;
   display: flex;
   flex-direction: column;
 }
 
 .sidebar-content::-webkit-scrollbar {
-  width: 6px;
+  width: 12px;
 }
 
 .sidebar-content::-webkit-scrollbar-track {
@@ -371,7 +371,7 @@
 
 .sidebar-content::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 .sidebar-content::-webkit-scrollbar-thumb:hover {
@@ -464,12 +464,12 @@
   z-index: 100;
   max-height: 280px;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: auto;
   scrollbar-color: var(--border) transparent;
 }
 
 .tag-suggestions::-webkit-scrollbar {
-  width: 6px;
+  width: 12px;
 }
 
 .tag-suggestions::-webkit-scrollbar-track {
@@ -478,7 +478,7 @@
 
 .tag-suggestions::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 .tag-suggestions::-webkit-scrollbar-thumb:hover {

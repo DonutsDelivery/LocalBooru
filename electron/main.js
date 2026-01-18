@@ -2,7 +2,7 @@
  * LocalBooru Electron Main Process
  * Manages the app lifecycle, backend server, and directory watcher
  */
-const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell, clipboard, nativeImage, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const BackendManager = require('./backendManager');
@@ -92,6 +92,9 @@ async function createWindow() {
   mainWindow.webContents.on('responsive', () => {
     log('[Window] Webcontents responsive again');
   });
+
+  // Clear cache to ensure fresh CSS/JS is loaded
+  await session.defaultSession.clearCache();
 
   // Load the frontend from backend server (same as browser access)
   const loadWithRetry = async (url, maxRetries = 5) => {
