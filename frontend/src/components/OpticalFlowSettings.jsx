@@ -79,10 +79,10 @@ export default function OpticalFlowSettings() {
 
   return (
     <div className="optical-flow-settings">
-      <h2>Frame Interpolation</h2>
+      <h2>Built-in Interpolation</h2>
       <p className="settings-description">
-        Smooth video playback with AI-generated intermediate frames.
-        Uses optical flow to create fluid motion at higher frame rates.
+        Basic frame interpolation using NVIDIA Optical Flow.
+        Fast but lower quality than SVP. Use SVP below for best results.
       </p>
 
       {/* Backend status */}

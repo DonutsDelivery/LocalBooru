@@ -99,10 +99,10 @@ export default function SVPSettings() {
 
   return (
     <div className="optical-flow-settings svp-settings">
-      <h2>SVP Interpolation</h2>
+      <h2>SVP Interpolation (Recommended)</h2>
       <p className="settings-description">
         High-quality frame interpolation using SVP (SmoothVideo Project).
-        Uses VapourSynth with SVPflow plugins for professional-grade motion compensation.
+        Best results with motion-compensated interpolation. Requires more processing power.
       </p>
 
       {/* Status badges */}
