@@ -88,8 +88,16 @@ DEFAULT_NETWORK_SETTINGS = {
     "public_network_enabled": False,
     "local_port": 8790,
     "public_port": 8791,
-    "auth_required_level": "none",  # none, public, local_network, always
+    "auth_required_level": "local_network",  # none, public, local_network, always
     "upnp_enabled": False
+}
+
+# Optical flow interpolation settings defaults
+DEFAULT_OPTICAL_FLOW_SETTINGS = {
+    "enabled": False,
+    "target_fps": 60,
+    "use_gpu": True,
+    "quality": "fast",  # fast, balanced, quality, gpu_native
 }
 
 
@@ -105,6 +113,21 @@ def save_network_settings(network_settings: dict):
     """Save network settings"""
     settings = load_settings()
     settings["network"] = network_settings
+    save_settings(settings)
+
+
+def get_optical_flow_settings() -> dict:
+    """Get optical flow interpolation settings with defaults"""
+    settings = load_settings()
+    optical_flow = settings.get("optical_flow", {})
+    # Merge with defaults
+    return {**DEFAULT_OPTICAL_FLOW_SETTINGS, **optical_flow}
+
+
+def save_optical_flow_settings(optical_flow_settings: dict):
+    """Save optical flow interpolation settings"""
+    settings = load_settings()
+    settings["optical_flow"] = optical_flow_settings
     save_settings(settings)
 
 
@@ -899,5 +922,143 @@ async def migration_events_stream():
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no"
+        }
+    )
+
+
+# =============================================================================
+# Optical Flow Interpolation Endpoints
+# =============================================================================
+
+@router.get("/optical-flow")
+async def get_optical_flow_config():
+    """Get optical flow interpolation configuration and backend status"""
+    from ..services.optical_flow import get_backend_status
+
+    config = get_optical_flow_settings()
+    backend = get_backend_status()
+
+    return {
+        **config,
+        "backend": backend
+    }
+
+
+class OpticalFlowConfigUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    target_fps: Optional[int] = None
+    use_gpu: Optional[bool] = None
+    quality: Optional[str] = None  # fast, balanced, quality, gpu_native
+
+
+@router.post("/optical-flow")
+async def update_optical_flow_config(config: OpticalFlowConfigUpdate):
+    """Update optical flow interpolation configuration"""
+    current = get_optical_flow_settings()
+
+    # Update only provided fields
+    if config.enabled is not None:
+        current["enabled"] = config.enabled
+    if config.target_fps is not None:
+        # Clamp to valid range
+        current["target_fps"] = max(15, min(120, config.target_fps))
+    if config.use_gpu is not None:
+        current["use_gpu"] = config.use_gpu
+    if config.quality is not None:
+        # Validate quality preset
+        if config.quality in ("fast", "balanced", "quality", "gpu_native"):
+            current["quality"] = config.quality
+
+    save_optical_flow_settings(current)
+
+    return {"success": True, **current}
+
+
+@router.post("/optical-flow/play")
+async def play_video_interpolated(file_path: str):
+    """
+    Start interpolated video stream via HLS.
+
+    Returns the stream URL that can be used with hls.js.
+    """
+    from ..services.optical_flow_stream import create_interpolated_stream
+    from ..services.optical_flow import get_backend_status
+
+    config = get_optical_flow_settings()
+    backend = get_backend_status()
+
+    if not config["enabled"]:
+        return {"success": False, "error": "Optical flow interpolation is not enabled"}
+
+    if not backend["any_backend_available"]:
+        return {"success": False, "error": "No interpolation backend available. Install OpenCV or PyTorch."}
+
+    # Check if file exists
+    if not os.path.exists(file_path):
+        return {"success": False, "error": "File not found"}
+
+    try:
+        stream = await create_interpolated_stream(
+            video_path=file_path,
+            target_fps=config["target_fps"],
+            use_gpu=config["use_gpu"] and backend["cuda_available"],
+            quality=config.get("quality", "fast"),
+            wait_for_buffer=True,
+            min_segments=2
+        )
+
+        if stream:
+            return {
+                "success": True,
+                "stream_id": stream.stream_id,
+                "stream_url": f"/api/settings/optical-flow/stream/{stream.stream_id}/stream.m3u8",
+                "message": f"Interpolated stream started at {config['target_fps']} fps"
+            }
+        else:
+            return {"success": False, "error": "Failed to start interpolated stream"}
+
+    except Exception as e:
+        return {"success": False, "error": f"Stream error: {str(e)}"}
+
+
+@router.post("/optical-flow/stop")
+async def stop_interpolated_stream():
+    """Stop the active interpolated stream."""
+    from ..services.optical_flow_stream import stop_all_streams
+
+    stop_all_streams()
+    return {"success": True, "message": "Stream stopped"}
+
+
+from fastapi.responses import FileResponse, Response
+
+
+@router.get("/optical-flow/stream/{stream_id}/{filename:path}")
+async def serve_hls_file(stream_id: str, filename: str):
+    """Serve HLS playlist or segment files for the interpolated stream."""
+    from ..services.optical_flow_stream import get_active_stream
+
+    stream = get_active_stream(stream_id)
+    if not stream:
+        return Response(content="Stream not found", status_code=404)
+
+    file_path = stream.get_file_path(filename)
+    if not file_path:
+        return Response(content="File not found", status_code=404)
+
+    # Determine content type
+    if filename.endswith('.m3u8'):
+        media_type = 'application/vnd.apple.mpegurl'
+    elif filename.endswith('.ts'):
+        media_type = 'video/mp2t'
+    else:
+        media_type = 'application/octet-stream'
+
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Access-Control-Allow-Origin': '*'
         }
     )
