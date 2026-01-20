@@ -412,8 +412,29 @@ class BackendManager {
       return;
     }
 
-    // Kill any zombie processes first
-    await this.killZombieProcesses();
+    // AGGRESSIVE cleanup - kill ALL uvicorn processes, not just on our port
+    // This prevents zombie processes from previous sessions
+    console.log('[Backend] Cleaning up any existing uvicorn processes...');
+    try {
+      if (process.platform === 'win32') {
+        execSync('taskkill /F /IM python.exe /FI "WINDOWTITLE eq uvicorn*" 2>nul', { stdio: 'ignore', timeout: 5000 });
+      } else {
+        // Kill any uvicorn process for api.main:app specifically
+        execSync('pkill -9 -f "uvicorn api.main:app" 2>/dev/null || true', { stdio: 'ignore', timeout: 5000 });
+      }
+      // Give OS time to release the port
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (e) {
+      // Ignore errors - process might not exist
+    }
+
+    // Now do the standard zombie kill on port
+    try {
+      await this.killZombieProcesses();
+    } catch (e) {
+      // Log but don't fail - we'll try to start anyway and let uvicorn fail if port is busy
+      console.error('[Backend] Warning: Could not free port:', e.message);
+    }
 
     console.log('[Backend] Starting server on port', this.port);
 
@@ -653,21 +674,47 @@ class BackendManager {
   }
 
   /**
-   * Force kill the backend process
+   * Force kill the backend process AND any zombie uvicorn processes
    */
   forceKill() {
-    if (!this.process) return;
+    // Kill our tracked process
+    if (this.process) {
+      try {
+        if (process.platform === 'win32') {
+          execSync(`taskkill /pid ${this.process.pid} /T /F`, { stdio: 'ignore' });
+        } else {
+          this.process.kill('SIGKILL');
+        }
+      } catch (e) {
+        // Process may already be dead
+      }
+      this.process = null;
+    }
 
+    // ALSO kill any other uvicorn processes that might be zombies
+    // This is aggressive but prevents the blank window issue
     try {
       if (process.platform === 'win32') {
-        execSync(`taskkill /pid ${this.process.pid} /T /F`, { stdio: 'ignore' });
+        execSync('taskkill /F /IM python.exe /FI "WINDOWTITLE eq uvicorn*" 2>nul', { stdio: 'ignore', timeout: 3000 });
       } else {
-        this.process.kill('SIGKILL');
+        execSync('pkill -9 -f "uvicorn api.main:app" 2>/dev/null || true', { stdio: 'ignore', timeout: 3000 });
       }
     } catch (e) {
-      // Process may already be dead
+      // Ignore
     }
-    this.process = null;
+
+    // Kill anything on our port
+    try {
+      if (process.platform !== 'win32') {
+        const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 3000 });
+        const pids = output.trim().split('\n').filter(p => p && /^\d+$/.test(p));
+        for (const pid of pids) {
+          try { execSync(`kill -9 ${pid}`, { stdio: 'ignore', timeout: 1000 }); } catch (e) {}
+        }
+      }
+    } catch (e) {
+      // No process on port
+    }
   }
 
   /**
