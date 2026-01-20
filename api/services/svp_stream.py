@@ -519,6 +519,7 @@ class SVPStream:
         self._width: int = 0
         self._height: int = 0
         self._src_fps: float = 0
+        self._duration: float = 0  # Source video duration in seconds
 
         # Register stream
         _active_svp_streams[self.stream_id] = self
@@ -564,12 +565,13 @@ class SVPStream:
             return False
 
     def _get_video_info(self) -> bool:
-        """Get video dimensions and FPS using ffprobe."""
+        """Get video dimensions, FPS, and duration using ffprobe."""
         try:
             result = subprocess.run([
                 'ffprobe', '-v', 'error',
                 '-select_streams', 'v:0',
                 '-show_entries', 'stream=width,height,r_frame_rate',
+                '-show_entries', 'format=duration',
                 '-of', 'csv=p=0',
                 self.video_path
             ], capture_output=True, text=True, timeout=10)
@@ -578,19 +580,28 @@ class SVPStream:
                 logger.error(f"ffprobe failed: {result.stderr}")
                 return False
 
-            parts = result.stdout.strip().split(',')
-            if len(parts) >= 3:
-                self._width = int(parts[0])
-                self._height = int(parts[1])
-                # Parse frame rate (e.g., "30000/1001" or "30/1")
-                fps_parts = parts[2].split('/')
-                if len(fps_parts) == 2:
-                    self._src_fps = int(fps_parts[0]) / int(fps_parts[1])
-                else:
-                    self._src_fps = float(fps_parts[0])
+            lines = result.stdout.strip().split('\n')
+            if len(lines) >= 1:
+                parts = lines[0].split(',')
+                if len(parts) >= 3:
+                    self._width = int(parts[0])
+                    self._height = int(parts[1])
+                    # Parse frame rate (e.g., "30000/1001" or "30/1")
+                    fps_parts = parts[2].split('/')
+                    if len(fps_parts) == 2:
+                        self._src_fps = int(fps_parts[0]) / int(fps_parts[1])
+                    else:
+                        self._src_fps = float(fps_parts[0])
 
-                logger.info(f"[SVP {self.stream_id}] Video: {self._width}x{self._height} @ {self._src_fps:.2f}fps")
-                return True
+            # Get duration from format line
+            if len(lines) >= 2 and lines[1]:
+                try:
+                    self._duration = float(lines[1])
+                except ValueError:
+                    pass
+
+            logger.info(f"[SVP {self.stream_id}] Video: {self._width}x{self._height} @ {self._src_fps:.2f}fps, {self._duration:.1f}s")
+            return True
 
         except Exception as e:
             logger.error(f"Failed to get video info: {e}")
@@ -628,13 +639,13 @@ class SVPStream:
                 '-crf', '23',
             ])
 
-        # HLS output options
+        # HLS output options - VOD-style for seeking
         cmd.extend([
             '-g', str(self.target_fps * 2),  # GOP = 2 seconds
             '-f', 'hls',
             '-hls_time', '2',
-            '-hls_list_size', '10',
-            '-hls_flags', 'delete_segments+append_list',
+            '-hls_list_size', '0',  # Keep all segments
+            '-hls_flags', 'append_list',  # Allow seeking
             '-hls_segment_filename', str(self._temp_dir / 'segment_%03d.ts'),
             str(self.playlist_path)
         ])
@@ -718,13 +729,13 @@ class SVPStream:
                     '-crf', '23',
                 ])
 
-            # HLS output
+            # HLS output - VOD-style (keep all segments for seeking)
             ffmpeg_cmd.extend([
                 '-g', str(self.target_fps * 2),
                 '-f', 'hls',
                 '-hls_time', '2',
-                '-hls_list_size', '10',
-                '-hls_flags', 'delete_segments+append_list',
+                '-hls_list_size', '0',  # Keep all segments (not a rolling window)
+                '-hls_flags', 'append_list',  # No delete_segments - allow seeking
                 '-hls_segment_filename', str(self._temp_dir / 'segment_%03d.ts'),
                 str(self.playlist_path)
             ])
@@ -840,6 +851,7 @@ class SVPStream:
             "preset": self.preset,
             "resolution": f"{self._width}x{self._height}",
             "src_fps": self._src_fps,
+            "duration": self._duration,  # Source video duration
             "running": self._running,
             "elapsed_seconds": elapsed,
             "segments_ready": self.segments_ready,

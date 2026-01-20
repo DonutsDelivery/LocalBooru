@@ -1212,6 +1212,7 @@ async def play_video_svp(file_path: str):
                 "success": True,
                 "stream_id": stream.stream_id,
                 "stream_url": f"/api/settings/svp/stream/{stream.stream_id}/stream.m3u8",
+                "duration": stream._duration,  # Source video duration in seconds
                 "message": f"SVP stream started at {config['target_fps']} fps with {config.get('preset', 'balanced')} preset"
             }
         else:
