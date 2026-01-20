@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useState, useRef } from 'react'
-import { getMediaUrl } from '../api'
+import Hls from 'hls.js'
+import { getMediaUrl, getOpticalFlowConfig, playVideoInterpolated, stopInterpolatedStream } from '../api'
 import './Lightbox.css'
 
 // Check if filename is a video
@@ -29,6 +30,15 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [previewUrl, setPreviewUrl] = useState(null)
   const [generatingPreview, setGeneratingPreview] = useState(false)
 
+  // HLS streaming ref
+  const hlsRef = useRef(null)
+
+  // Optical flow interpolation state
+  const [opticalFlowConfig, setOpticalFlowConfig] = useState(null)
+  const [opticalFlowLoading, setOpticalFlowLoading] = useState(false)
+  const [opticalFlowError, setOpticalFlowError] = useState(null)
+  const [opticalFlowStreamUrl, setOpticalFlowStreamUrl] = useState(null)
+
   // Zoom state
   const [zoom, setZoom] = useState({ scale: 1, x: 0, y: 0 })
   const zoomRef = useRef(zoom) // Ref to always have current zoom in callbacks
@@ -41,13 +51,35 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   const image = images[currentIndex]
 
-  // Reset adjustments, preview, and zoom when changing images
+  // Reset adjustments, preview, zoom, and optical flow when changing images
   useEffect(() => {
     setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
     setShowAdjustments(false)
     setPreviewUrl(null)
     setZoom({ scale: 1, x: 0, y: 0 })
+    // Reset optical flow state for new video
+    setOpticalFlowError(null)
+    setOpticalFlowStreamUrl(null)
+    // Cleanup HLS instance
+    if (hlsRef.current) {
+      hlsRef.current.destroy()
+      hlsRef.current = null
+    }
   }, [image?.id])
+
+  // Load optical flow config on mount
+  useEffect(() => {
+    async function loadOpticalFlowConfig() {
+      try {
+        const config = await getOpticalFlowConfig()
+        setOpticalFlowConfig(config)
+      } catch (err) {
+        console.error('Failed to load optical flow config:', err)
+      }
+    }
+    loadOpticalFlowConfig()
+  }, [])
+
 
   // Auto-hide UI after inactivity
   const resetHideTimer = useCallback(() => {
@@ -441,6 +473,100 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setTimeout(() => setCopyFeedback(null), 1500)
   }, [image])
 
+  // Start optical flow interpolation for video (called automatically when enabled)
+  const startInterpolatedStream = useCallback(async () => {
+    if (!image || !opticalFlowConfig?.enabled || !isVideo(image.filename)) return
+    if (opticalFlowStreamUrl || opticalFlowLoading) return // Already active or starting
+
+    setOpticalFlowLoading(true)
+    setOpticalFlowError(null)
+
+    try {
+      const result = await playVideoInterpolated(image.file_path)
+
+      if (result.success && result.stream_url) {
+        setOpticalFlowStreamUrl(result.stream_url)
+      } else {
+        setOpticalFlowError(result.error || 'Failed to start interpolated playback')
+      }
+    } catch (err) {
+      console.error('Optical flow error:', err)
+      setOpticalFlowError(err.message || 'Failed to start interpolated playback')
+    }
+
+    setOpticalFlowLoading(false)
+  }, [image, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading])
+
+  // Auto-start interpolated stream when video opens and optical flow is enabled
+  useEffect(() => {
+    if (image && opticalFlowConfig?.enabled && isVideo(image.filename)) {
+      startInterpolatedStream()
+    }
+  }, [image?.id, opticalFlowConfig?.enabled])
+
+  // Setup HLS player when optical flow stream is active
+  useEffect(() => {
+    if (!opticalFlowStreamUrl || !mediaRef.current) return
+
+    const video = mediaRef.current
+
+    if (Hls.isSupported()) {
+      // Cleanup previous instance
+      if (hlsRef.current) {
+        hlsRef.current.destroy()
+      }
+
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 30
+      })
+
+      hls.loadSource(opticalFlowStreamUrl)
+      hls.attachMedia(video)
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {})
+      })
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          console.error('HLS fatal error:', data)
+          setOpticalFlowError('Stream playback error.')
+          setOpticalFlowStreamUrl(null)
+        }
+      })
+
+      hlsRef.current = hls
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari/iOS native HLS support
+      video.src = opticalFlowStreamUrl
+      video.addEventListener('loadedmetadata', () => {
+        video.play().catch(() => {})
+      })
+    } else {
+      setOpticalFlowError('HLS playback is not supported in this browser')
+      setOpticalFlowStreamUrl(null)
+    }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy()
+        hlsRef.current = null
+      }
+    }
+  }, [opticalFlowStreamUrl])
+
+  // Cleanup HLS on unmount
+  useEffect(() => {
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy()
+        hlsRef.current = null
+      }
+    }
+  }, [])
+
   // Generate preview of adjustments
   const handleGeneratePreview = useCallback(async () => {
     if (!image || generatingPreview) return
@@ -688,7 +814,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   if (!image) return null
 
-  const isVideoFile = isVideo(image.filename)
+  const isVideoFile = isVideo(image.original_filename)
   const fileStatus = image.file_status || 'available'
   const isUnavailable = fileStatus !== 'available'
 
@@ -891,26 +1017,47 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         ) : isVideoFile ? (
-          <video
-            key={image.id}
-            ref={mediaRef}
-            src={getMediaUrl(image.url)}
-            controls
-            autoPlay
-            loop
-            className="lightbox-media"
-            style={getZoomTransform()}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              if (window.electronAPI?.showImageContextMenu) {
-                window.electronAPI.showImageContextMenu({
-                  imageUrl: getMediaUrl(image.url),
-                  filePath: image.file_path,
-                  isVideo: true
-                })
-              }
-            }}
-          />
+          <>
+            <video
+              key={opticalFlowStreamUrl ? `${image.id}-interp` : image.id}
+              ref={mediaRef}
+              src={opticalFlowStreamUrl ? undefined : getMediaUrl(image.url)}
+              controls
+              autoPlay={!opticalFlowStreamUrl}
+              loop={!opticalFlowStreamUrl}
+              className={`lightbox-media ${opticalFlowStreamUrl ? 'interpolated-streaming' : ''}`}
+              style={getZoomTransform()}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                if (window.electronAPI?.showImageContextMenu) {
+                  window.electronAPI.showImageContextMenu({
+                    imageUrl: getMediaUrl(image.url),
+                    filePath: image.file_path,
+                    isVideo: true
+                  })
+                }
+              }}
+            />
+            {/* Optical flow loading indicator */}
+            {opticalFlowLoading && (
+              <div className="interpolate-loading">
+                <div className="interpolate-loading-spinner" />
+                <span>Buffering {opticalFlowConfig?.target_fps || 60} FPS...</span>
+              </div>
+            )}
+            {/* Optical flow streaming indicator */}
+            {opticalFlowStreamUrl && !opticalFlowLoading && (
+              <div className="interpolate-badge">
+                {opticalFlowConfig?.target_fps || 60} FPS
+              </div>
+            )}
+            {/* Optical flow error toast */}
+            {opticalFlowError && (
+              <div className="interpolate-error-toast">
+                {opticalFlowError}
+              </div>
+            )}
+          </>
         ) : (
           <img
             key={previewUrl ? `${image.id}-preview` : image.id}

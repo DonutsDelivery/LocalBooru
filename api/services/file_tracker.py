@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 from pathlib import Path
 from datetime import datetime
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Image, ImageFile, WatchDirectory, TaskQueue, TaskType, TaskStatus, FileStatus
@@ -21,7 +21,7 @@ BATCH_SIZE = 100  # Commit every N imports
 
 # Supported image extensions
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'}
-VIDEO_EXTENSIONS = {'.webm', '.mp4', '.mov'}
+VIDEO_EXTENSIONS = {'.webm', '.mp4', '.mov', '.avi', '.mkv'}
 ALL_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 
@@ -91,14 +91,82 @@ async def scan_directory(
         'imported': 0,
         'duplicates': 0,
         'errors': 0,
-        'cleaned': 0
+        'cleaned': 0,
+        'removed': 0
     }
 
     path = Path(directory_path)
     if not path.exists() or not path.is_dir():
         raise ValueError(f"Directory does not exist: {directory_path}")
 
-    # Skip stale file cleanup during scan for speed - do it separately
+    # Clean up stale associations - files pointing to this directory_id but not in this path
+    from ..database import get_data_dir
+    stale_query = select(ImageFile).where(
+        ImageFile.watch_directory_id == directory_id,
+        ~ImageFile.original_path.like(str(path) + '%')
+    )
+    stale_result = await db.execute(stale_query)
+    stale_files = stale_result.scalars().all()
+
+    for stale_file in stale_files:
+        if Path(stale_file.original_path).exists():
+            # File exists but in wrong directory - just clear association
+            stale_file.watch_directory_id = None
+            stats['cleaned'] += 1
+        else:
+            # File doesn't exist - delete from DB
+            image = await db.get(Image, stale_file.image_id)
+            if image:
+                files_count_query = select(func.count(ImageFile.id)).where(ImageFile.image_id == image.id)
+                files_count_result = await db.execute(files_count_query)
+                files_count = files_count_result.scalar()
+
+                if files_count <= 1:
+                    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+                    if thumbnail_path.exists():
+                        thumbnail_path.unlink()
+                    await db.delete(image)
+                else:
+                    await db.delete(stale_file)
+                stats['removed'] += 1
+
+    if stats['cleaned'] > 0 or stats['removed'] > 0:
+        await db.commit()
+        if stats['cleaned'] > 0:
+            print(f"[Scan] Cleared {stats['cleaned']} stale file associations")
+        if stats['removed'] > 0:
+            print(f"[Scan] Removed {stats['removed']} non-existent stale files")
+
+    # Remove deleted files - files in DB for this directory that no longer exist on disk
+    existing_files_query = select(ImageFile).where(ImageFile.watch_directory_id == directory_id)
+    existing_result = await db.execute(existing_files_query)
+    existing_files = existing_result.scalars().all()
+
+    for image_file in existing_files:
+        if not Path(image_file.original_path).exists():
+            # Get the image to delete thumbnail
+            image = await db.get(Image, image_file.image_id)
+            if image:
+                # Check if this is the only file for this image
+                files_count_query = select(func.count(ImageFile.id)).where(ImageFile.image_id == image.id)
+                files_count_result = await db.execute(files_count_query)
+                files_count = files_count_result.scalar()
+
+                if files_count <= 1:
+                    # Last file - delete the image and thumbnail
+                    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+                    if thumbnail_path.exists():
+                        thumbnail_path.unlink()
+                    await db.delete(image)
+                else:
+                    # Just delete this file reference
+                    await db.delete(image_file)
+                stats['removed'] += 1
+
+    if stats['removed'] > 0:
+        await db.commit()
+        print(f"[Scan] Removed {stats['removed']} deleted files from database")
+
     # Collect all media files first
     if recursive:
         files = list(path.rglob('*'))

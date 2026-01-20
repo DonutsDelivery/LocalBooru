@@ -523,7 +523,7 @@ class BackendManager {
   }
 
   /**
-   * Stop the backend server
+   * Stop the backend server gracefully
    */
   async stop() {
     if (this.healthCheckInterval) {
@@ -536,32 +536,64 @@ class BackendManager {
       return;
     }
 
-    console.log('[Backend] Stopping server...');
+    console.log('[Backend] Initiating graceful shutdown...');
+
+    // First, try to notify the backend via a shutdown request
+    // This gives FastAPI time to cleanup before SIGTERM
+    try {
+      await new Promise((resolve, reject) => {
+        const req = http.request({
+          hostname: '127.0.0.1',
+          port: this.port,
+          path: '/health',  // Just check it's responding
+          method: 'GET',
+          timeout: 1000
+        }, () => resolve());
+        req.on('error', () => resolve());  // Ignore errors
+        req.on('timeout', () => { req.destroy(); resolve(); });
+        req.end();
+      });
+    } catch (e) {
+      // Backend may already be unresponsive
+    }
 
     return new Promise((resolve) => {
+      // Give more time for graceful shutdown (thread pools, db connections, etc.)
       const timeout = setTimeout(() => {
-        console.log('[Backend] Force killing...');
+        console.log('[Backend] Graceful shutdown timeout, force killing...');
         this.forceKill();
         resolve();
-      }, 5000);
+      }, 10000);  // Increased from 5s to 10s
 
       this.process.once('exit', () => {
         clearTimeout(timeout);
         this.process = null;
-        console.log('[Backend] Stopped');
+        console.log('[Backend] Stopped gracefully');
         resolve();
       });
 
-      // Windows doesn't support SIGTERM well, use different approach
+      // Send SIGINT first (Ctrl+C equivalent) for cleaner uvicorn shutdown
+      // Then SIGTERM if needed
       if (process.platform === 'win32') {
-        // Try graceful kill first, then force
+        // Windows: CTRL_C_EVENT doesn't work well with spawn, use taskkill
         try {
-          execSync(`taskkill /pid ${this.process.pid} /T`, { stdio: 'ignore' });
+          // First try graceful tree kill (no /F flag)
+          execSync(`taskkill /pid ${this.process.pid} /T`, { stdio: 'ignore', timeout: 3000 });
         } catch (e) {
-          this.forceKill();
+          // If that fails, the process exit handler will trigger force kill via timeout
         }
       } else {
-        this.process.kill('SIGTERM');
+        // Unix: Send SIGINT first (cleaner uvicorn shutdown)
+        console.log('[Backend] Sending SIGINT...');
+        this.process.kill('SIGINT');
+
+        // If still running after 5s, escalate to SIGTERM
+        setTimeout(() => {
+          if (this.process) {
+            console.log('[Backend] Escalating to SIGTERM...');
+            this.process.kill('SIGTERM');
+          }
+        }, 5000);
       }
     });
   }

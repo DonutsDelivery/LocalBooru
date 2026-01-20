@@ -567,3 +567,95 @@
 .lightbox-confirm-delete:focus:not(:focus-visible) {
   outline: none;
 }
+
+@keyframes badge-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-slide-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* Optical flow interpolation badge when active */
+.interpolate-badge {
+  position: absolute;
+  top: 80px;
+  right: 20px;
+  background: rgba(33, 150, 243, 0.9);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  z-index: 10;
+  letter-spacing: 0.5px;
+  animation: badge-fade-in 0.3s ease-out;
+}
+
+/* Auto-hide interpolate badge with UI */
+.lightbox.ui-hidden .interpolate-badge {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* Optical flow buffering indicator */
+.interpolate-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 24px 32px;
+  border-radius: 12px;
+  z-index: 15;
+  color: white;
+  font-size: 0.9rem;
+}
+
+.interpolate-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #2196F3;
+  border-radius: 50%;
+  animation: interpolate-spin 0.8s linear infinite;
+}
+
+@keyframes interpolate-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Optical flow error toast */
+.interpolate-error-toast {
+  position: absolute;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(244, 67, 54, 0.9);
+  color: white;
+  font-size: 0.85rem;
+  padding: 10px 20px;
+  border-radius: 8px;
+  z-index: 10;
+  max-width: 80%;
+  text-align: center;
+  animation: toast-slide-up 0.3s ease-out;
+}
