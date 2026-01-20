@@ -654,9 +654,39 @@ app.on('before-quit', async () => {
   }
 });
 
-// Handle uncaught exceptions
+// CRITICAL: Synchronous cleanup on process exit
+// This catches cases where before-quit doesn't fire (crashes, SIGKILL, etc.)
+process.on('exit', () => {
+  console.log('[LocalBooru] Process exit - forcing backend cleanup');
+  if (backendManager) {
+    backendManager.forceKill();
+  }
+});
+
+// Handle SIGTERM (kill command, system shutdown)
+process.on('SIGTERM', () => {
+  console.log('[LocalBooru] Received SIGTERM');
+  if (backendManager) {
+    backendManager.forceKill();
+  }
+  process.exit(0);
+});
+
+// Handle SIGINT (Ctrl+C)
+process.on('SIGINT', () => {
+  console.log('[LocalBooru] Received SIGINT');
+  if (backendManager) {
+    backendManager.forceKill();
+  }
+  process.exit(0);
+});
+
+// Handle uncaught exceptions - cleanup before crashing
 process.on('uncaughtException', (error) => {
   console.error('[LocalBooru] Uncaught exception:', error);
+  if (backendManager) {
+    backendManager.forceKill();
+  }
 });
 
 process.on('unhandledRejection', (reason, promise) => {
