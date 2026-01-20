@@ -169,54 +169,77 @@ class BackendManager {
   }
 
   /**
+   * Get information about what process is using a port
+   */
+  getPortUser() {
+    try {
+      if (process.platform === 'win32') {
+        const output = execSync(
+          `netstat -ano | findstr :${this.port} | findstr LISTENING`,
+          { encoding: 'utf-8', timeout: 5000, windowsHide: true }
+        );
+        const lines = output.trim().split('\n');
+        if (lines.length > 0) {
+          const parts = lines[0].trim().split(/\s+/);
+          const pid = parts[parts.length - 1];
+          if (pid && /^\d+$/.test(pid)) {
+            try {
+              const taskInfo = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`,
+                { encoding: 'utf-8', timeout: 3000, windowsHide: true });
+              const name = taskInfo.split(',')[0]?.replace(/"/g, '') || 'unknown';
+              return { pid, name };
+            } catch (e) {
+              return { pid, name: 'unknown' };
+            }
+          }
+        }
+      } else {
+        // Linux/macOS
+        const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 5000 });
+        const pid = output.trim().split('\n')[0];
+        if (pid && /^\d+$/.test(pid)) {
+          try {
+            const name = execSync(`ps -p ${pid} -o comm=`, { encoding: 'utf-8', timeout: 3000 }).trim();
+            return { pid, name };
+          } catch (e) {
+            return { pid, name: 'unknown' };
+          }
+        }
+      }
+    } catch (e) {
+      // No process found or error
+    }
+    return null;
+  }
+
+  /**
    * Kill any zombie processes on our port
+   * Throws PortConflictError if port cannot be freed
    */
   async killZombieProcesses() {
     console.log('[Backend] Checking for zombie processes on port', this.port);
 
-    try {
-      if (process.platform === 'win32') {
-        // Windows: synchronously find and kill processes on port
-        // Using netstat output parsing
-        try {
-          const output = execSync(
-            `netstat -ano | findstr :${this.port} | findstr LISTENING`,
-            { encoding: 'utf-8', timeout: 5000, windowsHide: true }
-          );
-          // Parse PIDs from output (last column)
-          const pids = new Set();
-          for (const line of output.trim().split('\n')) {
-            const parts = line.trim().split(/\s+/);
-            const pid = parts[parts.length - 1];
-            if (pid && /^\d+$/.test(pid) && pid !== '0') {
-              pids.add(pid);
-            }
-          }
-          for (const pid of pids) {
-            console.log(`[Backend] Killing zombie process ${pid}`);
-            try {
-              execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 3000, windowsHide: true });
-            } catch (e) {
-              // Process may already be dead
-            }
-          }
-        } catch (e) {
-          // No process on port (findstr returns error if no match)
-        }
-      } else {
-        // Linux/macOS: use lsof + kill (more reliable than fuser)
-        try {
-          // First try fuser
-          execSync(`fuser -k ${this.port}/tcp 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
-        } catch (e) {
-          // fuser may not be available, try lsof
+    const killAttempt = async () => {
+      try {
+        if (process.platform === 'win32') {
+          // Windows: synchronously find and kill processes on port
           try {
-            const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 5000 });
-            const pids = output.trim().split('\n').filter(p => p && /^\d+$/.test(p));
+            const output = execSync(
+              `netstat -ano | findstr :${this.port} | findstr LISTENING`,
+              { encoding: 'utf-8', timeout: 5000, windowsHide: true }
+            );
+            const pids = new Set();
+            for (const line of output.trim().split('\n')) {
+              const parts = line.trim().split(/\s+/);
+              const pid = parts[parts.length - 1];
+              if (pid && /^\d+$/.test(pid) && pid !== '0') {
+                pids.add(pid);
+              }
+            }
             for (const pid of pids) {
-              console.log(`[Backend] Killing zombie process ${pid} via lsof`);
+              console.log(`[Backend] Killing zombie process ${pid}`);
               try {
-                execSync(`kill -9 ${pid}`, { stdio: 'ignore', timeout: 1000 });
+                execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 3000, windowsHide: true });
               } catch (e) {
                 // Process may already be dead
               }
@@ -224,20 +247,51 @@ class BackendManager {
           } catch (e) {
             // No process on port
           }
+        } else {
+          // Linux/macOS: use lsof + kill -9 directly (most reliable)
+          try {
+            const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 5000 });
+            const pids = output.trim().split('\n').filter(p => p && /^\d+$/.test(p));
+            for (const pid of pids) {
+              console.log(`[Backend] Killing zombie process ${pid}`);
+              try {
+                execSync(`kill -9 ${pid}`, { stdio: 'ignore', timeout: 1000 });
+              } catch (e) {
+                // Process may already be dead
+              }
+            }
+          } catch (e) {
+            // No process on port (lsof returns error if no match)
+          }
         }
+      } catch (e) {
+        console.log('[Backend] Zombie check error:', e.message);
       }
-    } catch (e) {
-      console.log('[Backend] Zombie check error:', e.message);
+    };
+
+    // Try killing up to 3 times with waits between
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await killAttempt();
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const portFree = await this.isPortFree();
+      if (portFree) {
+        console.log('[Backend] Port is free');
+        return;
+      }
+      console.log(`[Backend] Port still in use after attempt ${attempt}, retrying...`);
     }
 
-    // Wait for port to be released (increased from 500ms)
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Double-check the port is free
+    // Final check - if still occupied, throw error with details
     const portFree = await this.isPortFree();
     if (!portFree) {
-      console.log('[Backend] Port still in use after zombie kill, waiting...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const portUser = this.getPortUser();
+      const error = new Error(`Port ${this.port} is already in use`);
+      error.code = 'PORT_CONFLICT';
+      error.port = this.port;
+      error.portUser = portUser;
+      console.error('[Backend] CRITICAL: Port', this.port, 'occupied by:', portUser);
+      throw error;
     }
   }
 
