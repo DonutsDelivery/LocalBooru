@@ -45,6 +45,7 @@ let mainWindow = null;
 let tray = null;
 let backendManager = null;
 let directoryWatcher = null;
+let isCreatingWindow = false;  // Guard against concurrent window creation
 
 // Only enable dev mode when explicitly set via LOCALBOORU_DEV
 // This avoids issues with NODE_ENV being set in the shell environment
@@ -55,8 +56,21 @@ const API_PORT = 8790;
  * Create the main application window
  */
 async function createWindow() {
+  // Prevent concurrent window creation (race condition guard)
+  if (isCreatingWindow) {
+    log('[createWindow] Already creating window, skipping...');
+    return;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    log('[createWindow] Window already exists, skipping...');
+    return;
+  }
+
+  isCreatingWindow = true;
   log('[createWindow] Starting...');
-  mainWindow = new BrowserWindow({
+
+  try {
+    mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
@@ -72,6 +86,59 @@ async function createWindow() {
     show: false // Show when ready
   });
   log('[createWindow] BrowserWindow created');
+
+  // CRITICAL: Prevent blank windows from opening
+  // This handles window.open(), target="_blank" links, and any other new window requests
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    log(`[Window] setWindowOpenHandler called for: ${url}`);
+
+    // Allow same-origin URLs (internal app navigation) - but open in same window, not new
+    const appHost = `127.0.0.1:${API_PORT}`;
+    const devHost = 'localhost:5174';
+
+    if (url.includes(appHost) || url.includes(devHost)) {
+      // Internal URL - load in current window instead of opening new one
+      mainWindow.loadURL(url);
+      return { action: 'deny' };
+    }
+
+    // External URLs - open in system browser
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      log(`[Window] Opening external URL in browser: ${url}`);
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+
+    // Deny all other window creation requests (prevents blank windows)
+    log(`[Window] Denying window open for: ${url}`);
+    return { action: 'deny' };
+  });
+
+  // Prevent navigation to about:blank or other problematic URLs
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    log(`[Window] will-navigate to: ${url}`);
+
+    // Block navigation to about:blank (common source of blank windows)
+    if (url === 'about:blank' || url === '') {
+      log('[Window] Blocking navigation to about:blank');
+      event.preventDefault();
+      return;
+    }
+
+    // Allow internal navigation
+    const appHost = `127.0.0.1:${API_PORT}`;
+    const devHost = 'localhost:5174';
+    if (url.includes(appHost) || url.includes(devHost)) {
+      return; // Allow
+    }
+
+    // External URLs - open in browser and prevent navigation
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      log(`[Window] Redirecting external navigation to browser: ${url}`);
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
 
   // Register event listeners BEFORE loading URL to catch all events
   mainWindow.webContents.on('did-start-loading', () => {
@@ -126,7 +193,26 @@ async function createWindow() {
     const loaded = await loadWithRetry(`http://127.0.0.1:${API_PORT}`);
     if (!loaded) {
       log('[Window] All load attempts failed, showing error page');
-      mainWindow.loadURL(`data:text/html,<html><body style="background:#141414;color:white;font-family:system-ui;padding:40px;"><h1>Failed to connect</h1><p>Could not connect to backend at 127.0.0.1:${API_PORT}</p><p>The backend server may have failed to start.</p><button onclick="location.href='http://127.0.0.1:${API_PORT}'" style="padding:10px 20px;cursor:pointer;">Retry</button></body></html>`);
+      // Error page with draggable title bar since frame:false means no native title bar
+      mainWindow.loadURL(`data:text/html,<html><head><style>
+        body{background:#141414;color:white;font-family:system-ui;margin:0;padding:0;}
+        .titlebar{-webkit-app-region:drag;background:#1a1a1a;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;}
+        .titlebar button{-webkit-app-region:no-drag;background:#dc3545;border:none;color:white;padding:4px 12px;cursor:pointer;border-radius:4px;}
+        .content{padding:40px;}
+        .retry{padding:10px 20px;cursor:pointer;background:#3b82f6;border:none;color:white;border-radius:4px;margin-right:10px;}
+      </style></head><body>
+        <div class="titlebar"><span>LocalBooru - Connection Error</span><button onclick="window.close()">Quit</button></div>
+        <div class="content">
+          <h1>Failed to connect</h1>
+          <p>Could not connect to backend at 127.0.0.1:${API_PORT}</p>
+          <p>The backend server may have failed to start, or the port is occupied by another process.</p>
+          <p style="color:#888;margin-top:20px;">Try: <code>pkill -9 -f uvicorn</code> then restart</p>
+          <div style="margin-top:20px;">
+            <button class="retry" onclick="location.href='http://127.0.0.1:${API_PORT}'">Retry</button>
+            <button class="retry" style="background:#666;" onclick="window.close()">Quit</button>
+          </div>
+        </div>
+      </body></html>`);
     }
   }
 
@@ -156,12 +242,21 @@ async function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  } finally {
+    isCreatingWindow = false;
+  }
 }
 
 /**
  * Create system tray icon
  */
 function createTray() {
+  // Prevent duplicate tray creation
+  if (tray && !tray.isDestroyed()) {
+    log('[createTray] Tray already exists, skipping...');
+    return;
+  }
+
   const iconPath = path.join(__dirname, '../assets/tray-icon.png');
   tray = new Tray(iconPath);
 
@@ -414,12 +509,32 @@ app.whenReady().then(async () => {
   log('[App] whenReady fired');
   setupIPC();
   log('[App] IPC setup complete');
-  await initializeApp();
-  log('[App] initializeApp complete');
-  await createWindow();
-  log('[App] createWindow complete');
+
+  // Create tray FIRST - ensures user always has a way to quit/interact
+  // even if backend or window initialization fails
   createTray();
   log('[App] createTray complete');
+
+  let backendStarted = false;
+  try {
+    await initializeApp();
+    backendStarted = true;
+    log('[App] initializeApp complete');
+  } catch (err) {
+    log(`[App] initializeApp FAILED: ${err.message}`);
+  }
+
+  try {
+    await createWindow();
+    log('[App] createWindow complete');
+
+    // If backend failed, show error in window
+    if (!backendStarted && mainWindow) {
+      mainWindow.loadURL(`data:text/html,<html><body style="background:#141414;color:white;font-family:system-ui;padding:40px;"><h1>Backend Failed to Start</h1><p>The LocalBooru backend server could not start.</p><p>Check the debug.log file for details.</p><p style="color:#888;">Right-click the tray icon to quit.</p></body></html>`);
+    }
+  } catch (err) {
+    log(`[App] createWindow FAILED: ${err.message}`);
+  }
 
   // Initialize auto-updater
   if (mainWindow) {
