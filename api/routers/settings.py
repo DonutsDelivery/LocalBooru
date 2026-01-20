@@ -100,6 +100,17 @@ DEFAULT_OPTICAL_FLOW_SETTINGS = {
     "quality": "fast",  # svp, gpu_native, realtime, fast, balanced, quality
 }
 
+# SVP (SmoothVideo Project) interpolation settings defaults
+DEFAULT_SVP_SETTINGS = {
+    "enabled": False,
+    "target_fps": 60,
+    "preset": "balanced",  # fast, balanced, quality, max, animation, film
+    # Advanced settings (override preset when set)
+    "custom_super": None,
+    "custom_analyse": None,
+    "custom_smooth": None,
+}
+
 
 def get_network_settings() -> dict:
     """Get network settings with defaults"""
@@ -128,6 +139,21 @@ def save_optical_flow_settings(optical_flow_settings: dict):
     """Save optical flow interpolation settings"""
     settings = load_settings()
     settings["optical_flow"] = optical_flow_settings
+    save_settings(settings)
+
+
+def get_svp_settings() -> dict:
+    """Get SVP interpolation settings with defaults"""
+    settings = load_settings()
+    svp = settings.get("svp", {})
+    # Merge with defaults
+    return {**DEFAULT_SVP_SETTINGS, **svp}
+
+
+def save_svp_settings(svp_settings: dict):
+    """Save SVP interpolation settings"""
+    settings = load_settings()
+    settings["svp"] = svp_settings
     save_settings(settings)
 
 
@@ -1056,6 +1082,182 @@ async def serve_hls_file(stream_id: str, filename: str):
 
     return FileResponse(
         path=file_path,
+        media_type=media_type,
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Access-Control-Allow-Origin': '*'
+        }
+    )
+
+
+# =============================================================================
+# SVP (SmoothVideo Project) Interpolation Endpoints
+# =============================================================================
+
+@router.get("/svp")
+async def get_svp_config():
+    """Get SVP interpolation configuration and availability status"""
+    from ..services.svp_stream import get_svp_status, SVP_PRESETS, SVP_ALGORITHMS, SVP_BLOCK_SIZES, SVP_PEL_OPTIONS, SVP_MASK_AREA
+
+    config = get_svp_settings()
+    status = get_svp_status()
+
+    return {
+        **config,
+        "status": status,
+        "presets": {
+            name: {"name": preset["name"], "description": preset["description"]}
+            for name, preset in SVP_PRESETS.items()
+        },
+        "options": {
+            "algorithms": SVP_ALGORITHMS,
+            "block_sizes": SVP_BLOCK_SIZES,
+            "pel_options": SVP_PEL_OPTIONS,
+            "mask_area": SVP_MASK_AREA,
+        }
+    }
+
+
+class SVPConfigUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    target_fps: Optional[int] = None
+    preset: Optional[str] = None  # fast, balanced, quality, max, animation, film
+    custom_super: Optional[str] = None
+    custom_analyse: Optional[str] = None
+    custom_smooth: Optional[str] = None
+
+
+@router.post("/svp")
+async def update_svp_config(config: SVPConfigUpdate):
+    """Update SVP interpolation configuration"""
+    from ..services.svp_stream import SVP_PRESETS
+
+    current = get_svp_settings()
+
+    # Update only provided fields
+    if config.enabled is not None:
+        current["enabled"] = config.enabled
+    if config.target_fps is not None:
+        # Clamp to valid range
+        current["target_fps"] = max(15, min(144, config.target_fps))
+    if config.preset is not None:
+        # Validate preset
+        if config.preset in SVP_PRESETS:
+            current["preset"] = config.preset
+    if config.custom_super is not None:
+        current["custom_super"] = config.custom_super if config.custom_super else None
+    if config.custom_analyse is not None:
+        current["custom_analyse"] = config.custom_analyse if config.custom_analyse else None
+    if config.custom_smooth is not None:
+        current["custom_smooth"] = config.custom_smooth if config.custom_smooth else None
+
+    save_svp_settings(current)
+
+    return {"success": True, **current}
+
+
+@router.post("/svp/play")
+async def play_video_svp(file_path: str):
+    """
+    Start SVP-interpolated video stream via HLS.
+
+    SVP uses VapourSynth + SVPflow plugins for high-quality
+    motion-compensated frame interpolation.
+    """
+    from ..services.svp_stream import SVPStream, get_svp_status
+
+    config = get_svp_settings()
+    status = get_svp_status()
+
+    if not config["enabled"]:
+        return {"success": False, "error": "SVP interpolation is not enabled"}
+
+    if not status["ready"]:
+        missing = []
+        if not status["vapoursynth_available"]:
+            missing.append("VapourSynth")
+        if not status["svp_plugins_available"]:
+            missing.append("SVPflow plugins")
+        if not status["vspipe_available"]:
+            missing.append("vspipe")
+        return {"success": False, "error": f"SVP not ready. Missing: {', '.join(missing)}"}
+
+    # Check if file exists
+    if not os.path.exists(file_path):
+        return {"success": False, "error": "File not found"}
+
+    try:
+        # Create SVP stream
+        stream = SVPStream(
+            video_path=file_path,
+            target_fps=config["target_fps"],
+            preset=config.get("preset", "balanced"),
+            custom_super=config.get("custom_super"),
+            custom_analyse=config.get("custom_analyse"),
+            custom_smooth=config.get("custom_smooth"),
+        )
+
+        # Start the stream
+        success = await stream.start()
+
+        if success:
+            # Wait for initial buffer
+            import asyncio
+            for _ in range(50):  # Wait up to 5 seconds
+                if stream.playlist_ready:
+                    break
+                await asyncio.sleep(0.1)
+
+            return {
+                "success": True,
+                "stream_id": stream.stream_id,
+                "stream_url": f"/api/settings/svp/stream/{stream.stream_id}/stream.m3u8",
+                "message": f"SVP stream started at {config['target_fps']} fps with {config.get('preset', 'balanced')} preset"
+            }
+        else:
+            return {"success": False, "error": stream.error or "Failed to start SVP stream"}
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": f"SVP stream error: {str(e)}"}
+
+
+@router.post("/svp/stop")
+async def stop_svp_stream():
+    """Stop all active SVP streams."""
+    from ..services.svp_stream import stop_all_svp_streams
+
+    stop_all_svp_streams()
+    return {"success": True, "message": "SVP streams stopped"}
+
+
+@router.get("/svp/stream/{stream_id}/{filename:path}")
+async def serve_svp_hls_file(stream_id: str, filename: str):
+    """Serve HLS playlist or segment files for the SVP stream."""
+    from ..services.svp_stream import get_active_svp_stream
+
+    stream = get_active_svp_stream(stream_id)
+    if not stream:
+        return Response(content="Stream not found", status_code=404)
+
+    if not stream.hls_dir:
+        return Response(content="Stream not ready", status_code=404)
+
+    file_path = stream.hls_dir / filename
+    if not file_path.exists():
+        return Response(content="File not found", status_code=404)
+
+    # Determine content type
+    if filename.endswith('.m3u8'):
+        media_type = 'application/vnd.apple.mpegurl'
+    elif filename.endswith('.ts'):
+        media_type = 'video/mp2t'
+    else:
+        media_type = 'application/octet-stream'
+
+    return FileResponse(
+        path=str(file_path),
         media_type=media_type,
         headers={
             'Cache-Control': 'no-cache, no-store, must-revalidate',

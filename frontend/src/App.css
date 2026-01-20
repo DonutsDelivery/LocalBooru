@@ -257,6 +257,12 @@
   display: block;
 }
 
+.settings-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 32px 0;
+}
+
 .setting-description {
   font-size: 0.85rem;
   color: var(--text-muted);

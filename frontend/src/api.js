@@ -640,3 +640,28 @@ export async function stopInterpolatedStream() {
   const response = await api.post('/settings/optical-flow/stop')
   return response.data
 }
+
+// SVP (SmoothVideo Project) Interpolation API
+export async function getSVPConfig() {
+  const response = await api.get('/settings/svp')
+  return response.data
+}
+
+export async function updateSVPConfig(config) {
+  const response = await api.post('/settings/svp', config)
+  return response.data
+}
+
+export async function playVideoSVP(filePath) {
+  // Longer timeout since SVP processing can take time
+  const response = await api.post('/settings/svp/play', null, {
+    params: { file_path: filePath },
+    timeout: 60000  // 60 second timeout for initial buffering
+  })
+  return response.data
+}
+
+export async function stopSVPStream() {
+  const response = await api.post('/settings/svp/stop')
+  return response.data
+}

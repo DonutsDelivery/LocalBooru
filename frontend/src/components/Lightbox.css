@@ -659,3 +659,26 @@
   text-align: center;
   animation: toast-slide-up 0.3s ease-out;
 }
+
+/* SVP-specific styles */
+.lightbox-svp.active {
+  color: #9C27B0 !important;
+  background: rgba(156, 39, 176, 0.2);
+}
+
+.svp-badge {
+  background: rgba(156, 39, 176, 0.9) !important;
+  top: 110px;
+}
+
+.svp-loading {
+  background: rgba(156, 39, 176, 0.9);
+}
+
+.svp-loading .interpolate-loading-spinner {
+  border-top-color: #E1BEE7;
+}
+
+.svp-error {
+  background: rgba(156, 39, 176, 0.9) !important;
+}

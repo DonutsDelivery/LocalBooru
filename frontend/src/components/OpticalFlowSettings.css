@@ -280,3 +280,78 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* SVP-specific styles */
+.svp-settings .toggle-advanced {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.svp-settings .toggle-advanced:hover {
+  color: var(--accent);
+}
+
+.svp-settings .advanced-settings {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.svp-settings .advanced-settings .setting-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.svp-settings .advanced-settings label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.svp-settings .advanced-settings textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+  min-height: 60px;
+  transition: border-color 0.2s;
+}
+
+.svp-settings .advanced-settings textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
+}
+
+.svp-settings .advanced-settings textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.svp-settings .advanced-settings small {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.svp-settings .setting-note a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.svp-settings .setting-note a:hover {
+  text-decoration: underline;
+}
