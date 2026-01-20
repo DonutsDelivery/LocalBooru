@@ -466,11 +466,9 @@ smooth = core.svp2.SmoothFps(
     fps=src_fps
 )
 
-# Convert to RGB24 for FFmpeg rawvideo input
-output = core.resize.Bicubic(smooth, format=vs.RGB24, matrix_s="709")
-
-# Set output
-output.set_output()
+# Keep as YUV420P8 for Y4M output (Y4M only supports YUV/Gray formats)
+# FFmpeg will handle any necessary color space conversion
+smooth.set_output()
 '''
     return script
 
