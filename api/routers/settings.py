@@ -105,7 +105,12 @@ DEFAULT_SVP_SETTINGS = {
     "enabled": False,
     "target_fps": 60,
     "preset": "balanced",  # fast, balanced, quality, max, animation, film
-    # Advanced settings (override preset when set)
+    # Key settings
+    "use_nvof": True,           # Use NVIDIA Optical Flow
+    "shader": 23,               # SVP shader/algo (1,2,11,13,21,23)
+    "artifact_masking": 100,    # Artifact masking area (0-200)
+    "frame_interpolation": 2,   # Frame interpolation mode (1=uniform, 2=adaptive)
+    # Advanced settings (full override when set)
     "custom_super": None,
     "custom_analyse": None,
     "custom_smooth": None,
@@ -1122,6 +1127,10 @@ class SVPConfigUpdate(BaseModel):
     enabled: Optional[bool] = None
     target_fps: Optional[int] = None
     preset: Optional[str] = None  # fast, balanced, quality, max, animation, film
+    use_nvof: Optional[bool] = None  # Use NVIDIA Optical Flow
+    shader: Optional[int] = None  # SVP shader/algo (1,2,11,13,21,23)
+    artifact_masking: Optional[int] = None  # Artifact masking area (0-200)
+    frame_interpolation: Optional[int] = None  # Frame interpolation mode (1=uniform, 2=adaptive)
     custom_super: Optional[str] = None
     custom_analyse: Optional[str] = None
     custom_smooth: Optional[str] = None
@@ -1144,6 +1153,18 @@ async def update_svp_config(config: SVPConfigUpdate):
         # Validate preset
         if config.preset in SVP_PRESETS:
             current["preset"] = config.preset
+    if config.use_nvof is not None:
+        current["use_nvof"] = config.use_nvof
+    if config.shader is not None:
+        # Validate shader value
+        if config.shader in [1, 2, 11, 13, 21, 23]:
+            current["shader"] = config.shader
+    if config.artifact_masking is not None:
+        # Clamp to valid range
+        current["artifact_masking"] = max(0, min(200, config.artifact_masking))
+    if config.frame_interpolation is not None:
+        if config.frame_interpolation in [1, 2]:
+            current["frame_interpolation"] = config.frame_interpolation
     if config.custom_super is not None:
         current["custom_super"] = config.custom_super if config.custom_super else None
     if config.custom_analyse is not None:
