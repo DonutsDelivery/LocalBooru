@@ -241,7 +241,7 @@ SVP_PRESETS = {
         "name": "Fast",
         "description": "Fastest processing, lower quality. Good for real-time on weaker hardware.",
         "super": "{gpu:1,pel:1,scale:{up:0,down:4}}",
-        "analyse": "{gpu:1,block:{w:32,h:32,overlap:0},main:{search:{coarse:{type:2,distance:-6,bad:{sad:2000,range:24}},type:2,distance:6}},refine:[{thsad:200}]}",
+        "analyse": "{gpu:1,nvof:1,block:{w:32,h:32,overlap:0},main:{search:{coarse:{type:2,distance:-6,bad:{sad:2000,range:24}},type:2,distance:6}},refine:[{thsad:200}]}",
         "smooth": "{gpuid:0,algo:13,mask:{area:100},scene:{}}",
     },
     # Balanced preset - good tradeoff between speed and quality
@@ -249,7 +249,7 @@ SVP_PRESETS = {
         "name": "Balanced",
         "description": "Good balance of speed and quality. Recommended for most videos.",
         "super": "{gpu:1,pel:2,scale:{up:0,down:2}}",
-        "analyse": "{gpu:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-8,bad:{sad:2000,range:24}},type:2,distance:8}},refine:[{thsad:200}]}",
+        "analyse": "{gpu:1,nvof:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-8,bad:{sad:2000,range:24}},type:2,distance:8}},refine:[{thsad:200}]}",
         "smooth": "{gpuid:0,algo:23,mask:{area:100},scene:{}}",
     },
     # Quality preset - higher quality, slower processing
@@ -257,7 +257,7 @@ SVP_PRESETS = {
         "name": "Quality",
         "description": "Higher quality motion estimation. Slower but smoother results.",
         "super": "{gpu:1,pel:2,scale:{up:0,down:2}}",
-        "analyse": "{gpu:1,block:{w:8,h:8,overlap:2},main:{search:{coarse:{type:2,distance:-10,bad:{sad:2000,range:24}},type:2,distance:10}},refine:[{thsad:200},{thsad:100}]}",
+        "analyse": "{gpu:1,nvof:1,block:{w:8,h:8,overlap:2},main:{search:{coarse:{type:2,distance:-10,bad:{sad:2000,range:24}},type:2,distance:10}},refine:[{thsad:200},{thsad:100}]}",
         "smooth": "{gpuid:0,algo:23,mask:{area:100},scene:{}}",
     },
     # Maximum quality preset - best results, significantly slower
@@ -265,7 +265,7 @@ SVP_PRESETS = {
         "name": "Maximum",
         "description": "Maximum quality settings. Best for pre-rendering, not real-time.",
         "super": "{gpu:1,pel:4,scale:{up:2,down:2}}",
-        "analyse": "{gpu:1,block:{w:8,h:8,overlap:3},main:{search:{coarse:{type:4,distance:-12,bad:{sad:1000,range:24}},type:4,distance:12}},refine:[{thsad:200},{thsad:100},{thsad:50}]}",
+        "analyse": "{gpu:1,nvof:1,block:{w:8,h:8,overlap:3},main:{search:{coarse:{type:4,distance:-12,bad:{sad:1000,range:24}},type:4,distance:12}},refine:[{thsad:200},{thsad:100},{thsad:50}]}",
         "smooth": "{gpuid:0,algo:23,mask:{area:50,cover:80},scene:{}}",
     },
     # Animation preset - optimized for anime/cartoons
@@ -273,7 +273,7 @@ SVP_PRESETS = {
         "name": "Animation",
         "description": "Optimized for anime and cartoons with flat colors and sharp edges.",
         "super": "{gpu:1,pel:2,scale:{up:0,down:2}}",
-        "analyse": "{gpu:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-10,bad:{sad:1500,range:24}},type:2,distance:10},penalty:{lambda:3.0}},refine:[{thsad:150}]}",
+        "analyse": "{gpu:1,nvof:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-10,bad:{sad:1500,range:24}},type:2,distance:10},penalty:{lambda:3.0}},refine:[{thsad:150}]}",
         "smooth": "{gpuid:0,algo:23,mask:{area:150},scene:{mode:0}}",
     },
     # Film preset - optimized for live action with natural motion
@@ -281,7 +281,7 @@ SVP_PRESETS = {
         "name": "Film",
         "description": "Optimized for live action movies with natural motion blur.",
         "super": "{gpu:1,pel:2,scale:{up:0,down:2}}",
-        "analyse": "{gpu:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-8,bad:{sad:2000,range:24}},type:2,distance:8}},refine:[{thsad:200}]}",
+        "analyse": "{gpu:1,nvof:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-8,bad:{sad:2000,range:24}},type:2,distance:8}},refine:[{thsad:200}]}",
         "smooth": "{gpuid:0,algo:23,mask:{area:80,cover:80},scene:{blend:true}}",
     },
 }
