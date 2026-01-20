@@ -292,7 +292,12 @@ DEFAULT_SVP_SETTINGS = {
     "preset": "balanced",
     "target_fps": 60,
     "use_gpu": True,
-    # Advanced settings (override preset when set)
+    # Key settings (override preset values)
+    "use_nvof": True,           # Use NVIDIA Optical Flow
+    "shader": 23,               # SVP shader/algo (13=uniform, 23=adaptive)
+    "artifact_masking": 100,    # Artifact masking area (0=off, 50-200)
+    "frame_interpolation": 2,   # Frame interpolation mode (1=uniform, 2=adaptive)
+    # Advanced settings (full override when set)
     "custom_super": None,
     "custom_analyse": None,
     "custom_smooth": None,
@@ -336,10 +341,13 @@ def _generate_svp_script(
     video_path: str,
     target_fps: int,
     preset: str = "balanced",
+    use_nvof: bool = True,
+    shader: int = 23,
+    artifact_masking: int = 100,
+    frame_interpolation: int = 2,
     custom_super: Optional[str] = None,
     custom_analyse: Optional[str] = None,
     custom_smooth: Optional[str] = None,
-    output_format: str = "RGB24"
 ) -> str:
     """
     Generate a VapourSynth script for SVP interpolation.
@@ -348,33 +356,49 @@ def _generate_svp_script(
         video_path: Path to input video
         target_fps: Target output frame rate
         preset: Quality preset (fast, balanced, quality, max, animation, film)
-        custom_super: Custom super params (overrides preset)
-        custom_analyse: Custom analyse params (overrides preset)
-        custom_smooth: Custom smooth params (overrides preset)
-        output_format: Output pixel format (RGB24 for FFmpeg rawvideo)
+        use_nvof: Use NVIDIA Optical Flow for motion estimation
+        shader: SVP shader/algorithm (13=uniform, 23=adaptive)
+        artifact_masking: Artifact masking area (0=off, 50-200)
+        frame_interpolation: Frame interpolation mode (1=uniform, 2=adaptive)
+        custom_super: Custom super params (full override)
+        custom_analyse: Custom analyse params (full override)
+        custom_smooth: Custom smooth params (full override)
 
     Returns:
         VapourSynth script as string
     """
     preset_config = SVP_PRESETS.get(preset, SVP_PRESETS["balanced"])
 
-    # Use custom params if provided, otherwise use preset
-    super_params = custom_super if custom_super else preset_config["super"]
-    analyse_params = custom_analyse if custom_analyse else preset_config["analyse"]
-
-    # For smooth params, we need to inject the target FPS into the rate settings
-    # Get base smooth params from custom or preset
-    base_smooth = custom_smooth if custom_smooth else preset_config["smooth"]
-
-    # Build smooth params with target FPS
-    # We inject the rate:{num:N,den:1,abs:true} into the smooth params
-    # The preset smooth params have the base settings, we need to add rate
-    if "rate:" in base_smooth:
-        # Custom already has rate, use as-is
-        smooth_params = base_smooth
+    # Use custom params if provided, otherwise build from preset + overrides
+    if custom_super:
+        super_params = custom_super
     else:
-        # Inject rate into smooth params (after first {)
-        smooth_params = base_smooth.replace(
+        super_params = preset_config["super"]
+
+    if custom_analyse:
+        analyse_params = custom_analyse
+    else:
+        # Start with preset and override nvof setting
+        analyse_params = preset_config["analyse"]
+        # Update nvof setting
+        if use_nvof and "nvof:" not in analyse_params:
+            analyse_params = analyse_params.replace("{gpu:1,", "{gpu:1,nvof:1,")
+        elif not use_nvof:
+            analyse_params = analyse_params.replace(",nvof:1", "").replace("nvof:1,", "")
+
+    if custom_smooth:
+        smooth_params = custom_smooth
+    else:
+        # Build smooth params with user settings
+        # Shader algo combines with frame_interpolation: algo = shader_base + frame_mode
+        # shader 13/23 are pixel-based, frame_interpolation 1=uniform 2=adaptive
+        # Actually algo is just the shader value directly
+        algo = shader
+        smooth_params = f"{{gpuid:0,algo:{algo},mask:{{area:{artifact_masking}}},scene:{{}}}}"
+
+    # Inject target FPS into smooth params
+    if "rate:" not in smooth_params:
+        smooth_params = smooth_params.replace(
             "{",
             f"{{rate:{{num:{target_fps},den:1,abs:true}},",
             1
@@ -490,6 +514,10 @@ class SVPStream:
         target_fps: int = 60,
         preset: str = "balanced",
         use_nvenc: Optional[bool] = None,
+        use_nvof: bool = True,
+        shader: int = 23,
+        artifact_masking: int = 100,
+        frame_interpolation: int = 2,
         custom_super: Optional[str] = None,
         custom_analyse: Optional[str] = None,
         custom_smooth: Optional[str] = None,
@@ -500,7 +528,13 @@ class SVPStream:
         self.use_nvenc = use_nvenc if use_nvenc is not None else _check_nvenc_available()
         self.stream_id = str(uuid.uuid4())[:8]
 
-        # Custom SVP parameters (override preset when set)
+        # Key SVP settings
+        self.use_nvof = use_nvof
+        self.shader = shader
+        self.artifact_masking = artifact_masking
+        self.frame_interpolation = frame_interpolation
+
+        # Custom SVP parameters (full override when set)
         self.custom_super = custom_super
         self.custom_analyse = custom_analyse
         self.custom_smooth = custom_smooth
@@ -678,6 +712,10 @@ class SVPStream:
             self.video_path,
             self.target_fps,
             self.preset,
+            use_nvof=self.use_nvof,
+            shader=self.shader,
+            artifact_masking=self.artifact_masking,
+            frame_interpolation=self.frame_interpolation,
             custom_super=self.custom_super,
             custom_analyse=self.custom_analyse,
             custom_smooth=self.custom_smooth,

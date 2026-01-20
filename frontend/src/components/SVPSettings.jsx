@@ -15,6 +15,12 @@ export default function SVPSettings() {
   const [enabled, setEnabled] = useState(false)
   const [targetFps, setTargetFps] = useState(60)
   const [preset, setPreset] = useState('balanced')
+  // Key settings
+  const [useNvof, setUseNvof] = useState(true)
+  const [shader, setShader] = useState(23)
+  const [artifactMasking, setArtifactMasking] = useState(100)
+  const [frameInterpolation, setFrameInterpolation] = useState(2)
+  // Advanced custom params
   const [customSuper, setCustomSuper] = useState('')
   const [customAnalyse, setCustomAnalyse] = useState('')
   const [customSmooth, setCustomSmooth] = useState('')
@@ -31,6 +37,10 @@ export default function SVPSettings() {
       setEnabled(data.enabled || false)
       setTargetFps(data.target_fps || 60)
       setPreset(data.preset || 'balanced')
+      setUseNvof(data.use_nvof !== false)
+      setShader(data.shader || 23)
+      setArtifactMasking(data.artifact_masking ?? 100)
+      setFrameInterpolation(data.frame_interpolation ?? 2)
       setCustomSuper(data.custom_super || '')
       setCustomAnalyse(data.custom_analyse || '')
       setCustomSmooth(data.custom_smooth || '')
@@ -52,6 +62,10 @@ export default function SVPSettings() {
         enabled,
         target_fps: targetFps,
         preset,
+        use_nvof: useNvof,
+        shader,
+        artifact_masking: artifactMasking,
+        frame_interpolation: frameInterpolation,
         custom_super: customSuper || null,
         custom_analyse: customAnalyse || null,
         custom_smooth: customSmooth || null,
@@ -77,6 +91,10 @@ export default function SVPSettings() {
     enabled !== (config?.enabled || false) ||
     targetFps !== (config?.target_fps || 60) ||
     preset !== (config?.preset || 'balanced') ||
+    useNvof !== (config?.use_nvof !== false) ||
+    shader !== (config?.shader || 23) ||
+    artifactMasking !== (config?.artifact_masking ?? 100) ||
+    frameInterpolation !== (config?.frame_interpolation ?? 2) ||
     (customSuper || '') !== (config?.custom_super || '') ||
     (customAnalyse || '') !== (config?.custom_analyse || '') ||
     (customSmooth || '') !== (config?.custom_smooth || '')
@@ -210,6 +228,71 @@ export default function SVPSettings() {
           <strong>Animation:</strong> Optimized for anime<br />
           <strong>Film:</strong> Natural motion for movies
         </p>
+      </section>
+
+      {/* Key SVP Settings */}
+      <section className="settings-section">
+        <h3>SVP Settings</h3>
+
+        {/* Frames interpolation mode */}
+        <div className="setting-row">
+          <label style={{minWidth: '180px'}}>Frames interpolation mode:</label>
+          <select
+            value={frameInterpolation}
+            onChange={(e) => setFrameInterpolation(parseInt(e.target.value))}
+            className="quality-select"
+          >
+            <option value={1}>Uniform (max fluidity)</option>
+            <option value={2}>Adaptive</option>
+          </select>
+        </div>
+
+        {/* SVP Shader */}
+        <div className="setting-row" style={{marginTop: '12px'}}>
+          <label style={{minWidth: '180px'}}>SVP Shader:</label>
+          <select
+            value={shader}
+            onChange={(e) => setShader(parseInt(e.target.value))}
+            className="quality-select"
+          >
+            <option value={1}>1. Fastest (slow PCs)</option>
+            <option value={2}>2. Sharp (anime)</option>
+            <option value={11}>11. Simple Lite</option>
+            <option value={13}>13. Standard</option>
+            <option value={21}>21. Simple</option>
+            <option value={23}>23. Complicated</option>
+          </select>
+        </div>
+
+        {/* Artifact Masking */}
+        <div className="setting-row" style={{marginTop: '12px'}}>
+          <label style={{minWidth: '180px'}}>Artifacts Masking:</label>
+          <select
+            value={artifactMasking}
+            onChange={(e) => setArtifactMasking(parseInt(e.target.value))}
+            className="quality-select"
+          >
+            <option value={0}>Disabled</option>
+            <option value={50}>Weakest</option>
+            <option value={75}>Weak</option>
+            <option value={100}>Average</option>
+            <option value={150}>Strong</option>
+            <option value={200}>Strongest</option>
+          </select>
+        </div>
+
+        {/* NVIDIA Optical Flow */}
+        <div className="setting-row" style={{marginTop: '12px'}}>
+          <label style={{minWidth: '180px'}}>Use NVIDIA Optical Flow:</label>
+          <select
+            value={useNvof ? 'use' : 'dont'}
+            onChange={(e) => setUseNvof(e.target.value === 'use')}
+            className="quality-select"
+          >
+            <option value="use">Use</option>
+            <option value="dont">Don't use</option>
+          </select>
+        </div>
       </section>
 
       {/* Advanced Settings Toggle */}
