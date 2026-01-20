@@ -1127,14 +1127,30 @@ def get_backend_status() -> dict:
 
 
 # Quality presets for frame interpolation
+# svp: SVP-style NVIDIA Optical Flow - 60+fps at 1440p, motion-compensated (best realtime)
+# gpu_native: Full GPU pipeline with NVOF - similar to svp but more aggressive preset
 # realtime: Simple GPU blend - 60fps at 1440p, lower quality
 # fast: RIFE-NCNN - ~15fps at 1440p, high quality (for pre-processing)
 # balanced/quality: Even higher quality RIFE settings
 QUALITY_PRESETS = {
+    "svp": {
+        "backend": "gpu_native",  # Full GPU pipeline: NVOF + GPU warp
+        "preset": "medium",       # NVOF preset (slow/medium/fast) - medium for quality/speed balance
+        "flow_scale": 1.0,        # Full resolution flow
+        "use_ipc_worker": False,  # Direct NVOF (no CPU, full GPU)
+        # Fallback Farneback params (used if NVOF unavailable)
+        "pyr_scale": 0.5,
+        "levels": 3,
+        "winsize": 15,
+        "iterations": 3,
+        "poly_n": 5,
+        "poly_sigma": 1.2,
+    },
     "gpu_native": {
         "backend": "gpu_native",  # Full GPU pipeline: NVOF + GPU warp + GPU encode
         "preset": "fast",         # NVOF preset (slow/medium/fast)
         "flow_scale": 1.0,        # Full resolution flow
+        "use_ipc_worker": False,  # Direct NVOF (no CPU, full GPU)
         # Fallback Farneback params (used if NVOF unavailable)
         "pyr_scale": 0.5,
         "levels": 3,
@@ -1299,7 +1315,8 @@ class FrameInterpolator:
             # Try GPU Native first (full GPU pipeline with NVOF)
             if self.use_gpu_native:
                 preset = self.params.get("preset", "fast")
-                self._gpu_native = GPUNativeInterpolator(preset=preset)
+                use_ipc_worker = self.params.get("use_ipc_worker", True)  # Default to worker for Py3.14 opencv-cuda
+                self._gpu_native = GPUNativeInterpolator(preset=preset, use_ipc_worker=use_ipc_worker)
                 if self._gpu_native.initialize():
                     self._initialized = True
                     self._active_backend = "gpu_native"
@@ -1612,7 +1629,7 @@ class GPUNativeInterpolator:
             height: Frame height (0 = auto-detect from first frame)
             preset: NVOF performance preset ('slow', 'medium', 'fast')
             gpu_id: CUDA device ID
-            use_ipc_worker: Use IPC worker for NVOF (for Python version mismatch)
+            use_ipc_worker: Use IPC worker for NVOF (default False - direct is faster, no CPU)
         """
         if not HAS_TORCH or not CUDA_AVAILABLE:
             raise RuntimeError("PyTorch with CUDA required for GPUNativeInterpolator")
@@ -1657,13 +1674,14 @@ class GPUNativeInterpolator:
             return True  # Will initialize on first frame
 
         try:
-            # Try to initialize NVIDIA Optical Flow
-            if self.use_ipc_worker:
-                self._init_nvof_worker()
-            else:
-                self._init_nvof_direct()
+            # Try direct NVIDIA Optical Flow first (best performance - no CPU)
+            self._init_nvof_direct()
 
-            # Fall back to OpenCV CUDA if NVOF failed
+            # Fall back to worker if direct not available and requested
+            if self._flow_backend is None and self.use_ipc_worker:
+                self._init_nvof_worker()
+
+            # Fall back to OpenCV CUDA Farneback if NVOF failed
             if self._flow_backend is None and HAS_CV2_CUDA:
                 self._init_cuda_farneback()
 
@@ -1757,7 +1775,7 @@ class GPUNativeInterpolator:
         """
         Generate intermediate frame at position t.
 
-        All computation stays on GPU for maximum performance.
+        SVP-style full GPU pipeline: upload once, process on GPU, download once.
 
         Args:
             frame1: First frame (H, W, 3) uint8 BGR
@@ -1778,25 +1796,72 @@ class GPUNativeInterpolator:
                 return self._blend_frames_cpu(frame1, frame2, t)
 
         try:
-            # Upload frames to GPU
+            # Full GPU pipeline using cv2.cuda (SVP-style)
+            if self._nvof_direct is not None and HAS_CV2_CUDA:
+                return self._interpolate_full_gpu(frame1, frame2, t)
+
+            # Fallback: PyTorch-based pipeline
             f1_gpu = torch.from_numpy(frame1).to(self.device, non_blocking=True)
             f2_gpu = torch.from_numpy(frame2).to(self.device, non_blocking=True)
 
-            # Compute optical flow
             flow_gpu = self._compute_flow_gpu(frame1, frame2)
             if flow_gpu is None:
-                # Fallback to simple blend
                 return self._blend_frames_gpu(f1_gpu, f2_gpu, t)
 
-            # Warp and blend on GPU
             result_gpu = self._warp_and_blend_gpu(f1_gpu, f2_gpu, flow_gpu, t)
-
-            # Download result
             return result_gpu.cpu().numpy()
 
         except Exception as e:
             logger.warning(f"GPU interpolation failed: {e}")
             return self._blend_frames_cpu(frame1, frame2, t)
+
+    def _interpolate_full_gpu(self, frame1: np.ndarray, frame2: np.ndarray, t: float) -> np.ndarray:
+        """
+        SVP-style full GPU interpolation using cv2.cuda.
+
+        Pipeline: Upload → Grayscale → NVOF → Warp → Blend → Download
+        All operations on GPU, only 1 upload and 1 download.
+        """
+        h, w = frame1.shape[:2]
+
+        # Upload frames to GPU (only CPU transfer: input)
+        gpu_frame1 = cv2.cuda_GpuMat()
+        gpu_frame2 = cv2.cuda_GpuMat()
+        gpu_frame1.upload(frame1)
+        gpu_frame2.upload(frame2)
+
+        # Convert to grayscale on GPU
+        gpu_gray1 = cv2.cuda.cvtColor(gpu_frame1, cv2.COLOR_BGR2GRAY)
+        gpu_gray2 = cv2.cuda.cvtColor(gpu_frame2, cv2.COLOR_BGR2GRAY)
+
+        # Compute optical flow on GPU (NVOF hardware accelerated)
+        gpu_flow, _ = self._nvof_direct._nvof.calc(gpu_gray1, gpu_gray2, None)
+
+        # Download flow for coordinate calculation (small: h*w*2*2 bytes)
+        flow_raw = gpu_flow.download()
+        flow = flow_raw.astype(np.float32) / 32.0  # NVOF uses 1/32 pixel precision
+
+        # Create warp maps
+        grid_x, grid_y = np.meshgrid(np.arange(w, dtype=np.float32),
+                                      np.arange(h, dtype=np.float32))
+        map_x = (grid_x - flow[:, :, 0] * t).astype(np.float32)
+        map_y = (grid_y - flow[:, :, 1] * t).astype(np.float32)
+
+        # Upload warp maps to GPU
+        gpu_map_x = cv2.cuda_GpuMat()
+        gpu_map_y = cv2.cuda_GpuMat()
+        gpu_map_x.upload(map_x)
+        gpu_map_y.upload(map_y)
+
+        # Warp frame1 toward frame2 on GPU
+        gpu_warped1 = cv2.cuda.remap(gpu_frame1, gpu_map_x, gpu_map_y,
+                                      cv2.INTER_LINEAR, cv2.BORDER_REPLICATE)
+
+        # Blend on GPU
+        gpu_result = cv2.cuda.addWeighted(gpu_warped1, 1 - t, gpu_frame2, t, 0)
+
+        # Download result (only CPU transfer: output)
+        return gpu_result.download()
 
     def interpolate_gpu(self, frame1_gpu: torch.Tensor, frame2_gpu: torch.Tensor,
                         t: float) -> torch.Tensor:

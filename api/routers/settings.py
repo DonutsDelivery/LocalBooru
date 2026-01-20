@@ -97,7 +97,7 @@ DEFAULT_OPTICAL_FLOW_SETTINGS = {
     "enabled": False,
     "target_fps": 60,
     "use_gpu": True,
-    "quality": "fast",  # fast, balanced, quality, gpu_native
+    "quality": "fast",  # svp, gpu_native, realtime, fast, balanced, quality
 }
 
 
@@ -948,7 +948,7 @@ class OpticalFlowConfigUpdate(BaseModel):
     enabled: Optional[bool] = None
     target_fps: Optional[int] = None
     use_gpu: Optional[bool] = None
-    quality: Optional[str] = None  # fast, balanced, quality, gpu_native
+    quality: Optional[str] = None  # svp, gpu_native, realtime, fast, balanced, quality
 
 
 @router.post("/optical-flow")
@@ -966,7 +966,7 @@ async def update_optical_flow_config(config: OpticalFlowConfigUpdate):
         current["use_gpu"] = config.use_gpu
     if config.quality is not None:
         # Validate quality preset
-        if config.quality in ("fast", "balanced", "quality", "gpu_native"):
+        if config.quality in ("svp", "gpu_native", "realtime", "fast", "balanced", "quality"):
             current["quality"] = config.quality
 
     save_optical_flow_settings(current)
