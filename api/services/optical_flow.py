@@ -1658,6 +1658,11 @@ class GPUNativeInterpolator:
         self._flow_backend = None
         self._warp_backend = "pytorch_cuda"
 
+        # Frame caching for sequential interpolation (saves ~1.5ms per frame)
+        self._cached_gpu_frame: Optional[cv2.cuda_GpuMat] = None
+        self._cached_gpu_gray: Optional[cv2.cuda_GpuMat] = None
+        self._cached_frame_id: Optional[int] = None  # id(frame) for identity check
+
     def initialize(self, width: int = 0, height: int = 0) -> bool:
         """Initialize GPU resources."""
         if self._initialized:
@@ -1830,19 +1835,39 @@ class GPUNativeInterpolator:
         OPTIMIZATION: Uses WARP_RELATIVE_MAP flag which interprets flow as relative
         offsets, eliminating the need for coordinate grid computation entirely.
 
-        Performance @ 1440p with FAST preset:
-        - GPU-only: ~12ms (82 fps) - exceeds 60fps target
-        - With download: ~14ms (74 fps) - still exceeds 60fps target
-        """
-        # Upload frames to GPU (only CPU transfer: input)
-        gpu_frame1 = cv2.cuda_GpuMat()
-        gpu_frame2 = cv2.cuda_GpuMat()
-        gpu_frame1.upload(frame1)
-        gpu_frame2.upload(frame2)
+        OPTIMIZATION: Frame caching - when called sequentially (frame1 = previous frame2),
+        reuses the cached GPU frame to avoid redundant upload (~1.5ms savings).
 
-        # Convert to grayscale on GPU
-        gpu_gray1 = cv2.cuda.cvtColor(gpu_frame1, cv2.COLOR_BGR2GRAY)
+        Performance @ 1440p with FAST preset:
+        - With frame caching: ~15.3ms (65 fps)
+        - Without caching: ~17.0ms (59 fps)
+        - NVOF hardware: ~9.3ms (bottleneck)
+        """
+        # Check if frame1 is the cached frame2 from the previous call
+        frame1_id = id(frame1)
+        cache_hit = (self._cached_frame_id == frame1_id and
+                     self._cached_gpu_frame is not None and
+                     self._cached_gpu_gray is not None)
+
+        if cache_hit:
+            # Reuse cached GPU data for frame1
+            gpu_frame1 = self._cached_gpu_frame
+            gpu_gray1 = self._cached_gpu_gray
+        else:
+            # Cache miss - upload frame1
+            gpu_frame1 = cv2.cuda_GpuMat()
+            gpu_frame1.upload(frame1)
+            gpu_gray1 = cv2.cuda.cvtColor(gpu_frame1, cv2.COLOR_BGR2GRAY)
+
+        # Always upload frame2
+        gpu_frame2 = cv2.cuda_GpuMat()
+        gpu_frame2.upload(frame2)
         gpu_gray2 = cv2.cuda.cvtColor(gpu_frame2, cv2.COLOR_BGR2GRAY)
+
+        # Cache frame2 for the next call
+        self._cached_gpu_frame = gpu_frame2
+        self._cached_gpu_gray = gpu_gray2
+        self._cached_frame_id = id(frame2)
 
         # Compute optical flow on GPU (NVOF hardware accelerated)
         # Returns int16 with 1/32 pixel precision as 2-channel GpuMat
@@ -2071,6 +2096,11 @@ class GPUNativeInterpolator:
         self._cuda_farneback = None
         self._grid_cache = None
         self._initialized = False
+
+        # Clear frame cache
+        self._cached_gpu_frame = None
+        self._cached_gpu_gray = None
+        self._cached_frame_id = None
 
         if HAS_TORCH and CUDA_AVAILABLE:
             torch.cuda.empty_cache()
