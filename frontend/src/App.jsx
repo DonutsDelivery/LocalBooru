@@ -12,8 +12,6 @@ import ComfyUIConfigModal from './components/ComfyUIConfigModal'
 import NetworkSettings from './components/NetworkSettings'
 import ServerSettings from './components/ServerSettings'
 import MigrationSettings from './components/MigrationSettings'
-import OpticalFlowSettings from './components/OpticalFlowSettings'
-import SVPSettings from './components/SVPSettings'
 import QRConnect from './components/QRConnect'
 import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
 import './App.css'
@@ -334,12 +332,6 @@ function SettingsPage() {
                 General
               </button>
               <button
-                className={`settings-tab ${activeTab === 'video' ? 'active' : ''}`}
-                onClick={() => setActiveTab('video')}
-              >
-                Video
-              </button>
-              <button
                 className={`settings-tab ${activeTab === 'network' ? 'active' : ''}`}
                 onClick={() => setActiveTab('network')}
               >
@@ -365,30 +357,21 @@ function SettingsPage() {
               </button>
             </div>
 
-            {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
-            <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
-              <OpticalFlowSettings />
-              <hr className="settings-divider" />
-              <SVPSettings />
-            </div>
+            {/* Network Tab Content */}
+            {activeTab === 'network' && <NetworkSettings />}
 
-            <div className={`settings-tab-content ${activeTab === 'network' ? 'active' : ''}`}>
-              <NetworkSettings />
-            </div>
+            {/* Data/Migration Tab Content */}
+            {activeTab === 'data' && <MigrationSettings />}
 
-            <div className={`settings-tab-content ${activeTab === 'data' ? 'active' : ''}`}>
-              <MigrationSettings />
-            </div>
+            {/* Servers Tab Content (for mobile app) */}
+            {activeTab === 'servers' && <ServerSettings />}
 
-            <div className={`settings-tab-content ${activeTab === 'servers' ? 'active' : ''}`}>
-              <ServerSettings />
-            </div>
+            {/* Mobile App QR Code */}
+            {activeTab === 'mobile' && <QRConnect />}
 
-            <div className={`settings-tab-content ${activeTab === 'mobile' ? 'active' : ''}`}>
-              <QRConnect />
-            </div>
-
-            <div className={`settings-tab-content ${activeTab === 'general' ? 'active' : ''}`}>
+            {/* General Tab Content */}
+            {activeTab === 'general' && (
+            <>
             <section>
               <h2>Age Detection (Optional)</h2>
               <p className="setting-description">
@@ -547,7 +530,8 @@ function SettingsPage() {
                 </button>
               </section>
             )}
-            </div>
+            </>
+            )}
           </div>
         </main>
       </div>
@@ -563,7 +547,6 @@ function Gallery() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [total, setTotal] = useState(0)
-  const [filtersInitialized, setFiltersInitialized] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
@@ -616,12 +599,10 @@ function Gallery() {
         console.error('Failed to load saved filters:', e)
       }
     }
-    setFiltersInitialized(true)
   }, [])
 
-  // Save filters to localStorage when they change (only after initial load to avoid overwriting)
+  // Save filters to localStorage when they change
   useEffect(() => {
-    if (!filtersInitialized) return
     const filters = {
       tags: currentTags || null,
       rating: currentRating,
@@ -632,7 +613,7 @@ function Gallery() {
       max_age: currentMaxAge
     }
     localStorage.setItem('localbooru_filters', JSON.stringify(filters))
-  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge])
+  }, [currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge])
 
   // Touch handling for mobile sidebar
   const touchStartX = useRef(null)
@@ -733,9 +714,8 @@ function Gallery() {
   }, [])
 
   useEffect(() => {
-    if (!filtersInitialized) return
     loadImages(1, false)
-  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, loadImages])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, loadImages])
 
   useEffect(() => {
     loadTags()

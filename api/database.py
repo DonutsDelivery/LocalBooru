@@ -30,10 +30,6 @@ def get_database_url() -> str:
 engine = create_async_engine(
     get_database_url(),
     echo=False,
-    # Increase pool size for concurrent API requests (preview frames, etc.)
-    pool_size=10,
-    max_overflow=20,
-    pool_timeout=60,  # Wait up to 60s for a connection
     # SQLite specific settings for better concurrency
     connect_args={
         "check_same_thread": False,
