@@ -163,6 +163,21 @@ async def add_directory(data: DirectoryCreate, db: AsyncSession = Depends(get_db
     await db.commit()
     await db.refresh(directory)
 
+    # Clear any stale ImageFile associations from a previously deleted directory
+    # that had the same ID (SQLite can reuse IDs)
+    from sqlalchemy import update
+    # Use trailing separator to ensure proper directory boundary matching
+    dir_pattern = str(path).rstrip('/') + '/%'
+    stale_cleanup = await db.execute(
+        update(ImageFile)
+        .where(ImageFile.watch_directory_id == directory.id)
+        .where(~ImageFile.original_path.like(dir_pattern))
+        .values(watch_directory_id=None)
+    )
+    if stale_cleanup.rowcount > 0:
+        await db.commit()
+        print(f"[Directory] Cleared {stale_cleanup.rowcount} stale file associations from reused ID {directory.id}")
+
     # Queue initial scan
     await enqueue_task(
         TaskType.scan_directory,
@@ -226,6 +241,20 @@ async def add_parent_directory(data: ParentDirectoryCreate, db: AsyncSession = D
         db.add(directory)
         await db.commit()
         await db.refresh(directory)
+
+        # Clear any stale ImageFile associations from reused ID
+        from sqlalchemy import update
+        # Use trailing separator to ensure proper directory boundary matching
+        subdir_pattern = str(subdir).rstrip('/') + '/%'
+        stale_cleanup = await db.execute(
+            update(ImageFile)
+            .where(ImageFile.watch_directory_id == directory.id)
+            .where(~ImageFile.original_path.like(subdir_pattern))
+            .values(watch_directory_id=None)
+        )
+        if stale_cleanup.rowcount > 0:
+            await db.commit()
+            print(f"[Directory] Cleared {stale_cleanup.rowcount} stale associations from reused ID {directory.id}")
 
         # Queue initial scan
         await enqueue_task(

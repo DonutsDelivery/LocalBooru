@@ -232,7 +232,7 @@
   color: var(--text-muted);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.1s ease, border-color 0.1s ease;
   margin-bottom: -1px;
 }
 
@@ -246,6 +246,21 @@
   color: var(--accent);
   border-bottom-color: var(--accent);
   background: transparent;
+}
+
+/* Tab content - hidden by default, shown when active */
+.settings-tab-content {
+  display: none;
+}
+
+.settings-tab-content.active {
+  display: block;
+}
+
+.settings-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 32px 0;
 }
 
 .setting-description {
