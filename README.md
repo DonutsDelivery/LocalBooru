@@ -10,7 +10,7 @@ A local image library with automatic AI tagging, designed for organizing and bro
 
 | Platform | Download |
 |----------|----------|
-| **Windows** | [Portable](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Portable.exe) &#124; [Installer](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Setup.exe) &#124; [ZIP](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Windows.zip) &#124; [Microsoft Store](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Store.appx) |
+| **Windows** | [Portable](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Portable.exe) &#124; [Installer](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Setup.exe) &#124; [ZIP](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Windows.zip) |
 | **Linux** | [AppImage](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.AppImage) &#124; [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.zip) &#124; [.deb](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.deb) &#124; [.rpm](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.rpm) |
 | **macOS** | [Apple Silicon](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.dmg) &#124; [Intel](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-x64.dmg) &#124; [ZIP (ARM)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.zip) |
 
