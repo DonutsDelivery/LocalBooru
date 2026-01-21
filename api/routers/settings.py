@@ -83,10 +83,18 @@ AGE_DETECTION_INSTALLING = "age_detection_installing"
 AGE_DETECTION_INSTALL_PROGRESS = "age_detection_install_progress"
 
 # Network settings defaults
+# Different default ports: portable=8791, system=8790
+# This allows running both simultaneously without conflicts
+def get_default_local_port():
+    """Get default local port based on install mode"""
+    if os.environ.get('LOCALBOORU_PORTABLE_DATA'):
+        return 8791  # Portable mode
+    return 8790  # System install
+
 DEFAULT_NETWORK_SETTINGS = {
     "local_network_enabled": False,
     "public_network_enabled": False,
-    "local_port": 8790,
+    "local_port": get_default_local_port(),
     "public_port": 8791,
     "auth_required_level": "local_network",  # none, public, local_network, always
     "upnp_enabled": False

@@ -11,8 +11,7 @@ const os = require('os');
 const { app } = require('electron');
 
 class BackendManager {
-  constructor(port = 8790) {
-    this.port = port;
+  constructor() {
     this.process = null;
     this.healthCheckInterval = null;
     this.restartAttempts = 0;
@@ -21,6 +20,15 @@ class BackendManager {
 
     // Detect portable mode on construction
     this.detectPortableMode();
+
+    // Different default ports: portable=8791, system=8790
+    // This allows running both simultaneously without conflicts
+    this.defaultPort = this.portableDataDir ? 8791 : 8790;
+
+    // Read port from settings (user can override the default)
+    const networkSettings = this.getNetworkSettings();
+    this.port = networkSettings.local_port || this.defaultPort;
+    console.log('[Backend] Mode:', this.portableDataDir ? 'portable' : 'system', '| Port:', this.port);
   }
 
   /**
@@ -105,12 +113,13 @@ class BackendManager {
 
   /**
    * Load network settings from settings.json
+   * Note: local_port default is not set here - it's determined by portable mode in constructor
    */
   getNetworkSettings() {
     const defaults = {
       local_network_enabled: false,
       public_network_enabled: false,
-      local_port: 8790,
+      // local_port intentionally omitted - defaults differ by mode (portable=8791, system=8790)
       public_port: 8791,
       auth_required_level: 'none',
       upnp_enabled: false

@@ -50,7 +50,12 @@ let isCreatingWindow = false;  // Guard against concurrent window creation
 // Only enable dev mode when explicitly set via LOCALBOORU_DEV
 // This avoids issues with NODE_ENV being set in the shell environment
 const isDev = process.env.LOCALBOORU_DEV === 'true';
-const API_PORT = 8790;
+const DEFAULT_PORT = 8790;
+
+// Get the current API port (from backendManager if available, otherwise default)
+function getApiPort() {
+  return backendManager ? backendManager.port : DEFAULT_PORT;
+}
 
 /**
  * Create the main application window
@@ -97,7 +102,7 @@ async function createWindow(options = {}) {
     log(`[Window] setWindowOpenHandler called for: ${url}`);
 
     // Allow same-origin URLs (internal app navigation) - but open in same window, not new
-    const appHost = `127.0.0.1:${API_PORT}`;
+    const appHost = `127.0.0.1:${getApiPort()}`;
     const devHost = 'localhost:5174';
 
     if (url.includes(appHost) || url.includes(devHost)) {
@@ -130,7 +135,7 @@ async function createWindow(options = {}) {
     }
 
     // Allow internal navigation
-    const appHost = `127.0.0.1:${API_PORT}`;
+    const appHost = `127.0.0.1:${getApiPort()}`;
     const devHost = 'localhost:5174';
     if (url.includes(appHost) || url.includes(devHost)) {
       return; // Allow
@@ -198,8 +203,8 @@ async function createWindow(options = {}) {
     }
     mainWindow.webContents.openDevTools();
   } else {
-    log(`[Window] Backend should be at http://127.0.0.1:${API_PORT}`);
-    const loaded = await loadWithRetry(`http://127.0.0.1:${API_PORT}`);
+    log(`[Window] Backend should be at http://127.0.0.1:${getApiPort()}`);
+    const loaded = await loadWithRetry(`http://127.0.0.1:${getApiPort()}`);
     if (!loaded) {
       log('[Window] All load attempts failed, showing error page');
       // Error page with draggable title bar since frame:false means no native title bar
@@ -213,11 +218,11 @@ async function createWindow(options = {}) {
         <div class="titlebar"><span>LocalBooru - Connection Error</span><button onclick="window.close()">Quit</button></div>
         <div class="content">
           <h1>Failed to connect</h1>
-          <p>Could not connect to backend at 127.0.0.1:${API_PORT}</p>
+          <p>Could not connect to backend at 127.0.0.1:${getApiPort()}</p>
           <p>The backend server may have failed to start, or the port is occupied by another process.</p>
           <p style="color:#888;margin-top:20px;">Try: <code>pkill -9 -f uvicorn</code> then restart</p>
           <div style="margin-top:20px;">
-            <button class="retry" onclick="location.href='http://127.0.0.1:${API_PORT}'">Retry</button>
+            <button class="retry" onclick="location.href='http://127.0.0.1:${getApiPort()}'">Retry</button>
             <button class="retry" style="background:#666;" onclick="window.close()">Quit</button>
           </div>
         </div>
@@ -289,7 +294,7 @@ function createTray() {
 
       if (needsReload) {
         log(`[Tray] WebContents needs reload (crashed: ${mainWindow.webContents.isCrashed()}, url: ${mainWindow.webContents.getURL()})`);
-        const url = isDev ? 'http://localhost:5174' : `http://127.0.0.1:${API_PORT}`;
+        const url = isDev ? 'http://localhost:5174' : `http://127.0.0.1:${getApiPort()}`;
         mainWindow.loadURL(url);
       }
     } else {
@@ -312,7 +317,7 @@ function createTray() {
     {
       label: 'Open in Browser',
       click: () => {
-        shell.openExternal(`http://127.0.0.1:${API_PORT}`);
+        shell.openExternal(`http://127.0.0.1:${getApiPort()}`);
       }
     },
     {
@@ -366,15 +371,15 @@ function createTray() {
 async function initializeApp() {
   console.log('[LocalBooru] Initializing...');
 
-  // Start backend server
-  backendManager = new BackendManager(API_PORT);
+  // Start backend server (port determined by settings and portable mode)
+  backendManager = new BackendManager();
   await backendManager.start();
 
-  // Initialize directory watcher
-  directoryWatcher = new DirectoryWatcher(API_PORT);
+  // Initialize directory watcher with the backend's port
+  directoryWatcher = new DirectoryWatcher(backendManager.port);
   await directoryWatcher.loadWatchDirectories();
 
-  console.log('[LocalBooru] Initialization complete');
+  console.log('[LocalBooru] Initialization complete, port:', backendManager.port);
 }
 
 /**
@@ -383,7 +388,7 @@ async function initializeApp() {
 function setupIPC() {
   // Get API URL
   ipcMain.handle('get-api-url', () => {
-    return `http://127.0.0.1:${API_PORT}`;
+    return `http://127.0.0.1:${getApiPort()}`;
   });
 
   // Add watch directory
@@ -403,7 +408,7 @@ function setupIPC() {
   ipcMain.handle('get-backend-status', () => {
     return {
       running: backendManager?.isRunning() ?? false,
-      port: API_PORT
+      port: getApiPort()
     };
   });
 
@@ -556,8 +561,8 @@ app.whenReady().then(async () => {
           : `kill -9 ${portUser?.pid || 'PID'}`;
 
         const lsofCmd = process.platform === 'win32'
-          ? `netstat -ano | findstr :${API_PORT}`
-          : `lsof -i :${API_PORT}`;
+          ? `netstat -ano | findstr :${getApiPort()}`
+          : `lsof -i :${getApiPort()}`;
 
         errorHtml = `<html><head><style>
           body{background:#141414;color:white;font-family:system-ui;margin:0;padding:0;}
@@ -572,8 +577,8 @@ app.whenReady().then(async () => {
         </style></head><body>
           <div class="titlebar"><span>LocalBooru - Port Conflict</span><button onclick="window.close()">Quit</button></div>
           <div class="content">
-            <h1>Port ${API_PORT} is already in use</h1>
-            <p>LocalBooru cannot start because another application is using port ${API_PORT}.</p>
+            <h1>Port ${getApiPort()} is already in use</h1>
+            <p>LocalBooru cannot start because another application is using port ${getApiPort()}.</p>
             ${processInfo}
             <div class="fix-steps">
               <strong>How to fix:</strong>

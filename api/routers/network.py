@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional, Literal
 
-from .settings import get_network_settings, save_network_settings
+from .settings import get_network_settings, save_network_settings, get_default_local_port
 from ..services.network import (
     get_local_ip,
     get_all_local_ips,
@@ -64,7 +64,7 @@ async def get_network_config():
     public_url = None
 
     if local_ip and settings.get("local_network_enabled"):
-        local_port = settings.get("local_port", 8790)
+        local_port = settings.get("local_port", get_default_local_port())
         local_url = f"http://{local_ip}:{local_port}"
 
     # Check UPnP status if enabled
@@ -102,7 +102,7 @@ async def get_qr_data():
     # Build local URL (always include if we have an IP)
     local_url = None
     if local_ip:
-        local_port = settings.get("local_port", 8790)
+        local_port = settings.get("local_port", get_default_local_port())
         local_url = f"http://{local_ip}:{local_port}"
 
     # Build public URL if UPnP is enabled and has external IP
