@@ -9,6 +9,40 @@ const BackendManager = require('./backendManager');
 const DirectoryWatcher = require('./directoryWatcher');
 const { initUpdater } = require('./updater');
 
+// Detect portable mode EARLY - before single instance lock
+// This ensures portable and system installs use separate locks/userData
+function detectPortableModeEarly() {
+  if (!app.isPackaged) return null;
+
+  const appDir = path.dirname(app.getPath('exe'));
+  const portableDataPath = path.join(appDir, 'data');
+  const useAppdataMarker = path.join(appDir, '.use-appdata');
+
+  // Check for .use-appdata marker
+  if (fs.existsSync(useAppdataMarker)) return null;
+
+  // Check for Program Files (Windows)
+  if (process.platform === 'win32') {
+    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    if (appDir.startsWith(programFiles) || appDir.startsWith(programFilesX86)) return null;
+  }
+
+  // Portable mode - ensure data folder exists
+  if (!fs.existsSync(portableDataPath)) {
+    fs.mkdirSync(portableDataPath, { recursive: true });
+  }
+  return portableDataPath;
+}
+
+const portableDataDir = detectPortableModeEarly();
+
+// Set userData path for portable mode BEFORE single instance lock
+// This ensures portable and system installs have separate locks
+if (portableDataDir) {
+  app.setPath('userData', portableDataDir);
+}
+
 // Debug logging to file
 const logFile = path.join(app.getPath('userData'), 'debug.log');
 const log = (msg) => {
@@ -17,8 +51,10 @@ const log = (msg) => {
   fs.appendFileSync(logFile, line);
 };
 log('=== App starting ===');
+log(`[App] Mode: ${portableDataDir ? 'portable' : 'system'}`);
 
 // Single instance lock - prevent multiple instances
+// Now uses separate lock files for portable vs system installs
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
