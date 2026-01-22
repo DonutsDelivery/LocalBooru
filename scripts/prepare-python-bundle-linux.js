@@ -120,9 +120,10 @@ async function main() {
     rmSync(BUNDLE_DIR, { recursive: true });
   }
 
-  // 1. Create virtual environment
-  console.log('\n[1/4] Creating virtual environment...');
-  execSync(`${pythonCmd} -m venv "${BUNDLE_DIR}"`, { stdio: 'inherit' });
+  // 1. Create virtual environment with --copies to avoid symlinks
+  // This is critical for making the venv relocatable/portable
+  console.log('\n[1/4] Creating virtual environment (with copies, not symlinks)...');
+  execSync(`${pythonCmd} -m venv --copies "${BUNDLE_DIR}"`, { stdio: 'inherit' });
 
   // Get venv Python path
   const venvPython = path.join(BUNDLE_DIR, 'bin', 'python');

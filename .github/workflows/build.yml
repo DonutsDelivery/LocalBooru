@@ -37,8 +37,9 @@ jobs:
           echo "Creating Python virtual environment bundle..."
           BUNDLE_DIR="python-venv-linux"
 
-          # Create venv
-          python3 -m venv "$BUNDLE_DIR"
+          # Create venv with --copies to avoid symlinks to system Python
+          # This is critical for making the venv relocatable/portable
+          python3 -m venv --copies "$BUNDLE_DIR"
 
           # Upgrade pip
           "$BUNDLE_DIR/bin/pip" install --upgrade pip
@@ -64,8 +65,17 @@ jobs:
           done
           cd -
 
-          # Make venv relocatable by patching activate script
+          # Make venv relocatable
+          # 1. Patch activate script to use dynamic VIRTUAL_ENV
           sed -i 's|^VIRTUAL_ENV=.*|VIRTUAL_ENV="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." \&\& pwd)"|' "$BUNDLE_DIR/bin/activate"
+
+          # 2. Fix shebangs in pip-installed scripts (uvicorn, etc.) to use /usr/bin/env
+          # This is critical - without this, scripts have hardcoded paths that break after relocation
+          for script in "$BUNDLE_DIR/bin"/*; do
+            if [ -f "$script" ] && head -1 "$script" | grep -q "^#!.*python"; then
+              sed -i '1s|^#!.*python.*|#!/usr/bin/env python3|' "$script"
+            fi
+          done
 
           # Report size
           SIZE=$(du -sh "$BUNDLE_DIR" | cut -f1)
