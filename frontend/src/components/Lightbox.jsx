@@ -1,6 +1,5 @@
 import { useEffect, useCallback, useState, useRef } from 'react'
-import Hls from 'hls.js'
-import { getMediaUrl, getOpticalFlowConfig, playVideoInterpolated, stopInterpolatedStream, getSVPConfig, playVideoSVP, stopSVPStream } from '../api'
+import { getMediaUrl } from '../api'
 import './Lightbox.css'
 
 // Check if filename is a video
@@ -30,23 +29,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [previewUrl, setPreviewUrl] = useState(null)
   const [generatingPreview, setGeneratingPreview] = useState(false)
 
-  // HLS streaming ref
-  const hlsRef = useRef(null)
-
-  // Optical flow interpolation state
-  const [opticalFlowConfig, setOpticalFlowConfig] = useState(null)
-  const [opticalFlowLoading, setOpticalFlowLoading] = useState(false)
-  const [opticalFlowError, setOpticalFlowError] = useState(null)
-  const [opticalFlowStreamUrl, setOpticalFlowStreamUrl] = useState(null)
-
-  // SVP interpolation state
-  const [svpConfig, setSvpConfig] = useState(null)
-  const [svpLoading, setSvpLoading] = useState(false)
-  const [svpError, setSvpError] = useState(null)
-  const [svpStreamUrl, setSvpStreamUrl] = useState(null)
-  const svpHlsRef = useRef(null)
-  const svpStartingRef = useRef(false)  // Synchronous lock to prevent double-starts
-
   // Zoom state
   const [zoom, setZoom] = useState({ scale: 1, x: 0, y: 0 })
   const zoomRef = useRef(zoom) // Ref to always have current zoom in callbacks
@@ -59,58 +41,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   const image = images[currentIndex]
 
-  // Reset adjustments, preview, zoom, and interpolation when changing images
+  // Reset adjustments, preview, and zoom when changing images
   useEffect(() => {
     setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
     setShowAdjustments(false)
     setPreviewUrl(null)
     setZoom({ scale: 1, x: 0, y: 0 })
-    // Reset optical flow state for new video
-    setOpticalFlowError(null)
-    setOpticalFlowStreamUrl(null)
-    // Reset SVP state for new video
-    setSvpError(null)
-    setSvpStreamUrl(null)
-    svpStartingRef.current = false  // Reset lock for new video
-    // Cleanup HLS instances
-    if (hlsRef.current) {
-      hlsRef.current.destroy()
-      hlsRef.current = null
-    }
-    if (svpHlsRef.current) {
-      svpHlsRef.current.destroy()
-      svpHlsRef.current = null
-    }
-    // Note: Don't call stopSVPStream() here - it races with auto-start.
-    // Backend handles stopping old streams when starting new ones.
   }, [image?.id])
-
-  // Load optical flow config on mount
-  useEffect(() => {
-    async function loadOpticalFlowConfig() {
-      try {
-        const config = await getOpticalFlowConfig()
-        setOpticalFlowConfig(config)
-      } catch (err) {
-        console.error('Failed to load optical flow config:', err)
-      }
-    }
-    loadOpticalFlowConfig()
-  }, [])
-
-  // Load SVP config on mount
-  useEffect(() => {
-    async function loadSVPConfig() {
-      try {
-        const config = await getSVPConfig()
-        setSvpConfig(config)
-      } catch (err) {
-        console.error('Failed to load SVP config:', err)
-      }
-    }
-    loadSVPConfig()
-  }, [])
-
 
   // Auto-hide UI after inactivity
   const resetHideTimer = useCallback(() => {
@@ -504,241 +441,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setTimeout(() => setCopyFeedback(null), 1500)
   }, [image])
 
-  // Start optical flow interpolation for video (called automatically when enabled)
-  const startInterpolatedStream = useCallback(async () => {
-    if (!image || !opticalFlowConfig?.enabled || !isVideo(image.filename)) return
-    if (opticalFlowStreamUrl || opticalFlowLoading) return // Already active or starting
-
-    setOpticalFlowLoading(true)
-    setOpticalFlowError(null)
-
-    try {
-      const result = await playVideoInterpolated(image.file_path)
-
-      if (result.success && result.stream_url) {
-        setOpticalFlowStreamUrl(result.stream_url)
-      } else {
-        setOpticalFlowError(result.error || 'Failed to start interpolated playback')
-      }
-    } catch (err) {
-      console.error('Optical flow error:', err)
-      setOpticalFlowError(err.message || 'Failed to start interpolated playback')
-    }
-
-    setOpticalFlowLoading(false)
-  }, [image, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading])
-
-  // Auto-start interpolated stream when video opens
-  // Priority: SVP (if enabled and ready) > Optical Flow (if enabled)
-  useEffect(() => {
-    if (image && isVideo(image.filename)) {
-      // Prefer SVP if enabled and ready
-      if (svpConfig?.enabled && svpConfig?.status?.ready) {
-        startSVPStream()
-      }
-      // Fall back to optical flow if enabled
-      else if (opticalFlowConfig?.enabled) {
-        startInterpolatedStream()
-      }
-    }
-  }, [image?.id, svpConfig?.enabled, svpConfig?.status?.ready, opticalFlowConfig?.enabled])
-
-  // Setup HLS player when optical flow stream is active
-  useEffect(() => {
-    if (!opticalFlowStreamUrl || !mediaRef.current) return
-
-    const video = mediaRef.current
-
-    if (Hls.isSupported()) {
-      // Cleanup previous instance
-      if (hlsRef.current) {
-        hlsRef.current.destroy()
-      }
-
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 30
-      })
-
-      hls.loadSource(opticalFlowStreamUrl)
-      hls.attachMedia(video)
-
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(() => {})
-      })
-
-      hls.on(Hls.Events.ERROR, (event, data) => {
-        if (data.fatal) {
-          console.error('HLS fatal error:', data)
-          setOpticalFlowError('Stream playback error.')
-          setOpticalFlowStreamUrl(null)
-        }
-      })
-
-      hlsRef.current = hls
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari/iOS native HLS support
-      video.src = opticalFlowStreamUrl
-      video.addEventListener('loadedmetadata', () => {
-        video.play().catch(() => {})
-      })
-    } else {
-      setOpticalFlowError('HLS playback is not supported in this browser')
-      setOpticalFlowStreamUrl(null)
-    }
-
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy()
-        hlsRef.current = null
-      }
-    }
-  }, [opticalFlowStreamUrl])
-
-  // Cleanup HLS on unmount
-  useEffect(() => {
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy()
-        hlsRef.current = null
-      }
-      if (svpHlsRef.current) {
-        svpHlsRef.current.destroy()
-        svpHlsRef.current = null
-      }
-      // Stop backend streams on unmount
-      stopSVPStream().catch(() => {})
-      stopInterpolatedStream().catch(() => {})
-    }
-  }, [])
-
-  // Start SVP interpolation for video (called manually via button)
-  const startSVPStream = useCallback(async () => {
-    if (!image || !svpConfig?.enabled || !isVideo(image.filename)) return
-    if (svpStreamUrl || svpLoading) return // Already active or starting
-
-    // Use ref for synchronous lock (state updates are batched/async)
-    if (svpStartingRef.current) return
-    svpStartingRef.current = true
-
-    // Stop any existing optical flow stream
-    if (opticalFlowStreamUrl) {
-      setOpticalFlowStreamUrl(null)
-      await stopInterpolatedStream()
-    }
-
-    setSvpLoading(true)
-    setSvpError(null)
-
-    try {
-      const result = await playVideoSVP(image.file_path)
-
-      if (result.success && result.stream_url) {
-        setSvpStreamUrl(result.stream_url)
-      } else {
-        setSvpError(result.error || 'Failed to start SVP playback')
-      }
-    } catch (err) {
-      console.error('SVP error:', err)
-      setSvpError(err.message || 'Failed to start SVP playback')
-    } finally {
-      svpStartingRef.current = false
-    }
-
-    setSvpLoading(false)
-  }, [image, svpConfig, svpStreamUrl, svpLoading, opticalFlowStreamUrl])
-
-  // Stop SVP stream
-  const stopSVP = useCallback(async () => {
-    if (svpHlsRef.current) {
-      svpHlsRef.current.destroy()
-      svpHlsRef.current = null
-    }
-    setSvpStreamUrl(null)
-    setSvpError(null)
-    await stopSVPStream()
-  }, [])
-
-  // Setup HLS player when SVP stream URL is available
-  // Keep normal video playing until HLS is ready, then switch
-  useEffect(() => {
-    if (!svpStreamUrl || !mediaRef.current) return
-
-    const video = mediaRef.current
-    let cancelled = false
-
-    if (Hls.isSupported()) {
-      // Cleanup previous instance
-      if (svpHlsRef.current) {
-        svpHlsRef.current.destroy()
-      }
-
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 30,
-        // Retry manifest loading while SVP buffers
-        manifestLoadingMaxRetry: 30,
-        manifestLoadingRetryDelay: 1000,  // 1 second between retries
-        manifestLoadingMaxRetryTimeout: 60000,  // Max 60 seconds total
-      })
-
-      // Start loading manifest in background
-      hls.loadSource(svpStreamUrl)
-
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (cancelled) return
-        // Manifest ready! Now attach to video and switch
-        const currentTime = video.currentTime
-        const wasPlaying = !video.paused
-
-        hls.attachMedia(video)
-        video.currentTime = currentTime  // Try to maintain position
-        if (wasPlaying) {
-          video.play().catch(() => {})
-        }
-        setSvpLoading(false)
-      })
-
-      hls.on(Hls.Events.ERROR, (event, data) => {
-        if (cancelled) return
-        // Only treat as fatal if it's not a recoverable manifest load error
-        if (data.fatal && data.type !== Hls.ErrorTypes.NETWORK_ERROR) {
-          console.error('SVP HLS fatal error:', data)
-          setSvpError('SVP stream playback error.')
-          setSvpStreamUrl(null)
-          setSvpLoading(false)
-        } else if (data.fatal) {
-          // Network error - HLS.js will retry automatically
-          console.log('SVP HLS retrying...', data.details)
-        }
-      })
-
-      svpHlsRef.current = hls
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari/iOS native HLS support - just set src directly
-      // It will handle buffering itself
-      video.src = svpStreamUrl
-      video.addEventListener('loadedmetadata', () => {
-        video.play().catch(() => {})
-        setSvpLoading(false)
-      })
-    } else {
-      setSvpError('HLS playback is not supported in this browser')
-      setSvpStreamUrl(null)
-      setSvpLoading(false)
-    }
-
-    return () => {
-      cancelled = true
-      if (svpHlsRef.current) {
-        svpHlsRef.current.destroy()
-        svpHlsRef.current = null
-      }
-    }
-  }, [svpStreamUrl])
-
   // Generate preview of adjustments
   const handleGeneratePreview = useCallback(async () => {
     if (!image || generatingPreview) return
@@ -986,7 +688,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   if (!image) return null
 
-  const isVideoFile = isVideo(image.original_filename)
+  const isVideoFile = isVideo(image.filename)
   const fileStatus = image.file_status || 'available'
   const isUnavailable = fileStatus !== 'available'
 
@@ -1189,66 +891,26 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         ) : isVideoFile ? (
-          <>
-            <video
-              key={image.id}
-              ref={mediaRef}
-              src={getMediaUrl(image.url)}
-              controls
-              autoPlay
-              loop
-              className={`lightbox-media ${svpStreamUrl ? 'svp-streaming' : opticalFlowStreamUrl ? 'interpolated-streaming' : ''}`}
-              style={getZoomTransform()}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                if (window.electronAPI?.showImageContextMenu) {
-                  window.electronAPI.showImageContextMenu({
-                    imageUrl: getMediaUrl(image.url),
-                    filePath: image.file_path,
-                    isVideo: true
-                  })
-                }
-              }}
-            />
-            {/* Optical flow loading indicator */}
-            {opticalFlowLoading && (
-              <div className="interpolate-loading">
-                <div className="interpolate-loading-spinner" />
-                <span>Buffering {opticalFlowConfig?.target_fps || 60} FPS...</span>
-              </div>
-            )}
-            {/* Optical flow streaming indicator */}
-            {opticalFlowStreamUrl && !opticalFlowLoading && (
-              <div className="interpolate-badge">
-                {opticalFlowConfig?.target_fps || 60} FPS
-              </div>
-            )}
-            {/* Optical flow error toast */}
-            {opticalFlowError && (
-              <div className="interpolate-error-toast">
-                {opticalFlowError}
-              </div>
-            )}
-            {/* SVP loading indicator */}
-            {svpLoading && (
-              <div className="interpolate-loading svp-loading">
-                <div className="interpolate-loading-spinner" />
-                <span>SVP: Buffering {svpConfig?.target_fps || 60} FPS...</span>
-              </div>
-            )}
-            {/* SVP streaming indicator */}
-            {svpStreamUrl && !svpLoading && (
-              <div className="interpolate-badge svp-badge">
-                SVP {svpConfig?.target_fps || 60} FPS
-              </div>
-            )}
-            {/* SVP error toast */}
-            {svpError && (
-              <div className="interpolate-error-toast svp-error">
-                SVP: {svpError}
-              </div>
-            )}
-          </>
+          <video
+            key={image.id}
+            ref={mediaRef}
+            src={getMediaUrl(image.url)}
+            controls
+            autoPlay
+            loop
+            className="lightbox-media"
+            style={getZoomTransform()}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              if (window.electronAPI?.showImageContextMenu) {
+                window.electronAPI.showImageContextMenu({
+                  imageUrl: getMediaUrl(image.url),
+                  filePath: image.file_path,
+                  isVideo: true
+                })
+              }
+            }}
+          />
         ) : (
           <img
             key={previewUrl ? `${image.id}-preview` : image.id}

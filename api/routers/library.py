@@ -234,55 +234,6 @@ async def clean_missing_files(db: AsyncSession = Depends(get_db)):
     return {"cleaned": cleaned, "tasks_cleaned": tasks_cleaned}
 
 
-@router.post("/clean-orphans")
-async def clean_orphan_files(db: AsyncSession = Depends(get_db)):
-    """Remove files from DB that have no watch_directory_id and aren't under any watched directory"""
-    from pathlib import Path
-    from ..database import get_data_dir
-
-    # Get all watched directory paths
-    dir_query = select(WatchDirectory)
-    dir_result = await db.execute(dir_query)
-    watched_dirs = dir_result.scalars().all()
-    watched_paths = [d.path.rstrip('/') + '/' for d in watched_dirs]
-
-    # Find orphaned files (no watch_directory_id)
-    orphan_query = select(ImageFile).where(ImageFile.watch_directory_id == None)
-    orphan_result = await db.execute(orphan_query)
-    orphan_files = orphan_result.scalars().all()
-
-    cleaned = 0
-    for image_file in orphan_files:
-        # Check if file path is under any watched directory
-        is_watched = any(image_file.original_path.startswith(wp) for wp in watched_paths)
-
-        if not is_watched:
-            # File is orphaned - remove from DB
-            image = await db.get(Image, image_file.image_id)
-            if image:
-                # Check if image has other file references
-                other_query = select(ImageFile).where(
-                    ImageFile.image_id == image_file.image_id,
-                    ImageFile.id != image_file.id
-                )
-                other_result = await db.execute(other_query)
-                has_other_refs = other_result.scalar_one_or_none() is not None
-
-                if not has_other_refs:
-                    # No other references - delete image and thumbnail
-                    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
-                    if thumbnail_path.exists():
-                        thumbnail_path.unlink()
-                    await db.delete(image)
-                else:
-                    # Just delete this file reference
-                    await db.delete(image_file)
-            cleaned += 1
-
-    await db.commit()
-    return {"cleaned": cleaned}
-
-
 @router.post("/verify-files")
 async def verify_all_files(db: AsyncSession = Depends(get_db)):
     """Queue a file verification task"""

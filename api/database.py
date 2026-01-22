@@ -4,8 +4,19 @@ LocalBooru database layer - SQLite for single-user local storage
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+from pathlib import Path
+import os
 
-from .config import get_data_dir
+# Get data directory - ~/.localbooru/ on Linux/Mac, AppData on Windows
+def get_data_dir() -> Path:
+    if os.name == 'nt':  # Windows
+        base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
+    else:  # Linux/Mac
+        base = Path.home()
+
+    data_dir = base / '.localbooru'
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
 
 
 def get_database_url() -> str:
@@ -19,10 +30,6 @@ def get_database_url() -> str:
 engine = create_async_engine(
     get_database_url(),
     echo=False,
-    # Increase pool size for concurrent API requests (preview frames, etc.)
-    pool_size=10,
-    max_overflow=20,
-    pool_timeout=60,  # Wait up to 60s for a connection
     # SQLite specific settings for better concurrency
     connect_args={
         "check_same_thread": False,

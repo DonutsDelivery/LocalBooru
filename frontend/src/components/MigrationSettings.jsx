@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import {
   getMigrationInfo,
-  getMigrationDirectories,
   validateMigration,
   startMigration,
   getMigrationStatus,
@@ -27,12 +26,6 @@ export default function MigrationSettings() {
   const [result, setResult] = useState(null)
   const [validation, setValidation] = useState(null)
   const [error, setError] = useState(null)
-
-  // Directory selection state
-  const [directories, setDirectories] = useState([])
-  const [selectedDirIds, setSelectedDirIds] = useState(new Set())
-  const [loadingDirs, setLoadingDirs] = useState(false)
-  const [dirMode, setDirMode] = useState(null) // Which mode we loaded directories for
 
   useEffect(() => {
     loadInfo()
@@ -94,65 +87,10 @@ export default function MigrationSettings() {
     }
   }
 
-  async function loadDirectories(mode) {
-    try {
-      setLoadingDirs(true)
-      setError(null)
-      const data = await getMigrationDirectories(mode)
-      if (data.success) {
-        setDirectories(data.directories)
-        setDirMode(mode)
-        // Select all by default
-        setSelectedDirIds(new Set(data.directories.map(d => d.id)))
-      } else {
-        setError('Failed to load directories: ' + data.error)
-      }
-    } catch (e) {
-      setError('Failed to load directories: ' + e.message)
-    } finally {
-      setLoadingDirs(false)
-    }
-  }
-
-  function toggleDirectory(id) {
-    setSelectedDirIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-    // Clear validation when selection changes
-    setValidation(null)
-  }
-
-  function selectAll() {
-    setSelectedDirIds(new Set(directories.map(d => d.id)))
-    setValidation(null)
-  }
-
-  function deselectAll() {
-    setSelectedDirIds(new Set())
-    setValidation(null)
-  }
-
-  // Calculate selected counts
-  const selectedDirs = directories.filter(d => selectedDirIds.has(d.id))
-  const selectedImageCount = selectedDirs.reduce((sum, d) => sum + d.image_count, 0)
-  const selectedThumbSize = selectedDirs.reduce((sum, d) => sum + d.thumbnail_size, 0)
-
   async function handleValidate(mode) {
     try {
       setError(null)
-      // Load directories if not already loaded for this mode
-      if (dirMode !== mode) {
-        await loadDirectories(mode)
-      }
-
-      const directoryIds = selectedDirIds.size > 0 ? Array.from(selectedDirIds) : null
-      const result = await validateMigration(mode, directoryIds)
+      const result = await validateMigration(mode)
       setValidation({ mode, ...result })
     } catch (e) {
       setError('Validation failed: ' + e.message)
@@ -160,15 +98,7 @@ export default function MigrationSettings() {
   }
 
   async function handleStartMigration(mode) {
-    const dirCount = selectedDirIds.size
-    const isSelective = dirCount > 0 && dirCount < directories.length
-
-    let confirmMsg = `Start migration?\n\nThis will copy ${isSelective ? 'selected' : 'all'} data to the ${mode === 'system_to_portable' ? 'portable' : 'system'} location.`
-    if (isSelective) {
-      confirmMsg += `\n\n${dirCount} of ${directories.length} directories selected (${selectedImageCount} images)`
-    }
-
-    if (!confirm(confirmMsg)) {
+    if (!confirm(`Start migration?\n\nThis will copy all your data to the ${mode === 'system_to_portable' ? 'portable' : 'system'} location.`)) {
       return
     }
 
@@ -178,8 +108,7 @@ export default function MigrationSettings() {
       setResult(null)
       setMigrating(true)
 
-      const directoryIds = selectedDirIds.size > 0 ? Array.from(selectedDirIds) : null
-      const response = await startMigration(mode, directoryIds)
+      const response = await startMigration(mode)
       if (!response.success) {
         setMigrating(false)
         setError(response.error)
@@ -239,9 +168,8 @@ export default function MigrationSettings() {
   }
 
   const isPortable = info.current_mode === 'portable'
-  // Allow migration even if destination has data (for selective/merge migrations)
-  const canMigrateToPortable = info.portable_path && info.system_has_data
-  const canMigrateToSystem = info.portable_has_data
+  const canMigrateToPortable = !isPortable && info.portable_path && info.system_has_data && !info.portable_has_data
+  const canMigrateToSystem = isPortable && info.portable_has_data && !info.system_has_data
 
   return (
     <div className="migration-settings">
@@ -375,7 +303,7 @@ export default function MigrationSettings() {
                 <p className="warning">Run LocalBooru from a portable installation to enable this option.</p>
               )}
               {info.portable_has_data && (
-                <p className="info">Portable location has existing data. Selected directories will be merged.</p>
+                <p className="warning">Portable location already has data. Remove it first to migrate.</p>
               )}
               {!info.system_has_data && (
                 <p className="warning">No data in system location to migrate.</p>
@@ -384,34 +312,16 @@ export default function MigrationSettings() {
               {canMigrateToPortable && (
                 <>
                   <button onClick={() => handleValidate('system_to_portable')}>
-                    {loadingDirs && dirMode !== 'system_to_portable' ? 'Loading...' : 'Check Migration'}
+                    Check Migration
                   </button>
-
-                  {/* Directory selection - show after loading directories */}
-                  {dirMode === 'system_to_portable' && directories.length > 0 && (
-                    <DirectorySelector
-                      directories={directories}
-                      selectedIds={selectedDirIds}
-                      onToggle={toggleDirectory}
-                      onSelectAll={selectAll}
-                      onDeselectAll={deselectAll}
-                      selectedImageCount={selectedImageCount}
-                      selectedThumbSize={selectedThumbSize}
-                    />
-                  )}
-
                   {validation?.mode === 'system_to_portable' && (
                     <div className="validation-result">
                       {validation.valid ? (
                         <>
-                          <p className="success">
-                            Ready to migrate {formatBytes(validation.bytes_to_copy)} ({validation.files_to_copy} files)
-                            {validation.selective && ` from ${validation.directory_count} directories`}
-                          </p>
+                          <p className="success">Ready to migrate {formatBytes(validation.bytes_to_copy)} ({validation.files_to_copy} files)</p>
                           <button
                             onClick={() => handleStartMigration('system_to_portable')}
                             className="primary-btn"
-                            disabled={selectedDirIds.size === 0}
                           >
                             Start Migration
                           </button>
@@ -430,8 +340,11 @@ export default function MigrationSettings() {
               <h3>Portable → System</h3>
               <p>Copy all data to the system location for a standard installation.</p>
 
+              {!isPortable && (
+                <p className="warning">Run LocalBooru from a portable installation to enable this option.</p>
+              )}
               {info.system_has_data && (
-                <p className="info">System location has existing data. Selected directories will be merged.</p>
+                <p className="warning">System location already has data. Remove it first to migrate.</p>
               )}
               {!info.portable_has_data && (
                 <p className="warning">No data in portable location to migrate.</p>
@@ -440,34 +353,16 @@ export default function MigrationSettings() {
               {canMigrateToSystem && (
                 <>
                   <button onClick={() => handleValidate('portable_to_system')}>
-                    {loadingDirs && dirMode !== 'portable_to_system' ? 'Loading...' : 'Check Migration'}
+                    Check Migration
                   </button>
-
-                  {/* Directory selection - show after loading directories */}
-                  {dirMode === 'portable_to_system' && directories.length > 0 && (
-                    <DirectorySelector
-                      directories={directories}
-                      selectedIds={selectedDirIds}
-                      onToggle={toggleDirectory}
-                      onSelectAll={selectAll}
-                      onDeselectAll={deselectAll}
-                      selectedImageCount={selectedImageCount}
-                      selectedThumbSize={selectedThumbSize}
-                    />
-                  )}
-
                   {validation?.mode === 'portable_to_system' && (
                     <div className="validation-result">
                       {validation.valid ? (
                         <>
-                          <p className="success">
-                            Ready to migrate {formatBytes(validation.bytes_to_copy)} ({validation.files_to_copy} files)
-                            {validation.selective && ` from ${validation.directory_count} directories`}
-                          </p>
+                          <p className="success">Ready to migrate {formatBytes(validation.bytes_to_copy)} ({validation.files_to_copy} files)</p>
                           <button
                             onClick={() => handleStartMigration('portable_to_system')}
                             className="primary-btn"
-                            disabled={selectedDirIds.size === 0}
                           >
                             Start Migration
                           </button>
@@ -489,63 +384,10 @@ export default function MigrationSettings() {
         <ul className="migration-notes">
           <li>Migration copies your database, thumbnails, settings, and cached data.</li>
           <li>Your original image files are NOT moved - they stay in your watch directories.</li>
-          <li>You can select which watch directories to include in the migration.</li>
           <li>After migration, restart LocalBooru to use the new data location.</li>
           <li>You can delete the source data after verifying the migration was successful.</li>
         </ul>
       </section>
-    </div>
-  )
-}
-
-// Directory selection component
-function DirectorySelector({
-  directories,
-  selectedIds,
-  onToggle,
-  onSelectAll,
-  onDeselectAll,
-  selectedImageCount,
-  selectedThumbSize
-}) {
-  return (
-    <div className="directory-selector">
-      <div className="directory-selector-header">
-        <h4>Select Watch Directories to Migrate</h4>
-        <div className="directory-selector-actions">
-          <button type="button" onClick={onSelectAll} className="small-btn">Select All</button>
-          <button type="button" onClick={onDeselectAll} className="small-btn">Deselect All</button>
-        </div>
-      </div>
-
-      <div className="directory-list">
-        {directories.map(dir => (
-          <label key={dir.id} className={`directory-item ${!dir.path_accessible ? 'inaccessible' : ''}`}>
-            <input
-              type="checkbox"
-              checked={selectedIds.has(dir.id)}
-              onChange={() => onToggle(dir.id)}
-            />
-            <div className="directory-info">
-              <span className="directory-name">{dir.name}</span>
-              <span className="directory-path">{dir.path}</span>
-              <span className="directory-stats">
-                {dir.image_count} images, {formatBytes(dir.thumbnail_size)} thumbnails
-              </span>
-              {dir.warning && (
-                <span className="directory-warning">
-                  {dir.warning}
-                </span>
-              )}
-            </div>
-          </label>
-        ))}
-      </div>
-
-      <div className="directory-summary">
-        <strong>Selected:</strong> {selectedIds.size} of {directories.length} directories
-        ({selectedImageCount} images, {formatBytes(selectedThumbSize)} thumbnails)
-      </div>
     </div>
   )
 }

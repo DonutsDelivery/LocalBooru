@@ -474,108 +474,6 @@ async def get_image_thumbnail(request: Request, image_id: int, db: AsyncSession 
         raise HTTPException(status_code=404, detail="Source file missing - cannot generate thumbnail")
 
 
-@router.get("/{image_id}/preview-frames")
-async def get_preview_frames(request: Request, image_id: int, db: AsyncSession = Depends(get_db)):
-    """Get list of video preview frame URLs for an image.
-
-    Returns frame URLs for videos with preview frames available.
-    On-demand generation: if frames don't exist and source file is available,
-    generation will be triggered and an empty array returned (check again later).
-    """
-    try:
-        from ..services.video_preview import get_preview_frames as get_frames, generate_video_previews
-
-        # Check public access for non-localhost
-        if not await check_image_public_access(image_id, request, db):
-            raise HTTPException(status_code=403, detail="This image is not available for remote access")
-
-        query = select(Image).where(Image.id == image_id)
-        result = await db.execute(query)
-        image = result.scalar_one_or_none()
-
-        if not image:
-            raise HTTPException(status_code=404, detail="Image not found")
-
-        # Check if this is a video
-        ext = image.filename.lower().split('.')[-1] if image.filename else ''
-        if ext not in ['webm', 'mp4', 'mov', 'avi', 'mkv']:
-            return {"frames": [], "is_video": False}
-
-        # Safety check for missing file_hash
-        if not image.file_hash:
-            return {"frames": [], "is_video": True, "error": "Missing file hash"}
-
-        # Check for existing preview frames
-        existing_frames = get_frames(image.file_hash)
-        if existing_frames:
-            # Return URLs to the frames
-            frame_urls = [
-                f"/api/images/{image_id}/preview-frame/{i}"
-                for i in range(len(existing_frames))
-            ]
-            return {"frames": frame_urls, "is_video": True, "count": len(existing_frames)}
-
-        # No frames exist - try to generate them on-demand
-        file_query = select(ImageFile).where(ImageFile.image_id == image_id).limit(1)
-        file_result = await db.execute(file_query)
-        image_file = file_result.scalar_one_or_none()
-
-        if image_file:
-            status = check_file_availability(image_file.original_path)
-            if status == FileStatus.available:
-                # Trigger generation in background
-                import asyncio
-                from ..config import get_settings
-                settings = get_settings()
-                asyncio.create_task(
-                    generate_video_previews(image_file.original_path, image.file_hash, settings.video_preview_frames)
-                )
-
-        # Return empty for now - client should retry after a moment
-        return {"frames": [], "is_video": True, "generating": True}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[PreviewFrames] Error for image {image_id}: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error getting preview frames: {str(e)}")
-
-
-@router.get("/{image_id}/preview-frame/{frame_index}")
-async def get_preview_frame(request: Request, image_id: int, frame_index: int, db: AsyncSession = Depends(get_db)):
-    """Serve a specific video preview frame image"""
-    from ..services.video_preview import get_preview_dir
-
-    # Check public access for non-localhost
-    if not await check_image_public_access(image_id, request, db):
-        raise HTTPException(status_code=403, detail="This image is not available for remote access")
-
-    if frame_index < 0 or frame_index >= 8:
-        raise HTTPException(status_code=400, detail="Invalid frame index (must be 0-7)")
-
-    query = select(Image).where(Image.id == image_id)
-    result = await db.execute(query)
-    image = result.scalar_one_or_none()
-
-    if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    # Safety check for missing file_hash
-    if not image.file_hash:
-        raise HTTPException(status_code=404, detail="Image has no file hash")
-
-    # Get the frame file
-    preview_dir = get_preview_dir(image.file_hash)
-    frame_path = preview_dir / f"frame_{frame_index}.webp"
-
-    if not frame_path.exists():
-        raise HTTPException(status_code=404, detail="Preview frame not found")
-
-    return FileResponse(str(frame_path), media_type="image/webp")
-
-
 @router.post("/{image_id}/favorite")
 async def toggle_favorite(image_id: int, db: AsyncSession = Depends(get_db)):
     """Toggle favorite status"""
@@ -631,10 +529,6 @@ async def delete_image(
     if thumbnail_path.exists():
         thumbnail_path.unlink()
 
-    # Delete video preview frames
-    from ..services.video_preview import delete_preview_frames
-    delete_preview_frames(image.file_hash)
-
     # Delete from database (cascades to files, tags, etc.)
     await db.delete(image)
     await db.commit()
@@ -670,7 +564,6 @@ async def batch_delete_images(
 ):
     """Delete multiple images from the library (optionally delete files too)"""
     from ..database import get_data_dir
-    from ..services.video_preview import delete_preview_frames
 
     deleted = 0
     errors = []
@@ -695,9 +588,6 @@ async def batch_delete_images(
             thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
             if thumbnail_path.exists():
                 thumbnail_path.unlink()
-
-            # Delete video preview frames
-            delete_preview_frames(image.file_hash)
 
             # Delete from database (cascades to files, tags, etc.)
             await db.delete(image)
