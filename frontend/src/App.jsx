@@ -11,7 +11,10 @@ import TitleBar from './components/TitleBar'
 import ComfyUIConfigModal from './components/ComfyUIConfigModal'
 import NetworkSettings from './components/NetworkSettings'
 import ServerSettings from './components/ServerSettings'
+import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
+import OpticalFlowSettings from './components/OpticalFlowSettings'
+import SVPSettings from './components/SVPSettings'
 import QRConnect from './components/QRConnect'
 import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
 import './App.css'
@@ -332,6 +335,12 @@ function SettingsPage() {
                 General
               </button>
               <button
+                className={`settings-tab ${activeTab === 'video' ? 'active' : ''}`}
+                onClick={() => setActiveTab('video')}
+              >
+                Video
+              </button>
+              <button
                 className={`settings-tab ${activeTab === 'network' ? 'active' : ''}`}
                 onClick={() => setActiveTab('network')}
               >
@@ -357,21 +366,30 @@ function SettingsPage() {
               </button>
             </div>
 
-            {/* Network Tab Content */}
-            {activeTab === 'network' && <NetworkSettings />}
+            {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
+            <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
+              <OpticalFlowSettings />
+              <hr className="settings-divider" />
+              <SVPSettings />
+            </div>
 
-            {/* Data/Migration Tab Content */}
-            {activeTab === 'data' && <MigrationSettings />}
+            <div className={`settings-tab-content ${activeTab === 'network' ? 'active' : ''}`}>
+              <NetworkSettings />
+            </div>
 
-            {/* Servers Tab Content (for mobile app) */}
-            {activeTab === 'servers' && <ServerSettings />}
+            <div className={`settings-tab-content ${activeTab === 'data' ? 'active' : ''}`}>
+              <MigrationSettings />
+            </div>
 
-            {/* Mobile App QR Code */}
-            {activeTab === 'mobile' && <QRConnect />}
+            <div className={`settings-tab-content ${activeTab === 'servers' ? 'active' : ''}`}>
+              <ServerSettings />
+            </div>
 
-            {/* General Tab Content */}
-            {activeTab === 'general' && (
-            <>
+            <div className={`settings-tab-content ${activeTab === 'mobile' ? 'active' : ''}`}>
+              <QRConnect />
+            </div>
+
+            <div className={`settings-tab-content ${activeTab === 'general' ? 'active' : ''}`}>
             <section>
               <h2>Age Detection (Optional)</h2>
               <p className="setting-description">
@@ -530,8 +548,7 @@ function SettingsPage() {
                 </button>
               </section>
             )}
-            </>
-            )}
+            </div>
           </div>
         </main>
       </div>
@@ -547,6 +564,7 @@ function Gallery() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [total, setTotal] = useState(0)
+  const [filtersInitialized, setFiltersInitialized] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
@@ -599,10 +617,12 @@ function Gallery() {
         console.error('Failed to load saved filters:', e)
       }
     }
+    setFiltersInitialized(true)
   }, [])
 
-  // Save filters to localStorage when they change
+  // Save filters to localStorage when they change (only after initial load to avoid overwriting)
   useEffect(() => {
+    if (!filtersInitialized) return
     const filters = {
       tags: currentTags || null,
       rating: currentRating,
@@ -613,7 +633,7 @@ function Gallery() {
       max_age: currentMaxAge
     }
     localStorage.setItem('localbooru_filters', JSON.stringify(filters))
-  }, [currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge])
 
   // Touch handling for mobile sidebar
   const touchStartX = useRef(null)
@@ -714,8 +734,9 @@ function Gallery() {
   }, [])
 
   useEffect(() => {
+    if (!filtersInitialized) return
     loadImages(1, false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, loadImages])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, loadImages])
 
   useEffect(() => {
     loadTags()
@@ -1250,18 +1271,36 @@ function Gallery() {
 function App() {
   const [mobileReady, setMobileReady] = useState(false)
   const [showServerSetup, setShowServerSetup] = useState(false)
+  const [servers, setServers] = useState([])
+  const [serverStatuses, setServerStatuses] = useState({})
 
   // Initialize server configuration for mobile app
   useEffect(() => {
     async function initMobile() {
-      const { isMobileApp, getActiveServer } = await import('./serverManager')
+      const { isMobileApp, getServers, getActiveServer, setActiveServerId, pingAllServers } = await import('./serverManager')
       const { updateServerConfig } = await import('./api')
 
       if (isMobileApp()) {
-        await updateServerConfig()
-        const server = await getActiveServer()
-        if (!server) {
+        const serverList = await getServers()
+
+        if (serverList.length === 0) {
+          // No servers - show add server UI
           setShowServerSetup(true)
+        } else {
+          // Ping all servers in parallel
+          const statuses = await pingAllServers(serverList)
+          const onlineServers = serverList.filter(s => statuses[s.id] === 'online')
+
+          if (onlineServers.length === 1) {
+            // Exactly 1 online - auto-connect
+            await setActiveServerId(onlineServers[0].id)
+            await updateServerConfig()
+          } else {
+            // 0 or 2+ online - show selection with status
+            setServers(serverList)
+            setServerStatuses(statuses)
+            setShowServerSetup(true)
+          }
         }
       }
       setMobileReady(true)
@@ -1281,8 +1320,34 @@ function App() {
     )
   }
 
-  // Show server setup for mobile when no server configured
+  // Handle disconnect/switch server
+  const handleDisconnect = () => {
+    setShowServerSetup(true)
+    // Re-fetch servers and their statuses
+    import('./serverManager').then(async ({ getServers, pingAllServers }) => {
+      const serverList = await getServers()
+      setServers(serverList)
+      if (serverList.length > 0) {
+        const statuses = await pingAllServers(serverList)
+        setServerStatuses(statuses)
+      }
+    })
+  }
+
+  // Show server setup/selection for mobile
   if (showServerSetup) {
+    // If we have servers with statuses, show the selection screen
+    if (servers.length > 0) {
+      return (
+        <ServerSelectScreen
+          servers={servers}
+          serverStatuses={serverStatuses}
+          onConnect={() => setShowServerSetup(false)}
+        />
+      )
+    }
+
+    // Otherwise show the add server screen
     return (
       <div className="app server-setup-screen">
         <div className="server-setup-content">
@@ -1302,7 +1367,7 @@ function App() {
 
   return (
     <>
-      <TitleBar />
+      <TitleBar onSwitchServer={handleDisconnect} />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Gallery />} />

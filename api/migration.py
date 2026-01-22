@@ -569,3 +569,714 @@ async def verify_migration(mode: MigrationMode) -> tuple[bool, list[str]]:
         issues.append("Settings file not found (will use defaults)")
 
     return len(issues) == 0 or (len(issues) == 2 and "thumbnails" in issues[0] and "settings" in issues[1]), issues
+
+
+async def get_watch_directories_for_migration(mode: MigrationMode) -> list[dict]:
+    """Get watch directories from source database with metadata for selective migration.
+
+    Returns list of dicts with:
+        - id: directory ID
+        - path: directory path
+        - name: user-friendly name
+        - image_count: number of images in this directory
+        - thumbnail_size: size of thumbnails for these images in bytes
+        - path_accessible: whether the path would be accessible at destination
+    """
+    import sqlite3
+
+    try:
+        source, dest = get_migration_paths(mode)
+    except ValueError:
+        return []
+
+    source_db = source / "library.db"
+    if not source_db.exists():
+        return []
+
+    directories = []
+
+    # Use synchronous sqlite3 to read from source (not our active database)
+    conn = sqlite3.connect(str(source_db))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    try:
+        # Get all watch directories with image counts
+        cursor.execute("""
+            SELECT
+                wd.id,
+                wd.path,
+                wd.name,
+                COUNT(DISTINCT if2.image_id) as image_count
+            FROM watch_directories wd
+            LEFT JOIN image_files if2 ON if2.watch_directory_id = wd.id
+            GROUP BY wd.id
+            ORDER BY wd.path
+        """)
+
+        rows = cursor.fetchall()
+
+        # Get thumbnails directory to calculate sizes
+        thumb_dir = source / "thumbnails"
+
+        for row in rows:
+            dir_id = row['id']
+            dir_path = row['path']
+            dir_name = row['name'] or Path(dir_path).name
+
+            # Get image hashes for this directory to find thumbnails
+            cursor.execute("""
+                SELECT DISTINCT i.file_hash
+                FROM images i
+                JOIN image_files if2 ON if2.image_id = i.id
+                WHERE if2.watch_directory_id = ?
+            """, (dir_id,))
+            hashes = [r[0] for r in cursor.fetchall()]
+
+            # Calculate thumbnail size for these images
+            thumb_size = 0
+            if thumb_dir.exists():
+                for file_hash in hashes:
+                    # Thumbnails are stored as hash.webp
+                    thumb_path = thumb_dir / f"{file_hash}.webp"
+                    if thumb_path.exists():
+                        try:
+                            thumb_size += thumb_path.stat().st_size
+                        except OSError:
+                            pass
+
+            # Check if path would be accessible at destination
+            # For portable -> system, warn if path is on portable drive
+            path_accessible = True
+            warning = None
+
+            if mode == MigrationMode.PORTABLE_TO_SYSTEM:
+                # Check if directory path is on a removable/portable drive
+                dir_path_obj = Path(dir_path)
+                if not dir_path_obj.exists():
+                    path_accessible = False
+                    warning = "Path does not currently exist"
+                else:
+                    # Simple heuristic: if path is on same drive as portable data, warn
+                    portable_path = get_portable_data_dir()
+                    if portable_path:
+                        try:
+                            # On Windows, compare drive letters
+                            # On Linux, compare mount points
+                            if os.name == 'nt':
+                                portable_drive = str(portable_path.resolve())[:3].upper()
+                                dir_drive = str(dir_path_obj.resolve())[:3].upper()
+                                if portable_drive == dir_drive and portable_drive not in ('C:\\', 'C:/'):
+                                    warning = "Path may be on portable drive"
+                            else:
+                                # Linux: check if on same mount point as portable
+                                import subprocess
+                                try:
+                                    portable_mount = subprocess.run(
+                                        ['df', '--output=target', str(portable_path)],
+                                        capture_output=True, text=True
+                                    ).stdout.strip().split('\n')[-1]
+                                    dir_mount = subprocess.run(
+                                        ['df', '--output=target', str(dir_path_obj)],
+                                        capture_output=True, text=True
+                                    ).stdout.strip().split('\n')[-1]
+                                    if portable_mount == dir_mount and portable_mount != '/':
+                                        warning = "Path may be on portable drive"
+                                except:
+                                    pass
+                        except:
+                            pass
+
+            directories.append({
+                "id": dir_id,
+                "path": dir_path,
+                "name": dir_name,
+                "image_count": row['image_count'],
+                "thumbnail_size": thumb_size,
+                "path_accessible": path_accessible,
+                "warning": warning
+            })
+
+    finally:
+        conn.close()
+
+    return directories
+
+
+def calculate_selective_migration_size(
+    source: Path,
+    directory_ids: list[int]
+) -> tuple[int, int, int]:
+    """Calculate size of selective migration.
+
+    Returns:
+        tuple of (total_files, total_bytes, thumbnail_bytes)
+    """
+    import sqlite3
+
+    source_db = source / "library.db"
+    if not source_db.exists():
+        return 0, 0, 0
+
+    total_files = 0
+    total_bytes = 0
+    thumbnail_bytes = 0
+
+    # Count non-selective items (settings, packages, models)
+    non_db_items = ["settings.json", "packages", "models"]
+    for item_name in non_db_items:
+        item_path = source / item_name
+        if not item_path.exists():
+            continue
+        resolved = item_path.resolve() if item_path.is_symlink() else item_path
+        if resolved.is_file():
+            total_files += 1
+            total_bytes += resolved.stat().st_size
+        elif resolved.is_dir():
+            for root, dirs, files in os.walk(resolved, followlinks=True):
+                for f in files:
+                    file_path = Path(root) / f
+                    if file_path.is_file():
+                        total_files += 1
+                        try:
+                            total_bytes += file_path.stat().st_size
+                        except OSError:
+                            pass
+
+    # Database file size (new DB will be smaller, but estimate full size)
+    # In practice, the new DB will be similar size if migrating all directories
+    if source_db.exists():
+        total_files += 1
+        total_bytes += source_db.stat().st_size
+
+    # Calculate thumbnail sizes for selected directories
+    conn = sqlite3.connect(str(source_db))
+    cursor = conn.cursor()
+
+    try:
+        if directory_ids:
+            placeholders = ','.join('?' * len(directory_ids))
+            cursor.execute(f"""
+                SELECT DISTINCT i.file_hash
+                FROM images i
+                JOIN image_files if2 ON if2.image_id = i.id
+                WHERE if2.watch_directory_id IN ({placeholders})
+            """, directory_ids)
+        else:
+            cursor.execute("""
+                SELECT DISTINCT i.file_hash
+                FROM images i
+                JOIN image_files if2 ON if2.image_id = i.id
+            """)
+
+        hashes = [r[0] for r in cursor.fetchall()]
+
+        thumb_dir = source / "thumbnails"
+        preview_dir = source / "preview_cache"
+
+        for file_hash in hashes:
+            # Thumbnails
+            thumb_path = thumb_dir / f"{file_hash}.webp"
+            if thumb_path.exists():
+                total_files += 1
+                size = thumb_path.stat().st_size
+                total_bytes += size
+                thumbnail_bytes += size
+
+            # Preview cache (if exists)
+            preview_path = preview_dir / file_hash
+            if preview_path.exists() and preview_path.is_dir():
+                for f in preview_path.iterdir():
+                    if f.is_file():
+                        total_files += 1
+                        total_bytes += f.stat().st_size
+
+    finally:
+        conn.close()
+
+    return total_files, total_bytes, thumbnail_bytes
+
+
+async def migrate_data_selective(
+    mode: MigrationMode,
+    directory_ids: list[int],
+    progress_callback: Optional[Callable[[MigrationProgress], None]] = None,
+    dry_run: bool = False
+) -> MigrationResult:
+    """Migrate data selectively, only including specified watch directories.
+
+    This creates a new database at the destination with only the selected
+    directories' data, then copies relevant thumbnails and other files.
+
+    Args:
+        mode: Direction of migration
+        directory_ids: List of watch_directory IDs to include (empty = all)
+        progress_callback: Optional callback for progress updates
+        dry_run: If True, only validate without copying
+
+    Returns:
+        MigrationResult with outcome details
+    """
+    import sqlite3
+    import json
+
+    try:
+        source, dest = get_migration_paths(mode)
+    except ValueError as e:
+        return MigrationResult(
+            success=False,
+            mode=mode,
+            source_path="",
+            dest_path="",
+            files_copied=0,
+            bytes_copied=0,
+            error=str(e)
+        )
+
+    source_db = source / "library.db"
+    if not source_db.exists():
+        return MigrationResult(
+            success=False,
+            mode=mode,
+            source_path=str(source),
+            dest_path=str(dest),
+            files_copied=0,
+            bytes_copied=0,
+            error="No database found at source"
+        )
+
+    # Calculate sizes
+    total_files, total_bytes, _ = calculate_selective_migration_size(source, directory_ids)
+
+    if total_files == 0:
+        return MigrationResult(
+            success=False,
+            mode=mode,
+            source_path=str(source),
+            dest_path=str(dest),
+            files_copied=0,
+            bytes_copied=0,
+            error="No data found to migrate"
+        )
+
+    # Validate destination
+    dest_db = dest / "library.db"
+    if dest_db.exists():
+        return MigrationResult(
+            success=False,
+            mode=mode,
+            source_path=str(source),
+            dest_path=str(dest),
+            files_copied=0,
+            bytes_copied=0,
+            error=f"Destination already has a database: {dest_db}. Please backup and remove existing data first."
+        )
+
+    # Check disk space
+    has_space, available = check_disk_space(dest, total_bytes)
+    if not has_space:
+        return MigrationResult(
+            success=False,
+            mode=mode,
+            source_path=str(source),
+            dest_path=str(dest),
+            files_copied=0,
+            bytes_copied=0,
+            error=f"Insufficient disk space. Required: {total_bytes / 1024 / 1024:.1f} MB, Available: {available / 1024 / 1024:.1f} MB"
+        )
+
+    if dry_run:
+        return MigrationResult(
+            success=True,
+            mode=mode,
+            source_path=str(source),
+            dest_path=str(dest),
+            files_copied=total_files,
+            bytes_copied=total_bytes,
+            error=None
+        )
+
+    # Perform selective migration
+    files_copied = 0
+    bytes_copied = 0
+
+    def report_progress(phase: str, current_file: str = ""):
+        if progress_callback:
+            progress = MigrationProgress(
+                phase=phase,
+                current_file=current_file,
+                files_copied=files_copied,
+                total_files=total_files,
+                bytes_copied=bytes_copied,
+                total_bytes=total_bytes,
+                percent=(bytes_copied / total_bytes * 100) if total_bytes > 0 else 0
+            )
+            progress_callback(progress)
+
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        report_progress("starting")
+
+        # Step 1: Create new database with selected data
+        report_progress("creating_database", "library.db")
+
+        source_conn = sqlite3.connect(str(source_db))
+        source_conn.row_factory = sqlite3.Row
+        dest_conn = sqlite3.connect(str(dest_db))
+
+        try:
+            # Copy schema from source
+            source_cursor = source_conn.cursor()
+            dest_cursor = dest_conn.cursor()
+
+            # Get all table creation SQL
+            source_cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL")
+            for (sql,) in source_cursor.fetchall():
+                if sql and not sql.startswith('CREATE TABLE sqlite_'):
+                    dest_cursor.execute(sql)
+
+            # Get all index creation SQL
+            source_cursor.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")
+            for (sql,) in source_cursor.fetchall():
+                if sql:
+                    try:
+                        dest_cursor.execute(sql)
+                    except sqlite3.OperationalError:
+                        pass  # Index might already exist from table creation
+
+            dest_conn.commit()
+
+            # Build list of image IDs to migrate
+            if directory_ids:
+                placeholders = ','.join('?' * len(directory_ids))
+                source_cursor.execute(f"""
+                    SELECT DISTINCT if2.image_id
+                    FROM image_files if2
+                    WHERE if2.watch_directory_id IN ({placeholders})
+                """, directory_ids)
+            else:
+                source_cursor.execute("SELECT DISTINCT image_id FROM image_files")
+
+            image_ids = [r[0] for r in source_cursor.fetchall()]
+            image_id_set = set(image_ids)
+
+            # Copy watch_directories (only selected)
+            report_progress("copying_data", "watch_directories")
+            if directory_ids:
+                source_cursor.execute(f"SELECT * FROM watch_directories WHERE id IN ({placeholders})", directory_ids)
+            else:
+                source_cursor.execute("SELECT * FROM watch_directories")
+
+            rows = source_cursor.fetchall()
+            if rows:
+                cols = [desc[0] for desc in source_cursor.description]
+                placeholders_insert = ','.join('?' * len(cols))
+                for row in rows:
+                    dest_cursor.execute(
+                        f"INSERT INTO watch_directories ({','.join(cols)}) VALUES ({placeholders_insert})",
+                        tuple(row)
+                    )
+
+            # Copy images (only those with files in selected directories)
+            report_progress("copying_data", "images")
+            if image_ids:
+                # Copy in batches to avoid SQL limits
+                batch_size = 500
+                for i in range(0, len(image_ids), batch_size):
+                    batch = image_ids[i:i + batch_size]
+                    batch_placeholders = ','.join('?' * len(batch))
+                    source_cursor.execute(f"SELECT * FROM images WHERE id IN ({batch_placeholders})", batch)
+                    rows = source_cursor.fetchall()
+                    if rows:
+                        cols = [desc[0] for desc in source_cursor.description]
+                        placeholders_insert = ','.join('?' * len(cols))
+                        for row in rows:
+                            dest_cursor.execute(
+                                f"INSERT INTO images ({','.join(cols)}) VALUES ({placeholders_insert})",
+                                tuple(row)
+                            )
+                    await asyncio.sleep(0)
+
+            # Copy image_files (only for selected directories)
+            report_progress("copying_data", "image_files")
+            if directory_ids:
+                source_cursor.execute(f"SELECT * FROM image_files WHERE watch_directory_id IN ({','.join('?' * len(directory_ids))})", directory_ids)
+            else:
+                source_cursor.execute("SELECT * FROM image_files")
+
+            rows = source_cursor.fetchall()
+            if rows:
+                cols = [desc[0] for desc in source_cursor.description]
+                placeholders_insert = ','.join('?' * len(cols))
+                for row in rows:
+                    dest_cursor.execute(
+                        f"INSERT INTO image_files ({','.join(cols)}) VALUES ({placeholders_insert})",
+                        tuple(row)
+                    )
+
+            # Copy image_tags (only for selected images)
+            report_progress("copying_data", "image_tags")
+            if image_ids:
+                batch_size = 500
+                for i in range(0, len(image_ids), batch_size):
+                    batch = image_ids[i:i + batch_size]
+                    batch_placeholders = ','.join('?' * len(batch))
+                    source_cursor.execute(f"SELECT * FROM image_tags WHERE image_id IN ({batch_placeholders})", batch)
+                    rows = source_cursor.fetchall()
+                    if rows:
+                        cols = [desc[0] for desc in source_cursor.description]
+                        placeholders_insert = ','.join('?' * len(cols))
+                        for row in rows:
+                            try:
+                                dest_cursor.execute(
+                                    f"INSERT INTO image_tags ({','.join(cols)}) VALUES ({placeholders_insert})",
+                                    tuple(row)
+                                )
+                            except sqlite3.IntegrityError:
+                                pass  # Skip duplicates
+                    await asyncio.sleep(0)
+
+            # Get tag IDs used by migrated images
+            tag_ids = set()
+            if image_ids:
+                batch_size = 500
+                for i in range(0, len(image_ids), batch_size):
+                    batch = image_ids[i:i + batch_size]
+                    batch_placeholders = ','.join('?' * len(batch))
+                    source_cursor.execute(f"SELECT DISTINCT tag_id FROM image_tags WHERE image_id IN ({batch_placeholders})", batch)
+                    tag_ids.update(r[0] for r in source_cursor.fetchall())
+
+            # Copy tags (only those used by migrated images)
+            report_progress("copying_data", "tags")
+            if tag_ids:
+                tag_id_list = list(tag_ids)
+                batch_size = 500
+                for i in range(0, len(tag_id_list), batch_size):
+                    batch = tag_id_list[i:i + batch_size]
+                    batch_placeholders = ','.join('?' * len(batch))
+                    source_cursor.execute(f"SELECT * FROM tags WHERE id IN ({batch_placeholders})", batch)
+                    rows = source_cursor.fetchall()
+                    if rows:
+                        cols = [desc[0] for desc in source_cursor.description]
+                        placeholders_insert = ','.join('?' * len(cols))
+                        for row in rows:
+                            dest_cursor.execute(
+                                f"INSERT INTO tags ({','.join(cols)}) VALUES ({placeholders_insert})",
+                                tuple(row)
+                            )
+
+            # Copy tag_aliases for migrated tags
+            report_progress("copying_data", "tag_aliases")
+            if tag_ids:
+                tag_id_list = list(tag_ids)
+                batch_size = 500
+                for i in range(0, len(tag_id_list), batch_size):
+                    batch = tag_id_list[i:i + batch_size]
+                    batch_placeholders = ','.join('?' * len(batch))
+                    source_cursor.execute(f"SELECT * FROM tag_aliases WHERE target_tag_id IN ({batch_placeholders})", batch)
+                    rows = source_cursor.fetchall()
+                    if rows:
+                        cols = [desc[0] for desc in source_cursor.description]
+                        placeholders_insert = ','.join('?' * len(cols))
+                        for row in rows:
+                            try:
+                                dest_cursor.execute(
+                                    f"INSERT INTO tag_aliases ({','.join(cols)}) VALUES ({placeholders_insert})",
+                                    tuple(row)
+                                )
+                            except sqlite3.IntegrityError:
+                                pass
+
+            # Copy settings table
+            report_progress("copying_data", "settings")
+            source_cursor.execute("SELECT * FROM settings")
+            rows = source_cursor.fetchall()
+            if rows:
+                cols = [desc[0] for desc in source_cursor.description]
+                placeholders_insert = ','.join('?' * len(cols))
+                for row in rows:
+                    try:
+                        dest_cursor.execute(
+                            f"INSERT INTO settings ({','.join(cols)}) VALUES ({placeholders_insert})",
+                            tuple(row)
+                        )
+                    except sqlite3.IntegrityError:
+                        pass
+
+            # Copy users table
+            report_progress("copying_data", "users")
+            source_cursor.execute("SELECT * FROM users")
+            rows = source_cursor.fetchall()
+            if rows:
+                cols = [desc[0] for desc in source_cursor.description]
+                placeholders_insert = ','.join('?' * len(cols))
+                for row in rows:
+                    try:
+                        dest_cursor.execute(
+                            f"INSERT INTO users ({','.join(cols)}) VALUES ({placeholders_insert})",
+                            tuple(row)
+                        )
+                    except sqlite3.IntegrityError:
+                        pass
+
+            dest_conn.commit()
+            files_copied += 1
+            bytes_copied += dest_db.stat().st_size
+            report_progress("copied_database", "library.db")
+
+        finally:
+            source_conn.close()
+            dest_conn.close()
+
+        await asyncio.sleep(0)
+
+        # Step 2: Get file hashes for selected images (for thumbnail copying)
+        source_conn = sqlite3.connect(str(source_db))
+        source_cursor = source_conn.cursor()
+
+        try:
+            if directory_ids:
+                placeholders = ','.join('?' * len(directory_ids))
+                source_cursor.execute(f"""
+                    SELECT DISTINCT i.file_hash
+                    FROM images i
+                    JOIN image_files if2 ON if2.image_id = i.id
+                    WHERE if2.watch_directory_id IN ({placeholders})
+                """, directory_ids)
+            else:
+                source_cursor.execute("""
+                    SELECT DISTINCT i.file_hash
+                    FROM images i
+                    JOIN image_files if2 ON if2.image_id = i.id
+                """)
+
+            selected_hashes = set(r[0] for r in source_cursor.fetchall())
+        finally:
+            source_conn.close()
+
+        # Step 3: Copy thumbnails for selected images
+        source_thumb_dir = source / "thumbnails"
+        dest_thumb_dir = dest / "thumbnails"
+
+        if source_thumb_dir.exists():
+            dest_thumb_dir.mkdir(parents=True, exist_ok=True)
+
+            for file_hash in selected_hashes:
+                thumb_file = f"{file_hash}.webp"
+                source_thumb = source_thumb_dir / thumb_file
+                dest_thumb = dest_thumb_dir / thumb_file
+
+                if source_thumb.exists():
+                    report_progress("copying", f"thumbnails/{thumb_file}")
+                    shutil.copy2(source_thumb, dest_thumb)
+                    files_copied += 1
+                    bytes_copied += source_thumb.stat().st_size
+                    report_progress("copied", f"thumbnails/{thumb_file}")
+
+                if files_copied % 50 == 0:
+                    await asyncio.sleep(0)
+
+        # Step 4: Copy preview cache for selected images
+        source_preview_dir = source / "preview_cache"
+        dest_preview_dir = dest / "preview_cache"
+
+        if source_preview_dir.exists():
+            dest_preview_dir.mkdir(parents=True, exist_ok=True)
+
+            for file_hash in selected_hashes:
+                source_preview = source_preview_dir / file_hash
+                dest_preview = dest_preview_dir / file_hash
+
+                if source_preview.exists() and source_preview.is_dir():
+                    dest_preview.mkdir(parents=True, exist_ok=True)
+                    for f in source_preview.iterdir():
+                        if f.is_file():
+                            report_progress("copying", f"preview_cache/{file_hash}/{f.name}")
+                            shutil.copy2(f, dest_preview / f.name)
+                            files_copied += 1
+                            bytes_copied += f.stat().st_size
+
+                if files_copied % 50 == 0:
+                    await asyncio.sleep(0)
+
+        # Step 5: Copy other files (settings.json, packages/, models/)
+        non_selective_items = ["settings.json", "packages", "models"]
+
+        for item_name in non_selective_items:
+            source_item = source / item_name
+            dest_item = dest / item_name
+
+            if not source_item.exists():
+                continue
+
+            resolved_item = source_item.resolve() if source_item.is_symlink() else source_item
+
+            if resolved_item.is_file():
+                report_progress("copying", item_name)
+                shutil.copy2(resolved_item, dest_item, follow_symlinks=True)
+                files_copied += 1
+                bytes_copied += resolved_item.stat().st_size
+                report_progress("copied", item_name)
+                await asyncio.sleep(0)
+
+            elif resolved_item.is_dir():
+                for root, dirs, files in os.walk(resolved_item, followlinks=True):
+                    root_path = Path(root)
+                    rel_from_resolved = root_path.relative_to(resolved_item)
+                    rel_path = Path(item_name) / rel_from_resolved
+                    dest_root = dest / rel_path
+                    dest_root.mkdir(parents=True, exist_ok=True)
+
+                    for f in files:
+                        src_file = root_path / f
+                        dst_file = dest_root / f
+                        rel_file = str(rel_path / f)
+
+                        if not src_file.exists():
+                            continue
+
+                        try:
+                            report_progress("copying", rel_file)
+                            shutil.copy2(src_file, dst_file, follow_symlinks=True)
+                            files_copied += 1
+                            bytes_copied += src_file.stat().st_size
+                            report_progress("copied", rel_file)
+                        except (OSError, PermissionError) as e:
+                            print(f"[Migration] Warning: Could not copy {rel_file}: {e}")
+
+                        if files_copied % 10 == 0:
+                            await asyncio.sleep(0)
+
+        report_progress("complete")
+
+        return MigrationResult(
+            success=True,
+            mode=mode,
+            source_path=str(source),
+            dest_path=str(dest),
+            files_copied=files_copied,
+            bytes_copied=bytes_copied
+        )
+
+    except Exception as e:
+        if progress_callback:
+            progress_callback(MigrationProgress(
+                phase="error",
+                current_file="",
+                files_copied=files_copied,
+                total_files=total_files,
+                bytes_copied=bytes_copied,
+                total_bytes=total_bytes,
+                percent=(bytes_copied / total_bytes * 100) if total_bytes > 0 else 0,
+                error=str(e)
+            ))
+
+        return MigrationResult(
+            success=False,
+            mode=mode,
+            source_path=str(source),
+            dest_path=str(dest),
+            files_copied=files_copied,
+            bytes_copied=bytes_copied,
+            error=str(e)
+        )

@@ -24,6 +24,7 @@
     "@capacitor/ios": "^8.0.1",
     "@capacitor/preferences": "^8.0.0",
     "axios": "^1.13.2",
+    "hls.js": "^1.6.15",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

@@ -18,6 +18,11 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install dependencies
         run: npm ci
 
@@ -26,6 +31,81 @@ jobs:
 
       - name: Build frontend
         run: npm run build:frontend
+
+      - name: Prepare Python bundle
+        run: |
+          echo "Creating Python virtual environment bundle..."
+          BUNDLE_DIR="python-venv-linux"
+
+          # Create venv with --copies to avoid symlinks to system Python
+          # This is critical for making the venv relocatable/portable
+          python3 -m venv --copies "$BUNDLE_DIR"
+
+          # Upgrade pip
+          "$BUNDLE_DIR/bin/pip" install --upgrade pip
+
+          # Install dependencies
+          echo "Installing Python dependencies (this may take a while)..."
+          "$BUNDLE_DIR/bin/pip" install -r requirements.txt --no-warn-script-location
+
+          # Clean up __pycache__ and .pyc files
+          echo "Cleaning up..."
+          find "$BUNDLE_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find "$BUNDLE_DIR" -type f -name "*.pyc" -delete 2>/dev/null || true
+          find "$BUNDLE_DIR" -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find "$BUNDLE_DIR" -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+
+          # Remove unnecessary bin scripts (keep python* and pip*)
+          cd "$BUNDLE_DIR/bin"
+          for f in *; do
+            case "$f" in
+              python*|pip*|activate*) ;;
+              *) rm -f "$f" 2>/dev/null || true ;;
+            esac
+          done
+          cd -
+
+          # Make venv relocatable
+          # 1. Patch activate script to use dynamic VIRTUAL_ENV
+          sed -i 's|^VIRTUAL_ENV=.*|VIRTUAL_ENV="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." \&\& pwd)"|' "$BUNDLE_DIR/bin/activate"
+
+          # 2. Fix shebangs in pip-installed scripts (uvicorn, etc.) to use /usr/bin/env
+          # This is critical - without this, scripts have hardcoded paths that break after relocation
+          for script in "$BUNDLE_DIR/bin"/*; do
+            if [ -f "$script" ] && head -1 "$script" | grep -q "^#!.*python"; then
+              sed -i '1s|^#!.*python.*|#!/usr/bin/env python3|' "$script"
+            fi
+          done
+
+          # Report size
+          SIZE=$(du -sh "$BUNDLE_DIR" | cut -f1)
+          echo "Python bundle ready! Size: $SIZE"
+
+      - name: Create empty model directories
+        run: |
+          # Create empty tagger directory (models downloaded on first use)
+          rm -rf tagger 2>/dev/null || true
+          mkdir -p tagger
+
+          # Create a readme explaining the on-demand download
+          cat > tagger/README.txt << 'EOF'
+          # ML Models
+
+          Models are downloaded automatically on first use.
+          This keeps the installer small and fast.
+
+          Supported models:
+          - tagger/vit-v3 (default, ~180MB)
+          - tagger/eva02-large-v3 (~400MB)
+          - tagger/swinv2-v3 (~180MB)
+          - yolov8n (~6MB)
+
+          Models are stored in:
+          - Windows: %APPDATA%\.localbooru\models\
+          - Linux/Mac: ~/.localbooru/models/
+          EOF
+
+          echo "ML models will be downloaded on-demand"
 
       - name: Build Linux packages
         run: npx electron-builder --linux --publish never

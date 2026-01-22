@@ -1,6 +1,6 @@
 {
   "name": "localbooru",
-  "version": "0.2.1",
+  "version": "0.3.3",
   "description": "Local image library with automatic tagging",
   "main": "electron/main.js",
   "scripts": {
@@ -14,6 +14,7 @@
     "build:linux": "npm run build:frontend && electron-builder --linux",
     "build:win": "npm run build:frontend && electron-builder --win",
     "prepare:python:win": "node scripts/prepare-python-bundle.js",
+    "prepare:python:linux": "node scripts/prepare-python-bundle-linux.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "postinstall": "electron-builder install-app-deps"
@@ -70,20 +71,39 @@
       ],
       "icon": "assets/icon.png",
       "category": "Graphics",
-      "artifactName": "${productName}-Linux.${ext}"
+      "artifactName": "${productName}-Linux.${ext}",
+      "extraResources": [
+        {
+          "from": "python-venv-linux",
+          "to": "python-venv",
+          "filter": [
+            "**/*",
+            "!**/__pycache__/**",
+            "!**/*.pyc"
+          ]
+        },
+        {
+          "from": "api",
+          "to": "api",
+          "filter": [
+            "**/*",
+            "!**/__pycache__/**",
+            "!**/*.pyc"
+          ]
+        },
+        {
+          "from": "frontend/dist",
+          "to": "frontend/dist",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
     },
     "deb": {
-      "depends": [
-        "python3",
-        "python3-pip"
-      ],
       "category": "Graphics"
     },
     "rpm": {
-      "depends": [
-        "python3",
-        "python3-pip"
-      ]
     },
     "mac": {
       "target": [

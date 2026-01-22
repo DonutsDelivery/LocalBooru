@@ -18,11 +18,26 @@ from ..models import Image, ImageFile, Tag, image_tags, TaskType, WatchDirectory
 from ..config import get_settings
 from .task_queue import enqueue_task
 from .events import library_events, EventType
+from .video_preview import (
+    check_ffmpeg_available,
+    get_video_duration_async,
+    generate_video_previews,
+    get_hwaccel_args
+)
 
 settings = get_settings()
 
+# Video file extensions
+VIDEO_EXTENSIONS = {'webm', 'mp4', 'mov', 'avi', 'mkv'}
+
+
+def is_video_file(file_path: str) -> bool:
+    """Check if the file is a video based on extension"""
+    ext = Path(file_path).suffix.lower().lstrip('.')
+    return ext in VIDEO_EXTENSIONS
+
 # Thread pool for CPU-bound operations (thumbnails, hashing)
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=8)  # Increased from 4 for faster bulk imports
 
 
 async def safe_enqueue_task(task_type, payload, priority, db, max_retries=3):
@@ -93,7 +108,12 @@ def generate_thumbnail(file_path: str, output_path: str, size: int = 400) -> boo
     """Generate a thumbnail for the image"""
     try:
         with PILImage.open(file_path) as img:
-            img.thumbnail((size, size), PILImage.Resampling.LANCZOS)
+            # Use draft() for JPEG to reduce memory at load time
+            if img.format == 'JPEG':
+                img.draft(None, (size, size))
+
+            # reducing_gap=3 for memory-efficient multi-step resize
+            img.thumbnail((size, size), PILImage.Resampling.LANCZOS, reducing_gap=3)
 
             # Convert to RGB if necessary (for RGBA, P mode images)
             if img.mode in ('RGBA', 'P'):
@@ -104,7 +124,8 @@ def generate_thumbnail(file_path: str, output_path: str, size: int = 400) -> boo
                     background.paste(img)
                 img = background
 
-            img.save(output_path, 'WEBP', quality=85)
+            # method=0 for fastest WebP encoding
+            img.save(output_path, 'WEBP', quality=85, method=0)
             return True
     except Exception as e:
         print(f"Error generating thumbnail: {e}")
@@ -115,6 +136,42 @@ async def generate_thumbnail_async(file_path: str, output_path: str, size: int =
     """Async wrapper for thumbnail generation"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(_executor, generate_thumbnail, file_path, output_path, size)
+
+
+def generate_video_thumbnail(video_path: str, output_path: str, size: int = 400) -> bool:
+    """Generate a thumbnail for a video file using ffmpeg"""
+    import subprocess
+
+    if not check_ffmpeg_available():
+        return False
+
+    try:
+        # Build command with optional hardware acceleration
+        hwaccel_args = get_hwaccel_args()
+        cmd = ['ffmpeg', '-y'] + hwaccel_args + [
+            '-ss', '0.5',  # Seek to 0.5s (fast seek before -i)
+            '-i', video_path,
+            '-vframes', '1',
+            '-vf', f'scale={size}:-1',  # Scale to width, maintain aspect ratio
+            '-c:v', 'libwebp',
+            '-quality', '85',
+            output_path
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=30
+        )
+        return result.returncode == 0 and Path(output_path).exists()
+    except Exception as e:
+        print(f"[Import] Error generating video thumbnail: {e}")
+        return False
+
+
+async def generate_video_thumbnail_async(video_path: str, output_path: str, size: int = 400) -> bool:
+    """Async wrapper for video thumbnail generation"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(_executor, generate_video_thumbnail, video_path, output_path, size)
 
 
 async def import_image(
@@ -199,8 +256,19 @@ async def import_image(
 
     # Get file info
     file_size = os.path.getsize(file_path)
-    dimensions = get_image_dimensions(file_path)
-    perceptual_hash = calculate_perceptual_hash(file_path)
+
+    # Check if this is a video file
+    is_video = is_video_file(file_path)
+
+    # For videos, skip PIL operations (they'll fail) and use ffprobe instead
+    if is_video:
+        dimensions = None  # Could use ffprobe but not critical
+        perceptual_hash = None  # Not applicable to videos
+        video_duration = await get_video_duration_async(file_path)
+    else:
+        dimensions = get_image_dimensions(file_path)
+        perceptual_hash = calculate_perceptual_hash(file_path)
+        video_duration = None
 
     # Get file timestamps
     stat = os.stat(file_path)
@@ -223,6 +291,7 @@ async def import_image(
         width=dimensions[0] if dimensions else None,
         height=dimensions[1] if dimensions else None,
         file_size=file_size,
+        duration=video_duration,
         import_source=str(path.parent),
         file_created_at=file_created_at,
         file_modified_at=file_modified_at
@@ -243,7 +312,18 @@ async def import_image(
     thumbnails_dir = Path(settings.thumbnails_dir)
     thumbnails_dir.mkdir(parents=True, exist_ok=True)
     thumbnail_path = thumbnails_dir / f"{file_hash[:16]}.webp"
-    await generate_thumbnail_async(file_path, str(thumbnail_path))
+
+    if is_video:
+        # Generate video thumbnail and preview frames in background (non-blocking)
+        # This speeds up bulk imports significantly
+        asyncio.create_task(
+            generate_video_thumbnail_async(file_path, str(thumbnail_path))
+        )
+        asyncio.create_task(
+            generate_video_previews(file_path, file_hash, settings.video_preview_frames)
+        )
+    else:
+        await generate_thumbnail_async(file_path, str(thumbnail_path))
 
     if not skip_commit:
         await db.commit()
@@ -308,3 +388,10 @@ async def import_image(
         'image_id': image.id,
         'filename': filename
     }
+
+
+def shutdown():
+    """Shutdown the importer service and cleanup thread pool"""
+    print("[Importer] Shutting down...")
+    _executor.shutdown(wait=True, cancel_futures=True)
+    print("[Importer] Shutdown complete")

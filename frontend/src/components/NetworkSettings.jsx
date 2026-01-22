@@ -143,6 +143,7 @@ export default function NetworkSettings() {
   const hasChanges =
     localEnabled !== (config?.settings?.local_network_enabled || false) ||
     publicEnabled !== (config?.settings?.public_network_enabled || false) ||
+    localPort !== (config?.settings?.local_port || 8790) ||
     publicPort !== (config?.settings?.public_port || 8791) ||
     authLevel !== (config?.settings?.auth_required_level || 'none')
 
@@ -188,17 +189,38 @@ export default function NetworkSettings() {
           </div>
         )}
 
-        <div className="info-row">
-          <span className="info-label">Port:</span>
-          <code className="info-value">8790</code>
-          <span className="info-note">(fixed)</span>
+        <div className="setting-row">
+          <label>
+            <span>Local Port:</span>
+            <input
+              type="number"
+              value={localPort}
+              onChange={(e) => setLocalPort(parseInt(e.target.value) || 8790)}
+              min="1024"
+              max="65535"
+            />
+          </label>
+          <button
+            className="test-btn"
+            onClick={() => handleTestPort(localPort)}
+          >
+            Test Port
+          </button>
         </div>
 
-        {localEnabled && config?.local_ip && (
+        {portTestResult && portTestResult.port === localPort && (
+          <div className={`port-test-result ${portTestResult.available ? 'success' : 'error'}`}>
+            {portTestResult.available
+              ? 'Port is available'
+              : `Port unavailable: ${portTestResult.error}`}
+          </div>
+        )}
+
+        {config?.local_ip && (
           <div className="access-url">
             <span>Access URL:</span>
-            <a href={`http://${config.local_ip}:8790`} target="_blank" rel="noopener noreferrer">
-              http://{config.local_ip}:8790
+            <a href={`http://${config.local_ip}:${localPort}`} target="_blank" rel="noopener noreferrer">
+              http://{config.local_ip}:{localPort}
             </a>
           </div>
         )}
