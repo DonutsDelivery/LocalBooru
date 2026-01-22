@@ -563,13 +563,26 @@ export async function getMigrationInfo() {
   return response.data
 }
 
-export async function validateMigration(mode) {
-  const response = await api.post('/settings/migration/validate', { mode })
+export async function getMigrationDirectories(mode) {
+  const response = await api.get('/settings/migration/directories', { params: { mode } })
   return response.data
 }
 
-export async function startMigration(mode) {
-  const response = await api.post('/settings/migration/start', { mode })
+export async function validateMigration(mode, directoryIds = null) {
+  const payload = { mode }
+  if (directoryIds && directoryIds.length > 0) {
+    payload.directory_ids = directoryIds
+  }
+  const response = await api.post('/settings/migration/validate', payload)
+  return response.data
+}
+
+export async function startMigration(mode, directoryIds = null) {
+  const payload = { mode }
+  if (directoryIds && directoryIds.length > 0) {
+    payload.directory_ids = directoryIds
+  }
+  const response = await api.post('/settings/migration/start', payload)
   return response.data
 }
 

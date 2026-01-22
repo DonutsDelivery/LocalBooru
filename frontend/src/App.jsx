@@ -11,6 +11,7 @@ import TitleBar from './components/TitleBar'
 import ComfyUIConfigModal from './components/ComfyUIConfigModal'
 import NetworkSettings from './components/NetworkSettings'
 import ServerSettings from './components/ServerSettings'
+import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
 import OpticalFlowSettings from './components/OpticalFlowSettings'
 import SVPSettings from './components/SVPSettings'
@@ -1270,18 +1271,36 @@ function Gallery() {
 function App() {
   const [mobileReady, setMobileReady] = useState(false)
   const [showServerSetup, setShowServerSetup] = useState(false)
+  const [servers, setServers] = useState([])
+  const [serverStatuses, setServerStatuses] = useState({})
 
   // Initialize server configuration for mobile app
   useEffect(() => {
     async function initMobile() {
-      const { isMobileApp, getActiveServer } = await import('./serverManager')
+      const { isMobileApp, getServers, getActiveServer, setActiveServerId, pingAllServers } = await import('./serverManager')
       const { updateServerConfig } = await import('./api')
 
       if (isMobileApp()) {
-        await updateServerConfig()
-        const server = await getActiveServer()
-        if (!server) {
+        const serverList = await getServers()
+
+        if (serverList.length === 0) {
+          // No servers - show add server UI
           setShowServerSetup(true)
+        } else {
+          // Ping all servers in parallel
+          const statuses = await pingAllServers(serverList)
+          const onlineServers = serverList.filter(s => statuses[s.id] === 'online')
+
+          if (onlineServers.length === 1) {
+            // Exactly 1 online - auto-connect
+            await setActiveServerId(onlineServers[0].id)
+            await updateServerConfig()
+          } else {
+            // 0 or 2+ online - show selection with status
+            setServers(serverList)
+            setServerStatuses(statuses)
+            setShowServerSetup(true)
+          }
         }
       }
       setMobileReady(true)
@@ -1301,8 +1320,34 @@ function App() {
     )
   }
 
-  // Show server setup for mobile when no server configured
+  // Handle disconnect/switch server
+  const handleDisconnect = () => {
+    setShowServerSetup(true)
+    // Re-fetch servers and their statuses
+    import('./serverManager').then(async ({ getServers, pingAllServers }) => {
+      const serverList = await getServers()
+      setServers(serverList)
+      if (serverList.length > 0) {
+        const statuses = await pingAllServers(serverList)
+        setServerStatuses(statuses)
+      }
+    })
+  }
+
+  // Show server setup/selection for mobile
   if (showServerSetup) {
+    // If we have servers with statuses, show the selection screen
+    if (servers.length > 0) {
+      return (
+        <ServerSelectScreen
+          servers={servers}
+          serverStatuses={serverStatuses}
+          onConnect={() => setShowServerSetup(false)}
+        />
+      )
+    }
+
+    // Otherwise show the add server screen
     return (
       <div className="app server-setup-screen">
         <div className="server-setup-content">
@@ -1322,7 +1367,7 @@ function App() {
 
   return (
     <>
-      <TitleBar />
+      <TitleBar onSwitchServer={handleDisconnect} />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Gallery />} />

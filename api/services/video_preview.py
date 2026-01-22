@@ -12,7 +12,7 @@ from ..config import get_settings
 settings = get_settings()
 
 # Thread pool for video operations (more workers since ffmpeg is I/O bound)
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=8)  # Increased from 4 for faster bulk imports
 
 # Cache ffmpeg availability
 _ffmpeg_available = None
@@ -182,10 +182,10 @@ def extract_preview_frames(
         for i, ts in enumerate(timestamps)
     ]
 
-    # Extract frames in parallel using thread pool
+    # Extract frames in parallel using the module-level thread pool
     # Each extraction uses fast-seeking (-ss before -i) so they're independent
-    with ThreadPoolExecutor(max_workers=min(num_frames, 4)) as pool:
-        results = list(pool.map(_extract_single_frame, extraction_args))
+    # Using module-level executor avoids creating new thread pools for each video
+    results = list(_executor.map(_extract_single_frame, extraction_args))
 
     # Filter out failed extractions and return in order
     return [r for r in results if r is not None]

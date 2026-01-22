@@ -218,22 +218,39 @@ class DirectoryWatcher:
                     if files_to_check:
                         print(f"[Watcher] Found {len(files_to_check)} new files in {directory.name or directory.path}")
 
-                        for file_path in files_to_check:
-                            # Use a separate session for each import to avoid cascade failures
-                            try:
-                                async with AsyncSessionLocal() as import_db:
-                                    import_result = await import_image(
-                                        str(file_path),
-                                        import_db,
-                                        watch_directory_id=directory.id,
-                                        auto_tag=directory.auto_tag
-                                    )
-                                    if import_result['status'] == 'imported':
-                                        total_imported += 1
-                                    elif import_result['status'] == 'duplicate':
-                                        total_duplicates += 1
-                            except Exception as e:
-                                print(f"[Watcher] Error importing {file_path.name}: {e}")
+                        # Process files concurrently with semaphore
+                        SCAN_CONCURRENCY = 16
+                        semaphore = asyncio.Semaphore(SCAN_CONCURRENCY)
+
+                        async def import_one(file_path: Path) -> str:
+                            async with semaphore:
+                                try:
+                                    async with AsyncSessionLocal() as import_db:
+                                        import_result = await import_image(
+                                            str(file_path),
+                                            import_db,
+                                            watch_directory_id=directory.id,
+                                            auto_tag=directory.auto_tag
+                                        )
+                                        return import_result['status']
+                                except Exception as e:
+                                    print(f"[Watcher] Error importing {file_path.name}: {e}")
+                                    return 'error'
+
+                        # Process in batches of 100 for progress reporting
+                        BATCH_SIZE = 100
+                        for i in range(0, len(files_to_check), BATCH_SIZE):
+                            batch = files_to_check[i:i + BATCH_SIZE]
+                            results = await asyncio.gather(*[import_one(f) for f in batch])
+
+                            for status in results:
+                                if status == 'imported':
+                                    total_imported += 1
+                                elif status == 'duplicate':
+                                    total_duplicates += 1
+
+                            if len(files_to_check) > 100:
+                                print(f"[Watcher] Progress: {min(i + BATCH_SIZE, len(files_to_check))}/{len(files_to_check)} files")
 
                     # Update last_scanned_at
                     directory.last_scanned_at = datetime.now(timezone.utc)

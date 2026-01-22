@@ -16,8 +16,8 @@ from ..database import AsyncSessionLocal
 settings = get_settings()
 
 # Concurrency for imports within a directory scan
-SCAN_CONCURRENCY = 8
-BATCH_SIZE = 100  # Commit every N imports
+SCAN_CONCURRENCY = 16  # Increased from 8 for faster bulk imports
+BATCH_SIZE = 100  # Process N imports per batch
 
 # Supported image extensions
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'}

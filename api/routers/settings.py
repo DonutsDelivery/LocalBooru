@@ -712,12 +712,48 @@ async def get_migration_info_endpoint():
 
 class MigrationRequest(BaseModel):
     mode: str  # "system_to_portable" or "portable_to_system"
+    directory_ids: Optional[list[int]] = None  # Selective migration: which watch directories to include
+
+
+@router.get("/migration/directories")
+async def get_migration_directories(mode: str):
+    """Get watch directories available for selective migration.
+
+    Returns list of directories with metadata (path, image count, size).
+    """
+    from ..migration import get_watch_directories_for_migration, MigrationMode
+
+    try:
+        migration_mode = MigrationMode(mode)
+    except ValueError:
+        return {
+            "success": False,
+            "error": f"Invalid mode: {mode}. Must be 'system_to_portable' or 'portable_to_system'",
+            "directories": []
+        }
+
+    directories = await get_watch_directories_for_migration(migration_mode)
+
+    return {
+        "success": True,
+        "directories": directories,
+        "total_count": len(directories),
+        "total_images": sum(d["image_count"] for d in directories),
+        "total_thumbnail_size": sum(d["thumbnail_size"] for d in directories)
+    }
 
 
 @router.post("/migration/validate")
 async def validate_migration(request: MigrationRequest):
-    """Validate migration can proceed (dry run)."""
-    from ..migration import migrate_data, MigrationMode
+    """Validate migration can proceed (dry run).
+
+    If directory_ids is provided, validates selective migration.
+    If directory_ids is None or empty, validates full migration.
+    """
+    from ..migration import (
+        migrate_data, migrate_data_selective, MigrationMode,
+        get_migration_paths, calculate_selective_migration_size
+    )
 
     try:
         mode = MigrationMode(request.mode)
@@ -727,24 +763,53 @@ async def validate_migration(request: MigrationRequest):
             "error": f"Invalid mode: {request.mode}. Must be 'system_to_portable' or 'portable_to_system'"
         }
 
-    result = await migrate_data(mode, dry_run=True)
+    # Use selective migration if directory_ids provided
+    if request.directory_ids is not None and len(request.directory_ids) > 0:
+        result = await migrate_data_selective(mode, request.directory_ids, dry_run=True)
 
-    return {
-        "valid": result.success,
-        "error": result.error,
-        "source_path": result.source_path,
-        "dest_path": result.dest_path,
-        "files_to_copy": result.files_copied,
-        "bytes_to_copy": result.bytes_copied,
-        "size_mb": round(result.bytes_copied / 1024 / 1024, 1) if result.bytes_copied else 0
-    }
+        # Also get image count for selected directories
+        try:
+            source, _ = get_migration_paths(mode)
+            _, _, thumb_bytes = calculate_selective_migration_size(source, request.directory_ids)
+        except:
+            thumb_bytes = 0
+
+        return {
+            "valid": result.success,
+            "error": result.error,
+            "source_path": result.source_path,
+            "dest_path": result.dest_path,
+            "files_to_copy": result.files_copied,
+            "bytes_to_copy": result.bytes_copied,
+            "size_mb": round(result.bytes_copied / 1024 / 1024, 1) if result.bytes_copied else 0,
+            "thumbnail_size_mb": round(thumb_bytes / 1024 / 1024, 1) if thumb_bytes else 0,
+            "selective": True,
+            "directory_count": len(request.directory_ids)
+        }
+    else:
+        result = await migrate_data(mode, dry_run=True)
+
+        return {
+            "valid": result.success,
+            "error": result.error,
+            "source_path": result.source_path,
+            "dest_path": result.dest_path,
+            "files_to_copy": result.files_copied,
+            "bytes_to_copy": result.bytes_copied,
+            "size_mb": round(result.bytes_copied / 1024 / 1024, 1) if result.bytes_copied else 0,
+            "selective": False
+        }
 
 
 @router.post("/migration/start")
 async def start_migration(request: MigrationRequest):
-    """Start data migration (runs in background)."""
+    """Start data migration (runs in background).
+
+    If directory_ids is provided, performs selective migration.
+    If directory_ids is None or empty, performs full migration.
+    """
     import asyncio
-    from ..migration import migrate_data, MigrationMode
+    from ..migration import migrate_data, migrate_data_selective, MigrationMode
     from ..services.events import migration_events, MigrationEventType
 
     if _migration_state["running"]:
@@ -758,8 +823,16 @@ async def start_migration(request: MigrationRequest):
             "error": f"Invalid mode: {request.mode}. Must be 'system_to_portable' or 'portable_to_system'"
         }
 
+    # Determine if selective migration
+    is_selective = request.directory_ids is not None and len(request.directory_ids) > 0
+    directory_ids = request.directory_ids if is_selective else []
+
     # First validate
-    validation = await migrate_data(mode, dry_run=True)
+    if is_selective:
+        validation = await migrate_data_selective(mode, directory_ids, dry_run=True)
+    else:
+        validation = await migrate_data(mode, dry_run=True)
+
     if not validation.success:
         return {"success": False, "error": validation.error}
 
@@ -788,9 +861,17 @@ async def start_migration(request: MigrationRequest):
     async def run_migration():
         try:
             # Broadcast start event
-            await migration_events.broadcast(MigrationEventType.STARTED, {"mode": mode.value})
+            await migration_events.broadcast(MigrationEventType.STARTED, {
+                "mode": mode.value,
+                "selective": is_selective,
+                "directory_count": len(directory_ids) if is_selective else None
+            })
 
-            result = await migrate_data(mode, progress_callback=progress_callback)
+            if is_selective:
+                result = await migrate_data_selective(mode, directory_ids, progress_callback=progress_callback)
+            else:
+                result = await migrate_data(mode, progress_callback=progress_callback)
+
             _migration_state["result"] = result
 
             # Broadcast completion/error event
@@ -799,7 +880,8 @@ async def start_migration(request: MigrationRequest):
                     "files_copied": result.files_copied,
                     "bytes_copied": result.bytes_copied,
                     "source_path": result.source_path,
-                    "dest_path": result.dest_path
+                    "dest_path": result.dest_path,
+                    "selective": is_selective
                 })
             else:
                 await migration_events.broadcast(MigrationEventType.ERROR, {
@@ -826,6 +908,8 @@ async def start_migration(request: MigrationRequest):
 
     return {
         "success": True,
+        "selective": is_selective,
+        "directory_count": len(directory_ids) if is_selective else None,
         "message": "Migration started. Subscribe to /api/settings/migration/events for real-time progress."
     }
 
@@ -1297,3 +1381,179 @@ async def serve_svp_hls_file(stream_id: str, filename: str):
             'Access-Control-Allow-Origin': '*'
         }
     )
+
+
+# =============================================================================
+# Web Video SVP Endpoints (Browser Extension)
+# =============================================================================
+
+@router.post("/svp/web/play")
+async def play_web_video_svp(url: str, quality: str = "best"):
+    """
+    Start SVP stream for a web video URL using yt-dlp.
+
+    This endpoint:
+    1. Checks if the URL is from a DRM-protected site
+    2. Downloads the video via yt-dlp to a temp file
+    3. Passes the temp file to the existing SVP pipeline
+    4. Returns the HLS stream URL
+
+    Args:
+        url: Web video URL (YouTube, Vimeo, Twitch VOD, direct video, etc.)
+        quality: Quality preference - "best", "1080p", "720p", "480p"
+
+    Returns:
+        On success: {"success": true, "stream_url": "...", "download_id": "..."}
+        On pending: {"success": true, "status": "downloading", "download_id": "...", "progress": 0.5}
+        On error: {"success": false, "error": "..."}
+    """
+    from ..services.web_video_downloader import (
+        download_video,
+        get_download,
+        is_drm_site,
+        is_live_stream,
+    )
+    from ..services.svp_stream import SVPStream, get_svp_status
+
+    # Quick DRM check before starting download
+    if is_drm_site(url):
+        return {
+            "success": False,
+            "error": "This site uses DRM protection and cannot be processed",
+            "drm_protected": True,
+        }
+
+    # Quick live stream check
+    if is_live_stream(url):
+        return {
+            "success": False,
+            "error": "Live streams are not supported yet (coming in v2)",
+            "live_stream": True,
+        }
+
+    # Check SVP status before downloading
+    config = get_svp_settings()
+    status = get_svp_status()
+
+    if not config["enabled"]:
+        return {"success": False, "error": "SVP interpolation is not enabled"}
+
+    if not status["ready"]:
+        missing = []
+        if not status["vapoursynth_available"]:
+            missing.append("VapourSynth")
+        if not status["svp_plugins_available"]:
+            missing.append("SVPflow plugins")
+        if not status["vspipe_available"]:
+            missing.append("vspipe")
+        return {"success": False, "error": f"SVP not ready. Missing: {', '.join(missing)}"}
+
+    # Start or check download
+    result = await download_video(url, quality)
+
+    if not result.success:
+        return {"success": False, "error": result.error}
+
+    # Check download status
+    download = get_download(result.download_id)
+    if not download:
+        return {"success": False, "error": "Download tracking error"}
+
+    if download.status in ("pending", "downloading", "processing"):
+        return {
+            "success": True,
+            "status": download.status,
+            "download_id": download.download_id,
+            "progress": download.progress,
+        }
+
+    if download.status == "error":
+        return {"success": False, "error": download.error or "Download failed"}
+
+    if download.status == "complete" and download.file_path:
+        # Download complete, start SVP stream
+        try:
+            stream = SVPStream(
+                video_path=download.file_path,
+                target_fps=config["target_fps"],
+                preset=config.get("preset", "balanced"),
+                use_nvof=config.get("use_nvof", True),
+                shader=config.get("shader", 23),
+                artifact_masking=config.get("artifact_masking", 100),
+                frame_interpolation=config.get("frame_interpolation", 2),
+                custom_super=config.get("custom_super"),
+                custom_analyse=config.get("custom_analyse"),
+                custom_smooth=config.get("custom_smooth"),
+            )
+
+            success = await stream.start()
+
+            if success:
+                return {
+                    "success": True,
+                    "status": "streaming",
+                    "download_id": download.download_id,
+                    "stream_id": stream.stream_id,
+                    "stream_url": f"/api/settings/svp/stream/{stream.stream_id}/stream.m3u8",
+                    "duration": stream._duration,
+                    "title": download.title,
+                    "message": f"SVP stream started at {config['target_fps']} fps",
+                }
+            else:
+                return {"success": False, "error": stream.error or "Failed to start SVP stream"}
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"success": False, "error": f"SVP stream error: {str(e)}"}
+
+    return {"success": False, "error": "Unexpected download state"}
+
+
+@router.get("/svp/web/status/{download_id}")
+async def get_web_download_status(download_id: str):
+    """
+    Get download progress for a web video.
+
+    Args:
+        download_id: The download ID returned from /svp/web/play
+
+    Returns:
+        Download status including progress (0.0 to 1.0), status, and any errors.
+    """
+    from ..services.web_video_downloader import get_download
+
+    download = get_download(download_id)
+    if not download:
+        return {"success": False, "error": "Download not found"}
+
+    return {
+        "success": True,
+        "download_id": download.download_id,
+        "status": download.status,
+        "progress": download.progress,
+        "title": download.title,
+        "file_path": download.file_path,
+        "error": download.error,
+    }
+
+
+@router.get("/svp/web/drm-check")
+async def check_drm_site(url: str):
+    """
+    Check if a URL is from a DRM-protected site.
+
+    This is a quick check that the extension can use before attempting to play.
+
+    Args:
+        url: The URL to check
+
+    Returns:
+        {"drm_protected": true/false, "live_stream": true/false/null}
+    """
+    from ..services.web_video_downloader import is_drm_site, is_live_stream
+
+    return {
+        "drm_protected": is_drm_site(url),
+        "live_stream": is_live_stream(url),
+    }

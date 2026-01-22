@@ -37,7 +37,7 @@ def is_video_file(file_path: str) -> bool:
     return ext in VIDEO_EXTENSIONS
 
 # Thread pool for CPU-bound operations (thumbnails, hashing)
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=8)  # Increased from 4 for faster bulk imports
 
 
 async def safe_enqueue_task(task_type, payload, priority, db, max_retries=3):
@@ -314,10 +314,11 @@ async def import_image(
     thumbnail_path = thumbnails_dir / f"{file_hash[:16]}.webp"
 
     if is_video:
-        # Use ffmpeg for video thumbnails
-        await generate_video_thumbnail_async(file_path, str(thumbnail_path))
-        # Generate video preview frames in the background
-        # Don't await - let it run while we continue
+        # Generate video thumbnail and preview frames in background (non-blocking)
+        # This speeds up bulk imports significantly
+        asyncio.create_task(
+            generate_video_thumbnail_async(file_path, str(thumbnail_path))
+        )
         asyncio.create_task(
             generate_video_previews(file_path, file_hash, settings.video_preview_frames)
         )
