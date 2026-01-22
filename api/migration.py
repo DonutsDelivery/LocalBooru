@@ -1582,8 +1582,7 @@ async def import_directories(
             dest_cursor.execute("SELECT COALESCE(MAX(id), 0) FROM tags")
             max_tag_id = dest_cursor.fetchone()[0]
 
-            dest_cursor.execute("SELECT COALESCE(MAX(id), 0) FROM tag_aliases")
-            max_alias_id = dest_cursor.fetchone()[0]
+            # Note: tag_aliases doesn't have an id column (uses alias + target_tag_id as key)
 
             # Get existing tags in destination (for deduplication)
             dest_cursor.execute("SELECT id, name FROM tags")
