@@ -339,7 +339,21 @@ class BackendManager {
         return 'python';
       }
     } else {
-      // Linux/macOS - use system Python
+      // Linux/macOS
+      if (isPackaged) {
+        // Check for bundled venv in resources folder
+        const bundledPython = path.join(process.resourcesPath, 'python-venv', 'bin', 'python');
+        if (fs.existsSync(bundledPython)) {
+          return bundledPython;
+        }
+      } else {
+        // Development: check for local python-venv-linux folder
+        const localVenv = path.join(__dirname, '..', 'python-venv-linux', 'bin', 'python');
+        if (fs.existsSync(localVenv)) {
+          return localVenv;
+        }
+      }
+      // Fall back to system Python
       return 'python';
     }
   }
@@ -349,11 +363,13 @@ class BackendManager {
    */
   getWorkingDirectory() {
     if (app.isPackaged) {
-      if (process.platform === 'win32') {
-        // Windows: api folder is extracted to resources/
+      // Check if we have bundled resources (api folder in resources/)
+      const bundledApiPath = path.join(process.resourcesPath, 'api');
+      if (fs.existsSync(bundledApiPath)) {
+        // Windows or Linux with bundled venv: api folder is in resources/
         return process.resourcesPath;
       }
-      // Linux/macOS: api folder is in resources/app
+      // Fallback: api folder is in resources/app (unbundled Linux/macOS)
       return path.join(process.resourcesPath, 'app');
     }
     return path.join(__dirname, '..');
@@ -397,16 +413,53 @@ class BackendManager {
         };
       }
     } else {
-      // Linux/macOS with pyenv support
-      const homeDir = process.env.HOME || process.env.USERPROFILE;
-      const pyenvPath = `${homeDir}/.pyenv/shims:${homeDir}/.pyenv/bin`;
-      return {
-        ...baseEnv,
-        PATH: `${pyenvPath}:${process.env.PATH}`,
-        PYTHONPATH: `${packagesDir}:${this.getWorkingDirectory()}`,
-        LOCALBOORU_PACKAGED: app.isPackaged ? '1' : '',
-        LOCALBOORU_PACKAGES_DIR: packagesDir
-      };
+      // Linux/macOS
+      const pythonPath = this.getPythonPath();
+      const pythonDir = path.dirname(path.dirname(pythonPath)); // go up from bin/python to venv root
+
+      // Check if using bundled venv
+      const isBundledVenv = pythonPath.includes('python-venv');
+
+      if (isBundledVenv) {
+        // Using bundled venv - find the site-packages directory
+        const libDir = path.join(pythonDir, 'lib');
+        let sitePackagesPath = '';
+
+        // Find the python3.X directory inside lib
+        if (fs.existsSync(libDir)) {
+          const entries = fs.readdirSync(libDir);
+          for (const entry of entries) {
+            if (entry.startsWith('python3.')) {
+              const spPath = path.join(libDir, entry, 'site-packages');
+              if (fs.existsSync(spPath)) {
+                sitePackagesPath = spPath;
+                break;
+              }
+            }
+          }
+        }
+
+        return {
+          ...baseEnv,
+          // Add bundled venv's bin to PATH
+          PATH: `${path.join(pythonDir, 'bin')}:${process.env.PATH}`,
+          // Include persistent packages, working directory, and bundled site-packages
+          PYTHONPATH: `${packagesDir}:${this.getWorkingDirectory()}${sitePackagesPath ? ':' + sitePackagesPath : ''}`,
+          LOCALBOORU_PACKAGED: app.isPackaged ? '1' : '',
+          LOCALBOORU_PACKAGES_DIR: packagesDir
+        };
+      } else {
+        // System Python with pyenv support
+        const homeDir = process.env.HOME || process.env.USERPROFILE;
+        const pyenvPath = `${homeDir}/.pyenv/shims:${homeDir}/.pyenv/bin`;
+        return {
+          ...baseEnv,
+          PATH: `${pyenvPath}:${process.env.PATH}`,
+          PYTHONPATH: `${packagesDir}:${this.getWorkingDirectory()}`,
+          LOCALBOORU_PACKAGED: app.isPackaged ? '1' : '',
+          LOCALBOORU_PACKAGES_DIR: packagesDir
+        };
+      }
     }
 
     return baseEnv;
