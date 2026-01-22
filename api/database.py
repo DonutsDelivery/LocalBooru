@@ -4,19 +4,8 @@ LocalBooru database layer - SQLite for single-user local storage
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from pathlib import Path
-import os
 
-# Get data directory - ~/.localbooru/ on Linux/Mac, AppData on Windows
-def get_data_dir() -> Path:
-    if os.name == 'nt':  # Windows
-        base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
-    else:  # Linux/Mac
-        base = Path.home()
-
-    data_dir = base / '.localbooru'
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return data_dir
+from config import get_data_dir
 
 
 def get_database_url() -> str:
