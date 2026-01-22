@@ -35,7 +35,28 @@ function detectPortableModeEarly() {
   return portableDataPath;
 }
 
+/**
+ * Clean up the updates folder on startup
+ * This removes any leftover update files from previous update attempts
+ */
+function cleanupUpdatesFolder() {
+  if (!portableDataDir) return;
+
+  const updatesPath = path.join(portableDataDir, 'updates');
+  if (fs.existsSync(updatesPath)) {
+    try {
+      fs.rmSync(updatesPath, { recursive: true, force: true });
+      console.log('[Updater] Cleaned up updates folder');
+    } catch (err) {
+      console.error('[Updater] Failed to cleanup updates folder:', err.message);
+    }
+  }
+}
+
 const portableDataDir = detectPortableModeEarly();
+
+// Clean up any leftover update files from previous updates
+cleanupUpdatesFolder();
 
 // Set userData path for portable mode BEFORE single instance lock
 // This ensures portable and system installs have separate locks
@@ -664,7 +685,7 @@ app.whenReady().then(async () => {
 
   // Initialize auto-updater
   if (mainWindow) {
-    initUpdater(mainWindow);
+    initUpdater(mainWindow, { portableDataDir });
   }
 
   app.on('activate', async () => {
