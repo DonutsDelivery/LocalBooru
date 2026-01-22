@@ -5,7 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
-from config import get_data_dir
+from .config import get_data_dir
 
 
 def get_database_url() -> str:
