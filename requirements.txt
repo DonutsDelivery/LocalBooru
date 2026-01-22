@@ -42,4 +42,4 @@ gdown>=5.1.0
 # RIFE frame interpolation (Vulkan GPU acceleration)
 # Install one of these for optimal performance:
 # rife-ncnn-vulkan-python  # Original package
-rife-ncnn-vulkan-python-tntwise>=1.5.0  # Updated fork with more features
+rife-ncnn-vulkan-python-tntwise>=1.4.0  # Updated fork with more features
