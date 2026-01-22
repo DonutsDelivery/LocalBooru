@@ -343,6 +343,12 @@ export async function updateDirectory(id, updates) {
   return response.data
 }
 
+export async function updateDirectoryPath(id, newPath) {
+  const response = await api.patch(`/directories/${id}/path`, { new_path: newPath })
+  invalidateDirectoriesCache()
+  return response.data
+}
+
 export async function removeDirectory(id, keepImages = false) {
   const response = await api.delete(`/directories/${id}?keep_images=${keepImages}`)
   invalidateDirectoriesCache()
@@ -603,6 +609,23 @@ export async function deleteSourceData(mode) {
 
 export async function verifyMigration(mode) {
   const response = await api.post('/settings/migration/verify', { mode })
+  return response.data
+}
+
+// Import API (add directories to existing database)
+export async function validateImport(mode, directoryIds) {
+  const response = await api.post('/settings/migration/import/validate', {
+    mode,
+    directory_ids: directoryIds
+  })
+  return response.data
+}
+
+export async function startImport(mode, directoryIds) {
+  const response = await api.post('/settings/migration/import/start', {
+    mode,
+    directory_ids: directoryIds
+  })
   return response.data
 }
 

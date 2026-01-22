@@ -1050,6 +1050,191 @@ async def migration_events_stream():
 
 
 # =============================================================================
+# Directory Import Endpoints (import into existing database)
+# =============================================================================
+
+@router.post("/migration/import/validate")
+async def validate_import_endpoint(request: MigrationRequest):
+    """Validate import can proceed (dry run).
+
+    Import differs from migration:
+    - Import ADDS directories to an existing destination database
+    - Migration REQUIRES an empty destination
+
+    directory_ids is required for import.
+    """
+    from ..migration import (
+        import_directories, validate_import, calculate_import_size,
+        MigrationMode, get_migration_paths
+    )
+
+    if not request.directory_ids or len(request.directory_ids) == 0:
+        return {
+            "valid": False,
+            "error": "directory_ids is required for import"
+        }
+
+    try:
+        mode = MigrationMode(request.mode)
+    except ValueError:
+        return {
+            "valid": False,
+            "error": f"Invalid mode: {request.mode}. Must be 'system_to_portable' or 'portable_to_system'"
+        }
+
+    # Validate import
+    errors = validate_import(mode, request.directory_ids)
+    if errors:
+        return {
+            "valid": False,
+            "error": "; ".join(errors)
+        }
+
+    # Calculate size
+    try:
+        source, dest = get_migration_paths(mode)
+        total_files, total_bytes, images_to_import, images_to_skip = calculate_import_size(
+            source, request.directory_ids, dest
+        )
+    except ValueError as e:
+        return {"valid": False, "error": str(e)}
+
+    return {
+        "valid": True,
+        "error": None,
+        "source_path": str(source),
+        "dest_path": str(dest),
+        "files_to_copy": total_files,
+        "bytes_to_copy": total_bytes,
+        "size_mb": round(total_bytes / 1024 / 1024, 1) if total_bytes else 0,
+        "images_to_import": images_to_import,
+        "images_to_skip": images_to_skip,
+        "directory_count": len(request.directory_ids)
+    }
+
+
+@router.post("/migration/import/start")
+async def start_import(request: MigrationRequest):
+    """Start directory import (runs in background).
+
+    Import differs from migration:
+    - Import ADDS directories to an existing destination database
+    - Migration REQUIRES an empty destination
+
+    directory_ids is required for import.
+    """
+    import asyncio
+    from ..migration import import_directories, validate_import, MigrationMode, ImportResult
+    from ..services.events import migration_events, MigrationEventType
+
+    if _migration_state["running"]:
+        return {"success": False, "error": "Migration/import already in progress"}
+
+    if not request.directory_ids or len(request.directory_ids) == 0:
+        return {
+            "success": False,
+            "error": "directory_ids is required for import"
+        }
+
+    try:
+        mode = MigrationMode(request.mode)
+    except ValueError:
+        return {
+            "success": False,
+            "error": f"Invalid mode: {request.mode}. Must be 'system_to_portable' or 'portable_to_system'"
+        }
+
+    # Validate
+    errors = validate_import(mode, request.directory_ids)
+    if errors:
+        return {"success": False, "error": "; ".join(errors)}
+
+    directory_ids = request.directory_ids
+
+    # Reset state
+    _migration_state["running"] = True
+    _migration_state["progress"] = None
+    _migration_state["result"] = None
+
+    def progress_callback(progress):
+        _migration_state["progress"] = progress
+        # Broadcast progress via SSE
+        asyncio.create_task(migration_events.broadcast(
+            MigrationEventType.PROGRESS,
+            {
+                "phase": progress.phase,
+                "percent": round(progress.percent, 1),
+                "current_file": progress.current_file,
+                "files_copied": progress.files_copied,
+                "total_files": progress.total_files,
+                "bytes_copied": progress.bytes_copied,
+                "total_bytes": progress.total_bytes,
+                "error": progress.error
+            }
+        ))
+
+    async def run_import():
+        try:
+            # Broadcast start event
+            await migration_events.broadcast(MigrationEventType.STARTED, {
+                "mode": mode.value,
+                "import": True,
+                "directory_count": len(directory_ids)
+            })
+
+            result = await import_directories(mode, directory_ids, progress_callback=progress_callback)
+            _migration_state["result"] = result
+
+            # Broadcast completion/error event
+            if result.success:
+                await migration_events.broadcast(MigrationEventType.COMPLETED, {
+                    "import": True,
+                    "directories_imported": result.directories_imported,
+                    "images_imported": result.images_imported,
+                    "images_skipped": result.images_skipped,
+                    "tags_created": result.tags_created,
+                    "tags_reused": result.tags_reused,
+                    "files_copied": result.files_copied,
+                    "bytes_copied": result.bytes_copied,
+                    "source_path": result.source_path,
+                    "dest_path": result.dest_path
+                })
+            else:
+                await migration_events.broadcast(MigrationEventType.ERROR, {
+                    "error": result.error,
+                    "files_copied": result.files_copied
+                })
+        except Exception as e:
+            _migration_state["result"] = ImportResult(
+                success=False,
+                mode=mode,
+                source_path="",
+                dest_path="",
+                directories_imported=0,
+                images_imported=0,
+                images_skipped=0,
+                tags_created=0,
+                tags_reused=0,
+                files_copied=0,
+                bytes_copied=0,
+                error=str(e)
+            )
+            await migration_events.broadcast(MigrationEventType.ERROR, {"error": str(e)})
+        finally:
+            _migration_state["running"] = False
+
+    # Start background task
+    asyncio.create_task(run_import())
+
+    return {
+        "success": True,
+        "import": True,
+        "directory_count": len(directory_ids),
+        "message": "Import started. Subscribe to /api/settings/migration/events for real-time progress."
+    }
+
+
+# =============================================================================
 # Optical Flow Interpolation Endpoints
 # =============================================================================
 
