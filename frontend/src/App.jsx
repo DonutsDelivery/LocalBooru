@@ -28,6 +28,9 @@ function DirectoriesPage() {
   const [pruning, setPruning] = useState({})
   const [comfyuiConfigDir, setComfyuiConfigDir] = useState(null)
   const [stats, setStats] = useState(null)
+  const [relocating, setRelocating] = useState({})
+  const [selectedDirs, setSelectedDirs] = useState(new Set())
+  const [batchLoading, setBatchLoading] = useState(false)
 
   const refreshDirectories = async () => {
     const { fetchDirectories } = await import('./api')
@@ -119,6 +122,160 @@ function DirectoriesPage() {
     }
   }
 
+  const handleRelocate = async (dirId, dirName, currentPath) => {
+    if (window.electronAPI) {
+      const newPath = await window.electronAPI.addDirectory()
+      if (newPath && newPath !== currentPath) {
+        if (!confirm(`Update directory location?\n\nFrom: ${currentPath}\nTo: ${newPath}\n\nThis will update all file references.`)) {
+          return
+        }
+        setRelocating(prev => ({ ...prev, [dirId]: true }))
+        try {
+          const { updateDirectoryPath } = await import('./api')
+          const result = await updateDirectoryPath(dirId, newPath)
+          alert(`Directory relocated.\n${result.files_updated} file references updated.`)
+          await refreshDirectories()
+        } catch (error) {
+          console.error('Relocate failed:', error)
+          alert('Relocate failed: ' + (error.response?.data?.detail || error.message))
+        } finally {
+          setRelocating(prev => ({ ...prev, [dirId]: false }))
+        }
+      }
+    } else {
+      alert('Directory picker only available in Electron app')
+    }
+  }
+
+  // Selection handlers
+  const toggleSelectDir = (dirId) => {
+    setSelectedDirs(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(dirId)) {
+        newSet.delete(dirId)
+      } else {
+        newSet.add(dirId)
+      }
+      return newSet
+    })
+  }
+
+  const selectAllDirs = () => {
+    setSelectedDirs(new Set(directories.map(d => d.id)))
+  }
+
+  const clearSelection = () => {
+    setSelectedDirs(new Set())
+  }
+
+  // Batch action handlers
+  const handleBatchRescan = async () => {
+    if (selectedDirs.size === 0) return
+    setBatchLoading(true)
+    const { scanDirectory } = await import('./api')
+    const dirIds = Array.from(selectedDirs)
+
+    // Mark all as scanning
+    setScanning(prev => {
+      const next = { ...prev }
+      dirIds.forEach(id => next[id] = true)
+      return next
+    })
+
+    try {
+      // Run rescans in parallel
+      await Promise.all(dirIds.map(id => scanDirectory(id).catch(e => {
+        console.error(`Scan failed for ${id}:`, e)
+      })))
+      await refreshDirectories()
+    } finally {
+      setScanning({})
+      setBatchLoading(false)
+      clearSelection()
+    }
+  }
+
+  const handleBatchPrune = async () => {
+    if (selectedDirs.size === 0) return
+    const selectedList = directories.filter(d => selectedDirs.has(d.id))
+    const totalNonFavorited = selectedList.reduce((sum, d) => sum + (d.image_count - d.favorited_count), 0)
+    const totalFavorited = selectedList.reduce((sum, d) => sum + d.favorited_count, 0)
+    const savedDumpsterPath = localStorage.getItem('localbooru_dumpster_path') || null
+    const dumpsterInfo = savedDumpsterPath ? `\nDumpster: ${savedDumpsterPath}` : ''
+
+    if (!confirm(`Prune ${selectedDirs.size} directories?\n\nThis will move ${totalNonFavorited} non-favorited images to the dumpster folder.\nFavorited images (${totalFavorited}) will be kept.${dumpsterInfo}`)) {
+      return
+    }
+
+    setBatchLoading(true)
+    const { pruneDirectory } = await import('./api')
+    const dirIds = Array.from(selectedDirs)
+
+    // Mark all as pruning
+    setPruning(prev => {
+      const next = { ...prev }
+      dirIds.forEach(id => next[id] = true)
+      return next
+    })
+
+    try {
+      let totalPruned = 0
+      for (const id of dirIds) {
+        try {
+          const result = await pruneDirectory(id, savedDumpsterPath)
+          totalPruned += result.pruned
+        } catch (e) {
+          console.error(`Prune failed for ${id}:`, e)
+        }
+      }
+      alert(`Pruned ${totalPruned} images total`)
+      await refreshDirectories()
+      getLibraryStats().then(setStats).catch(console.error)
+    } finally {
+      setPruning({})
+      setBatchLoading(false)
+      clearSelection()
+    }
+  }
+
+  const handleBatchRemove = async () => {
+    if (selectedDirs.size === 0) return
+    const selectedList = directories.filter(d => selectedDirs.has(d.id))
+    const totalImages = selectedList.reduce((sum, d) => sum + (d.image_count || 0), 0)
+
+    // Only show first 5 names to avoid huge dialogs
+    const maxNames = 5
+    const namesList = selectedList.slice(0, maxNames).map(d => d.name || d.path)
+    const remaining = selectedList.length - maxNames
+    let namesDisplay = '- ' + namesList.join('\n- ')
+    if (remaining > 0) {
+      namesDisplay += `\n... and ${remaining} more`
+    }
+
+    if (!confirm(`Remove ${selectedDirs.size} directories (${totalImages.toLocaleString()} images) from watch list?\n\n${namesDisplay}\n\nImages will be removed from library.\nActual files on disk will NOT be deleted.\n\nThis may take a while for large libraries.`)) {
+      return
+    }
+
+    setBatchLoading(true)
+
+    try {
+      const { bulkDeleteDirectories } = await import('./api')
+      const dirIds = Array.from(selectedDirs)
+      console.log(`[Bulk Remove] Deleting ${dirIds.length} directories with ${totalImages} images...`)
+
+      const result = await bulkDeleteDirectories(dirIds, false)
+      console.log(`[Bulk Remove] Deleted ${result.deleted} directories, ${result.image_count} images`)
+
+      await refreshDirectories()
+    } catch (e) {
+      console.error('Bulk remove failed:', e)
+      alert(`Remove failed: ${e.response?.data?.detail || e.message || 'Unknown error'}`)
+    } finally {
+      setBatchLoading(false)
+      clearSelection()
+    }
+  }
+
   return (
     <div className="app">
       <div className="main-container">
@@ -142,9 +299,24 @@ function DirectoriesPage() {
             ) : directories.length === 0 ? (
               <p className="empty-state">No directories added yet. Add a folder to get started!</p>
             ) : (
+              <>
+              <div className="directory-list-header">
+                <span className="directory-count">{directories.length} directories</span>
+                <div className="selection-buttons">
+                  <button className="select-btn" onClick={selectAllDirs}>Select All</button>
+                  <button className="select-btn" onClick={clearSelection} disabled={selectedDirs.size === 0}>Unselect All</button>
+                </div>
+              </div>
               <ul className="directory-list">
                 {directories.map(dir => (
-                  <li key={dir.id} className={`directory-item ${dir.enabled ? '' : 'disabled'}`}>
+                  <li key={dir.id} className={`directory-item ${dir.enabled ? '' : 'disabled'} ${selectedDirs.has(dir.id) ? 'selected' : ''}`}>
+                    <label className="directory-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={selectedDirs.has(dir.id)}
+                        onChange={() => toggleSelectDir(dir.id)}
+                      />
+                    </label>
                     <div className="directory-info">
                       <strong>{dir.name}</strong>
                       <span className="directory-path">{dir.path}</span>
@@ -218,6 +390,14 @@ function DirectoriesPage() {
                         ComfyUI
                       </button>
                       <button
+                        className="relocate-btn"
+                        onClick={() => handleRelocate(dir.id, dir.name || dir.path, dir.path)}
+                        disabled={relocating[dir.id]}
+                        title="Change directory location (if folder was moved)"
+                      >
+                        {relocating[dir.id] ? 'Relocating...' : 'Edit Path'}
+                      </button>
+                      <button
                         className="remove-btn"
                         onClick={() => handleRemove(dir.id, dir.name || dir.path)}
                       >
@@ -231,6 +411,47 @@ function DirectoriesPage() {
                   </li>
                 ))}
               </ul>
+              </>
+            )}
+
+            {/* Batch action bar */}
+            {selectedDirs.size > 0 && (
+              <div className="batch-action-bar directory-batch-bar">
+                <div className="batch-action-count">
+                  {selectedDirs.size} selected
+                  <button className="batch-select-link" onClick={selectAllDirs}>Select All</button>
+                </div>
+                <div className="batch-action-buttons">
+                  <button
+                    className="batch-btn"
+                    onClick={handleBatchRescan}
+                    disabled={batchLoading}
+                  >
+                    Rescan All
+                  </button>
+                  <button
+                    className="batch-btn"
+                    onClick={handleBatchPrune}
+                    disabled={batchLoading}
+                  >
+                    Prune All
+                  </button>
+                  <button
+                    className="batch-btn danger"
+                    onClick={handleBatchRemove}
+                    disabled={batchLoading}
+                  >
+                    Remove All
+                  </button>
+                  <button
+                    className="batch-btn secondary"
+                    onClick={clearSelection}
+                    disabled={batchLoading}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </main>
@@ -577,6 +798,13 @@ function Gallery() {
     lightboxIndexRef.current = lightboxIndex
   }, [lightboxIndex])
 
+  // Keep hasMore in sync with actual images count (fixes stale closure bugs)
+  useEffect(() => {
+    if (total > 0) {
+      setHasMore(images.length < total)
+    }
+  }, [images.length, total])
+
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedImages, setSelectedImages] = useState(new Set())
@@ -685,8 +913,7 @@ function Gallery() {
         setImages(result.images)
       }
       setTotal(result.total)
-      const loadedCount = append ? images.length + result.images.length : result.images.length
-      setHasMore(loadedCount < result.total)
+      // Note: hasMore is computed by useEffect based on actual images.length
       setPage(pageNum)
     } catch (error) {
       console.error('Failed to load images:', error)
@@ -885,8 +1112,8 @@ function Gallery() {
 
           if (newImages.length > 0) {
             setImages(prev => [...prev, ...newImages])
-            const newLoadedCount = images.length + newImages.length
-            setHasMore(newLoadedCount < result.total)
+            setTotal(result.total)  // Update total in case it changed
+            // Note: hasMore is computed by useEffect based on actual images.length
             setPage(nextPage)
             // Navigate to the first new image
             setLightboxIndex(newImages[0].id)

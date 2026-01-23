@@ -1,15 +1,17 @@
 """
 Library router - library-wide operations and statistics
 """
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
+from ..database import get_db, directory_db_manager
 from ..models import (
     Image, Tag, ImageFile, WatchDirectory, TaskQueue,
-    TaskStatus, TaskType, Rating
+    TaskStatus, TaskType, Rating,
+    DirectoryImage, DirectoryImageFile
 )
 from ..services.events import library_events
 
@@ -296,6 +298,101 @@ async def verify_all_files(db: AsyncSession = Depends(get_db)):
     )
 
     return {"message": "File verification queued", "task_id": task.id}
+
+
+@router.post("/regenerate-thumbnails")
+async def regenerate_missing_thumbnails(
+    directory_id: int = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Find images without thumbnails and regenerate them.
+
+    This is useful after server restarts during import, or if thumbnails
+    were accidentally deleted.
+
+    Args:
+        directory_id: Optional - only check this directory. If not specified,
+                      checks all directories.
+    """
+    import asyncio
+    from ..services.importer import (
+        generate_thumbnail_async,
+        generate_video_thumbnail_async,
+        is_video_file
+    )
+    from ..config import get_settings
+
+    settings = get_settings()
+    thumbnails_dir = Path(settings.thumbnails_dir)
+    thumbnails_dir.mkdir(parents=True, exist_ok=True)
+
+    missing = 0
+    regenerated = 0
+    failed = 0
+
+    # Get directory IDs to check
+    if directory_id:
+        dir_ids = [directory_id]
+    else:
+        dir_ids = directory_db_manager.get_all_directory_ids()
+
+    for dir_id in dir_ids:
+        if not directory_db_manager.db_exists(dir_id):
+            continue
+
+        dir_db = await directory_db_manager.get_session(dir_id)
+        try:
+            # Get all images with their file paths
+            query = (
+                select(DirectoryImage.file_hash, DirectoryImageFile.original_path)
+                .join(DirectoryImageFile, DirectoryImageFile.image_id == DirectoryImage.id)
+                .where(DirectoryImageFile.file_exists == True)
+            )
+            result = await dir_db.execute(query)
+            rows = result.all()
+
+            for file_hash, original_path in rows:
+                if not file_hash:
+                    continue
+
+                thumbnail_path = thumbnails_dir / f"{file_hash[:16]}.webp"
+
+                if not thumbnail_path.exists():
+                    missing += 1
+
+                    # Check if source file exists
+                    if not Path(original_path).exists():
+                        failed += 1
+                        continue
+
+                    # Regenerate thumbnail
+                    try:
+                        if is_video_file(original_path):
+                            success = await generate_video_thumbnail_async(
+                                original_path, str(thumbnail_path)
+                            )
+                        else:
+                            success = await generate_thumbnail_async(
+                                original_path, str(thumbnail_path)
+                            )
+
+                        if success:
+                            regenerated += 1
+                        else:
+                            failed += 1
+                    except Exception as e:
+                        print(f"[Thumbnails] Failed to regenerate for {original_path}: {e}")
+                        failed += 1
+
+        finally:
+            await dir_db.close()
+
+    return {
+        "missing": missing,
+        "regenerated": regenerated,
+        "failed": failed,
+        "message": f"Found {missing} missing thumbnails, regenerated {regenerated}, failed {failed}"
+    }
 
 
 @router.post("/detect-ages")

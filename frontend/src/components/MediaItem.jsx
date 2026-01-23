@@ -40,7 +40,7 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
 
     const loadPreviewFrames = async () => {
       try {
-        const data = await fetchPreviewFrames(image.id)
+        const data = await fetchPreviewFrames(image.id, image.directory_id)
         if (data.frames && data.frames.length > 0) {
           // Preload all frame images
           const frameUrls = data.frames.map(url => getMediaUrl(url))
@@ -144,6 +144,8 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
 
   const handleLoadError = () => {
     setError(true)
+    // Always mark as loaded so we show the appropriate placeholder
+    setLoaded(true)
   }
 
   // Get the current display image
@@ -192,7 +194,8 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     )
   }
 
-  if (error && fileStatus === 'available') {
+  // Only show error for truly broken items, not just missing thumbnails
+  if (error && fileStatus !== 'available') {
     return (
       <div className="media-item media-error" onClick={handleClick}>
         <div className="error-placeholder">Failed to load</div>
@@ -267,6 +270,17 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
       )}
 
       {!loaded && <div className="loading-placeholder" />}
+
+      {/* Show placeholder icon when thumbnail is still generating (loaded but src failed) */}
+      {loaded && error && fileStatus === 'available' && (
+        <div className="thumbnail-generating">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21,15 16,10 5,21"/>
+          </svg>
+        </div>
+      )}
 
       {/* Rating badge */}
       <span className={`rating-badge rating-${localRating}`}>

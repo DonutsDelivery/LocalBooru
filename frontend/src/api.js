@@ -265,9 +265,10 @@ const previewFrameQueue = {
   }
 }
 
-export async function fetchPreviewFrames(imageId) {
+export async function fetchPreviewFrames(imageId, directoryId = null) {
   return previewFrameQueue.enqueue(async () => {
-    const response = await api.get(`/images/${imageId}/preview-frames`)
+    const params = directoryId ? `?directory_id=${directoryId}` : ''
+    const response = await api.get(`/images/${imageId}/preview-frames${params}`)
     return response.data
   })
 }
@@ -351,6 +352,16 @@ export async function updateDirectoryPath(id, newPath) {
 
 export async function removeDirectory(id, keepImages = false) {
   const response = await api.delete(`/directories/${id}?keep_images=${keepImages}`)
+  invalidateDirectoriesCache()
+  return response.data
+}
+
+export async function bulkDeleteDirectories(directoryIds, keepImages = false) {
+  // Long timeout for bulk operations with many images
+  const response = await api.post('/directories/bulk-delete',
+    { directory_ids: directoryIds, keep_images: keepImages },
+    { timeout: 600000 }  // 10 minute timeout for large deletions
+  )
   invalidateDirectoriesCache()
   return response.data
 }
@@ -520,6 +531,13 @@ export function getMediaUrl(path) {
     // Remove leading slash if present to avoid double slashes
     const cleanPath = path.startsWith('/') ? path : `/${path}`
     return `${currentServerUrl}${cleanPath}`
+  }
+
+  // Dev mode - Vite dev server needs full URL to backend
+  const isDevServer = window.location.port === '5173' || window.location.port === '5174'
+  if (isDevServer) {
+    const cleanPath = path.startsWith('/') ? path : `/${path}`
+    return `http://127.0.0.1:8790${cleanPath}`
   }
 
   // On web, relative URLs work fine

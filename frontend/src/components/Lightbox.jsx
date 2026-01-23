@@ -59,6 +59,42 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   const image = images[currentIndex]
 
+  // Preload next 3 images for smoother navigation
+  useEffect(() => {
+    if (!images || images.length === 0) return
+
+    const preloadCount = 3
+    const preloadedImages = []
+
+    for (let i = 1; i <= preloadCount; i++) {
+      const nextIndex = currentIndex + i
+      if (nextIndex < images.length) {
+        const nextImage = images[nextIndex]
+        if (nextImage?.url && !isVideo(nextImage.filename)) {
+          // Preload image by creating an Image object
+          const img = new Image()
+          img.src = getMediaUrl(nextImage.url)
+          preloadedImages.push(img)
+        }
+      }
+    }
+
+    // Also preload previous image for back navigation
+    if (currentIndex > 0) {
+      const prevImage = images[currentIndex - 1]
+      if (prevImage?.url && !isVideo(prevImage.filename)) {
+        const img = new Image()
+        img.src = getMediaUrl(prevImage.url)
+        preloadedImages.push(img)
+      }
+    }
+
+    // Cleanup: images will be garbage collected when effect re-runs
+    return () => {
+      preloadedImages.length = 0
+    }
+  }, [currentIndex, images])
+
   // Reset adjustments, preview, zoom, and interpolation when changing images
   useEffect(() => {
     setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
