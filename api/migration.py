@@ -1374,11 +1374,11 @@ def calculate_import_size(
     source: Path,
     directory_ids: list[int],
     dest: Path
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, int, int]:
     """Calculate size of import operation.
 
     Returns:
-        tuple of (total_files, total_bytes, images_to_import, images_to_skip)
+        tuple of (total_files, total_bytes, images_to_import, images_to_skip, total_db_records, total_tags)
     """
     import sqlite3
 
@@ -1386,12 +1386,14 @@ def calculate_import_size(
     dest_db = dest / "library.db"
 
     if not source_db.exists() or not dest_db.exists():
-        return 0, 0, 0, 0
+        return 0, 0, 0, 0, 0, 0
 
     total_files = 0
     total_bytes = 0
     images_to_import = 0
     images_to_skip = 0
+    total_db_records = 0
+    total_tags = 0
 
     source_conn = sqlite3.connect(str(source_db))
     dest_conn = sqlite3.connect(str(dest_db))
@@ -1421,6 +1423,46 @@ def calculate_import_size(
                 images_to_import += 1
                 source_hashes.append(file_hash)
 
+        # Count DB records to be inserted
+        total_db_records += len(directory_ids)  # watch_directories
+        total_db_records += images_to_import  # images
+
+        # Count image_files for non-duplicate images
+        if source_hashes:
+            # Get image IDs for non-duplicate hashes
+            batch_size = 500
+            image_ids = []
+            for i in range(0, len(source_hashes), batch_size):
+                batch = source_hashes[i:i + batch_size]
+                batch_placeholders = ','.join('?' * len(batch))
+                source_cursor.execute(f"SELECT id FROM images WHERE file_hash IN ({batch_placeholders})", batch)
+                image_ids.extend(r[0] for r in source_cursor.fetchall())
+
+            # Count image_files
+            if image_ids:
+                for i in range(0, len(image_ids), batch_size):
+                    batch = image_ids[i:i + batch_size]
+                    batch_placeholders = ','.join('?' * len(batch))
+                    source_cursor.execute(f"""
+                        SELECT COUNT(*) FROM image_files
+                        WHERE image_id IN ({batch_placeholders}) AND watch_directory_id IN ({','.join('?' * len(directory_ids))})
+                    """, batch + directory_ids)
+                    total_db_records += source_cursor.fetchone()[0]
+
+                # Count image_tags
+                for i in range(0, len(image_ids), batch_size):
+                    batch = image_ids[i:i + batch_size]
+                    batch_placeholders = ','.join('?' * len(batch))
+                    source_cursor.execute(f"SELECT COUNT(*) FROM image_tags WHERE image_id IN ({batch_placeholders})", batch)
+                    total_db_records += source_cursor.fetchone()[0]
+
+                # Count unique tags
+                for i in range(0, len(image_ids), batch_size):
+                    batch = image_ids[i:i + batch_size]
+                    batch_placeholders = ','.join('?' * len(batch))
+                    source_cursor.execute(f"SELECT COUNT(DISTINCT tag_id) FROM image_tags WHERE image_id IN ({batch_placeholders})", batch)
+                    total_tags += source_cursor.fetchone()[0]
+
         # Calculate thumbnail sizes for non-duplicate images
         thumb_dir = source / "thumbnails"
         preview_dir = source / "preview_cache"
@@ -1444,7 +1486,7 @@ def calculate_import_size(
         source_conn.close()
         dest_conn.close()
 
-    return total_files, total_bytes, images_to_import, images_to_skip
+    return total_files, total_bytes, images_to_import, images_to_skip, total_db_records, total_tags
 
 
 async def import_directories(
@@ -1460,6 +1502,7 @@ async def import_directories(
     - Remaps IDs to avoid conflicts
     - Deduplicates tags by name
     - Skips images that already exist (by file_hash)
+    - Uses batch inserts for better performance
 
     Args:
         mode: Direction of import
@@ -1511,10 +1554,15 @@ async def import_directories(
             error="; ".join(errors)
         )
 
-    # Calculate sizes
-    total_files, total_bytes, images_to_import, images_to_skip = calculate_import_size(
+    # Calculate sizes including DB records for accurate progress
+    total_files, total_bytes, images_to_import, images_to_skip, total_db_records, total_tags = calculate_import_size(
         source, directory_ids, dest
     )
+
+    # Total operations = DB records + file copies
+    # Weight DB operations as 1 unit each, file copies proportional to bytes
+    # For progress, we'll track: records_done + (bytes_copied / total_bytes * total_files)
+    total_operations = total_db_records + total_files
 
     if dry_run:
         return ImportResult(
@@ -1525,7 +1573,7 @@ async def import_directories(
             directories_imported=len(directory_ids),
             images_imported=images_to_import,
             images_skipped=images_to_skip,
-            tags_created=0,  # Unknown until actual import
+            tags_created=total_tags,  # Estimate
             tags_reused=0,
             files_copied=total_files,
             bytes_copied=total_bytes,
@@ -1540,9 +1588,20 @@ async def import_directories(
     actual_images_skipped = 0
     tags_created = 0
     tags_reused = 0
+    records_done = 0
 
     def report_progress(phase: str, current_file: str = ""):
         if progress_callback:
+            # Calculate overall progress based on DB records + file copies
+            if total_operations > 0:
+                file_progress = (files_copied / total_files) if total_files > 0 else 0
+                db_weight = total_db_records / total_operations
+                file_weight = total_files / total_operations
+                percent = (records_done / total_db_records * db_weight * 100 if total_db_records > 0 else 0) + \
+                         (file_progress * file_weight * 100)
+            else:
+                percent = 100 if phase == "complete" else 0
+
             progress = MigrationProgress(
                 phase=phase,
                 current_file=current_file,
@@ -1550,7 +1609,7 @@ async def import_directories(
                 total_files=total_files,
                 bytes_copied=bytes_copied,
                 total_bytes=total_bytes,
-                percent=(bytes_copied / total_bytes * 100) if total_bytes > 0 else 0
+                percent=min(percent, 100)
             )
             progress_callback(progress)
 
@@ -1582,8 +1641,6 @@ async def import_directories(
             dest_cursor.execute("SELECT COALESCE(MAX(id), 0) FROM tags")
             max_tag_id = dest_cursor.fetchone()[0]
 
-            # Note: tag_aliases doesn't have an id column (uses alias + target_tag_id as key)
-
             # Get existing tags in destination (for deduplication)
             dest_cursor.execute("SELECT id, name FROM tags")
             dest_tags_by_name = {row['name']: row['id'] for row in dest_cursor.fetchall()}
@@ -1601,8 +1658,8 @@ async def import_directories(
             # Track which source images to skip (duplicates)
             images_to_skip_ids = set()
 
-            # === Phase 2: Import watch directories ===
-            report_progress("importing", "watch_directories")
+            # === Phase 2: Import watch directories (batch) ===
+            report_progress("importing", f"watch_directories (0/{len(directory_ids)})")
 
             placeholders = ','.join('?' * len(directory_ids))
             source_cursor.execute(
@@ -1611,27 +1668,34 @@ async def import_directories(
             )
             watch_dir_rows = source_cursor.fetchall()
             watch_dir_cols = [desc[0] for desc in source_cursor.description]
+            id_idx = watch_dir_cols.index('id')
 
+            # Build all new rows for batch insert
+            watch_dir_batch = []
             for row in watch_dir_rows:
                 old_id = row['id']
                 new_id = max_watch_dir_id + 1
                 max_watch_dir_id = new_id
                 watch_dir_id_map[old_id] = new_id
 
-                # Build new row with remapped ID
                 new_row = list(row)
-                id_idx = watch_dir_cols.index('id')
                 new_row[id_idx] = new_id
+                watch_dir_batch.append(new_row)
 
+            # Batch insert all directories at once
+            if watch_dir_batch:
                 placeholders_insert = ','.join('?' * len(watch_dir_cols))
-                dest_cursor.execute(
+                dest_cursor.executemany(
                     f"INSERT INTO watch_directories ({','.join(watch_dir_cols)}) VALUES ({placeholders_insert})",
-                    new_row
+                    watch_dir_batch
                 )
-                directories_imported += 1
+                directories_imported = len(watch_dir_batch)
+                records_done += directories_imported
 
-            # === Phase 3: Identify images to import (non-duplicates) ===
-            report_progress("importing", "Identifying images")
+            report_progress("importing", f"watch_directories ({directories_imported}/{len(directory_ids)})")
+
+            # === Phase 3: Identify and import images ===
+            report_progress("importing", "Analyzing images...")
 
             placeholders = ','.join('?' * len(directory_ids))
             source_cursor.execute(f"""
@@ -1642,41 +1706,45 @@ async def import_directories(
             """, directory_ids)
             image_rows = source_cursor.fetchall()
             image_cols = [desc[0] for desc in source_cursor.description]
+            id_idx = image_cols.index('id')
+            hash_idx = image_cols.index('file_hash')
 
-            # First pass: identify which images to skip
-            for row in image_rows:
-                if row['file_hash'] in dest_hashes:
-                    images_to_skip_ids.add(row['id'])
-
-            # === Phase 4: Import images (non-duplicates only) ===
-            report_progress("importing", "images")
-
+            # Identify duplicates and build batch for non-duplicates
+            image_batch = []
+            total_source_images = len(image_rows)
             for row in image_rows:
                 old_id = row['id']
-
-                if old_id in images_to_skip_ids:
+                if row['file_hash'] in dest_hashes:
+                    images_to_skip_ids.add(old_id)
                     actual_images_skipped += 1
-                    continue
+                else:
+                    new_id = max_image_id + 1
+                    max_image_id = new_id
+                    image_id_map[old_id] = new_id
 
-                new_id = max_image_id + 1
-                max_image_id = new_id
-                image_id_map[old_id] = new_id
+                    new_row = list(row)
+                    new_row[id_idx] = new_id
+                    image_batch.append(new_row)
 
-                new_row = list(row)
-                id_idx = image_cols.index('id')
-                new_row[id_idx] = new_id
-
+            # Batch insert images
+            report_progress("importing", f"images (0/{len(image_batch)})")
+            if image_batch:
                 placeholders_insert = ','.join('?' * len(image_cols))
-                dest_cursor.execute(
-                    f"INSERT INTO images ({','.join(image_cols)}) VALUES ({placeholders_insert})",
-                    new_row
-                )
-                images_imported += 1
+                # Insert in batches of 1000 for memory efficiency
+                batch_size = 1000
+                for i in range(0, len(image_batch), batch_size):
+                    batch = image_batch[i:i + batch_size]
+                    dest_cursor.executemany(
+                        f"INSERT INTO images ({','.join(image_cols)}) VALUES ({placeholders_insert})",
+                        batch
+                    )
+                    images_imported += len(batch)
+                    records_done += len(batch)
+                    report_progress("importing", f"images ({images_imported}/{len(image_batch)})")
+                    await asyncio.sleep(0)
 
-            await asyncio.sleep(0)
-
-            # === Phase 5: Import image_files ===
-            report_progress("importing", "image_files")
+            # === Phase 4: Import image_files (batch) ===
+            report_progress("importing", "image_files...")
 
             source_cursor.execute(
                 f"SELECT * FROM image_files WHERE watch_directory_id IN ({','.join('?' * len(directory_ids))})",
@@ -1684,11 +1752,13 @@ async def import_directories(
             )
             image_file_rows = source_cursor.fetchall()
             image_file_cols = [desc[0] for desc in source_cursor.description]
+            id_idx = image_file_cols.index('id')
+            image_id_idx = image_file_cols.index('image_id')
+            watch_dir_idx = image_file_cols.index('watch_directory_id')
 
+            image_file_batch = []
             for row in image_file_rows:
                 old_image_id = row['image_id']
-
-                # Skip if parent image was skipped (duplicate)
                 if old_image_id in images_to_skip_ids:
                     continue
 
@@ -1698,26 +1768,28 @@ async def import_directories(
                 image_file_id_map[old_id] = new_id
 
                 new_row = list(row)
-                id_idx = image_file_cols.index('id')
-                image_id_idx = image_file_cols.index('image_id')
-                watch_dir_idx = image_file_cols.index('watch_directory_id')
-
                 new_row[id_idx] = new_id
                 new_row[image_id_idx] = image_id_map[old_image_id]
                 new_row[watch_dir_idx] = watch_dir_id_map[row['watch_directory_id']]
+                image_file_batch.append(new_row)
 
+            # Batch insert
+            if image_file_batch:
                 placeholders_insert = ','.join('?' * len(image_file_cols))
-                dest_cursor.execute(
-                    f"INSERT INTO image_files ({','.join(image_file_cols)}) VALUES ({placeholders_insert})",
-                    new_row
-                )
+                batch_size = 1000
+                for i in range(0, len(image_file_batch), batch_size):
+                    batch = image_file_batch[i:i + batch_size]
+                    dest_cursor.executemany(
+                        f"INSERT INTO image_files ({','.join(image_file_cols)}) VALUES ({placeholders_insert})",
+                        batch
+                    )
+                    records_done += len(batch)
+                    report_progress("importing", f"image_files ({min(i + batch_size, len(image_file_batch))}/{len(image_file_batch)})")
+                    await asyncio.sleep(0)
 
-            await asyncio.sleep(0)
+            # === Phase 5: Import tags (deduplicate by name, batch) ===
+            report_progress("importing", "tags...")
 
-            # === Phase 6: Import tags (deduplicate by name) ===
-            report_progress("importing", "tags")
-
-            # Get tag IDs used by imported images
             imported_image_ids = list(image_id_map.keys())
             source_tag_ids = set()
 
@@ -1732,7 +1804,9 @@ async def import_directories(
                     )
                     source_tag_ids.update(r[0] for r in source_cursor.fetchall())
 
-            # Get tag data and build mapping
+            # Get all tag data at once and build batch
+            tag_batch = []
+            tag_cols = None
             if source_tag_ids:
                 tag_id_list = list(source_tag_ids)
                 batch_size = 500
@@ -1744,43 +1818,50 @@ async def import_directories(
                         batch
                     )
                     tag_rows = source_cursor.fetchall()
-                    tag_cols = [desc[0] for desc in source_cursor.description]
+                    if tag_rows:
+                        if tag_cols is None:
+                            tag_cols = [desc[0] for desc in source_cursor.description]
+                        id_idx = tag_cols.index('id')
+                        name_idx = tag_cols.index('name')
+                        post_count_idx = tag_cols.index('post_count') if 'post_count' in tag_cols else None
 
-                    for row in tag_rows:
-                        old_id = row['id']
-                        tag_name = row['name']
+                        for row in tag_rows:
+                            old_id = row['id']
+                            tag_name = row['name']
 
-                        if tag_name in dest_tags_by_name:
-                            # Tag exists in destination - reuse it
-                            tag_id_map[old_id] = dest_tags_by_name[tag_name]
-                            tags_reused += 1
-                        else:
-                            # New tag - create it
-                            new_id = max_tag_id + 1
-                            max_tag_id = new_id
-                            tag_id_map[old_id] = new_id
-                            dest_tags_by_name[tag_name] = new_id
+                            if tag_name in dest_tags_by_name:
+                                tag_id_map[old_id] = dest_tags_by_name[tag_name]
+                                tags_reused += 1
+                            else:
+                                new_id = max_tag_id + 1
+                                max_tag_id = new_id
+                                tag_id_map[old_id] = new_id
+                                dest_tags_by_name[tag_name] = new_id
 
-                            new_row = list(row)
-                            id_idx = tag_cols.index('id')
-                            new_row[id_idx] = new_id
-                            # Reset post_count - will be recalculated
-                            if 'post_count' in tag_cols:
-                                post_count_idx = tag_cols.index('post_count')
-                                new_row[post_count_idx] = 0
+                                new_row = list(row)
+                                new_row[id_idx] = new_id
+                                if post_count_idx is not None:
+                                    new_row[post_count_idx] = 0
+                                tag_batch.append(new_row)
+                                tags_created += 1
 
-                            placeholders_insert = ','.join('?' * len(tag_cols))
-                            dest_cursor.execute(
-                                f"INSERT INTO tags ({','.join(tag_cols)}) VALUES ({placeholders_insert})",
-                                new_row
-                            )
-                            tags_created += 1
+            # Batch insert new tags
+            if tag_batch and tag_cols:
+                placeholders_insert = ','.join('?' * len(tag_cols))
+                dest_cursor.executemany(
+                    f"INSERT INTO tags ({','.join(tag_cols)}) VALUES ({placeholders_insert})",
+                    tag_batch
+                )
+                records_done += len(tag_batch)
 
+            report_progress("importing", f"tags ({tags_created} created, {tags_reused} reused)")
             await asyncio.sleep(0)
 
-            # === Phase 7: Import image_tags ===
-            report_progress("importing", "image_tags")
+            # === Phase 6: Import image_tags (batch) ===
+            report_progress("importing", "image_tags...")
 
+            image_tag_batch = []
+            image_tag_cols = None
             if imported_image_ids:
                 batch_size = 500
                 for i in range(0, len(imported_image_ids), batch_size):
@@ -1791,46 +1872,56 @@ async def import_directories(
                         batch
                     )
                     image_tag_rows = source_cursor.fetchall()
-                    image_tag_cols = [desc[0] for desc in source_cursor.description]
 
-                    for row in image_tag_rows:
-                        old_image_id = row['image_id']
-                        old_tag_id = row['tag_id']
+                    if image_tag_rows and not image_tag_cols:
+                        image_tag_cols = [desc[0] for desc in source_cursor.description]
 
-                        if old_image_id not in image_id_map or old_tag_id not in tag_id_map:
-                            continue
-
-                        new_row = list(row)
+                    if image_tag_rows:
                         image_id_idx = image_tag_cols.index('image_id')
                         tag_id_idx = image_tag_cols.index('tag_id')
-                        new_row[image_id_idx] = image_id_map[old_image_id]
-                        new_row[tag_id_idx] = tag_id_map[old_tag_id]
 
-                        placeholders_insert = ','.join('?' * len(image_tag_cols))
-                        try:
-                            dest_cursor.execute(
-                                f"INSERT INTO image_tags ({','.join(image_tag_cols)}) VALUES ({placeholders_insert})",
-                                new_row
-                            )
-                        except sqlite3.IntegrityError:
-                            pass  # Skip duplicates
+                        for row in image_tag_rows:
+                            old_image_id = row['image_id']
+                            old_tag_id = row['tag_id']
 
+                            if old_image_id not in image_id_map or old_tag_id not in tag_id_map:
+                                continue
+
+                            new_row = list(row)
+                            new_row[image_id_idx] = image_id_map[old_image_id]
+                            new_row[tag_id_idx] = tag_id_map[old_tag_id]
+                            image_tag_batch.append(tuple(new_row))
+
+            # Batch insert image_tags (with conflict ignore)
+            if image_tag_batch and image_tag_cols:
+                placeholders_insert = ','.join('?' * len(image_tag_cols))
+                batch_size = 1000
+                for i in range(0, len(image_tag_batch), batch_size):
+                    batch = image_tag_batch[i:i + batch_size]
+                    # Use INSERT OR IGNORE to skip duplicates
+                    dest_cursor.executemany(
+                        f"INSERT OR IGNORE INTO image_tags ({','.join(image_tag_cols)}) VALUES ({placeholders_insert})",
+                        batch
+                    )
+                    records_done += len(batch)
+                    report_progress("importing", f"image_tags ({min(i + batch_size, len(image_tag_batch))}/{len(image_tag_batch)})")
                     await asyncio.sleep(0)
 
-            # === Phase 8: Update tag post counts ===
-            report_progress("importing", "Updating tag counts")
+            # === Phase 7: Update tag post counts (batch) ===
+            report_progress("importing", "Updating tag counts...")
 
-            # Recalculate post_count for all affected tags
             affected_tag_ids = list(set(tag_id_map.values()))
             if affected_tag_ids:
-                batch_size = 100
+                # Update all tag counts in one query using a subquery
+                batch_size = 500
                 for i in range(0, len(affected_tag_ids), batch_size):
                     batch = affected_tag_ids[i:i + batch_size]
-                    for tag_id in batch:
-                        dest_cursor.execute(
-                            "UPDATE tags SET post_count = (SELECT COUNT(*) FROM image_tags WHERE tag_id = ?) WHERE id = ?",
-                            (tag_id, tag_id)
-                        )
+                    batch_placeholders = ','.join('?' * len(batch))
+                    dest_cursor.execute(f"""
+                        UPDATE tags SET post_count = (
+                            SELECT COUNT(*) FROM image_tags WHERE image_tags.tag_id = tags.id
+                        ) WHERE id IN ({batch_placeholders})
+                    """, batch)
 
             dest_conn.commit()
             report_progress("database_complete", "library.db")
@@ -1841,8 +1932,8 @@ async def import_directories(
 
         await asyncio.sleep(0)
 
-        # === Phase 9: Copy thumbnails for imported images ===
-        report_progress("copying", "thumbnails")
+        # === Phase 8: Copy thumbnails for imported images ===
+        report_progress("copying", "thumbnails...")
 
         # Get file hashes for imported images
         source_conn = sqlite3.connect(str(source_db))
@@ -1870,29 +1961,30 @@ async def import_directories(
 
         if source_thumb_dir.exists() and imported_hashes:
             dest_thumb_dir.mkdir(parents=True, exist_ok=True)
+            total_thumbs = len(imported_hashes)
 
-            for file_hash in imported_hashes:
+            for idx, file_hash in enumerate(imported_hashes):
                 thumb_file = f"{file_hash}.webp"
                 source_thumb = source_thumb_dir / thumb_file
                 dest_thumb = dest_thumb_dir / thumb_file
 
                 if source_thumb.exists() and not dest_thumb.exists():
-                    report_progress("copying", f"thumbnails/{thumb_file}")
                     shutil.copy2(source_thumb, dest_thumb)
                     files_copied += 1
                     bytes_copied += source_thumb.stat().st_size
 
-                if files_copied % 50 == 0:
+                # Report progress every 100 files
+                if (idx + 1) % 100 == 0 or idx == total_thumbs - 1:
+                    report_progress("copying", f"thumbnails ({idx + 1}/{total_thumbs})")
                     await asyncio.sleep(0)
 
-        # === Phase 10: Copy preview cache for imported images ===
-        report_progress("copying", "preview_cache")
-
+        # === Phase 9: Copy preview cache for imported images ===
         source_preview_dir = source / "preview_cache"
         dest_preview_dir = dest / "preview_cache"
 
         if source_preview_dir.exists() and imported_hashes:
             dest_preview_dir.mkdir(parents=True, exist_ok=True)
+            preview_count = 0
 
             for file_hash in imported_hashes:
                 source_preview = source_preview_dir / file_hash
@@ -1904,12 +1996,13 @@ async def import_directories(
                         if f.is_file():
                             dest_file = dest_preview / f.name
                             if not dest_file.exists():
-                                report_progress("copying", f"preview_cache/{file_hash}/{f.name}")
                                 shutil.copy2(f, dest_file)
                                 files_copied += 1
                                 bytes_copied += f.stat().st_size
+                                preview_count += 1
 
-                if files_copied % 50 == 0:
+                if preview_count % 50 == 0:
+                    report_progress("copying", f"preview_cache ({preview_count} files)")
                     await asyncio.sleep(0)
 
         report_progress("complete")
@@ -1929,6 +2022,9 @@ async def import_directories(
         )
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+
         if progress_callback:
             progress_callback(MigrationProgress(
                 phase="error",
@@ -1937,7 +2033,7 @@ async def import_directories(
                 total_files=total_files,
                 bytes_copied=bytes_copied,
                 total_bytes=total_bytes,
-                percent=(bytes_copied / total_bytes * 100) if total_bytes > 0 else 0,
+                percent=0,
                 error=str(e)
             ))
 

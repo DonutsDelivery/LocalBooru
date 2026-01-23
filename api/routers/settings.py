@@ -917,6 +917,8 @@ async def start_migration(request: MigrationRequest):
 @router.get("/migration/status")
 async def get_migration_status():
     """Get current migration progress."""
+    from ..migration import ImportResult
+
     response = {
         "running": _migration_state["running"],
         "progress": None,
@@ -938,7 +940,7 @@ async def get_migration_status():
 
     if _migration_state["result"]:
         r = _migration_state["result"]
-        response["result"] = {
+        result_data = {
             "success": r.success,
             "mode": r.mode.value if hasattr(r.mode, 'value') else r.mode,
             "source_path": r.source_path,
@@ -947,6 +949,19 @@ async def get_migration_status():
             "bytes_copied": r.bytes_copied,
             "error": r.error
         }
+
+        # Add import-specific fields if this was an import operation
+        if isinstance(r, ImportResult):
+            result_data["import"] = True
+            result_data["directories_imported"] = r.directories_imported
+            result_data["images_imported"] = r.images_imported
+            result_data["images_skipped"] = r.images_skipped
+            result_data["tags_created"] = r.tags_created
+            result_data["tags_reused"] = r.tags_reused
+        else:
+            result_data["import"] = False
+
+        response["result"] = result_data
 
     return response
 
@@ -1093,7 +1108,7 @@ async def validate_import_endpoint(request: MigrationRequest):
     # Calculate size
     try:
         source, dest = get_migration_paths(mode)
-        total_files, total_bytes, images_to_import, images_to_skip = calculate_import_size(
+        total_files, total_bytes, images_to_import, images_to_skip, total_db_records, total_tags = calculate_import_size(
             source, request.directory_ids, dest
         )
     except ValueError as e:
@@ -1109,7 +1124,9 @@ async def validate_import_endpoint(request: MigrationRequest):
         "size_mb": round(total_bytes / 1024 / 1024, 1) if total_bytes else 0,
         "images_to_import": images_to_import,
         "images_to_skip": images_to_skip,
-        "directory_count": len(request.directory_ids)
+        "directory_count": len(request.directory_ids),
+        "total_db_records": total_db_records,
+        "total_tags": total_tags
     }
 
 

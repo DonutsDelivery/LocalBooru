@@ -357,18 +357,18 @@ export default function MigrationSettings() {
           <div className={`migration-result ${result.success ? 'success' : 'error'}`}>
             {result.success ? (
               <>
-                <h3>{result.import ? 'Import' : 'Migration'} Complete!</h3>
-                {result.import ? (
+                <h3>{result.import === true ? 'Import' : 'Migration'} Complete!</h3>
+                {result.import === true ? (
                   <>
-                    <p>Imported {result.directories_imported} directories with {result.images_imported} images</p>
-                    {result.images_skipped > 0 && (
+                    <p>Imported {result.directories_imported || 0} directories with {result.images_imported || 0} images</p>
+                    {(result.images_skipped || 0) > 0 && (
                       <p>{result.images_skipped} duplicate images were skipped</p>
                     )}
-                    <p>Tags: {result.tags_created} created, {result.tags_reused} reused</p>
-                    <p>Copied {result.files_copied} files ({formatBytes(result.bytes_copied)})</p>
+                    <p>Tags: {result.tags_created || 0} created, {result.tags_reused || 0} reused</p>
+                    <p>Copied {result.files_copied || 0} files ({formatBytes(result.bytes_copied || 0)})</p>
                   </>
                 ) : (
-                  <p>Copied {result.files_copied} files ({formatBytes(result.bytes_copied)})</p>
+                  <p>Copied {result.files_copied || 0} files ({formatBytes(result.bytes_copied || 0)})</p>
                 )}
                 <p><strong>Important:</strong> Restart LocalBooru to use the new data location.</p>
                 <div className="result-actions">
