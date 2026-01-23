@@ -179,144 +179,6 @@ function extractZip(zipPath, destPath) {
 }
 
 /**
- * Create the updater script that will apply the update after app exits
- */
-function createUpdaterScript(extractedPath, appDir) {
-  const isWindows = process.platform === 'win32';
-  const scriptExt = isWindows ? '.bat' : '.sh';
-  const scriptPath = path.join(portableDataDir, 'updates', `apply-update${scriptExt}`);
-
-  // Find the actual content directory (might be nested in a folder)
-  let sourceDir = extractedPath;
-  const entries = fs.readdirSync(extractedPath);
-
-  // If there's only one directory and no files, the content is nested
-  if (entries.length === 1) {
-    const nested = path.join(extractedPath, entries[0]);
-    if (fs.statSync(nested).isDirectory()) {
-      sourceDir = nested;
-    }
-  }
-
-  // Get the executable name/path for restart
-  const exePath = app.getPath('exe');
-  const exeName = path.basename(exePath);
-
-  let script;
-  const logPath = path.join(portableDataDir, 'update.log').replace(/\\/g, '\\\\');
-
-  if (isWindows) {
-    // Windows batch script with logging
-    script = `@echo off
-setlocal enabledelayedexpansion
-
-set LOGFILE="${logPath}"
-echo [%date% %time%] Update script started > %LOGFILE%
-echo [%date% %time%] Source: ${sourceDir} >> %LOGFILE%
-echo [%date% %time%] Dest: ${appDir} >> %LOGFILE%
-echo [%date% %time%] Exe: ${exePath} >> %LOGFILE%
-
-echo Waiting for LocalBooru to exit...
-echo [%date% %time%] Waiting for app to exit... >> %LOGFILE%
-timeout /t 3 /nobreak >nul
-
-:waitloop
-tasklist /FI "IMAGENAME eq ${exeName}" 2>NUL | find /I /N "${exeName}" >NUL
-if "%ERRORLEVEL%"=="0" (
-    echo [%date% %time%] App still running, waiting... >> %LOGFILE%
-    timeout /t 1 /nobreak >nul
-    goto waitloop
-)
-
-echo [%date% %time%] App exited, applying update... >> %LOGFILE%
-echo Applying update...
-
-REM Check if source directory exists
-if not exist "${sourceDir}" (
-    echo [%date% %time%] ERROR: Source directory not found >> %LOGFILE%
-    goto error
-)
-
-REM List source files for debugging
-echo [%date% %time%] Source contents: >> %LOGFILE%
-dir "${sourceDir}" >> %LOGFILE% 2>&1
-
-xcopy /E /Y /I "${sourceDir}\\*" "${appDir}\\" >> %LOGFILE% 2>&1
-if errorlevel 1 (
-    echo [%date% %time%] ERROR: xcopy failed with errorlevel %errorlevel% >> %LOGFILE%
-    goto error
-)
-
-echo [%date% %time%] Update applied successfully >> %LOGFILE%
-echo Starting LocalBooru...
-echo [%date% %time%] Starting app: ${exePath} >> %LOGFILE%
-start "" "${exePath}"
-
-echo [%date% %time%] Update complete >> %LOGFILE%
-exit /b 0
-
-:error
-echo [%date% %time%] Update FAILED >> %LOGFILE%
-pause
-exit /b 1
-`;
-  } else {
-    // Linux/macOS shell script with logging
-    script = `#!/bin/bash
-
-LOGFILE="${logPath}"
-echo "[$(date)] Update script started" > "$LOGFILE"
-echo "[$(date)] Source: ${sourceDir}" >> "$LOGFILE"
-echo "[$(date)] Dest: ${appDir}" >> "$LOGFILE"
-echo "[$(date)] Exe: ${exePath}" >> "$LOGFILE"
-
-echo "Waiting for LocalBooru to exit..."
-echo "[$(date)] Waiting for app to exit..." >> "$LOGFILE"
-sleep 3
-
-# Wait for the process to fully exit
-while pgrep -f "${exeName}" > /dev/null 2>&1; do
-    echo "[$(date)] App still running, waiting..." >> "$LOGFILE"
-    sleep 1
-done
-
-echo "[$(date)] App exited, applying update..." >> "$LOGFILE"
-echo "Applying update..."
-
-# Check if source directory exists
-if [ ! -d "${sourceDir}" ]; then
-    echo "[$(date)] ERROR: Source directory not found" >> "$LOGFILE"
-    exit 1
-fi
-
-# List source files for debugging
-echo "[$(date)] Source contents:" >> "$LOGFILE"
-ls -la "${sourceDir}" >> "$LOGFILE" 2>&1
-
-cp -rf "${sourceDir}/"* "${appDir}/" >> "$LOGFILE" 2>&1
-if [ $? -ne 0 ]; then
-    echo "[$(date)] ERROR: cp failed" >> "$LOGFILE"
-    exit 1
-fi
-
-# Make sure the executable is still executable
-chmod +x "${exePath}"
-
-echo "[$(date)] Update applied successfully" >> "$LOGFILE"
-echo "Starting LocalBooru..."
-echo "[$(date)] Starting app: ${exePath}" >> "$LOGFILE"
-"${exePath}" &
-
-echo "[$(date)] Update complete" >> "$LOGFILE"
-exit 0
-`;
-  }
-
-  fs.writeFileSync(scriptPath, script, { mode: 0o755 });
-  return scriptPath;
-}
-
-/**
  * Check for updates (portable mode)
  */
 async function checkForPortableUpdate() {
@@ -378,55 +240,43 @@ async function downloadPortableUpdate(updateInfo, onProgress) {
   // Extract the ZIP
   await extractZip(zipPath, extractedDir);
 
-  // Create the updater script
-  const appDir = path.dirname(app.getPath('exe'));
-  const scriptPath = createUpdaterScript(extractedDir, appDir);
+  // Delete the ZIP to save space
+  try {
+    fs.unlinkSync(zipPath);
+  } catch (e) {
+    // Ignore deletion errors
+  }
 
   // Save pending update info
   pendingUpdate = {
     version: updateInfo.version,
-    scriptPath: scriptPath,
     extractedDir: extractedDir
   };
 
-  // Write marker file
+  // Write marker file (main.js will apply update on next start)
   const markerPath = path.join(updatesDir, 'pending.json');
   fs.writeFileSync(markerPath, JSON.stringify({
     version: updateInfo.version,
-    scriptPath: scriptPath,
     timestamp: new Date().toISOString()
   }));
 
-  console.log('[Updater] Update ready to apply');
+  console.log('[Updater] Update downloaded and ready to apply on restart');
   return pendingUpdate;
 }
 
 /**
- * Apply the portable update (launches script and quits app)
+ * Apply the portable update (quits app, update is applied on next start)
  */
 function applyPortableUpdate() {
   if (!pendingUpdate) {
     throw new Error('No pending update to apply');
   }
 
-  console.log('[Updater] Launching update script and quitting...');
+  console.log('[Updater] Update ready, quitting for restart...');
+  console.log('[Updater] Update will be applied on next app start');
 
-  const isWindows = process.platform === 'win32';
-
-  // Launch the updater script detached
-  const scriptProcess = spawn(
-    isWindows ? 'cmd.exe' : '/bin/bash',
-    isWindows ? ['/c', pendingUpdate.scriptPath] : [pendingUpdate.scriptPath],
-    {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true
-    }
-  );
-
-  scriptProcess.unref();
-
-  // Quit the app so the script can overwrite files
+  // Just quit - the update will be applied when the app starts again
+  // (handled by applyPendingUpdate() in main.js)
   app.isQuitting = true;
   app.quit();
 }

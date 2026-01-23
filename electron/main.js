@@ -36,11 +36,83 @@ function detectPortableModeEarly() {
 }
 
 /**
- * Clean up the updates folder on startup
- * This removes any leftover update files from previous update attempts
+ * Apply pending portable update on startup
+ * This copies files from the extracted update to the app directory
+ */
+function applyPendingUpdate() {
+  if (!portableDataDir) return false;
+
+  const pendingPath = path.join(portableDataDir, 'updates', 'pending.json');
+  if (!fs.existsSync(pendingPath)) return false;
+
+  try {
+    const pending = JSON.parse(fs.readFileSync(pendingPath, 'utf8'));
+    const extractedDir = path.join(portableDataDir, 'updates', 'extracted');
+    const appDir = path.dirname(process.execPath);
+
+    console.log(`[Updater] Found pending update to v${pending.version}`);
+    console.log(`[Updater] Source: ${extractedDir}`);
+    console.log(`[Updater] Dest: ${appDir}`);
+
+    if (!fs.existsSync(extractedDir)) {
+      console.error('[Updater] Extracted directory not found');
+      return false;
+    }
+
+    // Find the actual content directory (might be nested)
+    let sourceDir = extractedDir;
+    const entries = fs.readdirSync(extractedDir);
+    if (entries.length === 1) {
+      const nested = path.join(extractedDir, entries[0]);
+      if (fs.statSync(nested).isDirectory()) {
+        sourceDir = nested;
+      }
+    }
+
+    // Copy all files from source to app directory
+    const copyRecursive = (src, dest) => {
+      const stats = fs.statSync(src);
+      if (stats.isDirectory()) {
+        if (!fs.existsSync(dest)) {
+          fs.mkdirSync(dest, { recursive: true });
+        }
+        for (const entry of fs.readdirSync(src)) {
+          copyRecursive(path.join(src, entry), path.join(dest, entry));
+        }
+      } else {
+        try {
+          fs.copyFileSync(src, dest);
+        } catch (err) {
+          // File might be locked (like the current exe), skip it
+          console.log(`[Updater] Skipped locked file: ${dest}`);
+        }
+      }
+    };
+
+    console.log('[Updater] Applying update...');
+    copyRecursive(sourceDir, appDir);
+    console.log('[Updater] Update applied successfully');
+
+    // Clean up
+    fs.rmSync(path.join(portableDataDir, 'updates'), { recursive: true, force: true });
+    console.log('[Updater] Cleaned up update files');
+
+    return true;
+  } catch (err) {
+    console.error('[Updater] Failed to apply update:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Clean up the updates folder on startup (only if no pending update)
  */
 function cleanupUpdatesFolder() {
   if (!portableDataDir) return;
+
+  const pendingPath = path.join(portableDataDir, 'updates', 'pending.json');
+  // Don't clean up if there's a pending update
+  if (fs.existsSync(pendingPath)) return;
 
   const updatesPath = path.join(portableDataDir, 'updates');
   if (fs.existsSync(updatesPath)) {
@@ -55,8 +127,13 @@ function cleanupUpdatesFolder() {
 
 const portableDataDir = detectPortableModeEarly();
 
-// Clean up any leftover update files from previous updates
-cleanupUpdatesFolder();
+// Apply pending update FIRST, before anything else
+const updateApplied = applyPendingUpdate();
+
+// Clean up any leftover update files (only if no pending update was found)
+if (!updateApplied) {
+  cleanupUpdatesFolder();
+}
 
 // Set userData path for portable mode BEFORE single instance lock
 // This ensures portable and system installs have separate locks
