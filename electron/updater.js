@@ -203,53 +203,111 @@ function createUpdaterScript(extractedPath, appDir) {
   const exeName = path.basename(exePath);
 
   let script;
+  const logPath = path.join(portableDataDir, 'update.log').replace(/\\/g, '\\\\');
 
   if (isWindows) {
-    // Windows batch script
+    // Windows batch script with logging
     script = `@echo off
 setlocal enabledelayedexpansion
 
+set LOGFILE="${logPath}"
+echo [%date% %time%] Update script started > %LOGFILE%
+echo [%date% %time%] Source: ${sourceDir} >> %LOGFILE%
+echo [%date% %time%] Dest: ${appDir} >> %LOGFILE%
+echo [%date% %time%] Exe: ${exePath} >> %LOGFILE%
+
 echo Waiting for LocalBooru to exit...
-timeout /t 2 /nobreak >nul
+echo [%date% %time%] Waiting for app to exit... >> %LOGFILE%
+timeout /t 3 /nobreak >nul
 
 :waitloop
 tasklist /FI "IMAGENAME eq ${exeName}" 2>NUL | find /I /N "${exeName}" >NUL
 if "%ERRORLEVEL%"=="0" (
+    echo [%date% %time%] App still running, waiting... >> %LOGFILE%
     timeout /t 1 /nobreak >nul
     goto waitloop
 )
 
+echo [%date% %time%] App exited, applying update... >> %LOGFILE%
 echo Applying update...
-xcopy /E /Y /I "${sourceDir}\\*" "${appDir}\\"
 
+REM Check if source directory exists
+if not exist "${sourceDir}" (
+    echo [%date% %time%] ERROR: Source directory not found >> %LOGFILE%
+    goto error
+)
+
+REM List source files for debugging
+echo [%date% %time%] Source contents: >> %LOGFILE%
+dir "${sourceDir}" >> %LOGFILE% 2>&1
+
+xcopy /E /Y /I "${sourceDir}\\*" "${appDir}\\" >> %LOGFILE% 2>&1
+if errorlevel 1 (
+    echo [%date% %time%] ERROR: xcopy failed with errorlevel %errorlevel% >> %LOGFILE%
+    goto error
+)
+
+echo [%date% %time%] Update applied successfully >> %LOGFILE%
 echo Starting LocalBooru...
+echo [%date% %time%] Starting app: ${exePath} >> %LOGFILE%
 start "" "${exePath}"
 
-echo Cleanup will happen on next startup.
-exit
+echo [%date% %time%] Update complete >> %LOGFILE%
+exit /b 0
+
+:error
+echo [%date% %time%] Update FAILED >> %LOGFILE%
+pause
+exit /b 1
 `;
   } else {
-    // Linux/macOS shell script
+    // Linux/macOS shell script with logging
     script = `#!/bin/bash
 
+LOGFILE="${logPath}"
+echo "[$(date)] Update script started" > "$LOGFILE"
+echo "[$(date)] Source: ${sourceDir}" >> "$LOGFILE"
+echo "[$(date)] Dest: ${appDir}" >> "$LOGFILE"
+echo "[$(date)] Exe: ${exePath}" >> "$LOGFILE"
+
 echo "Waiting for LocalBooru to exit..."
-sleep 2
+echo "[$(date)] Waiting for app to exit..." >> "$LOGFILE"
+sleep 3
 
 # Wait for the process to fully exit
 while pgrep -f "${exeName}" > /dev/null 2>&1; do
+    echo "[$(date)] App still running, waiting..." >> "$LOGFILE"
     sleep 1
 done
 
+echo "[$(date)] App exited, applying update..." >> "$LOGFILE"
 echo "Applying update..."
-cp -rf "${sourceDir}/"* "${appDir}/"
+
+# Check if source directory exists
+if [ ! -d "${sourceDir}" ]; then
+    echo "[$(date)] ERROR: Source directory not found" >> "$LOGFILE"
+    exit 1
+fi
+
+# List source files for debugging
+echo "[$(date)] Source contents:" >> "$LOGFILE"
+ls -la "${sourceDir}" >> "$LOGFILE" 2>&1
+
+cp -rf "${sourceDir}/"* "${appDir}/" >> "$LOGFILE" 2>&1
+if [ $? -ne 0 ]; then
+    echo "[$(date)] ERROR: cp failed" >> "$LOGFILE"
+    exit 1
+fi
 
 # Make sure the executable is still executable
 chmod +x "${exePath}"
 
+echo "[$(date)] Update applied successfully" >> "$LOGFILE"
 echo "Starting LocalBooru..."
+echo "[$(date)] Starting app: ${exePath}" >> "$LOGFILE"
 "${exePath}" &
 
-echo "Cleanup will happen on next startup."
+echo "[$(date)] Update complete" >> "$LOGFILE"
 exit 0
 `;
   }
