@@ -536,21 +536,30 @@ def _generate_ffmpeg_svp_script(
 # NVOF Pipeline (NVIDIA Optical Flow Hardware Accelerator)
 # ================================================================
 # Uses dedicated optical flow hardware on RTX 20xx+ GPUs
-# 2x faster and 55% less CPU than regular SVP pipeline
+# NVOF vec_src MUST be exactly 1/1, 1/2, 1/4, 1/6, or 1/8 of source size
 
-nvof_blk = {nvof_blk}  # Block size emulation (NVOF always uses 4x4 internally)
-
-# Calculate NVOF preprocessing dimensions
-new_w = (WIDTH // nvof_blk) * 4
-new_h = (HEIGHT // nvof_blk) * 4
-crop_w = WIDTH % nvof_blk
-crop_h = HEIGHT % nvof_blk
-
-# Prepare NVOF vector source (downscaled for motion estimation)
-if crop_w > 0 or crop_h > 0:
-    nvof_src = clip.resize.Bicubic(new_w, new_h, src_width=WIDTH - crop_w, src_height=HEIGHT - crop_h)
+# Pick ratio based on block size emulation setting
+# nvof_blk=16 -> 1/4, nvof_blk=8 -> 1/2, etc.
+nvof_blk = {nvof_blk}
+if nvof_blk >= 16:
+    ratio = 4
+elif nvof_blk >= 8:
+    ratio = 2
 else:
-    nvof_src = clip.resize.Bicubic(new_w, new_h)
+    ratio = 1
+
+# Calculate vec_src as exact fraction of source
+new_w = WIDTH // ratio
+new_h = HEIGHT // ratio
+
+# Ensure even dimensions for video processing
+new_w = (new_w // 2) * 2
+new_h = (new_h // 2) * 2
+
+print(f"[NVOF] Video: {{WIDTH}}x{{HEIGHT}}, vec_src: {{new_w}}x{{new_h}} (1/{{ratio}} ratio)", file=sys.stderr)
+
+# Prepare NVOF vector source (exact fraction of source)
+nvof_src = clip.resize.Bicubic(new_w, new_h)
 
 smooth_params = '{smooth_params}'
 
@@ -1128,6 +1137,12 @@ class SVPStream:
                 '-map', '1:a?',
             ])
 
+            # Pad dimensions to multiple of 2 for encoder compatibility
+            # Some videos (especially portrait) have odd dimensions that break encoders
+            ffmpeg_cmd.extend([
+                '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2'
+            ])
+
             # Video encoder selection
             if self.use_nvenc:
                 ffmpeg_cmd.extend([
@@ -1195,21 +1210,38 @@ class SVPStream:
 
             # Monitor the processes
             while self._running:
+                # Check if SVP script failed first (it's the source)
+                if self._vspipe_proc.poll() is not None:
+                    svp_stderr = self._vspipe_proc.stderr.read().decode() if self._vspipe_proc.stderr else ""
+                    if self._vspipe_proc.returncode != 0:
+                        self._error = f"SVP script exited with code {self._vspipe_proc.returncode}: {svp_stderr[-1000:]}"
+                        logger.error(f"[SVP {self.stream_id}] {self._error}")
+                        print(f"[SVP {self.stream_id}] SVP script stderr:\n{svp_stderr}")
+                        break
+                    elif svp_stderr:
+                        # Script exited normally but had stderr output (warnings/errors)
+                        print(f"[SVP {self.stream_id}] SVP script stderr (exit 0):\n{svp_stderr[-1000:]}")
+
                 # Check if FFmpeg is still running
                 if self._ffmpeg_proc.poll() is not None:
+                    ffmpeg_stderr = self._ffmpeg_proc.stderr.read().decode() if self._ffmpeg_proc.stderr else ""
                     if self._ffmpeg_proc.returncode != 0:
-                        stderr = self._ffmpeg_proc.stderr.read().decode() if self._ffmpeg_proc.stderr else ""
-                        self._error = f"FFmpeg exited with code {self._ffmpeg_proc.returncode}: {stderr[-500:]}"
+                        # Also grab SVP stderr if available
+                        svp_stderr = ""
+                        if self._vspipe_proc and self._vspipe_proc.stderr:
+                            try:
+                                svp_stderr = self._vspipe_proc.stderr.read().decode()
+                            except:
+                                pass
+                        combined_error = f"FFmpeg exit {self._ffmpeg_proc.returncode}"
+                        if svp_stderr:
+                            combined_error += f"\nSVP stderr: {svp_stderr[-500:]}"
+                        combined_error += f"\nFFmpeg stderr: {ffmpeg_stderr[-500:]}"
+                        self._error = combined_error
                         logger.error(f"[SVP {self.stream_id}] {self._error}")
+                        print(f"[SVP {self.stream_id}] Full error:\n{combined_error}")
                     else:
                         logger.info(f"[SVP {self.stream_id}] FFmpeg finished normally")
-                    break
-
-                # Check if SVP script failed
-                if self._vspipe_proc.poll() is not None and self._vspipe_proc.returncode != 0:
-                    stderr = self._vspipe_proc.stderr.read().decode() if self._vspipe_proc.stderr else ""
-                    self._error = f"SVP script exited with code {self._vspipe_proc.returncode}: {stderr[-500:]}"
-                    logger.error(f"[SVP {self.stream_id}] {self._error}")
                     break
 
                 await asyncio.sleep(0.5)

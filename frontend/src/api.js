@@ -429,6 +429,26 @@ export async function cleanMissingFiles() {
   return response.data
 }
 
+export async function verifyDirectoryFiles(directoryId) {
+  const response = await api.post(`/directories/${directoryId}/verify`)
+  return response.data
+}
+
+export async function repairDirectoryPaths(directoryId) {
+  const response = await api.post(`/directories/${directoryId}/repair`)
+  return response.data
+}
+
+export async function bulkVerifyDirectories(directoryIds) {
+  const response = await api.post('/directories/bulk-verify', { directory_ids: directoryIds })
+  return response.data
+}
+
+export async function bulkRepairDirectories(directoryIds) {
+  const response = await api.post('/directories/bulk-repair', { directory_ids: directoryIds })
+  return response.data
+}
+
 export async function detectAgesRetrospective() {
   const response = await api.post('/library/detect-ages')
   return response.data

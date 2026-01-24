@@ -731,6 +731,43 @@ async def get_image_file(
                     detail="Drive is offline - the storage device containing this file is not connected"
                 )
             else:
+                # File missing - try to find by filename in the watched directory
+                # Use os.walk to include hidden directories
+                import os as os_module
+                from ..services.file_tracker import is_media_file
+                filename = Path(original_path).name
+                directory = await db.get(WatchDirectory, directory_id)
+                if directory and Path(directory.path).exists():
+                    dir_path = Path(directory.path)
+                    found_path = None
+                    if directory.recursive:
+                        for root, dirs, files in os_module.walk(dir_path):
+                            if filename in files:
+                                found_path = Path(root) / filename
+                                break
+                    else:
+                        candidate = dir_path / filename
+                        if candidate.exists():
+                            found_path = candidate
+
+                    if found_path and found_path.is_file() and is_media_file(found_path):
+                        # Found it - update the DB record and serve
+                        new_path = str(found_path)
+                        dir_db = await directory_db_manager.get_session(directory_id)
+                        try:
+                            update_query = select(DirectoryImageFile).where(
+                                DirectoryImageFile.image_id == image_id
+                            ).limit(1)
+                            result = await dir_db.execute(update_query)
+                            file_record = result.scalar_one_or_none()
+                            if file_record:
+                                file_record.original_path = new_path
+                                file_record.file_exists = True
+                                file_record.file_status = FileStatus.available
+                                await dir_db.commit()
+                        finally:
+                            await dir_db.close()
+                        return FileResponse(new_path)
                 raise HTTPException(status_code=404, detail="File is missing or was deleted")
 
     # Check public access for non-localhost (legacy path)

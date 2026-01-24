@@ -31,6 +31,7 @@ function DirectoriesPage() {
   const [relocating, setRelocating] = useState({})
   const [selectedDirs, setSelectedDirs] = useState(new Set())
   const [batchLoading, setBatchLoading] = useState(false)
+  const [repairing, setRepairing] = useState({})
 
   const refreshDirectories = async () => {
     const { fetchDirectories } = await import('./api')
@@ -276,6 +277,37 @@ function DirectoriesPage() {
     }
   }
 
+  const handleRepair = async (dirId) => {
+    setRepairing(prev => ({ ...prev, [dirId]: true }))
+    try {
+      const { repairDirectoryPaths } = await import('./api')
+      const result = await repairDirectoryPaths(dirId)
+      alert(`Repair complete:\n${result.valid} files OK\n${result.repaired} paths fixed\n${result.removed} missing removed`)
+      await refreshDirectories()
+    } catch (error) {
+      console.error('Repair failed:', error)
+      alert('Repair failed: ' + (error.response?.data?.detail || error.message))
+    } finally {
+      setRepairing(prev => ({ ...prev, [dirId]: false }))
+    }
+  }
+
+  const handleBatchRepair = async () => {
+    if (selectedDirs.size === 0) return
+    setBatchLoading(true)
+    try {
+      const { bulkRepairDirectories } = await import('./api')
+      const result = await bulkRepairDirectories(Array.from(selectedDirs))
+      alert(`Batch repair complete:\n${result.totals.valid} files OK\n${result.totals.repaired} paths fixed\n${result.totals.removed} missing removed`)
+      await refreshDirectories()
+    } catch (e) {
+      console.error('Batch repair failed:', e)
+      alert(`Batch repair failed: ${e.response?.data?.detail || e.message || 'Unknown error'}`)
+    } finally {
+      setBatchLoading(false)
+    }
+  }
+
   return (
     <div className="app">
       <div className="main-container">
@@ -375,6 +407,14 @@ function DirectoriesPage() {
                         {scanning[dir.id] ? 'Scanning...' : 'Rescan'}
                       </button>
                       <button
+                        className="repair-btn"
+                        onClick={() => handleRepair(dir.id)}
+                        disabled={repairing[dir.id]}
+                        title="Fix moved files and remove missing entries"
+                      >
+                        {repairing[dir.id] ? 'Repairing...' : 'Repair'}
+                      </button>
+                      <button
                         className="prune-btn"
                         onClick={() => handlePrune(dir.id, dir.name || dir.path, dir.favorited_count)}
                         disabled={pruning[dir.id] || dir.image_count === 0}
@@ -428,6 +468,13 @@ function DirectoriesPage() {
                     disabled={batchLoading}
                   >
                     Rescan All
+                  </button>
+                  <button
+                    className="batch-btn"
+                    onClick={handleBatchRepair}
+                    disabled={batchLoading}
+                  >
+                    Repair All
                   </button>
                   <button
                     className="batch-btn"
