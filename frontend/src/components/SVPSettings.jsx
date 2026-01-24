@@ -107,6 +107,7 @@ export default function SVPSettings() {
   const hasVspipe = status.vspipe_available
   const hasSourceFilter = status.source_filter_available
   const hasNvenc = status.nvenc_available
+  const hasNvof = status.nvof_ready  // NVIDIA Optical Flow (hardware)
   const missing = status.missing || []
 
   // Source filter details
@@ -138,6 +139,9 @@ export default function SVPSettings() {
         <span className={`backend-badge ${hasSourceFilter ? 'available' : 'unavailable'}`}>
           Source: {hasSourceFilter ? sourceFilterName : '✗'}
         </span>
+        <span className={`backend-badge ${hasNvof ? 'available' : 'unavailable'}`} title="NVIDIA Optical Flow hardware accelerator (RTX 20xx+)">
+          NVOF: {hasNvof ? '✓' : '✗'}
+        </span>
         <span className={`backend-badge ${hasNvenc ? 'available' : 'unavailable'}`}>
           NVENC: {hasNvenc ? '✓' : '✗'}
         </span>
@@ -146,7 +150,11 @@ export default function SVPSettings() {
       {isReady && (
         <div className="optical-flow-status info">
           <span className="status-icon">✓</span>
-          <span>SVP is ready! {hasNvenc ? 'Using NVENC for hardware encoding.' : 'Using software encoding.'}</span>
+          <span>
+            SVP is ready!
+            {hasNvof && useNvof ? ' Using NVIDIA Optical Flow (2x faster).' : ''}
+            {hasNvenc ? ' NVENC hardware encoding.' : ' Software encoding.'}
+          </span>
         </div>
       )}
 
@@ -288,11 +296,17 @@ export default function SVPSettings() {
             value={useNvof ? 'use' : 'dont'}
             onChange={(e) => setUseNvof(e.target.value === 'use')}
             className="quality-select"
+            disabled={!hasNvof}
           >
-            <option value="use">Use</option>
+            <option value="use">Use (Recommended)</option>
             <option value="dont">Don't use</option>
           </select>
         </div>
+        <p className="setting-note" style={{marginTop: '4px', fontSize: '0.85em'}}>
+          {hasNvof
+            ? 'NVOF uses dedicated hardware on RTX 20xx+ GPUs for 2x faster processing and 55% less CPU usage.'
+            : 'NVOF requires an RTX 20xx or newer GPU with Turing architecture.'}
+        </p>
       </section>
 
       {/* Advanced Settings Toggle */}

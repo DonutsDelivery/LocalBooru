@@ -51,6 +51,11 @@ async def lifespan(app: FastAPI):
     from .services.directory_watcher import directory_watcher
     await directory_watcher.start()
 
+    # Kill any orphaned SVP processes from previous runs
+    print("[Startup] Cleaning up orphaned SVP processes...")
+    from .services.svp_stream import kill_orphaned_svp_processes
+    kill_orphaned_svp_processes()
+
     yield
 
     # Shutdown - cleanup all resources gracefully
@@ -65,6 +70,11 @@ async def lifespan(app: FastAPI):
     # Stop background task queue
     print("[Shutdown] Stopping task queue...")
     await task_queue.stop()
+
+    # Stop SVP streams
+    print("[Shutdown] Stopping SVP streams...")
+    from .services.svp_stream import stop_all_svp_streams
+    stop_all_svp_streams()
 
     # Stop optical flow streams and cleanup thread pool
     print("[Shutdown] Stopping optical flow streams...")

@@ -98,6 +98,36 @@ def _check_nvenc_available() -> bool:
         return False
 
 
+def _check_nvof_available() -> bool:
+    """
+    Check if NVIDIA Optical Flow (NVOF) hardware is available.
+
+    NVOF requires:
+    - NVIDIA GPU with Turing architecture or newer (RTX 20xx, 30xx, 40xx)
+    - NVIDIA driver with NVOF support
+    """
+    try:
+        # Check GPU compute capability (Turing = 7.5+, Ada = 8.9)
+        result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=compute_cap', '--format=csv,noheader'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            compute_cap = result.stdout.strip()
+            # Parse compute capability (e.g., "8.9" or "7.5")
+            try:
+                major, minor = map(int, compute_cap.split('.'))
+                # Turing (7.5) and newer support NVOF
+                return major > 7 or (major == 7 and minor >= 5)
+            except ValueError:
+                pass
+    except Exception:
+        pass
+    return False
+
+
 def get_svp_status() -> dict:
     """
     Get SVP availability status.
@@ -111,6 +141,7 @@ def get_svp_status() -> dict:
     vs_available = False
     vs_version = None
     svp_available = False
+    nvof_func_available = False
     ffms2_available = False
     lsmas_available = False
     bestsource_available = False
@@ -125,6 +156,7 @@ import sys
 results = {{
     "vs_version": vs.__version__,
     "svp_available": False,
+    "nvof_func_available": False,
     "ffms2_available": False,
     "lsmas_available": False,
     "bestsource_available": False,
@@ -137,6 +169,9 @@ try:
     core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow1.so")
     core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow2.so")
     results["svp_available"] = True
+    # Check if SmoothFps_NVOF function exists
+    if hasattr(core.svp2, 'SmoothFps_NVOF'):
+        results["nvof_func_available"] = True
 except:
     pass
 
@@ -174,6 +209,7 @@ print(json.dumps(results))
                 vs_available = True
                 vs_version = data.get("vs_version")
                 svp_available = data.get("svp_available", False)
+                nvof_func_available = data.get("nvof_func_available", False)
                 ffms2_available = data.get("ffms2_available", False)
                 lsmas_available = data.get("lsmas_available", False)
                 bestsource_available = data.get("bestsource_available", False)
@@ -182,8 +218,15 @@ print(json.dumps(results))
 
     source_filter_available = ffms2_available or lsmas_available or bestsource_available
 
+    # Check NVOF hardware availability (Turing GPU or newer)
+    nvof_hw_available = _check_nvof_available()
+    # NVOF is fully ready if both the plugin function and hardware support it
+    nvof_ready = nvof_func_available and nvof_hw_available
+
     # Determine ready status and any missing requirements
-    ready = vs_available and svp_available and vspipe_available and source_filter_available
+    # Note: We use FFmpeg decode, so source_filter isn't strictly required
+    # but it's nice to have for the native vspipe path
+    ready = vs_available and svp_available and vspipe_available
 
     missing = []
     if not vs_available:
@@ -192,8 +235,6 @@ print(json.dumps(results))
         missing.append("SVPflow plugins")
     if not vspipe_available:
         missing.append("vspipe")
-    if not source_filter_available:
-        missing.append("source filter (install vapoursynth-plugin-bestsource)")
 
     return {
         "vapoursynth_available": vs_available,
@@ -206,6 +247,9 @@ print(json.dumps(results))
         "bestsource_available": bestsource_available,
         "source_filter_available": source_filter_available,
         "nvenc_available": _check_nvenc_available(),
+        "nvof_func_available": nvof_func_available,  # SmoothFps_NVOF function exists
+        "nvof_hw_available": nvof_hw_available,      # GPU supports NVOF (Turing+)
+        "nvof_ready": nvof_ready,                    # Both plugin and hardware ready
         "ready": ready,
         "missing": missing if missing else None,
     }
@@ -220,6 +264,45 @@ def stop_all_svp_streams():
     """Stop all active SVP streams."""
     for stream in list(_active_svp_streams.values()):
         stream.stop()
+    # Also kill any orphaned processes
+    kill_orphaned_svp_processes()
+
+
+def kill_orphaned_svp_processes():
+    """Kill any orphaned SVP-related processes that escaped normal cleanup."""
+    import signal
+    try:
+        # Find and kill any lingering svp_process.py or svp_process.vpy processes
+        result = subprocess.run(
+            ['pgrep', '-f', 'svp_process\\.(py|vpy)'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                if pid:
+                    try:
+                        os.kill(int(pid), signal.SIGKILL)
+                        logger.info(f"Killed orphaned SVP process: {pid}")
+                    except (ProcessLookupError, ValueError):
+                        pass
+
+        # Find and kill any lingering ffmpeg processes encoding to svp_stream dirs
+        result = subprocess.run(
+            ['pgrep', '-f', 'ffmpeg.*svp_stream'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                if pid:
+                    try:
+                        os.kill(int(pid), signal.SIGKILL)
+                        logger.info(f"Killed orphaned FFmpeg process: {pid}")
+                    except (ProcessLookupError, ValueError):
+                        pass
+    except Exception as e:
+        logger.debug(f"Error cleaning up orphaned processes: {e}")
 
 
 # =============================================================================
@@ -241,48 +324,54 @@ SVP_PRESETS = {
         "name": "Fast",
         "description": "Fastest processing, lower quality. Good for real-time on weaker hardware.",
         "super": "{gpu:1,pel:1,scale:{up:0,down:4}}",
-        "analyse": "{gpu:1,nvof:1,block:{w:32,h:32,overlap:0},main:{search:{coarse:{type:2,distance:-6,bad:{sad:2000,range:24}},type:2,distance:6}},refine:[{thsad:200}]}",
+        "analyse": "{gpu:1,block:{w:32,h:32,overlap:0},main:{search:{coarse:{type:2,distance:-6,bad:{sad:2000,range:24}},type:2,distance:6}},refine:[{thsad:200}]}",
         "smooth": "{gpuid:0,algo:13,mask:{area:100},scene:{}}",
+        "nvof_blk": 32,  # Larger blocks for faster NVOF processing
     },
     # Balanced preset - good tradeoff between speed and quality
     "balanced": {
         "name": "Balanced",
         "description": "Good balance of speed and quality. Recommended for most videos.",
         "super": "{gpu:1,pel:2,scale:{up:0,down:2}}",
-        "analyse": "{gpu:1,nvof:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-8,bad:{sad:2000,range:24}},type:2,distance:8}},refine:[{thsad:200}]}",
+        "analyse": "{gpu:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-8,bad:{sad:2000,range:24}},type:2,distance:8}},refine:[{thsad:200}]}",
         "smooth": "{gpuid:0,algo:23,mask:{area:100},scene:{}}",
+        "nvof_blk": 16,  # Balanced block size for NVOF
     },
     # Quality preset - higher quality, slower processing
     "quality": {
         "name": "Quality",
         "description": "Higher quality motion estimation. Slower but smoother results.",
         "super": "{gpu:1,pel:2,scale:{up:0,down:2}}",
-        "analyse": "{gpu:1,nvof:1,block:{w:8,h:8,overlap:2},main:{search:{coarse:{type:2,distance:-10,bad:{sad:2000,range:24}},type:2,distance:10}},refine:[{thsad:200},{thsad:100}]}",
+        "analyse": "{gpu:1,block:{w:8,h:8,overlap:2},main:{search:{coarse:{type:2,distance:-10,bad:{sad:2000,range:24}},type:2,distance:10}},refine:[{thsad:200},{thsad:100}]}",
         "smooth": "{gpuid:0,algo:23,mask:{area:100},scene:{}}",
+        "nvof_blk": 8,   # Smaller blocks for higher quality NVOF
     },
     # Maximum quality preset - best results, significantly slower
     "max": {
         "name": "Maximum",
         "description": "Maximum quality settings. Best for pre-rendering, not real-time.",
         "super": "{gpu:1,pel:4,scale:{up:2,down:2}}",
-        "analyse": "{gpu:1,nvof:1,block:{w:8,h:8,overlap:3},main:{search:{coarse:{type:4,distance:-12,bad:{sad:1000,range:24}},type:4,distance:12}},refine:[{thsad:200},{thsad:100},{thsad:50}]}",
+        "analyse": "{gpu:1,block:{w:8,h:8,overlap:3},main:{search:{coarse:{type:4,distance:-12,bad:{sad:1000,range:24}},type:4,distance:12}},refine:[{thsad:200},{thsad:100},{thsad:50}]}",
         "smooth": "{gpuid:0,algo:23,mask:{area:50,cover:80},scene:{}}",
+        "nvof_blk": 4,   # Smallest blocks for maximum quality NVOF
     },
     # Animation preset - optimized for anime/cartoons
     "animation": {
         "name": "Animation",
         "description": "Optimized for anime and cartoons with flat colors and sharp edges.",
         "super": "{gpu:1,pel:2,scale:{up:0,down:2}}",
-        "analyse": "{gpu:1,nvof:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-10,bad:{sad:1500,range:24}},type:2,distance:10},penalty:{lambda:3.0}},refine:[{thsad:150}]}",
+        "analyse": "{gpu:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-10,bad:{sad:1500,range:24}},type:2,distance:10},penalty:{lambda:3.0}},refine:[{thsad:150}]}",
         "smooth": "{gpuid:0,algo:23,mask:{area:150},scene:{mode:0}}",
+        "nvof_blk": 16,  # Balanced for animation
     },
     # Film preset - optimized for live action with natural motion
     "film": {
         "name": "Film",
         "description": "Optimized for live action movies with natural motion blur.",
         "super": "{gpu:1,pel:2,scale:{up:0,down:2}}",
-        "analyse": "{gpu:1,nvof:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-8,bad:{sad:2000,range:24}},type:2,distance:8}},refine:[{thsad:200}]}",
+        "analyse": "{gpu:1,block:{w:16,h:16,overlap:2},main:{search:{coarse:{type:2,distance:-8,bad:{sad:2000,range:24}},type:2,distance:8}},refine:[{thsad:200}]}",
         "smooth": "{gpuid:0,algo:23,mask:{area:80,cover:80},scene:{blend:true}}",
+        "nvof_blk": 16,  # Balanced for film
     },
 }
 
@@ -340,7 +429,6 @@ SVP_MASK_AREA = {
 def _build_svp_params(
     target_fps: int,
     preset: str = "balanced",
-    use_nvof: bool = True,
     shader: int = 23,
     artifact_masking: int = 100,
     frame_interpolation: int = 2,
@@ -348,10 +436,15 @@ def _build_svp_params(
     custom_analyse: Optional[str] = None,
     custom_smooth: Optional[str] = None,
 ) -> tuple:
-    """Build SVP parameters from preset and overrides."""
+    """Build SVP parameters from preset and overrides.
+
+    Note: NVOF (NVIDIA Optical Flow) is handled at the pipeline level by using
+    SmoothFps_NVOF instead of Super/Analyse/SmoothFps. These params are only
+    used for the regular (non-NVOF) pipeline.
+    """
     preset_config = SVP_PRESETS.get(preset, SVP_PRESETS["balanced"])
 
-    # Use custom params if provided, otherwise build from preset + overrides
+    # Use custom params if provided, otherwise use preset
     if custom_super:
         super_params = custom_super
     else:
@@ -360,13 +453,7 @@ def _build_svp_params(
     if custom_analyse:
         analyse_params = custom_analyse
     else:
-        # Start with preset and override nvof setting
         analyse_params = preset_config["analyse"]
-        # Update nvof setting
-        if use_nvof and "nvof:" not in analyse_params:
-            analyse_params = analyse_params.replace("{gpu:1,", "{gpu:1,nvof:1,")
-        elif not use_nvof:
-            analyse_params = analyse_params.replace(",nvof:1", "").replace("nvof:1,", "")
 
     if custom_smooth:
         smooth_params = custom_smooth
@@ -400,13 +487,22 @@ def _generate_ffmpeg_svp_script(
     Generate a Python script that uses FFmpeg to decode video and feeds frames
     to VapourSynth for SVP processing. This bypasses bestsource indexing entirely.
 
+    Supports two pipelines:
+    - NVOF (use_nvof=True): Uses SmoothFps_NVOF with hardware optical flow (2x faster)
+    - Regular (use_nvof=False): Uses Super/Analyse/SmoothFps pipeline
+
     Output is Y4M to stdout for FFmpeg to encode to HLS.
     """
-    # Get SVP parameters
+    preset_config = SVP_PRESETS.get(preset, SVP_PRESETS["balanced"])
+
+    # Get SVP parameters (for regular pipeline fallback)
     super_params, analyse_params, smooth_params = _build_svp_params(
-        target_fps, preset, use_nvof, shader, artifact_masking, frame_interpolation,
+        target_fps, preset, shader, artifact_masking, frame_interpolation,
         custom_super, custom_analyse, custom_smooth
     )
+
+    # Get NVOF block size for this preset
+    nvof_blk = preset_config.get("nvof_blk", 16)
 
     escaped_path = video_path.replace("\\", "\\\\").replace("'", "\\'")
     src_fps = src_fps_num / src_fps_den
@@ -433,13 +529,58 @@ def _generate_ffmpeg_svp_script(
         ffmpeg_input_seek = ""
         ffmpeg_output_seek = ""
 
+    # Build the SVP processing section based on NVOF setting
+    if use_nvof:
+        svp_processing = f'''
+# ================================================================
+# NVOF Pipeline (NVIDIA Optical Flow Hardware Accelerator)
+# ================================================================
+# Uses dedicated optical flow hardware on RTX 20xx+ GPUs
+# 2x faster and 55% less CPU than regular SVP pipeline
+
+nvof_blk = {nvof_blk}  # Block size emulation (NVOF always uses 4x4 internally)
+
+# Calculate NVOF preprocessing dimensions
+new_w = (WIDTH // nvof_blk) * 4
+new_h = (HEIGHT // nvof_blk) * 4
+crop_w = WIDTH % nvof_blk
+crop_h = HEIGHT % nvof_blk
+
+# Prepare NVOF vector source (downscaled for motion estimation)
+if crop_w > 0 or crop_h > 0:
+    nvof_src = clip.resize.Bicubic(new_w, new_h, src_width=WIDTH - crop_w, src_height=HEIGHT - crop_h)
+else:
+    nvof_src = clip.resize.Bicubic(new_w, new_h)
+
+smooth_params = '{smooth_params}'
+
+# Use NVIDIA Optical Flow for motion estimation and interpolation
+smooth = core.svp2.SmoothFps_NVOF(clip, smooth_params, vec_src=nvof_src, src=clip, fps=SRC_FPS)
+'''
+    else:
+        svp_processing = f'''
+# ================================================================
+# Regular SVP Pipeline (GPU-accelerated frame rendering)
+# ================================================================
+# Uses CPU for motion estimation, GPU for frame rendering
+
+super_params = '{super_params}'
+analyse_params = '{analyse_params}'
+smooth_params = '{smooth_params}'
+
+# SVP processing pipeline
+super_clip = core.svp1.Super(clip, super_params)
+vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
+smooth = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"],
+    vectors["clip"], vectors["data"], smooth_params, src=clip, fps=SRC_FPS)
+'''
+
     script = f'''#!/usr/bin/env python3
 """SVP processing script - uses FFmpeg decode to bypass bestsource indexing."""
 import vapoursynth as vs
 import subprocess
 import numpy as np
 import sys
-import struct
 import signal
 import atexit
 
@@ -540,18 +681,7 @@ def modify_frame(n, f):
 blank = core.std.BlankClip(width=WIDTH, height=HEIGHT, format=vs.YUV420P8,
                            length=NUM_FRAMES, fpsnum=FPS_NUM, fpsden=FPS_DEN)
 clip = core.std.ModifyFrame(blank, blank, modify_frame)
-
-# SVP parameters
-super_params = '{super_params}'
-analyse_params = '{analyse_params}'
-smooth_params = '{smooth_params}'
-
-# SVP processing pipeline
-super_clip = core.svp1.Super(clip, super_params)
-vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
-smooth = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"],
-    vectors["clip"], vectors["data"], smooth_params, src=clip, fps=SRC_FPS)
-
+{svp_processing}
 # Output Y4M to stdout
 def write_y4m_header():
     """Write Y4M header."""

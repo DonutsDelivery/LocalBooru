@@ -67,6 +67,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const zoomRef = useRef(zoom) // Ref to always have current zoom in callbacks
   zoomRef.current = zoom
   const mediaRef = useRef(null)
+  const timelineRef = useRef(null)
   const containerRef = useRef(null)
   const isDragging = useRef(false)
   const dragStart = useRef({ x: 0, y: 0 })
@@ -615,17 +616,27 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setOpticalFlowLoading(false)
   }, [image, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading])
 
+  // Refs to access latest callbacks without adding them to effect dependencies
+  const startSVPStreamRef = useRef(null)
+  const startInterpolatedStreamRef = useRef(null)
+
   // Auto-start interpolated stream when video opens
   // Priority: SVP (if enabled and ready) > Optical Flow (if enabled)
   useEffect(() => {
     if (image && isVideo(image.filename)) {
+      console.log('[SVP Auto-start] Checking...', {
+        enabled: svpConfig?.enabled,
+        ready: svpConfig?.status?.ready,
+        svpConfig: svpConfig
+      })
       // Prefer SVP if enabled and ready
       if (svpConfig?.enabled && svpConfig?.status?.ready) {
-        startSVPStream()
+        console.log('[SVP Auto-start] Starting SVP stream...')
+        startSVPStreamRef.current()
       }
       // Fall back to optical flow if enabled
       else if (opticalFlowConfig?.enabled) {
-        startInterpolatedStream()
+        startInterpolatedStreamRef.current()
       }
     }
   }, [image?.id, svpConfig?.enabled, svpConfig?.status?.ready, opticalFlowConfig?.enabled])
@@ -641,6 +652,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       if (hlsRef.current) {
         hlsRef.current.destroy()
       }
+
+      // Clear video src to prevent dual playback with HLS MediaSource
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
 
       const hls = new Hls({
         enableWorker: true,
@@ -703,11 +719,21 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Start SVP interpolation for video (called manually via button)
   const startSVPStream = useCallback(async () => {
-    if (!image || !svpConfig?.enabled || !isVideo(image.filename)) return
-    if (svpStreamUrl || svpLoading) return // Already active or starting
+    console.log('[startSVPStream] Called', { image: image?.id, enabled: svpConfig?.enabled, isVideo: isVideo(image?.filename) })
+    if (!image || !svpConfig?.enabled || !isVideo(image.filename)) {
+      console.log('[startSVPStream] Early return: missing image/config/not video')
+      return
+    }
+    if (svpStreamUrl || svpLoading) {
+      console.log('[startSVPStream] Early return: already active or loading', { svpStreamUrl, svpLoading })
+      return
+    }
 
     // Use ref for synchronous lock (state updates are batched/async)
-    if (svpStartingRef.current) return
+    if (svpStartingRef.current) {
+      console.log('[startSVPStream] Early return: ref lock active')
+      return
+    }
     svpStartingRef.current = true
 
     // Stop any existing optical flow stream
@@ -719,8 +745,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setSvpLoading(true)
     setSvpError(null)
 
+    console.log('[startSVPStream] Calling API with path:', image.file_path)
     try {
       const result = await playVideoSVP(image.file_path)
+      console.log('[startSVPStream] API result:', result)
 
       if (result.success && result.stream_url) {
         setSvpStreamUrl(result.stream_url)
@@ -741,6 +769,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
     // Note: svpLoading stays true until MANIFEST_PARSED fires in the useEffect
   }, [image, svpConfig, svpStreamUrl, svpLoading, opticalFlowStreamUrl])
+
+  // Update refs after callbacks are defined (used by auto-start effect)
+  startSVPStreamRef.current = startSVPStream
+  startInterpolatedStreamRef.current = startInterpolatedStream
 
   // Toggle video play/pause
   const toggleVideoPlay = useCallback(() => {
@@ -864,9 +896,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Handle seeking via timeline
   const handleSeek = useCallback((e) => {
-    if (!mediaRef.current || !duration) return
-    const timeline = e.currentTarget
-    const rect = timeline.getBoundingClientRect()
+    if (!mediaRef.current || !duration || !timelineRef.current) return
+    const rect = timelineRef.current.getBoundingClientRect()
     const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
     const newTime = percent * duration  // Absolute video time
 
@@ -968,6 +999,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       if (svpHlsRef.current) {
         svpHlsRef.current.destroy()
       }
+
+      // Clear video src to prevent dual playback with HLS MediaSource
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
 
       const hls = new Hls({
         enableWorker: true,
@@ -1556,7 +1592,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <video
               key={image.id}
               ref={mediaRef}
-              src={svpConfigLoaded && !svpConfig?.enabled ? getMediaUrl(image.url) : undefined}
+              src={svpConfigLoaded && !svpStreamUrl && !opticalFlowStreamUrl && !svpLoading && !(svpConfig?.enabled && svpConfig?.status?.ready) ? getMediaUrl(image.url) : undefined}
               autoPlay
               playsInline
               loop
@@ -1626,6 +1662,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               <div className="video-controls-row">
               <span className="video-time">{formatTime(currentTime)}</span>
               <div
+                ref={timelineRef}
                 className="video-timeline"
                 onMouseDown={handleSeekStart}
                 onMouseMove={handleSeekMove}

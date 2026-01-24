@@ -1492,8 +1492,8 @@ async def play_video_svp(request: SVPPlayRequest):
     config = get_svp_settings()
     status = get_svp_status()
 
-    if not config["enabled"]:
-        return {"success": False, "error": "SVP interpolation is not enabled"}
+    # Note: We don't check config["enabled"] here - the toggle button should work
+    # regardless of the global setting. We only check if SVP is ready (plugins installed).
 
     if not status["ready"]:
         missing = []
