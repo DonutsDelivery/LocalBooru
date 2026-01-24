@@ -1119,6 +1119,7 @@ class SVPStream:
 
             # Add audio input with seek if needed (must seek audio to match video)
             if self.start_position > 0:
+                logger.info(f"[SVP {self.stream_id}] Audio seek: -ss {self.start_position}")
                 ffmpeg_cmd.extend(['-ss', str(self.start_position)])
             ffmpeg_cmd.extend([
                 '-probesize', '5000000',
