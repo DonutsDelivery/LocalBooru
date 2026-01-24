@@ -233,46 +233,6 @@ export async function discardImagePreview(imageId) {
   return response.data
 }
 
-// Video preview frames API with rate limiting
-// Limit concurrent requests to prevent exhausting DB connection pool
-const previewFrameQueue = {
-  maxConcurrent: 3,
-  running: 0,
-  queue: [],
-
-  async enqueue(fn) {
-    return new Promise((resolve, reject) => {
-      this.queue.push({ fn, resolve, reject })
-      this.process()
-    })
-  },
-
-  async process() {
-    if (this.running >= this.maxConcurrent || this.queue.length === 0) return
-
-    const { fn, resolve, reject } = this.queue.shift()
-    this.running++
-
-    try {
-      const result = await fn()
-      resolve(result)
-    } catch (err) {
-      reject(err)
-    } finally {
-      this.running--
-      this.process()
-    }
-  }
-}
-
-export async function fetchPreviewFrames(imageId, directoryId = null) {
-  return previewFrameQueue.enqueue(async () => {
-    const params = directoryId ? `?directory_id=${directoryId}` : ''
-    const response = await api.get(`/images/${imageId}/preview-frames${params}`)
-    return response.data
-  })
-}
-
 // Tags API
 export async function fetchTags({ q, category, page = 1, per_page = 50, sort = 'count' } = {}) {
   const params = new URLSearchParams()
@@ -296,25 +256,10 @@ export async function getTagStats() {
   return response.data
 }
 
-// Directories API (with caching to avoid redundant calls)
-let directoriesCache = null
-let directoriesCacheTime = 0
-const DIRECTORIES_CACHE_TTL = 5000 // 5 seconds
-
-export async function fetchDirectories(forceRefresh = false) {
-  const now = Date.now()
-  if (!forceRefresh && directoriesCache && (now - directoriesCacheTime) < DIRECTORIES_CACHE_TTL) {
-    return directoriesCache
-  }
+// Directories API
+export async function fetchDirectories() {
   const response = await api.get('/directories')
-  directoriesCache = response.data
-  directoriesCacheTime = now
   return response.data
-}
-
-export function invalidateDirectoriesCache() {
-  directoriesCache = null
-  directoriesCacheTime = 0
 }
 
 export async function addDirectory(path, options = {}) {
@@ -324,7 +269,6 @@ export async function addDirectory(path, options = {}) {
     recursive: options.recursive ?? true,
     auto_tag: options.auto_tag ?? true
   })
-  invalidateDirectoriesCache()
   return response.data
 }
 
@@ -334,35 +278,16 @@ export async function addParentDirectory(path, options = {}) {
     recursive: options.recursive ?? true,
     auto_tag: options.auto_tag ?? true
   })
-  invalidateDirectoriesCache()
   return response.data
 }
 
 export async function updateDirectory(id, updates) {
   const response = await api.patch(`/directories/${id}`, updates)
-  invalidateDirectoriesCache()
-  return response.data
-}
-
-export async function updateDirectoryPath(id, newPath) {
-  const response = await api.patch(`/directories/${id}/path`, { new_path: newPath })
-  invalidateDirectoriesCache()
   return response.data
 }
 
 export async function removeDirectory(id, keepImages = false) {
   const response = await api.delete(`/directories/${id}?keep_images=${keepImages}`)
-  invalidateDirectoriesCache()
-  return response.data
-}
-
-export async function bulkDeleteDirectories(directoryIds, keepImages = false) {
-  // Long timeout for bulk operations with many images
-  const response = await api.post('/directories/bulk-delete',
-    { directory_ids: directoryIds, keep_images: keepImages },
-    { timeout: 600000 }  // 10 minute timeout for large deletions
-  )
-  invalidateDirectoriesCache()
   return response.data
 }
 
@@ -533,13 +458,6 @@ export function getMediaUrl(path) {
     return `${currentServerUrl}${cleanPath}`
   }
 
-  // Dev mode - Vite dev server needs full URL to backend
-  const isDevServer = window.location.port === '5173' || window.location.port === '5174'
-  if (isDevServer) {
-    const cleanPath = path.startsWith('/') ? path : `/${path}`
-    return `http://127.0.0.1:8790${cleanPath}`
-  }
-
   // On web, relative URLs work fine
   return path
 }
@@ -587,26 +505,13 @@ export async function getMigrationInfo() {
   return response.data
 }
 
-export async function getMigrationDirectories(mode) {
-  const response = await api.get('/settings/migration/directories', { params: { mode } })
+export async function validateMigration(mode) {
+  const response = await api.post('/settings/migration/validate', { mode })
   return response.data
 }
 
-export async function validateMigration(mode, directoryIds = null) {
-  const payload = { mode }
-  if (directoryIds && directoryIds.length > 0) {
-    payload.directory_ids = directoryIds
-  }
-  const response = await api.post('/settings/migration/validate', payload)
-  return response.data
-}
-
-export async function startMigration(mode, directoryIds = null) {
-  const payload = { mode }
-  if (directoryIds && directoryIds.length > 0) {
-    payload.directory_ids = directoryIds
-  }
-  const response = await api.post('/settings/migration/start', payload)
+export async function startMigration(mode) {
+  const response = await api.post('/settings/migration/start', { mode })
   return response.data
 }
 
@@ -627,23 +532,6 @@ export async function deleteSourceData(mode) {
 
 export async function verifyMigration(mode) {
   const response = await api.post('/settings/migration/verify', { mode })
-  return response.data
-}
-
-// Import API (add directories to existing database)
-export async function validateImport(mode, directoryIds) {
-  const response = await api.post('/settings/migration/import/validate', {
-    mode,
-    directory_ids: directoryIds
-  })
-  return response.data
-}
-
-export async function startImport(mode, directoryIds) {
-  const response = await api.post('/settings/migration/import/start', {
-    mode,
-    directory_ids: directoryIds
-  })
   return response.data
 }
 
@@ -668,54 +556,4 @@ export function subscribeToMigrationEvents(onEvent) {
   return () => {
     eventSource.close()
   }
-}
-
-// Optical Flow Interpolation API
-export async function getOpticalFlowConfig() {
-  const response = await api.get('/settings/optical-flow')
-  return response.data
-}
-
-export async function updateOpticalFlowConfig(config) {
-  const response = await api.post('/settings/optical-flow', config)
-  return response.data
-}
-
-export async function playVideoInterpolated(filePath) {
-  // Longer timeout since buffering can take time
-  const response = await api.post('/settings/optical-flow/play', null, {
-    params: { file_path: filePath },
-    timeout: 60000  // 60 second timeout for initial buffering
-  })
-  return response.data
-}
-
-export async function stopInterpolatedStream() {
-  const response = await api.post('/settings/optical-flow/stop')
-  return response.data
-}
-
-// SVP (SmoothVideo Project) Interpolation API
-export async function getSVPConfig() {
-  const response = await api.get('/settings/svp')
-  return response.data
-}
-
-export async function updateSVPConfig(config) {
-  const response = await api.post('/settings/svp', config)
-  return response.data
-}
-
-export async function playVideoSVP(filePath) {
-  // Longer timeout since SVP processing can take time
-  const response = await api.post('/settings/svp/play', null, {
-    params: { file_path: filePath },
-    timeout: 60000  // 60 second timeout for initial buffering
-  })
-  return response.data
-}
-
-export async function stopSVPStream() {
-  const response = await api.post('/settings/svp/stop')
-  return response.data
 }

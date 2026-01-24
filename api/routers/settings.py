@@ -83,45 +83,13 @@ AGE_DETECTION_INSTALLING = "age_detection_installing"
 AGE_DETECTION_INSTALL_PROGRESS = "age_detection_install_progress"
 
 # Network settings defaults
-# Different default ports: portable=8791, system=8790
-# This allows running both simultaneously without conflicts
-def get_default_local_port():
-    """Get default local port based on install mode"""
-    if os.environ.get('LOCALBOORU_PORTABLE_DATA'):
-        return 8791  # Portable mode
-    return 8790  # System install
-
 DEFAULT_NETWORK_SETTINGS = {
     "local_network_enabled": False,
     "public_network_enabled": False,
-    "local_port": get_default_local_port(),
+    "local_port": 8790,
     "public_port": 8791,
-    "auth_required_level": "local_network",  # none, public, local_network, always
+    "auth_required_level": "none",  # none, public, local_network, always
     "upnp_enabled": False
-}
-
-# Optical flow interpolation settings defaults
-DEFAULT_OPTICAL_FLOW_SETTINGS = {
-    "enabled": False,
-    "target_fps": 60,
-    "use_gpu": True,
-    "quality": "fast",  # svp, gpu_native, realtime, fast, balanced, quality
-}
-
-# SVP (SmoothVideo Project) interpolation settings defaults
-DEFAULT_SVP_SETTINGS = {
-    "enabled": False,
-    "target_fps": 60,
-    "preset": "balanced",  # fast, balanced, quality, max, animation, film
-    # Key settings
-    "use_nvof": True,           # Use NVIDIA Optical Flow
-    "shader": 23,               # SVP shader/algo (1,2,11,13,21,23)
-    "artifact_masking": 100,    # Artifact masking area (0-200)
-    "frame_interpolation": 2,   # Frame interpolation mode (1=uniform, 2=adaptive)
-    # Advanced settings (full override when set)
-    "custom_super": None,
-    "custom_analyse": None,
-    "custom_smooth": None,
 }
 
 
@@ -137,36 +105,6 @@ def save_network_settings(network_settings: dict):
     """Save network settings"""
     settings = load_settings()
     settings["network"] = network_settings
-    save_settings(settings)
-
-
-def get_optical_flow_settings() -> dict:
-    """Get optical flow interpolation settings with defaults"""
-    settings = load_settings()
-    optical_flow = settings.get("optical_flow", {})
-    # Merge with defaults
-    return {**DEFAULT_OPTICAL_FLOW_SETTINGS, **optical_flow}
-
-
-def save_optical_flow_settings(optical_flow_settings: dict):
-    """Save optical flow interpolation settings"""
-    settings = load_settings()
-    settings["optical_flow"] = optical_flow_settings
-    save_settings(settings)
-
-
-def get_svp_settings() -> dict:
-    """Get SVP interpolation settings with defaults"""
-    settings = load_settings()
-    svp = settings.get("svp", {})
-    # Merge with defaults
-    return {**DEFAULT_SVP_SETTINGS, **svp}
-
-
-def save_svp_settings(svp_settings: dict):
-    """Save SVP interpolation settings"""
-    settings = load_settings()
-    settings["svp"] = svp_settings
     save_settings(settings)
 
 
@@ -712,48 +650,12 @@ async def get_migration_info_endpoint():
 
 class MigrationRequest(BaseModel):
     mode: str  # "system_to_portable" or "portable_to_system"
-    directory_ids: Optional[list[int]] = None  # Selective migration: which watch directories to include
-
-
-@router.get("/migration/directories")
-async def get_migration_directories(mode: str):
-    """Get watch directories available for selective migration.
-
-    Returns list of directories with metadata (path, image count, size).
-    """
-    from ..migration import get_watch_directories_for_migration, MigrationMode
-
-    try:
-        migration_mode = MigrationMode(mode)
-    except ValueError:
-        return {
-            "success": False,
-            "error": f"Invalid mode: {mode}. Must be 'system_to_portable' or 'portable_to_system'",
-            "directories": []
-        }
-
-    directories = await get_watch_directories_for_migration(migration_mode)
-
-    return {
-        "success": True,
-        "directories": directories,
-        "total_count": len(directories),
-        "total_images": sum(d["image_count"] for d in directories),
-        "total_thumbnail_size": sum(d["thumbnail_size"] for d in directories)
-    }
 
 
 @router.post("/migration/validate")
 async def validate_migration(request: MigrationRequest):
-    """Validate migration can proceed (dry run).
-
-    If directory_ids is provided, validates selective migration.
-    If directory_ids is None or empty, validates full migration.
-    """
-    from ..migration import (
-        migrate_data, migrate_data_selective, MigrationMode,
-        get_migration_paths, calculate_selective_migration_size
-    )
+    """Validate migration can proceed (dry run)."""
+    from ..migration import migrate_data, MigrationMode
 
     try:
         mode = MigrationMode(request.mode)
@@ -763,53 +665,24 @@ async def validate_migration(request: MigrationRequest):
             "error": f"Invalid mode: {request.mode}. Must be 'system_to_portable' or 'portable_to_system'"
         }
 
-    # Use selective migration if directory_ids provided
-    if request.directory_ids is not None and len(request.directory_ids) > 0:
-        result = await migrate_data_selective(mode, request.directory_ids, dry_run=True)
+    result = await migrate_data(mode, dry_run=True)
 
-        # Also get image count for selected directories
-        try:
-            source, _ = get_migration_paths(mode)
-            _, _, thumb_bytes = calculate_selective_migration_size(source, request.directory_ids)
-        except:
-            thumb_bytes = 0
-
-        return {
-            "valid": result.success,
-            "error": result.error,
-            "source_path": result.source_path,
-            "dest_path": result.dest_path,
-            "files_to_copy": result.files_copied,
-            "bytes_to_copy": result.bytes_copied,
-            "size_mb": round(result.bytes_copied / 1024 / 1024, 1) if result.bytes_copied else 0,
-            "thumbnail_size_mb": round(thumb_bytes / 1024 / 1024, 1) if thumb_bytes else 0,
-            "selective": True,
-            "directory_count": len(request.directory_ids)
-        }
-    else:
-        result = await migrate_data(mode, dry_run=True)
-
-        return {
-            "valid": result.success,
-            "error": result.error,
-            "source_path": result.source_path,
-            "dest_path": result.dest_path,
-            "files_to_copy": result.files_copied,
-            "bytes_to_copy": result.bytes_copied,
-            "size_mb": round(result.bytes_copied / 1024 / 1024, 1) if result.bytes_copied else 0,
-            "selective": False
-        }
+    return {
+        "valid": result.success,
+        "error": result.error,
+        "source_path": result.source_path,
+        "dest_path": result.dest_path,
+        "files_to_copy": result.files_copied,
+        "bytes_to_copy": result.bytes_copied,
+        "size_mb": round(result.bytes_copied / 1024 / 1024, 1) if result.bytes_copied else 0
+    }
 
 
 @router.post("/migration/start")
 async def start_migration(request: MigrationRequest):
-    """Start data migration (runs in background).
-
-    If directory_ids is provided, performs selective migration.
-    If directory_ids is None or empty, performs full migration.
-    """
+    """Start data migration (runs in background)."""
     import asyncio
-    from ..migration import migrate_data, migrate_data_selective, MigrationMode
+    from ..migration import migrate_data, MigrationMode
     from ..services.events import migration_events, MigrationEventType
 
     if _migration_state["running"]:
@@ -823,16 +696,8 @@ async def start_migration(request: MigrationRequest):
             "error": f"Invalid mode: {request.mode}. Must be 'system_to_portable' or 'portable_to_system'"
         }
 
-    # Determine if selective migration
-    is_selective = request.directory_ids is not None and len(request.directory_ids) > 0
-    directory_ids = request.directory_ids if is_selective else []
-
     # First validate
-    if is_selective:
-        validation = await migrate_data_selective(mode, directory_ids, dry_run=True)
-    else:
-        validation = await migrate_data(mode, dry_run=True)
-
+    validation = await migrate_data(mode, dry_run=True)
     if not validation.success:
         return {"success": False, "error": validation.error}
 
@@ -861,17 +726,9 @@ async def start_migration(request: MigrationRequest):
     async def run_migration():
         try:
             # Broadcast start event
-            await migration_events.broadcast(MigrationEventType.STARTED, {
-                "mode": mode.value,
-                "selective": is_selective,
-                "directory_count": len(directory_ids) if is_selective else None
-            })
+            await migration_events.broadcast(MigrationEventType.STARTED, {"mode": mode.value})
 
-            if is_selective:
-                result = await migrate_data_selective(mode, directory_ids, progress_callback=progress_callback)
-            else:
-                result = await migrate_data(mode, progress_callback=progress_callback)
-
+            result = await migrate_data(mode, progress_callback=progress_callback)
             _migration_state["result"] = result
 
             # Broadcast completion/error event
@@ -880,8 +737,7 @@ async def start_migration(request: MigrationRequest):
                     "files_copied": result.files_copied,
                     "bytes_copied": result.bytes_copied,
                     "source_path": result.source_path,
-                    "dest_path": result.dest_path,
-                    "selective": is_selective
+                    "dest_path": result.dest_path
                 })
             else:
                 await migration_events.broadcast(MigrationEventType.ERROR, {
@@ -908,8 +764,6 @@ async def start_migration(request: MigrationRequest):
 
     return {
         "success": True,
-        "selective": is_selective,
-        "directory_count": len(directory_ids) if is_selective else None,
         "message": "Migration started. Subscribe to /api/settings/migration/events for real-time progress."
     }
 
@@ -917,8 +771,6 @@ async def start_migration(request: MigrationRequest):
 @router.get("/migration/status")
 async def get_migration_status():
     """Get current migration progress."""
-    from ..migration import ImportResult
-
     response = {
         "running": _migration_state["running"],
         "progress": None,
@@ -940,7 +792,7 @@ async def get_migration_status():
 
     if _migration_state["result"]:
         r = _migration_state["result"]
-        result_data = {
+        response["result"] = {
             "success": r.success,
             "mode": r.mode.value if hasattr(r.mode, 'value') else r.mode,
             "source_path": r.source_path,
@@ -949,19 +801,6 @@ async def get_migration_status():
             "bytes_copied": r.bytes_copied,
             "error": r.error
         }
-
-        # Add import-specific fields if this was an import operation
-        if isinstance(r, ImportResult):
-            result_data["import"] = True
-            result_data["directories_imported"] = r.directories_imported
-            result_data["images_imported"] = r.images_imported
-            result_data["images_skipped"] = r.images_skipped
-            result_data["tags_created"] = r.tags_created
-            result_data["tags_reused"] = r.tags_reused
-        else:
-            result_data["import"] = False
-
-        response["result"] = result_data
 
     return response
 
@@ -1062,700 +901,3 @@ async def migration_events_stream():
             "X-Accel-Buffering": "no"
         }
     )
-
-
-# =============================================================================
-# Directory Import Endpoints (import into existing database)
-# =============================================================================
-
-@router.post("/migration/import/validate")
-async def validate_import_endpoint(request: MigrationRequest):
-    """Validate import can proceed (dry run).
-
-    Import differs from migration:
-    - Import ADDS directories to an existing destination database
-    - Migration REQUIRES an empty destination
-
-    directory_ids is required for import.
-    """
-    from ..migration import (
-        import_directories, validate_import, calculate_import_size,
-        MigrationMode, get_migration_paths
-    )
-
-    if not request.directory_ids or len(request.directory_ids) == 0:
-        return {
-            "valid": False,
-            "error": "directory_ids is required for import"
-        }
-
-    try:
-        mode = MigrationMode(request.mode)
-    except ValueError:
-        return {
-            "valid": False,
-            "error": f"Invalid mode: {request.mode}. Must be 'system_to_portable' or 'portable_to_system'"
-        }
-
-    # Validate import
-    errors = validate_import(mode, request.directory_ids)
-    if errors:
-        return {
-            "valid": False,
-            "error": "; ".join(errors)
-        }
-
-    # Calculate size
-    try:
-        source, dest = get_migration_paths(mode)
-        total_files, total_bytes, images_to_import, images_to_skip, total_db_records, total_tags = calculate_import_size(
-            source, request.directory_ids, dest
-        )
-    except ValueError as e:
-        return {"valid": False, "error": str(e)}
-
-    return {
-        "valid": True,
-        "error": None,
-        "source_path": str(source),
-        "dest_path": str(dest),
-        "files_to_copy": total_files,
-        "bytes_to_copy": total_bytes,
-        "size_mb": round(total_bytes / 1024 / 1024, 1) if total_bytes else 0,
-        "images_to_import": images_to_import,
-        "images_to_skip": images_to_skip,
-        "directory_count": len(request.directory_ids),
-        "total_db_records": total_db_records,
-        "total_tags": total_tags
-    }
-
-
-@router.post("/migration/import/start")
-async def start_import(request: MigrationRequest):
-    """Start directory import (runs in background).
-
-    Import differs from migration:
-    - Import ADDS directories to an existing destination database
-    - Migration REQUIRES an empty destination
-
-    directory_ids is required for import.
-    """
-    import asyncio
-    from ..migration import import_directories, validate_import, MigrationMode, ImportResult
-    from ..services.events import migration_events, MigrationEventType
-
-    if _migration_state["running"]:
-        return {"success": False, "error": "Migration/import already in progress"}
-
-    if not request.directory_ids or len(request.directory_ids) == 0:
-        return {
-            "success": False,
-            "error": "directory_ids is required for import"
-        }
-
-    try:
-        mode = MigrationMode(request.mode)
-    except ValueError:
-        return {
-            "success": False,
-            "error": f"Invalid mode: {request.mode}. Must be 'system_to_portable' or 'portable_to_system'"
-        }
-
-    # Validate
-    errors = validate_import(mode, request.directory_ids)
-    if errors:
-        return {"success": False, "error": "; ".join(errors)}
-
-    directory_ids = request.directory_ids
-
-    # Reset state
-    _migration_state["running"] = True
-    _migration_state["progress"] = None
-    _migration_state["result"] = None
-
-    def progress_callback(progress):
-        _migration_state["progress"] = progress
-        # Broadcast progress via SSE
-        asyncio.create_task(migration_events.broadcast(
-            MigrationEventType.PROGRESS,
-            {
-                "phase": progress.phase,
-                "percent": round(progress.percent, 1),
-                "current_file": progress.current_file,
-                "files_copied": progress.files_copied,
-                "total_files": progress.total_files,
-                "bytes_copied": progress.bytes_copied,
-                "total_bytes": progress.total_bytes,
-                "error": progress.error
-            }
-        ))
-
-    async def run_import():
-        try:
-            # Broadcast start event
-            await migration_events.broadcast(MigrationEventType.STARTED, {
-                "mode": mode.value,
-                "import": True,
-                "directory_count": len(directory_ids)
-            })
-
-            result = await import_directories(mode, directory_ids, progress_callback=progress_callback)
-            _migration_state["result"] = result
-
-            # Broadcast completion/error event
-            if result.success:
-                await migration_events.broadcast(MigrationEventType.COMPLETED, {
-                    "import": True,
-                    "directories_imported": result.directories_imported,
-                    "images_imported": result.images_imported,
-                    "images_skipped": result.images_skipped,
-                    "tags_created": result.tags_created,
-                    "tags_reused": result.tags_reused,
-                    "files_copied": result.files_copied,
-                    "bytes_copied": result.bytes_copied,
-                    "source_path": result.source_path,
-                    "dest_path": result.dest_path
-                })
-            else:
-                await migration_events.broadcast(MigrationEventType.ERROR, {
-                    "error": result.error,
-                    "files_copied": result.files_copied
-                })
-        except Exception as e:
-            _migration_state["result"] = ImportResult(
-                success=False,
-                mode=mode,
-                source_path="",
-                dest_path="",
-                directories_imported=0,
-                images_imported=0,
-                images_skipped=0,
-                tags_created=0,
-                tags_reused=0,
-                files_copied=0,
-                bytes_copied=0,
-                error=str(e)
-            )
-            await migration_events.broadcast(MigrationEventType.ERROR, {"error": str(e)})
-        finally:
-            _migration_state["running"] = False
-
-    # Start background task
-    asyncio.create_task(run_import())
-
-    return {
-        "success": True,
-        "import": True,
-        "directory_count": len(directory_ids),
-        "message": "Import started. Subscribe to /api/settings/migration/events for real-time progress."
-    }
-
-
-# =============================================================================
-# Optical Flow Interpolation Endpoints
-# =============================================================================
-
-@router.get("/optical-flow")
-async def get_optical_flow_config():
-    """Get optical flow interpolation configuration and backend status"""
-    from ..services.optical_flow import get_backend_status
-
-    config = get_optical_flow_settings()
-    backend = get_backend_status()
-
-    return {
-        **config,
-        "backend": backend
-    }
-
-
-class OpticalFlowConfigUpdate(BaseModel):
-    enabled: Optional[bool] = None
-    target_fps: Optional[int] = None
-    use_gpu: Optional[bool] = None
-    quality: Optional[str] = None  # svp, gpu_native, realtime, fast, balanced, quality
-
-
-@router.post("/optical-flow")
-async def update_optical_flow_config(config: OpticalFlowConfigUpdate):
-    """Update optical flow interpolation configuration"""
-    current = get_optical_flow_settings()
-
-    # Update only provided fields
-    if config.enabled is not None:
-        current["enabled"] = config.enabled
-    if config.target_fps is not None:
-        # Clamp to valid range
-        current["target_fps"] = max(15, min(120, config.target_fps))
-    if config.use_gpu is not None:
-        current["use_gpu"] = config.use_gpu
-    if config.quality is not None:
-        # Validate quality preset
-        if config.quality in ("svp", "gpu_native", "realtime", "fast", "balanced", "quality"):
-            current["quality"] = config.quality
-
-    save_optical_flow_settings(current)
-
-    return {"success": True, **current}
-
-
-@router.post("/optical-flow/play")
-async def play_video_interpolated(file_path: str):
-    """
-    Start interpolated video stream via HLS.
-
-    Returns the stream URL that can be used with hls.js.
-    """
-    from ..services.optical_flow_stream import create_interpolated_stream
-    from ..services.optical_flow import get_backend_status
-
-    config = get_optical_flow_settings()
-    backend = get_backend_status()
-
-    if not config["enabled"]:
-        return {"success": False, "error": "Optical flow interpolation is not enabled"}
-
-    if not backend["any_backend_available"]:
-        return {"success": False, "error": "No interpolation backend available. Install OpenCV or PyTorch."}
-
-    # Check if file exists
-    if not os.path.exists(file_path):
-        return {"success": False, "error": "File not found"}
-
-    try:
-        stream = await create_interpolated_stream(
-            video_path=file_path,
-            target_fps=config["target_fps"],
-            use_gpu=config["use_gpu"] and backend["cuda_available"],
-            quality=config.get("quality", "fast"),
-            wait_for_buffer=True,
-            min_segments=2
-        )
-
-        if stream:
-            return {
-                "success": True,
-                "stream_id": stream.stream_id,
-                "stream_url": f"/api/settings/optical-flow/stream/{stream.stream_id}/stream.m3u8",
-                "message": f"Interpolated stream started at {config['target_fps']} fps"
-            }
-        else:
-            return {"success": False, "error": "Failed to start interpolated stream"}
-
-    except Exception as e:
-        return {"success": False, "error": f"Stream error: {str(e)}"}
-
-
-@router.post("/optical-flow/stop")
-async def stop_interpolated_stream():
-    """Stop the active interpolated stream."""
-    from ..services.optical_flow_stream import stop_all_streams
-
-    stop_all_streams()
-    return {"success": True, "message": "Stream stopped"}
-
-
-from fastapi.responses import FileResponse, Response
-
-
-@router.get("/optical-flow/stream/{stream_id}/{filename:path}")
-async def serve_hls_file(stream_id: str, filename: str):
-    """Serve HLS playlist or segment files for the interpolated stream."""
-    from ..services.optical_flow_stream import get_active_stream
-
-    stream = get_active_stream(stream_id)
-    if not stream:
-        return Response(content="Stream not found", status_code=404)
-
-    file_path = stream.get_file_path(filename)
-    if not file_path:
-        return Response(content="File not found", status_code=404)
-
-    # Determine content type
-    if filename.endswith('.m3u8'):
-        media_type = 'application/vnd.apple.mpegurl'
-    elif filename.endswith('.ts'):
-        media_type = 'video/mp2t'
-    else:
-        media_type = 'application/octet-stream'
-
-    return FileResponse(
-        path=file_path,
-        media_type=media_type,
-        headers={
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Access-Control-Allow-Origin': '*'
-        }
-    )
-
-
-# =============================================================================
-# SVP (SmoothVideo Project) Interpolation Endpoints
-# =============================================================================
-
-@router.get("/svp")
-async def get_svp_config():
-    """Get SVP interpolation configuration and availability status"""
-    from ..services.svp_stream import get_svp_status, SVP_PRESETS, SVP_ALGORITHMS, SVP_BLOCK_SIZES, SVP_PEL_OPTIONS, SVP_MASK_AREA
-
-    config = get_svp_settings()
-    status = get_svp_status()
-
-    return {
-        **config,
-        "status": status,
-        "presets": {
-            name: {"name": preset["name"], "description": preset["description"]}
-            for name, preset in SVP_PRESETS.items()
-        },
-        "options": {
-            "algorithms": SVP_ALGORITHMS,
-            "block_sizes": SVP_BLOCK_SIZES,
-            "pel_options": SVP_PEL_OPTIONS,
-            "mask_area": SVP_MASK_AREA,
-        }
-    }
-
-
-class SVPConfigUpdate(BaseModel):
-    enabled: Optional[bool] = None
-    target_fps: Optional[int] = None
-    preset: Optional[str] = None  # fast, balanced, quality, max, animation, film
-    use_nvof: Optional[bool] = None  # Use NVIDIA Optical Flow
-    shader: Optional[int] = None  # SVP shader/algo (1,2,11,13,21,23)
-    artifact_masking: Optional[int] = None  # Artifact masking area (0-200)
-    frame_interpolation: Optional[int] = None  # Frame interpolation mode (1=uniform, 2=adaptive)
-    custom_super: Optional[str] = None
-    custom_analyse: Optional[str] = None
-    custom_smooth: Optional[str] = None
-
-
-@router.post("/svp")
-async def update_svp_config(config: SVPConfigUpdate):
-    """Update SVP interpolation configuration"""
-    from ..services.svp_stream import SVP_PRESETS
-
-    current = get_svp_settings()
-
-    # Update only provided fields
-    if config.enabled is not None:
-        current["enabled"] = config.enabled
-    if config.target_fps is not None:
-        # Clamp to valid range
-        current["target_fps"] = max(15, min(144, config.target_fps))
-    if config.preset is not None:
-        # Validate preset
-        if config.preset in SVP_PRESETS:
-            current["preset"] = config.preset
-    if config.use_nvof is not None:
-        current["use_nvof"] = config.use_nvof
-    if config.shader is not None:
-        # Validate shader value
-        if config.shader in [1, 2, 11, 13, 21, 23]:
-            current["shader"] = config.shader
-    if config.artifact_masking is not None:
-        # Clamp to valid range
-        current["artifact_masking"] = max(0, min(200, config.artifact_masking))
-    if config.frame_interpolation is not None:
-        if config.frame_interpolation in [1, 2]:
-            current["frame_interpolation"] = config.frame_interpolation
-    if config.custom_super is not None:
-        current["custom_super"] = config.custom_super if config.custom_super else None
-    if config.custom_analyse is not None:
-        current["custom_analyse"] = config.custom_analyse if config.custom_analyse else None
-    if config.custom_smooth is not None:
-        current["custom_smooth"] = config.custom_smooth if config.custom_smooth else None
-
-    save_svp_settings(current)
-
-    return {"success": True, **current}
-
-
-@router.post("/svp/play")
-async def play_video_svp(file_path: str):
-    """
-    Start SVP-interpolated video stream via HLS.
-
-    SVP uses VapourSynth + SVPflow plugins for high-quality
-    motion-compensated frame interpolation.
-    """
-    from ..services.svp_stream import SVPStream, get_svp_status, stop_all_svp_streams
-
-    # Stop any existing SVP streams before starting a new one
-    stop_all_svp_streams()
-
-    config = get_svp_settings()
-    status = get_svp_status()
-
-    if not config["enabled"]:
-        return {"success": False, "error": "SVP interpolation is not enabled"}
-
-    if not status["ready"]:
-        missing = []
-        if not status["vapoursynth_available"]:
-            missing.append("VapourSynth")
-        if not status["svp_plugins_available"]:
-            missing.append("SVPflow plugins")
-        if not status["vspipe_available"]:
-            missing.append("vspipe")
-        return {"success": False, "error": f"SVP not ready. Missing: {', '.join(missing)}"}
-
-    # Check if file exists
-    if not os.path.exists(file_path):
-        return {"success": False, "error": "File not found"}
-
-    try:
-        # Create SVP stream
-        stream = SVPStream(
-            video_path=file_path,
-            target_fps=config["target_fps"],
-            preset=config.get("preset", "balanced"),
-            use_nvof=config.get("use_nvof", True),
-            shader=config.get("shader", 23),
-            artifact_masking=config.get("artifact_masking", 100),
-            frame_interpolation=config.get("frame_interpolation", 2),
-            custom_super=config.get("custom_super"),
-            custom_analyse=config.get("custom_analyse"),
-            custom_smooth=config.get("custom_smooth"),
-        )
-
-        # Start the stream
-        success = await stream.start()
-
-        if success:
-            # Return immediately - frontend will poll/retry for readiness
-            # This allows normal video to keep playing while SVP buffers
-            return {
-                "success": True,
-                "stream_id": stream.stream_id,
-                "stream_url": f"/api/settings/svp/stream/{stream.stream_id}/stream.m3u8",
-                "duration": stream._duration,
-                "message": f"SVP stream started at {config['target_fps']} fps with {config.get('preset', 'balanced')} preset"
-            }
-        else:
-            return {"success": False, "error": stream.error or "Failed to start SVP stream"}
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return {"success": False, "error": f"SVP stream error: {str(e)}"}
-
-
-@router.post("/svp/stop")
-async def stop_svp_stream():
-    """Stop all active SVP streams."""
-    from ..services.svp_stream import stop_all_svp_streams
-
-    stop_all_svp_streams()
-    return {"success": True, "message": "SVP streams stopped"}
-
-
-@router.get("/svp/stream/{stream_id}/{filename:path}")
-async def serve_svp_hls_file(stream_id: str, filename: str):
-    """Serve HLS playlist or segment files for the SVP stream."""
-    from ..services.svp_stream import get_active_svp_stream, _active_svp_streams
-
-    stream = get_active_svp_stream(stream_id)
-    if not stream:
-        print(f"[SVP] Stream {stream_id} not found. Active streams: {list(_active_svp_streams.keys())}")
-        return Response(content="Stream not found", status_code=404)
-
-    if not stream.hls_dir:
-        return Response(content="Stream not ready", status_code=404)
-
-    file_path = stream.hls_dir / filename
-    if not file_path.exists():
-        return Response(content="File not found", status_code=404)
-
-    # Determine content type
-    if filename.endswith('.m3u8'):
-        media_type = 'application/vnd.apple.mpegurl'
-    elif filename.endswith('.ts'):
-        media_type = 'video/mp2t'
-    else:
-        media_type = 'application/octet-stream'
-
-    return FileResponse(
-        path=str(file_path),
-        media_type=media_type,
-        headers={
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Access-Control-Allow-Origin': '*'
-        }
-    )
-
-
-# =============================================================================
-# Web Video SVP Endpoints (Browser Extension)
-# =============================================================================
-
-@router.post("/svp/web/play")
-async def play_web_video_svp(url: str, quality: str = "best"):
-    """
-    Start SVP stream for a web video URL using yt-dlp.
-
-    This endpoint:
-    1. Checks if the URL is from a DRM-protected site
-    2. Downloads the video via yt-dlp to a temp file
-    3. Passes the temp file to the existing SVP pipeline
-    4. Returns the HLS stream URL
-
-    Args:
-        url: Web video URL (YouTube, Vimeo, Twitch VOD, direct video, etc.)
-        quality: Quality preference - "best", "1080p", "720p", "480p"
-
-    Returns:
-        On success: {"success": true, "stream_url": "...", "download_id": "..."}
-        On pending: {"success": true, "status": "downloading", "download_id": "...", "progress": 0.5}
-        On error: {"success": false, "error": "..."}
-    """
-    from ..services.web_video_downloader import (
-        download_video,
-        get_download,
-        is_drm_site,
-        is_live_stream,
-    )
-    from ..services.svp_stream import SVPStream, get_svp_status
-
-    # Quick DRM check before starting download
-    if is_drm_site(url):
-        return {
-            "success": False,
-            "error": "This site uses DRM protection and cannot be processed",
-            "drm_protected": True,
-        }
-
-    # Quick live stream check
-    if is_live_stream(url):
-        return {
-            "success": False,
-            "error": "Live streams are not supported yet (coming in v2)",
-            "live_stream": True,
-        }
-
-    # Check SVP status before downloading
-    config = get_svp_settings()
-    status = get_svp_status()
-
-    if not config["enabled"]:
-        return {"success": False, "error": "SVP interpolation is not enabled"}
-
-    if not status["ready"]:
-        missing = []
-        if not status["vapoursynth_available"]:
-            missing.append("VapourSynth")
-        if not status["svp_plugins_available"]:
-            missing.append("SVPflow plugins")
-        if not status["vspipe_available"]:
-            missing.append("vspipe")
-        return {"success": False, "error": f"SVP not ready. Missing: {', '.join(missing)}"}
-
-    # Start or check download
-    result = await download_video(url, quality)
-
-    if not result.success:
-        return {"success": False, "error": result.error}
-
-    # Check download status
-    download = get_download(result.download_id)
-    if not download:
-        return {"success": False, "error": "Download tracking error"}
-
-    if download.status in ("pending", "downloading", "processing"):
-        return {
-            "success": True,
-            "status": download.status,
-            "download_id": download.download_id,
-            "progress": download.progress,
-        }
-
-    if download.status == "error":
-        return {"success": False, "error": download.error or "Download failed"}
-
-    if download.status == "complete" and download.file_path:
-        # Download complete, start SVP stream
-        try:
-            stream = SVPStream(
-                video_path=download.file_path,
-                target_fps=config["target_fps"],
-                preset=config.get("preset", "balanced"),
-                use_nvof=config.get("use_nvof", True),
-                shader=config.get("shader", 23),
-                artifact_masking=config.get("artifact_masking", 100),
-                frame_interpolation=config.get("frame_interpolation", 2),
-                custom_super=config.get("custom_super"),
-                custom_analyse=config.get("custom_analyse"),
-                custom_smooth=config.get("custom_smooth"),
-            )
-
-            success = await stream.start()
-
-            if success:
-                return {
-                    "success": True,
-                    "status": "streaming",
-                    "download_id": download.download_id,
-                    "stream_id": stream.stream_id,
-                    "stream_url": f"/api/settings/svp/stream/{stream.stream_id}/stream.m3u8",
-                    "duration": stream._duration,
-                    "title": download.title,
-                    "message": f"SVP stream started at {config['target_fps']} fps",
-                }
-            else:
-                return {"success": False, "error": stream.error or "Failed to start SVP stream"}
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return {"success": False, "error": f"SVP stream error: {str(e)}"}
-
-    return {"success": False, "error": "Unexpected download state"}
-
-
-@router.get("/svp/web/status/{download_id}")
-async def get_web_download_status(download_id: str):
-    """
-    Get download progress for a web video.
-
-    Args:
-        download_id: The download ID returned from /svp/web/play
-
-    Returns:
-        Download status including progress (0.0 to 1.0), status, and any errors.
-    """
-    from ..services.web_video_downloader import get_download
-
-    download = get_download(download_id)
-    if not download:
-        return {"success": False, "error": "Download not found"}
-
-    return {
-        "success": True,
-        "download_id": download.download_id,
-        "status": download.status,
-        "progress": download.progress,
-        "title": download.title,
-        "file_path": download.file_path,
-        "error": download.error,
-    }
-
-
-@router.get("/svp/web/drm-check")
-async def check_drm_site(url: str):
-    """
-    Check if a URL is from a DRM-protected site.
-
-    This is a quick check that the extension can use before attempting to play.
-
-    Args:
-        url: The URL to check
-
-    Returns:
-        {"drm_protected": true/false, "live_stream": true/false/null}
-    """
-    from ..services.web_video_downloader import is_drm_site, is_live_stream
-
-    return {
-        "drm_protected": is_drm_site(url),
-        "live_stream": is_live_stream(url),
-    }

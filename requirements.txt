@@ -27,7 +27,6 @@ pydantic>=2.0.0
 pydantic-settings>=2.0.0
 python-multipart>=0.0.9
 httpx>=0.27.0
-PyJWT>=2.8.0
 
 # Filesystem watching
 watchdog>=4.0.0
@@ -35,11 +34,3 @@ watchdog>=4.0.0
 # UPnP for network port forwarding
 miniupnpc>=2.2.0
 xxhash
-
-# RIFE model download
-gdown>=5.1.0
-
-# RIFE frame interpolation (Vulkan GPU acceleration)
-# Install one of these for optimal performance:
-# rife-ncnn-vulkan-python  # Original package
-rife-ncnn-vulkan-python-tntwise>=1.4.0  # Updated fork with more features
