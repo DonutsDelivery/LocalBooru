@@ -11,7 +11,10 @@ import TitleBar from './components/TitleBar'
 import ComfyUIConfigModal from './components/ComfyUIConfigModal'
 import NetworkSettings from './components/NetworkSettings'
 import ServerSettings from './components/ServerSettings'
+import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
+import OpticalFlowSettings from './components/OpticalFlowSettings'
+import SVPSettings from './components/SVPSettings'
 import QRConnect from './components/QRConnect'
 import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
 import './App.css'
@@ -25,6 +28,9 @@ function DirectoriesPage() {
   const [pruning, setPruning] = useState({})
   const [comfyuiConfigDir, setComfyuiConfigDir] = useState(null)
   const [stats, setStats] = useState(null)
+  const [relocating, setRelocating] = useState({})
+  const [selectedDirs, setSelectedDirs] = useState(new Set())
+  const [batchLoading, setBatchLoading] = useState(false)
 
   const refreshDirectories = async () => {
     const { fetchDirectories } = await import('./api')
@@ -116,6 +122,160 @@ function DirectoriesPage() {
     }
   }
 
+  const handleRelocate = async (dirId, dirName, currentPath) => {
+    if (window.electronAPI) {
+      const newPath = await window.electronAPI.addDirectory()
+      if (newPath && newPath !== currentPath) {
+        if (!confirm(`Update directory location?\n\nFrom: ${currentPath}\nTo: ${newPath}\n\nThis will update all file references.`)) {
+          return
+        }
+        setRelocating(prev => ({ ...prev, [dirId]: true }))
+        try {
+          const { updateDirectoryPath } = await import('./api')
+          const result = await updateDirectoryPath(dirId, newPath)
+          alert(`Directory relocated.\n${result.files_updated} file references updated.`)
+          await refreshDirectories()
+        } catch (error) {
+          console.error('Relocate failed:', error)
+          alert('Relocate failed: ' + (error.response?.data?.detail || error.message))
+        } finally {
+          setRelocating(prev => ({ ...prev, [dirId]: false }))
+        }
+      }
+    } else {
+      alert('Directory picker only available in Electron app')
+    }
+  }
+
+  // Selection handlers
+  const toggleSelectDir = (dirId) => {
+    setSelectedDirs(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(dirId)) {
+        newSet.delete(dirId)
+      } else {
+        newSet.add(dirId)
+      }
+      return newSet
+    })
+  }
+
+  const selectAllDirs = () => {
+    setSelectedDirs(new Set(directories.map(d => d.id)))
+  }
+
+  const clearSelection = () => {
+    setSelectedDirs(new Set())
+  }
+
+  // Batch action handlers
+  const handleBatchRescan = async () => {
+    if (selectedDirs.size === 0) return
+    setBatchLoading(true)
+    const { scanDirectory } = await import('./api')
+    const dirIds = Array.from(selectedDirs)
+
+    // Mark all as scanning
+    setScanning(prev => {
+      const next = { ...prev }
+      dirIds.forEach(id => next[id] = true)
+      return next
+    })
+
+    try {
+      // Run rescans in parallel
+      await Promise.all(dirIds.map(id => scanDirectory(id).catch(e => {
+        console.error(`Scan failed for ${id}:`, e)
+      })))
+      await refreshDirectories()
+    } finally {
+      setScanning({})
+      setBatchLoading(false)
+      clearSelection()
+    }
+  }
+
+  const handleBatchPrune = async () => {
+    if (selectedDirs.size === 0) return
+    const selectedList = directories.filter(d => selectedDirs.has(d.id))
+    const totalNonFavorited = selectedList.reduce((sum, d) => sum + (d.image_count - d.favorited_count), 0)
+    const totalFavorited = selectedList.reduce((sum, d) => sum + d.favorited_count, 0)
+    const savedDumpsterPath = localStorage.getItem('localbooru_dumpster_path') || null
+    const dumpsterInfo = savedDumpsterPath ? `\nDumpster: ${savedDumpsterPath}` : ''
+
+    if (!confirm(`Prune ${selectedDirs.size} directories?\n\nThis will move ${totalNonFavorited} non-favorited images to the dumpster folder.\nFavorited images (${totalFavorited}) will be kept.${dumpsterInfo}`)) {
+      return
+    }
+
+    setBatchLoading(true)
+    const { pruneDirectory } = await import('./api')
+    const dirIds = Array.from(selectedDirs)
+
+    // Mark all as pruning
+    setPruning(prev => {
+      const next = { ...prev }
+      dirIds.forEach(id => next[id] = true)
+      return next
+    })
+
+    try {
+      let totalPruned = 0
+      for (const id of dirIds) {
+        try {
+          const result = await pruneDirectory(id, savedDumpsterPath)
+          totalPruned += result.pruned
+        } catch (e) {
+          console.error(`Prune failed for ${id}:`, e)
+        }
+      }
+      alert(`Pruned ${totalPruned} images total`)
+      await refreshDirectories()
+      getLibraryStats().then(setStats).catch(console.error)
+    } finally {
+      setPruning({})
+      setBatchLoading(false)
+      clearSelection()
+    }
+  }
+
+  const handleBatchRemove = async () => {
+    if (selectedDirs.size === 0) return
+    const selectedList = directories.filter(d => selectedDirs.has(d.id))
+    const totalImages = selectedList.reduce((sum, d) => sum + (d.image_count || 0), 0)
+
+    // Only show first 5 names to avoid huge dialogs
+    const maxNames = 5
+    const namesList = selectedList.slice(0, maxNames).map(d => d.name || d.path)
+    const remaining = selectedList.length - maxNames
+    let namesDisplay = '- ' + namesList.join('\n- ')
+    if (remaining > 0) {
+      namesDisplay += `\n... and ${remaining} more`
+    }
+
+    if (!confirm(`Remove ${selectedDirs.size} directories (${totalImages.toLocaleString()} images) from watch list?\n\n${namesDisplay}\n\nImages will be removed from library.\nActual files on disk will NOT be deleted.\n\nThis may take a while for large libraries.`)) {
+      return
+    }
+
+    setBatchLoading(true)
+
+    try {
+      const { bulkDeleteDirectories } = await import('./api')
+      const dirIds = Array.from(selectedDirs)
+      console.log(`[Bulk Remove] Deleting ${dirIds.length} directories with ${totalImages} images...`)
+
+      const result = await bulkDeleteDirectories(dirIds, false)
+      console.log(`[Bulk Remove] Deleted ${result.deleted} directories, ${result.image_count} images`)
+
+      await refreshDirectories()
+    } catch (e) {
+      console.error('Bulk remove failed:', e)
+      alert(`Remove failed: ${e.response?.data?.detail || e.message || 'Unknown error'}`)
+    } finally {
+      setBatchLoading(false)
+      clearSelection()
+    }
+  }
+
   return (
     <div className="app">
       <div className="main-container">
@@ -139,9 +299,24 @@ function DirectoriesPage() {
             ) : directories.length === 0 ? (
               <p className="empty-state">No directories added yet. Add a folder to get started!</p>
             ) : (
+              <>
+              <div className="directory-list-header">
+                <span className="directory-count">{directories.length} directories</span>
+                <div className="selection-buttons">
+                  <button className="select-btn" onClick={selectAllDirs}>Select All</button>
+                  <button className="select-btn" onClick={clearSelection} disabled={selectedDirs.size === 0}>Unselect All</button>
+                </div>
+              </div>
               <ul className="directory-list">
                 {directories.map(dir => (
-                  <li key={dir.id} className={`directory-item ${dir.enabled ? '' : 'disabled'}`}>
+                  <li key={dir.id} className={`directory-item ${dir.enabled ? '' : 'disabled'} ${selectedDirs.has(dir.id) ? 'selected' : ''}`}>
+                    <label className="directory-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={selectedDirs.has(dir.id)}
+                        onChange={() => toggleSelectDir(dir.id)}
+                      />
+                    </label>
                     <div className="directory-info">
                       <strong>{dir.name}</strong>
                       <span className="directory-path">{dir.path}</span>
@@ -215,6 +390,14 @@ function DirectoriesPage() {
                         ComfyUI
                       </button>
                       <button
+                        className="relocate-btn"
+                        onClick={() => handleRelocate(dir.id, dir.name || dir.path, dir.path)}
+                        disabled={relocating[dir.id]}
+                        title="Change directory location (if folder was moved)"
+                      >
+                        {relocating[dir.id] ? 'Relocating...' : 'Edit Path'}
+                      </button>
+                      <button
                         className="remove-btn"
                         onClick={() => handleRemove(dir.id, dir.name || dir.path)}
                       >
@@ -228,6 +411,47 @@ function DirectoriesPage() {
                   </li>
                 ))}
               </ul>
+              </>
+            )}
+
+            {/* Batch action bar */}
+            {selectedDirs.size > 0 && (
+              <div className="batch-action-bar directory-batch-bar">
+                <div className="batch-action-count">
+                  {selectedDirs.size} selected
+                  <button className="batch-select-link" onClick={selectAllDirs}>Select All</button>
+                </div>
+                <div className="batch-action-buttons">
+                  <button
+                    className="batch-btn"
+                    onClick={handleBatchRescan}
+                    disabled={batchLoading}
+                  >
+                    Rescan All
+                  </button>
+                  <button
+                    className="batch-btn"
+                    onClick={handleBatchPrune}
+                    disabled={batchLoading}
+                  >
+                    Prune All
+                  </button>
+                  <button
+                    className="batch-btn danger"
+                    onClick={handleBatchRemove}
+                    disabled={batchLoading}
+                  >
+                    Remove All
+                  </button>
+                  <button
+                    className="batch-btn secondary"
+                    onClick={clearSelection}
+                    disabled={batchLoading}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </main>
@@ -332,6 +556,12 @@ function SettingsPage() {
                 General
               </button>
               <button
+                className={`settings-tab ${activeTab === 'video' ? 'active' : ''}`}
+                onClick={() => setActiveTab('video')}
+              >
+                Video
+              </button>
+              <button
                 className={`settings-tab ${activeTab === 'network' ? 'active' : ''}`}
                 onClick={() => setActiveTab('network')}
               >
@@ -357,21 +587,30 @@ function SettingsPage() {
               </button>
             </div>
 
-            {/* Network Tab Content */}
-            {activeTab === 'network' && <NetworkSettings />}
+            {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
+            <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
+              <OpticalFlowSettings />
+              <hr className="settings-divider" />
+              <SVPSettings />
+            </div>
 
-            {/* Data/Migration Tab Content */}
-            {activeTab === 'data' && <MigrationSettings />}
+            <div className={`settings-tab-content ${activeTab === 'network' ? 'active' : ''}`}>
+              <NetworkSettings />
+            </div>
 
-            {/* Servers Tab Content (for mobile app) */}
-            {activeTab === 'servers' && <ServerSettings />}
+            <div className={`settings-tab-content ${activeTab === 'data' ? 'active' : ''}`}>
+              <MigrationSettings />
+            </div>
 
-            {/* Mobile App QR Code */}
-            {activeTab === 'mobile' && <QRConnect />}
+            <div className={`settings-tab-content ${activeTab === 'servers' ? 'active' : ''}`}>
+              <ServerSettings />
+            </div>
 
-            {/* General Tab Content */}
-            {activeTab === 'general' && (
-            <>
+            <div className={`settings-tab-content ${activeTab === 'mobile' ? 'active' : ''}`}>
+              <QRConnect />
+            </div>
+
+            <div className={`settings-tab-content ${activeTab === 'general' ? 'active' : ''}`}>
             <section>
               <h2>Age Detection (Optional)</h2>
               <p className="setting-description">
@@ -530,8 +769,7 @@ function SettingsPage() {
                 </button>
               </section>
             )}
-            </>
-            )}
+            </div>
           </div>
         </main>
       </div>
@@ -547,6 +785,7 @@ function Gallery() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [total, setTotal] = useState(0)
+  const [filtersInitialized, setFiltersInitialized] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
@@ -558,6 +797,13 @@ function Gallery() {
   useEffect(() => {
     lightboxIndexRef.current = lightboxIndex
   }, [lightboxIndex])
+
+  // Keep hasMore in sync with actual images count (fixes stale closure bugs)
+  useEffect(() => {
+    if (total > 0) {
+      setHasMore(images.length < total)
+    }
+  }, [images.length, total])
 
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false)
@@ -599,10 +845,12 @@ function Gallery() {
         console.error('Failed to load saved filters:', e)
       }
     }
+    setFiltersInitialized(true)
   }, [])
 
-  // Save filters to localStorage when they change
+  // Save filters to localStorage when they change (only after initial load to avoid overwriting)
   useEffect(() => {
+    if (!filtersInitialized) return
     const filters = {
       tags: currentTags || null,
       rating: currentRating,
@@ -613,7 +861,7 @@ function Gallery() {
       max_age: currentMaxAge
     }
     localStorage.setItem('localbooru_filters', JSON.stringify(filters))
-  }, [currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge])
 
   // Touch handling for mobile sidebar
   const touchStartX = useRef(null)
@@ -665,8 +913,7 @@ function Gallery() {
         setImages(result.images)
       }
       setTotal(result.total)
-      const loadedCount = append ? images.length + result.images.length : result.images.length
-      setHasMore(loadedCount < result.total)
+      // Note: hasMore is computed by useEffect based on actual images.length
       setPage(pageNum)
     } catch (error) {
       console.error('Failed to load images:', error)
@@ -714,8 +961,9 @@ function Gallery() {
   }, [])
 
   useEffect(() => {
+    if (!filtersInitialized) return
     loadImages(1, false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, loadImages])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, loadImages])
 
   useEffect(() => {
     loadTags()
@@ -864,8 +1112,8 @@ function Gallery() {
 
           if (newImages.length > 0) {
             setImages(prev => [...prev, ...newImages])
-            const newLoadedCount = images.length + newImages.length
-            setHasMore(newLoadedCount < result.total)
+            setTotal(result.total)  // Update total in case it changed
+            // Note: hasMore is computed by useEffect based on actual images.length
             setPage(nextPage)
             // Navigate to the first new image
             setLightboxIndex(newImages[0].id)
@@ -1250,18 +1498,36 @@ function Gallery() {
 function App() {
   const [mobileReady, setMobileReady] = useState(false)
   const [showServerSetup, setShowServerSetup] = useState(false)
+  const [servers, setServers] = useState([])
+  const [serverStatuses, setServerStatuses] = useState({})
 
   // Initialize server configuration for mobile app
   useEffect(() => {
     async function initMobile() {
-      const { isMobileApp, getActiveServer } = await import('./serverManager')
+      const { isMobileApp, getServers, getActiveServer, setActiveServerId, pingAllServers } = await import('./serverManager')
       const { updateServerConfig } = await import('./api')
 
       if (isMobileApp()) {
-        await updateServerConfig()
-        const server = await getActiveServer()
-        if (!server) {
+        const serverList = await getServers()
+
+        if (serverList.length === 0) {
+          // No servers - show add server UI
           setShowServerSetup(true)
+        } else {
+          // Ping all servers in parallel
+          const statuses = await pingAllServers(serverList)
+          const onlineServers = serverList.filter(s => statuses[s.id] === 'online')
+
+          if (onlineServers.length === 1) {
+            // Exactly 1 online - auto-connect
+            await setActiveServerId(onlineServers[0].id)
+            await updateServerConfig()
+          } else {
+            // 0 or 2+ online - show selection with status
+            setServers(serverList)
+            setServerStatuses(statuses)
+            setShowServerSetup(true)
+          }
         }
       }
       setMobileReady(true)
@@ -1281,8 +1547,34 @@ function App() {
     )
   }
 
-  // Show server setup for mobile when no server configured
+  // Handle disconnect/switch server
+  const handleDisconnect = () => {
+    setShowServerSetup(true)
+    // Re-fetch servers and their statuses
+    import('./serverManager').then(async ({ getServers, pingAllServers }) => {
+      const serverList = await getServers()
+      setServers(serverList)
+      if (serverList.length > 0) {
+        const statuses = await pingAllServers(serverList)
+        setServerStatuses(statuses)
+      }
+    })
+  }
+
+  // Show server setup/selection for mobile
   if (showServerSetup) {
+    // If we have servers with statuses, show the selection screen
+    if (servers.length > 0) {
+      return (
+        <ServerSelectScreen
+          servers={servers}
+          serverStatuses={serverStatuses}
+          onConnect={() => setShowServerSetup(false)}
+        />
+      )
+    }
+
+    // Otherwise show the add server screen
     return (
       <div className="app server-setup-screen">
         <div className="server-setup-content">
@@ -1302,7 +1594,7 @@ function App() {
 
   return (
     <>
-      <TitleBar />
+      <TitleBar onSwitchServer={handleDisconnect} />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Gallery />} />

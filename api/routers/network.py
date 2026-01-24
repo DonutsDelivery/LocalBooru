@@ -1,19 +1,21 @@
 """
 Network configuration router - manage local network and public access settings.
 
-All endpoints in this router are localhost-only (enforced by middleware).
+Most endpoints in this router are localhost-only (enforced by middleware).
+Exception: /verify-handshake is accessible from the local network for mobile app trust verification.
 """
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional, Literal
 
-from .settings import get_network_settings, save_network_settings
+from .settings import get_network_settings, save_network_settings, get_default_local_port
 from ..services.network import (
     get_local_ip,
     get_all_local_ips,
     test_port_local,
     upnp_manager
 )
+from ..services.auth import get_server_fingerprint, create_handshake_nonce, verify_handshake_nonce
 
 router = APIRouter()
 
@@ -41,6 +43,11 @@ class UPnPPortRequest(BaseModel):
     description: Optional[str] = "LocalBooru"
 
 
+class HandshakeVerifyRequest(BaseModel):
+    """Request body for verifying handshake nonce"""
+    nonce: str
+
+
 @router.get("")
 async def get_network_config():
     """
@@ -57,7 +64,7 @@ async def get_network_config():
     public_url = None
 
     if local_ip and settings.get("local_network_enabled"):
-        local_port = settings.get("local_port", 8790)
+        local_port = settings.get("local_port", get_default_local_port())
         local_url = f"http://{local_ip}:{local_port}"
 
     # Check UPnP status if enabled
@@ -95,7 +102,7 @@ async def get_qr_data():
     # Build local URL (always include if we have an IP)
     local_url = None
     if local_ip:
-        local_port = settings.get("local_port", 8790)
+        local_port = settings.get("local_port", get_default_local_port())
         local_url = f"http://{local_ip}:{local_port}"
 
     # Build public URL if UPnP is enabled and has external IP
@@ -110,13 +117,19 @@ async def get_qr_data():
     auth_level = settings.get("auth_required_level", "none")
     auth_required = auth_level in ["local_network", "always"]
 
+    # Generate handshake nonce for verification
+    nonce, nonce_expires = create_handshake_nonce()
+
     return {
         "type": "localbooru",
         "version": 1,
         "name": "LocalBooru",
         "local": local_url,
         "public": public_url,
-        "auth": auth_required
+        "auth": auth_required,
+        "fingerprint": get_server_fingerprint(),
+        "nonce": nonce,
+        "nonce_expires": int(nonce_expires)
     }
 
 
@@ -226,3 +239,34 @@ async def get_external_ip():
     """
     ip = upnp_manager.get_external_ip()
     return {"external_ip": ip}
+
+
+@router.post("/verify-handshake")
+async def verify_handshake(request: HandshakeVerifyRequest):
+    """
+    Verify a handshake nonce from QR code scanning.
+
+    This endpoint is accessible from the local network (not localhost-only)
+    to allow mobile apps to verify they're connecting to the correct server.
+
+    The nonce is single-use and expires after 5 minutes.
+
+    Returns:
+        - On success: { "valid": true, "fingerprint": "...", "server_name": "LocalBooru" }
+        - On failure: { "valid": false, "error": "..." } with 401 status
+    """
+    if verify_handshake_nonce(request.nonce):
+        return {
+            "valid": True,
+            "fingerprint": get_server_fingerprint(),
+            "server_name": "LocalBooru"
+        }
+    else:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=401,
+            content={
+                "valid": False,
+                "error": "Invalid, expired, or already-used nonce"
+            }
+        )

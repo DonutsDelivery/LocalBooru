@@ -344,13 +344,11 @@ function Sidebar({
                 className="directory-select"
               >
                 <option value="">All Directories</option>
-                {directories
-                  .filter(dir => dir.image_count > 0)
-                  .map(dir => (
-                    <option key={dir.id} value={dir.id}>
-                      {dir.name} ({dir.image_count})
-                    </option>
-                  ))}
+                {directories.map(dir => (
+                  <option key={dir.id} value={dir.id}>
+                    {dir.name}{dir.image_count > 0 ? ` (${dir.image_count})` : ''}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -685,24 +683,22 @@ function Sidebar({
                   </button>
                 )}
                 {/* Autocomplete suggestions from API */}
-                {suggestions.length > 0 && (
-                  <div className="tag-suggestions">
-                    {suggestions.map((tag, index) => (
-                      <button
-                        key={tag.name}
-                        className={`suggestion-item tag-${tag.category} ${index === suggestionIndex ? 'selected' : ''}`}
-                        onClick={() => {
-                          onTagClick(tag.name)
-                          setTagInput('')
-                          setSuggestionIndex(-1)
-                        }}
-                      >
-                        <span className="suggestion-name">{tag.name.replace(/_/g, ' ')}</span>
-                        <span className="suggestion-count">({tag.post_count})</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className={`tag-suggestions ${suggestions.length > 0 ? 'visible' : ''}`}>
+                  {suggestions.map((tag, index) => (
+                    <button
+                      key={tag.name}
+                      className={`suggestion-item tag-${tag.category} ${index === suggestionIndex ? 'selected' : ''}`}
+                      onClick={() => {
+                        onTagClick(tag.name)
+                        setTagInput('')
+                        setSuggestionIndex(-1)
+                      }}
+                    >
+                      <span className="suggestion-name">{tag.name.replace(/_/g, ' ')}</span>
+                      <span className="suggestion-count">({tag.post_count})</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

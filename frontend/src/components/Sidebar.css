@@ -11,9 +11,10 @@
   border-radius: 0 0 0 var(--window-radius);
   display: flex;
   flex-direction: column;
-  transition: transform 0.3s ease, opacity 0.3s ease;
+  transition: transform 0.2s ease, opacity 0.2s ease;
   z-index: 900;
   box-shadow: var(--shadow-lg);
+  will-change: transform, opacity;
 }
 
 /* Nav item with count */
@@ -107,7 +108,7 @@
   color: var(--text-secondary);
   text-decoration: none;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .sidebar-nav .nav-item svg {
@@ -466,6 +467,20 @@
   overflow-y: auto;
   scrollbar-width: auto;
   scrollbar-color: var(--border) transparent;
+  /* Performance: always rendered, hidden via CSS */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+  will-change: opacity, transform;
+  pointer-events: none;
+}
+
+.tag-suggestions.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .tag-suggestions::-webkit-scrollbar {
@@ -495,7 +510,7 @@
   border: none;
   cursor: pointer;
   font-size: 0.85rem;
-  transition: background 0.1s;
+  transition: background 0.08s ease;
   text-align: left;
 }
 
@@ -675,7 +690,7 @@
   border-radius: 6px;
   font-size: 0.85rem;
   color: var(--text-secondary);
-  transition: all 0.15s ease;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease, transform 0.1s ease;
   border: 1px solid transparent;
   cursor: pointer;
   min-height: 36px;
@@ -929,7 +944,7 @@
   border-radius: 12px;
   position: relative;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: background 0.12s ease;
 }
 
 .toggle-switch:hover {
@@ -948,8 +963,9 @@
   height: 20px;
   background: white;
   border-radius: 50%;
-  transition: transform 0.2s ease;
+  transition: transform 0.12s ease;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  will-change: transform;
 }
 
 .toggle-switch.active .toggle-knob {
@@ -977,7 +993,7 @@
   font-size: 0.7rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease, transform 0.1s ease;
   background: var(--bg-primary);
   color: var(--text-muted);
   letter-spacing: 0.02em;
@@ -1205,7 +1221,7 @@
   font-size: 0.75rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.1s ease, color 0.1s ease, box-shadow 0.1s ease;
   background: transparent;
   color: var(--text-muted);
 }
@@ -1245,7 +1261,7 @@
   font-size: 0.7rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.1s ease, color 0.1s ease, box-shadow 0.1s ease;
   background: transparent;
   color: var(--text-muted);
 }
@@ -1528,6 +1544,7 @@
 .sidebar.lightbox-mode {
   transform: translateX(-100%);
   z-index: 2100; /* Above lightbox (z-index: 2000) */
+  transition: transform 0.15s ease;
 }
 
 .sidebar.lightbox-mode.lightbox-hover {

@@ -53,11 +53,41 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown - cleanup all resources gracefully
+    print("\n" + "="*50)
     print("Shutting down LocalBooru API...")
+    print("="*50)
+
+    # Stop directory watcher first (prevents new imports)
+    print("[Shutdown] Stopping directory watcher...")
     await directory_watcher.stop()
+
+    # Stop background task queue
+    print("[Shutdown] Stopping task queue...")
     await task_queue.stop()
+
+    # Stop optical flow streams and cleanup thread pool
+    print("[Shutdown] Stopping optical flow streams...")
+    from .services.optical_flow_stream import shutdown as shutdown_optical_flow
+    shutdown_optical_flow()
+
+    # Cleanup video preview thread pool
+    print("[Shutdown] Stopping video preview service...")
+    from .services.video_preview import shutdown as shutdown_video_preview
+    shutdown_video_preview()
+
+    # Cleanup importer thread pool
+    print("[Shutdown] Stopping importer service...")
+    from .services.importer import shutdown as shutdown_importer
+    shutdown_importer()
+
+    # Close database connections
+    print("[Shutdown] Closing database connections...")
     await close_db()
+
+    print("="*50)
+    print("LocalBooru shutdown complete.")
+    print("="*50 + "\n")
 
 
 app = FastAPI(

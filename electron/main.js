@@ -9,6 +9,138 @@ const BackendManager = require('./backendManager');
 const DirectoryWatcher = require('./directoryWatcher');
 const { initUpdater } = require('./updater');
 
+// Detect portable mode EARLY - before single instance lock
+// This ensures portable and system installs use separate locks/userData
+function detectPortableModeEarly() {
+  if (!app.isPackaged) return null;
+
+  const appDir = path.dirname(app.getPath('exe'));
+  const portableDataPath = path.join(appDir, 'data');
+  const useAppdataMarker = path.join(appDir, '.use-appdata');
+
+  // Check for .use-appdata marker
+  if (fs.existsSync(useAppdataMarker)) return null;
+
+  // Check for Program Files (Windows)
+  if (process.platform === 'win32') {
+    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    if (appDir.startsWith(programFiles) || appDir.startsWith(programFilesX86)) return null;
+  }
+
+  // Portable mode - ensure data folder exists
+  if (!fs.existsSync(portableDataPath)) {
+    fs.mkdirSync(portableDataPath, { recursive: true });
+  }
+  return portableDataPath;
+}
+
+/**
+ * Apply pending portable update on startup
+ * This copies files from the extracted update to the app directory
+ */
+function applyPendingUpdate() {
+  if (!portableDataDir) return false;
+
+  const pendingPath = path.join(portableDataDir, 'updates', 'pending.json');
+  if (!fs.existsSync(pendingPath)) return false;
+
+  try {
+    const pending = JSON.parse(fs.readFileSync(pendingPath, 'utf8'));
+    const extractedDir = path.join(portableDataDir, 'updates', 'extracted');
+    const appDir = path.dirname(process.execPath);
+
+    console.log(`[Updater] Found pending update to v${pending.version}`);
+    console.log(`[Updater] Source: ${extractedDir}`);
+    console.log(`[Updater] Dest: ${appDir}`);
+
+    if (!fs.existsSync(extractedDir)) {
+      console.error('[Updater] Extracted directory not found');
+      return false;
+    }
+
+    // Find the actual content directory (might be nested)
+    let sourceDir = extractedDir;
+    const entries = fs.readdirSync(extractedDir);
+    if (entries.length === 1) {
+      const nested = path.join(extractedDir, entries[0]);
+      if (fs.statSync(nested).isDirectory()) {
+        sourceDir = nested;
+      }
+    }
+
+    // Copy all files from source to app directory
+    const copyRecursive = (src, dest) => {
+      const stats = fs.statSync(src);
+      if (stats.isDirectory()) {
+        if (!fs.existsSync(dest)) {
+          fs.mkdirSync(dest, { recursive: true });
+        }
+        for (const entry of fs.readdirSync(src)) {
+          copyRecursive(path.join(src, entry), path.join(dest, entry));
+        }
+      } else {
+        try {
+          fs.copyFileSync(src, dest);
+        } catch (err) {
+          // File might be locked (like the current exe), skip it
+          console.log(`[Updater] Skipped locked file: ${dest}`);
+        }
+      }
+    };
+
+    console.log('[Updater] Applying update...');
+    copyRecursive(sourceDir, appDir);
+    console.log('[Updater] Update applied successfully');
+
+    // Clean up
+    fs.rmSync(path.join(portableDataDir, 'updates'), { recursive: true, force: true });
+    console.log('[Updater] Cleaned up update files');
+
+    return true;
+  } catch (err) {
+    console.error('[Updater] Failed to apply update:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Clean up the updates folder on startup (only if no pending update)
+ */
+function cleanupUpdatesFolder() {
+  if (!portableDataDir) return;
+
+  const pendingPath = path.join(portableDataDir, 'updates', 'pending.json');
+  // Don't clean up if there's a pending update
+  if (fs.existsSync(pendingPath)) return;
+
+  const updatesPath = path.join(portableDataDir, 'updates');
+  if (fs.existsSync(updatesPath)) {
+    try {
+      fs.rmSync(updatesPath, { recursive: true, force: true });
+      console.log('[Updater] Cleaned up updates folder');
+    } catch (err) {
+      console.error('[Updater] Failed to cleanup updates folder:', err.message);
+    }
+  }
+}
+
+const portableDataDir = detectPortableModeEarly();
+
+// Apply pending update FIRST, before anything else
+const updateApplied = applyPendingUpdate();
+
+// Clean up any leftover update files (only if no pending update was found)
+if (!updateApplied) {
+  cleanupUpdatesFolder();
+}
+
+// Set userData path for portable mode BEFORE single instance lock
+// This ensures portable and system installs have separate locks
+if (portableDataDir) {
+  app.setPath('userData', portableDataDir);
+}
+
 // Debug logging to file
 const logFile = path.join(app.getPath('userData'), 'debug.log');
 const log = (msg) => {
@@ -17,8 +149,10 @@ const log = (msg) => {
   fs.appendFileSync(logFile, line);
 };
 log('=== App starting ===');
+log(`[App] Mode: ${portableDataDir ? 'portable' : 'system'}`);
 
 // Single instance lock - prevent multiple instances
+// Now uses separate lock files for portable vs system installs
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
@@ -45,18 +179,41 @@ let mainWindow = null;
 let tray = null;
 let backendManager = null;
 let directoryWatcher = null;
+let isCreatingWindow = false;  // Guard against concurrent window creation
 
 // Only enable dev mode when explicitly set via LOCALBOORU_DEV
 // This avoids issues with NODE_ENV being set in the shell environment
 const isDev = process.env.LOCALBOORU_DEV === 'true';
-const API_PORT = 8790;
+const DEFAULT_PORT = 8790;
+
+// Get the current API port (from backendManager if available, otherwise default)
+function getApiPort() {
+  return backendManager ? backendManager.port : DEFAULT_PORT;
+}
 
 /**
  * Create the main application window
+ * @param {Object} options - Options for window creation
+ * @param {boolean} options.skipUrlLoad - Skip loading the backend URL (used when backend failed)
  */
-async function createWindow() {
+async function createWindow(options = {}) {
+  const { skipUrlLoad = false } = options;
+
+  // Prevent concurrent window creation (race condition guard)
+  if (isCreatingWindow) {
+    log('[createWindow] Already creating window, skipping...');
+    return;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    log('[createWindow] Window already exists, skipping...');
+    return;
+  }
+
+  isCreatingWindow = true;
   log('[createWindow] Starting...');
-  mainWindow = new BrowserWindow({
+
+  try {
+    mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
@@ -72,6 +229,59 @@ async function createWindow() {
     show: false // Show when ready
   });
   log('[createWindow] BrowserWindow created');
+
+  // CRITICAL: Prevent blank windows from opening
+  // This handles window.open(), target="_blank" links, and any other new window requests
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    log(`[Window] setWindowOpenHandler called for: ${url}`);
+
+    // Allow same-origin URLs (internal app navigation) - but open in same window, not new
+    const appHost = `127.0.0.1:${getApiPort()}`;
+    const devHost = 'localhost:5174';
+
+    if (url.includes(appHost) || url.includes(devHost)) {
+      // Internal URL - load in current window instead of opening new one
+      mainWindow.loadURL(url);
+      return { action: 'deny' };
+    }
+
+    // External URLs - open in system browser
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      log(`[Window] Opening external URL in browser: ${url}`);
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+
+    // Deny all other window creation requests (prevents blank windows)
+    log(`[Window] Denying window open for: ${url}`);
+    return { action: 'deny' };
+  });
+
+  // Prevent navigation to about:blank or other problematic URLs
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    log(`[Window] will-navigate to: ${url}`);
+
+    // Block navigation to about:blank (common source of blank windows)
+    if (url === 'about:blank' || url === '') {
+      log('[Window] Blocking navigation to about:blank');
+      event.preventDefault();
+      return;
+    }
+
+    // Allow internal navigation
+    const appHost = `127.0.0.1:${getApiPort()}`;
+    const devHost = 'localhost:5174';
+    if (url.includes(appHost) || url.includes(devHost)) {
+      return; // Allow
+    }
+
+    // External URLs - open in browser and prevent navigation
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      log(`[Window] Redirecting external navigation to browser: ${url}`);
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
 
   // Register event listeners BEFORE loading URL to catch all events
   mainWindow.webContents.on('did-start-loading', () => {
@@ -114,7 +324,12 @@ async function createWindow() {
     return false;
   };
 
-  if (isDev) {
+  // Skip URL loading if backend already failed (will show error page later)
+  if (skipUrlLoad) {
+    log('[Window] Skipping URL load (backend not started)');
+    // Load a minimal page so window isn't completely blank
+    mainWindow.loadURL(`data:text/html,<html><body style="background:#141414;"></body></html>`);
+  } else if (isDev) {
     const loaded = await loadWithRetry('http://localhost:5174');
     if (!loaded) {
       log('[Window] Dev server load failed, showing error page');
@@ -122,11 +337,30 @@ async function createWindow() {
     }
     mainWindow.webContents.openDevTools();
   } else {
-    log(`[Window] Backend should be at http://127.0.0.1:${API_PORT}`);
-    const loaded = await loadWithRetry(`http://127.0.0.1:${API_PORT}`);
+    log(`[Window] Backend should be at http://127.0.0.1:${getApiPort()}`);
+    const loaded = await loadWithRetry(`http://127.0.0.1:${getApiPort()}`);
     if (!loaded) {
       log('[Window] All load attempts failed, showing error page');
-      mainWindow.loadURL(`data:text/html,<html><body style="background:#141414;color:white;font-family:system-ui;padding:40px;"><h1>Failed to connect</h1><p>Could not connect to backend at 127.0.0.1:${API_PORT}</p><p>The backend server may have failed to start.</p><button onclick="location.href='http://127.0.0.1:${API_PORT}'" style="padding:10px 20px;cursor:pointer;">Retry</button></body></html>`);
+      // Error page with draggable title bar since frame:false means no native title bar
+      mainWindow.loadURL(`data:text/html,<html><head><style>
+        body{background:#141414;color:white;font-family:system-ui;margin:0;padding:0;}
+        .titlebar{-webkit-app-region:drag;background:#1a1a1a;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;}
+        .titlebar button{-webkit-app-region:no-drag;background:#dc3545;border:none;color:white;padding:4px 12px;cursor:pointer;border-radius:4px;}
+        .content{padding:40px;}
+        .retry{padding:10px 20px;cursor:pointer;background:#3b82f6;border:none;color:white;border-radius:4px;margin-right:10px;}
+      </style></head><body>
+        <div class="titlebar"><span>LocalBooru - Connection Error</span><button onclick="window.close()">Quit</button></div>
+        <div class="content">
+          <h1>Failed to connect</h1>
+          <p>Could not connect to backend at 127.0.0.1:${getApiPort()}</p>
+          <p>The backend server may have failed to start, or the port is occupied by another process.</p>
+          <p style="color:#888;margin-top:20px;">Try: <code>pkill -9 -f uvicorn</code> then restart</p>
+          <div style="margin-top:20px;">
+            <button class="retry" onclick="location.href='http://127.0.0.1:${getApiPort()}'">Retry</button>
+            <button class="retry" style="background:#666;" onclick="window.close()">Quit</button>
+          </div>
+        </div>
+      </body></html>`);
     }
   }
 
@@ -156,12 +390,21 @@ async function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  } finally {
+    isCreatingWindow = false;
+  }
 }
 
 /**
  * Create system tray icon
  */
 function createTray() {
+  // Prevent duplicate tray creation
+  if (tray && !tray.isDestroyed()) {
+    log('[createTray] Tray already exists, skipping...');
+    return;
+  }
+
   const iconPath = path.join(__dirname, '../assets/tray-icon.png');
   tray = new Tray(iconPath);
 
@@ -185,7 +428,7 @@ function createTray() {
 
       if (needsReload) {
         log(`[Tray] WebContents needs reload (crashed: ${mainWindow.webContents.isCrashed()}, url: ${mainWindow.webContents.getURL()})`);
-        const url = isDev ? 'http://localhost:5174' : `http://127.0.0.1:${API_PORT}`;
+        const url = isDev ? 'http://localhost:5174' : `http://127.0.0.1:${getApiPort()}`;
         mainWindow.loadURL(url);
       }
     } else {
@@ -208,7 +451,7 @@ function createTray() {
     {
       label: 'Open in Browser',
       click: () => {
-        shell.openExternal(`http://127.0.0.1:${API_PORT}`);
+        shell.openExternal(`http://127.0.0.1:${getApiPort()}`);
       }
     },
     {
@@ -262,15 +505,15 @@ function createTray() {
 async function initializeApp() {
   console.log('[LocalBooru] Initializing...');
 
-  // Start backend server
-  backendManager = new BackendManager(API_PORT);
+  // Start backend server (port determined by settings and portable mode)
+  backendManager = new BackendManager();
   await backendManager.start();
 
-  // Initialize directory watcher
-  directoryWatcher = new DirectoryWatcher(API_PORT);
+  // Initialize directory watcher with the backend's port
+  directoryWatcher = new DirectoryWatcher(backendManager.port);
   await directoryWatcher.loadWatchDirectories();
 
-  console.log('[LocalBooru] Initialization complete');
+  console.log('[LocalBooru] Initialization complete, port:', backendManager.port);
 }
 
 /**
@@ -279,7 +522,7 @@ async function initializeApp() {
 function setupIPC() {
   // Get API URL
   ipcMain.handle('get-api-url', () => {
-    return `http://127.0.0.1:${API_PORT}`;
+    return `http://127.0.0.1:${getApiPort()}`;
   });
 
   // Add watch directory
@@ -299,7 +542,7 @@ function setupIPC() {
   ipcMain.handle('get-backend-status', () => {
     return {
       running: backendManager?.isRunning() ?? false,
-      port: API_PORT
+      port: getApiPort()
     };
   });
 
@@ -414,16 +657,112 @@ app.whenReady().then(async () => {
   log('[App] whenReady fired');
   setupIPC();
   log('[App] IPC setup complete');
-  await initializeApp();
-  log('[App] initializeApp complete');
-  await createWindow();
-  log('[App] createWindow complete');
+
+  // Create tray FIRST - ensures user always has a way to quit/interact
+  // even if backend or window initialization fails
   createTray();
   log('[App] createTray complete');
 
+  let backendStarted = false;
+  let backendError = null;
+  try {
+    await initializeApp();
+    backendStarted = true;
+    log('[App] initializeApp complete');
+  } catch (err) {
+    log(`[App] initializeApp FAILED: ${err.message}`);
+    backendError = err;
+  }
+
+  try {
+    // If backend failed, create window without trying to load URL (saves 5+ seconds)
+    await createWindow({ skipUrlLoad: !backendStarted });
+    log('[App] createWindow complete');
+
+    // If backend failed, show detailed error in window
+    if (!backendStarted && mainWindow) {
+      let errorHtml;
+
+      if (backendError?.code === 'PORT_CONFLICT') {
+        // Port conflict - show detailed info about what's using the port
+        const portUser = backendError.portUser;
+        const processInfo = portUser
+          ? `<p><strong>Process using port:</strong> ${portUser.name} (PID: ${portUser.pid})</p>`
+          : '<p>Could not identify the process using the port.</p>';
+
+        const killCmd = process.platform === 'win32'
+          ? `taskkill /F /PID ${portUser?.pid || 'PID'}`
+          : `kill -9 ${portUser?.pid || 'PID'}`;
+
+        const lsofCmd = process.platform === 'win32'
+          ? `netstat -ano | findstr :${getApiPort()}`
+          : `lsof -i :${getApiPort()}`;
+
+        errorHtml = `<html><head><style>
+          body{background:#141414;color:white;font-family:system-ui;margin:0;padding:0;}
+          .titlebar{-webkit-app-region:drag;background:#1a1a1a;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;}
+          .titlebar button{-webkit-app-region:no-drag;background:#dc3545;border:none;color:white;padding:4px 12px;cursor:pointer;border-radius:4px;}
+          .content{padding:40px;}
+          h1{color:#f87171;margin-top:0;}
+          code{background:#333;padding:2px 8px;border-radius:4px;font-size:0.9em;}
+          .fix-steps{background:#1a1a1a;padding:20px;border-radius:8px;margin:20px 0;}
+          .fix-steps li{margin:10px 0;}
+          .retry{padding:10px 20px;cursor:pointer;background:#3b82f6;border:none;color:white;border-radius:4px;margin-right:10px;}
+        </style></head><body>
+          <div class="titlebar"><span>LocalBooru - Port Conflict</span><button onclick="window.close()">Quit</button></div>
+          <div class="content">
+            <h1>Port ${getApiPort()} is already in use</h1>
+            <p>LocalBooru cannot start because another application is using port ${getApiPort()}.</p>
+            ${processInfo}
+            <div class="fix-steps">
+              <strong>How to fix:</strong>
+              <ol>
+                <li>Close the other application using the port, OR</li>
+                <li>Kill the process manually:<br><code>${killCmd}</code></li>
+                <li>Or find what's using the port:<br><code>${lsofCmd}</code></li>
+              </ol>
+            </div>
+            <p style="color:#888;">This often happens when LocalBooru didn't shut down cleanly, or another instance is running.</p>
+            <div style="margin-top:20px;">
+              <button class="retry" onclick="location.reload()">Retry</button>
+              <button class="retry" style="background:#666;" onclick="window.close()">Quit</button>
+            </div>
+          </div>
+        </body></html>`;
+      } else {
+        // Generic backend error
+        errorHtml = `<html><head><style>
+          body{background:#141414;color:white;font-family:system-ui;margin:0;padding:0;}
+          .titlebar{-webkit-app-region:drag;background:#1a1a1a;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;}
+          .titlebar button{-webkit-app-region:no-drag;background:#dc3545;border:none;color:white;padding:4px 12px;cursor:pointer;border-radius:4px;}
+          .content{padding:40px;}
+          h1{color:#f87171;margin-top:0;}
+          code{background:#333;padding:2px 8px;border-radius:4px;font-size:0.9em;}
+          .retry{padding:10px 20px;cursor:pointer;background:#3b82f6;border:none;color:white;border-radius:4px;margin-right:10px;}
+        </style></head><body>
+          <div class="titlebar"><span>LocalBooru - Error</span><button onclick="window.close()">Quit</button></div>
+          <div class="content">
+            <h1>Backend Failed to Start</h1>
+            <p>The LocalBooru backend server could not start.</p>
+            <p><strong>Error:</strong> ${backendError?.message || 'Unknown error'}</p>
+            <p style="color:#888;margin-top:20px;">Check the debug.log file for more details.</p>
+            <div style="margin-top:20px;">
+              <button class="retry" onclick="location.reload()">Retry</button>
+              <button class="retry" style="background:#666;" onclick="window.close()">Quit</button>
+            </div>
+          </div>
+        </body></html>`;
+      }
+
+      mainWindow.loadURL(`data:text/html,${encodeURIComponent(errorHtml)}`);
+    }
+  } catch (err) {
+    log(`[App] createWindow FAILED: ${err.message}`);
+  }
+
   // Initialize auto-updater
   if (mainWindow) {
-    initUpdater(mainWindow);
+    initUpdater(mainWindow, { portableDataDir });
   }
 
   app.on('activate', async () => {
@@ -454,9 +793,39 @@ app.on('before-quit', async () => {
   }
 });
 
-// Handle uncaught exceptions
+// CRITICAL: Synchronous cleanup on process exit
+// This catches cases where before-quit doesn't fire (crashes, SIGKILL, etc.)
+process.on('exit', () => {
+  console.log('[LocalBooru] Process exit - forcing backend cleanup');
+  if (backendManager) {
+    backendManager.forceKill();
+  }
+});
+
+// Handle SIGTERM (kill command, system shutdown)
+process.on('SIGTERM', () => {
+  console.log('[LocalBooru] Received SIGTERM');
+  if (backendManager) {
+    backendManager.forceKill();
+  }
+  process.exit(0);
+});
+
+// Handle SIGINT (Ctrl+C)
+process.on('SIGINT', () => {
+  console.log('[LocalBooru] Received SIGINT');
+  if (backendManager) {
+    backendManager.forceKill();
+  }
+  process.exit(0);
+});
+
+// Handle uncaught exceptions - cleanup before crashing
 process.on('uncaughtException', (error) => {
   console.error('[LocalBooru] Uncaught exception:', error);
+  if (backendManager) {
+    backendManager.forceKill();
+  }
 });
 
 process.on('unhandledRejection', (reason, promise) => {

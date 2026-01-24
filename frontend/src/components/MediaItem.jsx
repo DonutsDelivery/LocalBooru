@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
-import { getMediaUrl } from '../api'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { getMediaUrl, fetchPreviewFrames } from '../api'
 import './MediaItem.css'
 
 // Check if filename is a video
@@ -12,10 +12,105 @@ const isVideo = (filename) => {
 function MediaItem({ image, onClick, isSelectable = false, isSelected = false, onSelect }) {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
-  const [localRating, setLocalRating] = useState(image?.rating)
+  const [localRating] = useState(image?.rating)
   const [isShortVideo, setIsShortVideo] = useState(image?.duration != null ? image.duration <= 10 : false)
 
+  // Preview frames state
+  const [previewFrames, setPreviewFrames] = useState([])
+  const [currentFrame, setCurrentFrame] = useState(-1) // -1 means show thumbnail
+  const [previewLoaded, setPreviewLoaded] = useState(false)
+  const frameIntervalRef = useRef(null)
+  const previewFetchedRef = useRef(false)
+
   const videoRef = useRef()
+
+  // Compute derived values (safe before hooks)
+  const thumbnailUrl = image?.thumbnail_url ? getMediaUrl(image.thumbnail_url) : ''
+  const isVideoFile = isVideo(image?.filename)
+  const fileStatus = image?.file_status || 'available'
+
+  // Determine if we should use preview frames or video fallback
+  const usePreviewFrames = isVideoFile && previewLoaded && previewFrames.length > 0
+
+  // Fetch preview frames for videos on mount (with staggered delay to avoid connection pool exhaustion)
+  useEffect(() => {
+    if (!image || !isVideo(image.filename) || previewFetchedRef.current) return
+
+    previewFetchedRef.current = true
+
+    const loadPreviewFrames = async () => {
+      try {
+        const data = await fetchPreviewFrames(image.id, image.directory_id)
+        if (data.frames && data.frames.length > 0) {
+          // Preload all frame images
+          const frameUrls = data.frames.map(url => getMediaUrl(url))
+          setPreviewFrames(frameUrls)
+
+          // Preload frames in background
+          frameUrls.forEach(url => {
+            const img = new Image()
+            img.src = url
+          })
+          setPreviewLoaded(true)
+        } else if (data.generating) {
+          // Frames are being generated - retry after a delay
+          setTimeout(loadPreviewFrames, 3000)
+        }
+      } catch (err) {
+        // Silent fail - will use video fallback
+        // Don't log connection pool errors as they're expected during heavy load
+      }
+    }
+
+    // Stagger initial requests with random delay (0-500ms) to avoid thundering herd
+    const delay = Math.random() * 500
+    const timeoutId = setTimeout(loadPreviewFrames, delay)
+
+    return () => clearTimeout(timeoutId)
+  }, [image])
+
+  // Auto-start short videos if duration is known from API
+  useEffect(() => {
+    if (isShortVideo && videoRef.current && loaded && !usePreviewFrames) {
+      videoRef.current.play().catch(() => {})
+    }
+  }, [isShortVideo, loaded, usePreviewFrames])
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (frameIntervalRef.current) {
+        clearInterval(frameIntervalRef.current)
+      }
+    }
+  }, [])
+
+  const handleMouseEnter = useCallback(() => {
+    if (usePreviewFrames) {
+      // Start frame slideshow
+      setCurrentFrame(0)
+      frameIntervalRef.current = setInterval(() => {
+        setCurrentFrame(prev => (prev + 1) % previewFrames.length)
+      }, 300) // 300ms per frame
+    } else if (videoRef.current && !isShortVideo) {
+      // Fallback to video playback
+      videoRef.current.play().catch(() => {})
+    }
+  }, [usePreviewFrames, previewFrames.length, isShortVideo])
+
+  const handleMouseLeave = useCallback(() => {
+    if (usePreviewFrames) {
+      // Stop frame slideshow and reset
+      if (frameIntervalRef.current) {
+        clearInterval(frameIntervalRef.current)
+        frameIntervalRef.current = null
+      }
+      setCurrentFrame(-1) // Back to thumbnail
+    } else if (videoRef.current && !isShortVideo) {
+      videoRef.current.pause()
+      videoRef.current.currentTime = 0
+    }
+  }, [usePreviewFrames, isShortVideo])
 
   // Handle click - either select or open lightbox
   const handleClick = (e) => {
@@ -35,23 +130,10 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     onSelect?.(image.id)
   }
 
-  // Guard against missing image data
-  if (!image || !image.thumbnail_url) {
-    return (
-      <div className="media-item media-error">
-        <div className="error-placeholder">Image unavailable</div>
-      </div>
-    )
-  }
-
-  const thumbnailUrl = getMediaUrl(image.thumbnail_url)
-  const isVideoFile = isVideo(image.filename)
-  const fileStatus = image.file_status || 'available'
-
-  // Handle video duration check for autoplay
+  // Handle video duration check for autoplay (only when not using preview frames)
   const handleVideoLoaded = () => {
     setLoaded(true)
-    if (videoRef.current) {
+    if (videoRef.current && !usePreviewFrames) {
       const duration = image?.duration != null ? image.duration : videoRef.current.duration
       if (duration <= 10) {
         setIsShortVideo(true)
@@ -60,28 +142,18 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     }
   }
 
-  // Auto-start short videos if duration is known from API
-  useEffect(() => {
-    if (isShortVideo && videoRef.current && loaded) {
-      videoRef.current.play().catch(() => {})
-    }
-  }, [isShortVideo, loaded])
-
-  const handleMouseEnter = () => {
-    if (videoRef.current && !isShortVideo) {
-      videoRef.current.play().catch(() => {})
-    }
-  }
-
-  const handleMouseLeave = () => {
-    if (videoRef.current && !isShortVideo) {
-      videoRef.current.pause()
-      videoRef.current.currentTime = 0
-    }
-  }
-
   const handleLoadError = () => {
     setError(true)
+    // Always mark as loaded so we show the appropriate placeholder
+    setLoaded(true)
+  }
+
+  // Get the current display image
+  const getCurrentDisplaySrc = () => {
+    if (currentFrame >= 0 && previewFrames[currentFrame]) {
+      return previewFrames[currentFrame]
+    }
+    return thumbnailUrl
   }
 
   // Render file status overlay
@@ -113,7 +185,17 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     return null
   }
 
-  if (error && fileStatus === 'available') {
+  // Guard against missing image data - AFTER all hooks
+  if (!image || !image.thumbnail_url) {
+    return (
+      <div className="media-item media-error">
+        <div className="error-placeholder">Image unavailable</div>
+      </div>
+    )
+  }
+
+  // Only show error for truly broken items, not just missing thumbnails
+  if (error && fileStatus !== 'available') {
     return (
       <div className="media-item media-error" onClick={handleClick}>
         <div className="error-placeholder">Failed to load</div>
@@ -144,7 +226,8 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
         </div>
       )}
 
-      {isVideoFile ? (
+      {isVideoFile && !usePreviewFrames ? (
+        // Video fallback when no preview frames
         <>
           <video
             ref={videoRef}
@@ -166,16 +249,38 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
           )}
         </>
       ) : (
-        <img
-          src={thumbnailUrl}
-          alt=""
-          loading="lazy"
-          onLoad={() => setLoaded(true)}
-          onError={handleLoadError}
-        />
+        // Image display (regular images or video with preview frames)
+        <>
+          <img
+            src={getCurrentDisplaySrc()}
+            alt=""
+            loading="lazy"
+            onLoad={() => setLoaded(true)}
+            onError={handleLoadError}
+          />
+          {/* Video indicator for videos using preview frames */}
+          {isVideoFile && (
+            <div className="video-indicator">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </div>
+          )}
+        </>
       )}
 
       {!loaded && <div className="loading-placeholder" />}
+
+      {/* Show placeholder icon when thumbnail is still generating (loaded but src failed) */}
+      {loaded && error && fileStatus === 'available' && (
+        <div className="thumbnail-generating">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21,15 16,10 5,21"/>
+          </svg>
+        </div>
+      )}
 
       {/* Rating badge */}
       <span className={`rating-badge rating-${localRating}`}>

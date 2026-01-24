@@ -1,5 +1,10 @@
 """
 Watch directories router - manage directories to watch for new images
+
+Architecture:
+- Each directory has its own database file at directories/{id}.db
+- Deleting a directory = deleting its database file (instant!)
+- Tag counts in main DB must be decremented before deletion
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -12,8 +17,11 @@ import shutil
 import os
 import json
 
-from ..database import get_db, get_data_dir
-from ..models import WatchDirectory, ImageFile, TaskType, Image, image_tags
+from ..database import get_db, get_data_dir, directory_db_manager
+from ..models import (
+    WatchDirectory, ImageFile, TaskType, Image, image_tags, Tag,
+    DirectoryImage, DirectoryImageFile, directory_image_tags
+)
 from ..services.task_queue import enqueue_task
 
 router = APIRouter()
@@ -25,6 +33,11 @@ class DirectoryCreate(BaseModel):
     recursive: bool = True
     auto_tag: bool = True
     auto_age_detect: bool = False
+
+
+class BulkDeleteRequest(BaseModel):
+    directory_ids: List[int]
+    keep_images: bool = False
 
 
 class ParentDirectoryCreate(BaseModel):
@@ -60,46 +73,77 @@ async def list_directories(request: Request, db: AsyncSession = Depends(get_db))
     # Get image counts and diagnostics per directory
     dir_data = []
     for d in directories:
-        # Total image count
-        count_query = select(func.count(ImageFile.id)).where(
-            ImageFile.watch_directory_id == d.id
-        )
-        count_result = await db.execute(count_query)
-        image_count = count_result.scalar() or 0
+        image_count = 0
+        age_detected_count = 0
+        tagged_count = 0
+        favorited_count = 0
 
-        # Age detected count (images with num_faces not null)
-        age_query = (
-            select(func.count(Image.id))
-            .join(ImageFile, ImageFile.image_id == Image.id)
-            .where(
-                ImageFile.watch_directory_id == d.id,
-                Image.num_faces.isnot(None)
+        # Check if this directory uses per-directory database
+        if directory_db_manager.db_exists(d.id):
+            # NEW ARCHITECTURE: Query per-directory database
+            dir_db = await directory_db_manager.get_session(d.id)
+            try:
+                # Total image count
+                count_result = await dir_db.execute(select(func.count(DirectoryImage.id)))
+                image_count = count_result.scalar() or 0
+
+                # Age detected count
+                age_result = await dir_db.execute(
+                    select(func.count(DirectoryImage.id)).where(DirectoryImage.num_faces.isnot(None))
+                )
+                age_detected_count = age_result.scalar() or 0
+
+                # Tagged count (images with at least one tag)
+                tagged_result = await dir_db.execute(
+                    select(func.count(func.distinct(directory_image_tags.c.image_id)))
+                )
+                tagged_count = tagged_result.scalar() or 0
+
+                # Favorited count
+                fav_result = await dir_db.execute(
+                    select(func.count(DirectoryImage.id)).where(DirectoryImage.is_favorite == True)
+                )
+                favorited_count = fav_result.scalar() or 0
+            finally:
+                await dir_db.close()
+        else:
+            # LEGACY: Query main database
+            count_query = select(func.count(ImageFile.id)).where(
+                ImageFile.watch_directory_id == d.id
             )
-        )
-        age_result = await db.execute(age_query)
-        age_detected_count = age_result.scalar() or 0
+            count_result = await db.execute(count_query)
+            image_count = count_result.scalar() or 0
 
-        # Tagged count (images with at least one tag)
-        tagged_query = (
-            select(func.count(func.distinct(Image.id)))
-            .join(ImageFile, ImageFile.image_id == Image.id)
-            .join(image_tags, image_tags.c.image_id == Image.id)
-            .where(ImageFile.watch_directory_id == d.id)
-        )
-        tagged_result = await db.execute(tagged_query)
-        tagged_count = tagged_result.scalar() or 0
-
-        # Favorited count
-        fav_query = (
-            select(func.count(Image.id))
-            .join(ImageFile, ImageFile.image_id == Image.id)
-            .where(
-                ImageFile.watch_directory_id == d.id,
-                Image.is_favorite == True
+            age_query = (
+                select(func.count(Image.id))
+                .join(ImageFile, ImageFile.image_id == Image.id)
+                .where(
+                    ImageFile.watch_directory_id == d.id,
+                    Image.num_faces.isnot(None)
+                )
             )
-        )
-        fav_result = await db.execute(fav_query)
-        favorited_count = fav_result.scalar() or 0
+            age_result = await db.execute(age_query)
+            age_detected_count = age_result.scalar() or 0
+
+            tagged_query = (
+                select(func.count(func.distinct(Image.id)))
+                .join(ImageFile, ImageFile.image_id == Image.id)
+                .join(image_tags, image_tags.c.image_id == Image.id)
+                .where(ImageFile.watch_directory_id == d.id)
+            )
+            tagged_result = await db.execute(tagged_query)
+            tagged_count = tagged_result.scalar() or 0
+
+            fav_query = (
+                select(func.count(Image.id))
+                .join(ImageFile, ImageFile.image_id == Image.id)
+                .where(
+                    ImageFile.watch_directory_id == d.id,
+                    Image.is_favorite == True
+                )
+            )
+            fav_result = await db.execute(fav_query)
+            favorited_count = fav_result.scalar() or 0
 
         # Check if path exists
         path_exists = Path(d.path).exists()
@@ -127,7 +171,9 @@ async def list_directories(request: Request, db: AsyncSession = Depends(get_db))
             "comfyui_negative_node_ids": json.loads(d.comfyui_negative_node_ids) if d.comfyui_negative_node_ids else [],
             "metadata_format": d.metadata_format or "auto",
             # Network access
-            "public_access": d.public_access if hasattr(d, 'public_access') else False
+            "public_access": d.public_access if hasattr(d, 'public_access') else False,
+            # Architecture indicator
+            "uses_per_directory_db": directory_db_manager.db_exists(d.id)
         })
 
     return {"directories": dir_data}
@@ -150,7 +196,7 @@ async def add_directory(data: DirectoryCreate, db: AsyncSession = Depends(get_db
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Directory already added")
 
-    # Create directory record
+    # Create directory record in main DB
     directory = WatchDirectory(
         path=str(path),
         name=data.name or path.name,
@@ -163,6 +209,10 @@ async def add_directory(data: DirectoryCreate, db: AsyncSession = Depends(get_db
     await db.commit()
     await db.refresh(directory)
 
+    # Create per-directory database
+    await directory_db_manager.create_directory_db(directory.id)
+    print(f"[Directory] Created per-directory database for {directory.id}")
+
     # Queue initial scan
     await enqueue_task(
         TaskType.scan_directory,
@@ -170,7 +220,7 @@ async def add_directory(data: DirectoryCreate, db: AsyncSession = Depends(get_db
             'directory_id': directory.id,
             'directory_path': str(path)
         },
-        priority=2,  # High priority for new directories
+        priority=2,
         db=db
     )
 
@@ -226,6 +276,9 @@ async def add_parent_directory(data: ParentDirectoryCreate, db: AsyncSession = D
         db.add(directory)
         await db.commit()
         await db.refresh(directory)
+
+        # Create per-directory database
+        await directory_db_manager.create_directory_db(directory.id)
 
         # Queue initial scan
         await enqueue_task(
@@ -331,59 +384,210 @@ async def update_directory(
     }
 
 
+@router.post("/bulk-delete")
+async def bulk_delete_directories(
+    data: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Remove multiple watch directories in one efficient operation."""
+    return await _delete_directories(data.directory_ids, data.keep_images, db)
+
+
 @router.delete("/{directory_id}")
 async def remove_directory(
     directory_id: int,
     keep_images: bool = False,
     db: AsyncSession = Depends(get_db)
 ):
-    """Remove a watch directory. Images are removed from library by default (files on disk are never touched)."""
-    directory = await db.get(WatchDirectory, directory_id)
-    if not directory:
-        raise HTTPException(status_code=404, detail="Directory not found")
+    """Remove a single watch directory. For bulk operations, use POST /directories/bulk-delete instead."""
+    return await _delete_directories([directory_id], keep_images, db)
 
-    if keep_images:
-        # Just unlink the files from this directory (keep in library)
-        from sqlalchemy import update
-        await db.execute(
-            update(ImageFile)
-            .where(ImageFile.watch_directory_id == directory_id)
-            .values(watch_directory_id=None)
-        )
+
+async def _delete_directories(
+    directory_ids: List[int],
+    keep_images: bool,
+    db: AsyncSession
+):
+    """
+    Internal: efficiently delete multiple directories.
+
+    With per-directory databases, deletion is now simple:
+    1. Get tag counts from directory DB and decrement in main DB
+    2. Delete the directory database file (instant!)
+    3. Remove the WatchDirectory record from main DB
+    """
+    import asyncio
+    from sqlalchemy import update, delete
+    from ..models import Image
+
+    if not directory_ids:
+        return {"deleted": 0, "images_removed": False, "image_count": 0}
+
+    # Pause task queue to prevent conflicts
+    from ..services.task_queue import task_queue
+    was_paused = task_queue.paused
+    if not was_paused:
+        task_queue.pause()
+        await asyncio.sleep(0.5)
+
+    try:
+        # Verify directories exist
+        dir_query = select(WatchDirectory).where(WatchDirectory.id.in_(directory_ids))
+        dir_result = await db.execute(dir_query)
+        directories = dir_result.scalars().all()
+
+        if not directories:
+            raise HTTPException(status_code=404, detail="No directories found")
+
+        found_ids = [d.id for d in directories]
+        print(f"[Directory] Bulk delete starting for {len(found_ids)} directories (keep_images={keep_images})")
+
+        total_images = 0
+        all_file_hashes = []
         images_removed = False
-    else:
-        # Remove images from library (default) - files on disk are NOT touched
-        from ..models import Image
-        file_query = select(ImageFile.image_id).where(
-            ImageFile.watch_directory_id == directory_id
-        )
-        file_result = await db.execute(file_query)
-        image_ids = [row[0] for row in file_result.all()]
 
-        for image_id in image_ids:
-            image = await db.get(Image, image_id)
-            if image:
-                # Delete thumbnails
-                from ..database import get_data_dir
-                thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
-                if thumbnail_path.exists():
-                    thumbnail_path.unlink()
-                await db.delete(image)
-        images_removed = True
+        for dir_id in found_ids:
+            # Check if this directory uses the new per-directory database
+            if directory_db_manager.db_exists(dir_id):
+                # NEW ARCHITECTURE: Per-directory database
+                print(f"[Directory] Deleting directory {dir_id} (per-directory DB)")
 
-    await db.delete(directory)
-    await db.commit()
+                # Get tag counts and file hashes before deletion
+                dir_db = await directory_db_manager.get_session(dir_id)
+                try:
+                    # Get image count
+                    count_result = await dir_db.execute(select(func.count(DirectoryImage.id)))
+                    image_count = count_result.scalar() or 0
+                    total_images += image_count
 
-    # Stop watching this directory
-    from ..services.directory_watcher import directory_watcher
-    await directory_watcher.remove_directory(directory_id)
+                    # Get file hashes for thumbnail cleanup
+                    hash_result = await dir_db.execute(select(DirectoryImage.file_hash))
+                    all_file_hashes.extend([row[0] for row in hash_result.all() if row[0]])
 
-    return {"deleted": True, "images_removed": images_removed}
+                    if not keep_images:
+                        # Get tag counts to decrement in main DB
+                        tag_counts_query = (
+                            select(directory_image_tags.c.tag_id, func.count(directory_image_tags.c.image_id))
+                            .group_by(directory_image_tags.c.tag_id)
+                        )
+                        tag_counts_result = await dir_db.execute(tag_counts_query)
+                        tag_counts = {row[0]: row[1] for row in tag_counts_result.all()}
+
+                        # Decrement tag post_counts in main DB
+                        for tag_id, count in tag_counts.items():
+                            tag = await db.get(Tag, tag_id)
+                            if tag:
+                                tag.post_count = max(0, tag.post_count - count)
+                        await db.commit()
+
+                        images_removed = True
+                finally:
+                    await dir_db.close()
+
+                # DELETE THE DATABASE FILE - instant!
+                await directory_db_manager.delete_directory_db(dir_id)
+
+            else:
+                # LEGACY: Images in main database
+                print(f"[Directory] Deleting directory {dir_id} (legacy main DB)")
+
+                if keep_images:
+                    await db.execute(
+                        update(ImageFile)
+                        .where(ImageFile.watch_directory_id == dir_id)
+                        .values(watch_directory_id=None)
+                    )
+                    await db.commit()
+                else:
+                    # Get image_ids and file_hashes
+                    file_query = select(ImageFile.image_id, Image.file_hash).join(
+                        Image, ImageFile.image_id == Image.id
+                    ).where(ImageFile.watch_directory_id == dir_id)
+                    file_result = await db.execute(file_query)
+                    rows = file_result.all()
+
+                    image_ids = list(set(row[0] for row in rows if row[0] is not None))
+                    file_hashes = [row[1] for row in rows if row[1] is not None]
+                    all_file_hashes.extend(file_hashes)
+                    total_images += len(image_ids)
+
+                    if image_ids:
+                        await db.execute(
+                            update(ImageFile)
+                            .where(ImageFile.watch_directory_id == dir_id)
+                            .values(watch_directory_id=None)
+                        )
+                        await db.commit()
+
+                        # Delete images in batches
+                        img_batch_size = 500
+                        for i in range(0, len(image_ids), img_batch_size):
+                            img_batch = image_ids[i:i + img_batch_size]
+                            await db.execute(delete(Image).where(Image.id.in_(img_batch)))
+                            await db.commit()
+
+                    images_removed = True
+
+            # Delete directory record from main DB
+            await db.execute(delete(WatchDirectory).where(WatchDirectory.id == dir_id))
+            await db.commit()
+
+        print(f"[Directory] Deleted {len(found_ids)} directories, {total_images} images")
+
+        # Stop watching deleted directories
+        from ..services.directory_watcher import directory_watcher
+        for dir_id in found_ids:
+            try:
+                await directory_watcher.remove_directory(dir_id)
+            except Exception:
+                pass
+
+        # Delete thumbnails (best effort)
+        if all_file_hashes:
+            thumbnails_dir = get_data_dir() / 'thumbnails'
+            for file_hash in set(all_file_hashes):
+                if file_hash:
+                    thumb_path = thumbnails_dir / f"{file_hash[:16]}.webp"
+                    try:
+                        if thumb_path.exists():
+                            thumb_path.unlink()
+                    except Exception:
+                        pass
+            print(f"[Directory] Cleaned up thumbnails")
+
+        return {
+            "deleted": len(found_ids),
+            "images_removed": images_removed,
+            "image_count": total_images
+        }
+
+    except Exception as e:
+        await db.rollback()
+        print(f"[Directory] Bulk delete failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        if not was_paused:
+            task_queue.resume()
+
+
+class ScanOptions(BaseModel):
+    clean_deleted: bool = False  # Whether to clean up deleted files before scanning
 
 
 @router.post("/{directory_id}/scan")
-async def scan_directory(directory_id: int, db: AsyncSession = Depends(get_db)):
-    """Manually trigger a directory scan"""
+async def scan_directory(
+    directory_id: int,
+    options: ScanOptions = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually trigger a directory scan.
+
+    By default, this only imports new files. Set clean_deleted=true to also
+    remove references to deleted files (slower).
+    """
     directory = await db.get(WatchDirectory, directory_id)
     if not directory:
         raise HTTPException(status_code=404, detail="Directory not found")
@@ -391,12 +595,15 @@ async def scan_directory(directory_id: int, db: AsyncSession = Depends(get_db)):
     if not Path(directory.path).exists():
         raise HTTPException(status_code=400, detail="Directory path no longer exists")
 
+    clean_deleted = options.clean_deleted if options else False
+
     # Queue scan task
     task = await enqueue_task(
         TaskType.scan_directory,
         {
             'directory_id': directory.id,
-            'directory_path': directory.path
+            'directory_path': directory.path,
+            'clean_deleted': clean_deleted
         },
         priority=2,
         db=db
@@ -404,7 +611,30 @@ async def scan_directory(directory_id: int, db: AsyncSession = Depends(get_db)):
 
     return {
         "message": "Scan queued",
-        "task_id": task.id
+        "task_id": task.id,
+        "clean_deleted": clean_deleted
+    }
+
+
+@router.post("/{directory_id}/clean-deleted")
+async def clean_deleted_files(directory_id: int, db: AsyncSession = Depends(get_db)):
+    """Remove references to files that no longer exist on disk.
+
+    This is a separate operation from scanning because it requires checking
+    every file in the database against the filesystem.
+    """
+    directory = await db.get(WatchDirectory, directory_id)
+    if not directory:
+        raise HTTPException(status_code=404, detail="Directory not found")
+
+    from ..services.file_tracker import _clean_deleted_files
+
+    removed = await _clean_deleted_files(directory_id)
+
+    return {
+        "removed": removed,
+        "directory_id": directory_id,
+        "message": f"Removed {removed} references to deleted files"
     }
 
 
@@ -515,6 +745,79 @@ async def prune_directory(
         "failed": failed_count,
         "removed_from_library": len(unique_image_ids),
         "dumpster_path": str(dumpster_dir)
+    }
+
+
+class DirectoryPathUpdate(BaseModel):
+    new_path: str
+
+
+@router.patch("/{directory_id}/path")
+async def update_directory_path(
+    directory_id: int,
+    data: DirectoryPathUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update a directory's path when it has been moved to a new location.
+    Updates all associated ImageFile paths to point to the new location.
+    """
+    directory = await db.get(WatchDirectory, directory_id)
+    if not directory:
+        raise HTTPException(status_code=404, detail="Directory not found")
+
+    # Validate new path exists
+    new_path = Path(data.new_path).resolve()
+    if not new_path.exists():
+        raise HTTPException(status_code=400, detail=f"New path does not exist: {data.new_path}")
+    if not new_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"New path is not a directory: {data.new_path}")
+
+    # Check if new path is already used by another directory
+    existing = await db.execute(
+        select(WatchDirectory).where(
+            WatchDirectory.path == str(new_path),
+            WatchDirectory.id != directory_id
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="New path is already used by another directory")
+
+    old_path = directory.path
+    old_path_normalized = old_path.rstrip('/\\')
+    new_path_str = str(new_path)
+
+    # Update all ImageFile paths that belong to this directory
+    from sqlalchemy import update
+
+    # Get all image files in this directory
+    file_query = select(ImageFile).where(ImageFile.watch_directory_id == directory_id)
+    file_result = await db.execute(file_query)
+    image_files = file_result.scalars().all()
+
+    updated_count = 0
+    for image_file in image_files:
+        if image_file.original_path.startswith(old_path_normalized):
+            # Replace old path prefix with new path
+            relative_part = image_file.original_path[len(old_path_normalized):]
+            image_file.original_path = new_path_str + relative_part
+            updated_count += 1
+
+    # Update directory path
+    directory.path = new_path_str
+
+    await db.commit()
+
+    # Refresh filesystem watcher
+    from ..services.directory_watcher import directory_watcher
+    await directory_watcher.refresh()
+
+    return {
+        "id": directory.id,
+        "old_path": old_path,
+        "new_path": new_path_str,
+        "files_updated": updated_count,
+        "message": f"Directory path updated. {updated_count} file references updated."
     }
 
 
