@@ -1114,12 +1114,18 @@ class SVPStream:
                 '-analyzeduration', '0',
                 '-fflags', '+nobuffer+flush_packets',
                 '-f', 'yuv4mpegpipe',
-                '-i', '-',  # Y4M from Python script
+                '-i', '-',  # Y4M from Python script (video already seeked)
+            ]
+
+            # Add audio input with seek if needed (must seek audio to match video)
+            if self.start_position > 0:
+                ffmpeg_cmd.extend(['-ss', str(self.start_position)])
+            ffmpeg_cmd.extend([
                 '-probesize', '5000000',
                 '-i', self.video_path,  # Original video for audio
                 '-map', '0:v',
                 '-map', '1:a?',
-            ]
+            ])
 
             # Video encoder selection
             if self.use_nvenc:
