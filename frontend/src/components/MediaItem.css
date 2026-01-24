@@ -547,21 +547,3 @@ button.rating-badge.clickable.updating {
   right: auto;
   left: 40px;
 }
-
-/* Thumbnail generating placeholder */
-.thumbnail-generating {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-tertiary);
-  min-height: 150px;
-}
-
-.thumbnail-generating svg {
-  width: 48px;
-  height: 48px;
-  color: var(--text-muted);
-  opacity: 0.5;
-}
