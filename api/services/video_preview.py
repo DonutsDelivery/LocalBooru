@@ -4,6 +4,7 @@ Video preview frame extraction service - generates preview frames for video file
 import asyncio
 import subprocess
 import shutil
+import platform
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -14,6 +15,45 @@ settings = get_settings()
 # Thread pool for video operations - limited to avoid overwhelming the system
 # Even with fast-seeking, each ffmpeg process uses CPU/GPU resources
 _executor = ThreadPoolExecutor(max_workers=4)
+
+# Cache for ionice/nice availability
+_ionice_available = None
+_nice_available = None
+
+
+def _check_ionice_available() -> bool:
+    """Check if ionice is available (Linux only)"""
+    global _ionice_available
+    if _ionice_available is not None:
+        return _ionice_available
+    _ionice_available = platform.system() == 'Linux' and shutil.which('ionice') is not None
+    return _ionice_available
+
+
+def _check_nice_available() -> bool:
+    """Check if nice is available"""
+    global _nice_available
+    if _nice_available is not None:
+        return _nice_available
+    _nice_available = shutil.which('nice') is not None
+    return _nice_available
+
+
+def get_low_priority_prefix() -> list[str]:
+    """Get command prefix to run at low CPU and I/O priority.
+
+    Uses ionice -c 3 (idle I/O class) and nice -n 19 (lowest CPU priority)
+    to ensure background tasks don't interfere with interactive use.
+
+    Based on Jellyfin and other media servers' approach to background processing.
+    See: https://github.com/jellyfin/jellyfin/issues/12740
+    """
+    prefix = []
+    if _check_ionice_available():
+        prefix.extend(['ionice', '-c', '3'])  # Idle I/O class
+    if _check_nice_available():
+        prefix.extend(['nice', '-n', '19'])  # Lowest CPU priority
+    return prefix
 
 # Semaphore to limit concurrent video preview generation tasks
 # This prevents bulk imports from spawning hundreds of ffmpeg processes
@@ -168,10 +208,14 @@ def extract_preview_frames(
     # Build a SINGLE ffmpeg command with multiple inputs (batched seeking)
     # This is 3-4x faster than spawning separate ffmpeg processes
     # Format: ffmpeg -ss T0 -i video -ss T1 -i video ... -map 0:v -frames:v 1 out0.jpg -map 1:v -frames:v 1 out1.jpg ...
-    cmd = ['ffmpeg', '-y']
+
+    # Use low priority to avoid interfering with video playback
+    cmd = get_low_priority_prefix() + ['ffmpeg', '-y']
 
     # Add all inputs with their seek positions
+    # Use -skip_frame nokey to only decode keyframes for faster extraction
     for ts in timestamps:
+        cmd.extend(['-skip_frame', 'nokey'])
         cmd.extend(hwaccel_args)
         cmd.extend(['-ss', str(ts), '-i', video_path])
 

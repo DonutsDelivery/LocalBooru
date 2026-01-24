@@ -13,7 +13,6 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
   const [localRating] = useState(image?.rating)
-  const [isShortVideo, setIsShortVideo] = useState(image?.duration != null ? image.duration <= 10 : false)
 
   // Preview frames state
   const [previewFrames, setPreviewFrames] = useState([])
@@ -22,14 +21,12 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
   const frameIntervalRef = useRef(null)
   const previewFetchedRef = useRef(false)
 
-  const videoRef = useRef()
-
   // Compute derived values (safe before hooks)
   const thumbnailUrl = image?.thumbnail_url ? getMediaUrl(image.thumbnail_url) : ''
   const isVideoFile = isVideo(image?.filename)
   const fileStatus = image?.file_status || 'available'
 
-  // Determine if we should use preview frames or video fallback
+  // Determine if we should use preview frames for hover animation
   const usePreviewFrames = isVideoFile && previewLoaded && previewFrames.length > 0
 
   // Fetch preview frames for videos on mount (with staggered delay to avoid connection pool exhaustion)
@@ -57,7 +54,7 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
           setTimeout(loadPreviewFrames, 3000)
         }
       } catch (err) {
-        // Silent fail - will use video fallback
+        // Silent fail - will show thumbnail
         // Don't log connection pool errors as they're expected during heavy load
       }
     }
@@ -68,13 +65,6 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
 
     return () => clearTimeout(timeoutId)
   }, [image])
-
-  // Auto-start short videos if duration is known from API
-  useEffect(() => {
-    if (isShortVideo && videoRef.current && loaded && !usePreviewFrames) {
-      videoRef.current.play().catch(() => {})
-    }
-  }, [isShortVideo, loaded, usePreviewFrames])
 
   // Cleanup interval on unmount
   useEffect(() => {
@@ -87,16 +77,14 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
 
   const handleMouseEnter = useCallback(() => {
     if (usePreviewFrames) {
-      // Start frame slideshow
+      // Start frame slideshow for videos with preview frames
       setCurrentFrame(0)
       frameIntervalRef.current = setInterval(() => {
         setCurrentFrame(prev => (prev + 1) % previewFrames.length)
       }, 300) // 300ms per frame
-    } else if (videoRef.current && !isShortVideo) {
-      // Fallback to video playback
-      videoRef.current.play().catch(() => {})
     }
-  }, [usePreviewFrames, previewFrames.length, isShortVideo])
+    // Videos without preview frames just show static thumbnail - no video loading
+  }, [usePreviewFrames, previewFrames.length])
 
   const handleMouseLeave = useCallback(() => {
     if (usePreviewFrames) {
@@ -106,11 +94,8 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
         frameIntervalRef.current = null
       }
       setCurrentFrame(-1) // Back to thumbnail
-    } else if (videoRef.current && !isShortVideo) {
-      videoRef.current.pause()
-      videoRef.current.currentTime = 0
     }
-  }, [usePreviewFrames, isShortVideo])
+  }, [usePreviewFrames])
 
   // Handle click - either select or open lightbox
   const handleClick = (e) => {
@@ -128,18 +113,6 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     e.preventDefault()
     e.stopPropagation()
     onSelect?.(image.id)
-  }
-
-  // Handle video duration check for autoplay (only when not using preview frames)
-  const handleVideoLoaded = () => {
-    setLoaded(true)
-    if (videoRef.current && !usePreviewFrames) {
-      const duration = image?.duration != null ? image.duration : videoRef.current.duration
-      if (duration <= 10) {
-        setIsShortVideo(true)
-        videoRef.current.play().catch(() => {})
-      }
-    }
   }
 
   const handleLoadError = () => {
@@ -226,47 +199,21 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
         </div>
       )}
 
-      {isVideoFile && !usePreviewFrames ? (
-        // Video fallback when no preview frames
-        <>
-          <video
-            ref={videoRef}
-            src={getMediaUrl(image.url)}
-            poster={thumbnailUrl}
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            onLoadedMetadata={handleVideoLoaded}
-            onError={handleLoadError}
-          />
-          {!isShortVideo && (
-            <div className="video-indicator">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z"/>
-              </svg>
-            </div>
-          )}
-        </>
-      ) : (
-        // Image display (regular images or video with preview frames)
-        <>
-          <img
-            src={getCurrentDisplaySrc()}
-            alt=""
-            loading="lazy"
-            onLoad={() => setLoaded(true)}
-            onError={handleLoadError}
-          />
-          {/* Video indicator for videos using preview frames */}
-          {isVideoFile && (
-            <div className="video-indicator">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z"/>
-              </svg>
-            </div>
-          )}
-        </>
+      {/* Always use thumbnail images in grid - never load actual videos */}
+      <img
+        src={getCurrentDisplaySrc()}
+        alt=""
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        onError={handleLoadError}
+      />
+      {/* Video indicator overlay */}
+      {isVideoFile && (
+        <div className="video-indicator">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </div>
       )}
 
       {!loaded && <div className="loading-placeholder" />}

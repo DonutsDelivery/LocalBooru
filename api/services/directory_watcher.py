@@ -21,6 +21,31 @@ VIDEO_EXTENSIONS = {'.mp4', '.webm', '.mov', '.avi', '.mkv'}
 SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 
+def is_video_thumbnail(name: str) -> bool:
+    """Check if file is a video thumbnail (e.g., video.mp4.png, clip.webm.jpg).
+
+    These are auto-generated thumbnail files that shouldn't be imported.
+    Detects files with 2+ dots that end with an image extension.
+    """
+    name = name.lower()
+
+    # Get the extension
+    if '.' not in name:
+        return False
+
+    ext = '.' + name.rsplit('.', 1)[-1]
+
+    # Must end with an image extension
+    if ext not in IMAGE_EXTENSIONS:
+        return False
+
+    # Check if filename has 2+ dots (e.g., "video.mp4.png", "file.something.jpg")
+    if name.count('.') >= 2:
+        return True
+
+    return False
+
+
 class DirectoryEventHandler(FileSystemEventHandler):
     """Handle filesystem events for a watched directory"""
 
@@ -33,9 +58,15 @@ class DirectoryEventHandler(FileSystemEventHandler):
         self._debounce_delay = 1.0  # Wait 1 second for file to finish writing
 
     def _is_supported_file(self, path: str) -> bool:
-        """Check if file has a supported extension"""
-        ext = Path(path).suffix.lower()
-        return ext in SUPPORTED_EXTENSIONS
+        """Check if file has a supported extension and is not a video thumbnail"""
+        p = Path(path)
+        ext = p.suffix.lower()
+        if ext not in SUPPORTED_EXTENSIONS:
+            return False
+        # Filter out video thumbnails (e.g., video.mp4.png)
+        if is_video_thumbnail(p.name):
+            return False
+        return True
 
     def _schedule_import(self, file_path: str):
         """Schedule file import with debouncing"""
@@ -219,7 +250,7 @@ class DirectoryWatcher:
                         print(f"[Watcher] Found {len(files_to_check)} new files in {directory.name or directory.path}")
 
                         # Process files concurrently with semaphore
-                        SCAN_CONCURRENCY = 16
+                        SCAN_CONCURRENCY = 4  # Limited to prevent disk I/O saturation
                         semaphore = asyncio.Semaphore(SCAN_CONCURRENCY)
 
                         async def import_one(file_path: Path) -> str:

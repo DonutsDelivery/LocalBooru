@@ -24,7 +24,7 @@ from ..database import AsyncSessionLocal, directory_db_manager
 settings = get_settings()
 
 # Concurrency for imports within a directory scan
-SCAN_CONCURRENCY = 16  # Increased from 8 for faster bulk imports
+SCAN_CONCURRENCY = 4  # Reduced to prevent disk I/O saturation during imports
 BATCH_SIZE = 100  # Process N imports per batch
 
 # Supported image extensions
@@ -71,9 +71,35 @@ def is_drive_available(watch_directory_path: str) -> bool:
     return False
 
 
+def is_video_thumbnail(path: Path) -> bool:
+    """Check if file is a video thumbnail (e.g., video.mp4.png, clip.webm.jpg).
+
+    These are auto-generated thumbnail files that shouldn't be imported.
+    Detects files with a video extension anywhere in the name followed by an image extension,
+    or any file with 2+ dots that ends with an image extension.
+    """
+    name = path.name.lower()
+    suffix = path.suffix.lower()
+
+    # Must end with an image extension
+    if suffix not in IMAGE_EXTENSIONS:
+        return False
+
+    # Check if filename has 2+ dots (e.g., "video.mp4.png", "file.something.jpg")
+    if name.count('.') >= 2:
+        return True
+
+    return False
+
+
 def is_media_file(path: Path) -> bool:
     """Check if file is a supported media file"""
-    return path.suffix.lower() in ALL_EXTENSIONS
+    if path.suffix.lower() not in ALL_EXTENSIONS:
+        return False
+    # Filter out video thumbnails (e.g., video.mp4.png)
+    if is_video_thumbnail(path):
+        return False
+    return True
 
 
 def calculate_file_hash(file_path: str) -> str:
@@ -305,6 +331,71 @@ async def _clean_deleted_files(directory_id: int) -> int:
         await dir_db.close()
 
     return removed
+
+
+async def clean_video_thumbnails() -> dict:
+    """Remove video thumbnail files (e.g., video.mp4.png) from all directory databases.
+
+    These are auto-generated thumbnails that shouldn't have been imported.
+    Returns stats on how many were removed.
+    """
+    from ..database import get_data_dir
+
+    stats = {'removed': 0, 'directories_checked': 0}
+
+    all_dir_ids = directory_db_manager.get_all_directory_ids()
+    print(f"[Cleanup] Found {len(all_dir_ids)} directories to check")
+
+    for directory_id in all_dir_ids:
+        stats['directories_checked'] += 1
+
+        # Ensure database is properly initialized
+        await directory_db_manager.ensure_db_exists(directory_id)
+        dir_db = await directory_db_manager.get_session(directory_id)
+
+        try:
+            # Get all file references
+            query = select(DirectoryImageFile)
+            try:
+                result = await dir_db.execute(query)
+            except Exception as e:
+                print(f"[Cleanup] Skipping directory {directory_id}: {e}")
+                continue
+            files = list(result.scalars().all())  # Convert to list to avoid iteration issues
+
+            for image_file in files:
+                path = Path(image_file.original_path)
+                if is_video_thumbnail(path):
+                    # Get the image to delete thumbnail
+                    image = await dir_db.get(DirectoryImage, image_file.image_id)
+                    if image:
+                        # Check if this is the only file for this image
+                        files_count_query = select(func.count(DirectoryImageFile.id)).where(
+                            DirectoryImageFile.image_id == image.id
+                        )
+                        files_count_result = await dir_db.execute(files_count_query)
+                        files_count = files_count_result.scalar()
+
+                        # Always delete the file reference first
+                        await dir_db.delete(image_file)
+
+                        if files_count <= 1:
+                            # Last file - also delete the image and thumbnail
+                            if image.file_hash:
+                                thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+                                if thumbnail_path.exists():
+                                    thumbnail_path.unlink()
+                            await dir_db.delete(image)
+
+                        stats['removed'] += 1
+                        print(f"[Cleanup] Removed video thumbnail: {path.name}")
+
+            await dir_db.commit()
+        finally:
+            await dir_db.close()
+
+    print(f"[Cleanup] Removed {stats['removed']} video thumbnails from {stats['directories_checked']} directories")
+    return stats
 
 
 async def verify_file_locations(db: AsyncSession, batch_size: int = 100) -> dict:

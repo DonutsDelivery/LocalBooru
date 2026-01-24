@@ -29,6 +29,7 @@ from .task_queue import enqueue_task
 from .events import library_events, EventType
 from .video_preview import (
     check_ffmpeg_available,
+    get_video_duration,
     get_video_duration_async,
     get_hwaccel_args
 )
@@ -45,7 +46,7 @@ def is_video_file(file_path: str) -> bool:
     return ext in VIDEO_EXTENSIONS
 
 # Thread pool for CPU-bound operations (thumbnails, hashing)
-_executor = ThreadPoolExecutor(max_workers=8)  # Increased from 4 for faster bulk imports
+_executor = ThreadPoolExecutor(max_workers=4)  # Limited to prevent disk I/O saturation
 
 
 async def safe_enqueue_task(task_type, payload, priority, db, max_retries=3):
@@ -189,25 +190,121 @@ async def generate_thumbnail_async(file_path: str, output_path: str, size: int =
     return await loop.run_in_executor(_executor, generate_thumbnail, file_path, output_path, size)
 
 
+def find_existing_thumbnail(video_path: str) -> str | None:
+    """Find an existing thumbnail file for a video.
+
+    Checks common thumbnail naming conventions used by media players:
+    - video.mp4.jpg, video.mp4.png (full filename + image ext)
+    - video.jpg, video.png (name without video ext)
+    - video-poster.jpg, video.mp4-poster.jpg
+    - video-thumb.jpg, video.mp4-thumb.jpg
+    - folder.jpg, poster.jpg (in same directory)
+
+    Returns the path to the existing thumbnail if found, None otherwise.
+    """
+    video = Path(video_path)
+    video_dir = video.parent
+    video_name = video.stem  # filename without extension
+    video_full = video.name  # filename with extension
+
+    image_exts = ['.jpg', '.jpeg', '.png', '.webp']
+    suffixes = ['', '-poster', '-thumb', '-fanart']
+
+    # Check patterns based on video filename
+    for suffix in suffixes:
+        for ext in image_exts:
+            # Pattern: video.mp4.jpg, video.mp4-poster.jpg
+            candidate = video_dir / f"{video_full}{suffix}{ext}"
+            if candidate.exists():
+                return str(candidate)
+
+            # Pattern: video.jpg, video-poster.jpg
+            candidate = video_dir / f"{video_name}{suffix}{ext}"
+            if candidate.exists():
+                return str(candidate)
+
+    # Check folder-level thumbnails
+    for name in ['folder', 'poster', 'thumb', 'cover']:
+        for ext in image_exts:
+            candidate = video_dir / f"{name}{ext}"
+            if candidate.exists():
+                return str(candidate)
+
+    return None
+
+
 def generate_video_thumbnail(video_path: str, output_path: str, size: int = 400) -> bool:
-    """Generate a thumbnail for a video file using ffmpeg"""
+    """Generate a thumbnail for a video file.
+
+    First checks for existing thumbnails (e.g., video.mp4.jpg) and uses those.
+    Falls back to generating with ffmpeg if none found.
+
+    Optimizations applied:
+    - Uses ionice/nice for low I/O and CPU priority (won't slow down video playback)
+    - Uses -skip_frame nokey to only decode keyframes (~110x faster)
+    - Uses -ss before -i for fast seeking
+    - Hardware acceleration when available
+    - Seeks to middle of video for more representative thumbnail
+
+    See research: https://github.com/jellyfin/jellyfin/issues/11336
+    """
     import subprocess
+    import shutil
+    from .video_preview import get_low_priority_prefix
+
+    # Check for existing thumbnail first
+    existing = find_existing_thumbnail(video_path)
+    if existing:
+        try:
+            # Resize existing thumbnail to our standard size
+            with PILImage.open(existing) as img:
+                img.thumbnail((size, size), PILImage.Resampling.LANCZOS)
+                if img.mode in ('RGBA', 'P'):
+                    background = PILImage.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'RGBA':
+                        background.paste(img, mask=img.split()[3])
+                    else:
+                        background.paste(img)
+                    img = background
+                img.save(output_path, 'WEBP', quality=85, method=0)
+            print(f"[Import] Used existing thumbnail: {Path(existing).name}")
+            return True
+        except Exception as e:
+            print(f"[Import] Failed to use existing thumbnail {existing}: {e}")
+            # Fall through to generate with ffmpeg
 
     if not check_ffmpeg_available():
         return False
 
     try:
-        # Build command with optional hardware acceleration
+        # Get video duration to seek to middle
+        duration = get_video_duration(video_path)
+        if duration and duration > 1.0:
+            seek_time = duration / 2
+        else:
+            seek_time = 0.5  # Fallback for very short videos or unknown duration
+
+        # Build command with low priority prefix for background processing
+        low_priority = get_low_priority_prefix()
         hwaccel_args = get_hwaccel_args()
-        cmd = ['ffmpeg', '-y'] + hwaccel_args + [
-            '-ss', '0.5',  # Seek to 0.5s (fast seek before -i)
+
+        cmd = low_priority + ['ffmpeg', '-y']
+
+        # Add keyframe-only decoding for massive speedup (only decode I-frames)
+        # This is safe for thumbnails since we just need any nearby frame
+        cmd.extend(['-skip_frame', 'nokey'])
+
+        cmd.extend(hwaccel_args)
+        cmd.extend([
+            '-ss', str(seek_time),  # Seek to middle of video (fast seek before -i)
             '-i', video_path,
             '-vframes', '1',
+            '-vsync', 'passthrough',  # Don't duplicate frames when using skip_frame
             '-vf', f'scale={size}:-1',  # Scale to width, maintain aspect ratio
             '-c:v', 'libwebp',
             '-quality', '85',
             output_path
-        ]
+        ])
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -505,8 +602,8 @@ async def _import_to_directory_db(
                 generate_thumbnail_async(file_path, str(thumbnail_path))
             )
 
-        # Queue tagging task if auto_tag is enabled
-        if auto_tag:
+        # Queue tagging task if auto_tag is enabled (skip videos - tagger only works on images)
+        if auto_tag and not is_video_file(file_path):
             await safe_enqueue_task(
                 TaskType.tag,
                 {

@@ -12,8 +12,12 @@ import os
 import csv
 import logging
 import numpy as np
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Video extensions to skip (tagger only works on images)
+VIDEO_EXTENSIONS = {'.webm', '.mp4', '.mov', '.avi', '.mkv'}
 from PIL import Image
 from io import BytesIO
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -459,6 +463,19 @@ async def tag_image(
         directory_id: If provided, image is in a directory database
         model_type: Which tagger model to use (vit-v3, eva02-large-v3, swinv2-v3)
     """
+    # Skip video files - tagger only works on images
+    ext = Path(image_path).suffix.lower()
+    if ext in VIDEO_EXTENSIONS:
+        return {
+            "tags": [],
+            "rating": "pg",
+            "rating_scores": {},
+            "general_count": 0,
+            "character_count": 0,
+            "model_used": "skipped_video",
+            "skipped": True
+        }
+
     if model_type is None:
         model_type = DEFAULT_MODEL
 

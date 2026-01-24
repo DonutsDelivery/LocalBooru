@@ -4,7 +4,7 @@ Background task queue for LocalBooru - handles tagging, file verification, etc.
 import asyncio
 import json
 from datetime import datetime, timedelta
-from sqlalchemy import select, update
+from sqlalchemy import select, update, and_, not_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import AsyncSessionLocal
@@ -152,13 +152,17 @@ class BackgroundTaskQueue:
         from ..models import image_tags
 
         # 1. Find untagged images (no entries in image_tags, file exists)
+        # Skip video files - tagger only works on images
+        video_extensions = ('.webm', '.mp4', '.mov', '.avi', '.mkv')
         tagged_subq = select(image_tags.c.image_id).distinct()
         untagged_query = (
             select(Image.id, ImageFile.original_path)
             .join(ImageFile, ImageFile.image_id == Image.id)
             .where(
                 Image.id.not_in(tagged_subq),
-                ImageFile.file_exists == True
+                ImageFile.file_exists == True,
+                # Exclude video files from tagging
+                *[not_(ImageFile.original_path.ilike(f'%{ext}')) for ext in video_extensions]
             )
             .limit(settings.tag_guardian_batch_size)
         )
