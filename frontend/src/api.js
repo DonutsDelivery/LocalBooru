@@ -706,10 +706,12 @@ export async function updateSVPConfig(config) {
   return response.data
 }
 
-export async function playVideoSVP(filePath) {
+export async function playVideoSVP(filePath, startPosition = 0) {
   // Longer timeout since SVP processing can take time
-  const response = await api.post('/settings/svp/play', null, {
-    params: { file_path: filePath },
+  const response = await api.post('/settings/svp/play', {
+    file_path: filePath,
+    start_position: startPosition
+  }, {
     timeout: 60000  // 60 second timeout for initial buffering
   })
   return response.data

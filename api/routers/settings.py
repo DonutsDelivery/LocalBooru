@@ -1471,8 +1471,13 @@ async def update_svp_config(config: SVPConfigUpdate):
     return {"success": True, **current}
 
 
+class SVPPlayRequest(BaseModel):
+    file_path: str
+    start_position: float = 0.0  # Seek position in seconds
+
+
 @router.post("/svp/play")
-async def play_video_svp(file_path: str):
+async def play_video_svp(request: SVPPlayRequest):
     """
     Start SVP-interpolated video stream via HLS.
 
@@ -1501,13 +1506,13 @@ async def play_video_svp(file_path: str):
         return {"success": False, "error": f"SVP not ready. Missing: {', '.join(missing)}"}
 
     # Check if file exists
-    if not os.path.exists(file_path):
+    if not os.path.exists(request.file_path):
         return {"success": False, "error": "File not found"}
 
     try:
         # Create SVP stream
         stream = SVPStream(
-            video_path=file_path,
+            video_path=request.file_path,
             target_fps=config["target_fps"],
             preset=config.get("preset", "balanced"),
             use_nvof=config.get("use_nvof", True),
@@ -1517,19 +1522,32 @@ async def play_video_svp(file_path: str):
             custom_super=config.get("custom_super"),
             custom_analyse=config.get("custom_analyse"),
             custom_smooth=config.get("custom_smooth"),
+            start_position=request.start_position,
         )
 
         # Start the stream
         success = await stream.start()
 
         if success:
-            # Return immediately - frontend will poll/retry for readiness
-            # This allows normal video to keep playing while SVP buffers
+            # Wait briefly for initial buffer, but return optimistically
+            # Let the frontend HLS.js handle retry/buffering for large files
+            import asyncio
+            for _ in range(50):  # Wait up to 5 seconds
+                if stream.playlist_ready:
+                    break
+                if stream.error:
+                    return {"success": False, "error": stream.error}
+                if not stream._running:
+                    return {"success": False, "error": stream.error or "Pipeline failed to start"}
+                await asyncio.sleep(0.1)
+
+            # Return success - stream is running, frontend will handle buffering
             return {
                 "success": True,
                 "stream_id": stream.stream_id,
                 "stream_url": f"/api/settings/svp/stream/{stream.stream_id}/stream.m3u8",
                 "duration": stream._duration,
+                "start_position": request.start_position,
                 "message": f"SVP stream started at {config['target_fps']} fps with {config.get('preset', 'balanced')} preset"
             }
         else:

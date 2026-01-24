@@ -142,9 +142,9 @@ except:
 
 # Check source filters
 plugin_paths = [
-    ("/usr/lib/vapoursynth/libbestsource.so", "bestsource_available", "bs"),
-    ("/usr/lib/vapoursynth/libffms2.so", "ffms2_available", "ffms2"),
-    ("/usr/lib/vapoursynth/liblsmas.so", "lsmas_available", "lsmas"),
+    ("/usr/lib/vapoursynth/bestsource.so", "bestsource_available", "bs"),
+    ("/usr/lib/vapoursynth/ffms2.so", "ffms2_available", "ffms2"),
+    ("/usr/lib/vapoursynth/lsmas.so", "lsmas_available", "lsmas"),
 ]
 
 for path, key, attr in plugin_paths:
@@ -337,6 +337,252 @@ SVP_MASK_AREA = {
 }
 
 
+def _build_svp_params(
+    target_fps: int,
+    preset: str = "balanced",
+    use_nvof: bool = True,
+    shader: int = 23,
+    artifact_masking: int = 100,
+    frame_interpolation: int = 2,
+    custom_super: Optional[str] = None,
+    custom_analyse: Optional[str] = None,
+    custom_smooth: Optional[str] = None,
+) -> tuple:
+    """Build SVP parameters from preset and overrides."""
+    preset_config = SVP_PRESETS.get(preset, SVP_PRESETS["balanced"])
+
+    # Use custom params if provided, otherwise build from preset + overrides
+    if custom_super:
+        super_params = custom_super
+    else:
+        super_params = preset_config["super"]
+
+    if custom_analyse:
+        analyse_params = custom_analyse
+    else:
+        # Start with preset and override nvof setting
+        analyse_params = preset_config["analyse"]
+        # Update nvof setting
+        if use_nvof and "nvof:" not in analyse_params:
+            analyse_params = analyse_params.replace("{gpu:1,", "{gpu:1,nvof:1,")
+        elif not use_nvof:
+            analyse_params = analyse_params.replace(",nvof:1", "").replace("nvof:1,", "")
+
+    if custom_smooth:
+        smooth_params = custom_smooth
+    else:
+        # Build smooth params with rate, algorithm, and masking
+        algo = shader  # shader setting maps to SVP algorithm
+        smooth_params = f"{{rate:{{num:{target_fps},den:1,abs:true}},gpuid:0,algo:{algo},mask:{{area:{artifact_masking}}},scene:{{}}}}"
+
+    return super_params, analyse_params, smooth_params
+
+
+def _generate_ffmpeg_svp_script(
+    video_path: str,
+    target_fps: int,
+    width: int,
+    height: int,
+    src_fps_num: int,
+    src_fps_den: int,
+    num_frames: int,
+    preset: str = "balanced",
+    use_nvof: bool = True,
+    shader: int = 23,
+    artifact_masking: int = 100,
+    frame_interpolation: int = 2,
+    custom_super: Optional[str] = None,
+    custom_analyse: Optional[str] = None,
+    custom_smooth: Optional[str] = None,
+    start_position: float = 0.0,
+) -> str:
+    """
+    Generate a Python script that uses FFmpeg to decode video and feeds frames
+    to VapourSynth for SVP processing. This bypasses bestsource indexing entirely.
+
+    Output is Y4M to stdout for FFmpeg to encode to HLS.
+    """
+    # Get SVP parameters
+    super_params, analyse_params, smooth_params = _build_svp_params(
+        target_fps, preset, use_nvof, shader, artifact_masking, frame_interpolation,
+        custom_super, custom_analyse, custom_smooth
+    )
+
+    escaped_path = video_path.replace("\\", "\\\\").replace("'", "\\'")
+    src_fps = src_fps_num / src_fps_den
+
+    # Calculate frames to skip and remaining frames
+    start_frame = int(start_position * src_fps)
+    remaining_frames = max(1, num_frames - start_frame)
+
+    # Build FFmpeg seek arguments using hybrid seeking for accuracy:
+    # - Input seek (-ss before -i) for fast approximate positioning
+    # - Output seek (-ss after -i) for frame-accurate final positioning
+    if start_position > 2:
+        # Seek to 2 seconds before target with input seeking (fast, keyframe-based)
+        # Then use output seeking for the remaining 2 seconds (accurate)
+        input_seek = start_position - 2
+        output_seek = 2.0
+        ffmpeg_input_seek = f"'-ss', '{input_seek:.3f}', "
+        ffmpeg_output_seek = f"'-ss', '{output_seek:.3f}', "
+    elif start_position > 0:
+        # For short seeks, just use output seeking (accurate but acceptable speed)
+        ffmpeg_input_seek = ""
+        ffmpeg_output_seek = f"'-ss', '{start_position:.3f}', "
+    else:
+        ffmpeg_input_seek = ""
+        ffmpeg_output_seek = ""
+
+    script = f'''#!/usr/bin/env python3
+"""SVP processing script - uses FFmpeg decode to bypass bestsource indexing."""
+import vapoursynth as vs
+import subprocess
+import numpy as np
+import sys
+import struct
+import signal
+import atexit
+
+# Video parameters (pre-computed)
+VIDEO_PATH = '{escaped_path}'
+WIDTH = {width}
+HEIGHT = {height}
+FPS_NUM = {src_fps_num}
+FPS_DEN = {src_fps_den}
+NUM_FRAMES = {remaining_frames}
+SRC_FPS = {src_fps}
+TARGET_FPS = {target_fps}
+START_POSITION = {start_position}
+
+# Frame size for YUV420P
+Y_SIZE = WIDTH * HEIGHT
+UV_SIZE = (WIDTH // 2) * (HEIGHT // 2)
+FRAME_SIZE = Y_SIZE + 2 * UV_SIZE
+
+# Initialize VapourSynth
+core = vs.core
+core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow1.so")
+core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow2.so")
+
+# Start FFmpeg decoder with hybrid seeking for accuracy:
+# Input seek (before -i) for fast keyframe positioning, output seek (after -i) for precision
+ffmpeg_proc = subprocess.Popen([
+    'ffmpeg', {ffmpeg_input_seek}'-i', VIDEO_PATH,
+    {ffmpeg_output_seek}'-f', 'rawvideo', '-pix_fmt', 'yuv420p',
+    '-'
+], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+# Cleanup handler to ensure FFmpeg is terminated
+def cleanup_ffmpeg():
+    try:
+        ffmpeg_proc.terminate()
+        ffmpeg_proc.wait(timeout=2)
+    except:
+        try:
+            ffmpeg_proc.kill()
+        except:
+            pass
+
+# Register cleanup for normal exit and signals
+atexit.register(cleanup_ffmpeg)
+signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
+signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
+
+# Frame cache for sequential access
+frame_cache = {{}}
+next_frame_to_read = 0
+
+def read_frame_data(n):
+    """Read frame n from FFmpeg output (sequential reading)."""
+    global next_frame_to_read
+
+    if n in frame_cache:
+        return frame_cache[n]
+
+    # Read frames sequentially until we reach n
+    while next_frame_to_read <= n:
+        data = ffmpeg_proc.stdout.read(FRAME_SIZE)
+        if len(data) < FRAME_SIZE:
+            return None
+        frame_cache[next_frame_to_read] = data
+        next_frame_to_read += 1
+
+    # Clean old frames from cache to save memory (keep last 10)
+    for old_n in list(frame_cache.keys()):
+        if old_n < n - 10:
+            del frame_cache[old_n]
+
+    return frame_cache.get(n)
+
+def modify_frame(n, f):
+    """Replace blank frame with FFmpeg decoded frame."""
+    frame_data = read_frame_data(n)
+    if frame_data is None:
+        return f.copy()
+
+    fout = f.copy()
+
+    # Copy Y plane
+    y_arr = np.frombuffer(frame_data[:Y_SIZE], dtype=np.uint8).reshape(HEIGHT, WIDTH)
+    np.copyto(np.asarray(fout[0]), y_arr)
+
+    # Copy U plane
+    u_arr = np.frombuffer(frame_data[Y_SIZE:Y_SIZE+UV_SIZE], dtype=np.uint8).reshape(HEIGHT//2, WIDTH//2)
+    np.copyto(np.asarray(fout[1]), u_arr)
+
+    # Copy V plane
+    v_arr = np.frombuffer(frame_data[Y_SIZE+UV_SIZE:], dtype=np.uint8).reshape(HEIGHT//2, WIDTH//2)
+    np.copyto(np.asarray(fout[2]), v_arr)
+
+    return fout
+
+# Create clip from FFmpeg decoded frames
+blank = core.std.BlankClip(width=WIDTH, height=HEIGHT, format=vs.YUV420P8,
+                           length=NUM_FRAMES, fpsnum=FPS_NUM, fpsden=FPS_DEN)
+clip = core.std.ModifyFrame(blank, blank, modify_frame)
+
+# SVP parameters
+super_params = '{super_params}'
+analyse_params = '{analyse_params}'
+smooth_params = '{smooth_params}'
+
+# SVP processing pipeline
+super_clip = core.svp1.Super(clip, super_params)
+vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
+smooth = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"],
+    vectors["clip"], vectors["data"], smooth_params, src=clip, fps=SRC_FPS)
+
+# Output Y4M to stdout
+def write_y4m_header():
+    """Write Y4M header."""
+    header = f"YUV4MPEG2 W{{smooth.width}} H{{smooth.height}} F{{TARGET_FPS}}:1 Ip A0:0 C420\\n"
+    sys.stdout.buffer.write(header.encode())
+    sys.stdout.buffer.flush()
+
+def write_y4m_frame(frame):
+    """Write a single Y4M frame."""
+    sys.stdout.buffer.write(b"FRAME\\n")
+    for plane_idx in range(3):
+        plane = frame[plane_idx]
+        arr = np.asarray(plane)
+        sys.stdout.buffer.write(arr.tobytes())
+    sys.stdout.buffer.flush()
+
+# Main output loop
+write_y4m_header()
+for i in range(len(smooth)):
+    try:
+        frame = smooth.get_frame(i)
+        write_y4m_frame(frame)
+    except Exception as e:
+        print(f"Frame {{i}} error: {{e}}", file=sys.stderr)
+        break
+
+ffmpeg_proc.terminate()
+'''
+    return script
+
+
 def _generate_svp_script(
     video_path: str,
     target_fps: int,
@@ -417,9 +663,9 @@ core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow2.so")
 
 # Try to load source filter plugins from system paths
 source_plugins = [
-    ('/usr/lib/vapoursynth/libbestsource.so', 'bs'),
-    ('/usr/lib/vapoursynth/libffms2.so', 'ffms2'),
-    ('/usr/lib/vapoursynth/liblsmas.so', 'lsmas'),
+    ('/usr/lib/vapoursynth/bestsource.so', 'bs'),
+    ('/usr/lib/vapoursynth/ffms2.so', 'ffms2'),
+    ('/usr/lib/vapoursynth/lsmas.so', 'lsmas'),
 ]
 for plugin_path, _ in source_plugins:
     try:
@@ -459,7 +705,8 @@ src_fps = clip.fps.numerator / clip.fps.denominator
 target_fps = {target_fps}
 
 # Convert to YUV420P8 for SVP processing (required format)
-clip_yuv = core.resize.Bicubic(clip, format=vs.YUV420P8, matrix_s="709")
+# Specify both input and output matrix to handle videos with unspecified colorspace
+clip_yuv = core.resize.Bicubic(clip, format=vs.YUV420P8, matrix_in_s="709", matrix_s="709")
 
 # SVP parameters (preset: {preset})
 super_params = '{super_params}'
@@ -521,12 +768,14 @@ class SVPStream:
         custom_super: Optional[str] = None,
         custom_analyse: Optional[str] = None,
         custom_smooth: Optional[str] = None,
+        start_position: float = 0.0,  # Seek position in seconds
     ):
         self.video_path = video_path
         self.target_fps = target_fps
         self.preset = preset if preset in SVP_PRESETS else "balanced"
         self.use_nvenc = use_nvenc if use_nvenc is not None else _check_nvenc_available()
         self.stream_id = str(uuid.uuid4())[:8]
+        self.start_position = start_position  # Where to start processing from
 
         # Key SVP settings
         self.use_nvof = use_nvof
@@ -553,6 +802,9 @@ class SVPStream:
         self._width: int = 0
         self._height: int = 0
         self._src_fps: float = 0
+        self._src_fps_num: int = 0
+        self._src_fps_den: int = 1
+        self._num_frames: int = 0
         self._duration: float = 0  # Source video duration in seconds
 
         # Register stream
@@ -599,12 +851,12 @@ class SVPStream:
             return False
 
     def _get_video_info(self) -> bool:
-        """Get video dimensions, FPS, and duration using ffprobe."""
+        """Get video dimensions, FPS, frame count, and duration using ffprobe."""
         try:
             result = subprocess.run([
                 'ffprobe', '-v', 'error',
                 '-select_streams', 'v:0',
-                '-show_entries', 'stream=width,height,r_frame_rate',
+                '-show_entries', 'stream=width,height,r_frame_rate,nb_frames',
                 '-show_entries', 'format=duration',
                 '-of', 'csv=p=0',
                 self.video_path
@@ -623,9 +875,20 @@ class SVPStream:
                     # Parse frame rate (e.g., "30000/1001" or "30/1")
                     fps_parts = parts[2].split('/')
                     if len(fps_parts) == 2:
-                        self._src_fps = int(fps_parts[0]) / int(fps_parts[1])
+                        self._src_fps_num = int(fps_parts[0])
+                        self._src_fps_den = int(fps_parts[1])
+                        self._src_fps = self._src_fps_num / self._src_fps_den
                     else:
                         self._src_fps = float(fps_parts[0])
+                        self._src_fps_num = int(self._src_fps * 1000)
+                        self._src_fps_den = 1000
+
+                # Get frame count if available
+                if len(parts) >= 4 and parts[3]:
+                    try:
+                        self._num_frames = int(parts[3])
+                    except ValueError:
+                        pass
 
             # Get duration from format line
             if len(lines) >= 2 and lines[1]:
@@ -634,7 +897,11 @@ class SVPStream:
                 except ValueError:
                     pass
 
-            logger.info(f"[SVP {self.stream_id}] Video: {self._width}x{self._height} @ {self._src_fps:.2f}fps, {self._duration:.1f}s")
+            # Estimate frame count from duration if not available
+            if self._num_frames == 0 and self._duration > 0 and self._src_fps > 0:
+                self._num_frames = int(self._duration * self._src_fps)
+
+            logger.info(f"[SVP {self.stream_id}] Video: {self._width}x{self._height} @ {self._src_fps:.2f}fps, {self._num_frames} frames, {self._duration:.1f}s")
             return True
 
         except Exception as e:
@@ -663,10 +930,15 @@ class SVPStream:
         self._temp_dir = Path(tempfile.mkdtemp(prefix='svp_stream_'))
         logger.info(f"[SVP {self.stream_id}] HLS output: {self._temp_dir}")
 
-        # Generate and write VapourSynth script
-        script = _generate_svp_script(
+        # Generate and write FFmpeg-based SVP script (bypasses bestsource indexing)
+        script = _generate_ffmpeg_svp_script(
             self.video_path,
             self.target_fps,
+            self._width,
+            self._height,
+            self._src_fps_num,
+            self._src_fps_den,
+            self._num_frames,
             self.preset,
             use_nvof=self.use_nvof,
             shader=self.shader,
@@ -675,9 +947,11 @@ class SVPStream:
             custom_super=self.custom_super,
             custom_analyse=self.custom_analyse,
             custom_smooth=self.custom_smooth,
+            start_position=self.start_position,
         )
-        self._script_path = self._temp_dir / "interpolate.vpy"
+        self._script_path = self._temp_dir / "svp_process.py"
         self._script_path.write_text(script)
+        os.chmod(self._script_path, 0o755)  # Make executable
         logger.debug(f"[SVP {self.stream_id}] Script written to {self._script_path}")
 
         # Start the pipeline
@@ -688,26 +962,33 @@ class SVPStream:
         return True
 
     async def _run_pipeline(self):
-        """Run the vspipe → FFmpeg pipeline."""
+        """Run the Python SVP script → FFmpeg pipeline.
+
+        Uses FFmpeg to decode video, feeds frames through Python/VapourSynth/SVP,
+        then outputs Y4M to FFmpeg for HLS encoding. This bypasses bestsource
+        indexing entirely for instant startup.
+        """
         try:
-            # Build commands
-            vspipe_cmd = [
-                'vspipe',
-                '--container', 'y4m',  # Output as Y4M (includes header info)
-                str(self._script_path),
-                '-'  # Output to stdout
+            # Build Python command to run the SVP script
+            # Use system Python to avoid venv conflicts with VapourSynth
+            svp_cmd = [
+                '/usr/bin/python3',
+                str(self._script_path)
             ]
 
-            # For Y4M input, FFmpeg auto-detects format
-            # Input 0: video from vspipe (stdin)
-            # Input 1: original video for audio track
+            # FFmpeg command to encode Y4M from stdin to HLS
             ffmpeg_cmd = [
                 'ffmpeg',
                 '-y',
-                '-i', '-',  # Input 0: Y4M from stdin (vspipe)
-                '-i', self.video_path,  # Input 1: original video for audio
-                '-map', '0:v',  # Video from input 0 (vspipe)
-                '-map', '1:a?',  # Audio from input 1 if available
+                '-probesize', '32',
+                '-analyzeduration', '0',
+                '-fflags', '+nobuffer+flush_packets',
+                '-f', 'yuv4mpegpipe',
+                '-i', '-',  # Y4M from Python script
+                '-probesize', '5000000',
+                '-i', self.video_path,  # Original video for audio
+                '-map', '0:v',
+                '-map', '1:a?',
             ]
 
             # Video encoder selection
@@ -728,38 +1009,42 @@ class SVPStream:
                     '-crf', '23',
                 ])
 
-            # Audio encoder for HLS compatibility
+            # Audio encoder
             ffmpeg_cmd.extend([
                 '-c:a', 'aac',
                 '-b:a', '192k',
             ])
 
-            # HLS output - VOD-style (keep all segments for seeking)
+            # HLS output
             ffmpeg_cmd.extend([
                 '-g', str(self.target_fps * 2),
+                '-keyint_min', str(self.target_fps),
+                '-force_key_frames', 'expr:gte(t,0)',
                 '-f', 'hls',
                 '-hls_time', '2',
-                '-hls_list_size', '0',  # Keep all segments (not a rolling window)
-                '-hls_flags', 'append_list',  # No delete_segments - allow seeking
+                '-hls_init_time', '1',
+                '-hls_list_size', '0',
+                '-hls_flags', 'append_list+split_by_time',
                 '-hls_segment_filename', str(self._temp_dir / 'segment_%03d.ts'),
+                '-max_delay', '0',
                 str(self.playlist_path)
             ])
 
-            logger.info(f"[SVP {self.stream_id}] Starting pipeline: vspipe → FFmpeg")
-            logger.debug(f"[SVP {self.stream_id}] vspipe: {' '.join(vspipe_cmd)}")
-            logger.debug(f"[SVP {self.stream_id}] ffmpeg: {' '.join(ffmpeg_cmd)}")
+            logger.info(f"[SVP {self.stream_id}] Starting pipeline: FFmpeg decode → Python/SVP → FFmpeg encode")
+            logger.debug(f"[SVP {self.stream_id}] SVP script: {' '.join(svp_cmd)}")
+            logger.debug(f"[SVP {self.stream_id}] FFmpeg: {' '.join(ffmpeg_cmd)}")
 
-            # Start vspipe with clean environment (avoids venv conflicts)
+            # Start the Python SVP script with clean environment
             clean_env = _get_clean_env()
             self._vspipe_proc = subprocess.Popen(
-                vspipe_cmd,
+                svp_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                bufsize=10**8,  # Large buffer for video frames
+                bufsize=10**7,
                 env=clean_env
             )
 
-            # Start FFmpeg with vspipe output as input
+            # Start FFmpeg with SVP script output as input
             self._ffmpeg_proc = subprocess.Popen(
                 ffmpeg_cmd,
                 stdin=self._vspipe_proc.stdout,
@@ -768,7 +1053,7 @@ class SVPStream:
                 env=clean_env
             )
 
-            # Allow vspipe to receive SIGPIPE if FFmpeg exits
+            # Allow SVP script to receive SIGPIPE if FFmpeg exits
             self._vspipe_proc.stdout.close()
 
             # Monitor the processes
@@ -783,10 +1068,10 @@ class SVPStream:
                         logger.info(f"[SVP {self.stream_id}] FFmpeg finished normally")
                     break
 
-                # Check if vspipe failed
+                # Check if SVP script failed
                 if self._vspipe_proc.poll() is not None and self._vspipe_proc.returncode != 0:
                     stderr = self._vspipe_proc.stderr.read().decode() if self._vspipe_proc.stderr else ""
-                    self._error = f"vspipe exited with code {self._vspipe_proc.returncode}: {stderr[-500:]}"
+                    self._error = f"SVP script exited with code {self._vspipe_proc.returncode}: {stderr[-500:]}"
                     logger.error(f"[SVP {self.stream_id}] {self._error}")
                     break
 
@@ -805,6 +1090,7 @@ class SVPStream:
 
     def _cleanup_processes(self):
         """Clean up subprocess resources."""
+        # Clean up SVP script process (stored in _vspipe_proc for compatibility)
         if self._vspipe_proc:
             try:
                 self._vspipe_proc.terminate()
