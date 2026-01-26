@@ -275,41 +275,57 @@ function launchUpdateScript(sourceDir, appDir, updatesDir) {
 
   if (process.platform === 'win32') {
     const scriptPath = path.join(portableDataDir, 'apply-update.bat');
+    const logPath = path.join(portableDataDir, 'update.log');
 
     const script = [
       '@echo off',
       'setlocal',
       '',
+      `set "LOGFILE=${logPath}"`,
+      'echo [%date% %time%] Update script started >> "%LOGFILE%"',
+      '',
       'REM Wait for the app process to exit',
       ':waitloop',
       `tasklist /FI "PID eq ${pid}" 2>nul | find /i "${pid}" >nul`,
       'if not errorlevel 1 (',
-      '    timeout /t 1 /nobreak >nul',
+      '    ping -n 2 127.0.0.1 >nul 2>&1',
       '    goto waitloop',
       ')',
       '',
+      'echo [%date% %time%] App exited, waiting for file locks >> "%LOGFILE%"',
       'REM Extra delay for file lock release',
-      'timeout /t 2 /nobreak >nul',
+      'ping -n 3 127.0.0.1 >nul 2>&1',
       '',
       'REM Copy updated files over the app directory',
-      `xcopy /s /e /y /q "${sourceDir}\\*" "${appDir}\\"`,
+      `echo [%date% %time%] Copying from ${sourceDir} to ${appDir} >> "%LOGFILE%"`,
+      `xcopy /s /e /y /q "${sourceDir}\\*" "${appDir}\\" >> "%LOGFILE%" 2>&1`,
+      'echo [%date% %time%] xcopy exit code: %errorlevel% >> "%LOGFILE%"',
       '',
       'REM Remove the updates staging folder',
-      `rmdir /s /q "${updatesDir}"`,
+      `rmdir /s /q "${updatesDir}" 2>nul`,
       '',
       'REM Restart the application',
+      `echo [%date% %time%] Starting ${appExe} >> "%LOGFILE%"`,
       `start "" "${appExe}"`,
       '',
-      'REM Delete this script',
+      'REM Clean up launcher and this script',
+      `del "${path.join(portableDataDir, 'apply-update.vbs')}" 2>nul`,
       'del "%~f0"',
     ].join('\r\n');
 
     fs.writeFileSync(scriptPath, script);
 
-    spawn('cmd.exe', ['/c', scriptPath], {
+    // Use a VBS wrapper to launch the batch file completely hidden.
+    // Node's detached:true overrides windowsHide:true and always creates
+    // a visible console window. WScript.Shell.Run with style 0 is truly hidden.
+    const vbsPath = path.join(portableDataDir, 'apply-update.vbs');
+    // VBS uses "" to escape a double quote inside a string literal
+    const vbsScript = `CreateObject("WScript.Shell").Run "cmd.exe /c ""${scriptPath}""", 0, False`;
+    fs.writeFileSync(vbsPath, vbsScript);
+
+    spawn('wscript.exe', [vbsPath], {
       detached: true,
-      stdio: 'ignore',
-      windowsHide: true
+      stdio: 'ignore'
     }).unref();
 
   } else {
