@@ -335,6 +335,11 @@ class BackendManager {
         if (fs.existsSync(localEmbed)) {
           return localEmbed;
         }
+        // Development: check for standard .venv folder
+        const dotVenv = path.join(__dirname, '..', '.venv', 'Scripts', 'python.exe');
+        if (fs.existsSync(dotVenv)) {
+          return dotVenv;
+        }
         // Fall back to system Python
         return 'python';
       }
@@ -351,6 +356,11 @@ class BackendManager {
         const localVenv = path.join(__dirname, '..', 'python-venv-linux', 'bin', 'python');
         if (fs.existsSync(localVenv)) {
           return localVenv;
+        }
+        // Development: check for standard .venv folder
+        const dotVenv = path.join(__dirname, '..', '.venv', 'bin', 'python');
+        if (fs.existsSync(dotVenv)) {
+          return dotVenv;
         }
       }
       // Fall back to system Python
