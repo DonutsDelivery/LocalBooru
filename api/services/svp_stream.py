@@ -27,7 +27,7 @@ import uuid
 from pathlib import Path
 from typing import Optional, Dict, List
 
-from api.services.svp_platform import (
+from .svp_platform import (
     get_svp_plugin_path, get_svp_plugin_full_paths,
     get_source_filter_paths, get_system_python, get_clean_env,
 )

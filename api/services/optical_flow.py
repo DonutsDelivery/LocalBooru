@@ -65,7 +65,7 @@ except ImportError:
 HAS_VAPOURSYNTH = False
 HAS_SVP = False
 
-from api.services.svp_platform import (
+from .svp_platform import (
     get_svp_plugin_path, get_svp_plugin_full_paths,
 )
 

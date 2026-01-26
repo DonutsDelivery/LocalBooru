@@ -1259,10 +1259,18 @@ async def start_import(request: MigrationRequest):
 @router.get("/optical-flow")
 async def get_optical_flow_config():
     """Get optical flow interpolation configuration and backend status"""
-    from ..services.optical_flow import get_backend_status
+    import traceback
+    import logging
+    logger = logging.getLogger(__name__)
 
     config = get_optical_flow_settings()
-    backend = get_backend_status()
+
+    try:
+        from ..services.optical_flow import get_backend_status
+        backend = get_backend_status()
+    except Exception as e:
+        logger.error(f"Failed to get backend status: {e}\n{traceback.format_exc()}")
+        backend = {"error": str(e), "any_backend_available": False}
 
     return {
         **config,
