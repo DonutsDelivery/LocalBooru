@@ -59,6 +59,7 @@ AUTH_EXEMPT_ENDPOINTS = [
 # Endpoints under localhost-only prefixes that should still be accessible from network
 LOCALHOST_EXEMPTIONS = [
     "/api/network/verify-handshake",
+    "/api/settings/svp",  # SVP video playback settings and streaming (read-only check + playback)
 ]
 
 # Auth level hierarchy - which access levels require auth at each setting
@@ -251,6 +252,13 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
                 # Check if this specific path is exempted from localhost restriction
                 is_exempted = any(path == exempt or path.startswith(exempt + "/")
                                   for exempt in LOCALHOST_EXEMPTIONS)
+
+                # Allow settings/admin access from local network if enabled
+                if not is_exempted and access_level == "local_network":
+                    if network_settings.get("allow_settings_local_network", False):
+                        is_exempted = True
+                        print(f"[AccessControl] Allowing settings access from local network (allow_settings_local_network=True)")
+
                 if not is_exempted:
                     return cors_response(
                         403,

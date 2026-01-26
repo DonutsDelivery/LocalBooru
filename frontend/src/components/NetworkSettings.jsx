@@ -24,6 +24,7 @@ export default function NetworkSettings() {
   const [localPort, setLocalPort] = useState(8790)
   const [publicPort, setPublicPort] = useState(8791)
   const [authLevel, setAuthLevel] = useState('none')
+  const [allowSettingsLAN, setAllowSettingsLAN] = useState(false)
 
   useEffect(() => {
     loadConfig()
@@ -40,6 +41,7 @@ export default function NetworkSettings() {
       setLocalPort(data.settings.local_port || 8790)
       setPublicPort(data.settings.public_port || 8791)
       setAuthLevel(data.settings.auth_required_level || 'none')
+      setAllowSettingsLAN(data.settings.allow_settings_local_network || false)
       setUpnpStatus(data.upnp_status)
     } catch (err) {
       console.error('Failed to load network config:', err)
@@ -56,7 +58,8 @@ export default function NetworkSettings() {
         public_network_enabled: publicEnabled,
         local_port: localPort,
         public_port: publicPort,
-        auth_required_level: authLevel
+        auth_required_level: authLevel,
+        allow_settings_local_network: allowSettingsLAN
       })
       if (result.restart_required) {
         setRestartRequired(true)
@@ -145,7 +148,8 @@ export default function NetworkSettings() {
     publicEnabled !== (config?.settings?.public_network_enabled || false) ||
     localPort !== (config?.settings?.local_port || 8790) ||
     publicPort !== (config?.settings?.public_port || 8791) ||
-    authLevel !== (config?.settings?.auth_required_level || 'none')
+    authLevel !== (config?.settings?.auth_required_level || 'none') ||
+    allowSettingsLAN !== (config?.settings?.allow_settings_local_network || false)
 
   return (
     <div className="network-settings">
@@ -180,6 +184,22 @@ export default function NetworkSettings() {
             />
             <span>Enable local network access</span>
           </label>
+        </div>
+
+        <div className="setting-row">
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={allowSettingsLAN}
+              onChange={(e) => setAllowSettingsLAN(e.target.checked)}
+              disabled={!localEnabled}
+            />
+            <span>Allow settings access from LAN</span>
+          </label>
+          <p className="setting-hint">
+            Allow devices on your local network to access settings and admin features.
+            Requires local network access to be enabled.
+          </p>
         </div>
 
         {config?.local_ip && (
@@ -370,9 +390,9 @@ export default function NetworkSettings() {
             <span className="icon">&#10007;</span>
             <span>Modify tags or ratings</span>
           </div>
-          <div className="restriction denied">
-            <span className="icon">&#10007;</span>
-            <span>Change settings</span>
+          <div className={`restriction ${allowSettingsLAN ? 'allowed' : 'denied'}`}>
+            <span className="icon">{allowSettingsLAN ? '\u2713' : '\u2717'}</span>
+            <span>Change settings {allowSettingsLAN ? '(LAN only)' : ''}</span>
           </div>
         </div>
       </section>

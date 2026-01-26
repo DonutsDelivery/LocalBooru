@@ -170,6 +170,21 @@
   cursor: not-allowed;
 }
 
+.repair-btn {
+  background: transparent;
+  border: 1px solid #2196f3;
+  color: #2196f3;
+}
+
+.repair-btn:hover:not(:disabled) {
+  background: rgba(33, 150, 243, 0.1);
+}
+
+.repair-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .remove-btn {
   background: transparent;
   border: 1px solid #f44336;
@@ -852,11 +867,77 @@
   color: var(--text-primary);
 }
 
-/* Floating select button */
-.floating-select-btn {
+/* Floating controls container */
+.floating-controls {
   position: fixed;
   top: 50px;
   right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 100;
+}
+
+/* Tile size control */
+.tile-size-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.tile-size-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.tile-size-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.tile-size-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.tile-size-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.tile-size-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.tile-size-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* Floating select button */
+.floating-select-btn {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -869,7 +950,6 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
-  z-index: 100;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 

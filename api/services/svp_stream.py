@@ -20,16 +20,22 @@ import asyncio
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
 from pathlib import Path
 from typing import Optional, Dict, List
 
+from api.services.svp_platform import (
+    get_svp_plugin_path, get_svp_plugin_full_paths,
+    get_source_filter_paths, get_system_python, get_clean_env,
+)
+
 logger = logging.getLogger(__name__)
 
-# SVP plugin path
-SVP_PLUGIN_PATH = "/opt/svp/plugins"
+# SVP plugin path (resolved per-platform, env override supported)
+SVP_PLUGIN_PATH = get_svp_plugin_path() or "/opt/svp/plugins"
 
 # Active SVP streams registry
 _active_svp_streams: Dict[str, 'SVPStream'] = {}
@@ -42,20 +48,9 @@ def _get_clean_env() -> dict:
     """
     Get a clean environment for running vspipe/VapourSynth commands.
 
-    VapourSynth's vspipe can fail when run from a Python venv due to
-    environment variable conflicts. This returns a clean environment
-    with only essential variables.
+    Delegates to the platform module for cross-platform support.
     """
-    home = os.environ.get('HOME', '/tmp')
-    return {
-        'PATH': '/usr/bin:/bin:/usr/local/bin',
-        'HOME': home,
-        'USER': os.environ.get('USER', 'user'),
-        'LANG': os.environ.get('LANG', 'en_US.UTF-8'),
-        # Required for GPU access
-        'DISPLAY': os.environ.get('DISPLAY', ':0'),
-        'XDG_RUNTIME_DIR': os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}'),
-    }
+    return get_clean_env()
 
 
 def _check_vspipe_available() -> bool:
@@ -147,6 +142,16 @@ def get_svp_status() -> dict:
     bestsource_available = False
 
     if vspipe_available:
+        # Resolve platform-specific paths for injection into subprocess script
+        _flow1_path, _flow2_path = get_svp_plugin_full_paths()
+        _src_filters = get_source_filter_paths()
+        _sys_python = get_system_python()
+
+        # Build source filter list literal for the test script
+        _sf_literal = ", ".join(
+            f'("{p}", "{k}", "{a}")' for p, k, a in _src_filters
+        )
+
         # Create a test script to check all capabilities
         test_script = f'''
 import vapoursynth as vs
@@ -166,8 +171,8 @@ core = vs.core
 
 # Check SVP plugins
 try:
-    core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow1.so")
-    core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow2.so")
+    core.std.LoadPlugin("{_flow1_path}")
+    core.std.LoadPlugin("{_flow2_path}")
     results["svp_available"] = True
     # Check if SmoothFps_NVOF function exists
     if hasattr(core.svp2, 'SmoothFps_NVOF'):
@@ -176,11 +181,7 @@ except:
     pass
 
 # Check source filters
-plugin_paths = [
-    ("/usr/lib/vapoursynth/bestsource.so", "bestsource_available", "bs"),
-    ("/usr/lib/vapoursynth/ffms2.so", "ffms2_available", "ffms2"),
-    ("/usr/lib/vapoursynth/lsmas.so", "lsmas_available", "lsmas"),
-]
+plugin_paths = [{_sf_literal}]
 
 for path, key, attr in plugin_paths:
     if hasattr(core, attr):
@@ -197,7 +198,7 @@ print(json.dumps(results))
         try:
             # Run the test script via system Python with clean environment
             result = subprocess.run(
-                ['/usr/bin/python3', '-c', test_script],
+                [_sys_python, '-c', test_script],
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -272,9 +273,20 @@ def kill_orphaned_svp_processes():
     """Kill any orphaned SVP-related processes that escaped normal cleanup."""
     import signal
     try:
-        # Find and kill any lingering svp_process.py or svp_process.vpy processes
+        if sys.platform == "win32":
+            _kill_orphaned_windows()
+        else:
+            _kill_orphaned_unix()
+    except Exception as e:
+        logger.debug(f"Error cleaning up orphaned processes: {e}")
+
+
+def _kill_orphaned_unix():
+    """Kill orphaned SVP processes on Linux/macOS using pgrep + SIGKILL."""
+    import signal
+    for pattern in ['svp_process\\.(py|vpy)', 'ffmpeg.*svp_stream']:
         result = subprocess.run(
-            ['pgrep', '-f', 'svp_process\\.(py|vpy)'],
+            ['pgrep', '-f', pattern],
             capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0:
@@ -283,26 +295,39 @@ def kill_orphaned_svp_processes():
                 if pid:
                     try:
                         os.kill(int(pid), signal.SIGKILL)
-                        logger.info(f"Killed orphaned SVP process: {pid}")
+                        logger.info(f"Killed orphaned process: {pid}")
                     except (ProcessLookupError, ValueError):
                         pass
 
-        # Find and kill any lingering ffmpeg processes encoding to svp_stream dirs
-        result = subprocess.run(
-            ['pgrep', '-f', 'ffmpeg.*svp_stream'],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode == 0:
-            pids = result.stdout.strip().split('\n')
-            for pid in pids:
-                if pid:
-                    try:
-                        os.kill(int(pid), signal.SIGKILL)
-                        logger.info(f"Killed orphaned FFmpeg process: {pid}")
-                    except (ProcessLookupError, ValueError):
-                        pass
-    except Exception as e:
-        logger.debug(f"Error cleaning up orphaned processes: {e}")
+
+def _kill_orphaned_windows():
+    """Kill orphaned SVP processes on Windows using tasklist + taskkill."""
+    import csv
+    import io
+    for image_name in ["python.exe", "python3.exe", "ffmpeg.exe"]:
+        try:
+            result = subprocess.run(
+                ['tasklist', '/FI', f'IMAGENAME eq {image_name}', '/FO', 'CSV', '/V'],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0:
+                continue
+            reader = csv.reader(io.StringIO(result.stdout))
+            next(reader, None)  # skip header
+            for row in reader:
+                if len(row) < 2:
+                    continue
+                pid = row[1].strip().strip('"')
+                # Check window title / command line for svp_process or svp_stream
+                row_text = " ".join(row).lower()
+                if "svp_process" in row_text or "svp_stream" in row_text:
+                    subprocess.run(
+                        ['taskkill', '/F', '/PID', pid],
+                        capture_output=True, timeout=5
+                    )
+                    logger.info(f"Killed orphaned process: {pid}")
+        except Exception:
+            pass
 
 
 # =============================================================================
@@ -504,6 +529,9 @@ def _generate_ffmpeg_svp_script(
     # Get NVOF block size for this preset
     nvof_blk = preset_config.get("nvof_blk", 16)
 
+    # Resolve platform-specific SVP plugin paths for injection
+    _flow1_path, _flow2_path = get_svp_plugin_full_paths()
+
     escaped_path = video_path.replace("\\", "\\\\").replace("'", "\\'")
     src_fps = src_fps_num / src_fps_den
 
@@ -538,23 +566,42 @@ def _generate_ffmpeg_svp_script(
 # Uses dedicated optical flow hardware on RTX 20xx+ GPUs
 # NVOF vec_src MUST be exactly 1/1, 1/2, 1/4, 1/6, or 1/8 of source size
 
+# NVOF minimum vec_src requirements: 40 blocks × 4 pixels = 160 width, 32 blocks × 4 pixels = 128 height
+NVOF_MIN_WIDTH = 160
+NVOF_MIN_HEIGHT = 128
+
 # Pick ratio based on block size emulation setting
 # nvof_blk=16 -> 1/4, nvof_blk=8 -> 1/2, etc.
 nvof_blk = {nvof_blk}
-if nvof_blk >= 16:
-    ratio = 4
-elif nvof_blk >= 8:
-    ratio = 2
-else:
-    ratio = 1
 
-# Calculate vec_src as exact fraction of source
+# Try ratios from largest (fastest) to smallest until we meet NVOF minimums
+for ratio in [8, 6, 4, 2, 1]:
+    test_w = WIDTH // ratio
+    test_h = HEIGHT // ratio
+    # Ensure even dimensions
+    test_w = (test_w // 2) * 2
+    test_h = (test_h // 2) * 2
+    if test_w >= NVOF_MIN_WIDTH and test_h >= NVOF_MIN_HEIGHT:
+        # Also respect the nvof_blk setting - don't use larger ratio than requested
+        if nvof_blk >= 16 and ratio <= 4:
+            break
+        elif nvof_blk >= 8 and ratio <= 2:
+            break
+        elif ratio <= 1:
+            break
+
 new_w = WIDTH // ratio
 new_h = HEIGHT // ratio
 
 # Ensure even dimensions for video processing
 new_w = (new_w // 2) * 2
 new_h = (new_h // 2) * 2
+
+# Final safety check - if still below minimum, use source resolution
+if new_w < NVOF_MIN_WIDTH or new_h < NVOF_MIN_HEIGHT:
+    new_w = (WIDTH // 2) * 2
+    new_h = (HEIGHT // 2) * 2
+    ratio = 1
 
 print(f"[NVOF] Video: {{WIDTH}}x{{HEIGHT}}, vec_src: {{new_w}}x{{new_h}} (1/{{ratio}} ratio)", file=sys.stderr)
 
@@ -611,8 +658,8 @@ FRAME_SIZE = Y_SIZE + 2 * UV_SIZE
 
 # Initialize VapourSynth
 core = vs.core
-core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow1.so")
-core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow2.so")
+core.std.LoadPlugin("{_flow1_path}")
+core.std.LoadPlugin("{_flow2_path}")
 
 # Start FFmpeg decoder with hybrid seeking for accuracy:
 # Input seek (before -i) for fast keyframe positioning, output seek (after -i) for precision
@@ -635,7 +682,8 @@ def cleanup_ffmpeg():
 
 # Register cleanup for normal exit and signals
 atexit.register(cleanup_ffmpeg)
-signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
+if hasattr(signal, 'SIGTERM'):
+    signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
 signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
 
 # Frame cache for sequential access
@@ -789,6 +837,14 @@ def _generate_svp_script(
             1
         )
 
+    # Resolve platform-specific paths for injection
+    _fb_flow1, _fb_flow2 = get_svp_plugin_full_paths()
+    _fb_src_filters = get_source_filter_paths()
+    # Build source plugin list literal: [('path', 'ns'), ...]
+    _fb_sf_literal = ", ".join(
+        f"('{p}', '{a}')" for p, _, a in _fb_src_filters
+    )
+
     # Escape path for Python string
     escaped_path = video_path.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -797,15 +853,11 @@ import vapoursynth as vs
 core = vs.core
 
 # Load SVP plugins
-core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow1.so")
-core.std.LoadPlugin("{SVP_PLUGIN_PATH}/libsvpflow2.so")
+core.std.LoadPlugin("{_fb_flow1}")
+core.std.LoadPlugin("{_fb_flow2}")
 
 # Try to load source filter plugins from system paths
-source_plugins = [
-    ('/usr/lib/vapoursynth/bestsource.so', 'bs'),
-    ('/usr/lib/vapoursynth/ffms2.so', 'ffms2'),
-    ('/usr/lib/vapoursynth/lsmas.so', 'lsmas'),
-]
+source_plugins = [{_fb_sf_literal}]
 for plugin_path, _ in source_plugins:
     try:
         core.std.LoadPlugin(plugin_path)
@@ -1111,7 +1163,7 @@ class SVPStream:
             # Build Python command to run the SVP script
             # Use system Python to avoid venv conflicts with VapourSynth
             svp_cmd = [
-                '/usr/bin/python3',
+                get_system_python(),
                 str(self._script_path)
             ]
 

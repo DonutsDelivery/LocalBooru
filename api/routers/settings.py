@@ -97,7 +97,8 @@ DEFAULT_NETWORK_SETTINGS = {
     "local_port": get_default_local_port(),
     "public_port": 8791,
     "auth_required_level": "local_network",  # none, public, local_network, always
-    "upnp_enabled": False
+    "upnp_enabled": False,
+    "allow_settings_local_network": False  # Allow settings/admin access from local network
 }
 
 # Optical flow interpolation settings defaults

@@ -28,6 +28,7 @@ class NetworkConfigUpdate(BaseModel):
     public_port: Optional[int] = None
     auth_required_level: Optional[Literal["none", "public", "local_network", "always"]] = None
     upnp_enabled: Optional[bool] = None
+    allow_settings_local_network: Optional[bool] = None  # Allow settings access from LAN
 
 
 class PortTestRequest(BaseModel):
@@ -155,6 +156,8 @@ async def update_network_config(config: NetworkConfigUpdate):
         current["auth_required_level"] = config.auth_required_level
     if config.upnp_enabled is not None:
         current["upnp_enabled"] = config.upnp_enabled
+    if config.allow_settings_local_network is not None:
+        current["allow_settings_local_network"] = config.allow_settings_local_network
 
     save_network_settings(current)
 

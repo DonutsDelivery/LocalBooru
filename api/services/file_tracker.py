@@ -522,6 +522,75 @@ async def verify_file_locations(db: AsyncSession, batch_size: int = 100) -> dict
     return stats
 
 
+async def verify_directory_files(directory_id: int, db: AsyncSession) -> dict:
+    """Verify files in a specific directory still exist at their recorded locations.
+
+    - If file exists: mark as available
+    - If file deleted (parent exists): DELETE from DB
+    - If drive offline: mark as drive_offline (keep in DB)
+
+    Returns stats on verified, deleted, and drive_offline files.
+    """
+    from ..database import get_data_dir
+
+    stats = {
+        'verified': 0,
+        'deleted': 0,
+        'drive_offline': 0
+    }
+
+    if not directory_db_manager.db_exists(directory_id):
+        return stats
+
+    dir_db = await directory_db_manager.get_session(directory_id)
+    try:
+        # Get all files in this directory
+        query = select(DirectoryImageFile)
+        result = await dir_db.execute(query)
+        files = result.scalars().all()
+
+        for image_file in files:
+            status = check_file_availability(image_file.original_path)
+
+            if status == FileStatus.available:
+                image_file.file_status = FileStatus.available
+                image_file.file_exists = True
+                image_file.last_verified_at = datetime.now()
+                stats['verified'] += 1
+            elif status == FileStatus.drive_offline:
+                image_file.file_status = FileStatus.drive_offline
+                image_file.last_verified_at = datetime.now()
+                stats['drive_offline'] += 1
+            else:
+                # File is missing - delete the record
+                image = await dir_db.get(DirectoryImage, image_file.image_id)
+
+                # Check for other file references
+                other_files = await dir_db.execute(
+                    select(DirectoryImageFile).where(
+                        DirectoryImageFile.image_id == image_file.image_id,
+                        DirectoryImageFile.id != image_file.id
+                    )
+                )
+                has_other_refs = other_files.scalar_one_or_none() is not None
+
+                await dir_db.delete(image_file)
+
+                if not has_other_refs and image:
+                    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+                    if thumbnail_path.exists():
+                        thumbnail_path.unlink()
+                    await dir_db.delete(image)
+
+                stats['deleted'] += 1
+
+        await dir_db.commit()
+    finally:
+        await dir_db.close()
+
+    return stats
+
+
 async def find_file_by_hash(file_hash: str, db: AsyncSession) -> str | None:
     """Try to find a file with matching hash in watch directories"""
     # Get all enabled watch directories

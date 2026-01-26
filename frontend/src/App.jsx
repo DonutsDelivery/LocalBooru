@@ -862,6 +862,17 @@ function Gallery() {
   const [moveDirectories, setMoveDirectories] = useState([])
   const [selectedMoveDir, setSelectedMoveDir] = useState(null)
 
+  // Tile size state (1 = smallest/most columns, 5 = largest/fewest columns)
+  const [tileSize, setTileSize] = useState(() => {
+    const saved = localStorage.getItem('localbooru_tileSize')
+    return saved ? parseInt(saved, 10) : 3
+  })
+
+  // Save tile size to localStorage
+  useEffect(() => {
+    localStorage.setItem('localbooru_tileSize', tileSize.toString())
+  }, [tileSize])
+
   const currentTags = searchParams.get('tags') || ''
   const currentRating = searchParams.get('rating') || 'pg,pg13,r,x,xxx'
   const favoritesOnly = searchParams.get('favorites') === 'true'
@@ -1360,21 +1371,43 @@ function Gallery() {
               isSelectable={selectionMode}
               selectedImages={selectedImages}
               onSelectImage={handleSelectImage}
+              tileSize={tileSize}
             />
           )}
 
-          {/* Floating select button */}
-          <button
-            className={`floating-select-btn ${selectionMode ? 'active' : ''}`}
-            onClick={toggleSelectionMode}
-            title={selectionMode ? 'Exit selection mode' : 'Enter selection mode'}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-              {selectionMode && <path d="M9 12l2 2 4-4"/>}
-            </svg>
-            {selectionMode ? 'Done' : 'Select'}
-          </button>
+          {/* Floating controls: tile size slider and select button */}
+          <div className="floating-controls">
+            <div className="tile-size-control" title="Adjust tile size">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="tile-size-icon">
+                <rect x="3" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/>
+                <rect x="14" y="14" width="7" height="7" rx="1"/>
+              </svg>
+              <input
+                type="range"
+                min="1"
+                max="5"
+                value={tileSize}
+                onChange={(e) => setTileSize(parseInt(e.target.value, 10))}
+                className="tile-size-slider"
+              />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="tile-size-icon">
+                <rect x="4" y="4" width="16" height="16" rx="2"/>
+              </svg>
+            </div>
+            <button
+              className={`floating-select-btn ${selectionMode ? 'active' : ''}`}
+              onClick={toggleSelectionMode}
+              title={selectionMode ? 'Exit selection mode' : 'Enter selection mode'}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                {selectionMode && <path d="M9 12l2 2 4-4"/>}
+              </svg>
+              {selectionMode ? 'Done' : 'Select'}
+            </button>
+          </div>
         </main>
 
         {/* Batch action bar - shown when images are selected */}

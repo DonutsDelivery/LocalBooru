@@ -64,7 +64,12 @@ except ImportError:
 # Check for VapourSynth + SVP (commercial SVP plugin)
 HAS_VAPOURSYNTH = False
 HAS_SVP = False
-SVP_PLUGIN_PATH = "/opt/svp/plugins"
+
+from api.services.svp_platform import (
+    get_svp_plugin_path, get_svp_plugin_full_paths,
+)
+
+SVP_PLUGIN_PATH = get_svp_plugin_path() or "/opt/svp/plugins"
 
 try:
     import vapoursynth as vs
@@ -74,8 +79,9 @@ try:
     # Try to load SVP plugins
     try:
         _test_core = vs.core
-        _test_core.std.LoadPlugin(f'{SVP_PLUGIN_PATH}/libsvpflow1.so')
-        _test_core.std.LoadPlugin(f'{SVP_PLUGIN_PATH}/libsvpflow2.so')
+        _flow1_path, _flow2_path = get_svp_plugin_full_paths(SVP_PLUGIN_PATH)
+        _test_core.std.LoadPlugin(_flow1_path)
+        _test_core.std.LoadPlugin(_flow2_path)
         HAS_SVP = True
         logger.info("SVP plugins available (svpflow1, svpflow2)")
         del _test_core
@@ -616,8 +622,9 @@ class SVPInterpolator:
             self._core.max_cache_size = 1024
 
             # Load SVP plugins
-            self._core.std.LoadPlugin(f'{self.plugin_path}/libsvpflow1.so')
-            self._core.std.LoadPlugin(f'{self.plugin_path}/libsvpflow2.so')
+            _flow1, _flow2 = get_svp_plugin_full_paths(self.plugin_path)
+            self._core.std.LoadPlugin(_flow1)
+            self._core.std.LoadPlugin(_flow2)
 
             self._width = width
             self._height = height
