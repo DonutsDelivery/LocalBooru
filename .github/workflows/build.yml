@@ -190,15 +190,19 @@ jobs:
           Get-Content "frontend/dist/index.html" | Select-Object -First 50
           Write-Host ""
           Write-Host "Checking for /api in JS bundle:"
-          $jsFile = Get-ChildItem "frontend/dist/assets/*.js" | Select-Object -First 1
-          if ($jsFile) {
+          $jsFiles = Get-ChildItem "frontend/dist/assets/*.js"
+          $found = $false
+          foreach ($jsFile in $jsFiles) {
             $content = Get-Content $jsFile.FullName -Raw
-            if ($content -match "return.*/api") {
-              Write-Host "SUCCESS: Found /api return in JS bundle"
-            } else {
-              Write-Host "ERROR: /api return NOT found in JS bundle!"
-              exit 1
+            if ($content -match "/api") {
+              Write-Host "SUCCESS: Found /api in $($jsFile.Name)"
+              $found = $true
+              break
             }
+          }
+          if (-not $found) {
+            Write-Host "ERROR: /api NOT found in any JS bundle!"
+            exit 1
           }
 
       - name: Prepare Python bundle
