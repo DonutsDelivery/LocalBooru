@@ -151,6 +151,22 @@
           "filter": [
             "**/*"
           ]
+        },
+        {
+          "from": "ffmpeg",
+          "to": "ffmpeg",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "vapoursynth",
+          "to": "vapoursynth",
+          "filter": [
+            "**/*",
+            "!**/__pycache__/**",
+            "!**/*.pyc"
+          ]
         }
       ]
     },

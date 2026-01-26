@@ -106,6 +106,14 @@ def get_source_filter_paths() -> List[Tuple[str, str, str]]:
 
     Each entry represents a VapourSynth source-filter plugin to try loading.
     """
+    env_dir = os.environ.get("LOCALBOORU_VS_PLUGIN_PATH")
+    if env_dir and os.path.isdir(env_dir):
+        ext = ".dll" if _is_windows() else ".dylib" if _is_macos() else ".so"
+        return [
+            (str(Path(env_dir) / f"ffms2{ext}"), "ffms2_available", "ffms2"),
+            (str(Path(env_dir) / f"libvslsmashsource{ext}"), "lsmas_available", "lsmas"),
+        ]
+
     if _is_windows():
         appdata = os.environ.get("APPDATA", "")
         base = os.path.join(appdata, "VapourSynth", "plugins64") if appdata else ""
@@ -138,6 +146,10 @@ def get_system_python() -> str:
     On Windows falls back to ``sys.executable`` since there's typically no
     separate ``python3`` binary.
     """
+    vs_python = os.environ.get("LOCALBOORU_VS_PYTHON")
+    if vs_python and os.path.isfile(vs_python):
+        return vs_python
+
     if _is_windows():
         found = shutil.which("python3") or shutil.which("python")
         return found or sys.executable
@@ -156,7 +168,7 @@ def get_clean_env() -> dict:
     conflicts.  This strips down to only what's needed per-platform.
     """
     if _is_windows():
-        return {
+        env = {
             "PATH": os.environ.get("PATH", ""),
             "SYSTEMROOT": os.environ.get("SYSTEMROOT", r"C:\WINDOWS"),
             "TEMP": os.environ.get("TEMP", os.environ.get("TMP", "")),
@@ -165,34 +177,41 @@ def get_clean_env() -> dict:
             "LOCALAPPDATA": os.environ.get("LOCALAPPDATA", ""),
             "LANG": os.environ.get("LANG", "en_US.UTF-8"),
         }
-
-    if _is_macos():
+    elif _is_macos():
         home = os.environ.get("HOME", "/tmp")
         path_parts = ["/usr/bin", "/bin", "/usr/local/bin"]
         if _is_macos_arm():
             path_parts.append("/opt/homebrew/bin")
-        return {
+        env = {
             "PATH": ":".join(path_parts),
             "HOME": home,
             "USER": os.environ.get("USER", "user"),
             "LANG": os.environ.get("LANG", "en_US.UTF-8"),
         }
-
-    # Linux
-    home = os.environ.get("HOME", "/tmp")
-    env = {
-        "PATH": "/usr/bin:/bin:/usr/local/bin",
-        "HOME": home,
-        "USER": os.environ.get("USER", "user"),
-        "LANG": os.environ.get("LANG", "en_US.UTF-8"),
-        "DISPLAY": os.environ.get("DISPLAY", ":0"),
-    }
-    xdg = os.environ.get("XDG_RUNTIME_DIR")
-    if xdg:
-        env["XDG_RUNTIME_DIR"] = xdg
     else:
-        try:
-            env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
-        except AttributeError:
-            pass  # os.getuid() doesn't exist on Windows
+        # Linux
+        home = os.environ.get("HOME", "/tmp")
+        env = {
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+            "HOME": home,
+            "USER": os.environ.get("USER", "user"),
+            "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+            "DISPLAY": os.environ.get("DISPLAY", ":0"),
+        }
+        xdg = os.environ.get("XDG_RUNTIME_DIR")
+        if xdg:
+            env["XDG_RUNTIME_DIR"] = xdg
+        else:
+            try:
+                env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+            except AttributeError:
+                pass  # os.getuid() doesn't exist on Windows
+
+    # Forward bundled tool env vars into subprocess environment (all platforms)
+    for key in ("LOCALBOORU_VS_PYTHON", "LOCALBOORU_SVP_PLUGIN_PATH",
+                "LOCALBOORU_VS_PLUGIN_PATH", "LOCALBOORU_PACKAGED"):
+        val = os.environ.get(key)
+        if val:
+            env[key] = val
+
     return env

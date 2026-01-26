@@ -265,18 +265,136 @@ async function downloadPortableUpdate(updateInfo, onProgress) {
 }
 
 /**
- * Apply the portable update (quits app, update is applied on next start)
+ * Launch an external script to apply the update after the app fully exits.
+ * This is necessary because the running executable (and DLLs) can't be
+ * overwritten while the app is still running, especially on Windows.
  */
-function applyPortableUpdate() {
-  if (!pendingUpdate) {
-    throw new Error('No pending update to apply');
+function launchUpdateScript(sourceDir, appDir, updatesDir) {
+  const appExe = process.execPath;
+  const pid = process.pid;
+
+  if (process.platform === 'win32') {
+    const scriptPath = path.join(portableDataDir, 'apply-update.bat');
+
+    const script = [
+      '@echo off',
+      'setlocal',
+      '',
+      'REM Wait for the app process to exit',
+      ':waitloop',
+      `tasklist /FI "PID eq ${pid}" 2>nul | find /i "${pid}" >nul`,
+      'if not errorlevel 1 (',
+      '    timeout /t 1 /nobreak >nul',
+      '    goto waitloop',
+      ')',
+      '',
+      'REM Extra delay for file lock release',
+      'timeout /t 2 /nobreak >nul',
+      '',
+      'REM Copy updated files over the app directory',
+      `xcopy /s /e /y /q "${sourceDir}\\*" "${appDir}\\"`,
+      '',
+      'REM Remove the updates staging folder',
+      `rmdir /s /q "${updatesDir}"`,
+      '',
+      'REM Restart the application',
+      `start "" "${appExe}"`,
+      '',
+      'REM Delete this script',
+      'del "%~f0"',
+    ].join('\r\n');
+
+    fs.writeFileSync(scriptPath, script);
+
+    spawn('cmd.exe', ['/c', scriptPath], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    }).unref();
+
+  } else {
+    const scriptPath = path.join(portableDataDir, 'apply-update.sh');
+
+    const script = [
+      '#!/bin/sh',
+      '',
+      '# Wait for app process to exit',
+      `while kill -0 ${pid} 2>/dev/null; do sleep 1; done`,
+      '',
+      '# Extra delay for safety',
+      'sleep 1',
+      '',
+      '# Copy updated files over the app directory',
+      `cp -rf "${sourceDir}/." "${appDir}/"`,
+      '',
+      '# Remove the updates staging folder',
+      `rm -rf "${updatesDir}"`,
+      '',
+      '# Restart the application',
+      `"${appExe}" &`,
+      '',
+      '# Delete this script',
+      `rm -f "${scriptPath}"`,
+    ].join('\n');
+
+    fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+
+    spawn('/bin/sh', [scriptPath], {
+      detached: true,
+      stdio: 'ignore'
+    }).unref();
   }
 
-  console.log('[Updater] Update ready, quitting for restart...');
-  console.log('[Updater] Update will be applied on next app start');
+  console.log('[Updater] Update script launched');
+}
 
-  // Just quit - the update will be applied when the app starts again
-  // (handled by applyPendingUpdate() in main.js)
+/**
+ * Apply the portable update by launching an external script, then quitting.
+ * The script waits for the app to exit, copies files, and restarts.
+ */
+function applyPortableUpdate() {
+  // Get update info from memory or disk
+  let extractedDir;
+
+  if (pendingUpdate) {
+    extractedDir = pendingUpdate.extractedDir;
+  } else {
+    // Fallback: check filesystem directly
+    extractedDir = path.join(portableDataDir, 'updates', 'extracted');
+    if (!fs.existsSync(extractedDir)) {
+      throw new Error('No pending update to apply');
+    }
+  }
+
+  if (!fs.existsSync(extractedDir)) {
+    throw new Error('Extracted update directory not found');
+  }
+
+  // Find the actual content directory (might be nested in a single folder)
+  let sourceDir = extractedDir;
+  const entries = fs.readdirSync(extractedDir);
+  if (entries.length === 1) {
+    const nested = path.join(extractedDir, entries[0]);
+    try {
+      if (fs.statSync(nested).isDirectory()) {
+        sourceDir = nested;
+      }
+    } catch (e) {
+      // Not a directory, use extractedDir as-is
+    }
+  }
+
+  const appDir = path.dirname(process.execPath);
+  const updatesDir = path.join(portableDataDir, 'updates');
+
+  console.log('[Updater] Launching external update script...');
+  console.log(`[Updater] Source: ${sourceDir}`);
+  console.log(`[Updater] Dest: ${appDir}`);
+
+  // Launch external script to apply update after app exits
+  launchUpdateScript(sourceDir, appDir, updatesDir);
+
+  // Quit the app so the script can overwrite files (including the exe)
   app.isQuitting = true;
   app.quit();
 }
@@ -372,6 +490,15 @@ function initPortableUpdater() {
   // Check for updates on startup (with delay)
   setTimeout(async () => {
     try {
+      // If update was already downloaded this session, keep that status
+      if (pendingUpdate) {
+        mainWindow?.webContents.send('updater:status', {
+          status: 'downloaded',
+          version: pendingUpdate.version
+        });
+        return;
+      }
+
       const result = await checkForPortableUpdate();
       if (result.available) {
         mainWindow?.webContents.send('updater:status', {
@@ -399,6 +526,15 @@ function initPortableUpdater() {
 ipcMain.handle('updater:check', async () => {
   try {
     if (isPortable) {
+      // If update was already downloaded this session, don't reset to 'available'
+      if (pendingUpdate) {
+        mainWindow?.webContents.send('updater:status', {
+          status: 'downloaded',
+          version: pendingUpdate.version
+        });
+        return { success: true, version: pendingUpdate.version, available: true };
+      }
+
       const result = await checkForPortableUpdate();
       if (result.available) {
         mainWindow?.webContents.send('updater:status', {
@@ -420,6 +556,15 @@ ipcMain.handle('updater:check', async () => {
 ipcMain.handle('updater:download', async () => {
   try {
     if (isPortable) {
+      // If already downloaded, just re-emit the status
+      if (pendingUpdate) {
+        mainWindow?.webContents.send('updater:status', {
+          status: 'downloaded',
+          version: pendingUpdate.version
+        });
+        return { success: true };
+      }
+
       const updateInfo = await checkForPortableUpdate();
       if (!updateInfo.available) {
         return { success: false, error: 'No update available' };

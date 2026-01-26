@@ -105,7 +105,7 @@ function applyPendingUpdate() {
 }
 
 /**
- * Clean up the updates folder on startup (only if no pending update)
+ * Clean up the updates folder and stale update scripts on startup (only if no pending update)
  */
 function cleanupUpdatesFolder() {
   if (!portableDataDir) return;
@@ -121,6 +121,19 @@ function cleanupUpdatesFolder() {
       console.log('[Updater] Cleaned up updates folder');
     } catch (err) {
       console.error('[Updater] Failed to cleanup updates folder:', err.message);
+    }
+  }
+
+  // Clean up stale update scripts (left behind if the script crashed before self-deleting)
+  for (const scriptName of ['apply-update.bat', 'apply-update.sh']) {
+    const scriptPath = path.join(portableDataDir, scriptName);
+    if (fs.existsSync(scriptPath)) {
+      try {
+        fs.unlinkSync(scriptPath);
+        console.log(`[Updater] Cleaned up stale ${scriptName}`);
+      } catch (err) {
+        // Ignore - might still be running
+      }
     }
   }
 }

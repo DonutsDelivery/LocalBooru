@@ -411,16 +411,41 @@ class BackendManager {
         // Add onnxruntime capi folder to PATH for DLL loading
         const onnxCapi = path.join(packagesDir, 'onnxruntime', 'capi');
         const bundledOnnxCapi = path.join(pythonDir, 'Lib', 'site-packages', 'onnxruntime', 'capi');
-        return {
+
+        // Bundled video pipeline tools (ffmpeg, vapoursynth)
+        const rootDir = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
+        const ffmpegDir = path.join(rootDir, 'ffmpeg');
+        const vsDir = path.join(rootDir, 'vapoursynth');
+        const vsPluginsDir = path.join(vsDir, 'vs-plugins');
+
+        // Build PATH with video tools prepended (if present)
+        let pathPrefix = `${onnxCapi};${bundledOnnxCapi};${pythonDir};${path.join(pythonDir, 'Scripts')}`;
+        if (fs.existsSync(ffmpegDir)) {
+          pathPrefix = `${ffmpegDir};${pathPrefix}`;
+        }
+        if (fs.existsSync(vsDir)) {
+          pathPrefix = `${vsDir};${pathPrefix}`;
+        }
+
+        const env = {
           ...baseEnv,
-          // Add persistent packages to PATH first (for DLLs), then bundled, then system
-          PATH: `${onnxCapi};${bundledOnnxCapi};${pythonDir};${path.join(pythonDir, 'Scripts')};${process.env.PATH}`,
+          PATH: `${pathPrefix};${process.env.PATH}`,
           PYTHONHOME: pythonDir,
-          // Persistent packages first, then working directory, then bundled site-packages
           PYTHONPATH: `${packagesDir};${this.getWorkingDirectory()};${path.join(pythonDir, 'Lib', 'site-packages')}`,
           LOCALBOORU_PACKAGED: '1',
           LOCALBOORU_PACKAGES_DIR: packagesDir
         };
+
+        // Set bundled video tool env vars if directories exist
+        if (fs.existsSync(path.join(vsDir, 'python.exe'))) {
+          env.LOCALBOORU_VS_PYTHON = path.join(vsDir, 'python.exe');
+        }
+        if (fs.existsSync(vsPluginsDir)) {
+          env.LOCALBOORU_SVP_PLUGIN_PATH = vsPluginsDir;
+          env.LOCALBOORU_VS_PLUGIN_PATH = vsPluginsDir;
+        }
+
+        return env;
       }
     } else {
       // Linux/macOS
