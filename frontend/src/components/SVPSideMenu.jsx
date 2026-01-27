@@ -106,7 +106,7 @@ export default function SVPSideMenu({ isOpen, onClose }) {
               </svg>
             </button>
           </div>
-          <div className="svp-menu-content">
+          <div className="svp-menu-content" onClick={(e) => e.stopPropagation()}>
             <div className="loading">
               <div className="spinner" />
               <span>Loading SVP settings...</span>
@@ -159,7 +159,7 @@ export default function SVPSideMenu({ isOpen, onClose }) {
           </button>
         </div>
 
-        <div className="svp-menu-content">
+        <div className="svp-menu-content" onClick={(e) => e.stopPropagation()}>
           {/* Status badges */}
           <div className="backend-status">
             <strong>Components:</strong>
