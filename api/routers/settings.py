@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_data_dir, get_db
+from ..database import get_data_dir, get_db, directory_db_manager
 from ..models import WatchDirectory, Image, DirectoryImage
 
 router = APIRouter()
@@ -2037,14 +2037,12 @@ async def scan_missing_dimensions(db: AsyncSession = Depends(get_db)):
             await db.commit()
 
         # Then scan directory database images
-        from ..services.directory_db import DirectoryDatabaseManager
-        db_manager = DirectoryDatabaseManager()
 
         for watch_dir in (await db.execute(select(WatchDirectory))).scalars():
-            if not db_manager.db_exists(watch_dir.id):
+            if not directory_db_manager.db_exists(watch_dir.id):
                 continue
 
-            dir_db = await db_manager.get_session(watch_dir.id)
+            dir_db = await directory_db_manager.get_session(watch_dir.id)
             try:
                 result = await dir_db.execute(select(DirectoryImage).where(
                     (DirectoryImage.width.is_(None) | (DirectoryImage.width == 0)) |
