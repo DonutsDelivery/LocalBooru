@@ -5,11 +5,13 @@ import {
 } from '../api'
 import './SVPSideMenu.css'
 
-export default function SVPSideMenu({ isOpen, onClose }) {
+export default function SVPSideMenu({ isOpen, onClose, image }) {
   const [config, setConfig] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [fileSize, setFileSize] = useState(null)
+  const [copyFeedback, setCopyFeedback] = useState(null)
 
   // Local form state
   const [enabled, setEnabled] = useState(false)
@@ -28,8 +30,61 @@ export default function SVPSideMenu({ isOpen, onClose }) {
   useEffect(() => {
     if (isOpen) {
       loadConfig()
+      fetchFileSize()
     }
-  }, [isOpen])
+  }, [isOpen, image])
+
+  async function fetchFileSize() {
+    if (!image?.file_path) {
+      setFileSize(null)
+      return
+    }
+    try {
+      const response = await fetch(`/api/images/media/file-info?path=${encodeURIComponent(image.file_path)}`)
+      if (response.ok) {
+        const data = await response.json()
+        setFileSize(data.size)
+      } else {
+        setFileSize(null)
+      }
+    } catch (err) {
+      console.error('Failed to fetch file size:', err)
+      setFileSize(null)
+    }
+  }
+
+  function formatFileSize(bytes) {
+    if (!bytes) return 'Unknown'
+    const units = ['B', 'KB', 'MB', 'GB']
+    let size = bytes
+    let unitIndex = 0
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024
+      unitIndex++
+    }
+    return `${size.toFixed(2)} ${units[unitIndex]}`
+  }
+
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyFeedback('Copied!')
+      setTimeout(() => setCopyFeedback(null), 2000)
+    }).catch(() => {
+      setCopyFeedback('Failed to copy')
+      setTimeout(() => setCopyFeedback(null), 2000)
+    })
+  }
+
+  function getFilename() {
+    if (!image?.file_path) return ''
+    return image.file_path.split('/').pop() || image.file_path
+  }
+
+  function getFolderPath() {
+    if (!image?.file_path) return ''
+    const parts = image.file_path.split('/')
+    return parts.slice(0, -1).join('/') || '/'
+  }
 
   async function loadConfig() {
     try {
@@ -80,15 +135,25 @@ export default function SVPSideMenu({ isOpen, onClose }) {
     }
   }
 
-  // Handle Escape key to close menu
+  // Handle Escape key to close menu and Ctrl+C for copy
   useEffect(() => {
-    const handleEscape = (e) => {
+    const handleKeyDown = (e) => {
       if (e.key === 'Escape' && isOpen) {
         onClose()
       }
+      // Ctrl+C or Cmd+C to copy selected text
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        const selection = window.getSelection().toString()
+        if (selection) {
+          navigator.clipboard.writeText(selection).then(() => {
+            setCopyFeedback('Copied!')
+            setTimeout(() => setCopyFeedback(null), 2000)
+          })
+        }
+      }
     }
-    window.addEventListener('keydown', handleEscape)
-    return () => window.removeEventListener('keydown', handleEscape)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, onClose])
 
   if (!isOpen) return null
@@ -160,6 +225,57 @@ export default function SVPSideMenu({ isOpen, onClose }) {
         </div>
 
         <div className="svp-menu-content" onClick={(e) => e.stopPropagation()}>
+          {/* File Information */}
+          {image && (
+            <div className="file-info-section">
+              <div className="file-info-item">
+                <label>File:</label>
+                <div
+                  className="file-info-value selectable"
+                  onClick={() => copyToClipboard(getFilename())}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    copyToClipboard(getFilename())
+                  }}
+                  title="Click to copy, Right-click to copy, or select and Ctrl+C"
+                >
+                  {getFilename()}
+                </div>
+              </div>
+              <div className="file-info-item">
+                <label>Path:</label>
+                <div
+                  className="file-info-value selectable"
+                  onClick={() => copyToClipboard(image.file_path)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    copyToClipboard(image.file_path)
+                  }}
+                  title="Click to copy, Right-click to copy, or select and Ctrl+C"
+                >
+                  {image.file_path}
+                </div>
+              </div>
+              {fileSize && (
+                <div className="file-info-item">
+                  <label>Size:</label>
+                  <div
+                    className="file-info-value selectable"
+                    onClick={() => copyToClipboard(formatFileSize(fileSize))}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      copyToClipboard(formatFileSize(fileSize))
+                    }}
+                    title="Click to copy, Right-click to copy, or select and Ctrl+C"
+                  >
+                    {formatFileSize(fileSize)}
+                  </div>
+                </div>
+              )}
+              {copyFeedback && <div className="copy-feedback">{copyFeedback}</div>}
+            </div>
+          )}
+
           {/* Status badges */}
           <div className="backend-status">
             <strong>Components:</strong>

@@ -802,6 +802,23 @@ async def get_image_file(
         raise HTTPException(status_code=404, detail="File is missing or was deleted")
 
 
+@router.get("/media/file-info")
+async def get_file_info(path: str = Query(...)):
+    """Get file information (size) for a file path"""
+    try:
+        file_path = Path(path)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        if not file_path.is_file():
+            raise HTTPException(status_code=400, detail="Path is not a file")
+        size = file_path.stat().st_size
+        return {"size": size, "path": str(file_path)}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+
+
 @router.get("/{image_id}/thumbnail")
 async def get_image_thumbnail(
     request: Request,

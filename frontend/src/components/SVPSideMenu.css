@@ -111,6 +111,66 @@
   background: rgba(0, 0, 0, 0.3);
 }
 
+/* File Info Section */
+.file-info-section {
+  margin-bottom: 20px;
+  padding: 12px;
+  background: rgba(33, 150, 243, 0.08);
+  border: 1px solid rgba(33, 150, 243, 0.2);
+  border-radius: 4px;
+}
+
+.file-info-item {
+  margin-bottom: 10px;
+}
+
+.file-info-item:last-child {
+  margin-bottom: 0;
+}
+
+.file-info-item label {
+  display: block;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.file-info-value {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  word-break: break-all;
+  line-height: 1.4;
+  font-family: monospace;
+  padding: 4px 6px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.file-info-value.selectable {
+  user-select: text;
+  cursor: text;
+  transition: background 0.2s;
+}
+
+.file-info-value.selectable:hover {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.copy-feedback {
+  margin-top: 8px;
+  padding: 4px 8px;
+  background: rgba(76, 175, 80, 0.2);
+  border: 1px solid rgba(76, 175, 80, 0.4);
+  color: #76FF03;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  text-align: center;
+  animation: fadeIn 0.2s ease;
+}
+
 /* Settings sections */
 .settings-section {
   margin-bottom: 20px;

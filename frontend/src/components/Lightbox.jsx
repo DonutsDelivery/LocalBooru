@@ -1957,7 +1957,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
       {/* SVP side menu */}
       {isVideoFile && (
-        <SVPSideMenu isOpen={showSVPMenu} onClose={() => setShowSVPMenu(false)} />
+        <SVPSideMenu isOpen={showSVPMenu} onClose={() => setShowSVPMenu(false)} image={image} />
       )}
 
       {/* Quality selector */}
