@@ -191,13 +191,32 @@ def get_clean_env() -> dict:
     else:
         # Linux
         home = os.environ.get("HOME", "/tmp")
+        # Build PATH with common Linux locations
+        path_parts = ["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        # Add any custom paths from environment
+        if os.environ.get("PATH"):
+            path_parts.extend(os.environ.get("PATH", "").split(":"))
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_paths = []
+        for p in path_parts:
+            if p and p not in seen:
+                seen.add(p)
+                unique_paths.append(p)
+
         env = {
-            "PATH": "/usr/bin:/bin:/usr/local/bin",
+            "PATH": ":".join(unique_paths),
             "HOME": home,
             "USER": os.environ.get("USER", "user"),
             "LANG": os.environ.get("LANG", "en_US.UTF-8"),
             "DISPLAY": os.environ.get("DISPLAY", ":0"),
         }
+
+        # Forward library paths (important for VapourSynth plugins)
+        for libvar in ("LD_LIBRARY_PATH", "LD_PRELOAD", "PKG_CONFIG_PATH"):
+            if libvar in os.environ:
+                env[libvar] = os.environ[libvar]
+
         xdg = os.environ.get("XDG_RUNTIME_DIR")
         if xdg:
             env["XDG_RUNTIME_DIR"] = xdg
