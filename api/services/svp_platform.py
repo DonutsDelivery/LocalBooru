@@ -145,10 +145,31 @@ def get_system_python() -> str:
 
     On Windows falls back to ``sys.executable`` since there's typically no
     separate ``python3`` binary.
+
+    Important: When running in a venv, this returns the system Python,
+    not the venv Python. This is critical for subprocess execution of
+    VapourSynth, which may only be installed for the system Python.
     """
     vs_python = os.environ.get("LOCALBOORU_VS_PYTHON")
     if vs_python and os.path.isfile(vs_python):
         return vs_python
+
+    # If we're in a venv, detect and use the system Python instead
+    # sys.base_prefix differs from sys.prefix when in a venv
+    in_venv = (hasattr(sys, 'base_prefix') and sys.prefix != sys.base_prefix) or \
+              (hasattr(sys, 'real_prefix'))
+
+    if in_venv and hasattr(sys, 'base_executable'):
+        # Python 3.10+: sys.base_executable is available and points to system Python
+        return sys.base_executable
+
+    if in_venv and _is_linux():
+        # Fallback for Python < 3.10 in venv: construct system Python path
+        # Try common system Python locations, preferring python3 in /usr/bin
+        for python_path in ['/usr/bin/python3', '/usr/bin/python',
+                            '/usr/local/bin/python3', '/usr/local/bin/python']:
+            if os.path.isfile(python_path):
+                return python_path
 
     if _is_windows():
         found = shutil.which("python3") or shutil.which("python")
