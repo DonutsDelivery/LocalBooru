@@ -1308,8 +1308,14 @@ async def update_optical_flow_config(config: OpticalFlowConfigUpdate):
     return {"success": True, **current}
 
 
+class InterpolationPlayRequest(BaseModel):
+    file_path: str
+    start_position: float = 0.0  # Seek position in seconds
+    quality_preset: Optional[str] = None  # Quality preset name
+
+
 @router.post("/optical-flow/play")
-async def play_video_interpolated(file_path: str):
+async def play_video_interpolated(request: InterpolationPlayRequest):
     """
     Start interpolated video stream via HLS.
 
@@ -1328,17 +1334,41 @@ async def play_video_interpolated(file_path: str):
         return {"success": False, "error": "No interpolation backend available. Install OpenCV or PyTorch."}
 
     # Check if file exists
-    if not os.path.exists(file_path):
+    if not os.path.exists(request.file_path):
         return {"success": False, "error": "File not found"}
 
     try:
+        # Parse quality preset
+        import subprocess
+        # Get source video resolution using ffprobe
+        source_resolution = None
+        try:
+            result = subprocess.run([
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height',
+                '-of', 'csv=p=0',
+                request.file_path
+            ], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                parts = result.stdout.strip().split(',')
+                if len(parts) == 2:
+                    source_resolution = (int(parts[0]), int(parts[1]))
+        except Exception as e:
+            print(f"[OpticalFlow] Could not detect source resolution: {e}")
+
+        quality_settings = parse_quality_preset(request.quality_preset, source_resolution)
+
         stream = await create_interpolated_stream(
-            video_path=file_path,
+            video_path=request.file_path,
             target_fps=config["target_fps"],
             use_gpu=config["use_gpu"] and backend["cuda_available"],
             quality=config.get("quality", "fast"),
             wait_for_buffer=True,
-            min_segments=2
+            min_segments=2,
+            target_bitrate=quality_settings["bitrate"],
+            target_resolution=quality_settings["resolution"],
+            start_position=request.start_position,
         )
 
         if stream:
@@ -1480,9 +1510,49 @@ async def update_svp_config(config: SVPConfigUpdate):
     return {"success": True, **current}
 
 
+# Quality preset definitions for streaming
+QUALITY_PRESETS = {
+    "original": {"bitrate": None, "resolution": None},
+    "1080p_8mbps": {"bitrate": "8M", "resolution": (1920, 1080)},
+    "1080p_4mbps": {"bitrate": "4M", "resolution": (1920, 1080)},
+    "720p_3mbps": {"bitrate": "3M", "resolution": (1280, 720)},
+    "480p_1.5mbps": {"bitrate": "1536K", "resolution": (854, 480)},
+}
+
+
+def parse_quality_preset(quality_preset, source_resolution=None):
+    """Parse quality preset and return bitrate and resolution settings.
+
+    Args:
+        quality_preset: Preset name (e.g., '720p_3mbps') or None for original
+        source_resolution: Tuple of (width, height) for source video
+
+    Returns:
+        Dict with 'bitrate' and 'resolution' keys (either can be None)
+    """
+    if not quality_preset or quality_preset == 'original' or quality_preset not in QUALITY_PRESETS:
+        return {"bitrate": None, "resolution": None}
+
+    preset = QUALITY_PRESETS[quality_preset]
+    bitrate = preset["bitrate"]
+    resolution = preset["resolution"]
+
+    # Don't upscale - if source resolution is smaller than preset, skip
+    if source_resolution and resolution:
+        src_width, src_height = source_resolution
+        preset_width, preset_height = resolution
+        # Check if source is smaller than preset (upscaling would be needed)
+        if src_width < preset_width or src_height < preset_height:
+            # Return original quality for sources smaller than preset
+            return {"bitrate": None, "resolution": None}
+
+    return {"bitrate": bitrate, "resolution": resolution}
+
+
 class SVPPlayRequest(BaseModel):
     file_path: str
     start_position: float = 0.0  # Seek position in seconds
+    quality_preset: Optional[str] = None  # Quality preset name
 
 
 @router.post("/svp/play")
@@ -1519,6 +1589,27 @@ async def play_video_svp(request: SVPPlayRequest):
         return {"success": False, "error": "File not found"}
 
     try:
+        # Parse quality preset
+        import subprocess
+        # Get source video resolution using ffprobe
+        source_resolution = None
+        try:
+            result = subprocess.run([
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height',
+                '-of', 'csv=p=0',
+                request.file_path
+            ], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                parts = result.stdout.strip().split(',')
+                if len(parts) == 2:
+                    source_resolution = (int(parts[0]), int(parts[1]))
+        except Exception as e:
+            print(f"[SVP] Could not detect source resolution: {e}")
+
+        quality_settings = parse_quality_preset(request.quality_preset, source_resolution)
+
         # Create SVP stream
         stream = SVPStream(
             video_path=request.file_path,
@@ -1531,6 +1622,8 @@ async def play_video_svp(request: SVPPlayRequest):
             custom_super=config.get("custom_super"),
             custom_analyse=config.get("custom_analyse"),
             custom_smooth=config.get("custom_smooth"),
+            target_bitrate=quality_settings["bitrate"],
+            target_resolution=quality_settings["resolution"],
             start_position=request.start_position,
         )
 

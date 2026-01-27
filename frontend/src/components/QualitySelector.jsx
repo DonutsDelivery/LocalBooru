@@ -1,0 +1,55 @@
+import { useState, useEffect } from 'react'
+import './QualitySelector.css'
+
+export default function QualitySelector({ isOpen, onClose, currentQuality, onQualityChange, sourceResolution }) {
+  if (!isOpen) return null
+
+  // Define quality options with metadata
+  const qualityOptions = [
+    { id: 'original', label: 'Original', description: 'No transcoding', maxHeight: Infinity },
+    { id: '1080p_8mbps', label: '1080p High', description: '8 Mbps', maxHeight: 1080 },
+    { id: '1080p_4mbps', label: '1080p', description: '4 Mbps', maxHeight: 1080 },
+    { id: '720p_3mbps', label: '720p', description: '3 Mbps', maxHeight: 720 },
+    { id: '480p_1.5mbps', label: '480p', description: '1.5 Mbps', maxHeight: 480 },
+  ]
+
+  // Filter options based on source resolution
+  let availableOptions = qualityOptions
+  if (sourceResolution && sourceResolution.height) {
+    const sourceHeight = sourceResolution.height
+    availableOptions = qualityOptions.filter(opt => opt.maxHeight >= sourceHeight || opt.id === 'original')
+  }
+
+  const handleQualitySelect = (optionId) => {
+    onQualityChange(optionId)
+    onClose()
+  }
+
+  return (
+    <>
+      <div className="quality-selector-popup">
+        <div className="quality-selector-header">Quality</div>
+        <div className="quality-options">
+          {availableOptions.map(option => (
+            <button
+              key={option.id}
+              className={`quality-option ${currentQuality === option.id ? 'active' : ''}`}
+              onClick={() => handleQualitySelect(option.id)}
+            >
+              <div className="quality-option-content">
+                <span className="quality-label">{option.label}</span>
+                <span className="quality-description">{option.description}</span>
+              </div>
+              {currentQuality === option.id && (
+                <svg className="quality-checkmark" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="quality-selector-backdrop" onClick={onClose} />
+    </>
+  )
+}

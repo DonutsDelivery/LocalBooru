@@ -761,7 +761,7 @@
 }
 
 /* Seek buttons (<<, >>) */
-.video-seek-btn {
+.video-nav-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -775,16 +775,16 @@
   transition: background 0.15s, transform 0.15s;
 }
 
-.video-seek-btn:hover {
+.video-nav-btn:hover {
   background: rgba(0, 0, 0, 0.6);
   transform: scale(1.05);
 }
 
-.video-seek-btn:active {
+.video-nav-btn:active {
   transform: scale(0.95);
 }
 
-.video-seek-btn svg {
+.video-nav-btn svg {
   width: 20px;
   height: 20px;
 }
@@ -847,6 +847,15 @@
 .video-control-btn svg {
   width: 28px;
   height: 28px;
+}
+
+/* Quality button */
+.quality-btn {
+  position: relative;
+}
+
+.quality-btn:hover {
+  background: rgba(33, 150, 243, 0.2) !important;
 }
 
 /* Time display */
@@ -971,12 +980,12 @@
     gap: 12px;
   }
 
-  .video-seek-btn {
+  .video-nav-btn {
     width: 36px;
     height: 36px;
   }
 
-  .video-seek-btn svg {
+  .video-nav-btn svg {
     width: 18px;
     height: 18px;
   }

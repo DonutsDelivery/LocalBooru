@@ -960,6 +960,8 @@ class SVPStream:
         custom_analyse: Optional[str] = None,
         custom_smooth: Optional[str] = None,
         start_position: float = 0.0,  # Seek position in seconds
+        target_bitrate: Optional[str] = None,  # Target bitrate (e.g., "4M", "1536K")
+        target_resolution: Optional[tuple] = None,  # Target resolution (width, height)
     ):
         self.video_path = video_path
         self.target_fps = target_fps
@@ -967,6 +969,10 @@ class SVPStream:
         self.use_nvenc = use_nvenc if use_nvenc is not None else _check_nvenc_available()
         self.stream_id = str(uuid.uuid4())[:8]
         self.start_position = start_position  # Where to start processing from
+
+        # Quality settings
+        self.target_bitrate = target_bitrate
+        self.target_resolution = target_resolution
 
         # Key SVP settings
         self.use_nvof = use_nvof
@@ -1189,10 +1195,19 @@ class SVPStream:
                 '-map', '1:a?',
             ])
 
-            # Pad dimensions to multiple of 2 for encoder compatibility
-            # Some videos (especially portrait) have odd dimensions that break encoders
+            # Build video filter chain: scale (if needed) + pad
+            vf_filters = []
+
+            # Add scaling filter if target resolution is specified
+            if self.target_resolution:
+                width, height = self.target_resolution
+                vf_filters.append(f'scale={width}:{height}:flags=lanczos')
+
+            # Always pad to multiple of 2 for encoder compatibility
+            vf_filters.append('pad=ceil(iw/2)*2:ceil(ih/2)*2')
+
             ffmpeg_cmd.extend([
-                '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2'
+                '-vf', ','.join(vf_filters)
             ])
 
             # Video encoder selection
@@ -1201,17 +1216,43 @@ class SVPStream:
                     '-c:v', 'h264_nvenc',
                     '-preset', 'p1',
                     '-tune', 'll',
-                    '-rc', 'vbr',
-                    '-cq', '23',
-                    '-b:v', '0',
                 ])
+
+                # Use CBR mode for predictable bitrate, or VBR for original quality
+                if self.target_bitrate:
+                    # CBR mode for consistent bitrate
+                    bitrate_value = self.target_bitrate
+                    ffmpeg_cmd.extend([
+                        '-rc', 'cbr',
+                        '-b:v', bitrate_value,
+                        '-maxrate', bitrate_value,
+                        '-bufsize', f'{int(bitrate_value.rstrip("MK")) * 2}M' if 'M' in bitrate_value else f'{int(bitrate_value.rstrip("MK")) * 2}K',
+                    ])
+                else:
+                    # VBR mode (original quality)
+                    ffmpeg_cmd.extend([
+                        '-rc', 'vbr',
+                        '-cq', '23',
+                        '-b:v', '0',
+                    ])
             else:
                 ffmpeg_cmd.extend([
                     '-c:v', 'libx264',
                     '-preset', 'ultrafast',
                     '-tune', 'zerolatency',
-                    '-crf', '23',
                 ])
+
+                if self.target_bitrate:
+                    # Use specified bitrate
+                    ffmpeg_cmd.extend([
+                        '-b:v', self.target_bitrate,
+                        '-bufsize', f'{int(self.target_bitrate.rstrip("MK")) * 2}M' if 'M' in self.target_bitrate else f'{int(self.target_bitrate.rstrip("MK")) * 2}K',
+                    ])
+                else:
+                    # Use CRF for original quality (default)
+                    ffmpeg_cmd.extend([
+                        '-crf', '23',
+                    ])
 
             # Audio encoder
             ffmpeg_cmd.extend([

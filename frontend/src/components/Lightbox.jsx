@@ -1,6 +1,8 @@
 import { useEffect, useCallback, useState, useRef } from 'react'
 import Hls from 'hls.js'
 import { getMediaUrl, getOpticalFlowConfig, playVideoInterpolated, stopInterpolatedStream, getSVPConfig, playVideoSVP, stopSVPStream } from '../api'
+import SVPSideMenu from './SVPSideMenu'
+import QualitySelector from './QualitySelector'
 import './Lightbox.css'
 
 // Check if filename is a video
@@ -51,6 +53,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [svpStartOffset, setSvpStartOffset] = useState(0)  // Offset when stream started from seek position
   const svpHlsRef = useRef(null)
   const svpStartingRef = useRef(false)  // Synchronous lock to prevent double-starts
+
+  // SVP side menu state
+  const [showSVPMenu, setShowSVPMenu] = useState(false)
+
+  // Quality selector state
+  const [showQualitySelector, setShowQualitySelector] = useState(false)
+  const [currentQuality, setCurrentQuality] = useState(() => {
+    // Load quality preference from localStorage on init
+    return localStorage.getItem('video_quality_preference') || 'original'
+  })
+  const [sourceResolution, setSourceResolution] = useState(null)
 
   // Video player state
   const [isPlaying, setIsPlaying] = useState(true) // Start autoplaying
@@ -341,12 +354,21 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
     resetHideTimer()
 
-    // Special handling for videos - toggle between fit (upscaled) and original size
+    // Special handling for videos - zone-based actions
     if (isVideo(image?.original_filename)) {
-      if (videoDisplayMode === 'fit') {
-        setVideoDisplayMode('original')
+      const rect = e.currentTarget.getBoundingClientRect()
+      const clickX = e.clientX - rect.left
+      const width = rect.width
+
+      if (clickX < width * 0.4) {
+        // Left 40%: skip back 10 seconds
+        seekVideo(-10)
+      } else if (clickX > width * 0.6) {
+        // Right 40%: skip forward 10 seconds
+        seekVideo(10)
       } else {
-        setVideoDisplayMode('fit')
+        // Center 20%: toggle display mode (fit/original)
+        setVideoDisplayMode(videoDisplayMode === 'fit' ? 'original' : 'fit')
       }
       return
     }
@@ -369,7 +391,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       // Reset zoom
       setZoom({ scale: 1, x: 0, y: 0 })
     }
-  }, [isZoomDefault, calculateFillScale, resetHideTimer, image?.original_filename, videoDisplayMode, videoNaturalSize])
+  }, [isZoomDefault, calculateFillScale, resetHideTimer, image?.original_filename, videoDisplayMode, videoNaturalSize, seekVideo])
 
   // Wheel zoom at cursor position (disabled for videos)
   const handleWheel = useCallback((e) => {
@@ -785,6 +807,62 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
   }, [])
 
+  // Handle click anywhere on video to play/pause
+  const handleVideoClick = useCallback((e) => {
+    if (!isVideo(image?.original_filename)) return
+    // Don't toggle play if clicking on controls
+    if (e.target.closest('.lightbox-video-controls')) return
+    toggleVideoPlay()
+    resetHideTimer()
+  }, [image?.original_filename, toggleVideoPlay, resetHideTimer])
+
+  // Handle quality change
+  const handleQualityChange = useCallback(async (qualityId) => {
+    setCurrentQuality(qualityId)
+    localStorage.setItem('video_quality_preference', qualityId)
+
+    if (!mediaRef.current) return
+
+    try {
+      if (qualityId === 'original') {
+        // Stop streams and load direct video
+        if (svpStreamUrl) {
+          await stopSVPStream()
+          setSvpStreamUrl(null)
+        }
+        if (opticalFlowStreamUrl) {
+          await stopInterpolatedStream()
+          setOpticalFlowStreamUrl(null)
+        }
+
+        if (mediaRef.current) {
+          const currentTime = mediaRef.current.currentTime
+          mediaRef.current.src = getMediaUrl(image.url)
+          mediaRef.current.currentTime = currentTime
+          mediaRef.current.play().catch(() => {})
+        }
+      } else {
+        // Restart stream with new quality
+        const currentTime = mediaRef.current?.currentTime || 0
+
+        if (svpConfig?.enabled && svpConfig?.status?.ready) {
+          await stopSVPStream()
+          const result = await playVideoSVP(image.file_path, currentTime, qualityId)
+          if (result.success) {
+            setSvpStreamUrl(result.stream_url)
+            if (result.duration) setSvpTotalDuration(result.duration)
+          }
+        } else if (opticalFlowConfig?.enabled) {
+          await stopInterpolatedStream()
+          const result = await playVideoInterpolated(image.file_path, currentTime, qualityId)
+          if (result.success) setOpticalFlowStreamUrl(result.stream_url)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to change quality:', err)
+    }
+  }, [image?.url, image?.file_path, svpStreamUrl, opticalFlowStreamUrl, svpConfig, opticalFlowConfig])
+
   // Restart SVP stream from a specific position (for seeking beyond buffered content)
   const restartSVPFromPosition = useCallback(async (targetTime) => {
     if (!image || !svpConfig?.enabled) return
@@ -889,6 +967,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       setDuration(mediaRef.current.duration)
     }
     setVideoNaturalSize({
+      width: mediaRef.current.videoWidth,
+      height: mediaRef.current.videoHeight
+    })
+    // Store source resolution for quality selector
+    setSourceResolution({
       width: mediaRef.current.videoWidth,
       height: mediaRef.current.videoHeight
     })
@@ -1354,6 +1437,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     // Don't navigate if zoomed in
     if (zoom.scale > 1) return
 
+    // Don't navigate on videos (navigation uses buttons only)
+    if (isVideo(image?.original_filename)) return
+
     // Don't navigate if clicking on interactive elements (but allow video area for navigation)
     if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-video-controls')) return
 
@@ -1534,6 +1620,19 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         )}
+        {isVideoFile && (
+          <button
+            className="lightbox-btn lightbox-svp"
+            onClick={() => setShowSVPMenu(true)}
+            title="SVP Settings"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="5" cy="12" r="2"/>
+              <circle cx="12" cy="12" r="2"/>
+              <circle cx="19" cy="12" r="2"/>
+            </svg>
+          </button>
+        )}
         <button
           className={`lightbox-btn lightbox-fullscreen ${isFullscreen ? 'active' : ''}`}
           onClick={handleToggleFullscreen}
@@ -1598,6 +1697,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               loop
               className={`lightbox-media video-display-${videoDisplayMode} ${svpStreamUrl ? 'svp-streaming' : opticalFlowStreamUrl ? 'interpolated-streaming' : ''}`}
               style={getZoomTransform()}
+              onClick={handleVideoClick}
               onPlay={handleVideoPlay}
               onPause={handleVideoPause}
               onTimeUpdate={handleTimeUpdate}
@@ -1625,12 +1725,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               {/* Centered playback controls */}
               <div className="video-playback-controls">
                 <button
-                  className="video-seek-btn"
-                  onClick={() => seekVideo(-10)}
-                  title="Rewind 10s"
+                  className="video-nav-btn"
+                  onClick={() => onNav(-1)}
+                  title="Previous (Left Arrow)"
                 >
                   <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
+                    <path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z"/>
                   </svg>
                 </button>
                 <button
@@ -1649,12 +1749,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   )}
                 </button>
                 <button
-                  className="video-seek-btn"
-                  onClick={() => seekVideo(10)}
-                  title="Forward 10s"
+                  className="video-nav-btn"
+                  onClick={() => onNav(1)}
+                  title="Next (Right Arrow)"
                 >
                   <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
+                    <path d="M16 6v12h2V6h-2zm-3.5 6l-8.5 6V6l8.5 6z"/>
                   </svg>
                 </button>
               </div>
@@ -1692,6 +1792,15 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 </div>
               </div>
               <span className="video-time">{formatTime(duration)}</span>
+              <button
+                className="video-control-btn quality-btn"
+                onClick={() => setShowQualitySelector(!showQualitySelector)}
+                title="Quality"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54h2.79v2.71h2V13.83h2.79l-2.75-3.54zM7 9h2v2H7z"/>
+                </svg>
+              </button>
               <div className="video-volume-container">
                 <button
                   className="video-control-btn video-mute-btn"
@@ -1841,6 +1950,22 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             </div>
           </div>
         </div>
+      )}
+
+      {/* SVP side menu */}
+      {isVideoFile && (
+        <SVPSideMenu isOpen={showSVPMenu} onClose={() => setShowSVPMenu(false)} />
+      )}
+
+      {/* Quality selector */}
+      {isVideoFile && (
+        <QualitySelector
+          isOpen={showQualitySelector}
+          onClose={() => setShowQualitySelector(false)}
+          currentQuality={currentQuality}
+          onQualityChange={handleQualityChange}
+          sourceResolution={sourceResolution}
+        />
       )}
     </div>
   )

@@ -14,7 +14,6 @@ import ServerSettings from './components/ServerSettings'
 import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
 import OpticalFlowSettings from './components/OpticalFlowSettings'
-import SVPSettings from './components/SVPSettings'
 import QRConnect from './components/QRConnect'
 import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
 import './App.css'
@@ -637,8 +636,6 @@ function SettingsPage() {
             {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
             <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
               <OpticalFlowSettings />
-              <hr className="settings-divider" />
-              <SVPSettings />
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'network' ? 'active' : ''}`}>

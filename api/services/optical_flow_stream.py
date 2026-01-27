@@ -464,7 +464,10 @@ class InterpolatedStream:
         quality: str = "fast",
         use_nvenc: Optional[bool] = None,  # None = auto-detect
         enable_perf_logging: bool = True,
-        use_gpu_native: Optional[bool] = None  # None = auto (use if quality="gpu_native")
+        use_gpu_native: Optional[bool] = None,  # None = auto (use if quality="gpu_native")
+        target_bitrate: Optional[str] = None,  # Target bitrate (e.g., "4M", "1536K")
+        target_resolution: Optional[tuple] = None,  # Target resolution (width, height)
+        start_position: float = 0.0  # Seek position in seconds
     ):
         self.video_path = video_path
         self.target_fps = target_fps
@@ -473,6 +476,11 @@ class InterpolatedStream:
         self.use_nvenc = use_nvenc if use_nvenc is not None else _check_nvenc_available()
         self.enable_perf_logging = enable_perf_logging
         self.stream_id = str(uuid.uuid4())[:8]
+
+        # Quality settings
+        self.target_bitrate = target_bitrate
+        self.target_resolution = target_resolution
+        self.start_position = start_position
 
         # Determine if we should use GPU native mode
         if use_gpu_native is not None:
@@ -559,6 +567,13 @@ class InterpolatedStream:
             '-i', '-',  # Read from stdin
         ]
 
+        # Add scaling filter if needed
+        if self.target_resolution:
+            target_width, target_height = self.target_resolution
+            cmd.extend([
+                '-vf', f'scale={target_width}:{target_height}:flags=lanczos'
+            ])
+
         # Select encoder
         if self.use_nvenc:
             # NVENC hardware encoding
@@ -566,10 +581,25 @@ class InterpolatedStream:
                 '-c:v', 'h264_nvenc',
                 '-preset', 'p1',  # Fastest NVENC preset
                 '-tune', 'll',   # Low latency
-                '-rc', 'vbr',
-                '-cq', '23',
-                '-b:v', '0',     # VBR mode
             ])
+
+            # Use CBR mode for predictable bitrate, or VBR for original quality
+            if self.target_bitrate:
+                # CBR mode for consistent bitrate
+                cmd.extend([
+                    '-rc', 'cbr',
+                    '-b:v', self.target_bitrate,
+                    '-maxrate', self.target_bitrate,
+                    '-bufsize', f'{int(self.target_bitrate.rstrip("MK")) * 2}M' if 'M' in self.target_bitrate else f'{int(self.target_bitrate.rstrip("MK")) * 2}K',
+                ])
+            else:
+                # VBR mode (original quality)
+                cmd.extend([
+                    '-rc', 'vbr',
+                    '-cq', '23',
+                    '-b:v', '0',     # VBR mode
+                ])
+
             logger.info(f"[Stream {self.stream_id}] Using NVENC hardware encoder")
         else:
             # Software encoding
@@ -577,8 +607,19 @@ class InterpolatedStream:
                 '-c:v', 'libx264',
                 '-preset', 'ultrafast',
                 '-tune', 'zerolatency',
-                '-crf', '23',
             ])
+
+            if self.target_bitrate:
+                # Use specified bitrate
+                cmd.extend([
+                    '-b:v', self.target_bitrate,
+                    '-bufsize', f'{int(self.target_bitrate.rstrip("MK")) * 2}M' if 'M' in self.target_bitrate else f'{int(self.target_bitrate.rstrip("MK")) * 2}K',
+                ])
+            else:
+                # Use CRF for original quality (default)
+                cmd.extend([
+                    '-crf', '23',
+                ])
 
         # Common output options
         cmd.extend([
@@ -1192,7 +1233,10 @@ async def create_interpolated_stream(
     min_segments: int = 2,
     use_nvenc: Optional[bool] = None,
     enable_perf_logging: bool = True,
-    use_gpu_native: Optional[bool] = None
+    use_gpu_native: Optional[bool] = None,
+    target_bitrate: Optional[str] = None,
+    target_resolution: Optional[tuple] = None,
+    start_position: float = 0.0
 ) -> Optional[InterpolatedStream]:
     """
     Create and start an interpolated stream.
@@ -1207,6 +1251,9 @@ async def create_interpolated_stream(
         use_nvenc: Use NVENC hardware encoding (None = auto-detect)
         enable_perf_logging: Enable performance monitoring and logging
         use_gpu_native: Force GPU native pipeline (None = auto, based on quality preset)
+        target_bitrate: Target bitrate (e.g., "4M", "1536K")
+        target_resolution: Target resolution (width, height)
+        start_position: Seek position in seconds
 
     Returns:
         InterpolatedStream instance or None on failure
@@ -1227,7 +1274,10 @@ async def create_interpolated_stream(
         quality=quality,
         use_nvenc=use_nvenc,
         enable_perf_logging=enable_perf_logging,
-        use_gpu_native=use_gpu_native
+        use_gpu_native=use_gpu_native,
+        target_bitrate=target_bitrate,
+        target_resolution=target_resolution,
+        start_position=start_position
     )
 
     if not await stream.start():

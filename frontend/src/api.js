@@ -701,10 +701,13 @@ export async function updateOpticalFlowConfig(config) {
   return response.data
 }
 
-export async function playVideoInterpolated(filePath) {
+export async function playVideoInterpolated(filePath, startPosition = 0, qualityPreset = null) {
   // Longer timeout since buffering can take time
-  const response = await api.post('/settings/optical-flow/play', null, {
-    params: { file_path: filePath },
+  const response = await api.post('/settings/optical-flow/play', {
+    file_path: filePath,
+    start_position: startPosition,
+    quality_preset: qualityPreset
+  }, {
     timeout: 60000  // 60 second timeout for initial buffering
   })
   return response.data
@@ -726,11 +729,12 @@ export async function updateSVPConfig(config) {
   return response.data
 }
 
-export async function playVideoSVP(filePath, startPosition = 0) {
+export async function playVideoSVP(filePath, startPosition = 0, qualityPreset = null) {
   // Longer timeout since SVP processing can take time
   const response = await api.post('/settings/svp/play', {
     file_path: filePath,
-    start_position: startPosition
+    start_position: startPosition,
+    quality_preset: qualityPreset
   }, {
     timeout: 60000  // 60 second timeout for initial buffering
   })
