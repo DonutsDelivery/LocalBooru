@@ -892,13 +892,18 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Handle quality change
   const handleQualityChange = useCallback(async (qualityId) => {
+    console.log('[Lightbox] Quality change requested:', qualityId)
     setCurrentQuality(qualityId)
     localStorage.setItem('video_quality_preference', qualityId)
 
-    if (!mediaRef.current) return
+    if (!mediaRef.current) {
+      console.log('[Lightbox] No mediaRef available')
+      return
+    }
 
     try {
       if (qualityId === 'original') {
+        console.log('[Lightbox] Switching to original quality')
         // Stop streams and load direct video
         if (svpStreamUrl) {
           await stopSVPStream()
@@ -918,18 +923,57 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       } else {
         // Restart stream with new quality
         const currentTime = mediaRef.current?.currentTime || 0
+        console.log('[Lightbox] Restarting stream with quality:', qualityId, 'at time:', currentTime)
+        console.log('[Lightbox] SVP enabled/ready:', svpConfig?.enabled, svpConfig?.status?.ready)
+        console.log('[Lightbox] OpticalFlow enabled:', opticalFlowConfig?.enabled)
 
-        if (svpConfig?.enabled && svpConfig?.status?.ready) {
+        // Check if SVP is currently playing
+        if (svpStreamUrl) {
+          console.log('[Lightbox] Restarting SVP stream with quality')
           await stopSVPStream()
           const result = await playVideoSVP(image.file_path, currentTime, qualityId)
+          console.log('[Lightbox] SVP play result:', result)
           if (result.success) {
             setSvpStreamUrl(result.stream_url)
             if (result.duration) setSvpTotalDuration(result.duration)
+          } else {
+            console.error('[Lightbox] SVP play failed:', result.error)
           }
-        } else if (opticalFlowConfig?.enabled) {
+        } else if (opticalFlowStreamUrl) {
+          console.log('[Lightbox] Restarting OpticalFlow stream with quality')
           await stopInterpolatedStream()
           const result = await playVideoInterpolated(image.file_path, currentTime, qualityId)
-          if (result.success) setOpticalFlowStreamUrl(result.stream_url)
+          console.log('[Lightbox] OpticalFlow play result:', result)
+          if (result.success) {
+            setOpticalFlowStreamUrl(result.stream_url)
+          } else {
+            console.error('[Lightbox] OpticalFlow play failed:', result.error)
+          }
+        } else {
+          // Neither SVP nor OpticalFlow is currently playing
+          console.log('[Lightbox] No active stream, starting new one with quality')
+          if (svpConfig?.enabled && svpConfig?.status?.ready) {
+            console.log('[Lightbox] Starting new SVP stream with quality')
+            const result = await playVideoSVP(image.file_path, currentTime, qualityId)
+            console.log('[Lightbox] SVP play result:', result)
+            if (result.success) {
+              setSvpStreamUrl(result.stream_url)
+              if (result.duration) setSvpTotalDuration(result.duration)
+            } else {
+              console.error('[Lightbox] SVP play failed:', result.error)
+            }
+          } else if (opticalFlowConfig?.enabled) {
+            console.log('[Lightbox] Starting new OpticalFlow stream with quality')
+            const result = await playVideoInterpolated(image.file_path, currentTime, qualityId)
+            console.log('[Lightbox] OpticalFlow play result:', result)
+            if (result.success) {
+              setOpticalFlowStreamUrl(result.stream_url)
+            } else {
+              console.error('[Lightbox] OpticalFlow play failed:', result.error)
+            }
+          } else {
+            console.warn('[Lightbox] No interpolation method available for quality change')
+          }
         }
       }
     } catch (err) {
