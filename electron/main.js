@@ -348,7 +348,6 @@ async function createWindow(options = {}) {
       log('[Window] Dev server load failed, showing error page');
       mainWindow.loadURL(`data:text/html,<html><body style="background:#141414;color:white;font-family:system-ui;padding:40px;"><h1>Failed to connect</h1><p>Could not connect to dev server at localhost:5174</p><p>Make sure the frontend dev server is running.</p><button onclick="location.reload()" style="padding:10px 20px;cursor:pointer;">Retry</button></body></html>`);
     }
-    mainWindow.webContents.openDevTools();
   } else {
     log(`[Window] Backend should be at http://127.0.0.1:${getApiPort()}`);
     const loaded = await loadWithRetry(`http://127.0.0.1:${getApiPort()}`);
