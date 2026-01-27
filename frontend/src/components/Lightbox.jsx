@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState, useRef } from 'react'
 import Hls from 'hls.js'
-import { getMediaUrl, getOpticalFlowConfig, playVideoInterpolated, stopInterpolatedStream, getSVPConfig, playVideoSVP, stopSVPStream } from '../api'
+import { getMediaUrl, getOpticalFlowConfig, playVideoInterpolated, stopInterpolatedStream, getSVPConfig, playVideoSVP, stopSVPStream, playVideoTranscode, stopTranscodeStream } from '../api'
 import SVPSideMenu from './SVPSideMenu'
 import QualitySelector from './QualitySelector'
 import './Lightbox.css'
@@ -53,6 +53,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [svpStartOffset, setSvpStartOffset] = useState(0)  // Offset when stream started from seek position
   const svpHlsRef = useRef(null)
   const svpStartingRef = useRef(false)  // Synchronous lock to prevent double-starts
+
+  // Transcode stream state (fallback when SVP/OpticalFlow not available)
+  const [transcodeStreamUrl, setTranscodeStreamUrl] = useState(null)
+  const transcodeHlsRef = useRef(null)
 
   // SVP side menu state
   const [showSVPMenu, setShowSVPMenu] = useState(false)
@@ -796,6 +800,64 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
   }, [opticalFlowStreamUrl])
 
+  // Setup HLS player when transcode stream is active (fallback when no interpolation)
+  useEffect(() => {
+    if (!transcodeStreamUrl || !mediaRef.current) return
+
+    const video = mediaRef.current
+
+    if (Hls.isSupported()) {
+      // Cleanup previous instance
+      if (transcodeHlsRef.current) {
+        transcodeHlsRef.current.destroy()
+      }
+
+      // Clear video src to prevent dual playback with HLS MediaSource
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 30
+      })
+
+      // Use getMediaUrl to handle dev mode (different ports for frontend/backend)
+      hls.loadSource(getMediaUrl(transcodeStreamUrl))
+      hls.attachMedia(video)
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {})
+      })
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          console.error('Transcode HLS fatal error:', data)
+          setTranscodeStreamUrl(null)
+        }
+      })
+
+      transcodeHlsRef.current = hls
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari/iOS native HLS support
+      video.src = getMediaUrl(transcodeStreamUrl)
+      video.addEventListener('loadedmetadata', () => {
+        video.play().catch(() => {})
+      })
+    } else {
+      console.error('HLS playback is not supported')
+      setTranscodeStreamUrl(null)
+    }
+
+    return () => {
+      if (transcodeHlsRef.current) {
+        transcodeHlsRef.current.destroy()
+        transcodeHlsRef.current = null
+      }
+    }
+  }, [transcodeStreamUrl])
+
   // Cleanup HLS on unmount
   useEffect(() => {
     return () => {
@@ -807,9 +869,14 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         svpHlsRef.current.destroy()
         svpHlsRef.current = null
       }
+      if (transcodeHlsRef.current) {
+        transcodeHlsRef.current.destroy()
+        transcodeHlsRef.current = null
+      }
       // Stop backend streams on unmount
       stopSVPStream().catch(() => {})
       stopInterpolatedStream().catch(() => {})
+      stopTranscodeStream().catch(() => {})
     }
   }, [])
 
@@ -913,6 +980,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           await stopInterpolatedStream()
           setOpticalFlowStreamUrl(null)
         }
+        if (transcodeStreamUrl) {
+          await stopTranscodeStream()
+          setTranscodeStreamUrl(null)
+        }
 
         if (mediaRef.current) {
           const currentTime = mediaRef.current.currentTime
@@ -977,8 +1048,20 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               alert('Failed to start OpticalFlow stream: ' + result.error)
             }
           } else {
-            console.warn('[Lightbox] No interpolation method available for quality change')
-            alert('To use quality/bitrate selection, please enable SVP or Optical Flow in settings')
+            // Neither SVP nor OpticalFlow available, use simple transcode
+            console.log('[Lightbox] Using transcode (FFmpeg only) for quality change')
+            if (transcodeStreamUrl) {
+              await stopTranscodeStream()
+              setTranscodeStreamUrl(null)
+            }
+            const result = await playVideoTranscode(image.file_path, currentTime, qualityId)
+            console.log('[Lightbox] Transcode play result:', result)
+            if (result.success) {
+              setTranscodeStreamUrl(result.stream_url)
+            } else {
+              console.error('[Lightbox] Transcode play failed:', result.error)
+              alert('Failed to transcode video: ' + result.error)
+            }
           }
         }
       }
@@ -1764,11 +1847,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <video
               key={image.id}
               ref={mediaRef}
-              src={svpConfigLoaded && !svpStreamUrl && !opticalFlowStreamUrl && !svpLoading && !(svpConfig?.enabled && svpConfig?.status?.ready) ? getMediaUrl(image.url) : undefined}
+              src={svpConfigLoaded && !svpStreamUrl && !opticalFlowStreamUrl && !transcodeStreamUrl && !svpLoading && !(svpConfig?.enabled && svpConfig?.status?.ready) ? getMediaUrl(image.url) : undefined}
               autoPlay
               playsInline
               loop
-              className={`lightbox-media video-display-${videoDisplayMode} ${svpStreamUrl ? 'svp-streaming' : opticalFlowStreamUrl ? 'interpolated-streaming' : ''}`}
+              className={`lightbox-media video-display-${videoDisplayMode} ${svpStreamUrl ? 'svp-streaming' : opticalFlowStreamUrl ? 'interpolated-streaming' : transcodeStreamUrl ? 'transcode-streaming' : ''}`}
               style={getZoomTransform()}
               onClick={handleVideoClick}
               onPlay={handleVideoPlay}

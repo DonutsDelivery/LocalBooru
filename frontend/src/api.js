@@ -749,3 +749,20 @@ export async function stopSVPStream() {
   const response = await api.post('/settings/svp/stop')
   return response.data
 }
+
+// Simple FFmpeg-based transcoding (fallback when SVP/OpticalFlow not available)
+export async function playVideoTranscode(filePath, startPosition = 0, qualityPreset = null) {
+  const response = await api.post('/settings/transcode/play', {
+    file_path: filePath,
+    start_position: startPosition,
+    quality_preset: qualityPreset
+  }, {
+    timeout: 60000  // 60 second timeout for buffering
+  })
+  return response.data
+}
+
+export async function stopTranscodeStream() {
+  const response = await api.post('/settings/transcode/stop')
+  return response.data
+}

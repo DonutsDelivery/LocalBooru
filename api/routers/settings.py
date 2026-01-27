@@ -1670,6 +1670,124 @@ async def stop_svp_stream():
     return {"success": True, "message": "SVP streams stopped"}
 
 
+# Transcoding endpoints (fallback when SVP/OpticalFlow not available)
+class TranscodePlayRequest(BaseModel):
+    file_path: str
+    start_position: float = 0.0
+    quality_preset: Optional[str] = None
+
+
+@router.post("/transcode/play")
+async def play_video_transcode(request: TranscodePlayRequest):
+    """
+    Start simple HLS transcoding via FFmpeg only (no interpolation).
+
+    This is a fallback when SVP or OpticalFlow aren't available but
+    the user wants to change quality/bitrate.
+    """
+    from ..services.transcode_stream import TranscodeStream, stop_all_transcode_streams
+
+    # Stop any existing transcode streams before starting a new one
+    stop_all_transcode_streams()
+
+    # Parse quality settings
+    quality_settings = parse_quality_preset(request.quality_preset)
+
+    try:
+        # Detect source resolution
+        source_resolution = None
+        try:
+            result = subprocess.run([
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height',
+                '-of', 'csv=p=0',
+                request.file_path
+            ], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                parts = result.stdout.strip().split(',')
+                if len(parts) == 2:
+                    source_resolution = (int(parts[0]), int(parts[1]))
+        except Exception as e:
+            print(f"[Transcode] Could not detect source resolution: {e}")
+
+        quality_settings = parse_quality_preset(request.quality_preset, source_resolution)
+
+        # Create transcode stream
+        stream = TranscodeStream(
+            video_path=request.file_path,
+            target_bitrate=quality_settings["bitrate"],
+            target_resolution=quality_settings["resolution"],
+            start_position=request.start_position,
+        )
+
+        # Start the stream
+        success = await stream.start()
+
+        if success:
+            # Wait briefly for initial buffer
+            import asyncio
+            for _ in range(50):  # Wait up to 5 seconds
+                if stream.playlist_ready:
+                    break
+                if stream.error:
+                    return {"success": False, "error": stream.error}
+                if not stream._running:
+                    return {"success": False, "error": stream.error or "Encoding failed"}
+                await asyncio.sleep(0.1)
+
+            # Return success
+            return {
+                "success": True,
+                "stream_id": stream.stream_id,
+                "stream_url": f"/api/settings/transcode/stream/{stream.stream_id}/playlist.m3u8",
+                "duration": stream._duration,
+                "start_position": request.start_position,
+                "message": "Transcoding started"
+            }
+        else:
+            return {"success": False, "error": stream.error or "Failed to start transcoding"}
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": f"Transcoding error: {str(e)}"}
+
+
+@router.post("/transcode/stop")
+async def stop_transcode_stream():
+    """Stop all active transcoding streams."""
+    from ..services.transcode_stream import stop_all_transcode_streams
+
+    stop_all_transcode_streams()
+    return {"success": True, "message": "Transcode streams stopped"}
+
+
+@router.get("/transcode/stream/{stream_id}/{filename:path}")
+async def serve_transcode_hls_file(stream_id: str, filename: str):
+    """Serve HLS playlist or segment files for transcoding stream."""
+    from ..services.transcode_stream import get_active_transcode_stream
+
+    stream = get_active_transcode_stream(stream_id)
+    if not stream:
+        return Response(content="Stream not found", status_code=404)
+
+    if not stream.hls_dir:
+        return Response(content="Stream not ready", status_code=404)
+
+    file_path = stream.hls_dir / filename
+    if not file_path.exists():
+        return Response(content="File not found", status_code=404)
+
+    # Determine content type
+    if filename.endswith('.m3u8'):
+        media_type = "application/vnd.apple.mpegurl"
+    else:
+        media_type = "video/mp2t"
+
+    return FileResponse(file_path, media_type=media_type)
+
+
 @router.get("/svp/stream/{stream_id}/{filename:path}")
 async def serve_svp_hls_file(stream_id: str, filename: str):
     """Serve HLS playlist or segment files for the SVP stream."""
