@@ -314,7 +314,7 @@ export default function SVPSideMenu({ isOpen, onClose, image }) {
             <div className="optical-flow-status warning">
               <span className="status-icon">!</span>
               <div>
-                <span>Missing: {missing.join(', ')}</span>
+                <span>Not detected: {missing.join(', ')}</span>
               </div>
             </div>
           )}
@@ -328,7 +328,6 @@ export default function SVPSideMenu({ isOpen, onClose, image }) {
                   type="checkbox"
                   checked={enabled}
                   onChange={(e) => setEnabled(e.target.checked)}
-                  disabled={!isReady}
                 />
                 <span>Use SVP for videos</span>
               </label>

@@ -162,7 +162,7 @@ export default function SVPSettings() {
         <div className="optical-flow-status warning">
           <span className="status-icon">!</span>
           <div>
-            <span>SVP is not ready. Missing: {missing.join(', ')}</span>
+            <span>SVP not detected (missing: {missing.join(', ')}). If you have it installed, you can still try enabling it above - it will report an error at runtime if needed.</span>
             {!hasSourceFilter && (
               <div style={{marginTop: '8px', fontSize: '0.85em'}}>
                 <strong>Install source filter:</strong> <code>pacman -S vapoursynth-plugin-bestsource</code>
@@ -181,7 +181,6 @@ export default function SVPSettings() {
               type="checkbox"
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
-              disabled={!isReady}
             />
             <span>Automatically use SVP for video playback</span>
           </label>
