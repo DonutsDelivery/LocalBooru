@@ -2044,7 +2044,10 @@ async def scan_missing_dimensions(db: AsyncSession = Depends(get_db)):
 
             dir_db = await directory_db_manager.get_session(watch_dir.id)
             try:
-                result = await dir_db.execute(select(DirectoryImage).where(
+                from sqlalchemy.orm import selectinload
+                result = await dir_db.execute(select(DirectoryImage).options(
+                    selectinload(DirectoryImage.files)
+                ).where(
                     (DirectoryImage.width.is_(None) | (DirectoryImage.width == 0)) |
                     (DirectoryImage.height.is_(None) | (DirectoryImage.height == 0))
                 ))
@@ -2052,12 +2055,19 @@ async def scan_missing_dimensions(db: AsyncSession = Depends(get_db)):
 
                 for image in images:
                     try:
-                        dims = get_image_dimensions(image.file_path)
-                        if dims:
-                            image.width, image.height = dims
-                            updated_count += 1
+                        # Get file path from files relationship
+                        file_path = None
+                        if image.files and len(image.files) > 0:
+                            file_path = image.files[0].original_path
+
+                        if file_path:
+                            dims = get_image_dimensions(file_path)
+                            if dims:
+                                image.width, image.height = dims
+                                updated_count += 1
                     except Exception as e:
-                        print(f"Error scanning {image.file_path}: {e}")
+                        file_path = image.files[0].original_path if image.files else "unknown"
+                        print(f"Error scanning {file_path}: {e}")
                         error_count += 1
 
                 if images:
