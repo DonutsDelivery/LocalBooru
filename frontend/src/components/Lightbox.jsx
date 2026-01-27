@@ -952,8 +952,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         } else {
           // Neither SVP nor OpticalFlow is currently playing
           console.log('[Lightbox] No active stream, starting new one with quality')
-          if (svpConfig?.enabled && svpConfig?.status?.ready) {
-            console.log('[Lightbox] Starting new SVP stream with quality')
+          // Try SVP first, fall back to OpticalFlow, or show error
+          if (svpConfig?.status?.ready) {
+            // SVP is ready, use it even if not currently enabled
+            console.log('[Lightbox] Starting new SVP stream with quality (auto-enabling SVP)')
             const result = await playVideoSVP(image.file_path, currentTime, qualityId)
             console.log('[Lightbox] SVP play result:', result)
             if (result.success) {
@@ -961,18 +963,22 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               if (result.duration) setSvpTotalDuration(result.duration)
             } else {
               console.error('[Lightbox] SVP play failed:', result.error)
+              alert('Failed to start SVP stream: ' + result.error)
             }
-          } else if (opticalFlowConfig?.enabled) {
-            console.log('[Lightbox] Starting new OpticalFlow stream with quality')
+          } else if (opticalFlowConfig?.status?.ready) {
+            // OpticalFlow is ready, use it
+            console.log('[Lightbox] Starting new OpticalFlow stream with quality (auto-enabling OpticalFlow)')
             const result = await playVideoInterpolated(image.file_path, currentTime, qualityId)
             console.log('[Lightbox] OpticalFlow play result:', result)
             if (result.success) {
               setOpticalFlowStreamUrl(result.stream_url)
             } else {
               console.error('[Lightbox] OpticalFlow play failed:', result.error)
+              alert('Failed to start OpticalFlow stream: ' + result.error)
             }
           } else {
             console.warn('[Lightbox] No interpolation method available for quality change')
+            alert('To use quality/bitrate selection, please enable SVP or Optical Flow in settings')
           }
         }
       }
