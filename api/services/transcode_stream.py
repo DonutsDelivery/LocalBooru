@@ -111,34 +111,43 @@ class TranscodeStream:
 
             logger.info(f"[Transcode {self.stream_id}] Starting FFmpeg: {' '.join(ffmpeg_cmd)}")
 
-            # Run FFmpeg
+            # Run FFmpeg with suppressed output
             process = await asyncio.create_subprocess_exec(
                 *ffmpeg_cmd,
-                stdout=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
 
             # Wait for playlist file to be created
             max_wait = 30
-            for _ in range(max_wait * 10):
+            for attempt in range(max_wait * 10):
                 if (self.hls_dir / "playlist.m3u8").exists():
-                    logger.info(f"[Transcode {self.stream_id}] Playlist created")
+                    logger.info(f"[Transcode {self.stream_id}] Playlist created after {attempt * 0.1:.1f}s")
                     self.playlist_ready = True
                     break
+                if attempt % 100 == 0:  # Log every 10 seconds
+                    logger.debug(f"[Transcode {self.stream_id}] Waiting for playlist... ({attempt * 0.1:.1f}s)")
                 await asyncio.sleep(0.1)
+
+            if not self.playlist_ready:
+                logger.warning(f"[Transcode {self.stream_id}] Playlist not created after {max_wait}s")
 
             # Wait for process to complete
             stdout, stderr = await process.communicate()
 
             if process.returncode != 0:
                 error_output = stderr.decode('utf-8', errors='replace')
-                logger.error(f"[Transcode {self.stream_id}] FFmpeg failed: {error_output}")
+                logger.error(f"[Transcode {self.stream_id}] FFmpeg failed with code {process.returncode}: {error_output[-500:]}")
                 self.error = "Encoding failed"
+            else:
+                logger.info(f"[Transcode {self.stream_id}] FFmpeg completed successfully")
 
         except asyncio.CancelledError:
             logger.info(f"[Transcode {self.stream_id}] Encoding cancelled")
         except Exception as e:
+            import traceback
             logger.error(f"[Transcode {self.stream_id}] Encoding error: {e}")
+            logger.error(traceback.format_exc())
             self.error = str(e)
         finally:
             self._running = False
@@ -178,18 +187,11 @@ class TranscodeStream:
         cmd = [
             'ffmpeg',
             '-i', self.video_path,
-            '-c:v', 'h264',
-            '-c:a', 'aac',
-            '-b:a', '192k',
-            '-hls_time', '10',
-            '-hls_list_size', '0',
-            '-hls_segment_filename', str(self.hls_dir / 'segment_%d.ts'),
         ]
 
         # Add start position if specified
         if self.start_position > 0:
-            cmd.insert(2, '-ss')
-            cmd.insert(3, str(self.start_position))
+            cmd.extend(['-ss', str(self.start_position)])
 
         # Build video filter chain
         vf_filters = []
@@ -205,6 +207,9 @@ class TranscodeStream:
         if vf_filters:
             cmd.extend(['-vf', ','.join(vf_filters)])
 
+        # Video codec and bitrate
+        cmd.extend(['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency'])
+
         # Add bitrate if specified
         if self.target_bitrate:
             cmd.extend([
@@ -215,7 +220,18 @@ class TranscodeStream:
             # Original quality - use CRF
             cmd.extend(['-crf', '23'])
 
-        cmd.append(str(self.hls_dir / 'playlist.m3u8'))
+        # Audio codec
+        cmd.extend(['-c:a', 'aac', '-b:a', '192k'])
+
+        # HLS format
+        cmd.extend([
+            '-f', 'hls',
+            '-hls_time', '10',
+            '-hls_list_size', '0',
+            '-hls_segment_filename', str(self.hls_dir / 'segment_%d.ts'),
+            str(self.hls_dir / 'playlist.m3u8')
+        ])
+
         return cmd
 
     def stop(self):
