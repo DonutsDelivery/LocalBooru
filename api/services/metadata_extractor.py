@@ -14,11 +14,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import (
-    Image as ImageModel, Tag, image_tags, TagCategory,
-    DirectoryImage, directory_image_tags
-)
-from ..database import get_data_dir, directory_db_manager
+from ..models import Image as ImageModel, Tag, image_tags, TagCategory
+from ..database import get_data_dir
 
 # Danbooru tags cache
 DANBOORU_TAGS_URL = "https://gist.githubusercontent.com/pythongosssss/1d3efa6050356a08cea975183088159a/raw/a18fb2f94f9156cf4476b0c24a09544d6c0baec6/danbooru-tags.txt"
@@ -371,8 +368,7 @@ async def extract_and_save_metadata(
     db: AsyncSession,
     comfyui_prompt_node_ids: list[str] = None,
     comfyui_negative_node_ids: list[str] = None,
-    format_hint: str = 'auto',
-    directory_id: int = None
+    format_hint: str = 'auto'
 ) -> ExtractionResult:
     """Extract metadata and update database"""
 
@@ -386,59 +382,29 @@ async def extract_and_save_metadata(
     if result.status != 'success' or result.metadata is None:
         return result
 
-    # Update image record in appropriate database
-    if directory_id:
-        # Image is in a directory database
-        dir_db = await directory_db_manager.get_session(directory_id)
-        try:
-            query = select(DirectoryImage).where(DirectoryImage.id == image_id)
-            db_result = await dir_db.execute(query)
-            image = db_result.scalar_one_or_none()
+    # Update image record
+    query = select(ImageModel).where(ImageModel.id == image_id)
+    db_result = await db.execute(query)
+    image = db_result.scalar_one_or_none()
 
-            if image:
-                metadata = result.metadata
-                if metadata.prompt:
-                    image.prompt = metadata.prompt
-                if metadata.negative_prompt:
-                    image.negative_prompt = metadata.negative_prompt
-                if metadata.model_name:
-                    image.model_name = metadata.model_name
-                if metadata.sampler:
-                    image.sampler = metadata.sampler
-                if metadata.seed:
-                    image.seed = metadata.seed
-                if metadata.steps:
-                    image.steps = metadata.steps
-                if metadata.cfg_scale:
-                    image.cfg_scale = metadata.cfg_scale
+    if image:
+        metadata = result.metadata
+        if metadata.prompt:
+            image.prompt = metadata.prompt
+        if metadata.negative_prompt:
+            image.negative_prompt = metadata.negative_prompt
+        if metadata.model_name:
+            image.model_name = metadata.model_name
+        if metadata.sampler:
+            image.sampler = metadata.sampler
+        if metadata.seed:
+            image.seed = metadata.seed
+        if metadata.steps:
+            image.steps = metadata.steps
+        if metadata.cfg_scale:
+            image.cfg_scale = metadata.cfg_scale
 
-                await dir_db.commit()
-        finally:
-            await dir_db.close()
-    else:
-        # Legacy: image is in main database
-        query = select(ImageModel).where(ImageModel.id == image_id)
-        db_result = await db.execute(query)
-        image = db_result.scalar_one_or_none()
-
-        if image:
-            metadata = result.metadata
-            if metadata.prompt:
-                image.prompt = metadata.prompt
-            if metadata.negative_prompt:
-                image.negative_prompt = metadata.negative_prompt
-            if metadata.model_name:
-                image.model_name = metadata.model_name
-            if metadata.sampler:
-                image.sampler = metadata.sampler
-            if metadata.seed:
-                image.seed = metadata.seed
-            if metadata.steps:
-                image.steps = metadata.steps
-            if metadata.cfg_scale:
-                image.cfg_scale = metadata.cfg_scale
-
-            await db.commit()
+        await db.commit()
 
     return result
 
@@ -549,15 +515,12 @@ async def add_tags_from_prompt(
     image_id: int,
     prompt: str,
     db: AsyncSession,
-    confidence: float = 0.8,
-    directory_id: int = None
+    confidence: float = 0.8
 ) -> list[str]:
     """
     Extract tags from prompt and add them to the image.
     Only adds tags that exist in the Danbooru tag list.
     Returns list of tags added.
-
-    Tags are stored in the main DB; associations go to the appropriate DB.
     """
     if not prompt:
         return []
@@ -571,110 +534,58 @@ async def add_tags_from_prompt(
     if not found_tags:
         return []
 
-    if directory_id:
-        # Image is in a directory database
-        dir_db = await directory_db_manager.get_session(directory_id)
-        try:
-            # Get existing tags for this image from directory DB
-            existing_query = (
-                select(Tag.name)
-                .where(Tag.id.in_(
-                    select(directory_image_tags.c.tag_id)
-                    .where(directory_image_tags.c.image_id == image_id)
-                ))
+    # Get existing tags for this image
+    existing_query = (
+        select(Tag.name)
+        .join(image_tags, image_tags.c.tag_id == Tag.id)
+        .where(image_tags.c.image_id == image_id)
+    )
+    existing_result = await db.execute(existing_query)
+    existing_tag_names = {row[0] for row in existing_result.all()}
+
+    added_tags = []
+    for tag_name in found_tags:
+        # Normalize tag name
+        normalized_name = tag_name.lower().replace(' ', '_')
+
+        # Skip if already on image
+        if normalized_name in existing_tag_names:
+            continue
+
+        # Find or create tag
+        tag_query = select(Tag).where(Tag.name == normalized_name)
+        tag_result = await db.execute(tag_query)
+        tag = tag_result.scalar_one_or_none()
+
+        if not tag:
+            # Create new tag (as 'general' category since we're extracting from prompts)
+            tag = Tag(
+                name=normalized_name,
+                category=TagCategory.general,
+                post_count=0
             )
-            existing_result = await db.execute(existing_query)
-            existing_tag_names = {row[0] for row in existing_result.all()}
+            db.add(tag)
+            await db.flush()
 
-            added_tags = []
-            for tag_name in found_tags:
-                normalized_name = tag_name.lower().replace(' ', '_')
-
-                if normalized_name in existing_tag_names:
-                    continue
-
-                # Find or create tag in main DB
-                tag_query = select(Tag).where(Tag.name == normalized_name)
-                tag_result = await db.execute(tag_query)
-                tag = tag_result.scalar_one_or_none()
-
-                if not tag:
-                    tag = Tag(
-                        name=normalized_name,
-                        category=TagCategory.general,
-                        post_count=0
-                    )
-                    db.add(tag)
-                    await db.flush()
-
-                # Add association to directory DB
-                await dir_db.execute(
-                    directory_image_tags.insert().values(
-                        image_id=image_id,
-                        tag_id=tag.id,
-                        confidence=confidence,
-                        is_manual=False
-                    )
-                )
-
-                tag.post_count += 1
-                added_tags.append(normalized_name)
-                existing_tag_names.add(normalized_name)
-
-            if added_tags:
-                await dir_db.commit()
-                await db.commit()
-
-            return added_tags
-        finally:
-            await dir_db.close()
-    else:
-        # Legacy: image is in main database
-        existing_query = (
-            select(Tag.name)
-            .join(image_tags, image_tags.c.tag_id == Tag.id)
-            .where(image_tags.c.image_id == image_id)
+        # Add image-tag association
+        await db.execute(
+            image_tags.insert().values(
+                image_id=image_id,
+                tag_id=tag.id,
+                confidence=confidence,
+                is_manual=False
+            )
         )
-        existing_result = await db.execute(existing_query)
-        existing_tag_names = {row[0] for row in existing_result.all()}
 
-        added_tags = []
-        for tag_name in found_tags:
-            normalized_name = tag_name.lower().replace(' ', '_')
+        # Increment post count
+        tag.post_count += 1
+        added_tags.append(normalized_name)
+        existing_tag_names.add(normalized_name)
 
-            if normalized_name in existing_tag_names:
-                continue
+    if added_tags:
+        await db.commit()
 
-            tag_query = select(Tag).where(Tag.name == normalized_name)
-            tag_result = await db.execute(tag_query)
-            tag = tag_result.scalar_one_or_none()
-
-            if not tag:
-                tag = Tag(
-                    name=normalized_name,
-                    category=TagCategory.general,
-                    post_count=0
-                )
-                db.add(tag)
-                await db.flush()
-
-            await db.execute(
-                image_tags.insert().values(
-                    image_id=image_id,
-                    tag_id=tag.id,
-                    confidence=confidence,
-                    is_manual=False
-                )
-            )
-
-            tag.post_count += 1
-            added_tags.append(normalized_name)
-            existing_tag_names.add(normalized_name)
-
-        if added_tags:
-            await db.commit()
-
-        return added_tags
+    return added_tags
 
 
 async def extract_and_save_metadata_with_tags(
@@ -684,8 +595,7 @@ async def extract_and_save_metadata_with_tags(
     comfyui_prompt_node_ids: list[str] = None,
     comfyui_negative_node_ids: list[str] = None,
     format_hint: str = 'auto',
-    extract_tags: bool = True,
-    directory_id: int = None
+    extract_tags: bool = True
 ) -> tuple[ExtractionResult, list[str]]:
     """
     Extract metadata and optionally match prompt words to booru tags.
@@ -697,17 +607,13 @@ async def extract_and_save_metadata_with_tags(
         db,
         comfyui_prompt_node_ids,
         comfyui_negative_node_ids,
-        format_hint,
-        directory_id=directory_id
+        format_hint
     )
 
     added_tags = []
     if extract_tags and result.status == 'success' and result.metadata:
         prompt = result.metadata.prompt or ''
         if prompt:
-            added_tags = await add_tags_from_prompt(
-                image_id, prompt, db,
-                directory_id=directory_id
-            )
+            added_tags = await add_tags_from_prompt(image_id, prompt, db)
 
     return result, added_tags

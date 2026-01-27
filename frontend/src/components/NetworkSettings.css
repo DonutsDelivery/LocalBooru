@@ -102,7 +102,6 @@
 .setting-row {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -128,24 +127,6 @@
   height: 18px;
   cursor: pointer;
   accent-color: var(--accent);
-}
-
-.toggle-label input[type="checkbox"]:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.toggle-label input[type="checkbox"]:disabled + span {
-  opacity: 0.5;
-}
-
-.setting-hint {
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  margin: 0;
-  line-height: 1.4;
-  flex: 1 1 100%;
-  padding-left: 26px;
 }
 
 .setting-row input[type="number"] {

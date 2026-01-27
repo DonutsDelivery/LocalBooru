@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { fetchDirectories, searchTags, getFileDimensions } from '../api'
+import { fetchDirectories, searchTags } from '../api'
 import './Sidebar.css'
 
 // Debounce hook for tag search input
@@ -130,7 +130,6 @@ function Sidebar({
   const [minAge, setMinAge] = useState(initialMinAge || null)
   const [maxAge, setMaxAge] = useState(initialMaxAge || null)
   const [timeframe, setTimeframe] = useState(initialTimeframe || null)
-  const [fetchedDimensions, setFetchedDimensions] = useState(null)
 
   // Load directories
   useEffect(() => {
@@ -162,30 +161,6 @@ function Sidebar({
     setTimeframe(initialTimeframe || null)
     if (initialSort) setSortBy(initialSort)
   }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe])
-
-  // Fetch dimensions for selected image when it changes
-  useEffect(() => {
-    if (!selectedImage || !selectedImage.file_path) {
-      setFetchedDimensions(null)
-      return
-    }
-
-    getFileDimensions(selectedImage.file_path)
-      .then(result => {
-        if (result.success) {
-          setFetchedDimensions({
-            width: result.width,
-            height: result.height
-          })
-        } else {
-          setFetchedDimensions(null)
-        }
-      })
-      .catch(err => {
-        console.error('Failed to fetch dimensions:', err)
-        setFetchedDimensions(null)
-      })
-  }, [selectedImage?.id, selectedImage?.file_path])
 
   const isVisible = !collapsed || hovering || mobileOpen
 
@@ -369,11 +344,13 @@ function Sidebar({
                 className="directory-select"
               >
                 <option value="">All Directories</option>
-                {directories.map(dir => (
-                  <option key={dir.id} value={dir.id}>
-                    {dir.name}{dir.image_count > 0 ? ` (${dir.image_count})` : ''}
-                  </option>
-                ))}
+                {directories
+                  .filter(dir => dir.image_count > 0)
+                  .map(dir => (
+                    <option key={dir.id} value={dir.id}>
+                      {dir.name} ({dir.image_count})
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -516,12 +493,8 @@ function Sidebar({
               <span className="info-label">ID</span>
               <span className="info-value">#{selectedImage.id}</span>
 
-              {fetchedDimensions ? (
-                <>
-                  <span className="info-label">Resolution</span>
-                  <span className="info-value">{fetchedDimensions.width}x{fetchedDimensions.height}</span>
-                </>
-              ) : null}
+              <span className="info-label">Size</span>
+              <span className="info-value">{selectedImage.width}x{selectedImage.height}</span>
 
               <span className="info-label">Rating</span>
               <span className={`info-value rating-${selectedImage.rating}`}>
@@ -568,7 +541,7 @@ function Sidebar({
                 <>
                   <span className="info-label">Path</span>
                   <span className="info-value file-path" title={selectedImage.file_path}>
-                    {selectedImage.file_path}
+                    {selectedImage.file_path.split('/').pop()}
                   </span>
                 </>
               )}
@@ -712,22 +685,24 @@ function Sidebar({
                   </button>
                 )}
                 {/* Autocomplete suggestions from API */}
-                <div className={`tag-suggestions ${suggestions.length > 0 ? 'visible' : ''}`}>
-                  {suggestions.map((tag, index) => (
-                    <button
-                      key={tag.name}
-                      className={`suggestion-item tag-${tag.category} ${index === suggestionIndex ? 'selected' : ''}`}
-                      onClick={() => {
-                        onTagClick(tag.name)
-                        setTagInput('')
-                        setSuggestionIndex(-1)
-                      }}
-                    >
-                      <span className="suggestion-name">{tag.name.replace(/_/g, ' ')}</span>
-                      <span className="suggestion-count">({tag.post_count})</span>
-                    </button>
-                  ))}
-                </div>
+                {suggestions.length > 0 && (
+                  <div className="tag-suggestions">
+                    {suggestions.map((tag, index) => (
+                      <button
+                        key={tag.name}
+                        className={`suggestion-item tag-${tag.category} ${index === suggestionIndex ? 'selected' : ''}`}
+                        onClick={() => {
+                          onTagClick(tag.name)
+                          setTagInput('')
+                          setSuggestionIndex(-1)
+                        }}
+                      >
+                        <span className="suggestion-name">{tag.name.replace(/_/g, ' ')}</span>
+                        <span className="suggestion-count">({tag.post_count})</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

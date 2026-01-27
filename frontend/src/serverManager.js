@@ -175,17 +175,6 @@ export async function getApiBaseUrl() {
   return `${server.url}/api`
 }
 
-// Ping all servers in parallel and return status map
-export async function pingAllServers(servers) {
-  const results = await Promise.all(
-    servers.map(async (server) => {
-      const result = await testServerConnection(server.url, server.username, server.password)
-      return { id: server.id, online: result.success }
-    })
-  )
-  return Object.fromEntries(results.map(r => [r.id, r.online ? 'online' : 'offline']))
-}
-
 // Get auth headers for the active server
 export async function getAuthHeaders() {
   if (!isMobileApp()) {
