@@ -2,7 +2,7 @@
 Settings router - app configuration and optional features
 Uses JSON file for settings to avoid database migration issues
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 import subprocess
@@ -10,8 +10,10 @@ import sys
 import os
 import json
 from pathlib import Path
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_data_dir
+from ..database import get_data_dir, get_db
+from ..models import WatchDirectory, Image, DirectoryImage
 
 router = APIRouter()
 
@@ -1997,3 +1999,81 @@ async def check_drm_site(url: str):
         "drm_protected": is_drm_site(url),
         "live_stream": is_live_stream(url),
     }
+
+
+# Maintenance endpoints
+@router.post("/maintenance/scan-dimensions")
+async def scan_missing_dimensions(db: AsyncSession = Depends(get_db)):
+    """
+    Scan all images/videos and populate missing width/height dimensions.
+
+    This is useful after an update that adds video support.
+    """
+    from ..services.importer import get_image_dimensions
+    from sqlalchemy import select
+
+    updated_count = 0
+    error_count = 0
+
+    try:
+        # First, scan main database images
+        result = await db.execute(select(Image).where(
+            (Image.width.is_(None) | (Image.width == 0)) |
+            (Image.height.is_(None) | (Image.height == 0))
+        ))
+        images = result.scalars().all()
+
+        for image in images:
+            try:
+                dims = get_image_dimensions(image.file_path)
+                if dims:
+                    image.width, image.height = dims
+                    updated_count += 1
+            except Exception as e:
+                print(f"Error scanning {image.file_path}: {e}")
+                error_count += 1
+
+        if images:
+            await db.commit()
+
+        # Then scan directory database images
+        from ..services.directory_db import DirectoryDatabaseManager
+        db_manager = DirectoryDatabaseManager()
+
+        for watch_dir in (await db.execute(select(WatchDirectory))).scalars():
+            if not db_manager.db_exists(watch_dir.id):
+                continue
+
+            dir_db = await db_manager.get_session(watch_dir.id)
+            try:
+                result = await dir_db.execute(select(DirectoryImage).where(
+                    (DirectoryImage.width.is_(None) | (DirectoryImage.width == 0)) |
+                    (DirectoryImage.height.is_(None) | (DirectoryImage.height == 0))
+                ))
+                images = result.scalars().all()
+
+                for image in images:
+                    try:
+                        dims = get_image_dimensions(image.file_path)
+                        if dims:
+                            image.width, image.height = dims
+                            updated_count += 1
+                    except Exception as e:
+                        print(f"Error scanning {image.file_path}: {e}")
+                        error_count += 1
+
+                if images:
+                    await dir_db.commit()
+            finally:
+                await dir_db.close()
+
+        return {
+            "success": True,
+            "updated": updated_count,
+            "errors": error_count,
+            "message": f"Scanned and updated {updated_count} images with missing dimensions"
+        }
+
+    except Exception as e:
+        print(f"Maintenance scan error: {e}")
+        return {"success": False, "error": str(e)}
