@@ -940,7 +940,19 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Sync play state with video element events
   const handleVideoPlay = useCallback(() => {
     setIsPlaying(true)
-  }, [])
+    // Ensure source resolution is set (fallback for HLS streams where it might not be available in onLoadedMetadata)
+    if (mediaRef.current && (!sourceResolution || !sourceResolution.width || !sourceResolution.height)) {
+      const width = mediaRef.current.videoWidth
+      const height = mediaRef.current.videoHeight
+      if (width > 0 && height > 0) {
+        console.log('[Lightbox] Setting resolution on play:', width, 'x', height)
+        setSourceResolution({
+          width,
+          height
+        })
+      }
+    }
+  }, [sourceResolution])
 
   const handleVideoPause = useCallback(() => {
     setIsPlaying(false)
@@ -966,15 +978,26 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     } else {
       setDuration(mediaRef.current.duration)
     }
+
+    const width = mediaRef.current.videoWidth
+    const height = mediaRef.current.videoHeight
+
     setVideoNaturalSize({
-      width: mediaRef.current.videoWidth,
-      height: mediaRef.current.videoHeight
+      width,
+      height
     })
+
     // Store source resolution for quality selector
-    setSourceResolution({
-      width: mediaRef.current.videoWidth,
-      height: mediaRef.current.videoHeight
-    })
+    // For HLS streams, dimensions might not be available immediately
+    if (width > 0 && height > 0) {
+      console.log('[Lightbox] Setting source resolution:', width, 'x', height)
+      setSourceResolution({
+        width,
+        height
+      })
+    } else {
+      console.log('[Lightbox] Video dimensions not available yet, will retry on play')
+    }
   }, [svpTotalDuration, svpStreamUrl])
 
   // Handle seeking via timeline
