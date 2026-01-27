@@ -1111,13 +1111,6 @@ class SVPStream:
         if self._running:
             return True
 
-        # Check prerequisites
-        status = get_svp_status()
-        if not status["ready"]:
-            self._error = "SVP not ready: " + str({k: v for k, v in status.items() if not v})
-            logger.error(f"[SVP {self.stream_id}] {self._error}")
-            return False
-
         # Get video info
         if not self._get_video_info():
             self._error = "Failed to get video info"
