@@ -766,3 +766,11 @@ export async function stopTranscodeStream() {
   const response = await api.post('/settings/transcode/stop')
   return response.data
 }
+
+// Utility endpoints
+export async function getFileDimensions(filePath) {
+  const response = await api.get('/settings/util/dimensions', {
+    params: { file_path: filePath }
+  })
+  return response.data
+}

@@ -2001,87 +2001,31 @@ async def check_drm_site(url: str):
     }
 
 
-# Maintenance endpoints
-@router.post("/maintenance/scan-dimensions")
-async def scan_missing_dimensions(db: AsyncSession = Depends(get_db)):
+# Utility endpoints
+@router.get("/util/dimensions")
+async def get_file_dimensions(file_path: str):
     """
-    Scan all images/videos and populate missing width/height dimensions.
+    Get dimensions for an image or video file.
 
-    This is useful after an update that adds video support.
+    Used to fetch dimensions on-the-fly without storing in DB.
     """
     from ..services.importer import get_image_dimensions
-    from sqlalchemy import select
-
-    updated_count = 0
-    error_count = 0
 
     try:
-        # First, scan main database images
-        result = await db.execute(select(Image).where(
-            (Image.width.is_(None) | (Image.width == 0)) |
-            (Image.height.is_(None) | (Image.height == 0))
-        ))
-        images = result.scalars().all()
-
-        for image in images:
-            try:
-                dims = get_image_dimensions(image.file_path)
-                if dims:
-                    image.width, image.height = dims
-                    updated_count += 1
-            except Exception as e:
-                print(f"Error scanning {image.file_path}: {e}")
-                error_count += 1
-
-        if images:
-            await db.commit()
-
-        # Then scan directory database images
-
-        for watch_dir in (await db.execute(select(WatchDirectory))).scalars():
-            if not directory_db_manager.db_exists(watch_dir.id):
-                continue
-
-            dir_db = await directory_db_manager.get_session(watch_dir.id)
-            try:
-                from sqlalchemy.orm import selectinload
-                result = await dir_db.execute(select(DirectoryImage).options(
-                    selectinload(DirectoryImage.files)
-                ).where(
-                    (DirectoryImage.width.is_(None) | (DirectoryImage.width == 0)) |
-                    (DirectoryImage.height.is_(None) | (DirectoryImage.height == 0))
-                ))
-                images = result.scalars().all()
-
-                for image in images:
-                    try:
-                        # Get file path from files relationship
-                        file_path = None
-                        if image.files and len(image.files) > 0:
-                            file_path = image.files[0].original_path
-
-                        if file_path:
-                            dims = get_image_dimensions(file_path)
-                            if dims:
-                                image.width, image.height = dims
-                                updated_count += 1
-                    except Exception as e:
-                        file_path = image.files[0].original_path if image.files else "unknown"
-                        print(f"Error scanning {file_path}: {e}")
-                        error_count += 1
-
-                if images:
-                    await dir_db.commit()
-            finally:
-                await dir_db.close()
-
-        return {
-            "success": True,
-            "updated": updated_count,
-            "errors": error_count,
-            "message": f"Scanned and updated {updated_count} images with missing dimensions"
-        }
-
+        dims = get_image_dimensions(file_path)
+        if dims:
+            return {
+                "success": True,
+                "width": dims[0],
+                "height": dims[1]
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Could not detect dimensions"
+            }
     except Exception as e:
-        print(f"Maintenance scan error: {e}")
-        return {"success": False, "error": str(e)}
+        return {
+            "success": False,
+            "error": str(e)
+        }

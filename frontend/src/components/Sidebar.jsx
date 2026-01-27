@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { fetchDirectories, searchTags } from '../api'
+import { fetchDirectories, searchTags, getFileDimensions } from '../api'
 import './Sidebar.css'
 
 // Debounce hook for tag search input
@@ -130,6 +130,7 @@ function Sidebar({
   const [minAge, setMinAge] = useState(initialMinAge || null)
   const [maxAge, setMaxAge] = useState(initialMaxAge || null)
   const [timeframe, setTimeframe] = useState(initialTimeframe || null)
+  const [fetchedDimensions, setFetchedDimensions] = useState(null)
 
   // Load directories
   useEffect(() => {
@@ -161,6 +162,30 @@ function Sidebar({
     setTimeframe(initialTimeframe || null)
     if (initialSort) setSortBy(initialSort)
   }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe])
+
+  // Fetch dimensions for selected image when it changes
+  useEffect(() => {
+    if (!selectedImage || !selectedImage.file_path) {
+      setFetchedDimensions(null)
+      return
+    }
+
+    getFileDimensions(selectedImage.file_path)
+      .then(result => {
+        if (result.success) {
+          setFetchedDimensions({
+            width: result.width,
+            height: result.height
+          })
+        } else {
+          setFetchedDimensions(null)
+        }
+      })
+      .catch(err => {
+        console.error('Failed to fetch dimensions:', err)
+        setFetchedDimensions(null)
+      })
+  }, [selectedImage?.id, selectedImage?.file_path])
 
   const isVisible = !collapsed || hovering || mobileOpen
 
@@ -491,10 +516,10 @@ function Sidebar({
               <span className="info-label">ID</span>
               <span className="info-value">#{selectedImage.id}</span>
 
-              {selectedImage.width && selectedImage.height ? (
+              {fetchedDimensions ? (
                 <>
                   <span className="info-label">Resolution</span>
-                  <span className="info-value">{selectedImage.width}x{selectedImage.height}</span>
+                  <span className="info-value">{fetchedDimensions.width}x{fetchedDimensions.height}</span>
                 </>
               ) : null}
 
