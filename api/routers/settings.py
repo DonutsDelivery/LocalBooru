@@ -1574,17 +1574,9 @@ async def play_video_svp(request: SVPPlayRequest):
     status = get_svp_status()
 
     # Note: We don't check config["enabled"] here - the toggle button should work
-    # regardless of the global setting. We only check if SVP is ready (plugins installed).
-
-    if not status["ready"]:
-        missing = []
-        if not status["vapoursynth_available"]:
-            missing.append("VapourSynth")
-        if not status["svp_plugins_available"]:
-            missing.append("SVPflow plugins")
-        if not status["vspipe_available"]:
-            missing.append("vspipe")
-        return {"success": False, "error": f"SVP not ready. Missing: {', '.join(missing)}"}
+    # regardless of the global setting. We allow users to try SVP even if detection
+    # fails - they'll get a runtime error if it's actually missing. This prevents
+    # detection from being a blocker.
 
     # Check if file exists
     if not os.path.exists(request.file_path):
