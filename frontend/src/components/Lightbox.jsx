@@ -636,7 +636,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
     try {
       const { deleteImage } = await import('../api')
-      await deleteImage(image.id, true) // true = delete from filesystem
+      await deleteImage(image.id, true, image.directory_id) // true = delete from filesystem, pass directory_id if available
       setShowDeleteConfirm(false)
 
       // Notify parent to remove the image and navigate

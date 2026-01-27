@@ -174,8 +174,12 @@ export async function updateRating(imageId, rating) {
 // Alias for Lightbox compatibility
 export const changeRating = updateRating
 
-export async function deleteImage(imageId, deleteFile = false) {
-  const response = await api.delete(`/images/${imageId}?delete_file=${deleteFile}`)
+export async function deleteImage(imageId, deleteFile = false, directoryId = null) {
+  let url = `/images/${imageId}?delete_file=${deleteFile}`
+  if (directoryId) {
+    url += `&directory_id=${directoryId}`
+  }
+  const response = await api.delete(url)
   return response.data
 }
 

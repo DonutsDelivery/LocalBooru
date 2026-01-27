@@ -1095,35 +1095,74 @@ async def update_rating(image_id: int, rating: str, db: AsyncSession = Depends(g
 async def delete_image(
     image_id: int,
     delete_file: bool = False,
+    directory_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Delete an image from the library (optionally delete the file too)"""
-    query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
-    result = await db.execute(query)
-    image = result.scalar_one_or_none()
+    from ..database import get_data_dir
+    from ..services.video_preview import delete_preview_frames
 
+    image = None
+    file_hash = None
+    original_path = None
+
+    # Try directory database first if directory_id provided
+    if directory_id is not None and directory_db_manager.db_exists(directory_id):
+        dir_db = await directory_db_manager.get_session(directory_id)
+        try:
+            query = select(DirectoryImage).options(selectinload(DirectoryImage.files)).where(DirectoryImage.id == image_id)
+            result = await dir_db.execute(query)
+            image = result.scalar_one_or_none()
+
+            if image:
+                file_hash = image.file_hash
+                # Get the original path from files
+                if image.files:
+                    original_path = image.files[0].original_path
+
+                # Optionally delete the actual file(s)
+                if delete_file and image.files:
+                    for f in image.files:
+                        if os.path.exists(f.original_path):
+                            os.remove(f.original_path)
+
+                # Delete from directory database
+                await dir_db.delete(image)
+                await dir_db.commit()
+        finally:
+            await dir_db.close()
+
+    # If not found in directory DB, try main database
     if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
+        query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+        result = await db.execute(query)
+        image = result.scalar_one_or_none()
 
-    # Optionally delete the actual file(s)
-    if delete_file:
-        for f in image.files:
-            if os.path.exists(f.original_path):
-                os.remove(f.original_path)
+        if not image:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        file_hash = image.file_hash
+        if image.files:
+            original_path = image.files[0].original_path
+
+        # Optionally delete the actual file(s)
+        if delete_file:
+            for f in image.files:
+                if os.path.exists(f.original_path):
+                    os.remove(f.original_path)
+
+        # Delete from main database (cascades to files, tags, etc.)
+        await db.delete(image)
+        await db.commit()
 
     # Delete thumbnail
-    from ..database import get_data_dir
-    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
-    if thumbnail_path.exists():
-        thumbnail_path.unlink()
+    if file_hash:
+        thumbnail_path = get_data_dir() / 'thumbnails' / f"{file_hash[:16]}.webp"
+        if thumbnail_path.exists():
+            thumbnail_path.unlink()
 
-    # Delete video preview frames
-    from ..services.video_preview import delete_preview_frames
-    delete_preview_frames(image.file_hash)
-
-    # Delete from database (cascades to files, tags, etc.)
-    await db.delete(image)
-    await db.commit()
+        # Delete video preview frames
+        delete_preview_frames(file_hash)
 
     return {"deleted": True}
 
@@ -1158,35 +1197,77 @@ async def batch_delete_images(
     from ..database import get_data_dir
     from ..services.video_preview import delete_preview_frames
 
+    # Get all watch directory IDs to try their databases
+    query = select(WatchDirectory.id)
+    result = await db.execute(query)
+    directory_ids = [row[0] for row in result.fetchall()]
+
     deleted = 0
     errors = []
 
     for image_id in request.image_ids:
         try:
-            query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
-            result = await db.execute(query)
-            image = result.scalar_one_or_none()
+            image = None
+            file_hash = None
 
+            # Try all directory databases first
+            for dir_id in directory_ids:
+                if directory_db_manager.db_exists(dir_id):
+                    dir_db = await directory_db_manager.get_session(dir_id)
+                    try:
+                        query = select(DirectoryImage).options(selectinload(DirectoryImage.files)).where(DirectoryImage.id == image_id)
+                        result = await dir_db.execute(query)
+                        image = result.scalar_one_or_none()
+
+                        if image:
+                            file_hash = image.file_hash
+
+                            # Optionally delete the actual file(s)
+                            if request.delete_files and image.files:
+                                for f in image.files:
+                                    if os.path.exists(f.original_path):
+                                        os.remove(f.original_path)
+
+                            # Delete from directory database
+                            await dir_db.delete(image)
+                            await dir_db.commit()
+                            break
+                    finally:
+                        await dir_db.close()
+
+                if image:
+                    break
+
+            # If not found in directory databases, try main database
             if not image:
-                errors.append({"id": image_id, "error": "Image not found"})
-                continue
+                query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+                result = await db.execute(query)
+                image = result.scalar_one_or_none()
 
-            # Optionally delete the actual file(s)
-            if request.delete_files:
-                for f in image.files:
-                    if os.path.exists(f.original_path):
-                        os.remove(f.original_path)
+                if not image:
+                    errors.append({"id": image_id, "error": "Image not found"})
+                    continue
 
-            # Delete thumbnail
-            thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
-            if thumbnail_path.exists():
-                thumbnail_path.unlink()
+                file_hash = image.file_hash
 
-            # Delete video preview frames
-            delete_preview_frames(image.file_hash)
+                # Optionally delete the actual file(s)
+                if request.delete_files:
+                    for f in image.files:
+                        if os.path.exists(f.original_path):
+                            os.remove(f.original_path)
 
-            # Delete from database (cascades to files, tags, etc.)
-            await db.delete(image)
+                # Delete from database (cascades to files, tags, etc.)
+                await db.delete(image)
+
+            # Delete thumbnail and preview frames (same for both databases)
+            if file_hash:
+                thumbnail_path = get_data_dir() / 'thumbnails' / f"{file_hash[:16]}.webp"
+                if thumbnail_path.exists():
+                    thumbnail_path.unlink()
+
+                # Delete video preview frames
+                delete_preview_frames(file_hash)
+
             deleted += 1
 
         except Exception as e:
