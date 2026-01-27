@@ -347,6 +347,80 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     return Math.max(scaleForWidth, scaleForHeight)
   }, [])
 
+  // Restart SVP stream from a specific position (for seeking beyond buffered content)
+  const restartSVPFromPosition = useCallback(async (targetTime) => {
+    if (!image || !svpConfig?.enabled) return
+
+    console.log(`[SVP] Restarting stream from ${targetTime.toFixed(1)}s`)
+
+    // Show loading indicator
+    setSvpLoading(true)
+    setSvpPendingSeek(null)
+    setCurrentTime(targetTime)
+
+    // Destroy current HLS instance
+    if (svpHlsRef.current) {
+      svpHlsRef.current.destroy()
+      svpHlsRef.current = null
+    }
+
+    // Clear current stream state
+    setSvpStreamUrl(null)
+    setSvpBufferedDuration(0)
+
+    try {
+      // Start new stream from target position
+      const result = await playVideoSVP(image.file_path, targetTime)
+
+      if (result.success && result.stream_url) {
+        setSvpStreamUrl(result.stream_url)
+        setSvpStartOffset(targetTime)  // Track offset for timeline display
+        if (result.duration) {
+          setSvpTotalDuration(result.duration)
+        }
+      } else {
+        setSvpError(result.error || 'Failed to restart SVP stream')
+        setSvpLoading(false)
+      }
+    } catch (err) {
+      console.error('SVP restart error:', err)
+      setSvpError(err.message || 'Failed to restart SVP stream')
+      setSvpLoading(false)
+    }
+  }, [image, svpConfig])
+
+  // Seek forward/backward
+  const seekVideo = useCallback((seconds) => {
+    if (!mediaRef.current) return
+
+    // For SVP streams, currentTime is in HLS time, need to convert to absolute video time
+    const currentAbsoluteTime = svpStreamUrl ? mediaRef.current.currentTime + svpStartOffset : mediaRef.current.currentTime
+    const newTime = Math.max(0, Math.min(duration, currentAbsoluteTime + seconds))
+
+    // For SVP streams, check if we need to restart from a new position
+    if (svpStreamUrl) {
+      const bufferedEnd = svpStartOffset + svpBufferedDuration
+      const bufferedStart = svpStartOffset
+
+      if (newTime < bufferedStart - 1 || newTime > bufferedEnd + 2) {
+        restartSVPFromPosition(newTime)
+        return
+      }
+
+      // Seek within current stream
+      const hlsTime = newTime - svpStartOffset
+      setSvpPendingSeek(null)
+      mediaRef.current.currentTime = Math.max(0, hlsTime)
+      setCurrentTime(newTime)
+      return
+    }
+
+    // Normal video seek
+    setSvpPendingSeek(null)
+    mediaRef.current.currentTime = newTime
+    setCurrentTime(newTime)
+  }, [duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, restartSVPFromPosition])
+
   // Double-click handler: zoom to fill or reset (images), toggle display mode (videos)
   const handleDoubleClick = useCallback((e) => {
     // Don't zoom if clicking on interactive elements
@@ -862,80 +936,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       console.error('Failed to change quality:', err)
     }
   }, [image?.url, image?.file_path, svpStreamUrl, opticalFlowStreamUrl, svpConfig, opticalFlowConfig])
-
-  // Restart SVP stream from a specific position (for seeking beyond buffered content)
-  const restartSVPFromPosition = useCallback(async (targetTime) => {
-    if (!image || !svpConfig?.enabled) return
-
-    console.log(`[SVP] Restarting stream from ${targetTime.toFixed(1)}s`)
-
-    // Show loading indicator
-    setSvpLoading(true)
-    setSvpPendingSeek(null)
-    setCurrentTime(targetTime)
-
-    // Destroy current HLS instance
-    if (svpHlsRef.current) {
-      svpHlsRef.current.destroy()
-      svpHlsRef.current = null
-    }
-
-    // Clear current stream state
-    setSvpStreamUrl(null)
-    setSvpBufferedDuration(0)
-
-    try {
-      // Start new stream from target position
-      const result = await playVideoSVP(image.file_path, targetTime)
-
-      if (result.success && result.stream_url) {
-        setSvpStreamUrl(result.stream_url)
-        setSvpStartOffset(targetTime)  // Track offset for timeline display
-        if (result.duration) {
-          setSvpTotalDuration(result.duration)
-        }
-      } else {
-        setSvpError(result.error || 'Failed to restart SVP stream')
-        setSvpLoading(false)
-      }
-    } catch (err) {
-      console.error('SVP restart error:', err)
-      setSvpError(err.message || 'Failed to restart SVP stream')
-      setSvpLoading(false)
-    }
-  }, [image, svpConfig])
-
-  // Seek forward/backward
-  const seekVideo = useCallback((seconds) => {
-    if (!mediaRef.current) return
-
-    // For SVP streams, currentTime is in HLS time, need to convert to absolute video time
-    const currentAbsoluteTime = svpStreamUrl ? mediaRef.current.currentTime + svpStartOffset : mediaRef.current.currentTime
-    const newTime = Math.max(0, Math.min(duration, currentAbsoluteTime + seconds))
-
-    // For SVP streams, check if we need to restart from a new position
-    if (svpStreamUrl) {
-      const bufferedEnd = svpStartOffset + svpBufferedDuration
-      const bufferedStart = svpStartOffset
-
-      if (newTime < bufferedStart - 1 || newTime > bufferedEnd + 2) {
-        restartSVPFromPosition(newTime)
-        return
-      }
-
-      // Seek within current stream
-      const hlsTime = newTime - svpStartOffset
-      setSvpPendingSeek(null)
-      mediaRef.current.currentTime = Math.max(0, hlsTime)
-      setCurrentTime(newTime)
-      return
-    }
-
-    // Normal video seek
-    setSvpPendingSeek(null)
-    mediaRef.current.currentTime = newTime
-    setCurrentTime(newTime)
-  }, [duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, restartSVPFromPosition])
 
   // Sync play state with video element events
   const handleVideoPlay = useCallback(() => {
