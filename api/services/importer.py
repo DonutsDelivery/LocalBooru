@@ -9,6 +9,7 @@ Architecture:
 import os
 import hashlib
 import asyncio
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -142,12 +143,38 @@ async def calculate_perceptual_hash_async(file_path: str) -> str | None:
 
 
 def get_image_dimensions(file_path: str) -> tuple[int, int] | None:
-    """Get image width and height"""
+    """Get image width and height (supports both images and videos)"""
+    # Check if it's a video file
+    video_extensions = {'.mp4', '.mkv', '.webm', '.avi', '.mov', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp'}
+    file_ext = os.path.splitext(file_path)[1].lower()
+
+    if file_ext in video_extensions:
+        # Use ffprobe for video files
+        try:
+            result = subprocess.run([
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height',
+                '-of', 'csv=p=0',
+                file_path
+            ], capture_output=True, text=True, timeout=5)
+
+            if result.returncode == 0:
+                line = result.stdout.strip()
+                if line:
+                    width, height = map(int, line.split(','))
+                    return (width, height)
+        except Exception:
+            pass
+
+    # Try PIL for image files
     try:
         with PILImage.open(file_path) as img:
             return img.size
     except Exception:
-        return None
+        pass
+
+    return None
 
 
 async def get_image_dimensions_async(file_path: str) -> tuple[int, int] | None:
