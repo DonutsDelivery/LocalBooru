@@ -721,16 +721,15 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const startInterpolatedStreamRef = useRef(null)
 
   // Auto-start interpolated stream when video opens
-  // Priority: SVP (if enabled and ready) > Optical Flow (if enabled)
+  // Priority: SVP (if enabled) > Optical Flow (if enabled)
   useEffect(() => {
     if (image && isVideo(image.filename)) {
       console.log('[SVP Auto-start] Checking...', {
         enabled: svpConfig?.enabled,
-        ready: svpConfig?.status?.ready,
         svpConfig: svpConfig
       })
-      // Prefer SVP if enabled and ready
-      if (svpConfig?.enabled && svpConfig?.status?.ready) {
+      // Prefer SVP if enabled
+      if (svpConfig?.enabled) {
         console.log('[SVP Auto-start] Starting SVP stream...')
         startSVPStreamRef.current()
       }
@@ -739,7 +738,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         startInterpolatedStreamRef.current()
       }
     }
-  }, [image?.id, svpConfig?.enabled, svpConfig?.status?.ready, opticalFlowConfig?.enabled])
+  }, [image?.id, svpConfig?.enabled, opticalFlowConfig?.enabled])
 
   // Setup HLS player when optical flow stream is active
   useEffect(() => {
@@ -1023,10 +1022,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         } else {
           // Neither SVP nor OpticalFlow is currently playing
           console.log('[Lightbox] No active stream, starting new one with quality')
-          // Try SVP first, fall back to OpticalFlow, or show error
-          if (svpConfig?.status?.ready) {
-            // SVP is ready, use it even if not currently enabled
-            console.log('[Lightbox] Starting new SVP stream with quality (auto-enabling SVP)')
+          // Try SVP first (if enabled), fall back to OpticalFlow (if enabled), or use transcode
+          if (svpConfig?.enabled) {
+            // SVP is enabled, try to use it
+            console.log('[Lightbox] Starting new SVP stream with quality')
             const result = await playVideoSVP(image.file_path, currentTime, qualityId)
             console.log('[Lightbox] SVP play result:', result)
             if (result.success) {
@@ -1036,9 +1035,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               console.error('[Lightbox] SVP play failed:', result.error)
               alert('Failed to start SVP stream: ' + result.error)
             }
-          } else if (opticalFlowConfig?.status?.ready) {
-            // OpticalFlow is ready, use it
-            console.log('[Lightbox] Starting new OpticalFlow stream with quality (auto-enabling OpticalFlow)')
+          } else if (opticalFlowConfig?.enabled) {
+            // OpticalFlow is enabled, try to use it
+            console.log('[Lightbox] Starting new OpticalFlow stream with quality')
             const result = await playVideoInterpolated(image.file_path, currentTime, qualityId)
             console.log('[Lightbox] OpticalFlow play result:', result)
             if (result.success) {
@@ -1048,7 +1047,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               alert('Failed to start OpticalFlow stream: ' + result.error)
             }
           } else {
-            // Neither SVP nor OpticalFlow available, use simple transcode
+            // Neither SVP nor OpticalFlow enabled, use simple transcode
             console.log('[Lightbox] Using transcode (FFmpeg only) for quality change')
             if (transcodeStreamUrl) {
               await stopTranscodeStream()
@@ -1847,7 +1846,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <video
               key={image.id}
               ref={mediaRef}
-              src={svpConfigLoaded && !svpStreamUrl && !opticalFlowStreamUrl && !transcodeStreamUrl && !svpLoading && !(svpConfig?.enabled && svpConfig?.status?.ready) ? getMediaUrl(image.url) : undefined}
+              src={svpConfigLoaded && !svpStreamUrl && !opticalFlowStreamUrl && !transcodeStreamUrl && !svpLoading && !svpConfig?.enabled && !opticalFlowConfig?.enabled ? getMediaUrl(image.url) : undefined}
               autoPlay
               playsInline
               loop
