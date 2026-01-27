@@ -491,8 +491,12 @@ function Sidebar({
               <span className="info-label">ID</span>
               <span className="info-value">#{selectedImage.id}</span>
 
-              <span className="info-label">Size</span>
-              <span className="info-value">{selectedImage.width}x{selectedImage.height}</span>
+              {selectedImage.width && selectedImage.height ? (
+                <>
+                  <span className="info-label">Resolution</span>
+                  <span className="info-value">{selectedImage.width}x{selectedImage.height}</span>
+                </>
+              ) : null}
 
               <span className="info-label">Rating</span>
               <span className={`info-value rating-${selectedImage.rating}`}>
@@ -539,7 +543,7 @@ function Sidebar({
                 <>
                   <span className="info-label">Path</span>
                   <span className="info-value file-path" title={selectedImage.file_path}>
-                    {selectedImage.file_path.split('/').pop()}
+                    {selectedImage.file_path}
                   </span>
                 </>
               )}

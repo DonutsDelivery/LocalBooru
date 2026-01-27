@@ -13,11 +13,18 @@ export default function QualitySelector({ isOpen, onClose, currentQuality, onQua
     { id: '480p_1.5mbps', label: '480p', description: '1.5 Mbps', maxHeight: 480 },
   ]
 
-  // Filter options based on source resolution
+  // Filter options based on source resolution (prevent upscaling)
   let availableOptions = qualityOptions
   if (sourceResolution && sourceResolution.height) {
     const sourceHeight = sourceResolution.height
-    availableOptions = qualityOptions.filter(opt => opt.maxHeight >= sourceHeight || opt.id === 'original')
+    console.log('[QualitySelector] Source resolution:', sourceHeight, 'px')
+    // Keep: Original (always), and options that don't upscale (maxHeight <= sourceHeight)
+    availableOptions = qualityOptions.filter(opt =>
+      opt.id === 'original' || opt.maxHeight <= sourceHeight
+    )
+    console.log('[QualitySelector] Available options:', availableOptions.map(o => o.id))
+  } else {
+    console.log('[QualitySelector] No source resolution provided, showing all options')
   }
 
   const handleQualitySelect = (optionId) => {
