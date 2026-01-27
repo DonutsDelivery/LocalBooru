@@ -1794,7 +1794,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               <span className="video-time">{formatTime(duration)}</span>
               <button
                 className="video-control-btn quality-btn"
-                onClick={() => setShowQualitySelector(!showQualitySelector)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowQualitySelector(!showQualitySelector)
+                }}
                 title="Quality"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor">

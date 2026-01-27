@@ -27,7 +27,7 @@ export default function QualitySelector({ isOpen, onClose, currentQuality, onQua
 
   return (
     <>
-      <div className="quality-selector-popup">
+      <div className="quality-selector-popup" onClick={(e) => e.stopPropagation()}>
         <div className="quality-selector-header">Quality</div>
         <div className="quality-options">
           {availableOptions.map(option => (
