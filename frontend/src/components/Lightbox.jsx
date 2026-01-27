@@ -2113,7 +2113,20 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
       {/* SVP side menu */}
       {isVideoFile && (
-        <SVPSideMenu isOpen={showSVPMenu} onClose={() => setShowSVPMenu(false)} image={image} />
+        <SVPSideMenu
+          isOpen={showSVPMenu}
+          onClose={async () => {
+            setShowSVPMenu(false)
+            // Reload SVP config in case it was changed in the menu
+            try {
+              const config = await getSVPConfig()
+              setSvpConfig(config)
+            } catch (err) {
+              console.error('Failed to reload SVP config:', err)
+            }
+          }}
+          image={image}
+        />
       )}
 
       {/* Quality selector */}
