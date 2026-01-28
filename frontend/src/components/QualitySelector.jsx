@@ -5,12 +5,14 @@ export default function QualitySelector({ isOpen, onClose, currentQuality, onQua
   if (!isOpen) return null
 
   // Define quality options with metadata
+  // Bitrates based on relative pixel count to 1080p @ 20 Mbps
   const qualityOptions = [
     { id: 'original', label: 'Original', description: 'No transcoding', maxHeight: Infinity },
-    { id: '1080p_8mbps', label: '1080p High', description: '8 Mbps', maxHeight: 1080 },
-    { id: '1080p_4mbps', label: '1080p', description: '4 Mbps', maxHeight: 1080 },
-    { id: '720p_3mbps', label: '720p', description: '3 Mbps', maxHeight: 720 },
-    { id: '480p_1.5mbps', label: '480p', description: '1.5 Mbps', maxHeight: 480 },
+    { id: '1440p', label: '1440p (QHD)', description: '30 Mbps', maxHeight: 1440 },
+    { id: '1080p_enhanced', label: '1080p Enhanced', description: '20 Mbps', maxHeight: 1080 },
+    { id: '1080p', label: '1080p', description: '12 Mbps', maxHeight: 1080 },
+    { id: '720p', label: '720p', description: '8 Mbps', maxHeight: 720 },
+    { id: '480p', label: '480p', description: '4 Mbps', maxHeight: 480 },
   ]
 
   // Filter options based on source resolution (prevent upscaling)

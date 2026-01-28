@@ -9,8 +9,10 @@ Architecture:
 """
 
 import asyncio
+import atexit
 import logging
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -23,6 +25,16 @@ logger = logging.getLogger(__name__)
 
 # Registry of active transcoding streams
 _active_transcode_streams: Dict[str, 'TranscodeStream'] = {}
+
+
+def _cleanup_on_exit():
+    """Clean up all transcode streams on process exit."""
+    logger.info("[Transcode] Cleaning up on exit...")
+    stop_all_transcode_streams()
+
+
+# Register cleanup on exit
+atexit.register(_cleanup_on_exit)
 
 
 def stop_all_transcode_streams():
@@ -72,6 +84,7 @@ class TranscodeStream:
         self._height = 0
         self.segments_ready = 0
         self.playlist_ready = False
+        self._process = None  # FFmpeg process reference
 
         # Register stream
         _active_transcode_streams[self.stream_id] = self
@@ -112,11 +125,12 @@ class TranscodeStream:
             logger.info(f"[Transcode {self.stream_id}] Starting FFmpeg: {' '.join(ffmpeg_cmd)}")
 
             # Run FFmpeg with suppressed output
-            process = await asyncio.create_subprocess_exec(
+            self._process = await asyncio.create_subprocess_exec(
                 *ffmpeg_cmd,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
+            process = self._process
 
             # Wait for playlist file to be created
             max_wait = 30
@@ -238,6 +252,23 @@ class TranscodeStream:
         """Stop the transcoding stream."""
         logger.info(f"[Transcode {self.stream_id}] Stopping")
         self._running = False
+
+        # Kill FFmpeg process first
+        if self._process:
+            try:
+                self._process.terminate()
+                # Give it a moment to terminate gracefully
+                import asyncio
+                try:
+                    asyncio.get_event_loop().run_until_complete(
+                        asyncio.wait_for(self._process.wait(), timeout=2)
+                    )
+                except (asyncio.TimeoutError, RuntimeError):
+                    # Force kill if it doesn't terminate
+                    self._process.kill()
+            except Exception as e:
+                logger.warning(f"[Transcode {self.stream_id}] Error killing process: {e}")
+            self._process = None
 
         if self._task:
             self._task.cancel()

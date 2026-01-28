@@ -16,6 +16,7 @@ Requirements:
     - ffms2 or lsmas VapourSynth plugin for video loading
     - FFmpeg for HLS encoding
 """
+import atexit
 import asyncio
 import logging
 import os
@@ -39,6 +40,17 @@ SVP_PLUGIN_PATH = get_svp_plugin_path() or "/opt/svp/plugins"
 
 # Active SVP streams registry
 _active_svp_streams: Dict[str, 'SVPStream'] = {}
+
+
+def _cleanup_svp_on_exit():
+    """Clean up all SVP streams on process exit."""
+    logger.info("[SVP] Cleaning up on exit...")
+    stop_all_svp_streams()
+    kill_orphaned_svp_processes()
+
+
+# Register cleanup on exit
+atexit.register(_cleanup_svp_on_exit)
 
 # Check for vspipe availability
 _VSPIPE_AVAILABLE: Optional[bool] = None
@@ -1406,6 +1418,15 @@ class SVPStream:
 
             decode_cmd.extend([
                 '-i', self.video_path,
+            ])
+
+            # Downscale BEFORE SVP if quality preset specifies resolution
+            # This makes SVP process smaller frames = much faster
+            if self.target_resolution:
+                width, height = self.target_resolution
+                decode_cmd.extend(['-vf', f'scale={width}:{height}:flags=lanczos'])
+
+            decode_cmd.extend([
                 '-f', 'yuv4mpegpipe',
                 '-pix_fmt', 'yuv420p',
                 '-'
@@ -1440,13 +1461,9 @@ class SVPStream:
                 '-map', '1:a?',
             ])
 
-            # Build video filter chain
-            vf_filters = []
-            if self.target_resolution:
-                width, height = self.target_resolution
-                vf_filters.append(f'scale={width}:{height}:flags=lanczos')
-            vf_filters.append('pad=ceil(iw/2)*2:ceil(ih/2)*2')
-            encode_cmd.extend(['-vf', ','.join(vf_filters)])
+            # Pad to even dimensions (required for H.264)
+            # Note: Scaling already done in decode stage before SVP
+            encode_cmd.extend(['-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2'])
 
             # Video encoder selection
             if self.use_nvenc:
@@ -1474,17 +1491,15 @@ class SVPStream:
             # Audio encoder
             encode_cmd.extend(['-c:a', 'aac', '-b:a', '192k'])
 
-            # HLS output with fMP4 segments (continuous encoding, lower overhead than .ts)
+            # HLS output with MPEG-TS segments
             encode_cmd.extend([
-                '-g', str(self.target_fps * 4),  # Keyframe every 4 seconds (natural intervals)
-                '-keyint_min', str(self.target_fps * 2),
+                '-g', str(self.target_fps * 2),  # Keyframe every 2 seconds
+                '-keyint_min', str(self.target_fps),
                 '-f', 'hls',
-                '-hls_time', '6',
+                '-hls_time', '4',
                 '-hls_list_size', '0',
-                '-hls_segment_type', 'fmp4',  # Fragmented MP4 - continuous encoding
-                '-hls_flags', 'append_list+independent_segments',
-                '-hls_segment_filename', str(self._temp_dir / 'segment_%03d.m4s'),
-                '-hls_fmp4_init_filename', 'init.mp4',
+                '-hls_flags', 'append_list+split_by_time',
+                '-hls_segment_filename', str(self._temp_dir / 'segment_%03d.ts'),
                 str(self.playlist_path)
             ])
 

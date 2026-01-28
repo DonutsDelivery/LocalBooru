@@ -1378,6 +1378,7 @@ async def play_video_interpolated(request: InterpolationPlayRequest):
                 "success": True,
                 "stream_id": stream.stream_id,
                 "stream_url": f"/api/settings/optical-flow/stream/{stream.stream_id}/stream.m3u8",
+                "source_resolution": {"width": source_resolution[0], "height": source_resolution[1]} if source_resolution else None,
                 "message": f"Interpolated stream started at {config['target_fps']} fps"
             }
         else:
@@ -1515,10 +1516,11 @@ async def update_svp_config(config: SVPConfigUpdate):
 # Quality preset definitions for streaming
 QUALITY_PRESETS = {
     "original": {"bitrate": None, "resolution": None},
-    "1080p_8mbps": {"bitrate": "8M", "resolution": (1920, 1080)},
-    "1080p_4mbps": {"bitrate": "4M", "resolution": (1920, 1080)},
-    "720p_3mbps": {"bitrate": "3M", "resolution": (1280, 720)},
-    "480p_1.5mbps": {"bitrate": "1536K", "resolution": (854, 480)},
+    "1440p": {"bitrate": "30M", "resolution": (2560, 1440)},
+    "1080p_enhanced": {"bitrate": "20M", "resolution": (1920, 1080)},
+    "1080p": {"bitrate": "12M", "resolution": (1920, 1080)},
+    "720p": {"bitrate": "8M", "resolution": (1280, 720)},
+    "480p": {"bitrate": "4M", "resolution": (854, 480)},
 }
 
 
@@ -1603,6 +1605,7 @@ async def play_video_svp(request: SVPPlayRequest):
             print(f"[SVP] Could not detect source resolution: {e}")
 
         quality_settings = parse_quality_preset(request.quality_preset, source_resolution)
+        print(f"[SVP] Quality preset: {request.quality_preset}, source: {source_resolution}, settings: {quality_settings}")
 
         # Create SVP stream
         stream = SVPStream(
@@ -1644,6 +1647,7 @@ async def play_video_svp(request: SVPPlayRequest):
                 "stream_url": f"/api/settings/svp/stream/{stream.stream_id}/stream.m3u8",
                 "duration": stream._duration,
                 "start_position": request.start_position,
+                "source_resolution": {"width": source_resolution[0], "height": source_resolution[1]} if source_resolution else None,
                 "message": f"SVP stream started at {config['target_fps']} fps with {config.get('preset', 'balanced')} preset"
             }
         else:
@@ -1737,6 +1741,7 @@ async def play_video_transcode(request: TranscodePlayRequest):
                 "stream_url": f"/api/settings/transcode/stream/{stream.stream_id}/playlist.m3u8",
                 "duration": stream._duration,
                 "start_position": request.start_position,
+                "source_resolution": {"width": source_resolution[0], "height": source_resolution[1]} if source_resolution else None,
                 "message": "Transcoding started"
             }
         else:

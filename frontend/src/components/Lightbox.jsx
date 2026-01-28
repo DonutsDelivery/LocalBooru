@@ -56,6 +56,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Transcode stream state (fallback when SVP/OpticalFlow not available)
   const [transcodeStreamUrl, setTranscodeStreamUrl] = useState(null)
+  const [transcodeTotalDuration, setTranscodeTotalDuration] = useState(null)
+  const [transcodeStartOffset, setTranscodeStartOffset] = useState(0)
   const transcodeHlsRef = useRef(null)
 
   // SVP side menu state
@@ -151,6 +153,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setSvpPendingSeek(null)
     setSvpStartOffset(0)
     svpStartingRef.current = false  // Reset lock for new video
+    setSourceResolution(null)  // Reset so it gets set from original video, not stream
+    setTranscodeTotalDuration(null)
+    setTranscodeStartOffset(0)
     // Cleanup HLS instances
     if (hlsRef.current) {
       hlsRef.current.destroy()
@@ -401,6 +406,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         setSvpStartOffset(targetTime)  // Track offset for timeline display
         if (result.duration) {
           setSvpTotalDuration(result.duration)
+        }
+        if (result.source_resolution) {
+          setSourceResolution(result.source_resolution)
         }
       } else {
         setSvpError(result.error || 'Failed to restart SVP stream')
@@ -721,10 +729,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setOpticalFlowError(null)
 
     try {
-      const result = await playVideoInterpolated(image.file_path)
+      const result = await playVideoInterpolated(image.file_path, 0, currentQuality)
 
       if (result.success && result.stream_url) {
         setOpticalFlowStreamUrl(result.stream_url)
+        if (result.source_resolution) setSourceResolution(result.source_resolution)
       } else {
         setOpticalFlowError(result.error || 'Failed to start interpolated playback')
       }
@@ -734,31 +743,51 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
 
     setOpticalFlowLoading(false)
-  }, [image, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading])
+  }, [image, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading, currentQuality])
 
   // Refs to access latest callbacks without adding them to effect dependencies
   const startSVPStreamRef = useRef(null)
   const startInterpolatedStreamRef = useRef(null)
 
   // Auto-start interpolated stream when video opens
-  // Priority: SVP (if enabled) > Optical Flow (if enabled)
+  // Priority: SVP (if enabled) > Optical Flow (if enabled) > Transcode (if quality != original)
   useEffect(() => {
     if (image && isVideo(image.filename)) {
-      console.log('[SVP Auto-start] Checking...', {
-        enabled: svpConfig?.enabled,
-        svpConfig: svpConfig
+      console.log('[Auto-start] Checking...', {
+        svpEnabled: svpConfig?.enabled,
+        opticalFlowEnabled: opticalFlowConfig?.enabled,
+        currentQuality
       })
       // Prefer SVP if enabled
       if (svpConfig?.enabled) {
-        console.log('[SVP Auto-start] Starting SVP stream...')
+        console.log('[Auto-start] Starting SVP stream...')
         startSVPStreamRef.current()
       }
       // Fall back to optical flow if enabled
       else if (opticalFlowConfig?.enabled) {
+        console.log('[Auto-start] Starting OpticalFlow stream...')
         startInterpolatedStreamRef.current()
       }
+      // If quality is not original and no interpolation enabled, use transcode
+      else if (currentQuality && currentQuality !== 'original') {
+        console.log('[Auto-start] Starting transcode stream for quality:', currentQuality)
+        // Start transcode stream
+        playVideoTranscode(image.file_path, 0, currentQuality).then(result => {
+          if (result.success) {
+            setTranscodeStreamUrl(result.stream_url)
+            setTranscodeStartOffset(0)
+            if (result.duration) setTranscodeTotalDuration(result.duration)
+            if (result.source_resolution) setSourceResolution(result.source_resolution)
+          } else {
+            console.error('[Auto-start] Transcode failed:', result.error)
+          }
+        }).catch(err => {
+          console.error('[Auto-start] Transcode error:', err)
+        })
+      }
+      // Otherwise play direct (original quality, no interpolation)
     }
-  }, [image?.id, svpConfig?.enabled, opticalFlowConfig?.enabled])
+  }, [image?.id, svpConfig?.enabled, opticalFlowConfig?.enabled, currentQuality])
 
   // Setup HLS player when optical flow stream is active
   useEffect(() => {
@@ -927,9 +956,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setSvpLoading(true)
     setSvpError(null)
 
-    console.log('[startSVPStream] Calling API with path:', image.file_path)
+    console.log('[startSVPStream] Calling API with path:', image.file_path, 'quality:', currentQuality)
     try {
-      const result = await playVideoSVP(image.file_path)
+      const result = await playVideoSVP(image.file_path, 0, currentQuality)
       console.log('[startSVPStream] API result:', result)
 
       if (result.success && result.stream_url) {
@@ -938,6 +967,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         // Store the known total duration from API for proper timeline display
         if (result.duration) {
           setSvpTotalDuration(result.duration)
+        }
+        // Set source resolution from API (original video dimensions, not stream dimensions)
+        if (result.source_resolution) {
+          setSourceResolution(result.source_resolution)
         }
       } else {
         setSvpError(result.error || 'Failed to start SVP playback')
@@ -951,7 +984,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       svpStartingRef.current = false
     }
     // Note: svpLoading stays true until MANIFEST_PARSED fires in the useEffect
-  }, [image, svpConfig, svpStreamUrl, svpLoading, opticalFlowStreamUrl])
+  }, [image, svpConfig, svpStreamUrl, svpLoading, opticalFlowStreamUrl, currentQuality])
 
   // Update refs after callbacks are defined (used by auto-start effect)
   startSVPStreamRef.current = startSVPStream
@@ -1027,6 +1060,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           if (result.success) {
             setSvpStreamUrl(result.stream_url)
             if (result.duration) setSvpTotalDuration(result.duration)
+            if (result.source_resolution) setSourceResolution(result.source_resolution)
           } else {
             console.error('[Lightbox] SVP play failed:', result.error)
           }
@@ -1052,6 +1086,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             if (result.success) {
               setSvpStreamUrl(result.stream_url)
               if (result.duration) setSvpTotalDuration(result.duration)
+              if (result.source_resolution) setSourceResolution(result.source_resolution)
             } else {
               console.error('[Lightbox] SVP play failed:', result.error)
               alert('Failed to start SVP stream: ' + result.error)
@@ -1078,6 +1113,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             console.log('[Lightbox] Transcode play result:', result)
             if (result.success) {
               setTranscodeStreamUrl(result.stream_url)
+              setTranscodeStartOffset(currentTime)
+              if (result.duration) setTranscodeTotalDuration(result.duration)
+              if (result.source_resolution) setSourceResolution(result.source_resolution)
             } else {
               console.error('[Lightbox] Transcode play failed:', result.error)
               alert('Failed to transcode video: ' + result.error)
@@ -1093,19 +1131,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Sync play state with video element events
   const handleVideoPlay = useCallback(() => {
     setIsPlaying(true)
-    // Ensure source resolution is set (fallback for HLS streams where it might not be available in onLoadedMetadata)
-    if (mediaRef.current && (!sourceResolution || !sourceResolution.width || !sourceResolution.height)) {
-      const width = mediaRef.current.videoWidth
-      const height = mediaRef.current.videoHeight
-      if (width > 0 && height > 0) {
-        console.log('[Lightbox] Setting resolution on play:', width, 'x', height)
-        setSourceResolution({
-          width,
-          height
-        })
-      }
-    }
-  }, [sourceResolution])
+    // Note: Don't update sourceResolution here - it should only be set once from the original video
+    // Updating it during streaming would give us the stream resolution (e.g., 480p) instead of source
+  }, [])
 
   const handleVideoPause = useCallback(() => {
     setIsPlaying(false)
@@ -1116,18 +1144,25 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     if (!mediaRef.current || isSeeking) return
     // Don't update time display while waiting for pending seek
     if (svpPendingSeek) return
-    // Add offset for SVP streams that started from a seek position
-    const actualTime = svpStreamUrl ? mediaRef.current.currentTime + svpStartOffset : mediaRef.current.currentTime
+    // Add offset for streams that started from a seek position
+    let actualTime = mediaRef.current.currentTime
+    if (svpStreamUrl) {
+      actualTime += svpStartOffset
+    } else if (transcodeStreamUrl) {
+      actualTime += transcodeStartOffset
+    }
     setCurrentTime(actualTime)
-  }, [isSeeking, svpPendingSeek, svpStreamUrl, svpStartOffset])
+  }, [isSeeking, svpPendingSeek, svpStreamUrl, svpStartOffset, transcodeStreamUrl, transcodeStartOffset])
 
   // Get duration and natural size when video metadata loads
   const handleLoadedMetadata = useCallback(() => {
     if (!mediaRef.current) return
-    // For SVP/HLS streams, use the known total duration from API if available
+    // For HLS streams, use the known total duration from API if available
     // This allows the timeline to show the full video length even while segments are being generated
     if (svpTotalDuration && svpStreamUrl) {
       setDuration(svpTotalDuration)
+    } else if (transcodeTotalDuration && transcodeStreamUrl) {
+      setDuration(transcodeTotalDuration)
     } else {
       setDuration(mediaRef.current.duration)
     }
@@ -1141,9 +1176,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     })
 
     // Store source resolution for quality selector
-    // For HLS streams, dimensions might not be available immediately
-    if (width > 0 && height > 0) {
-      console.log('[Lightbox] Setting source resolution:', width, 'x', height)
+    // ONLY set this when playing the ORIGINAL video (not a stream)
+    // Stream dimensions would be the transcoded resolution (e.g., 480p), not the source
+    const isStreaming = svpStreamUrl || opticalFlowStreamUrl || transcodeStreamUrl
+    if (width > 0 && height > 0 && !isStreaming) {
+      console.log('[Lightbox] Setting source resolution (original video):', width, 'x', height)
       setSourceResolution({
         width,
         height
@@ -1151,7 +1188,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     } else {
       console.log('[Lightbox] Video dimensions not available yet, will retry on play')
     }
-  }, [svpTotalDuration, svpStreamUrl])
+  }, [svpTotalDuration, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, transcodeTotalDuration])
 
   // Handle seeking via timeline
   const handleSeek = useCallback((e) => {
