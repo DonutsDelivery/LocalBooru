@@ -639,6 +639,8 @@ import numpy as np
 import sys
 import signal
 import atexit
+import threading
+from collections import deque
 
 # Video parameters (pre-computed)
 VIDEO_PATH = '{escaped_path}'
@@ -656,18 +658,24 @@ Y_SIZE = WIDTH * HEIGHT
 UV_SIZE = (WIDTH // 2) * (HEIGHT // 2)
 FRAME_SIZE = Y_SIZE + 2 * UV_SIZE
 
+# Buffer size: read ahead up to 30 frames to keep GPU fed
+BUFFER_SIZE = 30
+
 # Initialize VapourSynth
 core = vs.core
 core.std.LoadPlugin("{_flow1_path}")
 core.std.LoadPlugin("{_flow2_path}")
 
-# Start FFmpeg decoder with hybrid seeking for accuracy:
-# Input seek (before -i) for fast keyframe positioning, output seek (after -i) for precision
+# Start FFmpeg with hardware decoding (NVDEC/VAAPI auto-fallback to software)
+# Uses hybrid seeking: input seek for fast positioning, output seek for accuracy
 ffmpeg_proc = subprocess.Popen([
-    'ffmpeg', {ffmpeg_input_seek}'-i', VIDEO_PATH,
+    'ffmpeg',
+    '-hwaccel', 'auto',        # Auto-select best hardware decoder (NVDEC/VAAPI/etc)
+    '-threads', '0',           # Use all CPU threads for software decode fallback
+    {ffmpeg_input_seek}'-i', VIDEO_PATH,
     {ffmpeg_output_seek}'-f', 'rawvideo', '-pix_fmt', 'yuv420p',
     '-'
-], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=FRAME_SIZE * 4)
 
 # Cleanup handler to ensure FFmpeg is terminated
 def cleanup_ffmpeg():
@@ -686,31 +694,70 @@ if hasattr(signal, 'SIGTERM'):
     signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
 signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
 
-# Frame cache for sequential access
-frame_cache = {{}}
-next_frame_to_read = 0
+# Threaded frame reader for parallel decoding
+class FrameReader:
+    def __init__(self, proc, frame_size, buffer_size):
+        self.proc = proc
+        self.frame_size = frame_size
+        self.frames = {{}}  # frame_num -> data
+        self.next_read = 0
+        self.eof = False
+        self.lock = threading.Lock()
+        self.condition = threading.Condition(self.lock)
+        self.buffer_size = buffer_size
+        self.last_requested = -1
+
+        # Start reader thread
+        self.thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self.thread.start()
+
+    def _reader_loop(self):
+        """Background thread that reads frames ahead."""
+        while not self.eof:
+            with self.lock:
+                # Wait if buffer is full (too far ahead of consumer)
+                while (self.next_read - self.last_requested > self.buffer_size
+                       and not self.eof and self.last_requested >= 0):
+                    self.condition.wait(timeout=0.1)
+
+            # Read next frame outside lock
+            data = self.proc.stdout.read(self.frame_size)
+            if len(data) < self.frame_size:
+                with self.lock:
+                    self.eof = True
+                    self.condition.notify_all()
+                break
+
+            with self.lock:
+                self.frames[self.next_read] = data
+                self.next_read += 1
+                self.condition.notify_all()
+
+    def get_frame(self, n):
+        """Get frame n, blocking until available."""
+        with self.lock:
+            self.last_requested = max(self.last_requested, n)
+            self.condition.notify_all()  # Wake reader if it was waiting
+
+            # Wait for frame to be available
+            while n not in self.frames and not self.eof:
+                self.condition.wait(timeout=0.5)
+
+            data = self.frames.get(n)
+
+            # Clean old frames to save memory
+            for old_n in list(self.frames.keys()):
+                if old_n < n - 5:
+                    del self.frames[old_n]
+
+            return data
+
+# Create threaded frame reader
+frame_reader = FrameReader(ffmpeg_proc, FRAME_SIZE, BUFFER_SIZE)
 
 def read_frame_data(n):
-    """Read frame n from FFmpeg output (sequential reading)."""
-    global next_frame_to_read
-
-    if n in frame_cache:
-        return frame_cache[n]
-
-    # Read frames sequentially until we reach n
-    while next_frame_to_read <= n:
-        data = ffmpeg_proc.stdout.read(FRAME_SIZE)
-        if len(data) < FRAME_SIZE:
-            return None
-        frame_cache[next_frame_to_read] = data
-        next_frame_to_read += 1
-
-    # Clean old frames from cache to save memory (keep last 10)
-    for old_n in list(frame_cache.keys()):
-        if old_n < n - 10:
-            del frame_cache[old_n]
-
-    return frame_cache.get(n)
+    """Read frame n from threaded buffer."""
+    return frame_reader.get_frame(n)
 
 def modify_frame(n, f):
     """Replace blank frame with FFmpeg decoded frame."""
