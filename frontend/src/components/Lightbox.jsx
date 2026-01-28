@@ -168,6 +168,26 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
   }, [image?.id])
 
+  // Auto-dismiss SVP error toast after 5 seconds
+  useEffect(() => {
+    if (svpError) {
+      const timer = setTimeout(() => {
+        setSvpError(null)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [svpError])
+
+  // Auto-dismiss optical flow error toast after 5 seconds
+  useEffect(() => {
+    if (opticalFlowError) {
+      const timer = setTimeout(() => {
+        setOpticalFlowError(null)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [opticalFlowError])
+
   // Load optical flow config on mount
   useEffect(() => {
     async function loadOpticalFlowConfig() {
@@ -921,6 +941,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         }
       } else {
         setSvpError(result.error || 'Failed to start SVP playback')
+        setSvpLoading(false)  // Clear loading state on API failure
       }
     } catch (err) {
       console.error('SVP error:', err)
@@ -1844,7 +1865,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <video
               key={image.id}
               ref={mediaRef}
-              src={svpConfigLoaded && !svpStreamUrl && !opticalFlowStreamUrl && !transcodeStreamUrl && !svpLoading && !svpConfig?.enabled && !opticalFlowConfig?.enabled ? getMediaUrl(image.url) : undefined}
+              src={svpConfigLoaded && !svpStreamUrl && !opticalFlowStreamUrl && !transcodeStreamUrl && !svpLoading && (!svpConfig?.enabled || svpError) && (!opticalFlowConfig?.enabled || opticalFlowError) ? getMediaUrl(image.url) : undefined}
               autoPlay
               playsInline
               loop
@@ -2116,8 +2137,30 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             setShowSVPMenu(false)
             // Reload SVP config in case it was changed in the menu
             try {
-              const config = await getSVPConfig()
-              setSvpConfig(config)
+              const newConfig = await getSVPConfig()
+              const configChanged = JSON.stringify(newConfig) !== JSON.stringify(svpConfig)
+              setSvpConfig(newConfig)
+
+              // If config changed, restart the stream with new settings
+              if (configChanged) {
+                // Stop current stream
+                if (svpStreamUrl) {
+                  await stopSVPStream()
+                  setSvpStreamUrl(null)
+                }
+                // Clear error (e.g., "fps already at target" with old target)
+                setSvpError(null)
+                setSvpLoading(false)
+                svpStartingRef.current = false
+
+                // Start new stream if enabled
+                if (newConfig.enabled && image && isVideo(image.filename)) {
+                  // Small delay to ensure state is cleared
+                  setTimeout(() => {
+                    startSVPStreamRef.current?.()
+                  }, 100)
+                }
+              }
             } catch (err) {
               console.error('Failed to reload SVP config:', err)
             }

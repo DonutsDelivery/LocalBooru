@@ -490,6 +490,108 @@ def _build_svp_params(
     return super_params, analyse_params, smooth_params
 
 
+def _generate_vspipe_stdin_script(
+    target_fps: int,
+    preset: str = "balanced",
+    use_nvof: bool = True,
+    shader: int = 23,
+    artifact_masking: int = 100,
+    frame_interpolation: int = 2,
+    custom_super: Optional[str] = None,
+    custom_analyse: Optional[str] = None,
+    custom_smooth: Optional[str] = None,
+) -> str:
+    """
+    Generate a VapourSynth script that reads Y4M from stdin and outputs SVP-processed Y4M.
+
+    This script is meant to be run with vspipe, reading from FFmpeg's Y4M output:
+        ffmpeg -i video.mp4 -f yuv4mpegpipe - | vspipe -c y4m script.vpy - | ffmpeg -f yuv4mpegpipe -i - ...
+
+    NO PYTHON IN THE FRAME PATH - rawsource reads directly from stdin.
+    """
+    preset_config = SVP_PRESETS.get(preset, SVP_PRESETS["balanced"])
+
+    # Get SVP parameters
+    super_params, analyse_params, smooth_params = _build_svp_params(
+        target_fps, preset, shader, artifact_masking, frame_interpolation,
+        custom_super, custom_analyse, custom_smooth
+    )
+
+    # Get NVOF block size for this preset
+    nvof_blk = preset_config.get("nvof_blk", 16)
+
+    # Resolve platform-specific SVP plugin paths
+    _flow1_path, _flow2_path = get_svp_plugin_full_paths()
+
+    # Rawsource plugin path (user-installed)
+    rawsource_path = os.path.expanduser("~/.local/lib/vapoursynth/libvsrawsource.so")
+
+    if use_nvof:
+        svp_processing = f'''
+# NVOF Pipeline - uses NVIDIA Optical Flow hardware
+# Pick optimal vec_src ratio based on resolution
+NVOF_MIN_WIDTH = 160
+NVOF_MIN_HEIGHT = 128
+
+for ratio in [8, 6, 4, 2, 1]:
+    test_w = clip.width // ratio
+    test_h = clip.height // ratio
+    test_w = (test_w // 2) * 2
+    test_h = (test_h // 2) * 2
+    if test_w >= NVOF_MIN_WIDTH and test_h >= NVOF_MIN_HEIGHT:
+        if {nvof_blk} >= 16 and ratio <= 4:
+            break
+        elif {nvof_blk} >= 8 and ratio <= 2:
+            break
+        elif ratio <= 1:
+            break
+
+new_w = clip.width // ratio
+new_h = clip.height // ratio
+new_w = (new_w // 2) * 2
+new_h = (new_h // 2) * 2
+
+if new_w < NVOF_MIN_WIDTH or new_h < NVOF_MIN_HEIGHT:
+    new_w = (clip.width // 2) * 2
+    new_h = (clip.height // 2) * 2
+
+nvof_src = clip.resize.Bicubic(new_w, new_h)
+smooth = core.svp2.SmoothFps_NVOF(clip, '{smooth_params}', vec_src=nvof_src, src=clip, fps=src_fps)
+'''
+    else:
+        svp_processing = f'''
+# Regular SVP Pipeline - CPU motion estimation, GPU rendering
+super_clip = core.svp1.Super(clip, '{super_params}')
+vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, '{analyse_params}')
+smooth = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"],
+    vectors["clip"], vectors["data"], '{smooth_params}', src=clip, fps=src_fps)
+'''
+
+    script = f'''import vapoursynth as vs
+core = vs.core
+
+# Load plugins
+core.std.LoadPlugin("{rawsource_path}")
+core.std.LoadPlugin("{_flow1_path}")
+core.std.LoadPlugin("{_flow2_path}")
+
+# Read Y4M from stdin - NO PYTHON FRAME HANDLING
+clip = core.raws.Source("-")
+
+# Get source fps for SVP
+src_fps = float(clip.fps)
+
+# Convert to YUV420P8 if needed
+if clip.format.id != vs.YUV420P8:
+    clip = core.resize.Bicubic(clip, format=vs.YUV420P8, matrix_in_s="709", matrix_s="709")
+
+{svp_processing}
+
+smooth.set_output()
+'''
+    return script
+
+
 def _generate_ffmpeg_svp_script(
     video_path: str,
     target_fps: int,
@@ -694,6 +796,58 @@ if hasattr(signal, 'SIGTERM'):
     signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
 signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
 
+# Debug/performance metrics - writes to log file for real-time monitoring
+import time as _time
+
+# Log file path - fixed location for easy monitoring
+_LOG_PATH = '/tmp/svp_perf.log'
+
+class PerfMetrics:
+    def __init__(self):
+        self.start_time = _time.time()
+        self.decode_times = []  # FFmpeg read times
+        self.process_times = []  # VS frame get times
+        self.output_times = []  # Y4M write times
+        self.buffer_levels = []
+        self.frame_count = 0
+        self.last_report = _time.time()
+        self.stalls = 0  # times we had to wait for buffer
+        # Clear log file on start
+        with open(_LOG_PATH, 'w') as f:
+            f.write(f"[SVP PERF] Started at {{_time.strftime('%H:%M:%S')}}\\n")
+            f.write(f"[SVP PERF] Video: {{WIDTH}}x{{HEIGHT}} @ {{SRC_FPS:.2f}}fps -> {{TARGET_FPS}}fps\\n")
+            f.write(f"[SVP PERF] Frame size: {{FRAME_SIZE / 1024 / 1024:.1f}} MB\\n")
+
+    def log(self, msg):
+        """Write to log file (unbuffered)."""
+        with open(_LOG_PATH, 'a') as f:
+            f.write(msg + '\\n')
+
+    def report(self, buffer_fill, force=False):
+        """Print performance report every 2 seconds."""
+        now = _time.time()
+        if not force and now - self.last_report < 2.0:
+            return
+        self.last_report = now
+
+        elapsed = now - self.start_time
+        overall_fps = self.frame_count / elapsed if elapsed > 0 else 0
+
+        avg_decode = sum(self.decode_times[-100:]) / len(self.decode_times[-100:]) * 1000 if self.decode_times else 0
+        avg_process = sum(self.process_times[-100:]) / len(self.process_times[-100:]) * 1000 if self.process_times else 0
+        avg_output = sum(self.output_times[-100:]) / len(self.output_times[-100:]) * 1000 if self.output_times else 0
+
+        decode_fps = 1000 / avg_decode if avg_decode > 0 else float('inf')
+        process_fps = 1000 / avg_process if avg_process > 0 else float('inf')
+
+        self.log(f"[PERF] frame={{self.frame_count}} buf={{buffer_fill}}/{{BUFFER_SIZE}} "
+                 f"fps={{overall_fps:.1f}} stalls={{self.stalls}}")
+        self.log(f"       decode={{avg_decode:.1f}}ms ({{decode_fps:.0f}}fps) "
+                 f"process={{avg_process:.1f}}ms ({{process_fps:.0f}}fps) "
+                 f"output={{avg_output:.1f}}ms")
+
+metrics = PerfMetrics()
+
 # Threaded frame reader for parallel decoding
 class FrameReader:
     def __init__(self, proc, frame_size, buffer_size):
@@ -721,7 +875,10 @@ class FrameReader:
                     self.condition.wait(timeout=0.1)
 
             # Read next frame outside lock
+            t0 = _time.time()
             data = self.proc.stdout.read(self.frame_size)
+            decode_time = _time.time() - t0
+
             if len(data) < self.frame_size:
                 with self.lock:
                     self.eof = True
@@ -730,6 +887,7 @@ class FrameReader:
 
             with self.lock:
                 self.frames[self.next_read] = data
+                metrics.decode_times.append(decode_time)
                 self.next_read += 1
                 self.condition.notify_all()
 
@@ -740,24 +898,34 @@ class FrameReader:
             self.condition.notify_all()  # Wake reader if it was waiting
 
             # Wait for frame to be available
+            waited = False
             while n not in self.frames and not self.eof:
+                waited = True
                 self.condition.wait(timeout=0.5)
 
+            if waited:
+                metrics.stalls += 1
+
             data = self.frames.get(n)
+            buffer_fill = len(self.frames)
 
             # Clean old frames to save memory
             for old_n in list(self.frames.keys()):
                 if old_n < n - 5:
                     del self.frames[old_n]
 
-            return data
+            return data, buffer_fill
 
 # Create threaded frame reader
 frame_reader = FrameReader(ffmpeg_proc, FRAME_SIZE, BUFFER_SIZE)
+_last_buffer_fill = 0
 
 def read_frame_data(n):
     """Read frame n from threaded buffer."""
-    return frame_reader.get_frame(n)
+    global _last_buffer_fill
+    data, buffer_fill = frame_reader.get_frame(n)
+    _last_buffer_fill = buffer_fill
+    return data
 
 def modify_frame(n, f):
     """Replace blank frame with FFmpeg decoded frame."""
@@ -806,12 +974,27 @@ def write_y4m_frame(frame):
 write_y4m_header()
 for i in range(len(smooth)):
     try:
+        # Time VapourSynth frame processing
+        t0 = _time.time()
         frame = smooth.get_frame(i)
+        process_time = _time.time() - t0
+        metrics.process_times.append(process_time)
+
+        # Time Y4M output
+        t0 = _time.time()
         write_y4m_frame(frame)
+        output_time = _time.time() - t0
+        metrics.output_times.append(output_time)
+
+        metrics.frame_count += 1
+        metrics.report(_last_buffer_fill)
+
     except Exception as e:
         print(f"Frame {{i}} error: {{e}}", file=sys.stderr)
         break
 
+# Final report
+metrics.report(_last_buffer_fill, force=True)
 ffmpeg_proc.terminate()
 '''
     return script
@@ -1035,6 +1218,7 @@ class SVPStream:
         # State
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        self._decode_proc: Optional[subprocess.Popen] = None
         self._vspipe_proc: Optional[subprocess.Popen] = None
         self._ffmpeg_proc: Optional[subprocess.Popen] = None
         self._temp_dir: Optional[Path] = None
@@ -1163,19 +1347,21 @@ class SVPStream:
             self._error = "Failed to get video info"
             return False
 
+        # Check if interpolation is actually needed
+        # If source fps is within 5% of target fps, SVP is pointless
+        fps_ratio = self.target_fps / self._src_fps if self._src_fps > 0 else 2.0
+        if 0.95 <= fps_ratio <= 1.05:
+            self._error = f"Source fps ({self._src_fps:.2f}) already at target ({self.target_fps}fps), interpolation not needed"
+            logger.warning(f"[SVP {self.stream_id}] {self._error}")
+            return False
+
         # Create temp directory for HLS output
         self._temp_dir = Path(tempfile.mkdtemp(prefix='svp_stream_'))
         logger.info(f"[SVP {self.stream_id}] HLS output: {self._temp_dir}")
 
-        # Generate and write FFmpeg-based SVP script (bypasses bestsource indexing)
-        script = _generate_ffmpeg_svp_script(
-            self.video_path,
+        # Generate vspipe stdin script (reads Y4M from stdin, no Python frame handling)
+        script = _generate_vspipe_stdin_script(
             self.target_fps,
-            self._width,
-            self._height,
-            self._src_fps_num,
-            self._src_fps_den,
-            self._num_frames,
             self.preset,
             use_nvof=self.use_nvof,
             shader=self.shader,
@@ -1184,11 +1370,9 @@ class SVPStream:
             custom_super=self.custom_super,
             custom_analyse=self.custom_analyse,
             custom_smooth=self.custom_smooth,
-            start_position=self.start_position,
         )
-        self._script_path = self._temp_dir / "svp_process.py"
+        self._script_path = self._temp_dir / "svp_stdin.vpy"
         self._script_path.write_text(script)
-        os.chmod(self._script_path, 0o755)  # Make executable
         logger.debug(f"[SVP {self.stream_id}] Script written to {self._script_path}")
 
         # Start the pipeline
@@ -1199,182 +1383,193 @@ class SVPStream:
         return True
 
     async def _run_pipeline(self):
-        """Run the Python SVP script → FFmpeg pipeline.
+        """Run the FFmpeg → vspipe → FFmpeg pipeline.
 
-        Uses FFmpeg to decode video, feeds frames through Python/VapourSynth/SVP,
-        then outputs Y4M to FFmpeg for HLS encoding. This bypasses bestsource
-        indexing entirely for instant startup.
+        Three-stage pipeline with NO PYTHON in the frame path:
+        1. FFmpeg decodes video to Y4M (hardware accelerated)
+        2. vspipe reads Y4M from stdin, processes with SVP, outputs Y4M
+        3. FFmpeg encodes Y4M to HLS
+
+        This is the same architecture that native SVP uses for real-time playback.
         """
         try:
-            # Build Python command to run the SVP script
-            # Use system Python to avoid venv conflicts with VapourSynth
-            svp_cmd = [
-                get_system_python(),
-                str(self._script_path)
+            # Stage 1: FFmpeg decode to Y4M
+            decode_cmd = [
+                'ffmpeg',
+                '-hwaccel', 'auto',  # Use NVDEC/VAAPI if available
+                '-threads', '0',
             ]
 
-            # FFmpeg command to encode Y4M from stdin to HLS
-            ffmpeg_cmd = [
+            # Add seek if needed
+            if self.start_position > 0:
+                decode_cmd.extend(['-ss', str(self.start_position)])
+
+            decode_cmd.extend([
+                '-i', self.video_path,
+                '-f', 'yuv4mpegpipe',
+                '-pix_fmt', 'yuv420p',
+                '-'
+            ])
+
+            # Stage 2: vspipe with SVP processing
+            vspipe_cmd = [
+                'vspipe',
+                '-c', 'y4m',
+                str(self._script_path),
+                '-'
+            ]
+
+            # Stage 3: FFmpeg encode to HLS
+            encode_cmd = [
                 'ffmpeg',
                 '-y',
                 '-probesize', '32',
                 '-analyzeduration', '0',
                 '-fflags', '+nobuffer+flush_packets',
                 '-f', 'yuv4mpegpipe',
-                '-i', '-',  # Y4M from Python script (video already seeked)
+                '-i', '-',  # Y4M from vspipe
             ]
 
-            # Add audio input with seek if needed (must seek audio to match video)
+            # Add audio input with seek if needed
             if self.start_position > 0:
-                logger.info(f"[SVP {self.stream_id}] Audio seek: -ss {self.start_position}")
-                ffmpeg_cmd.extend(['-ss', str(self.start_position)])
-            ffmpeg_cmd.extend([
+                encode_cmd.extend(['-ss', str(self.start_position)])
+            encode_cmd.extend([
                 '-probesize', '5000000',
                 '-i', self.video_path,  # Original video for audio
                 '-map', '0:v',
                 '-map', '1:a?',
             ])
 
-            # Build video filter chain: scale (if needed) + pad
+            # Build video filter chain
             vf_filters = []
-
-            # Add scaling filter if target resolution is specified
             if self.target_resolution:
                 width, height = self.target_resolution
                 vf_filters.append(f'scale={width}:{height}:flags=lanczos')
-
-            # Always pad to multiple of 2 for encoder compatibility
             vf_filters.append('pad=ceil(iw/2)*2:ceil(ih/2)*2')
-
-            ffmpeg_cmd.extend([
-                '-vf', ','.join(vf_filters)
-            ])
+            encode_cmd.extend(['-vf', ','.join(vf_filters)])
 
             # Video encoder selection
             if self.use_nvenc:
-                ffmpeg_cmd.extend([
+                encode_cmd.extend([
                     '-c:v', 'h264_nvenc',
                     '-preset', 'p1',
                     '-tune', 'll',
                 ])
-
-                # Use CBR mode for predictable bitrate, or VBR for original quality
                 if self.target_bitrate:
-                    # CBR mode for consistent bitrate
-                    bitrate_value = self.target_bitrate
-                    ffmpeg_cmd.extend([
+                    encode_cmd.extend([
                         '-rc', 'cbr',
-                        '-b:v', bitrate_value,
-                        '-maxrate', bitrate_value,
-                        '-bufsize', f'{int(bitrate_value.rstrip("MK")) * 2}M' if 'M' in bitrate_value else f'{int(bitrate_value.rstrip("MK")) * 2}K',
-                    ])
-                else:
-                    # VBR mode (original quality)
-                    ffmpeg_cmd.extend([
-                        '-rc', 'vbr',
-                        '-cq', '23',
-                        '-b:v', '0',
-                    ])
-            else:
-                ffmpeg_cmd.extend([
-                    '-c:v', 'libx264',
-                    '-preset', 'ultrafast',
-                    '-tune', 'zerolatency',
-                ])
-
-                if self.target_bitrate:
-                    # Use specified bitrate
-                    ffmpeg_cmd.extend([
                         '-b:v', self.target_bitrate,
+                        '-maxrate', self.target_bitrate,
                         '-bufsize', f'{int(self.target_bitrate.rstrip("MK")) * 2}M' if 'M' in self.target_bitrate else f'{int(self.target_bitrate.rstrip("MK")) * 2}K',
                     ])
                 else:
-                    # Use CRF for original quality (default)
-                    ffmpeg_cmd.extend([
-                        '-crf', '23',
-                    ])
+                    encode_cmd.extend(['-rc', 'vbr', '-cq', '23', '-b:v', '0'])
+            else:
+                encode_cmd.extend(['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency'])
+                if self.target_bitrate:
+                    encode_cmd.extend(['-b:v', self.target_bitrate])
+                else:
+                    encode_cmd.extend(['-crf', '23'])
 
             # Audio encoder
-            ffmpeg_cmd.extend([
-                '-c:a', 'aac',
-                '-b:a', '192k',
-            ])
+            encode_cmd.extend(['-c:a', 'aac', '-b:a', '192k'])
 
-            # HLS output
-            ffmpeg_cmd.extend([
-                '-g', str(self.target_fps * 2),
-                '-keyint_min', str(self.target_fps),
-                '-force_key_frames', 'expr:gte(t,0)',
+            # HLS output with fMP4 segments (continuous encoding, lower overhead than .ts)
+            encode_cmd.extend([
+                '-g', str(self.target_fps * 4),  # Keyframe every 4 seconds (natural intervals)
+                '-keyint_min', str(self.target_fps * 2),
                 '-f', 'hls',
-                '-hls_time', '2',
-                '-hls_init_time', '1',
+                '-hls_time', '6',
                 '-hls_list_size', '0',
-                '-hls_flags', 'append_list+split_by_time',
-                '-hls_segment_filename', str(self._temp_dir / 'segment_%03d.ts'),
-                '-max_delay', '0',
+                '-hls_segment_type', 'fmp4',  # Fragmented MP4 - continuous encoding
+                '-hls_flags', 'append_list+independent_segments',
+                '-hls_segment_filename', str(self._temp_dir / 'segment_%03d.m4s'),
+                '-hls_fmp4_init_filename', 'init.mp4',
                 str(self.playlist_path)
             ])
 
-            logger.info(f"[SVP {self.stream_id}] Starting pipeline: FFmpeg decode → Python/SVP → FFmpeg encode")
-            logger.debug(f"[SVP {self.stream_id}] SVP script: {' '.join(svp_cmd)}")
-            logger.debug(f"[SVP {self.stream_id}] FFmpeg: {' '.join(ffmpeg_cmd)}")
+            logger.info(f"[SVP {self.stream_id}] Starting pipeline: FFmpeg decode → vspipe/SVP → FFmpeg encode")
+            logger.debug(f"[SVP {self.stream_id}] Decode: {' '.join(decode_cmd)}")
+            logger.debug(f"[SVP {self.stream_id}] vspipe: {' '.join(vspipe_cmd)}")
+            logger.debug(f"[SVP {self.stream_id}] Encode: {' '.join(encode_cmd)}")
 
-            # Start the Python SVP script with clean environment
+            # Start the three-stage pipeline
             clean_env = _get_clean_env()
-            self._vspipe_proc = subprocess.Popen(
-                svp_cmd,
+
+            # Stage 1: FFmpeg decode
+            self._decode_proc = subprocess.Popen(
+                decode_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                bufsize=10**7,
                 env=clean_env
             )
 
-            # Start FFmpeg with SVP script output as input
+            # Stage 2: vspipe (reads from decode, writes to encode)
+            self._vspipe_proc = subprocess.Popen(
+                vspipe_cmd,
+                stdin=self._decode_proc.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=clean_env
+            )
+            self._decode_proc.stdout.close()  # Allow SIGPIPE
+
+            # Stage 3: FFmpeg encode
             self._ffmpeg_proc = subprocess.Popen(
-                ffmpeg_cmd,
+                encode_cmd,
                 stdin=self._vspipe_proc.stdout,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=clean_env
             )
+            self._vspipe_proc.stdout.close()  # Allow SIGPIPE
 
-            # Allow SVP script to receive SIGPIPE if FFmpeg exits
-            self._vspipe_proc.stdout.close()
-
-            # Monitor the processes
+            # Monitor the three processes
             while self._running:
-                # Check if SVP script failed first (it's the source)
-                if self._vspipe_proc.poll() is not None:
-                    svp_stderr = self._vspipe_proc.stderr.read().decode() if self._vspipe_proc.stderr else ""
-                    if self._vspipe_proc.returncode != 0:
-                        self._error = f"SVP script exited with code {self._vspipe_proc.returncode}: {svp_stderr[-1000:]}"
+                # Check decode process
+                if self._decode_proc and self._decode_proc.poll() is not None:
+                    decode_stderr = self._decode_proc.stderr.read().decode() if self._decode_proc.stderr else ""
+                    if self._decode_proc.returncode != 0:
+                        self._error = f"Decode FFmpeg exited with code {self._decode_proc.returncode}: {decode_stderr[-500:]}"
                         logger.error(f"[SVP {self.stream_id}] {self._error}")
-                        print(f"[SVP {self.stream_id}] SVP script stderr:\n{svp_stderr}")
                         break
-                    elif svp_stderr:
-                        # Script exited normally but had stderr output (warnings/errors)
-                        print(f"[SVP {self.stream_id}] SVP script stderr (exit 0):\n{svp_stderr[-1000:]}")
 
-                # Check if FFmpeg is still running
-                if self._ffmpeg_proc.poll() is not None:
+                # Check vspipe process
+                if self._vspipe_proc and self._vspipe_proc.poll() is not None:
+                    vspipe_stderr = self._vspipe_proc.stderr.read().decode() if self._vspipe_proc.stderr else ""
+                    if self._vspipe_proc.returncode != 0:
+                        self._error = f"vspipe exited with code {self._vspipe_proc.returncode}: {vspipe_stderr[-1000:]}"
+                        logger.error(f"[SVP {self.stream_id}] {self._error}")
+                        print(f"[SVP {self.stream_id}] vspipe stderr:\n{vspipe_stderr}")
+                        break
+
+                # Check encode FFmpeg process
+                if self._ffmpeg_proc and self._ffmpeg_proc.poll() is not None:
                     ffmpeg_stderr = self._ffmpeg_proc.stderr.read().decode() if self._ffmpeg_proc.stderr else ""
                     if self._ffmpeg_proc.returncode != 0:
-                        # Also grab SVP stderr if available
-                        svp_stderr = ""
+                        # Collect all stderr for debugging
+                        vspipe_stderr = ""
+                        decode_stderr = ""
                         if self._vspipe_proc and self._vspipe_proc.stderr:
                             try:
-                                svp_stderr = self._vspipe_proc.stderr.read().decode()
+                                vspipe_stderr = self._vspipe_proc.stderr.read().decode()
                             except:
                                 pass
-                        combined_error = f"FFmpeg exit {self._ffmpeg_proc.returncode}"
-                        if svp_stderr:
-                            combined_error += f"\nSVP stderr: {svp_stderr[-500:]}"
-                        combined_error += f"\nFFmpeg stderr: {ffmpeg_stderr[-500:]}"
+                        if self._decode_proc and self._decode_proc.stderr:
+                            try:
+                                decode_stderr = self._decode_proc.stderr.read().decode()
+                            except:
+                                pass
+                        combined_error = f"Encode FFmpeg exit {self._ffmpeg_proc.returncode}"
+                        if decode_stderr:
+                            combined_error += f"\nDecode stderr: {decode_stderr[-300:]}"
+                        if vspipe_stderr:
+                            combined_error += f"\nvspipe stderr: {vspipe_stderr[-300:]}"
+                        combined_error += f"\nEncode stderr: {ffmpeg_stderr[-300:]}"
                         self._error = combined_error
                         logger.error(f"[SVP {self.stream_id}] {self._error}")
-                        print(f"[SVP {self.stream_id}] Full error:\n{combined_error}")
                     else:
-                        logger.info(f"[SVP {self.stream_id}] FFmpeg finished normally")
+                        logger.info(f"[SVP {self.stream_id}] Pipeline finished normally")
                     break
 
                 await asyncio.sleep(0.5)
@@ -1392,21 +1587,40 @@ class SVPStream:
 
     def _cleanup_processes(self):
         """Clean up subprocess resources."""
-        # Clean up SVP script process (stored in _vspipe_proc for compatibility)
+        # Clean up decode process
+        if self._decode_proc:
+            try:
+                self._decode_proc.terminate()
+                self._decode_proc.wait(timeout=2)
+            except:
+                try:
+                    self._decode_proc.kill()
+                except:
+                    pass
+            self._decode_proc = None
+
+        # Clean up vspipe process
         if self._vspipe_proc:
             try:
                 self._vspipe_proc.terminate()
-                self._vspipe_proc.wait(timeout=5)
+                self._vspipe_proc.wait(timeout=2)
             except:
-                self._vspipe_proc.kill()
+                try:
+                    self._vspipe_proc.kill()
+                except:
+                    pass
             self._vspipe_proc = None
 
+        # Clean up encode FFmpeg process
         if self._ffmpeg_proc:
             try:
                 self._ffmpeg_proc.terminate()
-                self._ffmpeg_proc.wait(timeout=5)
+                self._ffmpeg_proc.wait(timeout=2)
             except:
-                self._ffmpeg_proc.kill()
+                try:
+                    self._ffmpeg_proc.kill()
+                except:
+                    pass
             self._ffmpeg_proc = None
 
     def stop(self):
