@@ -490,138 +490,6 @@ def _build_svp_params(
     return super_params, analyse_params, smooth_params
 
 
-def _generate_vspipe_svp_script(
-    video_path: str,
-    target_fps: int,
-    preset: str = "balanced",
-    use_nvof: bool = True,
-    shader: int = 23,
-    artifact_masking: int = 100,
-    frame_interpolation: int = 2,
-    custom_super: Optional[str] = None,
-    custom_analyse: Optional[str] = None,
-    custom_smooth: Optional[str] = None,
-    start_position: float = 0.0,
-) -> str:
-    """
-    Generate a VapourSynth script for vspipe output.
-
-    Uses native VapourSynth source filters (bestsource/ffms2/lsmas) instead of
-    FFmpeg pipe for much better performance (~3x faster).
-
-    Note: First playback of a video may have a brief delay while the source
-    filter creates its index file. Subsequent plays are instant.
-    """
-    preset_config = SVP_PRESETS.get(preset, SVP_PRESETS["balanced"])
-    nvof_blk = preset_config.get("nvof_blk", 16)
-
-    # Get SVP parameters (for regular pipeline fallback)
-    super_params, analyse_params, smooth_params = _build_svp_params(
-        target_fps, preset, shader, artifact_masking, frame_interpolation,
-        custom_super, custom_analyse, custom_smooth
-    )
-
-    # Resolve platform-specific paths
-    _flow1_path, _flow2_path = get_svp_plugin_full_paths()
-    _src_filters = get_source_filter_paths()
-    _src_filter_literal = ", ".join(f"('{p}', '{ns}')" for p, _, ns in _src_filters)
-
-    escaped_path = video_path.replace("\\", "\\\\").replace("'", "\\'")
-
-    # Build NVOF or regular SVP processing section
-    if use_nvof:
-        svp_section = f'''
-# NVOF Pipeline (NVIDIA Optical Flow Hardware)
-NVOF_MIN_WIDTH, NVOF_MIN_HEIGHT = 160, 128
-nvof_blk = {nvof_blk}
-
-# Find best vec_src ratio
-for ratio in [8, 6, 4, 2, 1]:
-    test_w = (clip.width // ratio // 2) * 2
-    test_h = (clip.height // ratio // 2) * 2
-    if test_w >= NVOF_MIN_WIDTH and test_h >= NVOF_MIN_HEIGHT:
-        if nvof_blk >= 16 and ratio <= 4: break
-        elif nvof_blk >= 8 and ratio <= 2: break
-        elif ratio <= 1: break
-
-nvof_w = (clip.width // ratio // 2) * 2
-nvof_h = (clip.height // ratio // 2) * 2
-nvof_src = clip.resize.Bicubic(nvof_w, nvof_h)
-
-smooth_params = '{smooth_params}'
-src_fps = clip.fps.numerator / clip.fps.denominator
-smooth = core.svp2.SmoothFps_NVOF(clip, smooth_params, vec_src=nvof_src, src=clip, fps=src_fps)
-'''
-    else:
-        svp_section = f'''
-# Regular SVP Pipeline
-super_params = '{super_params}'
-analyse_params = '{analyse_params}'
-smooth_params = '{smooth_params}'
-
-src_fps = clip.fps.numerator / clip.fps.denominator
-super_clip = core.svp1.Super(clip, super_params)
-vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
-smooth = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"],
-    vectors["clip"], vectors["data"], smooth_params, src=clip, fps=src_fps)
-'''
-
-    # Build seeking section if needed
-    if start_position > 0:
-        seek_section = f'''
-# Seek to start position
-start_frame = int({start_position} * (clip.fps.numerator / clip.fps.denominator))
-clip = clip[start_frame:]
-'''
-    else:
-        seek_section = ''
-
-    script = f'''import vapoursynth as vs
-core = vs.core
-
-# Load SVP plugins
-core.std.LoadPlugin("{_flow1_path}")
-core.std.LoadPlugin("{_flow2_path}")
-
-# Try to load source filter plugins
-for plugin_path, _ in [{_src_filter_literal}]:
-    try:
-        core.std.LoadPlugin(plugin_path)
-    except: pass
-
-# Load video with native VapourSynth source
-video_path = '{escaped_path}'
-clip = None
-
-if clip is None and hasattr(core, 'bs'):
-    try:
-        clip = core.bs.VideoSource(video_path)
-    except Exception as e:
-        print(f"bestsource failed: {{e}}", file=__import__('sys').stderr)
-
-if clip is None and hasattr(core, 'ffms2'):
-    try:
-        clip = core.ffms2.Source(video_path)
-    except Exception as e:
-        print(f"ffms2 failed: {{e}}", file=__import__('sys').stderr)
-
-if clip is None and hasattr(core, 'lsmas'):
-    try:
-        clip = core.lsmas.LWLibavSource(video_path)
-    except Exception as e:
-        print(f"lsmas failed: {{e}}", file=__import__('sys').stderr)
-
-if clip is None:
-    raise RuntimeError("No video source filter available")
-
-# Convert to YUV420P8 for SVP
-clip = core.resize.Bicubic(clip, format=vs.YUV420P8, matrix_in_s="709", matrix_s="709")
-{seek_section}{svp_section}
-smooth.set_output()
-'''
-    return script
-
-
 def _generate_ffmpeg_svp_script(
     video_path: str,
     target_fps: int,
@@ -1252,11 +1120,15 @@ class SVPStream:
         self._temp_dir = Path(tempfile.mkdtemp(prefix='svp_stream_'))
         logger.info(f"[SVP {self.stream_id}] HLS output: {self._temp_dir}")
 
-        # Generate vspipe-compatible VapourSynth script (uses native source filters)
-        # This is ~3x faster than FFmpeg pipe approach
-        script = _generate_vspipe_svp_script(
+        # Generate and write FFmpeg-based SVP script (bypasses bestsource indexing)
+        script = _generate_ffmpeg_svp_script(
             self.video_path,
             self.target_fps,
+            self._width,
+            self._height,
+            self._src_fps_num,
+            self._src_fps_den,
+            self._num_frames,
             self.preset,
             use_nvof=self.use_nvof,
             shader=self.shader,
@@ -1267,8 +1139,9 @@ class SVPStream:
             custom_smooth=self.custom_smooth,
             start_position=self.start_position,
         )
-        self._script_path = self._temp_dir / "svp_process.vpy"
+        self._script_path = self._temp_dir / "svp_process.py"
         self._script_path.write_text(script)
+        os.chmod(self._script_path, 0o755)  # Make executable
         logger.debug(f"[SVP {self.stream_id}] Script written to {self._script_path}")
 
         # Start the pipeline
@@ -1279,20 +1152,18 @@ class SVPStream:
         return True
 
     async def _run_pipeline(self):
-        """Run the vspipe → FFmpeg pipeline.
+        """Run the Python SVP script → FFmpeg pipeline.
 
-        Uses vspipe with native VapourSynth source filters (bestsource/ffms2/lsmas)
-        for ~3x better performance than the FFmpeg pipe approach. VapourSynth loads
-        the video directly without Python frame copying overhead.
+        Uses FFmpeg to decode video, feeds frames through Python/VapourSynth/SVP,
+        then outputs Y4M to FFmpeg for HLS encoding. This bypasses bestsource
+        indexing entirely for instant startup.
         """
         try:
-            # Build vspipe command to run the VapourSynth script
-            # vspipe outputs Y4M directly, much faster than Python frame copying
+            # Build Python command to run the SVP script
+            # Use system Python to avoid venv conflicts with VapourSynth
             svp_cmd = [
-                'vspipe',
-                '-c', 'y4m',  # Output container: Y4M
-                str(self._script_path),
-                '-'  # Output to stdout
+                get_system_python(),
+                str(self._script_path)
             ]
 
             # FFmpeg command to encode Y4M from stdin to HLS
@@ -1303,7 +1174,7 @@ class SVPStream:
                 '-analyzeduration', '0',
                 '-fflags', '+nobuffer+flush_packets',
                 '-f', 'yuv4mpegpipe',
-                '-i', '-',  # Y4M from vspipe (video already seeked)
+                '-i', '-',  # Y4M from Python script (video already seeked)
             ]
 
             # Add audio input with seek if needed (must seek audio to match video)
@@ -1397,11 +1268,11 @@ class SVPStream:
                 str(self.playlist_path)
             ])
 
-            logger.info(f"[SVP {self.stream_id}] Starting pipeline: vspipe/SVP → FFmpeg encode")
-            logger.debug(f"[SVP {self.stream_id}] vspipe command: {' '.join(svp_cmd)}")
+            logger.info(f"[SVP {self.stream_id}] Starting pipeline: FFmpeg decode → Python/SVP → FFmpeg encode")
+            logger.debug(f"[SVP {self.stream_id}] SVP script: {' '.join(svp_cmd)}")
             logger.debug(f"[SVP {self.stream_id}] FFmpeg: {' '.join(ffmpeg_cmd)}")
 
-            # Start vspipe with clean environment
+            # Start the Python SVP script with clean environment
             clean_env = _get_clean_env()
             self._vspipe_proc = subprocess.Popen(
                 svp_cmd,
@@ -1411,7 +1282,7 @@ class SVPStream:
                 env=clean_env
             )
 
-            # Start FFmpeg with vspipe output as input
+            # Start FFmpeg with SVP script output as input
             self._ffmpeg_proc = subprocess.Popen(
                 ffmpeg_cmd,
                 stdin=self._vspipe_proc.stdout,
@@ -1420,37 +1291,37 @@ class SVPStream:
                 env=clean_env
             )
 
-            # Allow vspipe to receive SIGPIPE if FFmpeg exits
+            # Allow SVP script to receive SIGPIPE if FFmpeg exits
             self._vspipe_proc.stdout.close()
 
             # Monitor the processes
             while self._running:
-                # Check if vspipe failed first (it's the source)
+                # Check if SVP script failed first (it's the source)
                 if self._vspipe_proc.poll() is not None:
-                    vspipe_stderr = self._vspipe_proc.stderr.read().decode() if self._vspipe_proc.stderr else ""
+                    svp_stderr = self._vspipe_proc.stderr.read().decode() if self._vspipe_proc.stderr else ""
                     if self._vspipe_proc.returncode != 0:
-                        self._error = f"vspipe exited with code {self._vspipe_proc.returncode}: {vspipe_stderr[-1000:]}"
+                        self._error = f"SVP script exited with code {self._vspipe_proc.returncode}: {svp_stderr[-1000:]}"
                         logger.error(f"[SVP {self.stream_id}] {self._error}")
-                        print(f"[SVP {self.stream_id}] vspipe stderr:\n{vspipe_stderr}")
+                        print(f"[SVP {self.stream_id}] SVP script stderr:\n{svp_stderr}")
                         break
-                    elif vspipe_stderr:
-                        # vspipe exited normally but had stderr output (warnings/errors)
-                        print(f"[SVP {self.stream_id}] vspipe stderr (exit 0):\n{vspipe_stderr[-1000:]}")
+                    elif svp_stderr:
+                        # Script exited normally but had stderr output (warnings/errors)
+                        print(f"[SVP {self.stream_id}] SVP script stderr (exit 0):\n{svp_stderr[-1000:]}")
 
                 # Check if FFmpeg is still running
                 if self._ffmpeg_proc.poll() is not None:
                     ffmpeg_stderr = self._ffmpeg_proc.stderr.read().decode() if self._ffmpeg_proc.stderr else ""
                     if self._ffmpeg_proc.returncode != 0:
-                        # Also grab vspipe stderr if available
-                        vspipe_err = ""
+                        # Also grab SVP stderr if available
+                        svp_stderr = ""
                         if self._vspipe_proc and self._vspipe_proc.stderr:
                             try:
-                                vspipe_err = self._vspipe_proc.stderr.read().decode()
+                                svp_stderr = self._vspipe_proc.stderr.read().decode()
                             except:
                                 pass
                         combined_error = f"FFmpeg exit {self._ffmpeg_proc.returncode}"
-                        if vspipe_err:
-                            combined_error += f"\nvspipe stderr: {vspipe_err[-500:]}"
+                        if svp_stderr:
+                            combined_error += f"\nSVP stderr: {svp_stderr[-500:]}"
                         combined_error += f"\nFFmpeg stderr: {ffmpeg_stderr[-500:]}"
                         self._error = combined_error
                         logger.error(f"[SVP {self.stream_id}] {self._error}")
@@ -1474,7 +1345,7 @@ class SVPStream:
 
     def _cleanup_processes(self):
         """Clean up subprocess resources."""
-        # Clean up vspipe process
+        # Clean up SVP script process (stored in _vspipe_proc for compatibility)
         if self._vspipe_proc:
             try:
                 self._vspipe_proc.terminate()
