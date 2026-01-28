@@ -1,0 +1,145 @@
+/* Quality Selector Popup */
+
+.quality-selector-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1998;
+}
+
+.quality-selector-popup {
+  position: fixed;
+  bottom: 76px;
+  right: 16px;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 1999;
+  min-width: 200px;
+  animation: popupSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+@keyframes popupSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.quality-selector-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.quality-options {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.quality-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.quality-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.quality-option.active {
+  background: rgba(33, 150, 243, 0.2);
+  color: #64B5F6;
+}
+
+.quality-option-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.quality-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.quality-description {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  font-weight: normal;
+}
+
+.quality-checkmark {
+  width: 16px;
+  height: 16px;
+  color: #64B5F6;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+/* Scrollbar styling */
+.quality-options::-webkit-scrollbar {
+  width: 6px;
+}
+
+.quality-options::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.quality-options::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.quality-options::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+  .quality-selector-popup {
+    bottom: 60px;
+    right: 8px;
+    min-width: 180px;
+  }
+
+  .quality-option {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+
+  .quality-label {
+    font-size: 0.85rem;
+  }
+
+  .quality-description {
+    font-size: 0.7rem;
+  }
+}

@@ -1,5 +1,10 @@
 """
 Image router - simplified for local single-user library
+
+Architecture:
+- Images can be in per-directory databases (directories/{id}.db) or legacy main DB
+- directory_id parameter specifies which directory DB to query
+- For cross-directory queries, we aggregate results from multiple DBs
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
 from fastapi.responses import FileResponse
@@ -12,8 +17,11 @@ from pydantic import BaseModel
 import os
 import tempfile
 
-from ..database import get_db
-from ..models import Image, Tag, ImageFile, image_tags, Rating, TagCategory, FileStatus, TaskType, WatchDirectory
+from ..database import get_db, directory_db_manager
+from ..models import (
+    Image, Tag, ImageFile, image_tags, Rating, TagCategory, FileStatus, TaskType, WatchDirectory,
+    DirectoryImage, DirectoryImageFile, directory_image_tags
+)
 from ..services.importer import import_image
 from ..services.file_tracker import check_file_availability
 from ..services.task_queue import enqueue_task
@@ -52,6 +60,262 @@ class ImageAdjustmentRequest(BaseModel):
 
 
 router = APIRouter()
+
+
+# =============================================================================
+# Helper functions for per-directory database queries
+# =============================================================================
+
+async def get_image_from_directory(image_id: int, directory_id: int):
+    """Get an image from a specific directory database."""
+    dir_db = await directory_db_manager.get_session(directory_id)
+    try:
+        query = (
+            select(DirectoryImage)
+            .options(selectinload(DirectoryImage.files))
+            .where(DirectoryImage.id == image_id)
+        )
+        result = await dir_db.execute(query)
+        return result.scalar_one_or_none()
+    finally:
+        await dir_db.close()
+
+
+async def get_image_tags_from_directory(image_id: int, directory_id: int, main_db: AsyncSession) -> list:
+    """Get tags for an image in a directory database."""
+    dir_db = await directory_db_manager.get_session(directory_id)
+    try:
+        # Get tag IDs from directory DB
+        tag_ids_query = select(directory_image_tags.c.tag_id).where(
+            directory_image_tags.c.image_id == image_id
+        )
+        result = await dir_db.execute(tag_ids_query)
+        tag_ids = [row[0] for row in result.all()]
+
+        if not tag_ids:
+            return []
+
+        # Get tag details from main DB
+        tags_query = select(Tag).where(Tag.id.in_(tag_ids))
+        tags_result = await main_db.execute(tags_query)
+        return list(tags_result.scalars().all())
+    finally:
+        await dir_db.close()
+
+
+async def find_image_directory(image_id: int, file_hash: str = None) -> int | None:
+    """Find which directory contains an image by checking all directory DBs."""
+    for dir_id in directory_db_manager.get_all_directory_ids():
+        dir_db = await directory_db_manager.get_session(dir_id)
+        try:
+            if file_hash:
+                query = select(DirectoryImage.id).where(DirectoryImage.file_hash == file_hash).limit(1)
+            else:
+                query = select(DirectoryImage.id).where(DirectoryImage.id == image_id).limit(1)
+            result = await dir_db.execute(query)
+            if result.scalar_one_or_none():
+                return dir_id
+        finally:
+            await dir_db.close()
+    return None
+
+
+async def query_directory_images(
+    directory_id: int,
+    main_db: AsyncSession,
+    tags: list[str] = None,
+    exclude_tags: list[str] = None,
+    rating: list[str] = None,
+    favorites_only: bool = False,
+    min_age: int = None,
+    max_age: int = None,
+    has_faces: bool = None,
+    timeframe: str = None,
+    sort: str = "newest",
+    limit: int = 100,
+    offset: int = 0
+) -> tuple[list[dict], int]:
+    """
+    Query images from a single directory database.
+    Returns (images_list, total_count).
+    """
+    from datetime import datetime, timedelta
+
+    if not directory_db_manager.db_exists(directory_id):
+        return [], 0
+
+    dir_db = await directory_db_manager.get_session(directory_id)
+    try:
+        query = select(DirectoryImage).options(selectinload(DirectoryImage.files))
+        filters = []
+
+        # Exclude missing files
+        has_non_missing_file = select(DirectoryImageFile.image_id).where(
+            DirectoryImageFile.file_status != FileStatus.missing
+        )
+        filters.append(DirectoryImage.id.in_(has_non_missing_file))
+
+        # Favorites filter
+        if favorites_only:
+            filters.append(DirectoryImage.is_favorite == True)
+
+        # Rating filter
+        if rating:
+            valid_ratings = [r for r in rating if r in [e.value for e in Rating]]
+            if valid_ratings:
+                filters.append(DirectoryImage.rating.in_([Rating(r) for r in valid_ratings]))
+
+        # Age filters
+        if min_age is not None:
+            filters.append(DirectoryImage.max_detected_age >= min_age)
+        if max_age is not None:
+            filters.append(DirectoryImage.min_detected_age <= max_age)
+        if has_faces is not None:
+            if has_faces:
+                filters.append(DirectoryImage.num_faces > 0)
+            else:
+                filters.append(or_(DirectoryImage.num_faces == 0, DirectoryImage.num_faces.is_(None)))
+
+        # Timeframe filter
+        if timeframe:
+            now = datetime.now()
+            if timeframe == 'today':
+                start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                filters.append(DirectoryImage.created_at >= start)
+            elif timeframe == 'week':
+                start = now - timedelta(days=7)
+                filters.append(DirectoryImage.created_at >= start)
+            elif timeframe == 'month':
+                start = now - timedelta(days=30)
+                filters.append(DirectoryImage.created_at >= start)
+            elif timeframe == 'year':
+                start = now - timedelta(days=365)
+                filters.append(DirectoryImage.created_at >= start)
+
+        # Tag filters (need to query main DB for tag IDs)
+        if tags:
+            for tag_name in tags:
+                tag_query = select(Tag.id).where(Tag.name == tag_name)
+                tag_result = await main_db.execute(tag_query)
+                tag_id = tag_result.scalar_one_or_none()
+                if tag_id:
+                    tag_subq = select(directory_image_tags.c.image_id).where(
+                        directory_image_tags.c.tag_id == tag_id
+                    )
+                    filters.append(DirectoryImage.id.in_(tag_subq))
+                else:
+                    # Tag doesn't exist, no images will match
+                    return [], 0
+
+        if exclude_tags:
+            for tag_name in exclude_tags:
+                tag_query = select(Tag.id).where(Tag.name == tag_name)
+                tag_result = await main_db.execute(tag_query)
+                tag_id = tag_result.scalar_one_or_none()
+                if tag_id:
+                    tag_subq = select(directory_image_tags.c.image_id).where(
+                        directory_image_tags.c.tag_id == tag_id
+                    )
+                    filters.append(DirectoryImage.id.not_in(tag_subq))
+
+        if filters:
+            query = query.where(and_(*filters))
+
+        # Get total count
+        count_query = select(func.count()).select_from(query.subquery())
+        total_result = await dir_db.execute(count_query)
+        total = total_result.scalar()
+
+        # Apply sorting
+        if sort == "newest":
+            query = query.order_by(
+                desc(func.coalesce(DirectoryImage.file_modified_at, DirectoryImage.created_at)),
+                desc(DirectoryImage.id)
+            )
+        elif sort == "oldest":
+            query = query.order_by(
+                asc(func.coalesce(DirectoryImage.file_modified_at, DirectoryImage.created_at)),
+                asc(DirectoryImage.id)
+            )
+        elif sort == "random":
+            query = query.order_by(func.random())
+
+        # Apply pagination
+        query = query.offset(offset).limit(limit)
+
+        result = await dir_db.execute(query)
+        images = result.scalars().all()
+
+        # Get directory name once (not per image)
+        dir_query = select(WatchDirectory.name).where(WatchDirectory.id == directory_id)
+        dir_result = await main_db.execute(dir_query)
+        dir_name = dir_result.scalar_one_or_none()
+
+        # Batch fetch all tags for these images (much faster than N+1 queries)
+        image_ids = [img.id for img in images]
+        tags_by_image = {}
+        if image_ids:
+            # Get all tag associations for these images in one query
+            tag_ids_query = select(
+                directory_image_tags.c.image_id,
+                directory_image_tags.c.tag_id
+            ).where(directory_image_tags.c.image_id.in_(image_ids))
+            tag_assoc_result = await dir_db.execute(tag_ids_query)
+            tag_associations = tag_assoc_result.all()
+
+            # Collect unique tag IDs
+            all_tag_ids = list(set(t[1] for t in tag_associations))
+
+            # Fetch all tag details in one query from main DB
+            if all_tag_ids:
+                tags_query = select(Tag).where(Tag.id.in_(all_tag_ids))
+                tags_result = await main_db.execute(tags_query)
+                tags_by_id = {t.id: t for t in tags_result.scalars().all()}
+
+                # Build tags_by_image mapping
+                for image_id, tag_id in tag_associations:
+                    if image_id not in tags_by_image:
+                        tags_by_image[image_id] = []
+                    if tag_id in tags_by_id:
+                        tags_by_image[image_id].append(tags_by_id[tag_id])
+
+        images_data = []
+        for img in images:
+            tags_list = tags_by_image.get(img.id, [])
+            images_data.append({
+                "id": img.id,
+                "directory_id": directory_id,
+                "filename": img.filename,
+                "original_filename": img.original_filename,
+                "width": img.width,
+                "height": img.height,
+                "rating": img.rating.value,
+                "is_favorite": img.is_favorite,
+                "thumbnail_url": f"/api/images/{img.id}/thumbnail?directory_id={directory_id}",
+                "url": f"/api/images/{img.id}/file?directory_id={directory_id}",
+                "file_status": img.files[0].file_status.value if img.files and img.files[0].file_status else "unknown",
+                "tags": [{"name": t.name, "category": t.category.value} for t in tags_list],
+                "num_faces": img.num_faces,
+                "min_age": img.min_detected_age,
+                "max_age": img.max_detected_age,
+                "created_at": img.created_at.isoformat() if img.created_at else None,
+                "file_size": img.file_size,
+                "file_path": img.files[0].original_path if img.files else None,
+                "directory_name": dir_name,
+                "prompt": img.prompt,
+                "negative_prompt": img.negative_prompt,
+                "model_name": img.model_name,
+                "sampler": img.sampler,
+                "seed": img.seed,
+                "steps": img.steps,
+                "cfg_scale": img.cfg_scale,
+                "duration": img.duration
+            })
+
+        return images_data, total
+
+    finally:
+        await dir_db.close()
 
 
 async def check_image_public_access(image_id: int, request: Request, db: AsyncSession) -> bool:
@@ -151,7 +415,93 @@ async def list_images(
     sort: str = "newest",
     db: AsyncSession = Depends(get_db)
 ):
-    """List images with filtering and pagination"""
+    """
+    List images with filtering and pagination.
+
+    If directory_id is provided, queries that specific directory database.
+    Otherwise, queries all directory databases and merges results.
+    """
+    # Parse tag filters
+    tag_names = [t.strip().lower().replace(" ", "_") for t in (tags or "").split(",") if t.strip()]
+    exclude_names = [t.strip().lower().replace(" ", "_") for t in (exclude_tags or "").split(",") if t.strip()]
+    rating_list = [r for r in (rating or "").split(",") if r in [e.value for e in Rating]]
+
+    offset = (page - 1) * per_page
+
+    # Check if we should query per-directory databases
+    if directory_id is not None and directory_db_manager.db_exists(directory_id):
+        # Query single directory database
+        images_data, total = await query_directory_images(
+            directory_id=directory_id,
+            main_db=db,
+            tags=tag_names if tag_names else None,
+            exclude_tags=exclude_names if exclude_names else None,
+            rating=rating_list if rating_list else None,
+            favorites_only=favorites_only,
+            min_age=min_age,
+            max_age=max_age,
+            has_faces=has_faces,
+            timeframe=timeframe,
+            sort=sort,
+            limit=per_page,
+            offset=offset
+        )
+
+        return {
+            "images": images_data,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": (total + per_page - 1) // per_page
+        }
+
+    # No specific directory - check if any per-directory DBs exist
+    all_dir_ids = directory_db_manager.get_all_directory_ids()
+
+    if all_dir_ids and directory_id is None:
+        # "All Directories" view - query the first directory that has matching content
+        # This keeps the response fast while still showing images
+        for dir_id in all_dir_ids:
+            if not directory_db_manager.db_exists(dir_id):
+                continue
+            try:
+                dir_images, dir_total = await query_directory_images(
+                    directory_id=dir_id,
+                    main_db=db,
+                    tags=tag_names if tag_names else None,
+                    exclude_tags=exclude_names if exclude_names else None,
+                    rating=rating_list if rating_list else None,
+                    favorites_only=favorites_only,
+                    min_age=min_age,
+                    max_age=max_age,
+                    has_faces=has_faces,
+                    timeframe=timeframe,
+                    sort=sort,
+                    limit=per_page,
+                    offset=offset
+                )
+                if dir_images:
+                    return {
+                        "images": dir_images,
+                        "total": dir_total,
+                        "page": page,
+                        "per_page": per_page,
+                        "total_pages": (dir_total + per_page - 1) // per_page
+                    }
+            except Exception as e:
+                print(f"[Images] Error querying directory {dir_id}: {e}")
+                continue
+
+        # No images found in any directory
+        return {
+            "images": [],
+            "total": 0,
+            "page": 1,
+            "per_page": per_page,
+            "total_pages": 0
+        }
+
+    # Fall back to legacy main database query
     query = select(Image).options(
         selectinload(Image.tags),
         selectinload(Image.files).selectinload(ImageFile.watch_directory)
@@ -159,42 +509,30 @@ async def list_images(
 
     filters = []
 
-    # Network access filtering: public internet IPs can only see images from public directories
-    # Local network (same WiFi) gets full access like localhost
+    # Network access filtering
     access_level = getattr(request.state, 'access_level', 'localhost')
     if access_level == 'public':
-        # Get directories with public_access=True
         public_dirs_subq = select(WatchDirectory.id).where(WatchDirectory.public_access == True)
-        # Filter to images in those directories
         public_images_subq = select(ImageFile.image_id).where(
             ImageFile.watch_directory_id.in_(public_dirs_subq)
         )
         filters.append(Image.id.in_(public_images_subq))
 
-    # Exclude images where all files are confirmed missing
-    # (drive_offline is OK to show, only exclude "missing" status)
+    # Exclude missing files
     has_non_missing_file = select(ImageFile.image_id).where(
         ImageFile.file_status != FileStatus.missing
     )
     filters.append(Image.id.in_(has_non_missing_file))
 
-    # Favorites filter
     if favorites_only:
         filters.append(Image.is_favorite == True)
 
-    # Rating filter
-    if rating:
-        ratings = rating.split(",")
-        valid_ratings = [r for r in ratings if r in [e.value for e in Rating]]
-        if valid_ratings:
-            filters.append(Image.rating.in_([Rating(r) for r in valid_ratings]))
+    if rating_list:
+        filters.append(Image.rating.in_([Rating(r) for r in rating_list]))
 
-    # Age filters
     if min_age is not None:
-        # Include images where max_detected_age >= min_age (at least one face is old enough)
         filters.append(Image.max_detected_age >= min_age)
     if max_age is not None:
-        # Include images where min_detected_age <= max_age (at least one face is young enough)
         filters.append(Image.min_detected_age <= max_age)
     if has_faces is not None:
         if has_faces:
@@ -202,7 +540,6 @@ async def list_images(
         else:
             filters.append(or_(Image.num_faces == 0, Image.num_faces.is_(None)))
 
-    # Timeframe filter (based on when image was added to library)
     if timeframe:
         from datetime import datetime, timedelta
         now = datetime.now()
@@ -219,38 +556,21 @@ async def list_images(
             start = now - timedelta(days=365)
             filters.append(Image.created_at >= start)
 
-    # Directory filter
     if directory_id is not None:
         dir_subq = select(ImageFile.image_id).where(ImageFile.watch_directory_id == directory_id)
         filters.append(Image.id.in_(dir_subq))
 
-    # Tag inclusion filter
-    if tags:
-        tag_names = [t.strip().lower().replace(" ", "_") for t in tags.split(",") if t.strip()]
-        for tag_name in tag_names:
-            tag_subq = (
-                select(image_tags.c.image_id)
-                .join(Tag)
-                .where(Tag.name == tag_name)
-            )
-            filters.append(Image.id.in_(tag_subq))
+    for tag_name in tag_names:
+        tag_subq = select(image_tags.c.image_id).join(Tag).where(Tag.name == tag_name)
+        filters.append(Image.id.in_(tag_subq))
 
-    # Tag exclusion filter
-    if exclude_tags:
-        exclude_names = [t.strip().lower().replace(" ", "_") for t in exclude_tags.split(",") if t.strip()]
-        for tag_name in exclude_names:
-            tag_subq = (
-                select(image_tags.c.image_id)
-                .join(Tag)
-                .where(Tag.name == tag_name)
-            )
-            filters.append(Image.id.not_in(tag_subq))
+    for tag_name in exclude_names:
+        tag_subq = select(image_tags.c.image_id).join(Tag).where(Tag.name == tag_name)
+        filters.append(Image.id.not_in(tag_subq))
 
     if filters:
         query = query.where(and_(*filters))
 
-    # Sorting (with secondary sort by ID for consistent ordering)
-    # Use file_modified_at for date sorting (actual file date), fall back to created_at
     if sort == "newest":
         query = query.order_by(
             desc(func.coalesce(Image.file_modified_at, Image.created_at)),
@@ -264,20 +584,16 @@ async def list_images(
     elif sort == "random":
         query = query.order_by(func.random())
 
-    # Count total
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
 
-    # Pagination
-    offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
     result = await db.execute(query)
     images = result.scalars().all()
 
     def get_file_status(img):
-        """Get file status from loaded files relationship"""
         if not img.files:
             return "missing"
         return img.files[0].file_status.value if img.files[0].file_status else "unknown"
@@ -300,11 +616,9 @@ async def list_images(
                 "min_age": img.min_detected_age,
                 "max_age": img.max_detected_age,
                 "created_at": img.created_at.isoformat() if img.created_at else None,
-                # File metadata
                 "file_size": img.file_size,
                 "file_path": img.files[0].original_path if img.files else None,
                 "directory_name": img.files[0].watch_directory.name if img.files and img.files[0].watch_directory else None,
-                # AI generation metadata
                 "prompt": img.prompt,
                 "negative_prompt": img.negative_prompt,
                 "model_name": img.model_name,
@@ -386,12 +700,81 @@ async def get_image(request: Request, image_id: int, db: AsyncSession = Depends(
 
 
 @router.get("/{image_id}/file")
-async def get_image_file(request: Request, image_id: int, db: AsyncSession = Depends(get_db)):
+async def get_image_file(
+    request: Request,
+    image_id: int,
+    directory_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
     """Serve the original image file"""
-    # Check public access for non-localhost
+    original_path = None
+
+    # Try directory database first if directory_id provided
+    if directory_id is not None and directory_db_manager.db_exists(directory_id):
+        dir_db = await directory_db_manager.get_session(directory_id)
+        try:
+            query = select(DirectoryImageFile.original_path).where(
+                DirectoryImageFile.image_id == image_id
+            ).limit(1)
+            result = await dir_db.execute(query)
+            original_path = result.scalar_one_or_none()
+        finally:
+            await dir_db.close()
+
+        if original_path:
+            status = check_file_availability(original_path)
+            if status == FileStatus.available:
+                return FileResponse(original_path)  # Auto-detect media type from file
+            elif status == FileStatus.drive_offline:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Drive is offline - the storage device containing this file is not connected"
+                )
+            else:
+                # File missing - try to find by filename in the watched directory
+                # Use os.walk to include hidden directories
+                import os as os_module
+                from ..services.file_tracker import is_media_file
+                filename = Path(original_path).name
+                directory = await db.get(WatchDirectory, directory_id)
+                if directory and Path(directory.path).exists():
+                    dir_path = Path(directory.path)
+                    found_path = None
+                    if directory.recursive:
+                        for root, dirs, files in os_module.walk(dir_path):
+                            if filename in files:
+                                found_path = Path(root) / filename
+                                break
+                    else:
+                        candidate = dir_path / filename
+                        if candidate.exists():
+                            found_path = candidate
+
+                    if found_path and found_path.is_file() and is_media_file(found_path):
+                        # Found it - update the DB record and serve
+                        new_path = str(found_path)
+                        dir_db = await directory_db_manager.get_session(directory_id)
+                        try:
+                            update_query = select(DirectoryImageFile).where(
+                                DirectoryImageFile.image_id == image_id
+                            ).limit(1)
+                            result = await dir_db.execute(update_query)
+                            file_record = result.scalar_one_or_none()
+                            if file_record:
+                                file_record.original_path = new_path
+                                file_record.file_exists = True
+                                file_record.file_status = FileStatus.available
+                                await dir_db.commit()
+                        finally:
+                            await dir_db.close()
+                        return FileResponse(new_path)
+                raise HTTPException(status_code=404, detail="File is missing or was deleted")
+
+    # Check public access for non-localhost (legacy path)
     if not await check_image_public_access(image_id, request, db):
         raise HTTPException(status_code=403, detail="This image is not available for remote access")
 
+    # Legacy: query main database
     query = select(ImageFile).where(ImageFile.image_id == image_id).limit(1)
     result = await db.execute(query)
     image_file = result.scalar_one_or_none()
@@ -409,10 +792,7 @@ async def get_image_file(request: Request, image_id: int, db: AsyncSession = Dep
         await db.commit()
 
     if status == FileStatus.available:
-        return FileResponse(
-            image_file.original_path,
-            media_type="image/webp"  # Will be overridden by actual type
-        )
+        return FileResponse(image_file.original_path)  # Auto-detect media type
     elif status == FileStatus.drive_offline:
         raise HTTPException(
             status_code=503,
@@ -422,15 +802,73 @@ async def get_image_file(request: Request, image_id: int, db: AsyncSession = Dep
         raise HTTPException(status_code=404, detail="File is missing or was deleted")
 
 
+@router.get("/media/file-info")
+async def get_file_info(path: str = Query(...)):
+    """Get file information (size) for a file path"""
+    try:
+        file_path = Path(path)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        if not file_path.is_file():
+            raise HTTPException(status_code=400, detail="Path is not a file")
+        size = file_path.stat().st_size
+        return {"size": size, "path": str(file_path)}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+
+
 @router.get("/{image_id}/thumbnail")
-async def get_image_thumbnail(request: Request, image_id: int, db: AsyncSession = Depends(get_db)):
+async def get_image_thumbnail(
+    request: Request,
+    image_id: int,
+    directory_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
     """Serve the thumbnail"""
-    # Check public access for non-localhost
+    from ..database import get_data_dir
+
+    # Try directory database first if directory_id provided
+    if directory_id is not None and directory_db_manager.db_exists(directory_id):
+        dir_db = await directory_db_manager.get_session(directory_id)
+        try:
+            query = select(DirectoryImage).where(DirectoryImage.id == image_id)
+            result = await dir_db.execute(query)
+            image = result.scalar_one_or_none()
+
+            if image and image.file_hash:
+                thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+
+                if thumbnail_path.exists():
+                    return FileResponse(str(thumbnail_path), media_type="image/webp")
+
+                # Try to regenerate from original
+                file_query = select(DirectoryImageFile).where(
+                    DirectoryImageFile.image_id == image_id
+                ).limit(1)
+                file_result = await dir_db.execute(file_query)
+                image_file = file_result.scalar_one_or_none()
+
+                if image_file and Path(image_file.original_path).exists():
+                    from ..services.importer import generate_thumbnail, generate_video_thumbnail, is_video_file
+                    thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+                    if is_video_file(image_file.original_path):
+                        generate_video_thumbnail(image_file.original_path, str(thumbnail_path))
+                    else:
+                        generate_thumbnail(image_file.original_path, str(thumbnail_path))
+                    if thumbnail_path.exists():
+                        return FileResponse(str(thumbnail_path), media_type="image/webp")
+
+                raise HTTPException(status_code=404, detail="Thumbnail not found")
+        finally:
+            await dir_db.close()
+
+    # Check public access for non-localhost (legacy path)
     if not await check_image_public_access(image_id, request, db):
         raise HTTPException(status_code=403, detail="This image is not available for remote access")
 
-    from ..database import get_data_dir
-
+    # Legacy: query main database
     query = select(Image).where(Image.id == image_id)
     result = await db.execute(query)
     image = result.scalar_one_or_none()
@@ -474,6 +912,156 @@ async def get_image_thumbnail(request: Request, image_id: int, db: AsyncSession 
         raise HTTPException(status_code=404, detail="Source file missing - cannot generate thumbnail")
 
 
+@router.get("/{image_id}/preview-frames")
+async def get_preview_frames(
+    request: Request,
+    image_id: int,
+    directory_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get list of video preview frame URLs for an image.
+
+    Returns frame URLs for videos with preview frames available.
+    On-demand generation: if frames don't exist and source file is available,
+    generation will be triggered and an empty array returned (check again later).
+    """
+    try:
+        from ..services.video_preview import get_preview_frames as get_frames, generate_video_previews
+
+        file_hash = None
+        filename = None
+        original_path = None
+
+        # Try directory database first if directory_id provided
+        if directory_id is not None and directory_db_manager.db_exists(directory_id):
+            dir_db = await directory_db_manager.get_session(directory_id)
+            try:
+                query = (
+                    select(DirectoryImage)
+                    .options(selectinload(DirectoryImage.files))
+                    .where(DirectoryImage.id == image_id)
+                )
+                result = await dir_db.execute(query)
+                image = result.scalar_one_or_none()
+
+                if image:
+                    file_hash = image.file_hash
+                    filename = image.filename
+                    if image.files:
+                        original_path = image.files[0].original_path
+            finally:
+                await dir_db.close()
+        else:
+            # Check public access for non-localhost (legacy path)
+            if not await check_image_public_access(image_id, request, db):
+                raise HTTPException(status_code=403, detail="This image is not available for remote access")
+
+            # Legacy: query main database
+            query = select(Image).where(Image.id == image_id)
+            result = await db.execute(query)
+            image = result.scalar_one_or_none()
+
+            if image:
+                file_hash = image.file_hash
+                filename = image.filename
+
+                file_query = select(ImageFile).where(ImageFile.image_id == image_id).limit(1)
+                file_result = await db.execute(file_query)
+                image_file = file_result.scalar_one_or_none()
+                if image_file:
+                    original_path = image_file.original_path
+
+        if not file_hash:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        # Check if this is a video
+        ext = filename.lower().split('.')[-1] if filename else ''
+        if ext not in ['webm', 'mp4', 'mov', 'avi', 'mkv']:
+            return {"frames": [], "is_video": False}
+
+        # Check for existing preview frames
+        existing_frames = get_frames(file_hash)
+        if existing_frames:
+            # Return URLs to the frames
+            dir_param = f"?directory_id={directory_id}" if directory_id else ""
+            frame_urls = [
+                f"/api/images/{image_id}/preview-frame/{i}{dir_param}"
+                for i in range(len(existing_frames))
+            ]
+            return {"frames": frame_urls, "is_video": True, "count": len(existing_frames)}
+
+        # No frames exist - try to generate them on-demand
+        if original_path:
+            status = check_file_availability(original_path)
+            if status == FileStatus.available:
+                # Trigger generation in background
+                import asyncio
+                from ..config import get_settings
+                settings = get_settings()
+                asyncio.create_task(
+                    generate_video_previews(original_path, file_hash, settings.video_preview_frames)
+                )
+
+        # Return empty for now - client should retry after a moment
+        return {"frames": [], "is_video": True, "generating": True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[PreviewFrames] Error for image {image_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error getting preview frames: {str(e)}")
+
+
+@router.get("/{image_id}/preview-frame/{frame_index}")
+async def get_preview_frame(
+    request: Request,
+    image_id: int,
+    frame_index: int,
+    directory_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Serve a specific video preview frame image"""
+    from ..services.video_preview import get_preview_dir
+
+    if frame_index < 0 or frame_index >= 8:
+        raise HTTPException(status_code=400, detail="Invalid frame index (must be 0-7)")
+
+    file_hash = None
+
+    # Try directory database first if directory_id provided
+    if directory_id is not None and directory_db_manager.db_exists(directory_id):
+        dir_db = await directory_db_manager.get_session(directory_id)
+        try:
+            query = select(DirectoryImage.file_hash).where(DirectoryImage.id == image_id)
+            result = await dir_db.execute(query)
+            file_hash = result.scalar_one_or_none()
+        finally:
+            await dir_db.close()
+    else:
+        # Check public access for non-localhost (legacy path)
+        if not await check_image_public_access(image_id, request, db):
+            raise HTTPException(status_code=403, detail="This image is not available for remote access")
+
+        # Legacy: query main database
+        query = select(Image.file_hash).where(Image.id == image_id)
+        result = await db.execute(query)
+        file_hash = result.scalar_one_or_none()
+
+    if not file_hash:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # Get the frame file
+    preview_dir = get_preview_dir(file_hash)
+    frame_path = preview_dir / f"frame_{frame_index}.webp"
+
+    if not frame_path.exists():
+        raise HTTPException(status_code=404, detail="Preview frame not found")
+
+    return FileResponse(str(frame_path), media_type="image/webp")
+
+
 @router.post("/{image_id}/favorite")
 async def toggle_favorite(image_id: int, db: AsyncSession = Depends(get_db)):
     """Toggle favorite status"""
@@ -507,31 +1095,74 @@ async def update_rating(image_id: int, rating: str, db: AsyncSession = Depends(g
 async def delete_image(
     image_id: int,
     delete_file: bool = False,
+    directory_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Delete an image from the library (optionally delete the file too)"""
-    query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
-    result = await db.execute(query)
-    image = result.scalar_one_or_none()
+    from ..database import get_data_dir
+    from ..services.video_preview import delete_preview_frames
 
+    image = None
+    file_hash = None
+    original_path = None
+
+    # Try directory database first if directory_id provided
+    if directory_id is not None and directory_db_manager.db_exists(directory_id):
+        dir_db = await directory_db_manager.get_session(directory_id)
+        try:
+            query = select(DirectoryImage).options(selectinload(DirectoryImage.files)).where(DirectoryImage.id == image_id)
+            result = await dir_db.execute(query)
+            image = result.scalar_one_or_none()
+
+            if image:
+                file_hash = image.file_hash
+                # Get the original path from files
+                if image.files:
+                    original_path = image.files[0].original_path
+
+                # Optionally delete the actual file(s)
+                if delete_file and image.files:
+                    for f in image.files:
+                        if os.path.exists(f.original_path):
+                            os.remove(f.original_path)
+
+                # Delete from directory database
+                await dir_db.delete(image)
+                await dir_db.commit()
+        finally:
+            await dir_db.close()
+
+    # If not found in directory DB, try main database
     if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
+        query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+        result = await db.execute(query)
+        image = result.scalar_one_or_none()
 
-    # Optionally delete the actual file(s)
-    if delete_file:
-        for f in image.files:
-            if os.path.exists(f.original_path):
-                os.remove(f.original_path)
+        if not image:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        file_hash = image.file_hash
+        if image.files:
+            original_path = image.files[0].original_path
+
+        # Optionally delete the actual file(s)
+        if delete_file:
+            for f in image.files:
+                if os.path.exists(f.original_path):
+                    os.remove(f.original_path)
+
+        # Delete from main database (cascades to files, tags, etc.)
+        await db.delete(image)
+        await db.commit()
 
     # Delete thumbnail
-    from ..database import get_data_dir
-    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
-    if thumbnail_path.exists():
-        thumbnail_path.unlink()
+    if file_hash:
+        thumbnail_path = get_data_dir() / 'thumbnails' / f"{file_hash[:16]}.webp"
+        if thumbnail_path.exists():
+            thumbnail_path.unlink()
 
-    # Delete from database (cascades to files, tags, etc.)
-    await db.delete(image)
-    await db.commit()
+        # Delete video preview frames
+        delete_preview_frames(file_hash)
 
     return {"deleted": True}
 
@@ -564,33 +1195,79 @@ async def batch_delete_images(
 ):
     """Delete multiple images from the library (optionally delete files too)"""
     from ..database import get_data_dir
+    from ..services.video_preview import delete_preview_frames
+
+    # Get all watch directory IDs to try their databases
+    query = select(WatchDirectory.id)
+    result = await db.execute(query)
+    directory_ids = [row[0] for row in result.fetchall()]
 
     deleted = 0
     errors = []
 
     for image_id in request.image_ids:
         try:
-            query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
-            result = await db.execute(query)
-            image = result.scalar_one_or_none()
+            image = None
+            file_hash = None
 
+            # Try all directory databases first
+            for dir_id in directory_ids:
+                if directory_db_manager.db_exists(dir_id):
+                    dir_db = await directory_db_manager.get_session(dir_id)
+                    try:
+                        query = select(DirectoryImage).options(selectinload(DirectoryImage.files)).where(DirectoryImage.id == image_id)
+                        result = await dir_db.execute(query)
+                        image = result.scalar_one_or_none()
+
+                        if image:
+                            file_hash = image.file_hash
+
+                            # Optionally delete the actual file(s)
+                            if request.delete_files and image.files:
+                                for f in image.files:
+                                    if os.path.exists(f.original_path):
+                                        os.remove(f.original_path)
+
+                            # Delete from directory database
+                            await dir_db.delete(image)
+                            await dir_db.commit()
+                            break
+                    finally:
+                        await dir_db.close()
+
+                if image:
+                    break
+
+            # If not found in directory databases, try main database
             if not image:
-                errors.append({"id": image_id, "error": "Image not found"})
-                continue
+                query = select(Image).options(selectinload(Image.files)).where(Image.id == image_id)
+                result = await db.execute(query)
+                image = result.scalar_one_or_none()
 
-            # Optionally delete the actual file(s)
-            if request.delete_files:
-                for f in image.files:
-                    if os.path.exists(f.original_path):
-                        os.remove(f.original_path)
+                if not image:
+                    errors.append({"id": image_id, "error": "Image not found"})
+                    continue
 
-            # Delete thumbnail
-            thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
-            if thumbnail_path.exists():
-                thumbnail_path.unlink()
+                file_hash = image.file_hash
 
-            # Delete from database (cascades to files, tags, etc.)
-            await db.delete(image)
+                # Optionally delete the actual file(s)
+                if request.delete_files:
+                    for f in image.files:
+                        if os.path.exists(f.original_path):
+                            os.remove(f.original_path)
+
+                # Delete from database (cascades to files, tags, etc.)
+                await db.delete(image)
+
+            # Delete thumbnail and preview frames (same for both databases)
+            if file_hash:
+                thumbnail_path = get_data_dir() / 'thumbnails' / f"{file_hash[:16]}.webp"
+                if thumbnail_path.exists():
+                    thumbnail_path.unlink()
+
+                # Delete video preview frames
+                delete_preview_frames(file_hash)
+
             deleted += 1
 
         except Exception as e:
