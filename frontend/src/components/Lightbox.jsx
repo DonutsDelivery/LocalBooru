@@ -1,5 +1,8 @@
 import { useEffect, useCallback, useState, useRef } from 'react'
-import { getMediaUrl } from '../api'
+import Hls from 'hls.js'
+import { getMediaUrl, getOpticalFlowConfig, playVideoInterpolated, stopInterpolatedStream, getSVPConfig, playVideoSVP, stopSVPStream, playVideoTranscode, stopTranscodeStream } from '../api'
+import SVPSideMenu from './SVPSideMenu'
+import QualitySelector from './QualitySelector'
 import './Lightbox.css'
 
 // Check if filename is a video
@@ -29,11 +32,61 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [previewUrl, setPreviewUrl] = useState(null)
   const [generatingPreview, setGeneratingPreview] = useState(false)
 
+  // HLS streaming ref
+  const hlsRef = useRef(null)
+
+  // Optical flow interpolation state
+  const [opticalFlowConfig, setOpticalFlowConfig] = useState(null)
+  const [opticalFlowLoading, setOpticalFlowLoading] = useState(false)
+  const [opticalFlowError, setOpticalFlowError] = useState(null)
+  const [opticalFlowStreamUrl, setOpticalFlowStreamUrl] = useState(null)
+
+  // SVP interpolation state
+  const [svpConfig, setSvpConfig] = useState(null)
+  const [svpConfigLoaded, setSvpConfigLoaded] = useState(false)
+  const [svpLoading, setSvpLoading] = useState(false)
+  const [svpError, setSvpError] = useState(null)
+  const [svpStreamUrl, setSvpStreamUrl] = useState(null)
+  const [svpTotalDuration, setSvpTotalDuration] = useState(null)  // Known total duration from API
+  const [svpBufferedDuration, setSvpBufferedDuration] = useState(0)  // Duration available in HLS manifest
+  const [svpPendingSeek, setSvpPendingSeek] = useState(null)  // Target time waiting for buffer
+  const [svpStartOffset, setSvpStartOffset] = useState(0)  // Offset when stream started from seek position
+  const svpHlsRef = useRef(null)
+  const svpStartingRef = useRef(false)  // Synchronous lock to prevent double-starts
+
+  // Transcode stream state (fallback when SVP/OpticalFlow not available)
+  const [transcodeStreamUrl, setTranscodeStreamUrl] = useState(null)
+  const [transcodeTotalDuration, setTranscodeTotalDuration] = useState(null)
+  const [transcodeStartOffset, setTranscodeStartOffset] = useState(0)
+  const transcodeHlsRef = useRef(null)
+
+  // SVP side menu state
+  const [showSVPMenu, setShowSVPMenu] = useState(false)
+
+  // Quality selector state
+  const [showQualitySelector, setShowQualitySelector] = useState(false)
+  const [currentQuality, setCurrentQuality] = useState(() => {
+    // Load quality preference from localStorage on init
+    return localStorage.getItem('video_quality_preference') || 'original'
+  })
+  const [sourceResolution, setSourceResolution] = useState(null)
+
+  // Video player state
+  const [isPlaying, setIsPlaying] = useState(true) // Start autoplaying
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [isSeeking, setIsSeeking] = useState(false)
+  const [videoDisplayMode, setVideoDisplayMode] = useState('fit') // 'fit' | 'fill' | 'original'
+  const [videoNaturalSize, setVideoNaturalSize] = useState({ width: 0, height: 0 })
+  const [volume, setVolume] = useState(1)
+  const [isMuted, setIsMuted] = useState(false)
+
   // Zoom state
   const [zoom, setZoom] = useState({ scale: 1, x: 0, y: 0 })
   const zoomRef = useRef(zoom) // Ref to always have current zoom in callbacks
   zoomRef.current = zoom
   const mediaRef = useRef(null)
+  const timelineRef = useRef(null)
   const containerRef = useRef(null)
   const isDragging = useRef(false)
   const dragStart = useRef({ x: 0, y: 0 })
@@ -41,13 +94,133 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   const image = images[currentIndex]
 
-  // Reset adjustments, preview, and zoom when changing images
+  // Preload next 3 images (skip videos) for smoother navigation
+  useEffect(() => {
+    if (!images || images.length === 0) return
+
+    const preloadCount = 3
+    const preloadedImages = []
+
+    // Find next 3 non-video images
+    let found = 0
+    for (let i = currentIndex + 1; i < images.length && found < preloadCount; i++) {
+      const nextImage = images[i]
+      if (nextImage?.url && !isVideo(nextImage.filename)) {
+        const img = new Image()
+        img.src = getMediaUrl(nextImage.url)
+        preloadedImages.push(img)
+        found++
+      }
+    }
+
+    // Find previous non-video image for back navigation
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      const prevImage = images[i]
+      if (prevImage?.url && !isVideo(prevImage.filename)) {
+        const img = new Image()
+        img.src = getMediaUrl(prevImage.url)
+        preloadedImages.push(img)
+        break // Only need 1 previous image
+      }
+    }
+
+    // Cleanup: images will be garbage collected when effect re-runs
+    return () => {
+      preloadedImages.length = 0
+    }
+  }, [currentIndex, images])
+
+  // Reset adjustments, preview, zoom, video state, and interpolation when changing images
   useEffect(() => {
     setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
     setShowAdjustments(false)
     setPreviewUrl(null)
     setZoom({ scale: 1, x: 0, y: 0 })
+    setIsPlaying(true)
+    setCurrentTime(0)
+    setDuration(0)
+    setIsSeeking(false)
+    setVideoDisplayMode('fit')
+    setVideoNaturalSize({ width: 0, height: 0 })
+    // Reset optical flow state for new video
+    setOpticalFlowError(null)
+    setOpticalFlowStreamUrl(null)
+    // Reset SVP state for new video
+    setSvpError(null)
+    setSvpStreamUrl(null)
+    setSvpTotalDuration(null)
+    setSvpBufferedDuration(0)
+    setSvpPendingSeek(null)
+    setSvpStartOffset(0)
+    svpStartingRef.current = false  // Reset lock for new video
+    setSourceResolution(null)  // Reset so it gets set from original video, not stream
+    setTranscodeTotalDuration(null)
+    setTranscodeStartOffset(0)
+    // Cleanup HLS instances
+    if (hlsRef.current) {
+      hlsRef.current.destroy()
+      hlsRef.current = null
+    }
+    if (svpHlsRef.current) {
+      svpHlsRef.current.destroy()
+      svpHlsRef.current = null
+    }
+    // Stop backend streams when navigating to a non-video image
+    // (For video-to-video navigation, startSVPStream() handles stopping the old stream)
+    if (image && !isVideo(image.filename)) {
+      stopSVPStream().catch(() => {})
+      stopInterpolatedStream().catch(() => {})
+    }
   }, [image?.id])
+
+  // Auto-dismiss SVP error toast after 5 seconds
+  useEffect(() => {
+    if (svpError) {
+      const timer = setTimeout(() => {
+        setSvpError(null)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [svpError])
+
+  // Auto-dismiss optical flow error toast after 5 seconds
+  useEffect(() => {
+    if (opticalFlowError) {
+      const timer = setTimeout(() => {
+        setOpticalFlowError(null)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [opticalFlowError])
+
+  // Load optical flow config on mount
+  useEffect(() => {
+    async function loadOpticalFlowConfig() {
+      try {
+        const config = await getOpticalFlowConfig()
+        setOpticalFlowConfig(config)
+      } catch (err) {
+        console.error('Failed to load optical flow config:', err)
+      }
+    }
+    loadOpticalFlowConfig()
+  }, [])
+
+  // Load SVP config on mount
+  useEffect(() => {
+    async function loadSVPConfig() {
+      try {
+        const config = await getSVPConfig()
+        setSvpConfig(config)
+      } catch (err) {
+        console.error('Failed to load SVP config:', err)
+      } finally {
+        setSvpConfigLoaded(true)
+      }
+    }
+    loadSVPConfig()
+  }, [])
+
 
   // Auto-hide UI after inactivity
   const resetHideTimer = useCallback(() => {
@@ -203,13 +376,110 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     return Math.max(scaleForWidth, scaleForHeight)
   }, [])
 
-  // Double-click handler: zoom to fill or reset
+  // Restart SVP stream from a specific position (for seeking beyond buffered content)
+  const restartSVPFromPosition = useCallback(async (targetTime) => {
+    if (!image || !svpConfig?.enabled) return
+
+    console.log(`[SVP] Restarting stream from ${targetTime.toFixed(1)}s`)
+
+    // Show loading indicator
+    setSvpLoading(true)
+    setSvpPendingSeek(null)
+    setCurrentTime(targetTime)
+
+    // Destroy current HLS instance
+    if (svpHlsRef.current) {
+      svpHlsRef.current.destroy()
+      svpHlsRef.current = null
+    }
+
+    // Clear current stream state
+    setSvpStreamUrl(null)
+    setSvpBufferedDuration(0)
+
+    try {
+      // Start new stream from target position
+      const result = await playVideoSVP(image.file_path, targetTime)
+
+      if (result.success && result.stream_url) {
+        setSvpStreamUrl(result.stream_url)
+        setSvpStartOffset(targetTime)  // Track offset for timeline display
+        if (result.duration) {
+          setSvpTotalDuration(result.duration)
+        }
+        if (result.source_resolution) {
+          setSourceResolution(result.source_resolution)
+        }
+      } else {
+        setSvpError(result.error || 'Failed to restart SVP stream')
+        setSvpLoading(false)
+      }
+    } catch (err) {
+      console.error('SVP restart error:', err)
+      setSvpError(err.message || 'Failed to restart SVP stream')
+      setSvpLoading(false)
+    }
+  }, [image, svpConfig])
+
+  // Seek forward/backward
+  const seekVideo = useCallback((seconds) => {
+    if (!mediaRef.current) return
+
+    // For SVP streams, currentTime is in HLS time, need to convert to absolute video time
+    const currentAbsoluteTime = svpStreamUrl ? mediaRef.current.currentTime + svpStartOffset : mediaRef.current.currentTime
+    const newTime = Math.max(0, Math.min(duration, currentAbsoluteTime + seconds))
+
+    // For SVP streams, check if we need to restart from a new position
+    if (svpStreamUrl) {
+      const bufferedEnd = svpStartOffset + svpBufferedDuration
+      const bufferedStart = svpStartOffset
+
+      if (newTime < bufferedStart - 1 || newTime > bufferedEnd + 2) {
+        restartSVPFromPosition(newTime)
+        return
+      }
+
+      // Seek within current stream
+      const hlsTime = newTime - svpStartOffset
+      setSvpPendingSeek(null)
+      mediaRef.current.currentTime = Math.max(0, hlsTime)
+      setCurrentTime(newTime)
+      return
+    }
+
+    // Normal video seek
+    setSvpPendingSeek(null)
+    mediaRef.current.currentTime = newTime
+    setCurrentTime(newTime)
+  }, [duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, restartSVPFromPosition])
+
+  // Double-click handler: zoom to fill or reset (images), toggle display mode (videos)
   const handleDoubleClick = useCallback((e) => {
     // Don't zoom if clicking on interactive elements
-    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-adjustments')) return
+    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-adjustments, .lightbox-video-controls')) return
 
     resetHideTimer()
 
+    // Special handling for videos - zone-based actions
+    if (isVideo(image?.original_filename)) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const clickX = e.clientX - rect.left
+      const width = rect.width
+
+      if (clickX < width * 0.4) {
+        // Left 40%: skip back 10 seconds
+        seekVideo(-10)
+      } else if (clickX > width * 0.6) {
+        // Right 40%: skip forward 10 seconds
+        seekVideo(10)
+      } else {
+        // Center 20%: toggle display mode (fit/original)
+        setVideoDisplayMode(videoDisplayMode === 'fit' ? 'original' : 'fit')
+      }
+      return
+    }
+
+    // Image zoom behavior (unchanged)
     if (isZoomDefault()) {
       // Zoom to fill at click position
       const fillScale = calculateFillScale()
@@ -227,12 +497,18 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       // Reset zoom
       setZoom({ scale: 1, x: 0, y: 0 })
     }
-  }, [isZoomDefault, calculateFillScale, resetHideTimer])
+  }, [isZoomDefault, calculateFillScale, resetHideTimer, image?.original_filename, videoDisplayMode, videoNaturalSize, seekVideo])
 
-  // Wheel zoom at cursor position
+  // Wheel zoom at cursor position (disabled for videos)
   const handleWheel = useCallback((e) => {
     // Don't zoom if over interactive elements
     if (e.target.closest('.lightbox-toolbar, .lightbox-adjustments, .lightbox-confirm-overlay')) return
+
+    // Disable wheel zoom for videos
+    if (isVideo(image?.original_filename)) {
+      e.preventDefault()
+      return
+    }
 
     e.preventDefault()
     resetHideTimer()
@@ -266,7 +542,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     } else {
       setZoom({ scale: newScale, x: currentZoom.x, y: currentZoom.y })
     }
-  }, [resetHideTimer]) // Removed zoom from dependencies - using ref instead
+  }, [resetHideTimer, image?.original_filename]) // Removed zoom from dependencies - using ref instead
 
   // Mouse drag for panning when zoomed
   const handleMouseDown = useCallback((e) => {
@@ -290,8 +566,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     isDragging.current = false
   }, [])
 
-  // Pinch-to-zoom for touch
+  // Pinch-to-zoom for touch (disabled for videos)
   const handleTouchMoveZoom = useCallback((e) => {
+    // Disable pinch zoom for videos
+    if (isVideo(image?.original_filename)) return
+
     if (e.touches.length === 2) {
       // Pinch zoom
       const touch1 = e.touches[0]
@@ -343,7 +622,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         }
       }
     }
-  }, [zoom])
+  }, [zoom, image?.original_filename])
 
   const handleTouchEndZoom = useCallback(() => {
     lastPinchDistance.current = null
@@ -389,7 +668,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
     try {
       const { deleteImage } = await import('../api')
-      await deleteImage(image.id, true) // true = delete from filesystem
+      await deleteImage(image.id, true, image.directory_id) // true = delete from filesystem, pass directory_id if available
       setShowDeleteConfirm(false)
 
       // Notify parent to remove the image and navigate
@@ -440,6 +719,711 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
     setTimeout(() => setCopyFeedback(null), 1500)
   }, [image])
+
+  // Start optical flow interpolation for video (called automatically when enabled)
+  const startInterpolatedStream = useCallback(async () => {
+    if (!image || !opticalFlowConfig?.enabled || !isVideo(image.filename)) return
+    if (opticalFlowStreamUrl || opticalFlowLoading) return // Already active or starting
+
+    setOpticalFlowLoading(true)
+    setOpticalFlowError(null)
+
+    try {
+      const result = await playVideoInterpolated(image.file_path, 0, currentQuality)
+
+      if (result.success && result.stream_url) {
+        setOpticalFlowStreamUrl(result.stream_url)
+        if (result.source_resolution) setSourceResolution(result.source_resolution)
+      } else {
+        setOpticalFlowError(result.error || 'Failed to start interpolated playback')
+      }
+    } catch (err) {
+      console.error('Optical flow error:', err)
+      setOpticalFlowError(err.message || 'Failed to start interpolated playback')
+    }
+
+    setOpticalFlowLoading(false)
+  }, [image, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading, currentQuality])
+
+  // Refs to access latest callbacks without adding them to effect dependencies
+  const startSVPStreamRef = useRef(null)
+  const startInterpolatedStreamRef = useRef(null)
+
+  // Auto-start interpolated stream when video opens
+  // Priority: SVP (if enabled) > Optical Flow (if enabled) > Transcode (if quality != original)
+  useEffect(() => {
+    if (image && isVideo(image.filename)) {
+      console.log('[Auto-start] Checking...', {
+        svpEnabled: svpConfig?.enabled,
+        opticalFlowEnabled: opticalFlowConfig?.enabled,
+        currentQuality
+      })
+      // Prefer SVP if enabled
+      if (svpConfig?.enabled) {
+        console.log('[Auto-start] Starting SVP stream...')
+        startSVPStreamRef.current()
+      }
+      // Fall back to optical flow if enabled
+      else if (opticalFlowConfig?.enabled) {
+        console.log('[Auto-start] Starting OpticalFlow stream...')
+        startInterpolatedStreamRef.current()
+      }
+      // If quality is not original and no interpolation enabled, use transcode
+      else if (currentQuality && currentQuality !== 'original') {
+        console.log('[Auto-start] Starting transcode stream for quality:', currentQuality)
+        // Start transcode stream
+        playVideoTranscode(image.file_path, 0, currentQuality).then(result => {
+          if (result.success) {
+            setTranscodeStreamUrl(result.stream_url)
+            setTranscodeStartOffset(0)
+            if (result.duration) setTranscodeTotalDuration(result.duration)
+            if (result.source_resolution) setSourceResolution(result.source_resolution)
+          } else {
+            console.error('[Auto-start] Transcode failed:', result.error)
+          }
+        }).catch(err => {
+          console.error('[Auto-start] Transcode error:', err)
+        })
+      }
+      // Otherwise play direct (original quality, no interpolation)
+    }
+  }, [image?.id, svpConfig?.enabled, opticalFlowConfig?.enabled, currentQuality])
+
+  // Setup HLS player when optical flow stream is active
+  useEffect(() => {
+    if (!opticalFlowStreamUrl || !mediaRef.current) return
+
+    const video = mediaRef.current
+
+    if (Hls.isSupported()) {
+      // Cleanup previous instance
+      if (hlsRef.current) {
+        hlsRef.current.destroy()
+      }
+
+      // Clear video src to prevent dual playback with HLS MediaSource
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 30
+      })
+
+      // Use getMediaUrl to handle dev mode (different ports for frontend/backend)
+      hls.loadSource(getMediaUrl(opticalFlowStreamUrl))
+      hls.attachMedia(video)
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {})
+      })
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          console.error('HLS fatal error:', data)
+          setOpticalFlowError('Stream playback error.')
+          setOpticalFlowStreamUrl(null)
+        }
+      })
+
+      hlsRef.current = hls
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari/iOS native HLS support
+      video.src = getMediaUrl(opticalFlowStreamUrl)
+      video.addEventListener('loadedmetadata', () => {
+        video.play().catch(() => {})
+      })
+    } else {
+      setOpticalFlowError('HLS playback is not supported in this browser')
+      setOpticalFlowStreamUrl(null)
+    }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy()
+        hlsRef.current = null
+      }
+    }
+  }, [opticalFlowStreamUrl])
+
+  // Setup HLS player when transcode stream is active (fallback when no interpolation)
+  useEffect(() => {
+    if (!transcodeStreamUrl || !mediaRef.current) return
+
+    const video = mediaRef.current
+
+    if (Hls.isSupported()) {
+      // Cleanup previous instance
+      if (transcodeHlsRef.current) {
+        transcodeHlsRef.current.destroy()
+      }
+
+      // Clear video src to prevent dual playback with HLS MediaSource
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 30
+      })
+
+      // Use getMediaUrl to handle dev mode (different ports for frontend/backend)
+      hls.loadSource(getMediaUrl(transcodeStreamUrl))
+      hls.attachMedia(video)
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {})
+      })
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          console.error('Transcode HLS fatal error:', data)
+          setTranscodeStreamUrl(null)
+        }
+      })
+
+      transcodeHlsRef.current = hls
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari/iOS native HLS support
+      video.src = getMediaUrl(transcodeStreamUrl)
+      video.addEventListener('loadedmetadata', () => {
+        video.play().catch(() => {})
+      })
+    } else {
+      console.error('HLS playback is not supported')
+      setTranscodeStreamUrl(null)
+    }
+
+    return () => {
+      if (transcodeHlsRef.current) {
+        transcodeHlsRef.current.destroy()
+        transcodeHlsRef.current = null
+      }
+    }
+  }, [transcodeStreamUrl])
+
+  // Cleanup HLS on unmount
+  useEffect(() => {
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy()
+        hlsRef.current = null
+      }
+      if (svpHlsRef.current) {
+        svpHlsRef.current.destroy()
+        svpHlsRef.current = null
+      }
+      if (transcodeHlsRef.current) {
+        transcodeHlsRef.current.destroy()
+        transcodeHlsRef.current = null
+      }
+      // Stop backend streams on unmount
+      stopSVPStream().catch(() => {})
+      stopInterpolatedStream().catch(() => {})
+      stopTranscodeStream().catch(() => {})
+    }
+  }, [])
+
+  // Start SVP interpolation for video (called manually via button)
+  const startSVPStream = useCallback(async () => {
+    console.log('[startSVPStream] Called', { image: image?.id, enabled: svpConfig?.enabled, isVideo: isVideo(image?.filename) })
+    if (!image || !svpConfig?.enabled || !isVideo(image.filename)) {
+      console.log('[startSVPStream] Early return: missing image/config/not video')
+      return
+    }
+    if (svpStreamUrl || svpLoading) {
+      console.log('[startSVPStream] Early return: already active or loading', { svpStreamUrl, svpLoading })
+      return
+    }
+
+    // Use ref for synchronous lock (state updates are batched/async)
+    if (svpStartingRef.current) {
+      console.log('[startSVPStream] Early return: ref lock active')
+      return
+    }
+    svpStartingRef.current = true
+
+    // Stop any existing optical flow stream
+    if (opticalFlowStreamUrl) {
+      setOpticalFlowStreamUrl(null)
+      await stopInterpolatedStream()
+    }
+
+    setSvpLoading(true)
+    setSvpError(null)
+
+    console.log('[startSVPStream] Calling API with path:', image.file_path, 'quality:', currentQuality)
+    try {
+      const result = await playVideoSVP(image.file_path, 0, currentQuality)
+      console.log('[startSVPStream] API result:', result)
+
+      if (result.success && result.stream_url) {
+        setSvpStreamUrl(result.stream_url)
+        setSvpStartOffset(0)  // Starting from beginning
+        // Store the known total duration from API for proper timeline display
+        if (result.duration) {
+          setSvpTotalDuration(result.duration)
+        }
+        // Set source resolution from API (original video dimensions, not stream dimensions)
+        if (result.source_resolution) {
+          setSourceResolution(result.source_resolution)
+        }
+      } else {
+        setSvpError(result.error || 'Failed to start SVP playback')
+        setSvpLoading(false)  // Clear loading state on API failure
+      }
+    } catch (err) {
+      console.error('SVP error:', err)
+      setSvpError(err.message || 'Failed to start SVP playback')
+      setSvpLoading(false)  // Only set loading false on error here
+    } finally {
+      svpStartingRef.current = false
+    }
+    // Note: svpLoading stays true until MANIFEST_PARSED fires in the useEffect
+  }, [image, svpConfig, svpStreamUrl, svpLoading, opticalFlowStreamUrl, currentQuality])
+
+  // Update refs after callbacks are defined (used by auto-start effect)
+  startSVPStreamRef.current = startSVPStream
+  startInterpolatedStreamRef.current = startInterpolatedStream
+
+  // Toggle video play/pause
+  const toggleVideoPlay = useCallback(() => {
+    if (!mediaRef.current) return
+    const video = mediaRef.current
+    if (video.paused) {
+      video.play().catch(() => {})
+    } else {
+      video.pause()
+    }
+  }, [])
+
+  // Handle click anywhere on video to play/pause
+  const handleVideoClick = useCallback((e) => {
+    if (!isVideo(image?.original_filename)) return
+    // Don't toggle play if clicking on controls
+    if (e.target.closest('.lightbox-video-controls')) return
+    toggleVideoPlay()
+    resetHideTimer()
+  }, [image?.original_filename, toggleVideoPlay, resetHideTimer])
+
+  // Handle quality change
+  const handleQualityChange = useCallback(async (qualityId) => {
+    console.log('[Lightbox] Quality change requested:', qualityId)
+    setCurrentQuality(qualityId)
+    localStorage.setItem('video_quality_preference', qualityId)
+
+    if (!mediaRef.current) {
+      console.log('[Lightbox] No mediaRef available')
+      return
+    }
+
+    try {
+      if (qualityId === 'original') {
+        console.log('[Lightbox] Switching to original quality')
+        // Stop streams and load direct video
+        if (svpStreamUrl) {
+          await stopSVPStream()
+          setSvpStreamUrl(null)
+        }
+        if (opticalFlowStreamUrl) {
+          await stopInterpolatedStream()
+          setOpticalFlowStreamUrl(null)
+        }
+        if (transcodeStreamUrl) {
+          await stopTranscodeStream()
+          setTranscodeStreamUrl(null)
+        }
+
+        if (mediaRef.current) {
+          const currentTime = mediaRef.current.currentTime
+          mediaRef.current.src = getMediaUrl(image.url)
+          mediaRef.current.currentTime = currentTime
+          mediaRef.current.play().catch(() => {})
+        }
+      } else {
+        // Restart stream with new quality
+        const currentTime = mediaRef.current?.currentTime || 0
+        console.log('[Lightbox] Restarting stream with quality:', qualityId, 'at time:', currentTime)
+        console.log('[Lightbox] SVP enabled/ready:', svpConfig?.enabled, svpConfig?.status?.ready)
+        console.log('[Lightbox] OpticalFlow enabled:', opticalFlowConfig?.enabled)
+
+        // Check if SVP is currently playing
+        if (svpStreamUrl) {
+          console.log('[Lightbox] Restarting SVP stream with quality')
+          await stopSVPStream()
+          const result = await playVideoSVP(image.file_path, currentTime, qualityId)
+          console.log('[Lightbox] SVP play result:', result)
+          if (result.success) {
+            setSvpStreamUrl(result.stream_url)
+            if (result.duration) setSvpTotalDuration(result.duration)
+            if (result.source_resolution) setSourceResolution(result.source_resolution)
+          } else {
+            console.error('[Lightbox] SVP play failed:', result.error)
+          }
+        } else if (opticalFlowStreamUrl) {
+          console.log('[Lightbox] Restarting OpticalFlow stream with quality')
+          await stopInterpolatedStream()
+          const result = await playVideoInterpolated(image.file_path, currentTime, qualityId)
+          console.log('[Lightbox] OpticalFlow play result:', result)
+          if (result.success) {
+            setOpticalFlowStreamUrl(result.stream_url)
+          } else {
+            console.error('[Lightbox] OpticalFlow play failed:', result.error)
+          }
+        } else {
+          // Neither SVP nor OpticalFlow is currently playing
+          console.log('[Lightbox] No active stream, starting new one with quality')
+          // Try SVP first (if enabled), fall back to OpticalFlow (if enabled), or use transcode
+          if (svpConfig?.enabled) {
+            // SVP is enabled, try to use it
+            console.log('[Lightbox] Starting new SVP stream with quality')
+            const result = await playVideoSVP(image.file_path, currentTime, qualityId)
+            console.log('[Lightbox] SVP play result:', result)
+            if (result.success) {
+              setSvpStreamUrl(result.stream_url)
+              if (result.duration) setSvpTotalDuration(result.duration)
+              if (result.source_resolution) setSourceResolution(result.source_resolution)
+            } else {
+              console.error('[Lightbox] SVP play failed:', result.error)
+              alert('Failed to start SVP stream: ' + result.error)
+            }
+          } else if (opticalFlowConfig?.enabled) {
+            // OpticalFlow is enabled, try to use it
+            console.log('[Lightbox] Starting new OpticalFlow stream with quality')
+            const result = await playVideoInterpolated(image.file_path, currentTime, qualityId)
+            console.log('[Lightbox] OpticalFlow play result:', result)
+            if (result.success) {
+              setOpticalFlowStreamUrl(result.stream_url)
+            } else {
+              console.error('[Lightbox] OpticalFlow play failed:', result.error)
+              alert('Failed to start OpticalFlow stream: ' + result.error)
+            }
+          } else {
+            // Neither SVP nor OpticalFlow enabled, use simple transcode
+            console.log('[Lightbox] Using transcode (FFmpeg only) for quality change')
+            if (transcodeStreamUrl) {
+              await stopTranscodeStream()
+              setTranscodeStreamUrl(null)
+            }
+            const result = await playVideoTranscode(image.file_path, currentTime, qualityId)
+            console.log('[Lightbox] Transcode play result:', result)
+            if (result.success) {
+              setTranscodeStreamUrl(result.stream_url)
+              setTranscodeStartOffset(currentTime)
+              if (result.duration) setTranscodeTotalDuration(result.duration)
+              if (result.source_resolution) setSourceResolution(result.source_resolution)
+            } else {
+              console.error('[Lightbox] Transcode play failed:', result.error)
+              alert('Failed to transcode video: ' + result.error)
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to change quality:', err)
+    }
+  }, [image?.url, image?.file_path, svpStreamUrl, opticalFlowStreamUrl, svpConfig, opticalFlowConfig])
+
+  // Sync play state with video element events
+  const handleVideoPlay = useCallback(() => {
+    setIsPlaying(true)
+    // Note: Don't update sourceResolution here - it should only be set once from the original video
+    // Updating it during streaming would give us the stream resolution (e.g., 480p) instead of source
+  }, [])
+
+  const handleVideoPause = useCallback(() => {
+    setIsPlaying(false)
+  }, [])
+
+  // Update current time as video plays
+  const handleTimeUpdate = useCallback(() => {
+    if (!mediaRef.current || isSeeking) return
+    // Don't update time display while waiting for pending seek
+    if (svpPendingSeek) return
+    // Add offset for streams that started from a seek position
+    let actualTime = mediaRef.current.currentTime
+    if (svpStreamUrl) {
+      actualTime += svpStartOffset
+    } else if (transcodeStreamUrl) {
+      actualTime += transcodeStartOffset
+    }
+    setCurrentTime(actualTime)
+  }, [isSeeking, svpPendingSeek, svpStreamUrl, svpStartOffset, transcodeStreamUrl, transcodeStartOffset])
+
+  // Get duration and natural size when video metadata loads
+  const handleLoadedMetadata = useCallback(() => {
+    if (!mediaRef.current) return
+    // For HLS streams, use the known total duration from API if available
+    // This allows the timeline to show the full video length even while segments are being generated
+    if (svpTotalDuration && svpStreamUrl) {
+      setDuration(svpTotalDuration)
+    } else if (transcodeTotalDuration && transcodeStreamUrl) {
+      setDuration(transcodeTotalDuration)
+    } else {
+      setDuration(mediaRef.current.duration)
+    }
+
+    const width = mediaRef.current.videoWidth
+    const height = mediaRef.current.videoHeight
+
+    setVideoNaturalSize({
+      width,
+      height
+    })
+
+    // Store source resolution for quality selector
+    // ONLY set this when playing the ORIGINAL video (not a stream)
+    // Stream dimensions would be the transcoded resolution (e.g., 480p), not the source
+    const isStreaming = svpStreamUrl || opticalFlowStreamUrl || transcodeStreamUrl
+    if (width > 0 && height > 0 && !isStreaming) {
+      console.log('[Lightbox] Setting source resolution (original video):', width, 'x', height)
+      setSourceResolution({
+        width,
+        height
+      })
+    } else {
+      console.log('[Lightbox] Video dimensions not available yet, will retry on play')
+    }
+  }, [svpTotalDuration, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, transcodeTotalDuration])
+
+  // Handle seeking via timeline
+  const handleSeek = useCallback((e) => {
+    if (!mediaRef.current || !duration || !timelineRef.current) return
+    const rect = timelineRef.current.getBoundingClientRect()
+    const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    const newTime = percent * duration  // Absolute video time
+
+    // For SVP streams, check if we need to restart from a new position
+    if (svpStreamUrl) {
+      // Calculate the actual buffered range in absolute video time
+      const bufferedEnd = svpStartOffset + svpBufferedDuration
+      const bufferedStart = svpStartOffset
+
+      // Need to restart if seeking outside the current buffered range
+      if (newTime < bufferedStart - 1 || newTime > bufferedEnd + 2) {
+        console.log(`[SVP] Seeking to ${newTime.toFixed(1)}s, buffered range: ${bufferedStart.toFixed(1)}-${bufferedEnd.toFixed(1)}s. Restarting stream...`)
+        restartSVPFromPosition(newTime)
+        return
+      }
+
+      // Seek within current stream (convert to HLS stream time)
+      const hlsTime = newTime - svpStartOffset
+      setSvpPendingSeek(null)
+      mediaRef.current.currentTime = Math.max(0, hlsTime)
+      setCurrentTime(newTime)
+      return
+    }
+
+    // Normal video seek (no SVP)
+    setSvpPendingSeek(null)
+    mediaRef.current.currentTime = newTime
+    setCurrentTime(newTime)
+  }, [duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, restartSVPFromPosition])
+
+  const handleSeekStart = useCallback((e) => {
+    setIsSeeking(true)
+    handleSeek(e)
+  }, [handleSeek])
+
+  const handleSeekMove = useCallback((e) => {
+    if (!isSeeking) return
+    handleSeek(e)
+  }, [isSeeking, handleSeek])
+
+  const handleSeekEnd = useCallback(() => {
+    setIsSeeking(false)
+  }, [])
+
+  // Format time as MM:SS
+  const formatTime = (seconds) => {
+    if (!seconds || !isFinite(seconds)) return '0:00'
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // Handle volume change
+  const handleVolumeChange = useCallback((e) => {
+    const newVolume = parseFloat(e.target.value)
+    setVolume(newVolume)
+    if (mediaRef.current) {
+      mediaRef.current.volume = newVolume
+      setIsMuted(newVolume === 0)
+    }
+  }, [])
+
+  // Toggle mute
+  const toggleMute = useCallback(() => {
+    if (!mediaRef.current) return
+    if (isMuted) {
+      mediaRef.current.muted = false
+      setIsMuted(false)
+    } else {
+      mediaRef.current.muted = true
+      setIsMuted(true)
+    }
+  }, [isMuted])
+
+  // Stop SVP stream
+  const stopSVP = useCallback(async () => {
+    if (svpHlsRef.current) {
+      svpHlsRef.current.destroy()
+      svpHlsRef.current = null
+    }
+    setSvpStreamUrl(null)
+    setSvpTotalDuration(null)
+    setSvpBufferedDuration(0)
+    setSvpPendingSeek(null)
+    setSvpError(null)
+    await stopSVPStream()
+  }, [])
+
+  // Setup HLS player when SVP stream URL is available
+  // Keep normal video playing until HLS is ready, then switch
+  useEffect(() => {
+    if (!svpStreamUrl || !mediaRef.current) return
+
+    const video = mediaRef.current
+    let cancelled = false
+
+    if (Hls.isSupported()) {
+      // Cleanup previous instance
+      if (svpHlsRef.current) {
+        svpHlsRef.current.destroy()
+      }
+
+      // Clear video src to prevent dual playback with HLS MediaSource
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,  // Enable low latency for live-style HLS playlist
+        backBufferLength: 30,
+        maxBufferLength: 30,           // Buffer up to 30 seconds ahead
+        maxMaxBufferLength: 60,        // Allow up to 60 seconds in buffer
+        // Retry manifest loading while SVP produces initial segments
+        manifestLoadingMaxRetry: 30,
+        manifestLoadingRetryDelay: 500,   // 500ms between retries (faster feedback)
+        manifestLoadingMaxRetryTimeout: 60000,
+        // Also retry level/fragment loading
+        levelLoadingMaxRetry: 10,
+        levelLoadingRetryDelay: 500,
+        fragLoadingMaxRetry: 10,
+        fragLoadingRetryDelay: 500,
+        // Start playback even with small buffer
+        startPosition: 0,
+      })
+
+      // Attach media and load source
+      // Use getMediaUrl to handle dev mode (different ports for frontend/backend)
+      const fullStreamUrl = getMediaUrl(svpStreamUrl)
+      console.log('[SVP HLS] Stream URL:', fullStreamUrl)
+      hls.loadSource(fullStreamUrl)
+      hls.attachMedia(video)  // Attach immediately (like optical flow code)
+
+      // Debug logging for HLS events
+      hls.on(Hls.Events.MANIFEST_LOADING, () => {
+        console.log('[SVP HLS] Loading manifest...')
+      })
+
+      hls.on(Hls.Events.MANIFEST_LOADED, (event, data) => {
+        console.log('[SVP HLS] Manifest loaded:', data.levels?.length, 'levels')
+      })
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (cancelled) return
+        console.log('[SVP HLS] Manifest parsed, starting playback')
+        setSvpLoading(false)
+        video.play().catch(() => {})
+      })
+
+      hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+        console.log('[SVP HLS] Fragment loaded:', data.frag.sn)
+      })
+
+      // Track available duration from HLS manifest for seek handling
+      hls.on(Hls.Events.LEVEL_UPDATED, (event, data) => {
+        if (cancelled) return
+        const levelDetails = data.details
+        if (levelDetails && levelDetails.totalduration) {
+          const availableDuration = levelDetails.totalduration
+          console.log('[SVP HLS] Level updated, available duration:', availableDuration.toFixed(1) + 's')
+          setSvpBufferedDuration(availableDuration)
+        }
+      })
+
+      let retryCount = 0
+      const maxRetries = 60  // Allow up to 60 retries (1 min) for large files indexing
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (cancelled) return
+
+        if (data.fatal) {
+          // Check if it's a retryable network/manifest error during startup
+          const isManifestError = data.details === 'manifestLoadError' ||
+                                   data.details === 'manifestParsingError'
+          const isNetworkError = data.type === Hls.ErrorTypes.NETWORK_ERROR
+
+          if ((isManifestError || isNetworkError) && retryCount < maxRetries) {
+            retryCount++
+            console.log(`[SVP HLS] Fatal error, manual retry ${retryCount}/${maxRetries}:`, data.details)
+            // HLS.js stops after fatal error - must manually restart loading
+            setTimeout(() => {
+              if (!cancelled) {
+                hls.startLoad()
+              }
+            }, 1000)
+          } else {
+            // Give up - either not a retryable error, or retries exhausted
+            console.error('[SVP HLS] Giving up after fatal error:', data)
+            const errorMsg = retryCount >= maxRetries
+              ? 'SVP stream failed to start (timeout)'
+              : `SVP stream error: ${data.details || 'playback failed'}`
+            setSvpError(errorMsg)
+            setSvpStreamUrl(null)
+            setSvpTotalDuration(null)
+            setSvpBufferedDuration(0)
+            setSvpPendingSeek(null)
+            setSvpLoading(false)
+          }
+        } else {
+          // Non-fatal error - log but don't stop
+          console.warn('[SVP HLS] Non-fatal error:', data.details)
+        }
+      })
+
+      svpHlsRef.current = hls
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari/iOS native HLS support - just set src directly
+      // It will handle buffering itself
+      video.src = getMediaUrl(svpStreamUrl)
+      video.addEventListener('loadedmetadata', () => {
+        video.play().catch(() => {})
+        setSvpLoading(false)
+      })
+    } else {
+      setSvpError('HLS playback is not supported in this browser')
+      setSvpStreamUrl(null)
+      setSvpTotalDuration(null)
+      setSvpBufferedDuration(0)
+      setSvpPendingSeek(null)
+      setSvpLoading(false)
+    }
+
+    return () => {
+      cancelled = true
+      if (svpHlsRef.current) {
+        svpHlsRef.current.destroy()
+        svpHlsRef.current = null
+      }
+    }
+  }, [svpStreamUrl])
 
   // Generate preview of adjustments
   const handleGeneratePreview = useCallback(async () => {
@@ -620,6 +1604,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         case 'f':
           handleToggleFavorite()
           break
+        case ' ':
+          // Space toggles video play/pause
+          if (isVideo(image?.original_filename) && mediaRef.current) {
+            e.preventDefault()
+            toggleVideoPlay()
+          }
+          break
         case 'Delete':
           setShowDeleteConfirm(true)
           deleteDialogFocusIndex.current = 0 // Default focus to Cancel for safety
@@ -634,7 +1625,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm])
+  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, toggleVideoPlay, image?.original_filename])
 
   // Auto-focus Cancel button when delete dialog opens
   useEffect(() => {
@@ -657,8 +1648,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     // Don't navigate if zoomed in
     if (zoom.scale > 1) return
 
-    // Don't navigate if clicking on interactive elements
-    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, video')) return
+    // Don't navigate on videos (navigation uses buttons only)
+    if (isVideo(image?.original_filename)) return
+
+    // Don't navigate if clicking on interactive elements (but allow video area for navigation)
+    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-video-controls')) return
 
     const rect = e.currentTarget.getBoundingClientRect()
     const clickX = e.clientX - rect.left
@@ -688,7 +1682,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   if (!image) return null
 
-  const isVideoFile = isVideo(image.filename)
+  const isVideoFile = isVideo(image.original_filename)
   const fileStatus = image.file_status || 'available'
   const isUnavailable = fileStatus !== 'available'
 
@@ -837,6 +1831,19 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         )}
+        {isVideoFile && (
+          <button
+            className="lightbox-btn lightbox-svp"
+            onClick={() => setShowSVPMenu(true)}
+            title="SVP Settings"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="5" cy="12" r="2"/>
+              <circle cx="12" cy="12" r="2"/>
+              <circle cx="19" cy="12" r="2"/>
+            </svg>
+          </button>
+        )}
         <button
           className={`lightbox-btn lightbox-fullscreen ${isFullscreen ? 'active' : ''}`}
           onClick={handleToggleFullscreen}
@@ -891,26 +1898,202 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         ) : isVideoFile ? (
-          <video
-            key={image.id}
-            ref={mediaRef}
-            src={getMediaUrl(image.url)}
-            controls
-            autoPlay
-            loop
-            className="lightbox-media"
-            style={getZoomTransform()}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              if (window.electronAPI?.showImageContextMenu) {
-                window.electronAPI.showImageContextMenu({
-                  imageUrl: getMediaUrl(image.url),
-                  filePath: image.file_path,
-                  isVideo: true
-                })
-              }
-            }}
-          />
+          <div className="lightbox-video-container">
+            <video
+              key={image.id}
+              ref={mediaRef}
+              src={svpConfigLoaded && !svpStreamUrl && !opticalFlowStreamUrl && !transcodeStreamUrl && !svpLoading && (!svpConfig?.enabled || svpError) && (!opticalFlowConfig?.enabled || opticalFlowError) ? getMediaUrl(image.url) : undefined}
+              autoPlay
+              playsInline
+              loop
+              className={`lightbox-media video-display-${videoDisplayMode} ${svpStreamUrl ? 'svp-streaming' : opticalFlowStreamUrl ? 'interpolated-streaming' : transcodeStreamUrl ? 'transcode-streaming' : ''}`}
+              style={getZoomTransform()}
+              onClick={handleVideoClick}
+              onPlay={handleVideoPlay}
+              onPause={handleVideoPause}
+              onTimeUpdate={handleTimeUpdate}
+              onLoadedMetadata={handleLoadedMetadata}
+              onCanPlay={(e) => {
+                // Ensure video plays even if autoPlay is blocked
+                e.target.play().catch(() => {})
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                if (window.electronAPI?.showImageContextMenu) {
+                  window.electronAPI.showImageContextMenu({
+                    imageUrl: getMediaUrl(image.url),
+                    filePath: image.file_path,
+                    isVideo: true
+                  })
+                }
+              }}
+            />
+            {/* Custom video controls */}
+            <div
+              className="lightbox-video-controls"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Centered playback controls */}
+              <div className="video-playback-controls">
+                <button
+                  className="video-nav-btn"
+                  onClick={() => onNav(-1)}
+                  title="Previous (Left Arrow)"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z"/>
+                  </svg>
+                </button>
+                <button
+                  className="video-play-btn-center"
+                  onClick={toggleVideoPlay}
+                  title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+                >
+                  {isPlaying ? (
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                  )}
+                </button>
+                <button
+                  className="video-nav-btn"
+                  onClick={() => onNav(1)}
+                  title="Next (Right Arrow)"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M16 6v12h2V6h-2zm-3.5 6l-8.5 6V6l8.5 6z"/>
+                  </svg>
+                </button>
+              </div>
+              {/* Timeline row */}
+              <div className="video-controls-row">
+              <span className="video-time">{formatTime(currentTime)}</span>
+              <div
+                ref={timelineRef}
+                className="video-timeline"
+                onMouseDown={handleSeekStart}
+                onMouseMove={handleSeekMove}
+                onMouseUp={handleSeekEnd}
+                onMouseLeave={handleSeekEnd}
+              >
+                <div className="video-timeline-track">
+                  {/* Buffer indicator for SVP streams - shows how much is available */}
+                  {/* Buffer indicator for SVP streams - shows the buffered range */}
+                  {svpStreamUrl && svpBufferedDuration > 0 && duration > 0 && (
+                    <div
+                      className="video-timeline-buffer"
+                      style={{
+                        left: `${(svpStartOffset / duration) * 100}%`,
+                        width: `${(svpBufferedDuration / duration) * 100}%`
+                      }}
+                    />
+                  )}
+                  <div
+                    className="video-timeline-progress"
+                    style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
+                  />
+                  <div
+                    className="video-timeline-playhead"
+                    style={{ left: `${duration ? (currentTime / duration) * 100 : 0}%` }}
+                  />
+                </div>
+              </div>
+              <span className="video-time">{formatTime(duration)}</span>
+              <button
+                className="video-control-btn quality-btn"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowQualitySelector(!showQualitySelector)
+                }}
+                title="Quality"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54h2.79v2.71h2V13.83h2.79l-2.75-3.54zM7 9h2v2H7z"/>
+                </svg>
+              </button>
+              <div className="video-volume-container">
+                <button
+                  className="video-control-btn video-mute-btn"
+                  onClick={toggleMute}
+                  title={isMuted ? 'Unmute' : 'Mute'}
+                >
+                  {isMuted || volume === 0 ? (
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                    </svg>
+                  ) : volume < 0.5 ? (
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/>
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                    </svg>
+                  )}
+                </button>
+                <input
+                  type="range"
+                  className="video-volume-slider"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={isMuted ? 0 : volume}
+                  onChange={handleVolumeChange}
+                  title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
+                />
+              </div>
+              </div>
+            </div>
+            {/* Optical flow loading indicator */}
+            {opticalFlowLoading && (
+              <div className="interpolate-loading">
+                <div className="interpolate-loading-spinner" />
+                <span>Buffering {opticalFlowConfig?.target_fps || 60} FPS...</span>
+              </div>
+            )}
+            {/* Optical flow streaming indicator */}
+            {opticalFlowStreamUrl && !opticalFlowLoading && (
+              <div className="interpolate-badge">
+                {opticalFlowConfig?.target_fps || 60} FPS
+              </div>
+            )}
+            {/* Optical flow error toast */}
+            {opticalFlowError && (
+              <div className="interpolate-error-toast">
+                {opticalFlowError}
+              </div>
+            )}
+            {/* SVP loading indicator */}
+            {svpLoading && (
+              <div className="interpolate-loading svp-loading">
+                <div className="interpolate-loading-spinner" />
+                <span>SVP: Buffering {svpConfig?.target_fps || 60} FPS...</span>
+              </div>
+            )}
+            {/* SVP streaming indicator */}
+            {svpStreamUrl && !svpLoading && !svpPendingSeek && (
+              <div className="interpolate-badge svp-badge">
+                SVP {svpConfig?.target_fps || 60} FPS
+              </div>
+            )}
+            {/* SVP waiting for seek indicator */}
+            {svpPendingSeek && (
+              <div className="interpolate-loading svp-loading">
+                <div className="interpolate-loading-spinner" />
+                <span>Buffering to {formatTime(svpPendingSeek)}...</span>
+              </div>
+            )}
+            {/* SVP error toast */}
+            {svpError && (
+              <div className="interpolate-error-toast svp-error">
+                SVP: {svpError}
+              </div>
+            )}
+          </div>
         ) : (
           <img
             key={previewUrl ? `${image.id}-preview` : image.id}
@@ -981,6 +2164,57 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             </div>
           </div>
         </div>
+      )}
+
+      {/* SVP side menu */}
+      {isVideoFile && (
+        <SVPSideMenu
+          isOpen={showSVPMenu}
+          onClose={async () => {
+            setShowSVPMenu(false)
+            // Reload SVP config in case it was changed in the menu
+            try {
+              const newConfig = await getSVPConfig()
+              const configChanged = JSON.stringify(newConfig) !== JSON.stringify(svpConfig)
+              setSvpConfig(newConfig)
+
+              // If config changed, restart the stream with new settings
+              if (configChanged) {
+                // Stop current stream
+                if (svpStreamUrl) {
+                  await stopSVPStream()
+                  setSvpStreamUrl(null)
+                }
+                // Clear error (e.g., "fps already at target" with old target)
+                setSvpError(null)
+                setSvpLoading(false)
+                svpStartingRef.current = false
+
+                // Start new stream if enabled
+                if (newConfig.enabled && image && isVideo(image.filename)) {
+                  // Small delay to ensure state is cleared
+                  setTimeout(() => {
+                    startSVPStreamRef.current?.()
+                  }, 100)
+                }
+              }
+            } catch (err) {
+              console.error('Failed to reload SVP config:', err)
+            }
+          }}
+          image={image}
+        />
+      )}
+
+      {/* Quality selector */}
+      {isVideoFile && (
+        <QualitySelector
+          isOpen={showQualitySelector}
+          onClose={() => setShowQualitySelector(false)}
+          currentQuality={currentQuality}
+          onQualityChange={handleQualityChange}
+          sourceResolution={sourceResolution}
+        />
       )}
     </div>
   )

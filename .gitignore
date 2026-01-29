@@ -39,3 +39,14 @@ npm-debug.log*
 tagger/
 yolov8n.pt
 tagger
+.venv/
+.claude/get-shit-done/
+.claude/commands/gsd/
+
+# Dev/test files
+bench.py
+bench2.py
+test_*.py
+
+# Issue tracker
+.beads/

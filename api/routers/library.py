@@ -1,15 +1,17 @@
 """
 Library router - library-wide operations and statistics
 """
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
+from ..database import get_db, directory_db_manager
 from ..models import (
     Image, Tag, ImageFile, WatchDirectory, TaskQueue,
-    TaskStatus, TaskType, Rating
+    TaskStatus, TaskType, Rating,
+    DirectoryImage, DirectoryImageFile
 )
 from ..services.events import library_events
 
@@ -19,17 +21,61 @@ router = APIRouter()
 @router.get("/stats")
 async def library_stats(db: AsyncSession = Depends(get_db)):
     """Get library statistics"""
-    # Total images
-    total_images = await db.execute(select(func.count(Image.id)))
-    total = total_images.scalar()
+    total = 0
+    favorites = 0
+    by_rating = {}
 
-    # Favorites count
-    favorites_count = await db.execute(
-        select(func.count(Image.id)).where(Image.is_favorite == True)
-    )
-    favorites = favorites_count.scalar()
+    # Check per-directory databases first (new architecture)
+    all_dir_ids = directory_db_manager.get_all_directory_ids()
+    if all_dir_ids:
+        for dir_id in all_dir_ids:
+            if not directory_db_manager.db_exists(dir_id):
+                continue
+            try:
+                dir_db = await directory_db_manager.get_session(dir_id)
+                try:
+                    # Count images in this directory
+                    count_result = await dir_db.execute(select(func.count(DirectoryImage.id)))
+                    total += count_result.scalar() or 0
 
-    # Total tags
+                    # Count favorites in this directory
+                    fav_result = await dir_db.execute(
+                        select(func.count(DirectoryImage.id)).where(DirectoryImage.is_favorite == True)
+                    )
+                    favorites += fav_result.scalar() or 0
+
+                    # Count by rating in this directory
+                    rating_query = (
+                        select(DirectoryImage.rating, func.count(DirectoryImage.id))
+                        .group_by(DirectoryImage.rating)
+                    )
+                    rating_result = await dir_db.execute(rating_query)
+                    for row in rating_result:
+                        rating_val = row[0].value if row[0] else 'unrated'
+                        by_rating[rating_val] = by_rating.get(rating_val, 0) + row[1]
+                finally:
+                    await dir_db.close()
+            except Exception as e:
+                # Skip directories with corrupted/uninitialized databases
+                print(f"[LibraryStats] Skipping directory {dir_id}: {e}")
+    else:
+        # Fall back to legacy main database
+        total_images = await db.execute(select(func.count(Image.id)))
+        total = total_images.scalar()
+
+        favorites_count = await db.execute(
+            select(func.count(Image.id)).where(Image.is_favorite == True)
+        )
+        favorites = favorites_count.scalar()
+
+        rating_query = (
+            select(Image.rating, func.count(Image.id))
+            .group_by(Image.rating)
+        )
+        rating_result = await db.execute(rating_query)
+        by_rating = {row[0].value: row[1] for row in rating_result}
+
+    # Total tags (always from main DB)
     total_tags = await db.execute(select(func.count(Tag.id)))
     tags = total_tags.scalar()
 
@@ -37,19 +83,32 @@ async def library_stats(db: AsyncSession = Depends(get_db)):
     total_dirs = await db.execute(select(func.count(WatchDirectory.id)))
     directories = total_dirs.scalar()
 
-    # Missing files
-    missing_files = await db.execute(
-        select(func.count(ImageFile.id)).where(ImageFile.file_exists == False)
-    )
-    missing = missing_files.scalar()
-
-    # By rating
-    rating_query = (
-        select(Image.rating, func.count(Image.id))
-        .group_by(Image.rating)
-    )
-    rating_result = await db.execute(rating_query)
-    by_rating = {row[0].value: row[1] for row in rating_result}
+    # Missing files - check per-directory DBs if available
+    missing = 0
+    if all_dir_ids:
+        from ..models import FileStatus
+        for dir_id in all_dir_ids:
+            if not directory_db_manager.db_exists(dir_id):
+                continue
+            try:
+                dir_db = await directory_db_manager.get_session(dir_id)
+                try:
+                    missing_result = await dir_db.execute(
+                        select(func.count(DirectoryImageFile.id)).where(
+                            DirectoryImageFile.file_status == FileStatus.missing
+                        )
+                    )
+                    missing += missing_result.scalar() or 0
+                finally:
+                    await dir_db.close()
+            except Exception:
+                # Skip directories with corrupted/uninitialized databases
+                pass
+    else:
+        missing_files = await db.execute(
+            select(func.count(ImageFile.id)).where(ImageFile.file_exists == False)
+        )
+        missing = missing_files.scalar()
 
     # Task queue status
     pending_tasks = await db.execute(
@@ -234,6 +293,55 @@ async def clean_missing_files(db: AsyncSession = Depends(get_db)):
     return {"cleaned": cleaned, "tasks_cleaned": tasks_cleaned}
 
 
+@router.post("/clean-orphans")
+async def clean_orphan_files(db: AsyncSession = Depends(get_db)):
+    """Remove files from DB that have no watch_directory_id and aren't under any watched directory"""
+    from pathlib import Path
+    from ..database import get_data_dir
+
+    # Get all watched directory paths
+    dir_query = select(WatchDirectory)
+    dir_result = await db.execute(dir_query)
+    watched_dirs = dir_result.scalars().all()
+    watched_paths = [d.path.rstrip('/') + '/' for d in watched_dirs]
+
+    # Find orphaned files (no watch_directory_id)
+    orphan_query = select(ImageFile).where(ImageFile.watch_directory_id == None)
+    orphan_result = await db.execute(orphan_query)
+    orphan_files = orphan_result.scalars().all()
+
+    cleaned = 0
+    for image_file in orphan_files:
+        # Check if file path is under any watched directory
+        is_watched = any(image_file.original_path.startswith(wp) for wp in watched_paths)
+
+        if not is_watched:
+            # File is orphaned - remove from DB
+            image = await db.get(Image, image_file.image_id)
+            if image:
+                # Check if image has other file references
+                other_query = select(ImageFile).where(
+                    ImageFile.image_id == image_file.image_id,
+                    ImageFile.id != image_file.id
+                )
+                other_result = await db.execute(other_query)
+                has_other_refs = other_result.scalar_one_or_none() is not None
+
+                if not has_other_refs:
+                    # No other references - delete image and thumbnail
+                    thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+                    if thumbnail_path.exists():
+                        thumbnail_path.unlink()
+                    await db.delete(image)
+                else:
+                    # Just delete this file reference
+                    await db.delete(image_file)
+            cleaned += 1
+
+    await db.commit()
+    return {"cleaned": cleaned}
+
+
 @router.post("/verify-files")
 async def verify_all_files(db: AsyncSession = Depends(get_db)):
     """Queue a file verification task"""
@@ -247,6 +355,144 @@ async def verify_all_files(db: AsyncSession = Depends(get_db)):
     )
 
     return {"message": "File verification queued", "task_id": task.id}
+
+
+@router.post("/clean-video-thumbnails")
+async def clean_video_thumbnails_endpoint(db: AsyncSession = Depends(get_db)):
+    """Remove video thumbnail files (e.g., video.mp4.png) from the database.
+
+    These are auto-generated thumbnails that shouldn't have been imported.
+    """
+    import traceback
+    from ..services.file_tracker import clean_video_thumbnails
+
+    try:
+        stats = await clean_video_thumbnails()
+        return stats
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
+
+
+@router.post("/regenerate-thumbnails")
+async def regenerate_missing_thumbnails(
+    directory_id: int = None,
+    force_videos: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """Find images without thumbnails and regenerate them.
+
+    This is useful after server restarts during import, or if thumbnails
+    were accidentally deleted.
+
+    Args:
+        directory_id: Optional - only check this directory. If not specified,
+                      checks all directories.
+        force_videos: If True, regenerate all video thumbnails even if they exist.
+                     Useful for updating to middle-frame thumbnails.
+    """
+    import asyncio
+    from ..services.importer import (
+        generate_thumbnail_async,
+        generate_video_thumbnail_async,
+        is_video_file
+    )
+    from ..config import get_settings
+
+    settings = get_settings()
+    thumbnails_dir = Path(settings.thumbnails_dir)
+    thumbnails_dir.mkdir(parents=True, exist_ok=True)
+
+    missing = 0
+    regenerated = 0
+    failed = 0
+    videos_updated = 0
+
+    # Get directory IDs to check
+    if directory_id:
+        dir_ids = [directory_id]
+    else:
+        dir_ids = directory_db_manager.get_all_directory_ids()
+
+    for dir_id in dir_ids:
+        if not directory_db_manager.db_exists(dir_id):
+            continue
+
+        dir_db = await directory_db_manager.get_session(dir_id)
+        try:
+            # Get all images with their file paths
+            query = (
+                select(DirectoryImage.file_hash, DirectoryImageFile.original_path)
+                .join(DirectoryImageFile, DirectoryImageFile.image_id == DirectoryImage.id)
+                .where(DirectoryImageFile.file_exists == True)
+            )
+            try:
+                result = await dir_db.execute(query)
+                rows = result.all()
+            except Exception as db_err:
+                print(f"[Thumbnails] Skipping directory {dir_id}: {db_err}")
+                continue
+
+            for file_hash, original_path in rows:
+                if not file_hash:
+                    continue
+
+                thumbnail_path = thumbnails_dir / f"{file_hash[:16]}.webp"
+                is_video = is_video_file(original_path)
+                thumbnail_exists = thumbnail_path.exists()
+
+                # Decide if we need to regenerate
+                needs_regen = False
+                if not thumbnail_exists:
+                    missing += 1
+                    needs_regen = True
+                elif force_videos and is_video:
+                    needs_regen = True
+
+                if not needs_regen:
+                    continue
+
+                # Check if source file exists
+                if not Path(original_path).exists():
+                    failed += 1
+                    continue
+
+                # Regenerate thumbnail
+                try:
+                    if is_video:
+                        success = await generate_video_thumbnail_async(
+                            original_path, str(thumbnail_path)
+                        )
+                    else:
+                        success = await generate_thumbnail_async(
+                            original_path, str(thumbnail_path)
+                        )
+
+                    if success:
+                        if thumbnail_exists and force_videos:
+                            videos_updated += 1
+                        else:
+                            regenerated += 1
+                    else:
+                        failed += 1
+                except Exception as e:
+                    print(f"[Thumbnails] Failed to regenerate for {original_path}: {e}")
+                    failed += 1
+
+        finally:
+            await dir_db.close()
+
+    message = f"Found {missing} missing thumbnails, regenerated {regenerated}, failed {failed}"
+    if force_videos:
+        message += f", updated {videos_updated} video thumbnails"
+
+    return {
+        "missing": missing,
+        "regenerated": regenerated,
+        "failed": failed,
+        "videos_updated": videos_updated,
+        "message": message
+    }
 
 
 @router.post("/detect-ages")
