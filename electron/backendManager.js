@@ -11,7 +11,8 @@ const os = require('os');
 const { app } = require('electron');
 
 class BackendManager {
-  constructor() {
+  constructor(port = 8790) {
+    this.port = port;
     this.process = null;
     this.healthCheckInterval = null;
     this.restartAttempts = 0;
@@ -20,15 +21,6 @@ class BackendManager {
 
     // Detect portable mode on construction
     this.detectPortableMode();
-
-    // Different default ports: portable=8791, system=8790
-    // This allows running both simultaneously without conflicts
-    this.defaultPort = this.portableDataDir ? 8791 : 8790;
-
-    // Read port from settings (user can override the default)
-    const networkSettings = this.getNetworkSettings();
-    this.port = networkSettings.local_port || this.defaultPort;
-    console.log('[Backend] Mode:', this.portableDataDir ? 'portable' : 'system', '| Port:', this.port);
   }
 
   /**
@@ -113,13 +105,12 @@ class BackendManager {
 
   /**
    * Load network settings from settings.json
-   * Note: local_port default is not set here - it's determined by portable mode in constructor
    */
   getNetworkSettings() {
     const defaults = {
       local_network_enabled: false,
       public_network_enabled: false,
-      // local_port intentionally omitted - defaults differ by mode (portable=8791, system=8790)
+      local_port: 8790,
       public_port: 8791,
       auth_required_level: 'none',
       upnp_enabled: false
@@ -178,91 +169,52 @@ class BackendManager {
   }
 
   /**
-   * Get information about what process is using a port
-   */
-  getPortUser() {
-    try {
-      if (process.platform === 'win32') {
-        const output = execSync(
-          `netstat -ano | findstr :${this.port} | findstr LISTENING`,
-          { encoding: 'utf-8', timeout: 5000, windowsHide: true }
-        );
-        const lines = output.trim().split('\n');
-        if (lines.length > 0) {
-          const parts = lines[0].trim().split(/\s+/);
-          const pid = parts[parts.length - 1];
-          if (pid && /^\d+$/.test(pid)) {
-            try {
-              const taskInfo = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`,
-                { encoding: 'utf-8', timeout: 3000, windowsHide: true });
-              const name = taskInfo.split(',')[0]?.replace(/"/g, '') || 'unknown';
-              return { pid, name };
-            } catch (e) {
-              return { pid, name: 'unknown' };
-            }
-          }
-        }
-      } else {
-        // Linux/macOS
-        const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 5000 });
-        const pid = output.trim().split('\n')[0];
-        if (pid && /^\d+$/.test(pid)) {
-          try {
-            const name = execSync(`ps -p ${pid} -o comm=`, { encoding: 'utf-8', timeout: 3000 }).trim();
-            return { pid, name };
-          } catch (e) {
-            return { pid, name: 'unknown' };
-          }
-        }
-      }
-    } catch (e) {
-      // No process found or error
-    }
-    return null;
-  }
-
-  /**
    * Kill any zombie processes on our port
-   * Throws PortConflictError if port cannot be freed
    */
   async killZombieProcesses() {
     console.log('[Backend] Checking for zombie processes on port', this.port);
 
-    const killAttempt = async () => {
-      try {
-        if (process.platform === 'win32') {
-          // Windows: synchronously find and kill processes on port
-          try {
-            const output = execSync(
-              `netstat -ano | findstr :${this.port} | findstr LISTENING`,
-              { encoding: 'utf-8', timeout: 5000, windowsHide: true }
-            );
-            const pids = new Set();
-            for (const line of output.trim().split('\n')) {
-              const parts = line.trim().split(/\s+/);
-              const pid = parts[parts.length - 1];
-              if (pid && /^\d+$/.test(pid) && pid !== '0') {
-                pids.add(pid);
-              }
+    try {
+      if (process.platform === 'win32') {
+        // Windows: synchronously find and kill processes on port
+        // Using netstat output parsing
+        try {
+          const output = execSync(
+            `netstat -ano | findstr :${this.port} | findstr LISTENING`,
+            { encoding: 'utf-8', timeout: 5000, windowsHide: true }
+          );
+          // Parse PIDs from output (last column)
+          const pids = new Set();
+          for (const line of output.trim().split('\n')) {
+            const parts = line.trim().split(/\s+/);
+            const pid = parts[parts.length - 1];
+            if (pid && /^\d+$/.test(pid) && pid !== '0') {
+              pids.add(pid);
             }
-            for (const pid of pids) {
-              console.log(`[Backend] Killing zombie process ${pid}`);
-              try {
-                execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 3000, windowsHide: true });
-              } catch (e) {
-                // Process may already be dead
-              }
-            }
-          } catch (e) {
-            // No process on port
           }
-        } else {
-          // Linux/macOS: use lsof + kill -9 directly (most reliable)
+          for (const pid of pids) {
+            console.log(`[Backend] Killing zombie process ${pid}`);
+            try {
+              execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 3000, windowsHide: true });
+            } catch (e) {
+              // Process may already be dead
+            }
+          }
+        } catch (e) {
+          // No process on port (findstr returns error if no match)
+        }
+      } else {
+        // Linux/macOS: use lsof + kill (more reliable than fuser)
+        try {
+          // First try fuser
+          execSync(`fuser -k ${this.port}/tcp 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
+        } catch (e) {
+          // fuser may not be available, try lsof
           try {
             const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 5000 });
             const pids = output.trim().split('\n').filter(p => p && /^\d+$/.test(p));
             for (const pid of pids) {
-              console.log(`[Backend] Killing zombie process ${pid}`);
+              console.log(`[Backend] Killing zombie process ${pid} via lsof`);
               try {
                 execSync(`kill -9 ${pid}`, { stdio: 'ignore', timeout: 1000 });
               } catch (e) {
@@ -270,37 +222,22 @@ class BackendManager {
               }
             }
           } catch (e) {
-            // No process on port (lsof returns error if no match)
+            // No process on port
           }
         }
-      } catch (e) {
-        console.log('[Backend] Zombie check error:', e.message);
       }
-    };
-
-    // Try killing up to 3 times with waits between
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      await killAttempt();
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      const portFree = await this.isPortFree();
-      if (portFree) {
-        console.log('[Backend] Port is free');
-        return;
-      }
-      console.log(`[Backend] Port still in use after attempt ${attempt}, retrying...`);
+    } catch (e) {
+      console.log('[Backend] Zombie check error:', e.message);
     }
 
-    // Final check - if still occupied, throw error with details
+    // Wait for port to be released (increased from 500ms)
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Double-check the port is free
     const portFree = await this.isPortFree();
     if (!portFree) {
-      const portUser = this.getPortUser();
-      const error = new Error(`Port ${this.port} is already in use`);
-      error.code = 'PORT_CONFLICT';
-      error.port = this.port;
-      error.portUser = portUser;
-      console.error('[Backend] CRITICAL: Port', this.port, 'occupied by:', portUser);
-      throw error;
+      console.log('[Backend] Port still in use after zombie kill, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
 
@@ -335,35 +272,11 @@ class BackendManager {
         if (fs.existsSync(localEmbed)) {
           return localEmbed;
         }
-        // Development: check for standard .venv folder
-        const dotVenv = path.join(__dirname, '..', '.venv', 'Scripts', 'python.exe');
-        if (fs.existsSync(dotVenv)) {
-          return dotVenv;
-        }
         // Fall back to system Python
         return 'python';
       }
     } else {
-      // Linux/macOS
-      if (isPackaged) {
-        // Check for bundled venv in resources folder
-        const bundledPython = path.join(process.resourcesPath, 'python-venv', 'bin', 'python');
-        if (fs.existsSync(bundledPython)) {
-          return bundledPython;
-        }
-      } else {
-        // Development: check for local python-venv-linux folder
-        const localVenv = path.join(__dirname, '..', 'python-venv-linux', 'bin', 'python');
-        if (fs.existsSync(localVenv)) {
-          return localVenv;
-        }
-        // Development: check for standard .venv folder
-        const dotVenv = path.join(__dirname, '..', '.venv', 'bin', 'python');
-        if (fs.existsSync(dotVenv)) {
-          return dotVenv;
-        }
-      }
-      // Fall back to system Python
+      // Linux/macOS - use system Python
       return 'python';
     }
   }
@@ -373,13 +286,11 @@ class BackendManager {
    */
   getWorkingDirectory() {
     if (app.isPackaged) {
-      // Check if we have bundled resources (api folder in resources/)
-      const bundledApiPath = path.join(process.resourcesPath, 'api');
-      if (fs.existsSync(bundledApiPath)) {
-        // Windows or Linux with bundled venv: api folder is in resources/
+      if (process.platform === 'win32') {
+        // Windows: api folder is extracted to resources/
         return process.resourcesPath;
       }
-      // Fallback: api folder is in resources/app (unbundled Linux/macOS)
+      // Linux/macOS: api folder is in resources/app
       return path.join(process.resourcesPath, 'app');
     }
     return path.join(__dirname, '..');
@@ -411,90 +322,28 @@ class BackendManager {
         // Add onnxruntime capi folder to PATH for DLL loading
         const onnxCapi = path.join(packagesDir, 'onnxruntime', 'capi');
         const bundledOnnxCapi = path.join(pythonDir, 'Lib', 'site-packages', 'onnxruntime', 'capi');
-
-        // Bundled video pipeline tools (ffmpeg, vapoursynth)
-        const rootDir = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
-        const ffmpegDir = path.join(rootDir, 'ffmpeg');
-        const vsDir = path.join(rootDir, 'vapoursynth');
-        const vsPluginsDir = path.join(vsDir, 'vs-plugins');
-
-        // Build PATH with video tools prepended (if present)
-        let pathPrefix = `${onnxCapi};${bundledOnnxCapi};${pythonDir};${path.join(pythonDir, 'Scripts')}`;
-        if (fs.existsSync(ffmpegDir)) {
-          pathPrefix = `${ffmpegDir};${pathPrefix}`;
-        }
-        if (fs.existsSync(vsDir)) {
-          pathPrefix = `${vsDir};${pathPrefix}`;
-        }
-
-        const env = {
+        return {
           ...baseEnv,
-          PATH: `${pathPrefix};${process.env.PATH}`,
+          // Add persistent packages to PATH first (for DLLs), then bundled, then system
+          PATH: `${onnxCapi};${bundledOnnxCapi};${pythonDir};${path.join(pythonDir, 'Scripts')};${process.env.PATH}`,
           PYTHONHOME: pythonDir,
+          // Persistent packages first, then working directory, then bundled site-packages
           PYTHONPATH: `${packagesDir};${this.getWorkingDirectory()};${path.join(pythonDir, 'Lib', 'site-packages')}`,
           LOCALBOORU_PACKAGED: '1',
           LOCALBOORU_PACKAGES_DIR: packagesDir
         };
-
-        // Set bundled video tool env vars if directories exist
-        if (fs.existsSync(path.join(vsDir, 'python.exe'))) {
-          env.LOCALBOORU_VS_PYTHON = path.join(vsDir, 'python.exe');
-        }
-        if (fs.existsSync(vsPluginsDir)) {
-          env.LOCALBOORU_SVP_PLUGIN_PATH = vsPluginsDir;
-          env.LOCALBOORU_VS_PLUGIN_PATH = vsPluginsDir;
-        }
-
-        return env;
       }
     } else {
-      // Linux/macOS
-      const pythonPath = this.getPythonPath();
-      const pythonDir = path.dirname(path.dirname(pythonPath)); // go up from bin/python to venv root
-
-      // Check if using bundled venv
-      const isBundledVenv = pythonPath.includes('python-venv');
-
-      if (isBundledVenv) {
-        // Using bundled venv - find the site-packages directory
-        const libDir = path.join(pythonDir, 'lib');
-        let sitePackagesPath = '';
-
-        // Find the python3.X directory inside lib
-        if (fs.existsSync(libDir)) {
-          const entries = fs.readdirSync(libDir);
-          for (const entry of entries) {
-            if (entry.startsWith('python3.')) {
-              const spPath = path.join(libDir, entry, 'site-packages');
-              if (fs.existsSync(spPath)) {
-                sitePackagesPath = spPath;
-                break;
-              }
-            }
-          }
-        }
-
-        return {
-          ...baseEnv,
-          // Add bundled venv's bin to PATH
-          PATH: `${path.join(pythonDir, 'bin')}:${process.env.PATH}`,
-          // Include persistent packages, working directory, and bundled site-packages
-          PYTHONPATH: `${packagesDir}:${this.getWorkingDirectory()}${sitePackagesPath ? ':' + sitePackagesPath : ''}`,
-          LOCALBOORU_PACKAGED: app.isPackaged ? '1' : '',
-          LOCALBOORU_PACKAGES_DIR: packagesDir
-        };
-      } else {
-        // System Python with pyenv support
-        const homeDir = process.env.HOME || process.env.USERPROFILE;
-        const pyenvPath = `${homeDir}/.pyenv/shims:${homeDir}/.pyenv/bin`;
-        return {
-          ...baseEnv,
-          PATH: `${pyenvPath}:${process.env.PATH}`,
-          PYTHONPATH: `${packagesDir}:${this.getWorkingDirectory()}`,
-          LOCALBOORU_PACKAGED: app.isPackaged ? '1' : '',
-          LOCALBOORU_PACKAGES_DIR: packagesDir
-        };
-      }
+      // Linux/macOS with pyenv support
+      const homeDir = process.env.HOME || process.env.USERPROFILE;
+      const pyenvPath = `${homeDir}/.pyenv/shims:${homeDir}/.pyenv/bin`;
+      return {
+        ...baseEnv,
+        PATH: `${pyenvPath}:${process.env.PATH}`,
+        PYTHONPATH: `${packagesDir}:${this.getWorkingDirectory()}`,
+        LOCALBOORU_PACKAGED: app.isPackaged ? '1' : '',
+        LOCALBOORU_PACKAGES_DIR: packagesDir
+      };
     }
 
     return baseEnv;
@@ -509,29 +358,8 @@ class BackendManager {
       return;
     }
 
-    // AGGRESSIVE cleanup - kill ALL uvicorn processes, not just on our port
-    // This prevents zombie processes from previous sessions
-    console.log('[Backend] Cleaning up any existing uvicorn processes...');
-    try {
-      if (process.platform === 'win32') {
-        execSync('taskkill /F /IM python.exe /FI "WINDOWTITLE eq uvicorn*" 2>nul', { stdio: 'ignore', timeout: 5000 });
-      } else {
-        // Kill any uvicorn process for api.main:app specifically
-        execSync('pkill -9 -f "uvicorn api.main:app" 2>/dev/null || true', { stdio: 'ignore', timeout: 5000 });
-      }
-      // Give OS time to release the port
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    } catch (e) {
-      // Ignore errors - process might not exist
-    }
-
-    // Now do the standard zombie kill on port
-    try {
-      await this.killZombieProcesses();
-    } catch (e) {
-      // Log but don't fail - we'll try to start anyway and let uvicorn fail if port is busy
-      console.error('[Backend] Warning: Could not free port:', e.message);
-    }
+    // Kill any zombie processes first
+    await this.killZombieProcesses();
 
     console.log('[Backend] Starting server on port', this.port);
 
@@ -695,7 +523,7 @@ class BackendManager {
   }
 
   /**
-   * Stop the backend server gracefully
+   * Stop the backend server
    */
   async stop() {
     if (this.healthCheckInterval) {
@@ -708,110 +536,52 @@ class BackendManager {
       return;
     }
 
-    console.log('[Backend] Initiating graceful shutdown...');
-
-    // First, try to notify the backend via a shutdown request
-    // This gives FastAPI time to cleanup before SIGTERM
-    try {
-      await new Promise((resolve, reject) => {
-        const req = http.request({
-          hostname: '127.0.0.1',
-          port: this.port,
-          path: '/health',  // Just check it's responding
-          method: 'GET',
-          timeout: 1000
-        }, () => resolve());
-        req.on('error', () => resolve());  // Ignore errors
-        req.on('timeout', () => { req.destroy(); resolve(); });
-        req.end();
-      });
-    } catch (e) {
-      // Backend may already be unresponsive
-    }
+    console.log('[Backend] Stopping server...');
 
     return new Promise((resolve) => {
-      // Give more time for graceful shutdown (thread pools, db connections, etc.)
       const timeout = setTimeout(() => {
-        console.log('[Backend] Graceful shutdown timeout, force killing...');
+        console.log('[Backend] Force killing...');
         this.forceKill();
         resolve();
-      }, 10000);  // Increased from 5s to 10s
+      }, 5000);
 
       this.process.once('exit', () => {
         clearTimeout(timeout);
         this.process = null;
-        console.log('[Backend] Stopped gracefully');
+        console.log('[Backend] Stopped');
         resolve();
       });
 
-      // Send SIGINT first (Ctrl+C equivalent) for cleaner uvicorn shutdown
-      // Then SIGTERM if needed
+      // Windows doesn't support SIGTERM well, use different approach
       if (process.platform === 'win32') {
-        // Windows: CTRL_C_EVENT doesn't work well with spawn, use taskkill
+        // Try graceful kill first, then force
         try {
-          // First try graceful tree kill (no /F flag)
-          execSync(`taskkill /pid ${this.process.pid} /T`, { stdio: 'ignore', timeout: 3000 });
+          execSync(`taskkill /pid ${this.process.pid} /T`, { stdio: 'ignore' });
         } catch (e) {
-          // If that fails, the process exit handler will trigger force kill via timeout
+          this.forceKill();
         }
       } else {
-        // Unix: Send SIGINT first (cleaner uvicorn shutdown)
-        console.log('[Backend] Sending SIGINT...');
-        this.process.kill('SIGINT');
-
-        // If still running after 5s, escalate to SIGTERM
-        setTimeout(() => {
-          if (this.process) {
-            console.log('[Backend] Escalating to SIGTERM...');
-            this.process.kill('SIGTERM');
-          }
-        }, 5000);
+        this.process.kill('SIGTERM');
       }
     });
   }
 
   /**
-   * Force kill the backend process AND any zombie uvicorn processes
+   * Force kill the backend process
    */
   forceKill() {
-    // Kill our tracked process
-    if (this.process) {
-      try {
-        if (process.platform === 'win32') {
-          execSync(`taskkill /pid ${this.process.pid} /T /F`, { stdio: 'ignore' });
-        } else {
-          this.process.kill('SIGKILL');
-        }
-      } catch (e) {
-        // Process may already be dead
-      }
-      this.process = null;
-    }
+    if (!this.process) return;
 
-    // ALSO kill any other uvicorn processes that might be zombies
-    // This is aggressive but prevents the blank window issue
     try {
       if (process.platform === 'win32') {
-        execSync('taskkill /F /IM python.exe /FI "WINDOWTITLE eq uvicorn*" 2>nul', { stdio: 'ignore', timeout: 3000 });
+        execSync(`taskkill /pid ${this.process.pid} /T /F`, { stdio: 'ignore' });
       } else {
-        execSync('pkill -9 -f "uvicorn api.main:app" 2>/dev/null || true', { stdio: 'ignore', timeout: 3000 });
+        this.process.kill('SIGKILL');
       }
     } catch (e) {
-      // Ignore
+      // Process may already be dead
     }
-
-    // Kill anything on our port
-    try {
-      if (process.platform !== 'win32') {
-        const output = execSync(`lsof -ti:${this.port}`, { encoding: 'utf-8', timeout: 3000 });
-        const pids = output.trim().split('\n').filter(p => p && /^\d+$/.test(p));
-        for (const pid of pids) {
-          try { execSync(`kill -9 ${pid}`, { stdio: 'ignore', timeout: 1000 }); } catch (e) {}
-        }
-      }
-    } catch (e) {
-      // No process on port
-    }
+    this.process = null;
   }
 
   /**

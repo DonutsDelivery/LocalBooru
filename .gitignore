@@ -39,4 +39,3 @@ npm-debug.log*
 tagger/
 yolov8n.pt
 tagger
-.venv/

@@ -14,31 +14,11 @@
   background-clip: padding-box;
   flex: 1;
   min-width: 0; /* Allow columns to shrink */
-  max-width: var(--max-column-width, 300px); /* Dynamic based on tile size */
+  max-width: 300px; /* Prevent columns from getting too wide */
 }
 
 .masonry-column > div {
   margin-bottom: 8px;
-}
-
-/* Skeleton placeholder for loading state */
-.masonry-skeleton {
-  aspect-ratio: 1;
-  background: linear-gradient(
-    90deg,
-    var(--bg-secondary, #2a2a2a) 25%,
-    var(--bg-tertiary, #3a3a3a) 50%,
-    var(--bg-secondary, #2a2a2a) 75%
-  );
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.5s infinite;
-  border-radius: 4px;
-  margin-bottom: 8px;
-}
-
-@keyframes skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
 }
 
 .load-more-trigger {
@@ -80,9 +60,6 @@
     padding-left: 4px;
   }
   .masonry-column > div {
-    margin-bottom: 4px;
-  }
-  .masonry-skeleton {
     margin-bottom: 4px;
   }
 }

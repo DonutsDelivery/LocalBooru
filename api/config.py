@@ -40,12 +40,8 @@ class Settings(BaseSettings):
     # Storage
     data_dir: str = str(get_data_dir())
     thumbnails_dir: str = str(get_data_dir() / 'thumbnails')
-    previews_dir: str = str(get_data_dir() / 'previews')
     max_file_size: int = 100 * 1024 * 1024  # 100MB
-    allowed_extensions: set = {"png", "jpg", "jpeg", "gif", "webp", "webm", "mp4", "mov", "avi", "mkv"}
-
-    # Video preview frames
-    video_preview_frames: int = 8  # Number of frames to extract for video hover preview
+    allowed_extensions: set = {"png", "jpg", "jpeg", "gif", "webp", "webm", "mp4"}
 
     # Tagger - use legacy single-model path
     tagger_model_path: str = "./tagger/model"  # Path to model.onnx and selected_tags.csv

@@ -13,13 +13,7 @@ from pathlib import Path
 
 
 def get_data_dir() -> Path:
-    """Get LocalBooru data directory - portable or system."""
-    # Check for portable mode (set by Electron when running from portable folder)
-    portable_data = os.environ.get('LOCALBOORU_PORTABLE_DATA')
-    if portable_data:
-        return Path(portable_data)
-
-    # Default: system data directory
+    """Get LocalBooru data directory."""
     if os.name == 'nt':  # Windows
         base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
     else:  # Linux/Mac

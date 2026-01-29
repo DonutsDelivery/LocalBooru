@@ -1,24 +1,11 @@
 """
 LocalBooru database models - simplified single-user version of DonutBooru
-
-Architecture:
-- Main database (library.db): Global models using `Base`
-  - WatchDirectory, Tag, TagAlias, TaskQueue, Settings, User, BooruInstance, ExternalUpload
-- Per-directory databases (directories/{id}.db): Directory-local models using `DirectoryBase`
-  - DirectoryImage, DirectoryImageFile, directory_image_tags
 """
 from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Table, Enum
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
 import enum
-
-
-# =============================================================================
-# Directory-specific database base
-# =============================================================================
-# Models using DirectoryBase are stored in per-directory databases
-DirectoryBase = declarative_base()
 
 
 class Rating(str, enum.Enum):
@@ -298,106 +285,3 @@ class User(Base):
     can_write = Column(Boolean, default=False)  # Override read-only restriction for remote access
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_login = Column(DateTime(timezone=True), nullable=True)
-
-
-# =============================================================================
-# Per-Directory Database Models
-# =============================================================================
-# These models are stored in per-directory databases (directories/{id}.db)
-# They use DirectoryBase instead of Base
-
-# Association table for image-tag many-to-many in directory databases
-# Note: tag_id references global tags in main DB (not enforced via FK since cross-DB)
-directory_image_tags = Table(
-    "image_tags",
-    DirectoryBase.metadata,
-    Column("image_id", Integer, ForeignKey("images.id", ondelete="CASCADE"), primary_key=True),
-    Column("tag_id", Integer, primary_key=True),  # References Tag.id in main DB
-    Column("confidence", Float, nullable=True),  # AI confidence score
-    Column("is_manual", Boolean, default=False)  # User-added vs AI-generated
-)
-
-
-class DirectoryImage(DirectoryBase):
-    """
-    Image model for per-directory databases.
-
-    Same fields as the main Image model but stored in directory-specific DBs.
-    """
-    __tablename__ = "images"
-
-    id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String(255), nullable=False)  # Stored filename (hash-based)
-    original_filename = Column(String(255), nullable=True)  # Original upload name
-    file_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA256/xxhash
-    perceptual_hash = Column(String(16), nullable=True, index=True)  # pHash for visual duplicate detection
-    width = Column(Integer, nullable=True)
-    height = Column(Integer, nullable=True)
-    file_size = Column(Integer, nullable=True)
-    duration = Column(Float, nullable=True)  # Video duration in seconds
-    rating = Column(Enum(Rating), default=Rating.pg, index=True)
-
-    # AI generation metadata
-    prompt = Column(Text, nullable=True)
-    negative_prompt = Column(Text, nullable=True)
-    model_name = Column(String(255), nullable=True)
-    sampler = Column(String(100), nullable=True)
-    seed = Column(String(50), nullable=True)
-    steps = Column(Integer, nullable=True)
-    cfg_scale = Column(Float, nullable=True)
-
-    # Source URL (if from Civitai, etc.)
-    source_url = Column(Text, nullable=True)
-
-    # Age detection results
-    num_faces = Column(Integer, nullable=True)
-    min_detected_age = Column(Integer, nullable=True, index=True)
-    max_detected_age = Column(Integer, nullable=True, index=True)
-    detected_ages = Column(Text, nullable=True)  # JSON: [25, 32, 8]
-    age_detection_data = Column(Text, nullable=True)
-
-    # Local library features
-    is_favorite = Column(Boolean, default=False, index=True)
-    import_source = Column(String(500), nullable=True)
-
-    # View tracking
-    view_count = Column(Integer, default=0)
-
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    file_created_at = Column(DateTime(timezone=True), nullable=True, index=True)
-    file_modified_at = Column(DateTime(timezone=True), nullable=True, index=True)
-
-    # Relationships within directory DB
-    files = relationship("DirectoryImageFile", back_populates="image", cascade="all, delete-orphan")
-
-    @property
-    def url(self):
-        """Get URL to serve the image"""
-        return f"/api/images/{self.id}/file"
-
-    @property
-    def thumbnail_url(self):
-        """Get thumbnail URL"""
-        return f"/api/images/{self.id}/thumbnail"
-
-
-class DirectoryImageFile(DirectoryBase):
-    """
-    Track original file locations for images in a directory database.
-
-    Note: No watch_directory_id since each DB is already per-directory.
-    """
-    __tablename__ = "image_files"
-
-    id = Column(Integer, primary_key=True, index=True)
-    image_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
-    original_path = Column(Text, nullable=False, unique=True, index=True)
-    file_exists = Column(Boolean, default=True, index=True)
-    file_status = Column(Enum(FileStatus), default=FileStatus.available, index=True)
-    last_verified_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Relationship
-    image = relationship("DirectoryImage", back_populates="files")

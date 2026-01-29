@@ -24,7 +24,6 @@ export default function NetworkSettings() {
   const [localPort, setLocalPort] = useState(8790)
   const [publicPort, setPublicPort] = useState(8791)
   const [authLevel, setAuthLevel] = useState('none')
-  const [allowSettingsLAN, setAllowSettingsLAN] = useState(false)
 
   useEffect(() => {
     loadConfig()
@@ -41,7 +40,6 @@ export default function NetworkSettings() {
       setLocalPort(data.settings.local_port || 8790)
       setPublicPort(data.settings.public_port || 8791)
       setAuthLevel(data.settings.auth_required_level || 'none')
-      setAllowSettingsLAN(data.settings.allow_settings_local_network || false)
       setUpnpStatus(data.upnp_status)
     } catch (err) {
       console.error('Failed to load network config:', err)
@@ -58,8 +56,7 @@ export default function NetworkSettings() {
         public_network_enabled: publicEnabled,
         local_port: localPort,
         public_port: publicPort,
-        auth_required_level: authLevel,
-        allow_settings_local_network: allowSettingsLAN
+        auth_required_level: authLevel
       })
       if (result.restart_required) {
         setRestartRequired(true)
@@ -146,10 +143,8 @@ export default function NetworkSettings() {
   const hasChanges =
     localEnabled !== (config?.settings?.local_network_enabled || false) ||
     publicEnabled !== (config?.settings?.public_network_enabled || false) ||
-    localPort !== (config?.settings?.local_port || 8790) ||
     publicPort !== (config?.settings?.public_port || 8791) ||
-    authLevel !== (config?.settings?.auth_required_level || 'none') ||
-    allowSettingsLAN !== (config?.settings?.allow_settings_local_network || false)
+    authLevel !== (config?.settings?.auth_required_level || 'none')
 
   return (
     <div className="network-settings">
@@ -186,22 +181,6 @@ export default function NetworkSettings() {
           </label>
         </div>
 
-        <div className="setting-row">
-          <label className="toggle-label">
-            <input
-              type="checkbox"
-              checked={allowSettingsLAN}
-              onChange={(e) => setAllowSettingsLAN(e.target.checked)}
-              disabled={!localEnabled}
-            />
-            <span>Allow settings access from LAN</span>
-          </label>
-          <p className="setting-hint">
-            Allow devices on your local network to access settings and admin features.
-            Requires local network access to be enabled.
-          </p>
-        </div>
-
         {config?.local_ip && (
           <div className="info-row">
             <span className="info-label">Your Local IP:</span>
@@ -209,38 +188,17 @@ export default function NetworkSettings() {
           </div>
         )}
 
-        <div className="setting-row">
-          <label>
-            <span>Local Port:</span>
-            <input
-              type="number"
-              value={localPort}
-              onChange={(e) => setLocalPort(parseInt(e.target.value) || 8790)}
-              min="1024"
-              max="65535"
-            />
-          </label>
-          <button
-            className="test-btn"
-            onClick={() => handleTestPort(localPort)}
-          >
-            Test Port
-          </button>
+        <div className="info-row">
+          <span className="info-label">Port:</span>
+          <code className="info-value">8790</code>
+          <span className="info-note">(fixed)</span>
         </div>
 
-        {portTestResult && portTestResult.port === localPort && (
-          <div className={`port-test-result ${portTestResult.available ? 'success' : 'error'}`}>
-            {portTestResult.available
-              ? 'Port is available'
-              : `Port unavailable: ${portTestResult.error}`}
-          </div>
-        )}
-
-        {config?.local_ip && (
+        {localEnabled && config?.local_ip && (
           <div className="access-url">
             <span>Access URL:</span>
-            <a href={`http://${config.local_ip}:${localPort}`} target="_blank" rel="noopener noreferrer">
-              http://{config.local_ip}:{localPort}
+            <a href={`http://${config.local_ip}:8790`} target="_blank" rel="noopener noreferrer">
+              http://{config.local_ip}:8790
             </a>
           </div>
         )}
@@ -390,9 +348,9 @@ export default function NetworkSettings() {
             <span className="icon">&#10007;</span>
             <span>Modify tags or ratings</span>
           </div>
-          <div className={`restriction ${allowSettingsLAN ? 'allowed' : 'denied'}`}>
-            <span className="icon">{allowSettingsLAN ? '\u2713' : '\u2717'}</span>
-            <span>Change settings {allowSettingsLAN ? '(LAN only)' : ''}</span>
+          <div className="restriction denied">
+            <span className="icon">&#10007;</span>
+            <span>Change settings</span>
           </div>
         </div>
       </section>
