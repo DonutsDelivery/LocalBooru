@@ -15,7 +15,7 @@ import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
 import OpticalFlowSettings from './components/OpticalFlowSettings'
 import QRConnect from './components/QRConnect'
-import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
+import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, tagUntagged, clearDirectoryTagQueue } from './api'
 import './App.css'
 
 
@@ -31,11 +31,21 @@ function DirectoriesPage() {
   const [selectedDirs, setSelectedDirs] = useState(new Set())
   const [batchLoading, setBatchLoading] = useState(false)
   const [repairing, setRepairing] = useState({})
+  const [taggingActive, setTaggingActive] = useState({})
 
   const refreshDirectories = async () => {
     const { fetchDirectories } = await import('./api')
     const data = await fetchDirectories()
-    setDirectories(data.directories || [])
+    const dirs = data.directories || []
+    setDirectories(dirs)
+    // Sync tagging button state with actual queue
+    const activeState = {}
+    for (const dir of dirs) {
+      if (dir.pending_tag_tasks > 0) {
+        activeState[dir.id] = true
+      }
+    }
+    setTaggingActive(activeState)
   }
 
   useEffect(() => {
@@ -341,111 +351,186 @@ function DirectoriesPage() {
               <ul className="directory-list">
                 {directories.map(dir => (
                   <li key={dir.id} className={`directory-item ${dir.enabled ? '' : 'disabled'} ${selectedDirs.has(dir.id) ? 'selected' : ''}`}>
-                    <label className="directory-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={selectedDirs.has(dir.id)}
-                        onChange={() => toggleSelectDir(dir.id)}
-                      />
-                    </label>
-                    <div className="directory-info">
-                      <strong>{dir.name}</strong>
-                      <span className="directory-path">{dir.path}</span>
-                      <span className="directory-stats">{dir.image_count} images</span>
-                      <div className="directory-diagnostics">
-                        <span className="diagnostic" title="Images with age detection">
-                          Age: {dir.age_detected_pct}%
-                        </span>
-                        <span className="diagnostic" title="Images with booru tags">
-                          Tagged: {dir.tagged_pct}%
-                        </span>
-                        <span className="diagnostic" title="Favorited images">
-                          Favorites: {dir.favorited_count}
-                        </span>
-                        <button
-                          className="diagnostic toggle-btn"
-                          onClick={() => {
-                            const newValue = !dir.auto_age_detect
-                            setDirectories(dirs => dirs.map(d =>
-                              d.id === dir.id ? {...d, auto_age_detect: newValue} : d
-                            ))
-                            updateDirectory(dir.id, { auto_age_detect: newValue })
-                              .catch(err => {
-                                console.error('Failed to update:', err)
-                                refreshDirectories()
-                              })
-                          }}
-                        >
-                          {dir.auto_age_detect ? '☑' : '☐'} Age Detect
-                        </button>
-                        <button
-                          className="diagnostic toggle-btn public-toggle"
-                          onClick={() => {
-                            const newValue = !dir.public_access
-                            setDirectories(dirs => dirs.map(d =>
-                              d.id === dir.id ? {...d, public_access: newValue} : d
-                            ))
-                            updateDirectory(dir.id, { public_access: newValue })
-                              .catch(err => {
-                                console.error('Failed to update:', err)
-                                refreshDirectories()
-                              })
-                          }}
-                          title="Allow public network access to this directory"
-                        >
-                          {dir.public_access ? '☑' : '☐'} Public
-                        </button>
+                    {/* Header row: checkbox, name/path/count, status */}
+                    <div className="directory-header">
+                      <label className="directory-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={selectedDirs.has(dir.id)}
+                          onChange={() => toggleSelectDir(dir.id)}
+                        />
+                      </label>
+                      <div className="directory-info">
+                        <strong>{dir.name}</strong>
+                        <span className="directory-path">{dir.path}</span>
+                        <span className="directory-stats">{dir.image_count} images</span>
+                      </div>
+                      <div className="directory-status">
+                        {!dir.path_exists && <span className="warning">Path not found</span>}
+                        {dir.enabled ? '✓ Active' : 'Disabled'}
                       </div>
                     </div>
+
+                    {/* Stats row: read-only metrics */}
+                    <div className="directory-stats-row">
+                      <span className="stat" title="Images with age detection">
+                        Age: {dir.age_detected_pct}%
+                      </span>
+                      <span className="stat" title="Images with booru tags">
+                        Tagged: {dir.tagged_pct}%
+                      </span>
+                      <span className="stat" title="Favorited images">
+                        Favorites: {dir.favorited_count}
+                      </span>
+                    </div>
+
+                    {/* Toggles row: actionable settings */}
+                    <div className="directory-toggles">
+                      <button
+                        className={`toggle-btn tag-btn ${taggingActive[dir.id] ? 'active' : ''}`}
+                        onClick={async () => {
+                          const isActive = taggingActive[dir.id]
+                          if (isActive) {
+                            setTaggingActive(prev => ({ ...prev, [dir.id]: false }))
+                            try {
+                              await clearDirectoryTagQueue(dir.id)
+                            } catch (err) {
+                              console.error('Failed to clear queue:', err)
+                            }
+                          } else {
+                            setTaggingActive(prev => ({ ...prev, [dir.id]: true }))
+                            try {
+                              await tagUntagged(dir.id)
+                            } catch (err) {
+                              console.error('Failed to start tagging:', err)
+                              setTaggingActive(prev => ({ ...prev, [dir.id]: false }))
+                            }
+                          }
+                        }}
+                        title={taggingActive[dir.id] ? "Stop tagging and clear queue" : "Start tagging untagged images"}
+                      >
+                        {taggingActive[dir.id] ? '⏹' : '▶'} Tag
+                      </button>
+                      <button
+                        className={`toggle-btn ${dir.auto_age_detect ? 'active' : ''}`}
+                        onClick={() => {
+                          const newValue = !dir.auto_age_detect
+                          setDirectories(dirs => dirs.map(d =>
+                            d.id === dir.id ? {...d, auto_age_detect: newValue} : d
+                          ))
+                          updateDirectory(dir.id, { auto_age_detect: newValue })
+                            .catch(err => {
+                              console.error('Failed to update:', err)
+                              refreshDirectories()
+                            })
+                        }}
+                        title="Auto-detect ages on new images"
+                      >
+                        {dir.auto_age_detect ? '☑' : '☐'} Age Detect
+                      </button>
+                      <button
+                        className={`toggle-btn ${dir.public_access ? 'active' : ''}`}
+                        onClick={() => {
+                          const newValue = !dir.public_access
+                          setDirectories(dirs => dirs.map(d =>
+                            d.id === dir.id ? {...d, public_access: newValue} : d
+                          ))
+                          updateDirectory(dir.id, { public_access: newValue })
+                            .catch(err => {
+                              console.error('Failed to update:', err)
+                              refreshDirectories()
+                            })
+                        }}
+                        title="Allow public network access to this directory"
+                      >
+                        {dir.public_access ? '☑' : '☐'} Public
+                      </button>
+                      <button
+                        className={`toggle-btn ${dir.show_images ? 'active' : ''}`}
+                        onClick={() => {
+                          const newValue = !dir.show_images
+                          setDirectories(dirs => dirs.map(d =>
+                            d.id === dir.id ? {...d, show_images: newValue} : d
+                          ))
+                          updateDirectory(dir.id, { show_images: newValue })
+                            .catch(err => {
+                              console.error('Failed to update:', err)
+                              refreshDirectories()
+                            })
+                        }}
+                        title="Show images from this directory in gallery"
+                      >
+                        {dir.show_images ? '☑' : '☐'} Images
+                      </button>
+                      <button
+                        className={`toggle-btn ${dir.show_videos ? 'active' : ''}`}
+                        onClick={() => {
+                          const newValue = !dir.show_videos
+                          setDirectories(dirs => dirs.map(d =>
+                            d.id === dir.id ? {...d, show_videos: newValue} : d
+                          ))
+                          updateDirectory(dir.id, { show_videos: newValue })
+                            .catch(err => {
+                              console.error('Failed to update:', err)
+                              refreshDirectories()
+                            })
+                        }}
+                        title="Show videos from this directory in gallery"
+                      >
+                        {dir.show_videos ? '☑' : '☐'} Videos
+                      </button>
+                    </div>
+
+                    {/* Actions row: buttons grouped by purpose */}
                     <div className="directory-actions">
+                      <div className="action-group">
+                        <button
+                          className="action-btn"
+                          onClick={() => handleRescan(dir.id)}
+                          disabled={scanning[dir.id]}
+                        >
+                          {scanning[dir.id] ? 'Scanning...' : 'Rescan'}
+                        </button>
+                        <button
+                          className="action-btn"
+                          onClick={() => handleRepair(dir.id)}
+                          disabled={repairing[dir.id]}
+                          title="Fix moved files and remove missing entries"
+                        >
+                          {repairing[dir.id] ? 'Repairing...' : 'Repair'}
+                        </button>
+                        <button
+                          className="action-btn"
+                          onClick={() => handlePrune(dir.id, dir.name || dir.path, dir.favorited_count)}
+                          disabled={pruning[dir.id] || dir.image_count === 0}
+                          title="Move non-favorited images to dumpster"
+                        >
+                          {pruning[dir.id] ? 'Pruning...' : 'Prune'}
+                        </button>
+                      </div>
+                      <div className="action-group">
+                        <button
+                          className="action-btn secondary"
+                          onClick={() => setComfyuiConfigDir(dir)}
+                          title="Configure ComfyUI metadata extraction"
+                        >
+                          ComfyUI
+                        </button>
+                        <button
+                          className="action-btn secondary"
+                          onClick={() => handleRelocate(dir.id, dir.name || dir.path, dir.path)}
+                          disabled={relocating[dir.id]}
+                          title="Change directory location (if folder was moved)"
+                        >
+                          {relocating[dir.id] ? 'Relocating...' : 'Edit Path'}
+                        </button>
+                      </div>
                       <button
-                        className="rescan-btn"
-                        onClick={() => handleRescan(dir.id)}
-                        disabled={scanning[dir.id]}
-                      >
-                        {scanning[dir.id] ? 'Scanning...' : 'Rescan'}
-                      </button>
-                      <button
-                        className="repair-btn"
-                        onClick={() => handleRepair(dir.id)}
-                        disabled={repairing[dir.id]}
-                        title="Fix moved files and remove missing entries"
-                      >
-                        {repairing[dir.id] ? 'Repairing...' : 'Repair'}
-                      </button>
-                      <button
-                        className="prune-btn"
-                        onClick={() => handlePrune(dir.id, dir.name || dir.path, dir.favorited_count)}
-                        disabled={pruning[dir.id] || dir.image_count === 0}
-                        title="Move non-favorited images to dumpster"
-                      >
-                        {pruning[dir.id] ? 'Pruning...' : 'Prune'}
-                      </button>
-                      <button
-                        className="comfyui-btn"
-                        onClick={() => setComfyuiConfigDir(dir)}
-                        title="Configure ComfyUI metadata extraction"
-                      >
-                        ComfyUI
-                      </button>
-                      <button
-                        className="relocate-btn"
-                        onClick={() => handleRelocate(dir.id, dir.name || dir.path, dir.path)}
-                        disabled={relocating[dir.id]}
-                        title="Change directory location (if folder was moved)"
-                      >
-                        {relocating[dir.id] ? 'Relocating...' : 'Edit Path'}
-                      </button>
-                      <button
-                        className="remove-btn"
+                        className="action-btn danger"
                         onClick={() => handleRemove(dir.id, dir.name || dir.path)}
                       >
                         Remove
                       </button>
-                    </div>
-                    <div className="directory-status">
-                      {!dir.path_exists && <span className="warning">Path not found</span>}
-                      {dir.enabled ? '✓ Active' : 'Disabled'}
                     </div>
                   </li>
                 ))}
@@ -878,6 +963,7 @@ function Gallery() {
   const currentMinAge = searchParams.get('min_age') ? parseInt(searchParams.get('min_age')) : null
   const currentMaxAge = searchParams.get('max_age') ? parseInt(searchParams.get('max_age')) : null
   const currentTimeframe = searchParams.get('timeframe') || null
+  const currentFilename = searchParams.get('filename') || ''
 
   // Load saved filters from localStorage on mount
   useEffect(() => {
@@ -952,6 +1038,7 @@ function Gallery() {
         min_age: currentMinAge,
         max_age: currentMaxAge,
         timeframe: currentTimeframe,
+        filename: currentFilename,
         sort: currentSort,
         page: pageNum,
         per_page: 50
@@ -974,7 +1061,7 @@ function Gallery() {
       console.error('Failed to load images:', error)
     }
     setLoading(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename])
 
   // Update a single image in the images array
   const handleImageUpdate = useCallback((imageId, updates) => {
@@ -1104,7 +1191,7 @@ function Gallery() {
     setSearchParams(params)
   }
 
-  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe) => {
+  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe, filename) => {
     const params = {}
     if (tags) params.tags = tags
     if (rating && rating !== 'pg,pg13,r,x,xxx') params.rating = rating
@@ -1114,6 +1201,7 @@ function Gallery() {
     if (minAge !== null && minAge !== undefined) params.min_age = minAge
     if (maxAge !== null && maxAge !== undefined) params.max_age = maxAge
     if (timeframe) params.timeframe = timeframe
+    if (filename) params.filename = filename
     setSearchParams(params)
   }
 
@@ -1155,6 +1243,7 @@ function Gallery() {
           min_age: currentMinAge,
           max_age: currentMaxAge,
           timeframe: currentTimeframe,
+          filename: currentFilename,
           sort: currentSort,
           page: nextPage,
           per_page: 50
@@ -1342,6 +1431,7 @@ function Gallery() {
           initialMaxAge={currentMaxAge}
           initialSort={currentSort}
           initialTimeframe={currentTimeframe}
+          initialFilename={currentFilename}
           total={total}
           stats={stats}
           lightboxMode={lightboxIndex !== null}

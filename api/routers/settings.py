@@ -33,8 +33,55 @@ def get_packages_dir() -> Path:
     return packages_dir
 
 
+def get_venv_dir() -> Path:
+    """Get the age detection virtual environment directory."""
+    # Use data_dir for persistence across app updates
+    if os.environ.get('LOCALBOORU_PACKAGES_DIR'):
+        # Put venv alongside packages dir
+        venv_dir = Path(os.environ['LOCALBOORU_PACKAGES_DIR']).parent / 'age_detection_venv'
+    else:
+        venv_dir = get_data_dir() / 'age_detection_venv'
+    return venv_dir
+
+
+def get_venv_python() -> Path:
+    """Get the Python executable path for the venv."""
+    venv_dir = get_venv_dir()
+    if sys.platform == "win32":
+        return venv_dir / "Scripts" / "python.exe"
+    else:
+        return venv_dir / "bin" / "python"
+
+
+def get_venv_site_packages() -> Path:
+    """Get the site-packages directory for the venv."""
+    venv_dir = get_venv_dir()
+    if sys.platform == "win32":
+        return venv_dir / "Lib" / "site-packages"
+    else:
+        # Find the python version directory
+        lib_dir = venv_dir / "lib"
+        if lib_dir.exists():
+            for item in lib_dir.iterdir():
+                if item.name.startswith("python"):
+                    return item / "site-packages"
+        # Fallback - construct from current Python version
+        version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        return venv_dir / "lib" / version / "site-packages"
+
+
 def ensure_packages_in_path():
-    """Add persistent packages directory to Python path"""
+    """Add venv site-packages to Python path for imports."""
+    # First try venv site-packages (preferred)
+    venv_site = get_venv_site_packages()
+    if venv_site.exists():
+        venv_site_str = str(venv_site)
+        if venv_site_str not in sys.path:
+            sys.path.insert(0, venv_site_str)
+            print(f"[AgeDetection] Added venv site-packages to path: {venv_site_str}", flush=True)
+        return
+
+    # Fallback to legacy packages directory
     packages_dir = get_packages_dir()
     packages_str = str(packages_dir)
     if packages_str not in sys.path:
@@ -404,21 +451,82 @@ except ImportError:
     return patched_any
 
 
+def create_venv_if_needed() -> bool:
+    """Create the age detection venv if it doesn't exist.
+
+    Returns True if venv is ready, False if creation failed.
+    """
+    import venv
+
+    venv_dir = get_venv_dir()
+    venv_python = get_venv_python()
+
+    # Check if venv already exists and is functional
+    if venv_python.exists():
+        try:
+            result = subprocess.run(
+                [str(venv_python), "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                print(f"[AgeDetection] Venv already exists at {venv_dir}", flush=True)
+                return True
+        except Exception:
+            pass
+
+    # Create new venv
+    print(f"[AgeDetection] Creating venv at {venv_dir}...", flush=True)
+    set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Creating virtual environment...")
+
+    try:
+        # Create venv with pip included
+        venv.create(str(venv_dir), with_pip=True, clear=True)
+
+        # Verify it works
+        if not venv_python.exists():
+            print(f"[AgeDetection] Venv Python not found at {venv_python}", flush=True)
+            return False
+
+        result = subprocess.run(
+            [str(venv_python), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            print(f"[AgeDetection] Venv Python not functional: {result.stderr}", flush=True)
+            return False
+
+        # Upgrade pip in the venv
+        set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Upgrading pip...")
+        subprocess.run(
+            [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"],
+            capture_output=True,
+            timeout=120
+        )
+
+        print(f"[AgeDetection] Venv created successfully", flush=True)
+        return True
+
+    except Exception as e:
+        print(f"[AgeDetection] Failed to create venv: {e}", flush=True)
+        return False
+
+
 def install_age_detection_deps_sync():
-    """Synchronous function to install age detection dependencies"""
+    """Synchronous function to install age detection dependencies into a venv."""
     try:
         set_setting(AGE_DETECTION_INSTALLING, "true")
         set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Starting installation...")
 
-        # Get Python executable and persistent packages directory
-        python_exe = sys.executable
         is_windows = sys.platform == "win32"
-        packages_dir = get_packages_dir()
+        is_macos = sys.platform == "darwin"
 
-        # On Windows, install VC++ Redistributable if needed (required for PyTorch)
+        # On Windows, check for VC++ Redistributable (required for PyTorch)
         if is_windows:
             try:
-                # Check if VC++ is installed by trying to load a simple DLL
                 import ctypes
                 try:
                     ctypes.CDLL("vcruntime140.dll")
@@ -429,13 +537,11 @@ def install_age_detection_deps_sync():
                     import urllib.request
                     import tempfile
 
-                    # Download VC++ redistributable
                     vc_url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
                     vc_path = Path(tempfile.gettempdir()) / "vc_redist.x64.exe"
 
                     urllib.request.urlretrieve(vc_url, vc_path)
 
-                    # Install silently
                     result = subprocess.run(
                         [str(vc_path), "/install", "/quiet", "/norestart"],
                         capture_output=True,
@@ -447,7 +553,6 @@ def install_age_detection_deps_sync():
                     else:
                         print(f"[AgeDetection] VC++ install returned {result.returncode}", flush=True)
 
-                    # Clean up
                     try:
                         vc_path.unlink()
                     except:
@@ -455,50 +560,52 @@ def install_age_detection_deps_sync():
             except Exception as e:
                 print(f"[AgeDetection] VC++ check/install error: {e}", flush=True)
 
-        # Add packages dir to path so we can check for already-installed packages
+        # Create venv if needed
+        if not create_venv_if_needed():
+            set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Failed to create virtual environment")
+            return
+
+        venv_python = get_venv_python()
+        venv_site_packages = get_venv_site_packages()
+
+        # Add venv to path so we can check for already-installed packages
         ensure_packages_in_path()
 
         # Install packages one by one for progress tracking
+        # Using venv means pip will auto-select the correct wheel for the platform/Python version
         packages = [
+            ("numpy", "numpy<2"),  # numpy<2 required for insightface compatibility
             ("torch", "torch torchvision --index-url https://download.pytorch.org/whl/cpu"),
             ("transformers", "transformers"),
             ("ultralytics", "ultralytics"),
-            ("timm", "timm"),  # Required by mivolo
-            ("mivolo", "https://github.com/WildChlamydia/MiVOLO/archive/refs/heads/main.zip --no-deps"),  # Age/gender detection (MIT license), --no-deps to avoid conflicts
+            ("timm", "timm"),
+            ("mivolo", "https://github.com/WildChlamydia/MiVOLO/archive/refs/heads/main.zip --no-deps"),
+            # insightface - pip will auto-select correct wheel for platform/Python version
+            # On Windows/Linux x86_64: uses pre-built wheels from PyPI
+            # On macOS/ARM: may compile from source or use available wheel
+            ("insightface", "insightface"),
         ]
 
-        # numpy<2 required for insightface compatibility (both Gourieff wheel and PyPI)
-        packages.insert(0, ("numpy", "numpy<2"))
-
-        # insightface for better face detection
-        # Windows: pre-built wheel from Gourieff's repo (used by ComfyUI/A1111)
-        # Linux/Mac: pip install from PyPI
-        if is_windows:
-            packages.append(("insightface", "https://github.com/Gourieff/Assets/raw/main/Insightface/insightface-0.7.3-cp311-cp311-win_amd64.whl"))
-        else:
-            packages.append(("insightface", "insightface"))
-
         for name, package in packages:
-            # Check if already installed
+            # Check if already installed (reload sys.path first)
+            ensure_packages_in_path()
             try:
                 __import__(name)
                 print(f"[AgeDetection] {name} already installed, skipping", flush=True)
                 continue
             except OSError:
-                # OSError means package IS installed but has DLL issues (e.g. missing VC++)
-                # Reinstalling won't help, skip it
+                # OSError = installed but DLL issues (missing VC++ etc)
                 print(f"[AgeDetection] {name} installed but has DLL issues, skipping", flush=True)
                 continue
             except ImportError:
-                # Package not installed, proceed to install
                 pass
 
             set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Installing {name}...")
-            print(f"[AgeDetection] Installing {name} to {packages_dir}...", flush=True)
+            print(f"[AgeDetection] Installing {name} to venv...", flush=True)
 
             try:
-                # Install to persistent user directory (survives app updates)
-                cmd = [python_exe, "-m", "pip", "install", "--target", str(packages_dir)] + package.split()
+                # Install using venv's pip (auto-selects correct wheels)
+                cmd = [str(venv_python), "-m", "pip", "install"] + package.split()
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
@@ -508,21 +615,27 @@ def install_age_detection_deps_sync():
 
                 if result.returncode != 0:
                     print(f"[AgeDetection] Failed to install {name}: {result.stderr}", flush=True)
-                    set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Failed to install {name}")
+                    # Don't fail completely for optional packages like insightface
+                    if name == "insightface":
+                        print(f"[AgeDetection] InsightFace optional, continuing with OpenCV fallback", flush=True)
+                    else:
+                        set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Failed to install {name}")
                 else:
                     print(f"[AgeDetection] Installed {name}", flush=True)
 
             except subprocess.TimeoutExpired:
                 print(f"[AgeDetection] Timeout installing {name}", flush=True)
-                set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Timeout installing {name}")
+                if name != "insightface":
+                    set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Timeout installing {name}")
             except Exception as e:
                 print(f"[AgeDetection] Error installing {name}: {e}", flush=True)
 
         # Apply runtime patches for mivolo/timm compatibility
         set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Applying compatibility patches...")
-        patch_mivolo_for_timm_compat(packages_dir)
+        patch_mivolo_for_timm_compat(venv_site_packages)
 
-        # Check final status - only required deps matter
+        # Reload path and check final status
+        ensure_packages_in_path()
         deps = check_age_detection_deps()
         required = ["torch", "transformers", "ultralytics", "timm", "mivolo"]
         required_installed = all(deps.get(r, False) for r in required)
@@ -532,7 +645,6 @@ def install_age_detection_deps_sync():
             if deps.get("insightface", False):
                 set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Installation complete!")
             else:
-                # insightface is optional - OpenCV fallback works fine
                 set_setting(AGE_DETECTION_INSTALL_PROGRESS, "Installation complete (using OpenCV fallback)")
         else:
             missing = [k for k in required if not deps.get(k, False)]
@@ -540,6 +652,8 @@ def install_age_detection_deps_sync():
 
     except Exception as e:
         print(f"[AgeDetection] Installation error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         set_setting(AGE_DETECTION_INSTALL_PROGRESS, f"Error: {str(e)}")
     finally:
         set_setting(AGE_DETECTION_INSTALLING, "false")

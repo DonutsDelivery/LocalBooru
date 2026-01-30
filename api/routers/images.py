@@ -120,6 +120,11 @@ async def find_image_directory(image_id: int, file_hash: str = None) -> int | No
     return None
 
 
+# File extension sets for media type filtering
+IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'}
+VIDEO_EXTENSIONS = {'.webm', '.mp4', '.mov', '.avi', '.mkv'}
+
+
 async def query_directory_images(
     directory_id: int,
     main_db: AsyncSession,
@@ -131,9 +136,12 @@ async def query_directory_images(
     max_age: int = None,
     has_faces: bool = None,
     timeframe: str = None,
+    filename: str = None,
     sort: str = "newest",
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
+    show_images: bool = True,
+    show_videos: bool = True
 ) -> tuple[list[dict], int]:
     """
     Query images from a single directory database.
@@ -154,6 +162,34 @@ async def query_directory_images(
             DirectoryImageFile.file_status != FileStatus.missing
         )
         filters.append(DirectoryImage.id.in_(has_non_missing_file))
+
+        # Media type filtering (images vs videos)
+        if not show_images and not show_videos:
+            # Nothing to show
+            return [], 0
+        elif not show_images:
+            # Only videos - filter by video extensions
+            video_filter_conditions = []
+            for ext in VIDEO_EXTENSIONS:
+                video_filter_conditions.append(
+                    DirectoryImageFile.original_path.ilike(f'%{ext}')
+                )
+            has_video_ext = select(DirectoryImageFile.image_id).where(
+                or_(*video_filter_conditions)
+            )
+            filters.append(DirectoryImage.id.in_(has_video_ext))
+        elif not show_videos:
+            # Only images - filter by image extensions
+            image_filter_conditions = []
+            for ext in IMAGE_EXTENSIONS:
+                image_filter_conditions.append(
+                    DirectoryImageFile.original_path.ilike(f'%{ext}')
+                )
+            has_image_ext = select(DirectoryImageFile.image_id).where(
+                or_(*image_filter_conditions)
+            )
+            filters.append(DirectoryImage.id.in_(has_image_ext))
+        # If both are True, no filtering needed - show all
 
         # Favorites filter
         if favorites_only:
@@ -191,6 +227,15 @@ async def query_directory_images(
             elif timeframe == 'year':
                 start = now - timedelta(days=365)
                 filters.append(DirectoryImage.created_at >= start)
+
+        # Filename filter - search in file paths (case-insensitive)
+        if filename:
+            # Search for filename in any of the image's file paths
+            filename_pattern = f"%{filename}%"
+            filename_subq = select(DirectoryImageFile.image_id).where(
+                DirectoryImageFile.original_path.ilike(filename_pattern)
+            )
+            filters.append(DirectoryImage.id.in_(filename_subq))
 
         # Tag filters (need to query main DB for tag IDs)
         if tags:
@@ -412,6 +457,7 @@ async def list_images(
     max_age: Optional[int] = Query(None, ge=0, le=120, description="Maximum detected age"),
     has_faces: Optional[bool] = Query(None, description="Filter to images with detected faces"),
     timeframe: Optional[str] = Query(None, description="Filter by timeframe: today, week, month, year"),
+    filename: Optional[str] = Query(None, description="Search by filename (case-insensitive partial match)"),
     sort: str = "newest",
     db: AsyncSession = Depends(get_db)
 ):
@@ -430,6 +476,14 @@ async def list_images(
 
     # Check if we should query per-directory databases
     if directory_id is not None and directory_db_manager.db_exists(directory_id):
+        # Get directory's media type settings
+        dir_query = select(WatchDirectory).where(WatchDirectory.id == directory_id)
+        dir_result = await db.execute(dir_query)
+        directory = dir_result.scalar_one_or_none()
+
+        show_images = directory.show_images if directory and hasattr(directory, 'show_images') else True
+        show_videos = directory.show_videos if directory and hasattr(directory, 'show_videos') else True
+
         # Query single directory database
         images_data, total = await query_directory_images(
             directory_id=directory_id,
@@ -442,9 +496,12 @@ async def list_images(
             max_age=max_age,
             has_faces=has_faces,
             timeframe=timeframe,
+            filename=filename,
             sort=sort,
             limit=per_page,
-            offset=offset
+            offset=offset,
+            show_images=show_images,
+            show_videos=show_videos
         )
 
         return {
@@ -465,6 +522,14 @@ async def list_images(
             if not directory_db_manager.db_exists(dir_id):
                 continue
             try:
+                # Get directory's media type settings
+                dir_query = select(WatchDirectory).where(WatchDirectory.id == dir_id)
+                dir_result = await db.execute(dir_query)
+                directory = dir_result.scalar_one_or_none()
+
+                dir_show_images = directory.show_images if directory and hasattr(directory, 'show_images') else True
+                dir_show_videos = directory.show_videos if directory and hasattr(directory, 'show_videos') else True
+
                 dir_images, dir_total = await query_directory_images(
                     directory_id=dir_id,
                     main_db=db,
@@ -476,9 +541,12 @@ async def list_images(
                     max_age=max_age,
                     has_faces=has_faces,
                     timeframe=timeframe,
+                    filename=filename,
                     sort=sort,
                     limit=per_page,
-                    offset=offset
+                    offset=offset,
+                    show_images=dir_show_images,
+                    show_videos=dir_show_videos
                 )
                 if dir_images:
                     return {

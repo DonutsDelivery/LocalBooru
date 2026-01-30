@@ -278,6 +278,21 @@ async def init_db():
         except Exception:
             pass
 
+        # Media type filtering - show_images and show_videos for directories
+        try:
+            await conn.execute(text(
+                "ALTER TABLE watch_directories ADD COLUMN show_images BOOLEAN DEFAULT 1"
+            ))
+        except Exception:
+            pass
+
+        try:
+            await conn.execute(text(
+                "ALTER TABLE watch_directories ADD COLUMN show_videos BOOLEAN DEFAULT 1"
+            ))
+        except Exception:
+            pass
+
         # Performance indexes for tagging queries
         try:
             await conn.execute(text(

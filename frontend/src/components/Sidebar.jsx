@@ -103,6 +103,7 @@ function Sidebar({
   initialMaxAge,
   initialSort,
   initialTimeframe,
+  initialFilename,
   total,
   stats,
   lightboxMode,
@@ -130,6 +131,7 @@ function Sidebar({
   const [minAge, setMinAge] = useState(initialMinAge || null)
   const [maxAge, setMaxAge] = useState(initialMaxAge || null)
   const [timeframe, setTimeframe] = useState(initialTimeframe || null)
+  const [filenameSearch, setFilenameSearch] = useState(initialFilename || '')
   const [fetchedDimensions, setFetchedDimensions] = useState(null)
 
   // Load directories
@@ -160,8 +162,9 @@ function Sidebar({
     setMinAge(initialMinAge || null)
     setMaxAge(initialMaxAge || null)
     setTimeframe(initialTimeframe || null)
+    setFilenameSearch(initialFilename || '')
     if (initialSort) setSortBy(initialSort)
-  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe])
+  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe, initialFilename])
 
   // Fetch dimensions for selected image when it changes
   useEffect(() => {
@@ -235,7 +238,7 @@ function Sidebar({
   const handleSearchSubmit = (e) => {
     e.preventDefault()
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
   }
 
   const handleClear = () => {
@@ -247,26 +250,27 @@ function Sidebar({
     setMinAge(null)
     setMaxAge(null)
     setTimeframe(null)
-    onSearch('', ALL_RATINGS.join(','), 'newest', false, null, null, null, null)
+    setFilenameSearch('')
+    onSearch('', ALL_RATINGS.join(','), 'newest', false, null, null, null, null, '')
   }
 
   const handleSortChange = (newSortBy) => {
     setSortBy(newSortBy)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, newSortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
+    onSearch(currentTags || '', ratingParam, newSortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
   }
 
   const handleDirectoryChange = (dirId) => {
     const newDirId = dirId === '' ? null : parseInt(dirId)
     setSelectedDirectory(newDirId)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, newDirId, minAge, maxAge, timeframe)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, newDirId, minAge, maxAge, timeframe, filenameSearch)
   }
 
   const handleTimeframeChange = (newTimeframe) => {
     setTimeframe(newTimeframe)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, newTimeframe)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, newTimeframe, filenameSearch)
   }
 
   const toggleRating = (rating) => {
@@ -285,7 +289,7 @@ function Sidebar({
     const newFavOnly = !favoritesOnly
     setFavoritesOnly(newFavOnly)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, newFavOnly, selectedDirectory, minAge, maxAge, timeframe)
+    onSearch(currentTags || '', ratingParam, sortBy, newFavOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
   }
 
   return (
@@ -377,6 +381,43 @@ function Sidebar({
               </select>
             </div>
 
+            {/* Filename Search */}
+            <div className="filename-search">
+              <div className="search-input-wrapper">
+                <svg className="search-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>
+                </svg>
+                <input
+                  type="text"
+                  value={filenameSearch}
+                  onChange={(e) => setFilenameSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleSearchSubmit(e)
+                    }
+                  }}
+                  placeholder="Search by filename..."
+                  className="search-input"
+                />
+                {filenameSearch && (
+                  <button
+                    type="button"
+                    className="search-clear"
+                    onClick={() => {
+                      setFilenameSearch('')
+                      const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+                      onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, '')
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Favorites Toggle */}
             <label className="toggle-row">
               <span className="toggle-label">
@@ -425,11 +466,11 @@ function Sidebar({
                   }}
                   onMouseUp={() => {
                     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
+                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
                   }}
                   onTouchEnd={() => {
                     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
+                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
                   }}
                   className="age-slider age-slider-min"
                 />
@@ -445,11 +486,11 @@ function Sidebar({
                   }}
                   onMouseUp={() => {
                     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
+                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
                   }}
                   onTouchEnd={() => {
                     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe)
+                    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
                   }}
                   className="age-slider age-slider-max"
                 />

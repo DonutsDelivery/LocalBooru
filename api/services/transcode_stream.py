@@ -82,6 +82,7 @@ class TranscodeStream:
         self._duration = 0
         self._width = 0
         self._height = 0
+        self._has_audio = True  # Assume video has audio by default
         self.segments_ready = 0
         self.playlist_ready = False
         self._process = None  # FFmpeg process reference
@@ -132,19 +133,35 @@ class TranscodeStream:
             )
             process = self._process
 
-            # Wait for playlist file to be created
+            # Wait for playlist file AND at least one segment to be created
             max_wait = 30
             for attempt in range(max_wait * 10):
-                if (self.hls_dir / "playlist.m3u8").exists():
-                    logger.info(f"[Transcode {self.stream_id}] Playlist created after {attempt * 0.1:.1f}s")
-                    self.playlist_ready = True
-                    break
+                playlist_exists = (self.hls_dir / "playlist.m3u8").exists()
+                segment_exists = (self.hls_dir / "segment_0.ts").exists()
+
+                if playlist_exists and segment_exists:
+                    # Check if segment has some content (not empty)
+                    segment_size = (self.hls_dir / "segment_0.ts").stat().st_size
+                    if segment_size > 1000:  # At least 1KB
+                        logger.info(f"[Transcode {self.stream_id}] Playlist and first segment ready after {attempt * 0.1:.1f}s (segment: {segment_size} bytes)")
+                        self.playlist_ready = True
+                        break
+
+                # Check if FFmpeg process failed
+                if process.returncode is not None and process.returncode != 0:
+                    error_output = (await process.stderr.read()).decode('utf-8', errors='replace')
+                    error_lines = [l.strip() for l in error_output.split('\n') if l.strip()]
+                    meaningful_error = '; '.join(error_lines[-3:]) if error_lines else "FFmpeg exited early"
+                    self.error = f"FFmpeg error: {meaningful_error[:200]}"
+                    logger.error(f"[Transcode {self.stream_id}] {self.error}")
+                    return
+
                 if attempt % 100 == 0:  # Log every 10 seconds
                     logger.debug(f"[Transcode {self.stream_id}] Waiting for playlist... ({attempt * 0.1:.1f}s)")
                 await asyncio.sleep(0.1)
 
             if not self.playlist_ready:
-                logger.warning(f"[Transcode {self.stream_id}] Playlist not created after {max_wait}s")
+                logger.warning(f"[Transcode {self.stream_id}] Playlist not ready after {max_wait}s")
 
             # Wait for process to complete
             stdout, stderr = await process.communicate()
@@ -152,7 +169,11 @@ class TranscodeStream:
             if process.returncode != 0:
                 error_output = stderr.decode('utf-8', errors='replace')
                 logger.error(f"[Transcode {self.stream_id}] FFmpeg failed with code {process.returncode}: {error_output[-500:]}")
-                self.error = "Encoding failed"
+                # Extract meaningful error message from FFmpeg output
+                error_lines = [l.strip() for l in error_output.split('\n') if l.strip()]
+                # Get last few lines which usually contain the actual error
+                meaningful_error = '; '.join(error_lines[-3:]) if error_lines else "Unknown FFmpeg error"
+                self.error = f"FFmpeg error: {meaningful_error[:200]}"
             else:
                 logger.info(f"[Transcode {self.stream_id}] FFmpeg completed successfully")
 
@@ -167,7 +188,7 @@ class TranscodeStream:
             self._running = False
 
     async def _detect_video_info(self):
-        """Detect source video duration and dimensions."""
+        """Detect source video duration, dimensions, and audio presence."""
         try:
             result = await asyncio.create_subprocess_exec(
                 'ffprobe',
@@ -189,23 +210,60 @@ class TranscodeStream:
                     self._height = int(parts[1])
                     self._duration = float(parts[2])
                     logger.info(f"[Transcode {self.stream_id}] Detected: {self._width}x{self._height}, {self._duration}s")
+
+            # Check for audio stream
+            audio_result = await asyncio.create_subprocess_exec(
+                'ffprobe',
+                '-v', 'error',
+                '-select_streams', 'a:0',
+                '-show_entries', 'stream=codec_type',
+                '-of', 'csv=p=0',
+                self.video_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            audio_stdout, _ = await audio_result.communicate()
+            self._has_audio = bool(audio_stdout.decode('utf-8').strip())
+            logger.info(f"[Transcode {self.stream_id}] Has audio: {self._has_audio}")
         except Exception as e:
             logger.warning(f"[Transcode {self.stream_id}] Could not detect video info: {e}")
             # Use defaults
             self._width = 1920
             self._height = 1080
             self._duration = 0
+            self._has_audio = True
 
     async def _build_ffmpeg_command(self) -> list:
         """Build FFmpeg command for HLS transcoding."""
-        cmd = [
-            'ffmpeg',
-            '-i', self.video_path,
-        ]
+        cmd = ['ffmpeg', '-y']  # -y to overwrite output files
 
-        # Add start position if specified
-        if self.start_position > 0:
-            cmd.extend(['-ss', str(self.start_position)])
+        # Clamp to video duration to avoid seeking past end
+        effective_start = self.start_position
+        if self._duration > 0 and effective_start >= self._duration:
+            effective_start = max(0, self._duration - 1)
+            logger.warning(f"[Transcode {self.stream_id}] Start position {self.start_position}s >= duration {self._duration}s, clamping to {effective_start}s")
+
+        # Use hybrid seeking for frame-accurate positioning:
+        # - Input seek (-ss before -i): fast, keyframe-based positioning
+        # - Output seek (-ss after -i): frame-accurate final positioning
+        input_seek = 0
+        output_seek = 0
+        if effective_start > 2:
+            # Seek to 2 seconds before target with input seeking (fast)
+            # Then use output seeking for remaining 2 seconds (accurate)
+            input_seek = effective_start - 2
+            output_seek = 2.0
+        elif effective_start > 0:
+            # For short seeks, just use output seeking (accurate)
+            output_seek = effective_start
+
+        if input_seek > 0:
+            cmd.extend(['-ss', f'{input_seek:.3f}'])
+
+        cmd.extend(['-i', self.video_path])
+
+        if output_seek > 0:
+            cmd.extend(['-ss', f'{output_seek:.3f}'])
 
         # Build video filter chain
         vf_filters = []
@@ -213,7 +271,8 @@ class TranscodeStream:
         # Add scaling if target resolution specified
         if self.target_resolution:
             width, height = self.target_resolution
-            vf_filters.append(f'scale={width}:{height}:flags=lanczos')
+            # Scale to target width, maintaining aspect ratio (-2 ensures height is divisible by 2)
+            vf_filters.append(f'scale={width}:-2:flags=lanczos')
 
         # Always pad to multiple of 2
         vf_filters.append('pad=ceil(iw/2)*2:ceil(ih/2)*2')
@@ -234,14 +293,18 @@ class TranscodeStream:
             # Original quality - use CRF
             cmd.extend(['-crf', '23'])
 
-        # Audio codec
-        cmd.extend(['-c:a', 'aac', '-b:a', '192k'])
+        # Audio codec (only if video has audio)
+        if self._has_audio:
+            cmd.extend(['-c:a', 'aac', '-b:a', '192k'])
+        else:
+            cmd.extend(['-an'])  # No audio
 
-        # HLS format
+        # HLS format - use shorter segments for faster startup
         cmd.extend([
             '-f', 'hls',
-            '-hls_time', '10',
-            '-hls_list_size', '0',
+            '-hls_time', '2',  # 2-second segments for faster startup
+            '-hls_list_size', '0',  # Keep all segments
+            '-hls_flags', 'append_list',  # Append to playlist as segments are created
             '-hls_segment_filename', str(self.hls_dir / 'segment_%d.ts'),
             str(self.hls_dir / 'playlist.m3u8')
         ])

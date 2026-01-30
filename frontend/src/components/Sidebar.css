@@ -913,6 +913,19 @@
   color: var(--text-primary);
 }
 
+/* Filename search */
+.filename-search {
+  margin-bottom: 12px;
+}
+
+.filename-search .search-input-wrapper {
+  position: relative;
+}
+
+.filename-search .search-input {
+  padding-left: 36px;
+}
+
 /* Toggle row (for favorites, etc.) */
 .toggle-row {
   display: flex;

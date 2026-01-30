@@ -20,7 +20,8 @@ import json
 from ..database import get_db, get_data_dir, directory_db_manager
 from ..models import (
     WatchDirectory, ImageFile, TaskType, Image, image_tags, Tag,
-    DirectoryImage, DirectoryImageFile, directory_image_tags, FileStatus
+    DirectoryImage, DirectoryImageFile, directory_image_tags, FileStatus,
+    TaskQueue, TaskStatus
 )
 from ..services.task_queue import enqueue_task
 
@@ -58,6 +59,8 @@ class DirectoryUpdate(BaseModel):
     auto_tag: Optional[bool] = None
     auto_age_detect: Optional[bool] = None
     public_access: Optional[bool] = None  # Allow public network access to this directory
+    show_images: Optional[bool] = None  # Show image files in gallery
+    show_videos: Optional[bool] = None  # Show video files in gallery
 
 
 @router.get("")
@@ -73,6 +76,22 @@ async def list_directories(request: Request, db: AsyncSession = Depends(get_db))
 
     result = await db.execute(query)
     directories = result.scalars().all()
+
+    # Get pending tag tasks per directory
+    pending_tag_tasks = {}
+    pending_query = select(TaskQueue.payload).where(
+        TaskQueue.task_type == TaskType.tag,
+        TaskQueue.status.in_([TaskStatus.pending, TaskStatus.processing])
+    )
+    pending_result = await db.execute(pending_query)
+    for row in pending_result.scalars().all():
+        try:
+            payload = json.loads(row)
+            dir_id = payload.get('directory_id')
+            if dir_id:
+                pending_tag_tasks[dir_id] = pending_tag_tasks.get(dir_id, 0) + 1
+        except:
+            pass
 
     # Get image counts and diagnostics per directory
     dir_data = []
@@ -165,6 +184,7 @@ async def list_directories(request: Request, db: AsyncSession = Depends(get_db))
             "age_detected_pct": round(age_detected_count / image_count * 100, 1) if image_count > 0 else 0,
             "tagged_count": tagged_count,
             "tagged_pct": round(tagged_count / image_count * 100, 1) if image_count > 0 else 0,
+            "pending_tag_tasks": pending_tag_tasks.get(d.id, 0),
             "favorited_count": favorited_count,
             "favorited_pct": round(favorited_count / image_count * 100, 1) if image_count > 0 else 0,
             "path_exists": path_exists,
@@ -176,6 +196,9 @@ async def list_directories(request: Request, db: AsyncSession = Depends(get_db))
             "metadata_format": d.metadata_format or "auto",
             # Network access
             "public_access": d.public_access if hasattr(d, 'public_access') else False,
+            # Media type filtering
+            "show_images": d.show_images if hasattr(d, 'show_images') else True,
+            "show_videos": d.show_videos if hasattr(d, 'show_videos') else True,
             # Architecture indicator
             "uses_per_directory_db": directory_db_manager.db_exists(d.id)
         })
@@ -343,7 +366,10 @@ async def get_directory(directory_id: int, db: AsyncSession = Depends(get_db)):
         "comfyui_negative_node_ids": json.loads(directory.comfyui_negative_node_ids) if directory.comfyui_negative_node_ids else [],
         "metadata_format": directory.metadata_format or "auto",
         # Network access
-        "public_access": directory.public_access if hasattr(directory, 'public_access') else False
+        "public_access": directory.public_access if hasattr(directory, 'public_access') else False,
+        # Media type filtering
+        "show_images": directory.show_images if hasattr(directory, 'show_images') else True,
+        "show_videos": directory.show_videos if hasattr(directory, 'show_videos') else True
     }
 
 
@@ -370,6 +396,10 @@ async def update_directory(
         directory.auto_age_detect = data.auto_age_detect
     if data.public_access is not None:
         directory.public_access = data.public_access
+    if data.show_images is not None:
+        directory.show_images = data.show_images
+    if data.show_videos is not None:
+        directory.show_videos = data.show_videos
 
     await db.commit()
 
@@ -384,7 +414,9 @@ async def update_directory(
         "recursive": directory.recursive,
         "auto_tag": directory.auto_tag,
         "auto_age_detect": directory.auto_age_detect,
-        "public_access": directory.public_access if hasattr(directory, 'public_access') else False
+        "public_access": directory.public_access if hasattr(directory, 'public_access') else False,
+        "show_images": directory.show_images if hasattr(directory, 'show_images') else True,
+        "show_videos": directory.show_videos if hasattr(directory, 'show_videos') else True
     }
 
 

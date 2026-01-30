@@ -195,8 +195,12 @@ async def retry_failed_tasks(db: AsyncSession = Depends(get_db)):
 @router.get("/queue/paused")
 async def get_queue_paused():
     """Check if the task queue is paused"""
-    from ..services.task_queue import task_queue
-    return {"paused": task_queue.paused}
+    from ..services.task_queue import task_queue, is_gpu_busy
+    return {
+        "paused": task_queue.paused,
+        "auto_paused": task_queue.auto_paused,
+        "gpu_busy": is_gpu_busy()
+    }
 
 
 @router.post("/queue/pause")
@@ -226,6 +230,38 @@ async def clear_pending_tasks(db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     return {"cleared": result.rowcount}
+
+
+@router.delete("/queue/pending/directory/{directory_id}")
+async def clear_directory_pending_tasks(
+    directory_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Clear pending tag tasks for a specific directory"""
+    import json
+    from sqlalchemy import delete
+
+    # Get all pending tag tasks
+    pending_query = select(TaskQueue).where(
+        TaskQueue.task_type == TaskType.tag,
+        TaskQueue.status == TaskStatus.pending
+    )
+    result = await db.execute(pending_query)
+    pending_tasks = result.scalars().all()
+
+    # Filter by directory_id in payload and delete
+    cleared = 0
+    for task in pending_tasks:
+        try:
+            payload = json.loads(task.payload)
+            if payload.get('directory_id') == directory_id:
+                await db.delete(task)
+                cleared += 1
+        except:
+            pass
+
+    await db.commit()
+    return {"cleared": cleared}
 
 
 @router.post("/clean-missing")
@@ -499,49 +535,63 @@ async def regenerate_missing_thumbnails(
 async def detect_ages_retrospective(db: AsyncSession = Depends(get_db)):
     """Queue age detection for images in directories with auto_age_detect enabled"""
     from ..services.age_detector import is_age_detection_enabled
+    from ..services.task_queue import enqueue_task
+    from sqlalchemy.orm import selectinload
 
     if not is_age_detection_enabled():
         return {"error": "Age detection is not enabled", "queued": 0}
 
-    # Find images in directories with auto_age_detect enabled that don't have age data
-    images_query = (
-        select(Image)
-        .join(ImageFile, ImageFile.image_id == Image.id)
-        .join(WatchDirectory, WatchDirectory.id == ImageFile.watch_directory_id)
-        .where(
-            WatchDirectory.auto_age_detect == True,
-            Image.age_detection_data.is_(None)  # No age data yet
-        )
-        .distinct()
-    )
+    # Get directories with auto_age_detect enabled
+    dir_query = select(WatchDirectory).where(WatchDirectory.auto_age_detect == True)
+    dir_result = await db.execute(dir_query)
+    enabled_dirs = dir_result.scalars().all()
 
-    result = await db.execute(images_query)
-    images = result.scalars().all()
-
-    if not images:
-        return {"message": "No images need age detection (check directory settings)", "queued": 0}
-
-    # Queue age detection tasks
-    from ..services.task_queue import enqueue_task
+    if not enabled_dirs:
+        return {"message": "No directories have age detection enabled", "queued": 0}
 
     queued = 0
-    for image in images:
-        # Get file path
-        file_query = select(ImageFile).where(
-            ImageFile.image_id == image.id,
-            ImageFile.file_exists == True
-        ).limit(1)
-        file_result = await db.execute(file_query)
-        image_file = file_result.scalar_one_or_none()
 
-        if image_file:
-            await enqueue_task(
-                TaskType.age_detect,
-                {"image_id": image.id, "image_path": image_file.original_path},
-                priority=0,  # Low priority
-                db=db
+    # Query each per-directory database for images without age detection
+    for watch_dir in enabled_dirs:
+        if not directory_db_manager.db_exists(watch_dir.id):
+            continue
+
+        dir_db = await directory_db_manager.get_session(watch_dir.id)
+        try:
+            # Find images without age detection data in this directory
+            images_query = (
+                select(DirectoryImage)
+                .options(selectinload(DirectoryImage.files))
+                .where(DirectoryImage.age_detection_data.is_(None))
             )
-            queued += 1
+            result = await dir_db.execute(images_query)
+            images = result.scalars().all()
+
+            for image in images:
+                # Get file path from the first existing file
+                file_path = None
+                for f in image.files:
+                    if f.file_exists:
+                        file_path = f.original_path
+                        break
+
+                if file_path:
+                    await enqueue_task(
+                        TaskType.age_detect,
+                        {
+                            "image_id": image.id,
+                            "directory_id": watch_dir.id,
+                            "image_path": file_path
+                        },
+                        priority=0,  # Low priority
+                        db=db
+                    )
+                    queued += 1
+        finally:
+            await dir_db.close()
+
+    if queued == 0:
+        return {"message": "No images need age detection (check directory settings)", "queued": 0}
 
     return {"message": f"Queued age detection for {queued} images", "queued": queued}
 
@@ -560,9 +610,9 @@ async def list_untagged(db: AsyncSession = Depends(get_db)):
     return {"untagged_count": count}
 
 
-@router.post("/detect-ages")
+@router.post("/detect-ages-realistic")
 async def detect_ages_on_realistic(db: AsyncSession = Depends(get_db)):
-    """Queue age detection for realistic images that don't have it yet"""
+    """Queue age detection for realistic-tagged images that don't have it yet"""
     import json
     from ..models import image_tags
     from ..services.task_queue import enqueue_task
@@ -641,43 +691,22 @@ async def tag_untagged_images(
     directory_id: int = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Queue tagging for all untagged images.
+    """Queue tagging for all untagged images in a directory.
 
-    Optionally filter by directory_id.
+    Uses per-directory databases.
     """
     import json
-    from ..models import image_tags, FileStatus
+    from ..models import directory_image_tags
     from ..services.task_queue import enqueue_task
 
-    # Debug: count total images
-    total_images = await db.execute(select(func.count(Image.id)))
-    total = total_images.scalar()
+    if directory_id is None:
+        return {"error": "directory_id is required", "queued": 0}
 
-    # Debug: count images with tags
-    tagged_subq = select(image_tags.c.image_id).distinct()
-    tagged_count = await db.execute(
-        select(func.count(Image.id)).where(Image.id.in_(tagged_subq))
-    )
-    tagged = tagged_count.scalar()
+    # Check if directory database exists
+    if not directory_db_manager.db_exists(directory_id):
+        return {"error": "Directory database not found", "queued": 0}
 
-    # Get untagged images - simpler query without file_status filter first
-    untagged_query = (
-        select(Image)
-        .where(Image.id.not_in(tagged_subq))
-    )
-
-    # Filter by directory if specified
-    if directory_id is not None:
-        untagged_query = (
-            untagged_query
-            .join(ImageFile, ImageFile.image_id == Image.id)
-            .where(ImageFile.watch_directory_id == directory_id)
-        )
-
-    result = await db.execute(untagged_query)
-    images = result.scalars().all()
-
-    # Get IDs of images that already have pending tag tasks
+    # Get IDs of images that already have pending tag tasks (from main db)
     pending_query = (
         select(TaskQueue.payload)
         .where(
@@ -694,49 +723,65 @@ async def tag_untagged_images(
         except:
             pass
 
+    # Query per-directory database
+    dir_db = await directory_db_manager.get_session(directory_id)
+    try:
+        # Count total images
+        total_result = await dir_db.execute(select(func.count(DirectoryImage.id)))
+        total = total_result.scalar() or 0
+
+        # Get tagged image IDs
+        tagged_subq = select(directory_image_tags.c.image_id).distinct()
+
+        # Count tagged
+        tagged_result = await dir_db.execute(
+            select(func.count(DirectoryImage.id)).where(DirectoryImage.id.in_(tagged_subq))
+        )
+        tagged = tagged_result.scalar() or 0
+
+        # Get untagged images with their file paths
+        untagged_query = (
+            select(DirectoryImage, DirectoryImageFile)
+            .join(DirectoryImageFile, DirectoryImageFile.image_id == DirectoryImage.id)
+            .where(DirectoryImage.id.not_in(tagged_subq))
+            .where(DirectoryImageFile.file_exists == True)
+        )
+        result = await dir_db.execute(untagged_query)
+        rows = result.all()
+    finally:
+        await dir_db.close()
+
     queued = 0
     skipped_queued = 0
-    skipped_no_file = 0
-    for image in images:
+    for image, image_file in rows:
         # Skip if already queued
         if image.id in already_queued:
             skipped_queued += 1
             continue
 
-        # Get file path - any existing file
-        file_query = select(ImageFile).where(
-            ImageFile.image_id == image.id,
-            ImageFile.file_exists == True
-        ).limit(1)
-        file_result = await db.execute(file_query)
-        image_file = file_result.scalar_one_or_none()
-
-        if image_file:
-            task = await enqueue_task(
-                TaskType.tag,
-                {
-                    'image_id': image.id,
-                    'image_path': image_file.original_path
-                },
-                priority=0,
-                db=db,
-                dedupe_key=image.id  # Prevent duplicate tasks for same image
-            )
-            if task:
-                queued += 1
-            else:
-                skipped_queued += 1  # Was duplicate
+        task = await enqueue_task(
+            TaskType.tag,
+            {
+                'image_id': image.id,
+                'image_path': image_file.original_path,
+                'directory_id': directory_id
+            },
+            priority=5,  # Higher priority for user-initiated tagging
+            db=db,
+            dedupe_key=f"{directory_id}:{image.id}"  # Prevent duplicate tasks
+        )
+        if task:
+            queued += 1
         else:
-            skipped_no_file += 1
+            skipped_queued += 1  # Was duplicate
 
     return {
         "queued": queued,
         "skipped_already_queued": skipped_queued,
-        "skipped_no_file": skipped_no_file,
         "debug": {
             "total_images": total,
             "tagged_images": tagged,
-            "untagged_found": len(images)
+            "untagged_found": len(rows)
         }
     }
 

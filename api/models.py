@@ -222,6 +222,10 @@ class WatchDirectory(Base):
     # Network access control
     public_access = Column(Boolean, default=False)  # Allow public network access to this directory
 
+    # Media type filtering
+    show_images = Column(Boolean, default=True)  # Show image files in this directory
+    show_videos = Column(Boolean, default=True)  # Show video files in this directory
+
     # Relationships
     image_files = relationship("ImageFile", back_populates="watch_directory")
 

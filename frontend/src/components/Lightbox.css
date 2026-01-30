@@ -190,12 +190,12 @@
     width: 40px;
   }
 
-  /* Hide toolbar favorite on mobile */
+  /* Hide toolbar favorite on mobile (images only) */
   .lightbox-toolbar .lightbox-favorite {
     display: none;
   }
 
-  /* Large bottom favorite button for mobile */
+  /* Large bottom favorite button for mobile (images only) */
   .lightbox-mobile-favorite {
     display: flex;
     position: absolute;
@@ -231,12 +231,31 @@
     border-color: #ffc107;
   }
 
-  /* Move counter to top to make room for button */
+  /* Move counter to top to make room for button (images only) */
   .lightbox-counter {
     bottom: auto;
     top: 20px;
     left: 20px;
     transform: none;
+  }
+
+  /* VIDEO: Same layout as desktop on mobile */
+  /* Show toolbar favorite for videos */
+  .lightbox.lightbox-video .lightbox-toolbar .lightbox-favorite {
+    display: flex;
+  }
+
+  /* Hide mobile favorite button for videos (would overlap video controls) */
+  .lightbox.lightbox-video .lightbox-mobile-favorite {
+    display: none;
+  }
+
+  /* Keep counter at bottom for videos (like desktop) */
+  .lightbox.lightbox-video .lightbox-counter {
+    bottom: 100px;
+    top: auto;
+    left: 50%;
+    transform: translateX(-50%);
   }
 }
 
@@ -874,6 +893,7 @@
   display: flex;
   align-items: center;
   cursor: pointer;
+  touch-action: none; /* Prevent scrolling while seeking on mobile */
 }
 
 .video-timeline-track {
@@ -1014,12 +1034,24 @@
     min-width: 36px;
   }
 
-  .video-timeline-playhead {
-    opacity: 1;
+  /* Larger touch target for timeline on mobile */
+  .video-timeline {
+    height: 32px;
   }
 
-  /* Hide volume slider on mobile, keep mute button */
+  .video-timeline-track {
+    height: 6px;
+  }
+
+  .video-timeline-playhead {
+    opacity: 1;
+    width: 18px;
+    height: 18px;
+  }
+
+  /* Show volume slider on mobile (was hidden, now matching desktop) */
   .video-volume-slider {
-    display: none;
+    display: block;
+    width: 60px;
   }
 }

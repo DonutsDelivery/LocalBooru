@@ -14,25 +14,59 @@ from ..config import get_settings
 settings = get_settings()
 
 
+def is_gpu_busy() -> bool:
+    """Check if GPU is being used by video streaming/encoding.
+
+    Returns True if any SVP, optical flow, or transcode streams are active.
+    """
+    try:
+        from .svp_stream import _active_svp_streams
+        if _active_svp_streams:
+            return True
+    except ImportError:
+        pass
+
+    try:
+        from .optical_flow_stream import _active_streams
+        if _active_streams:
+            return True
+    except ImportError:
+        pass
+
+    try:
+        from .transcode_stream import _active_transcode_streams
+        if _active_transcode_streams:
+            return True
+    except ImportError:
+        pass
+
+    return False
+
+
 class BackgroundTaskQueue:
     """In-process background task processor with Tag Guardian"""
 
     def __init__(self):
         self.running = False
-        self.paused = False
+        self.paused = False  # Manual pause by user
+        self.auto_paused = False  # Auto-pause due to GPU busy
         self.worker_task = None
         self.guardian_task = None
         self.concurrency = settings.task_queue_concurrency
 
     def pause(self):
-        """Pause task processing"""
+        """Pause task processing (manual)"""
         self.paused = True
-        print("[TaskQueue] Paused")
+        print("[TaskQueue] Paused (manual)")
 
     def resume(self):
-        """Resume task processing"""
+        """Resume task processing (manual)"""
         self.paused = False
-        print("[TaskQueue] Resumed")
+        print("[TaskQueue] Resumed (manual)")
+
+    def is_paused(self) -> bool:
+        """Check if queue is paused (manual or auto)"""
+        return self.paused or self.auto_paused
 
     async def start(self):
         """Start the background worker"""
@@ -77,8 +111,21 @@ class BackgroundTaskQueue:
         while self.running:
             loop_count += 1
 
-            # Check if paused
+            # Check if manually paused
             if self.paused:
+                await asyncio.sleep(1)
+                continue
+
+            # Check if GPU is busy (auto-pause for video streaming)
+            gpu_busy = is_gpu_busy()
+            if gpu_busy and not self.auto_paused:
+                self.auto_paused = True
+                print("[TaskQueue] Auto-paused (GPU busy with video streaming)")
+            elif not gpu_busy and self.auto_paused:
+                self.auto_paused = False
+                print("[TaskQueue] Auto-resumed (GPU available)")
+
+            if self.auto_paused:
                 await asyncio.sleep(1)
                 continue
 
@@ -89,7 +136,7 @@ class BackgroundTaskQueue:
                     task_ids = [t.id for t in tasks]
 
                 if loop_count % 10 == 0:
-                    print(f"[TaskQueue] Heartbeat: loop={loop_count}, pending tasks found={len(task_ids)}, paused={self.paused}", flush=True)
+                    print(f"[TaskQueue] Heartbeat: loop={loop_count}, pending={len(task_ids)}, paused={self.paused}, auto_paused={self.auto_paused}", flush=True)
 
                 if not task_ids:
                     await asyncio.sleep(1)
@@ -129,8 +176,8 @@ class BackgroundTaskQueue:
         print("[TagGuardian] Started monitoring for untagged images")
 
         while self.running:
-            # Skip guardian work when paused
-            if self.paused:
+            # Skip guardian work when paused (manual or auto)
+            if self.is_paused():
                 await asyncio.sleep(settings.tag_guardian_interval)
                 continue
 
