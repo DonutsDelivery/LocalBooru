@@ -1,276 +1,27 @@
 """
-Library router - library-wide operations and statistics
+Library maintenance operations - cleanup, regeneration, file management
 """
+import json
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from ..database import get_db, directory_db_manager
-from ..models import (
-    Image, Tag, ImageFile, WatchDirectory, TaskQueue,
-    TaskStatus, TaskType, Rating,
+from ...database import get_db, directory_db_manager, get_data_dir
+from ...models import (
+    Image, ImageFile, WatchDirectory, TaskQueue,
+    TaskStatus, TaskType,
     DirectoryImage, DirectoryImageFile
 )
-from ..services.events import library_events
+from .models import ImportFileRequest, FileMissingRequest
 
 router = APIRouter()
-
-
-@router.get("/stats")
-async def library_stats(db: AsyncSession = Depends(get_db)):
-    """Get library statistics"""
-    total = 0
-    favorites = 0
-    by_rating = {}
-
-    # Check per-directory databases first (new architecture)
-    all_dir_ids = directory_db_manager.get_all_directory_ids()
-    if all_dir_ids:
-        for dir_id in all_dir_ids:
-            if not directory_db_manager.db_exists(dir_id):
-                continue
-            try:
-                dir_db = await directory_db_manager.get_session(dir_id)
-                try:
-                    # Count images in this directory
-                    count_result = await dir_db.execute(select(func.count(DirectoryImage.id)))
-                    total += count_result.scalar() or 0
-
-                    # Count favorites in this directory
-                    fav_result = await dir_db.execute(
-                        select(func.count(DirectoryImage.id)).where(DirectoryImage.is_favorite == True)
-                    )
-                    favorites += fav_result.scalar() or 0
-
-                    # Count by rating in this directory
-                    rating_query = (
-                        select(DirectoryImage.rating, func.count(DirectoryImage.id))
-                        .group_by(DirectoryImage.rating)
-                    )
-                    rating_result = await dir_db.execute(rating_query)
-                    for row in rating_result:
-                        rating_val = row[0].value if row[0] else 'unrated'
-                        by_rating[rating_val] = by_rating.get(rating_val, 0) + row[1]
-                finally:
-                    await dir_db.close()
-            except Exception as e:
-                # Skip directories with corrupted/uninitialized databases
-                print(f"[LibraryStats] Skipping directory {dir_id}: {e}")
-    else:
-        # Fall back to legacy main database
-        total_images = await db.execute(select(func.count(Image.id)))
-        total = total_images.scalar()
-
-        favorites_count = await db.execute(
-            select(func.count(Image.id)).where(Image.is_favorite == True)
-        )
-        favorites = favorites_count.scalar()
-
-        rating_query = (
-            select(Image.rating, func.count(Image.id))
-            .group_by(Image.rating)
-        )
-        rating_result = await db.execute(rating_query)
-        by_rating = {row[0].value: row[1] for row in rating_result}
-
-    # Total tags (always from main DB)
-    total_tags = await db.execute(select(func.count(Tag.id)))
-    tags = total_tags.scalar()
-
-    # Watch directories
-    total_dirs = await db.execute(select(func.count(WatchDirectory.id)))
-    directories = total_dirs.scalar()
-
-    # Missing files - check per-directory DBs if available
-    missing = 0
-    if all_dir_ids:
-        from ..models import FileStatus
-        for dir_id in all_dir_ids:
-            if not directory_db_manager.db_exists(dir_id):
-                continue
-            try:
-                dir_db = await directory_db_manager.get_session(dir_id)
-                try:
-                    missing_result = await dir_db.execute(
-                        select(func.count(DirectoryImageFile.id)).where(
-                            DirectoryImageFile.file_status == FileStatus.missing
-                        )
-                    )
-                    missing += missing_result.scalar() or 0
-                finally:
-                    await dir_db.close()
-            except Exception:
-                # Skip directories with corrupted/uninitialized databases
-                pass
-    else:
-        missing_files = await db.execute(
-            select(func.count(ImageFile.id)).where(ImageFile.file_exists == False)
-        )
-        missing = missing_files.scalar()
-
-    # Task queue status
-    pending_tasks = await db.execute(
-        select(func.count(TaskQueue.id)).where(TaskQueue.status == TaskStatus.pending)
-    )
-    processing_tasks = await db.execute(
-        select(func.count(TaskQueue.id)).where(TaskQueue.status == TaskStatus.processing)
-    )
-
-    return {
-        "total_images": total,
-        "favorites": favorites,
-        "total_tags": tags,
-        "watch_directories": directories,
-        "missing_files": missing,
-        "by_rating": by_rating,
-        "queue": {
-            "pending": pending_tasks.scalar(),
-            "processing": processing_tasks.scalar()
-        }
-    }
-
-
-@router.get("/queue")
-async def queue_status(db: AsyncSession = Depends(get_db)):
-    """Get background task queue status"""
-    # Count by status
-    status_query = (
-        select(TaskQueue.status, func.count(TaskQueue.id))
-        .group_by(TaskQueue.status)
-    )
-    status_result = await db.execute(status_query)
-    by_status = {row[0].value: row[1] for row in status_result}
-
-    # Count by type
-    type_query = (
-        select(TaskQueue.task_type, func.count(TaskQueue.id))
-        .where(TaskQueue.status.in_([TaskStatus.pending, TaskStatus.processing]))
-        .group_by(TaskQueue.task_type)
-    )
-    type_result = await db.execute(type_query)
-    by_type = {row[0].value: row[1] for row in type_result}
-
-    # Recent failed tasks
-    failed_query = (
-        select(TaskQueue)
-        .where(TaskQueue.status == TaskStatus.failed)
-        .order_by(TaskQueue.completed_at.desc())
-        .limit(10)
-    )
-    failed_result = await db.execute(failed_query)
-    failed_tasks = [
-        {
-            "id": t.id,
-            "type": t.task_type.value,
-            "error": t.error_message,
-            "attempts": t.attempts
-        }
-        for t in failed_result.scalars().all()
-    ]
-
-    return {
-        "by_status": by_status,
-        "pending_by_type": by_type,
-        "recent_failures": failed_tasks
-    }
-
-
-@router.post("/queue/retry-failed")
-async def retry_failed_tasks(db: AsyncSession = Depends(get_db)):
-    """Retry all failed tasks"""
-    from sqlalchemy import update
-
-    result = await db.execute(
-        update(TaskQueue)
-        .where(TaskQueue.status == TaskStatus.failed)
-        .values(status=TaskStatus.pending, attempts=0, error_message=None)
-    )
-    await db.commit()
-
-    return {"retried": result.rowcount}
-
-
-@router.get("/queue/paused")
-async def get_queue_paused():
-    """Check if the task queue is paused"""
-    from ..services.task_queue import task_queue, is_gpu_busy
-    return {
-        "paused": task_queue.paused,
-        "auto_paused": task_queue.auto_paused,
-        "gpu_busy": is_gpu_busy()
-    }
-
-
-@router.post("/queue/pause")
-async def pause_queue():
-    """Pause the task queue"""
-    from ..services.task_queue import task_queue
-    task_queue.pause()
-    return {"paused": True}
-
-
-@router.post("/queue/resume")
-async def resume_queue():
-    """Resume the task queue"""
-    from ..services.task_queue import task_queue
-    task_queue.resume()
-    return {"paused": False}
-
-
-@router.delete("/queue/pending")
-async def clear_pending_tasks(db: AsyncSession = Depends(get_db)):
-    """Clear all pending tasks from the queue"""
-    from sqlalchemy import delete
-
-    result = await db.execute(
-        delete(TaskQueue).where(TaskQueue.status == TaskStatus.pending)
-    )
-    await db.commit()
-
-    return {"cleared": result.rowcount}
-
-
-@router.delete("/queue/pending/directory/{directory_id}")
-async def clear_directory_pending_tasks(
-    directory_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """Clear pending tag tasks for a specific directory"""
-    import json
-    from sqlalchemy import delete
-
-    # Get all pending tag tasks
-    pending_query = select(TaskQueue).where(
-        TaskQueue.task_type == TaskType.tag,
-        TaskQueue.status == TaskStatus.pending
-    )
-    result = await db.execute(pending_query)
-    pending_tasks = result.scalars().all()
-
-    # Filter by directory_id in payload and delete
-    cleared = 0
-    for task in pending_tasks:
-        try:
-            payload = json.loads(task.payload)
-            if payload.get('directory_id') == directory_id:
-                await db.delete(task)
-                cleared += 1
-        except:
-            pass
-
-    await db.commit()
-    return {"cleared": cleared}
 
 
 @router.post("/clean-missing")
 async def clean_missing_files(db: AsyncSession = Depends(get_db)):
     """Remove all images with missing files from the library"""
-    import json
-    from pathlib import Path
-    from ..database import get_data_dir
-
     cleaned = 0
     tasks_cleaned = 0
 
@@ -332,9 +83,6 @@ async def clean_missing_files(db: AsyncSession = Depends(get_db)):
 @router.post("/clean-orphans")
 async def clean_orphan_files(db: AsyncSession = Depends(get_db)):
     """Remove files from DB that have no watch_directory_id and aren't under any watched directory"""
-    from pathlib import Path
-    from ..database import get_data_dir
-
     # Get all watched directory paths
     dir_query = select(WatchDirectory)
     dir_result = await db.execute(dir_query)
@@ -381,7 +129,7 @@ async def clean_orphan_files(db: AsyncSession = Depends(get_db)):
 @router.post("/verify-files")
 async def verify_all_files(db: AsyncSession = Depends(get_db)):
     """Queue a file verification task"""
-    from ..services.task_queue import enqueue_task
+    from ...services.task_queue import enqueue_task
 
     task = await enqueue_task(
         TaskType.verify_files,
@@ -400,7 +148,7 @@ async def clean_video_thumbnails_endpoint(db: AsyncSession = Depends(get_db)):
     These are auto-generated thumbnails that shouldn't have been imported.
     """
     import traceback
-    from ..services.file_tracker import clean_video_thumbnails
+    from ...services.file_tracker import clean_video_thumbnails
 
     try:
         stats = await clean_video_thumbnails()
@@ -427,13 +175,12 @@ async def regenerate_missing_thumbnails(
         force_videos: If True, regenerate all video thumbnails even if they exist.
                      Useful for updating to middle-frame thumbnails.
     """
-    import asyncio
-    from ..services.importer import (
+    from ...services.importer import (
         generate_thumbnail_async,
         generate_video_thumbnail_async,
         is_video_file
     )
-    from ..config import get_settings
+    from ...config import get_settings
 
     settings = get_settings()
     thumbnails_dir = Path(settings.thumbnails_dir)
@@ -534,9 +281,8 @@ async def regenerate_missing_thumbnails(
 @router.post("/detect-ages")
 async def detect_ages_retrospective(db: AsyncSession = Depends(get_db)):
     """Queue age detection for images in directories with auto_age_detect enabled"""
-    from ..services.age_detector import is_age_detection_enabled
-    from ..services.task_queue import enqueue_task
-    from sqlalchemy.orm import selectinload
+    from ...services.age_detector import is_age_detection_enabled
+    from ...services.task_queue import enqueue_task
 
     if not is_age_detection_enabled():
         return {"error": "Age detection is not enabled", "queued": 0}
@@ -596,27 +342,12 @@ async def detect_ages_retrospective(db: AsyncSession = Depends(get_db)):
     return {"message": f"Queued age detection for {queued} images", "queued": queued}
 
 
-@router.get("/untagged")
-async def list_untagged(db: AsyncSession = Depends(get_db)):
-    """Get count of images without tags"""
-    from ..models import image_tags
-
-    # Images with no tags
-    subq = select(image_tags.c.image_id).distinct()
-    untagged_query = select(func.count(Image.id)).where(Image.id.not_in(subq))
-    result = await db.execute(untagged_query)
-    count = result.scalar()
-
-    return {"untagged_count": count}
-
-
 @router.post("/detect-ages-realistic")
 async def detect_ages_on_realistic(db: AsyncSession = Depends(get_db)):
     """Queue age detection for realistic-tagged images that don't have it yet"""
-    import json
-    from ..models import image_tags
-    from ..services.task_queue import enqueue_task
-    from ..services.age_detector import REALISTIC_TAGS
+    from ...models import image_tags
+    from ...services.task_queue import enqueue_task
+    from ...services.age_detector import REALISTIC_TAGS
 
     # Get images with realistic tags that don't have age detection
     realistic_tag_query = select(Tag.id).where(Tag.name.in_(REALISTIC_TAGS))
@@ -695,9 +426,8 @@ async def tag_untagged_images(
 
     Uses per-directory databases.
     """
-    import json
-    from ..models import directory_image_tags
-    from ..services.task_queue import enqueue_task
+    from ...models import directory_image_tags
+    from ...services.task_queue import enqueue_task
 
     if directory_id is None:
         return {"error": "directory_id is required", "queued": 0}
@@ -786,67 +516,10 @@ async def tag_untagged_images(
     }
 
 
-@router.post("/clear-duplicate-tasks")
-async def clear_duplicate_tasks_endpoint(db: AsyncSession = Depends(get_db)):
-    """Remove duplicate pending tasks from the queue.
-
-    Keeps the oldest task for each image_id and marks duplicates as failed.
-    """
-    from ..services.task_queue import clear_duplicate_tasks
-    removed = await clear_duplicate_tasks(db)
-    return {"duplicates_removed": removed}
-
-
-@router.delete("/clear-pending-tasks")
-async def clear_pending_tasks(
-    task_type: str = None,
-    db: AsyncSession = Depends(get_db)
-):
-    """Clear all pending tasks, optionally filtered by type.
-
-    WARNING: This will cancel all queued work!
-    """
-    from ..models import TaskQueue, TaskStatus, TaskType as TT
-
-    query = (
-        update(TaskQueue)
-        .where(TaskQueue.status == TaskStatus.pending)
-    )
-
-    if task_type:
-        try:
-            tt = TT(task_type)
-            query = query.where(TaskQueue.task_type == tt)
-        except ValueError:
-            raise HTTPException(400, f"Invalid task type: {task_type}")
-
-    query = query.values(status=TaskStatus.failed, error_message="Cancelled by user")
-
-    result = await db.execute(query)
-    await db.commit()
-
-    return {"cancelled": result.rowcount}
-
-
-# Endpoints for directory watcher integration
-
-from pydantic import BaseModel
-
-
-class ImportFileRequest(BaseModel):
-    file_path: str
-    watch_directory_id: int = None
-    auto_tag: bool = True
-
-
-class FileMissingRequest(BaseModel):
-    file_path: str
-
-
 @router.post("/import-file")
 async def import_file(request: ImportFileRequest, db: AsyncSession = Depends(get_db)):
     """Import a single file (called by directory watcher)"""
-    from ..services.importer import import_image
+    from ...services.importer import import_image
 
     result = await import_image(
         request.file_path,
@@ -860,28 +533,11 @@ async def import_file(request: ImportFileRequest, db: AsyncSession = Depends(get
 @router.post("/file-missing")
 async def mark_file_missing(request: FileMissingRequest, db: AsyncSession = Depends(get_db)):
     """Mark a file as missing (called by directory watcher)"""
-    from ..services.file_tracker import mark_file_missing
+    from ...services.file_tracker import mark_file_missing
 
     await mark_file_missing(request.file_path, db)
     return {"marked_missing": True}
 
 
-@router.get("/events")
-async def library_events_stream():
-    """Server-Sent Events stream for real-time library updates"""
-    async def event_generator():
-        # Send initial connection message
-        yield "data: {\"type\": \"connected\"}\n\n"
-        # Stream events
-        async for event in library_events.subscribe():
-            yield event
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
-    )
+# Import Tag model for detect_ages_on_realistic
+from ...models import Tag

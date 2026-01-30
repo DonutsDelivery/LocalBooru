@@ -36,9 +36,10 @@ Thumbs.db
 npm-debug.log*
 
 # ML Models (downloaded during CI build)
-tagger/
+/tagger/
+/tagger
 yolov8n.pt
-tagger
+!api/services/tagger/
 .venv/
 .claude/get-shit-done/
 .claude/commands/gsd/
