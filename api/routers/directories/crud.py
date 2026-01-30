@@ -21,7 +21,7 @@ from .models import DirectoryCreate, DirectoryUpdate, ParentDirectoryCreate, Bul
 router = APIRouter()
 
 
-@router.get("")
+@router.get("/")
 async def list_directories(request: Request, db: AsyncSession = Depends(get_db)):
     """List all watch directories"""
     access_level = getattr(request.state, 'access_level', 'localhost')
@@ -164,7 +164,7 @@ async def list_directories(request: Request, db: AsyncSession = Depends(get_db))
     return {"directories": dir_data}
 
 
-@router.post("")
+@router.post("/")
 async def add_directory(data: DirectoryCreate, db: AsyncSession = Depends(get_db)):
     """Add a new watch directory"""
     # Validate path exists

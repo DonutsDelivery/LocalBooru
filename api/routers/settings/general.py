@@ -14,7 +14,7 @@ from .tagging import check_age_detection_deps, are_required_deps_installed
 router = APIRouter()
 
 
-@router.get("")
+@router.get("/")
 async def get_all_settings():
     """Get all app settings"""
     deps = check_age_detection_deps()

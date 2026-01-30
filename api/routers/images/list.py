@@ -17,7 +17,7 @@ from .helpers import query_directory_images, check_image_public_access
 router = APIRouter()
 
 
-@router.get("")
+@router.get("/")
 async def list_images(
     request: Request,
     page: int = Query(1, ge=1),

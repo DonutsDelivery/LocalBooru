@@ -33,6 +33,7 @@ from .models import (
     save_optical_flow_settings,
     get_svp_settings,
     save_svp_settings,
+    get_default_local_port,
     DEFAULT_NETWORK_SETTINGS,
     DEFAULT_OPTICAL_FLOW_SETTINGS,
     DEFAULT_SVP_SETTINGS,
