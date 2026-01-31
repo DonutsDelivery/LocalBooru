@@ -16,7 +16,7 @@ Architecture:
 """
 from fastapi import APIRouter
 
-from .list import router as list_router
+from .list import router as list_router, list_images
 from .single import router as single_router
 from .batch import router as batch_router
 from .adjustments import router as adjustments_router
@@ -25,7 +25,10 @@ from .adjustments import router as adjustments_router
 # Main router that includes all sub-routers
 router = APIRouter()
 
-# Include list endpoints (GET "")
+# Add root route explicitly to handle both with and without trailing slash
+router.add_api_route("", list_images, methods=["GET"])
+
+# Include list endpoints (GET "/")
 router.include_router(list_router)
 
 # Include single image endpoints (GET/POST/PATCH/DELETE "/{image_id}/...")

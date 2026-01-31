@@ -48,6 +48,12 @@ from .models import (
 # Create the combined router
 router = APIRouter()
 
+# Import the root endpoint handler for explicit route registration
+from .general import get_all_settings
+
+# Add root route explicitly to handle both with and without trailing slash
+router.add_api_route("", get_all_settings, methods=["GET"])
+
 # Include all sub-routers (no prefix - paths are already correct)
 router.include_router(general_router)
 router.include_router(video_router)
