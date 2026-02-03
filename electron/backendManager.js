@@ -6,6 +6,7 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const https = require('https');
 const net = require('net');
 const os = require('os');
 const { app } = require('electron');
@@ -17,6 +18,7 @@ class BackendManager {
     this.restartAttempts = 0;
     this.maxRestartAttempts = 5;
     this.portableDataDir = null;
+    this.useHttps = false;  // Will be set to true if cert/key exist
 
     // Detect portable mode on construction
     this.detectPortableMode();
@@ -29,6 +31,25 @@ class BackendManager {
     const networkSettings = this.getNetworkSettings();
     this.port = networkSettings.local_port || this.defaultPort;
     console.log('[Backend] Mode:', this.portableDataDir ? 'portable' : 'system', '| Port:', this.port);
+  }
+
+  /**
+   * Get paths to TLS certificate and key files
+   */
+  getTlsPaths() {
+    const dataDir = this.getDataDir();
+    return {
+      cert: path.join(dataDir, 'tls_cert.pem'),
+      key: path.join(dataDir, 'tls_key.pem')
+    };
+  }
+
+  /**
+   * Check if TLS certificate files exist
+   */
+  hasTlsCertificate() {
+    const { cert, key } = this.getTlsPaths();
+    return fs.existsSync(cert) && fs.existsSync(key);
   }
 
   /**
@@ -545,19 +566,40 @@ class BackendManager {
     console.log('[Backend] Python path:', pythonPath);
     console.log('[Backend] Working directory:', cwd);
     console.log('[Backend] Binding to:', bindHost);
+
+    // Check for TLS certificate
+    const { cert, key } = this.getTlsPaths();
+    this.useHttps = this.hasTlsCertificate();
+    const protocol = this.useHttps ? 'https' : 'http';
+
     if (bindHost === '0.0.0.0') {
       const localIP = this.getLocalIP();
-      console.log('[Backend] Local network access:', networkSettings.local_network_enabled ? `enabled (http://${localIP}:${this.port})` : 'disabled');
+      console.log('[Backend] Local network access:', networkSettings.local_network_enabled ? `enabled (${protocol}://${localIP}:${this.port})` : 'disabled');
       console.log('[Backend] Public access:', networkSettings.public_network_enabled ? 'enabled' : 'disabled');
     }
 
-    // Spawn uvicorn via python -m for better compatibility
-    this.process = spawn(pythonPath, [
+    if (this.useHttps) {
+      console.log('[Backend] TLS enabled with certificate:', cert);
+    } else {
+      console.log('[Backend] TLS not available (certificate will be generated on first API startup)');
+    }
+
+    // Build uvicorn arguments
+    const uvicornArgs = [
       '-m', 'uvicorn',
       'api.main:app',
       '--host', bindHost,
       '--port', String(this.port)
-    ], {
+    ];
+
+    // Add SSL flags if certificate exists
+    if (this.useHttps) {
+      uvicornArgs.push('--ssl-keyfile', key);
+      uvicornArgs.push('--ssl-certfile', cert);
+    }
+
+    // Spawn uvicorn via python -m for better compatibility
+    this.process = spawn(pythonPath, uvicornArgs, {
       cwd: cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: env,
@@ -651,7 +693,15 @@ class BackendManager {
    */
   healthCheck() {
     return new Promise((resolve) => {
-      const req = http.get(`http://127.0.0.1:${this.port}/health`, (res) => {
+      const protocol = this.useHttps ? https : http;
+      const url = `${this.useHttps ? 'https' : 'http'}://127.0.0.1:${this.port}/health`;
+
+      // Options for HTTPS - accept self-signed certificate
+      const options = this.useHttps ? {
+        rejectUnauthorized: false  // Accept self-signed certificates
+      } : {};
+
+      const req = protocol.get(url, options, (res) => {
         if (res.statusCode !== 200) {
           resolve(false);
           return;

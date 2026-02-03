@@ -21,6 +21,7 @@ function createServer(data) {
     url: data.url,
     username: data.username || null,
     password: data.password || null,
+    certFingerprint: data.certFingerprint || null,  // TLS certificate fingerprint for pinning
     lastConnected: data.lastConnected || null,
   }
 }

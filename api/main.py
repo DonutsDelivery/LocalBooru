@@ -37,6 +37,16 @@ async def lifespan(app: FastAPI):
     # Clear stuck "installing" flag from previous crash (thread won't survive restart)
     set_setting(AGE_DETECTION_INSTALLING, "false")
 
+    # Generate or load TLS certificate for HTTPS
+    from .services.certificate import get_or_create_certificate, get_certificate_fingerprint
+    try:
+        cert_path, key_path = get_or_create_certificate()
+        fingerprint = get_certificate_fingerprint()
+        if fingerprint:
+            print(f"[Startup] TLS Certificate fingerprint: {fingerprint}")
+    except Exception as e:
+        print(f"[Startup] Warning: Could not create TLS certificate: {e}")
+
     await init_db()
 
     # Ensure directories exist

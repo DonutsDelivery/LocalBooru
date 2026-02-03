@@ -3,10 +3,13 @@
  */
 import axios from 'axios'
 import { isMobileApp, getActiveServer } from './serverManager'
+import { validateServerCertificate, isHttps } from './sslPinning'
 
 // Current server config (cached for synchronous access)
 let currentServerUrl = null
 let currentServerAuth = null
+let currentCertFingerprint = null  // TLS certificate fingerprint for pinning
+let certValidated = false  // Whether certificate has been validated this session
 
 // Get API URL - same origin when served from backend, fallback for dev
 function getApiUrl() {
@@ -35,6 +38,8 @@ export async function updateServerConfig() {
   const server = await getActiveServer()
   if (server) {
     currentServerUrl = server.url
+    currentCertFingerprint = server.certFingerprint || null
+    certValidated = false  // Reset validation on server change
     if (server.username && server.password) {
       currentServerAuth = 'Basic ' + btoa(`${server.username}:${server.password}`)
     } else {
@@ -42,9 +47,16 @@ export async function updateServerConfig() {
     }
     // Update axios base URL
     api.defaults.baseURL = `${server.url}/api`
+
+    // Validate certificate on first connection to HTTPS server
+    if (isHttps(server.url) && currentCertFingerprint) {
+      console.log('[API] Server uses HTTPS with certificate pinning')
+    }
   } else {
     currentServerUrl = null
     currentServerAuth = null
+    currentCertFingerprint = null
+    certValidated = false
     api.defaults.baseURL = null
   }
 }
@@ -61,10 +73,25 @@ const api = axios.create({
   timeout: 60000  // 60s timeout for busy servers
 })
 
-// Add request interceptor for auth on mobile
-api.interceptors.request.use((config) => {
-  if (isMobileApp() && currentServerAuth) {
-    config.headers['Authorization'] = currentServerAuth
+// Add request interceptor for auth on mobile and certificate validation
+api.interceptors.request.use(async (config) => {
+  if (isMobileApp()) {
+    // Add auth header if available
+    if (currentServerAuth) {
+      config.headers['Authorization'] = currentServerAuth
+    }
+
+    // Validate certificate on first request to HTTPS server with stored fingerprint
+    if (isHttps(currentServerUrl) && currentCertFingerprint && !certValidated) {
+      const result = await validateServerCertificate(currentServerUrl, currentCertFingerprint)
+      if (!result.valid) {
+        // Certificate validation failed - reject the request
+        console.error('[API] Certificate validation failed:', result.error)
+        throw new axios.Cancel(`Certificate validation failed: ${result.error}`)
+      }
+      certValidated = true
+      console.log('[API] Certificate validated successfully')
+    }
   }
   return config
 })

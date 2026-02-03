@@ -16,6 +16,7 @@ from ..services.network import (
     upnp_manager
 )
 from ..services.auth import get_server_fingerprint, create_handshake_nonce, verify_handshake_nonce
+from ..services.certificate import get_certificate_fingerprint, certificate_exists
 
 router = APIRouter()
 
@@ -96,15 +97,20 @@ async def get_qr_data():
     Get data for QR code to connect mobile app.
 
     Returns server info including local and public URLs for the mobile app to try.
+    Version 2 includes cert_fingerprint for HTTPS certificate pinning.
     """
     settings = get_network_settings()
     local_ip = get_local_ip()
+
+    # Check if HTTPS is enabled (certificate exists)
+    has_https = certificate_exists()
+    protocol = "https" if has_https else "http"
 
     # Build local URL (always include if we have an IP)
     local_url = None
     if local_ip:
         local_port = settings.get("local_port", get_default_local_port())
-        local_url = f"http://{local_ip}:{local_port}"
+        local_url = f"{protocol}://{local_ip}:{local_port}"
 
     # Build public URL if UPnP is enabled and has external IP
     public_url = None
@@ -112,7 +118,7 @@ async def get_qr_data():
         external_ip = upnp_manager.get_external_ip()
         if external_ip and settings.get("public_network_enabled"):
             public_port = settings.get("public_port", 8791)
-            public_url = f"http://{external_ip}:{public_port}"
+            public_url = f"{protocol}://{external_ip}:{public_port}"
 
     # Check if auth is required
     auth_level = settings.get("auth_required_level", "none")
@@ -121,14 +127,18 @@ async def get_qr_data():
     # Generate handshake nonce for verification
     nonce, nonce_expires = create_handshake_nonce()
 
+    # Get TLS certificate fingerprint for certificate pinning
+    cert_fingerprint = get_certificate_fingerprint() if has_https else None
+
     return {
         "type": "localbooru",
-        "version": 1,
+        "version": 2,  # Bumped from 1 to indicate HTTPS support
         "name": "LocalBooru",
         "local": local_url,
         "public": public_url,
         "auth": auth_required,
         "fingerprint": get_server_fingerprint(),
+        "cert_fingerprint": cert_fingerprint,  # NEW: TLS certificate fingerprint for pinning
         "nonce": nonce,
         "nonce_expires": int(nonce_expires)
     }
