@@ -220,11 +220,10 @@ async def query_directory_images(
                     )
                     filters.append(DirectoryImage.id.not_in(tag_subq))
 
-        # Resolution filters
-        if min_width is not None:
-            filters.append(DirectoryImage.width >= min_width)
+        # Resolution filter - check that the shorter dimension meets the minimum
+        # This handles both landscape and portrait correctly (e.g., 1440p means shorter side >= 1440)
         if min_height is not None:
-            filters.append(DirectoryImage.height >= min_height)
+            filters.append(func.least(DirectoryImage.width, DirectoryImage.height) >= min_height)
 
         # Orientation filter
         if orientation:

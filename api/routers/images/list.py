@@ -225,11 +225,10 @@ async def list_images(
         tag_subq = select(image_tags.c.image_id).join(Tag).where(Tag.name == tag_name)
         filters.append(Image.id.not_in(tag_subq))
 
-    # Resolution filters
-    if min_width is not None:
-        filters.append(Image.width >= min_width)
+    # Resolution filter - check that the shorter dimension meets the minimum
+    # This handles both landscape and portrait correctly (e.g., 1440p means shorter side >= 1440)
     if min_height is not None:
-        filters.append(Image.height >= min_height)
+        filters.append(func.least(Image.width, Image.height) >= min_height)
 
     # Orientation filter
     if orientation:
