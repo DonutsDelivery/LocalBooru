@@ -516,6 +516,109 @@ async def tag_untagged_images(
     }
 
 
+@router.post("/reextract-video-metadata")
+async def reextract_video_metadata(
+    directory_id: int = None,
+    force: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Re-extract video metadata (duration, dimensions) for videos missing this data.
+
+    Args:
+        directory_id: Specific directory to process, or None for all directories
+        force: If True, re-extract even for videos that already have metadata
+    """
+    from ...services.video_preview import get_video_duration, is_video_file
+    from ...services.importer import get_image_dimensions
+    from pathlib import Path
+    import asyncio
+
+    updated = 0
+    skipped = 0
+    failed = 0
+    not_found = 0
+
+    # Get directory IDs to process
+    if directory_id:
+        dir_ids = [directory_id]
+    else:
+        dir_ids = directory_db_manager.get_all_directory_ids()
+
+    for dir_id in dir_ids:
+        if not directory_db_manager.db_exists(dir_id):
+            continue
+
+        dir_db = await directory_db_manager.get_session(dir_id)
+        try:
+            # Get videos - either all or just those missing metadata
+            if force:
+                query = (
+                    select(DirectoryImage, DirectoryImageFile)
+                    .join(DirectoryImageFile, DirectoryImageFile.image_id == DirectoryImage.id)
+                    .where(DirectoryImageFile.file_exists == True)
+                )
+            else:
+                # Only videos missing duration
+                query = (
+                    select(DirectoryImage, DirectoryImageFile)
+                    .join(DirectoryImageFile, DirectoryImageFile.image_id == DirectoryImage.id)
+                    .where(DirectoryImageFile.file_exists == True)
+                    .where(DirectoryImage.duration == None)
+                )
+
+            result = await dir_db.execute(query)
+            rows = result.all()
+
+            for image, image_file in rows:
+                file_path = image_file.original_path
+
+                # Skip non-video files
+                if not is_video_file(file_path):
+                    skipped += 1
+                    continue
+
+                # Check file exists
+                if not Path(file_path).exists():
+                    not_found += 1
+                    continue
+
+                try:
+                    # Extract duration
+                    loop = asyncio.get_event_loop()
+                    duration = await loop.run_in_executor(None, get_video_duration, file_path)
+
+                    # Extract dimensions if missing
+                    if image.width is None or image.height is None:
+                        dimensions = await loop.run_in_executor(None, get_image_dimensions, file_path)
+                        if dimensions:
+                            image.width = dimensions[0]
+                            image.height = dimensions[1]
+
+                    if duration is not None:
+                        image.duration = duration
+                        updated += 1
+                    else:
+                        failed += 1
+
+                except Exception as e:
+                    print(f"[VideoMetadata] Failed for {file_path}: {e}")
+                    failed += 1
+
+            await dir_db.commit()
+
+        finally:
+            await dir_db.close()
+
+    return {
+        "updated": updated,
+        "skipped_non_video": skipped,
+        "failed": failed,
+        "file_not_found": not_found,
+        "message": f"Updated {updated} videos, {failed} failed, {not_found} files not found"
+    }
+
+
 @router.post("/import-file")
 async def import_file(request: ImportFileRequest, db: AsyncSession = Depends(get_db)):
     """Import a single file (called by directory watcher)"""
