@@ -460,6 +460,9 @@ function Gallery() {
     return { min: min ?? null, max: max ?? null }
   }, [durationParam])
 
+  // Track if we're waiting for localStorage params to be applied to URL
+  const [pendingParamsFromStorage, setPendingParamsFromStorage] = useState(false)
+
   // Load saved filters from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem('localbooru_filters')
@@ -478,7 +481,9 @@ function Gallery() {
         if (filters.orientation) params.orientation = filters.orientation
         if (filters.duration) params.duration = `${filters.duration.min ?? 'null'}-${filters.duration.max ?? 'null'}`
         if (Object.keys(params).length > 0) {
+          setPendingParamsFromStorage(true)
           setSearchParams(params)
+          return // Don't initialize yet - wait for params to be applied
         }
       } catch (e) {
         console.error('Failed to load saved filters:', e)
@@ -486,6 +491,14 @@ function Gallery() {
     }
     setFiltersInitialized(true)
   }, [])
+
+  // Initialize filters once localStorage params have been applied to URL
+  useEffect(() => {
+    if (pendingParamsFromStorage && window.location.search) {
+      setPendingParamsFromStorage(false)
+      setFiltersInitialized(true)
+    }
+  }, [pendingParamsFromStorage, searchParams])
 
   // Save filters to localStorage when they change (only after initial load to avoid overwriting)
   useEffect(() => {
