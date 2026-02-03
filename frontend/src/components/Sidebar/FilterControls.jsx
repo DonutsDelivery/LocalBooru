@@ -25,6 +25,32 @@ export const TIMEFRAME_OPTIONS = [
   { value: 'year', label: 'This Year' }
 ]
 
+// Resolution presets (min width/height)
+export const RESOLUTION_OPTIONS = [
+  { value: null, label: 'Any' },
+  { value: { width: 1280, height: 720 }, label: '720p+' },
+  { value: { width: 1920, height: 1080 }, label: '1080p+' },
+  { value: { width: 2560, height: 1440 }, label: '1440p+' },
+  { value: { width: 3840, height: 2160 }, label: '4K+' }
+]
+
+// Orientation options
+export const ORIENTATION_OPTIONS = [
+  { value: null, label: 'Any' },
+  { value: 'landscape', label: 'Landscape' },
+  { value: 'portrait', label: 'Portrait' },
+  { value: 'square', label: 'Square' }
+]
+
+// Duration options (in seconds)
+export const DURATION_OPTIONS = [
+  { value: null, label: 'Any' },
+  { value: { min: 0, max: 60 }, label: '<1m' },
+  { value: { min: 60, max: 300 }, label: '1-5m' },
+  { value: { min: 300, max: 1800 }, label: '5-30m' },
+  { value: { min: 1800, max: null }, label: '30m+' }
+]
+
 function FilterControls({
   // Directory filter
   directories,
@@ -53,6 +79,14 @@ function FilterControls({
   // Timeframe
   timeframe,
   onTimeframeChange,
+  // Resolution
+  resolution,
+  onResolutionChange,
+  orientation,
+  onOrientationChange,
+  // Duration
+  duration,
+  onDurationChange,
   // Search results
   total
 }) {
@@ -193,16 +227,83 @@ function FilterControls({
       {/* Timeframe Filter */}
       <div className="timeframe-filter">
         <div className="timeframe-buttons">
-          {TIMEFRAME_OPTIONS.map(option => (
-            <button
-              key={option.value || 'all'}
-              type="button"
-              className={`timeframe-btn ${timeframe === option.value ? 'active' : ''}`}
-              onClick={() => onTimeframeChange(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
+          {TIMEFRAME_OPTIONS.map(option => {
+            const isActive = timeframe === option.value
+            return (
+              <button
+                key={option.value || 'all'}
+                type="button"
+                className={`timeframe-btn ${isActive ? 'active' : ''}`}
+                onClick={() => onTimeframeChange(isActive && option.value !== null ? null : option.value)}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Resolution Filter */}
+      <div className="resolution-filter">
+        <span className="filter-label">Min Resolution</span>
+        <div className="resolution-buttons">
+          {RESOLUTION_OPTIONS.map(option => {
+            const isActive = option.value === null
+              ? resolution === null
+              : resolution?.width === option.value?.width && resolution?.height === option.value?.height
+            return (
+              <button
+                key={option.label}
+                type="button"
+                className={`resolution-btn ${isActive ? 'active' : ''}`}
+                onClick={() => onResolutionChange(isActive && option.value !== null ? null : option.value)}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Orientation Filter */}
+      <div className="orientation-filter">
+        <span className="filter-label">Orientation</span>
+        <div className="orientation-buttons">
+          {ORIENTATION_OPTIONS.map(option => {
+            const isActive = orientation === option.value
+            return (
+              <button
+                key={option.value || 'any'}
+                type="button"
+                className={`orientation-btn ${isActive ? 'active' : ''}`}
+                onClick={() => onOrientationChange(isActive && option.value !== null ? null : option.value)}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Duration Filter (for videos) */}
+      <div className="duration-filter">
+        <span className="filter-label">Video Duration</span>
+        <div className="duration-buttons">
+          {DURATION_OPTIONS.map(option => {
+            const isActive = option.value === null
+              ? duration === null
+              : duration?.min === option.value?.min && duration?.max === option.value?.max
+            return (
+              <button
+                key={option.label}
+                type="button"
+                className={`duration-btn ${isActive ? 'active' : ''}`}
+                onClick={() => onDurationChange(isActive && option.value !== null ? null : option.value)}
+              >
+                {option.label}
+              </button>
+            )
+          })}
         </div>
       </div>
 

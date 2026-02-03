@@ -3,11 +3,13 @@
  * Extracted from App.jsx
  */
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import ComfyUIConfigModal from '../components/ComfyUIConfigModal'
 import { getLibraryStats, updateDirectory, tagUntagged, clearDirectoryTagQueue } from '../api'
 
 function DirectoriesPage() {
+  const navigate = useNavigate()
   const [directories, setDirectories] = useState([])
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState({})
@@ -310,7 +312,14 @@ function DirectoriesPage() {
         <Sidebar stats={stats} />
         <main className="content with-sidebar">
           <div className="page directories-page">
-            <h1>Watch Directories</h1>
+            <div className="page-header">
+              <button className="back-btn mobile-only" onClick={() => navigate('/')} aria-label="Back to gallery">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
+              <h1>Watch Directories</h1>
+            </div>
             <p>Add folders to automatically import and tag images.</p>
 
             <div className="directory-buttons">

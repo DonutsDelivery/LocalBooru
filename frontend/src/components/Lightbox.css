@@ -107,6 +107,11 @@
   -webkit-user-drag: none;
 }
 
+/* Disable transform transition for videos to prevent flickering during playback */
+video.lightbox-media {
+  transition: none;
+}
+
 /* When zoomed, allow overflow and change cursor */
 .lightbox.zoomed {
   cursor: grab;
@@ -882,7 +887,8 @@
   font-size: 0.8rem;
   color: white;
   font-family: monospace;
-  min-width: 40px;
+  min-width: 52px;
+  text-align: center;
   user-select: none;
 }
 
@@ -945,6 +951,60 @@
 
 .video-timeline:hover .video-timeline-playhead {
   opacity: 1;
+}
+
+/* Timeline loading state - before video duration is known */
+.video-timeline.loading {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.video-timeline.loading .video-timeline-track {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Timeline thumbnail preview on hover */
+.video-timeline-preview {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.video-timeline-preview img {
+  width: 160px;
+  height: auto;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  background: #000;
+}
+
+.video-timeline-preview .preview-time {
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: white;
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 /* Volume controls */
@@ -1031,7 +1091,7 @@
 
   .video-time {
     font-size: 0.75rem;
-    min-width: 36px;
+    min-width: 46px;
   }
 
   /* Larger touch target for timeline on mobile */

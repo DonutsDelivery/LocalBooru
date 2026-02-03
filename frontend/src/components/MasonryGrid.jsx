@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo, useState } from 'react'
+import { useEffect, useRef, useMemo, useState } from 'react'
 import MediaItem from './MediaItem'
 import './MasonryGrid.css'
 
@@ -117,6 +117,25 @@ function MasonryGrid({
   const observerRef = useRef()
   const loadMoreRef = useRef()
 
+  // Use refs for observer callback values to avoid recreating the observer
+  const hasMoreRef = useRef(hasMore)
+  const loadingRef = useRef(loading)
+  const onLoadMoreRef = useRef(onLoadMore)
+  const loadingTimeoutRef = useRef(null)
+
+  // Keep refs in sync
+  useEffect(() => {
+    hasMoreRef.current = hasMore
+  }, [hasMore])
+
+  useEffect(() => {
+    loadingRef.current = loading
+  }, [loading])
+
+  useEffect(() => {
+    onLoadMoreRef.current = onLoadMore
+  }, [onLoadMore])
+
   // Update column count on resize
   useEffect(() => {
     const handleResize = () => {
@@ -144,15 +163,24 @@ function MasonryGrid({
     [columnData, loading, hasMore]
   )
 
-  // Infinite scroll observer
-  const handleObserver = useCallback((entries) => {
-    const [entry] = entries
-    if (entry.isIntersecting && hasMore && !loading) {
-      onLoadMore()
-    }
-  }, [hasMore, loading, onLoadMore])
-
+  // Infinite scroll observer - uses refs to avoid recreating observer on state changes
   useEffect(() => {
+    const handleObserver = (entries) => {
+      const [entry] = entries
+      if (entry.isIntersecting && hasMoreRef.current && !loadingRef.current) {
+        // Debounce to prevent rapid re-triggering during layout shifts
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current)
+        }
+        loadingTimeoutRef.current = setTimeout(() => {
+          // Double-check state hasn't changed during debounce
+          if (hasMoreRef.current && !loadingRef.current) {
+            onLoadMoreRef.current()
+          }
+        }, 50)
+      }
+    }
+
     const option = {
       root: null,
       rootMargin: '1500px', // Load well ahead to hide column height differences
@@ -168,8 +196,11 @@ function MasonryGrid({
       if (observerRef.current) {
         observerRef.current.disconnect()
       }
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+      }
     }
-  }, [handleObserver])
+  }, []) // Empty deps - observer created once, uses refs for current values
 
   if (!images.length && !loading) {
     return (

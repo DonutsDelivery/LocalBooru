@@ -135,6 +135,11 @@ export async function fetchImages({
   has_faces,
   timeframe,
   filename,
+  min_width,
+  min_height,
+  orientation,
+  min_duration,
+  max_duration,
   sort = 'newest',
   page = 1,
   per_page = 50
@@ -150,6 +155,11 @@ export async function fetchImages({
   if (has_faces !== undefined && has_faces !== null) params.append('has_faces', has_faces)
   if (timeframe) params.append('timeframe', timeframe)
   if (filename) params.append('filename', filename)
+  if (min_width !== undefined && min_width !== null) params.append('min_width', min_width)
+  if (min_height !== undefined && min_height !== null) params.append('min_height', min_height)
+  if (orientation) params.append('orientation', orientation)
+  if (min_duration !== undefined && min_duration !== null) params.append('min_duration', min_duration)
+  if (max_duration !== undefined && max_duration !== null) params.append('max_duration', max_duration)
   params.append('sort', sort)
   params.append('page', page)
   params.append('per_page', per_page)
@@ -779,6 +789,13 @@ export async function stopTranscodeStream() {
 export async function getFileDimensions(filePath) {
   const response = await api.get('/settings/util/dimensions', {
     params: { file_path: filePath }
+  })
+  return response.data
+}
+
+export async function getFileInfo(filePath) {
+  const response = await api.get('/images/media/file-info', {
+    params: { path: filePath }
   })
   return response.data
 }

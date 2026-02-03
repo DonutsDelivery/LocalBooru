@@ -23,7 +23,7 @@ from ...models import (
 )
 from ...services.importer import import_image
 from ...services.file_tracker import check_file_availability
-from .helpers import check_image_public_access
+from .helpers import check_image_public_access, find_image_directory
 
 
 router = APIRouter()
@@ -373,7 +373,31 @@ async def get_preview_frames(
                         original_path = image.files[0].original_path
             finally:
                 await dir_db.close()
-        else:
+        elif directory_id is None and directory_db_manager.get_all_directory_ids():
+            # No directory_id provided but per-directory DBs exist - search them
+            found_dir_id = await find_image_directory(image_id)
+            if found_dir_id:
+                directory_id = found_dir_id  # Update for URL generation later
+                dir_db = await directory_db_manager.get_session(found_dir_id)
+                try:
+                    query = (
+                        select(DirectoryImage)
+                        .options(selectinload(DirectoryImage.files))
+                        .where(DirectoryImage.id == image_id)
+                    )
+                    result = await dir_db.execute(query)
+                    image = result.scalar_one_or_none()
+
+                    if image:
+                        file_hash = image.file_hash
+                        filename = image.filename
+                        if image.files:
+                            original_path = image.files[0].original_path
+                finally:
+                    await dir_db.close()
+
+        # Fall back to legacy main database if not found in directory DBs
+        if not file_hash:
             # Check public access for non-localhost (legacy path)
             if not await check_image_public_access(image_id, request, db):
                 raise HTTPException(status_code=403, detail="This image is not available for remote access")
@@ -461,7 +485,20 @@ async def get_preview_frame(
             file_hash = result.scalar_one_or_none()
         finally:
             await dir_db.close()
-    else:
+    elif directory_id is None and directory_db_manager.get_all_directory_ids():
+        # No directory_id provided but per-directory DBs exist - search them
+        found_dir_id = await find_image_directory(image_id)
+        if found_dir_id:
+            dir_db = await directory_db_manager.get_session(found_dir_id)
+            try:
+                query = select(DirectoryImage.file_hash).where(DirectoryImage.id == image_id)
+                result = await dir_db.execute(query)
+                file_hash = result.scalar_one_or_none()
+            finally:
+                await dir_db.close()
+
+    # Fall back to legacy main database if not found
+    if not file_hash:
         # Check public access for non-localhost (legacy path)
         if not await check_image_public_access(image_id, request, db):
             raise HTTPException(status_code=403, detail="This image is not available for remote access")

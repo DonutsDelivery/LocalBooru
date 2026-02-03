@@ -41,6 +41,53 @@
   color: var(--text-primary);
 }
 
+/* Page header with back button */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.page-header h1 {
+  margin-bottom: 0;
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: var(--bg-tertiary);
+  border: none;
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.back-btn:hover {
+  background: var(--bg-hover);
+}
+
+.back-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Hide back button on desktop, show on mobile */
+.back-btn.mobile-only {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .back-btn.mobile-only {
+    display: flex;
+  }
+}
+
 .page p {
   color: var(--text-secondary);
   margin-bottom: 20px;
@@ -626,6 +673,13 @@
   overflow-y: auto;
 }
 
+.content > .masonry-container {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
 .content.with-sidebar {
   margin-left: 280px;
 }
@@ -943,6 +997,107 @@
 
 .tile-size-slider::-moz-range-thumb:hover {
   transform: scale(1.2);
+}
+
+/* Navigation jump control */
+.nav-jump-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.nav-jump-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.nav-jump-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.nav-jump-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.nav-jump-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.nav-jump-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-position {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.nav-separator {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.nav-jump-input {
+  width: 60px;
+  padding: 4px 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  transition: border-color 0.15s ease;
+}
+
+.nav-jump-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.nav-jump-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Hide number input spinners */
+.nav-jump-input::-webkit-outer-spin-button,
+.nav-jump-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.nav-jump-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+/* Responsive: hide nav on very small screens */
+@media (max-width: 600px) {
+  .nav-jump-control {
+    display: none;
+  }
 }
 
 /* Floating select button */

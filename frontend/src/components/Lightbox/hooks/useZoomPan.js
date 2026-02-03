@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef, useEffect } from 'react'
+import { useCallback, useState, useRef, useEffect, useMemo } from 'react'
 import { isVideo } from '../utils/helpers'
 
 /**
@@ -254,16 +254,19 @@ export function useZoomPan(mediaRef, containerRef, resetHideTimer, image) {
     return () => container.removeEventListener('wheel', handleWheel)
   }, [handleWheel, containerRef])
 
-  // Get transform style for zoomed media
-  const getZoomTransform = useCallback(() => {
+  // Memoized transform style for zoomed media - stable reference prevents unnecessary re-renders
+  const zoomTransformStyle = useMemo(() => {
     if (zoom.scale === 1 && zoom.x === 0 && zoom.y === 0) {
-      return {}
+      return undefined // undefined is more stable than {} for style props
     }
     return {
       transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`,
       cursor: zoom.scale > 1 ? 'grab' : 'default'
     }
-  }, [zoom])
+  }, [zoom.scale, zoom.x, zoom.y])
+
+  // Keep getZoomTransform for backwards compatibility but return memoized value
+  const getZoomTransform = useCallback(() => zoomTransformStyle, [zoomTransformStyle])
 
   return {
     zoom,

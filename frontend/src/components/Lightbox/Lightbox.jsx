@@ -8,6 +8,7 @@ import { useUIVisibility } from './hooks/useUIVisibility'
 import { useZoomPan } from './hooks/useZoomPan'
 import { useVideoStreaming } from './hooks/useVideoStreaming'
 import { useVideoPlayback } from './hooks/useVideoPlayback'
+import { useTimelinePreview } from './hooks/useTimelinePreview'
 
 function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
   const [processing, setProcessing] = useState(false)
@@ -73,6 +74,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Zoom and pan hook
   const zoomPan = useZoomPan(mediaRef, containerRef, resetHideTimer, image)
+
+  // Timeline preview hook (for video thumbnail preview on hover)
+  const timelinePreview = useTimelinePreview(
+    image?.id,
+    image?.directory_id,
+    playback.duration
+  )
 
   // Preload next 3 images (skip videos) for smoother navigation
   useEffect(() => {
@@ -524,7 +532,26 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Handle loaded metadata with source resolution setter
   const handleLoadedMetadataWithResolution = useCallback(() => {
     playback.handleLoadedMetadata(streaming.setSourceResolution)
-  }, [playback, streaming])
+  }, [playback.handleLoadedMetadata, streaming.setSourceResolution])
+
+  // Handle video canplay event - ensure video plays even if autoPlay is blocked
+  // Also reset hide timer to ensure auto-hide works on mobile/Capacitor
+  const handleVideoCanPlay = useCallback((e) => {
+    e.target.play().catch(() => {})
+    resetHideTimer()
+  }, [resetHideTimer])
+
+  // Handle video context menu
+  const handleVideoContextMenu = useCallback((e) => {
+    e.preventDefault()
+    if (window.electronAPI?.showImageContextMenu) {
+      window.electronAPI.showImageContextMenu({
+        imageUrl: getMediaUrl(image?.url),
+        filePath: image?.file_path,
+        isVideo: true
+      })
+    }
+  }, [image?.url, image?.file_path])
 
   if (!image) return null
 
@@ -759,20 +786,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onPause={playback.handleVideoPause}
               onTimeUpdate={playback.handleTimeUpdate}
               onLoadedMetadata={handleLoadedMetadataWithResolution}
-              onCanPlay={(e) => {
-                // Ensure video plays even if autoPlay is blocked
-                e.target.play().catch(() => {})
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                if (window.electronAPI?.showImageContextMenu) {
-                  window.electronAPI.showImageContextMenu({
-                    imageUrl: getMediaUrl(image.url),
-                    filePath: image.file_path,
-                    isVideo: true
-                  })
-                }
-              }}
+              onCanPlay={handleVideoCanPlay}
+              onContextMenu={handleVideoContextMenu}
             />
             {/* Custom video controls */}
             <div
@@ -823,15 +838,31 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               <span className="video-time">{formatTime(playback.currentTime)}</span>
               <div
                 ref={playback.timelineRef}
-                className="video-timeline"
+                className={`video-timeline ${!playback.duration ? 'loading' : ''}`}
                 onMouseDown={playback.handleSeekStart}
-                onMouseMove={playback.handleSeekMove}
+                onMouseMove={(e) => {
+                  playback.handleSeekMove(e)
+                  timelinePreview.handleTimelineHover(e)
+                }}
                 onMouseUp={playback.handleSeekEnd}
-                onMouseLeave={playback.handleSeekEnd}
+                onMouseLeave={(e) => {
+                  playback.handleSeekEnd(e)
+                  timelinePreview.handleTimelineHoverEnd()
+                }}
                 onTouchStart={playback.handleSeekTouchStart}
                 onTouchMove={playback.handleSeekTouchMove}
                 onTouchEnd={playback.handleSeekTouchEnd}
               >
+                {/* Timeline thumbnail preview */}
+                {timelinePreview.hoverTime !== null && timelinePreview.hasPreviewFrames && (
+                  <div
+                    className="video-timeline-preview"
+                    style={{ left: `${timelinePreview.hoverX}px` }}
+                  >
+                    <img src={timelinePreview.getCurrentFrame()} alt="" />
+                    <span className="preview-time">{formatTime(timelinePreview.hoverTime)}</span>
+                  </div>
+                )}
                 <div className="video-timeline-track">
                   {/* Buffer indicator for SVP streams - shows how much is available */}
                   {/* Buffer indicator for SVP streams - shows the buffered range */}
@@ -854,7 +885,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   />
                 </div>
               </div>
-              <span className="video-time">{formatTime(playback.duration)}</span>
+              <span className="video-time">{formatTime(playback.duration, true)}</span>
               <button
                 className="video-control-btn quality-btn"
                 onClick={(e) => {

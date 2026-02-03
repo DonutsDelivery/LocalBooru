@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { fetchDirectories, getFileDimensions } from '../../api'
 import PromptSection from './PromptSection'
-import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT } from './FilterControls'
+import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_OPTIONS, ORIENTATION_OPTIONS, DURATION_OPTIONS } from './FilterControls'
 import TagSearch from './TagSearch'
 import '../Sidebar.css'
 
@@ -24,6 +24,9 @@ function Sidebar({
   initialSort,
   initialTimeframe,
   initialFilename,
+  initialResolution,
+  initialOrientation,
+  initialDuration,
   total,
   stats,
   lightboxMode,
@@ -50,7 +53,14 @@ function Sidebar({
   const [maxAge, setMaxAge] = useState(initialMaxAge || null)
   const [timeframe, setTimeframe] = useState(initialTimeframe || null)
   const [filenameSearch, setFilenameSearch] = useState(initialFilename || '')
+  const [resolution, setResolution] = useState(initialResolution || null)
+  const [orientation, setOrientation] = useState(initialOrientation || null)
+  const [duration, setDuration] = useState(initialDuration || null)
   const [fetchedDimensions, setFetchedDimensions] = useState(null)
+  const [filtersExpanded, setFiltersExpanded] = useState(() => {
+    const saved = localStorage.getItem('filtersExpanded')
+    return saved !== null ? JSON.parse(saved) : false
+  })
 
   // Load directories
   useEffect(() => {
@@ -58,6 +68,11 @@ function Sidebar({
       setDirectories(data.directories || [])
     }).catch(console.error)
   }, [])
+
+  // Persist filters expanded state
+  useEffect(() => {
+    localStorage.setItem('filtersExpanded', JSON.stringify(filtersExpanded))
+  }, [filtersExpanded])
 
   // Get app version and listen for updates (Electron only)
   useEffect(() => {
@@ -81,8 +96,11 @@ function Sidebar({
     setMaxAge(initialMaxAge || null)
     setTimeframe(initialTimeframe || null)
     setFilenameSearch(initialFilename || '')
+    setResolution(initialResolution || null)
+    setOrientation(initialOrientation || null)
+    setDuration(initialDuration || null)
     if (initialSort) setSortBy(initialSort)
-  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe, initialFilename])
+  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe, initialFilename, initialResolution, initialOrientation, initialDuration])
 
   // Fetch dimensions for selected image when it changes
   useEffect(() => {
@@ -118,7 +136,7 @@ function Sidebar({
   const handleSearchSubmit = (e) => {
     e.preventDefault()
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
   }
 
   const handleClear = () => {
@@ -130,26 +148,47 @@ function Sidebar({
     setMinAge(null)
     setMaxAge(null)
     setTimeframe(null)
-    onSearch('', ALL_RATINGS.join(','), 'newest', false, null, null, null, null, '')
+    setResolution(null)
+    setOrientation(null)
+    setDuration(null)
+    onSearch('', ALL_RATINGS.join(','), 'newest', false, null, null, null, null, '', null, null, null)
   }
 
   const handleSortChange = (newSortBy) => {
     setSortBy(newSortBy)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, newSortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
+    onSearch(currentTags || '', ratingParam, newSortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
   }
 
   const handleDirectoryChange = (dirId) => {
     const newDirId = dirId === '' ? null : parseInt(dirId)
     setSelectedDirectory(newDirId)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, newDirId, minAge, maxAge, timeframe, filenameSearch)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, newDirId, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
   }
 
   const handleTimeframeChange = (newTimeframe) => {
     setTimeframe(newTimeframe)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, newTimeframe, filenameSearch)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, newTimeframe, filenameSearch, resolution, orientation, duration)
+  }
+
+  const handleResolutionChange = (newResolution) => {
+    setResolution(newResolution)
+    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, newResolution, orientation, duration)
+  }
+
+  const handleOrientationChange = (newOrientation) => {
+    setOrientation(newOrientation)
+    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, newOrientation, duration)
+  }
+
+  const handleDurationChange = (newDuration) => {
+    setDuration(newDuration)
+    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, newDuration)
   }
 
   const toggleRating = (rating) => {
@@ -168,18 +207,18 @@ function Sidebar({
     const newFavOnly = !favoritesOnly
     setFavoritesOnly(newFavOnly)
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, newFavOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
+    onSearch(currentTags || '', ratingParam, sortBy, newFavOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
   }
 
   const handleFilenameSearchClear = () => {
     setFilenameSearch('')
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, '')
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, '', resolution, orientation, duration)
   }
 
   const handleAgeChange = () => {
     const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
   }
 
   return (
@@ -255,29 +294,56 @@ function Sidebar({
         {/* Search Section - only show on gallery page */}
         {isGalleryPage && <div className="sidebar-section search-section">
           <form onSubmit={handleSearchSubmit}>
-            <FilterControls
-              directories={directories}
-              selectedDirectory={selectedDirectory}
-              onDirectoryChange={handleDirectoryChange}
-              filenameSearch={filenameSearch}
-              setFilenameSearch={setFilenameSearch}
-              onFilenameSearchClear={handleFilenameSearchClear}
-              onSearchSubmit={handleSearchSubmit}
-              favoritesOnly={favoritesOnly}
-              onToggleFavorites={toggleFavorites}
-              selectedRatings={selectedRatings}
-              onToggleRating={toggleRating}
-              minAge={minAge}
-              maxAge={maxAge}
-              setMinAge={setMinAge}
-              setMaxAge={setMaxAge}
-              onAgeChange={handleAgeChange}
-              sortBy={sortBy}
-              onSortChange={handleSortChange}
-              timeframe={timeframe}
-              onTimeframeChange={handleTimeframeChange}
-              total={total}
-            />
+            {/* Collapsible Filters Header */}
+            <button
+              type="button"
+              className={`filters-toggle ${filtersExpanded ? 'expanded' : ''}`}
+              onClick={() => setFiltersExpanded(!filtersExpanded)}
+            >
+              <svg className="filters-toggle-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/>
+              </svg>
+              <span>Filters</span>
+              {total > 0 && <span className="filters-count">{total.toLocaleString()}</span>}
+              <svg className="filters-chevron" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M7 10l5 5 5-5z"/>
+              </svg>
+            </button>
+
+            {/* Collapsible Filters Content */}
+            <div className={`filters-content ${filtersExpanded ? 'expanded' : ''}`}>
+              <div className="filters-inner">
+                <FilterControls
+                  directories={directories}
+                  selectedDirectory={selectedDirectory}
+                  onDirectoryChange={handleDirectoryChange}
+                  filenameSearch={filenameSearch}
+                  setFilenameSearch={setFilenameSearch}
+                  onFilenameSearchClear={handleFilenameSearchClear}
+                  onSearchSubmit={handleSearchSubmit}
+                  favoritesOnly={favoritesOnly}
+                  onToggleFavorites={toggleFavorites}
+                  selectedRatings={selectedRatings}
+                  onToggleRating={toggleRating}
+                  minAge={minAge}
+                  maxAge={maxAge}
+                  setMinAge={setMinAge}
+                  setMaxAge={setMaxAge}
+                  onAgeChange={handleAgeChange}
+                  sortBy={sortBy}
+                  onSortChange={handleSortChange}
+                  timeframe={timeframe}
+                  onTimeframeChange={handleTimeframeChange}
+                  resolution={resolution}
+                  onResolutionChange={handleResolutionChange}
+                  orientation={orientation}
+                  onOrientationChange={handleOrientationChange}
+                  duration={duration}
+                  onDurationChange={handleDurationChange}
+                  total={0}
+                />
+              </div>
+            </div>
 
             <div className="search-controls">
               <button type="submit" className="search-button">

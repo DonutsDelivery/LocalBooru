@@ -2,8 +2,10 @@
  * LocalBooru - Local image library with auto-tagging
  * Simplified single-user version
  */
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { BrowserRouter, Routes, Route, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { BrowserRouter, Routes, Route, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+import { App as CapacitorApp } from '@capacitor/app'
+import { isMobileApp } from './serverManager'
 import MasonryGrid from './components/MasonryGrid'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
@@ -19,8 +21,43 @@ import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, batc
 import DirectoriesPage from './pages/DirectoriesPage'
 import './App.css'
 
+// Column count calculation (mirrors MasonryGrid logic, extended for high-res screens)
+const baseColumnCounts = {
+  3840: 10, 3200: 9, 2400: 8, 1800: 7, 1400: 6, 1200: 5, 900: 4, 600: 3, 0: 2
+}
+const tileSizeAdjustments = { 1: 3, 2: 1, 3: 0, 4: -2, 5: -4 }
+const tileWidths = { 1: 200, 2: 250, 3: 300, 4: 450, 5: 600 }
+
+function getColumnCount(width, tileSize) {
+  const adjustment = tileSizeAdjustments[tileSize] || 0
+  const breakpoints = Object.keys(baseColumnCounts).map(Number).sort((a, b) => b - a)
+  for (const bp of breakpoints) {
+    if (width >= bp) {
+      return Math.max(1, baseColumnCounts[bp] + adjustment)
+    }
+  }
+  return Math.max(1, 2 + adjustment)
+}
+
+// Calculate how many items to load based on viewport and tile size
+function calculatePerPage(tileSize) {
+  const width = window.innerWidth
+  const height = window.innerHeight
+  const columns = getColumnCount(width, tileSize)
+  const tileWidth = tileWidths[tileSize] || 300
+  // Assume average aspect ratio of 1.33 (4:3), so tile height ≈ tileWidth * 0.75
+  // Add some for captions/padding
+  const avgTileHeight = tileWidth * 0.75 + 40
+  const rows = Math.ceil(height / avgTileHeight)
+  // Load enough for 2x viewport to ensure smooth scrolling
+  const needed = columns * rows * 2
+  // Minimum 50, maximum 400 (enough for 4K with small tiles)
+  return Math.min(400, Math.max(50, needed))
+}
+
 // Settings page with tabs
 function SettingsPage() {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('general')
   const [queueStatus, setQueueStatus] = useState(null)
   const [queuePaused, setQueuePaused] = useState(false)
@@ -94,7 +131,14 @@ function SettingsPage() {
         <Sidebar stats={stats} />
         <main className="content with-sidebar">
           <div className="page settings-page">
-            <h1>Settings</h1>
+            <div className="page-header">
+              <button className="back-btn mobile-only" onClick={() => navigate('/')} aria-label="Back to gallery">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
+              <h1>Settings</h1>
+            </div>
 
             {/* Settings Tabs */}
             <div className="settings-tabs">
@@ -345,6 +389,19 @@ function Gallery() {
     lightboxIndexRef.current = lightboxIndex
   }, [lightboxIndex])
 
+  // Handle browser back button for lightbox (works on mobile and desktop)
+  useEffect(() => {
+    const handlePopState = (e) => {
+      // If lightbox is open and we're going back, close it
+      if (lightboxIndexRef.current !== null && !e.state?.lightbox) {
+        setLightboxIndex(null)
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
   // Keep hasMore in sync with actual images count (fixes stale closure bugs)
   useEffect(() => {
     if (total > 0) {
@@ -368,6 +425,10 @@ function Gallery() {
     return saved ? parseInt(saved, 10) : 3
   })
 
+  // Navigation jump state
+  const [jumpInput, setJumpInput] = useState('')
+  const [isJumping, setIsJumping] = useState(false)
+
   // Save tile size to localStorage
   useEffect(() => {
     localStorage.setItem('localbooru_tileSize', tileSize.toString())
@@ -382,6 +443,22 @@ function Gallery() {
   const currentMaxAge = searchParams.get('max_age') ? parseInt(searchParams.get('max_age')) : null
   const currentTimeframe = searchParams.get('timeframe') || null
   const currentFilename = searchParams.get('filename') || ''
+  const currentOrientation = searchParams.get('orientation') || null
+  // Resolution is stored as "widthxheight" in URL, e.g., "1920x1080"
+  const resolutionParam = searchParams.get('resolution')
+  const currentResolution = useMemo(() => {
+    if (!resolutionParam) return null
+    const [width, height] = resolutionParam.split('x').map(Number)
+    if (width && height) return { width, height }
+    return null
+  }, [resolutionParam])
+  // Duration is stored as "min-max" in URL, e.g., "60-300" for 1-5 minutes
+  const durationParam = searchParams.get('duration')
+  const currentDuration = useMemo(() => {
+    if (!durationParam) return null
+    const [min, max] = durationParam.split('-').map(v => v === 'null' ? null : Number(v))
+    return { min: min ?? null, max: max ?? null }
+  }, [durationParam])
 
   // Load saved filters from localStorage on mount
   useEffect(() => {
@@ -397,6 +474,9 @@ function Gallery() {
         if (filters.directory) params.directory = filters.directory
         if (filters.min_age !== null && filters.min_age !== undefined) params.min_age = filters.min_age
         if (filters.max_age !== null && filters.max_age !== undefined) params.max_age = filters.max_age
+        if (filters.resolution) params.resolution = `${filters.resolution.width}x${filters.resolution.height}`
+        if (filters.orientation) params.orientation = filters.orientation
+        if (filters.duration) params.duration = `${filters.duration.min ?? 'null'}-${filters.duration.max ?? 'null'}`
         if (Object.keys(params).length > 0) {
           setSearchParams(params)
         }
@@ -417,10 +497,13 @@ function Gallery() {
       sort: currentSort,
       directory: currentDirectoryId,
       min_age: currentMinAge,
-      max_age: currentMaxAge
+      max_age: currentMaxAge,
+      resolution: currentResolution,
+      orientation: currentOrientation,
+      duration: currentDuration
     }
     localStorage.setItem('localbooru_filters', JSON.stringify(filters))
-  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge, currentResolution, currentOrientation, currentDuration])
 
   // Touch handling for mobile sidebar
   const touchStartX = useRef(null)
@@ -457,9 +540,14 @@ function Gallery() {
         max_age: currentMaxAge,
         timeframe: currentTimeframe,
         filename: currentFilename,
+        min_width: currentResolution?.width,
+        min_height: currentResolution?.height,
+        orientation: currentOrientation,
+        min_duration: currentDuration?.min,
+        max_duration: currentDuration?.max,
         sort: currentSort,
         page: pageNum,
-        per_page: 50
+        per_page: calculatePerPage(tileSize)
       })
 
       if (append) {
@@ -479,7 +567,7 @@ function Gallery() {
       console.error('Failed to load images:', error)
     }
     setLoading(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize])
 
   // Update a single image in the images array
   const handleImageUpdate = useCallback((imageId, updates) => {
@@ -523,7 +611,7 @@ function Gallery() {
   useEffect(() => {
     if (!filtersInitialized) return
     loadImages(1, false)
-  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, loadImages])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, loadImages])
 
   useEffect(() => {
     loadTags()
@@ -588,6 +676,64 @@ function Gallery() {
     }
   }
 
+  // Jump to a specific image number in the results
+  const jumpToImage = useCallback(async (targetIndex) => {
+    if (targetIndex < 1 || targetIndex > total) return
+
+    setIsJumping(true)
+    const perPage = calculatePerPage(tileSize)
+    const targetPage = Math.ceil(targetIndex / perPage)
+
+    try {
+      const result = await fetchImages({
+        tags: currentTags,
+        rating: currentRating,
+        favorites_only: favoritesOnly,
+        directory_id: currentDirectoryId,
+        min_age: currentMinAge,
+        max_age: currentMaxAge,
+        timeframe: currentTimeframe,
+        filename: currentFilename,
+        min_width: currentResolution?.width,
+        min_height: currentResolution?.height,
+        orientation: currentOrientation,
+        min_duration: currentDuration?.min,
+        max_duration: currentDuration?.max,
+        sort: currentSort,
+        page: targetPage,
+        per_page: perPage
+      })
+
+      setImages(result.images)
+      setTotal(result.total)
+      setPage(targetPage)
+
+      // Scroll to top since we're showing a new set of images
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (error) {
+      console.error('Failed to jump to image:', error)
+    }
+    setIsJumping(false)
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, total, tileSize])
+
+  // Handle jump by offset (for +/- 100 buttons)
+  const handleJumpByOffset = useCallback((offset) => {
+    const perPage = calculatePerPage(tileSize)
+    const currentFirstImage = (page - 1) * perPage + 1
+    const targetIndex = Math.max(1, Math.min(total, currentFirstImage + offset))
+    jumpToImage(targetIndex)
+  }, [page, total, jumpToImage, tileSize])
+
+  // Handle direct jump from input
+  const handleJumpSubmit = useCallback((e) => {
+    e.preventDefault()
+    const targetIndex = parseInt(jumpInput, 10)
+    if (!isNaN(targetIndex) && targetIndex >= 1 && targetIndex <= total) {
+      jumpToImage(targetIndex)
+      setJumpInput('')
+    }
+  }, [jumpInput, total, jumpToImage])
+
   const handleTagClick = (tagName) => {
     const currentTagList = currentTags ? currentTags.split(',').map(t => t.trim()) : []
     let newTagList
@@ -609,7 +755,7 @@ function Gallery() {
     setSearchParams(params)
   }
 
-  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe, filename) => {
+  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe, filename, resolution, orientation, duration) => {
     const params = {}
     if (tags) params.tags = tags
     if (rating && rating !== 'pg,pg13,r,x,xxx') params.rating = rating
@@ -620,18 +766,31 @@ function Gallery() {
     if (maxAge !== null && maxAge !== undefined) params.max_age = maxAge
     if (timeframe) params.timeframe = timeframe
     if (filename) params.filename = filename
+    if (resolution) params.resolution = `${resolution.width}x${resolution.height}`
+    if (orientation) params.orientation = orientation
+    if (duration) params.duration = `${duration.min ?? 'null'}-${duration.max ?? 'null'}`
     setSearchParams(params)
   }
 
   const handleImageClick = (imageId) => {
+    // Push history state so back button closes lightbox
+    window.history.pushState({ lightbox: true, imageId }, '')
     setLightboxIndex(imageId)
     // Keep sidebar visible to show image details
   }
 
-  const handleLightboxClose = () => {
+  const handleLightboxClose = useCallback(() => {
     // Scroll to the image that was being viewed
     const imageId = lightboxIndex
-    setLightboxIndex(null)
+
+    // Go back in history to trigger popstate which closes the lightbox
+    // This ensures hardware back button and X button behave consistently
+    if (window.history.state?.lightbox) {
+      window.history.back()
+    } else {
+      // Fallback: close directly if no history state (shouldn't normally happen)
+      setLightboxIndex(null)
+    }
 
     // Use requestAnimationFrame to scroll after the lightbox closes and DOM updates
     requestAnimationFrame(() => {
@@ -640,7 +799,7 @@ function Gallery() {
         imageElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
     })
-  }
+  }, [lightboxIndex])
 
   const handleLightboxNav = async (direction) => {
     const currentIdx = images.findIndex(img => img.id === lightboxIndex)
@@ -662,9 +821,14 @@ function Gallery() {
           max_age: currentMaxAge,
           timeframe: currentTimeframe,
           filename: currentFilename,
+          min_width: currentResolution?.width,
+          min_height: currentResolution?.height,
+          orientation: currentOrientation,
+          min_duration: currentDuration?.min,
+          max_duration: currentDuration?.max,
           sort: currentSort,
           page: nextPage,
-          per_page: 50
+          per_page: calculatePerPage(tileSize)
         })
 
         if (result.images.length > 0) {
@@ -850,6 +1014,9 @@ function Gallery() {
           initialSort={currentSort}
           initialTimeframe={currentTimeframe}
           initialFilename={currentFilename}
+          initialResolution={currentResolution}
+          initialOrientation={currentOrientation}
+          initialDuration={currentDuration}
           total={total}
           stats={stats}
           lightboxMode={lightboxIndex !== null}
@@ -880,7 +1047,7 @@ function Gallery() {
             />
           )}
 
-          {/* Floating controls: tile size slider and select button */}
+          {/* Floating controls: tile size slider, navigation, and select button */}
           <div className="floating-controls">
             <div className="tile-size-control" title="Adjust tile size">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="tile-size-icon">
@@ -901,6 +1068,49 @@ function Gallery() {
                 <rect x="4" y="4" width="16" height="16" rx="2"/>
               </svg>
             </div>
+
+            {/* Navigation controls */}
+            {total > 50 && (
+              <div className="nav-jump-control">
+                <button
+                  className="nav-jump-btn"
+                  onClick={() => handleJumpByOffset(-100)}
+                  disabled={isJumping || page === 1}
+                  title="Jump back 100 images"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="18 15 12 9 6 15"/>
+                  </svg>
+                </button>
+                <form onSubmit={handleJumpSubmit} className="nav-jump-form">
+                  <span className="nav-position">
+                    {((page - 1) * 50 + 1).toLocaleString()}-{Math.min(page * 50, total).toLocaleString()}
+                  </span>
+                  <span className="nav-separator">/</span>
+                  <input
+                    type="number"
+                    className="nav-jump-input"
+                    placeholder={total.toLocaleString()}
+                    value={jumpInput}
+                    onChange={(e) => setJumpInput(e.target.value)}
+                    min="1"
+                    max={total}
+                    title="Type a number and press Enter to jump"
+                  />
+                </form>
+                <button
+                  className="nav-jump-btn"
+                  onClick={() => handleJumpByOffset(100)}
+                  disabled={isJumping || page * 50 >= total}
+                  title="Jump forward 100 images"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                </button>
+              </div>
+            )}
+
             <button
               className={`floating-select-btn ${selectionMode ? 'active' : ''}`}
               onClick={toggleSelectionMode}
@@ -1181,6 +1391,7 @@ function App() {
     <>
       <TitleBar onSwitchServer={handleDisconnect} />
       <BrowserRouter>
+        <BackButtonHandler />
         <Routes>
           <Route path="/" element={<Gallery />} />
           <Route path="/directories" element={<DirectoriesPage />} />
@@ -1189,6 +1400,35 @@ function App() {
       </BrowserRouter>
     </>
   )
+}
+
+// Handle hardware back button on mobile
+function BackButtonHandler() {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (!isMobileApp()) return
+
+    const handleBackButton = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+      // If there's history to go back to, use it
+      if (canGoBack) {
+        window.history.back()
+      } else if (location.pathname !== '/') {
+        // On a sub-page with no history, navigate to home
+        navigate('/')
+      } else {
+        // On home with no history - minimize app (Android default behavior)
+        CapacitorApp.minimizeApp()
+      }
+    })
+
+    return () => {
+      handleBackButton.then(listener => listener.remove())
+    }
+  }, [navigate, location.pathname])
+
+  return null
 }
 
 export default App

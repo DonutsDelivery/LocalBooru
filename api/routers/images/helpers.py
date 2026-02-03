@@ -91,6 +91,11 @@ async def query_directory_images(
     has_faces: bool = None,
     timeframe: str = None,
     filename: str = None,
+    min_width: int = None,
+    min_height: int = None,
+    orientation: str = None,
+    min_duration: int = None,
+    max_duration: int = None,
     sort: str = "newest",
     limit: int = 100,
     offset: int = 0,
@@ -214,6 +219,27 @@ async def query_directory_images(
                         directory_image_tags.c.tag_id == tag_id
                     )
                     filters.append(DirectoryImage.id.not_in(tag_subq))
+
+        # Resolution filters
+        if min_width is not None:
+            filters.append(DirectoryImage.width >= min_width)
+        if min_height is not None:
+            filters.append(DirectoryImage.height >= min_height)
+
+        # Orientation filter
+        if orientation:
+            if orientation == 'landscape':
+                filters.append(DirectoryImage.width > DirectoryImage.height)
+            elif orientation == 'portrait':
+                filters.append(DirectoryImage.height > DirectoryImage.width)
+            elif orientation == 'square':
+                filters.append(DirectoryImage.width == DirectoryImage.height)
+
+        # Duration filter (for videos)
+        if min_duration is not None:
+            filters.append(DirectoryImage.duration >= min_duration)
+        if max_duration is not None:
+            filters.append(DirectoryImage.duration <= max_duration)
 
         if filters:
             query = query.where(and_(*filters))

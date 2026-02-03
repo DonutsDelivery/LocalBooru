@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import {
   getSVPConfig,
-  updateSVPConfig
+  updateSVPConfig,
+  getFileInfo
 } from '../api'
 import './SVPSideMenu.css'
 
@@ -40,13 +41,8 @@ export default function SVPSideMenu({ isOpen, onClose, image }) {
       return
     }
     try {
-      const response = await fetch(`/api/images/media/file-info?path=${encodeURIComponent(image.file_path)}`)
-      if (response.ok) {
-        const data = await response.json()
-        setFileSize(data.size)
-      } else {
-        setFileSize(null)
-      }
+      const data = await getFileInfo(image.file_path)
+      setFileSize(data.size)
     } catch (err) {
       console.error('Failed to fetch file size:', err)
       setFileSize(null)

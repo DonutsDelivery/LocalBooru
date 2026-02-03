@@ -123,20 +123,36 @@ export function useVideoPlayback(mediaRef, streamState) {
     if (!mediaRef.current) return
     // For HLS streams, use the known total duration from API if available
     // This allows the timeline to show the full video length even while segments are being generated
+    // IMPORTANT: Never overwrite a known duration with a shorter HLS segment duration
+    let newDuration = mediaRef.current.duration
+
     if (svpTotalDuration && svpStreamUrl) {
-      setDuration(svpTotalDuration)
+      newDuration = svpTotalDuration
     } else if (transcodeTotalDuration && transcodeStreamUrl) {
-      setDuration(transcodeTotalDuration)
-    } else {
-      setDuration(mediaRef.current.duration)
+      newDuration = transcodeTotalDuration
     }
+
+    // Only update duration if it's valid and either:
+    // 1. We don't have a duration yet, OR
+    // 2. The new duration is longer (we got the full video duration)
+    // This prevents HLS segment duration from shrinking the timeline on seek
+    setDuration(prev => {
+      if (!prev || !isFinite(prev) || prev === 0) {
+        return newDuration
+      }
+      // Keep the longer duration (full video vs HLS segment)
+      return Math.max(prev, newDuration)
+    })
 
     const width = mediaRef.current.videoWidth
     const height = mediaRef.current.videoHeight
 
-    setVideoNaturalSize({
-      width,
-      height
+    // Only update natural size if it actually changed to prevent unnecessary re-renders
+    setVideoNaturalSize(prev => {
+      if (prev.width === width && prev.height === height) {
+        return prev
+      }
+      return { width, height }
     })
 
     // Store source resolution for quality selector

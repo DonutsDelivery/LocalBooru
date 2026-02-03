@@ -21,7 +21,7 @@ router = APIRouter()
 async def list_images(
     request: Request,
     page: int = Query(1, ge=1),
-    per_page: int = Query(50, ge=1, le=100),
+    per_page: int = Query(50, ge=1, le=400),
     tags: Optional[str] = None,
     exclude_tags: Optional[str] = None,
     rating: Optional[str] = None,
@@ -32,6 +32,11 @@ async def list_images(
     has_faces: Optional[bool] = Query(None, description="Filter to images with detected faces"),
     timeframe: Optional[str] = Query(None, description="Filter by timeframe: today, week, month, year"),
     filename: Optional[str] = Query(None, description="Search by filename (case-insensitive partial match)"),
+    min_width: Optional[int] = Query(None, ge=1, description="Minimum width in pixels"),
+    min_height: Optional[int] = Query(None, ge=1, description="Minimum height in pixels"),
+    orientation: Optional[str] = Query(None, description="Filter by orientation: landscape, portrait, square"),
+    min_duration: Optional[int] = Query(None, ge=0, description="Minimum video duration in seconds"),
+    max_duration: Optional[int] = Query(None, ge=0, description="Maximum video duration in seconds"),
     sort: str = "newest",
     db: AsyncSession = Depends(get_db)
 ):
@@ -71,6 +76,11 @@ async def list_images(
             has_faces=has_faces,
             timeframe=timeframe,
             filename=filename,
+            min_width=min_width,
+            min_height=min_height,
+            orientation=orientation,
+            min_duration=min_duration,
+            max_duration=max_duration,
             sort=sort,
             limit=per_page,
             offset=offset,
@@ -116,6 +126,11 @@ async def list_images(
                     has_faces=has_faces,
                     timeframe=timeframe,
                     filename=filename,
+                    min_width=min_width,
+                    min_height=min_height,
+                    orientation=orientation,
+                    min_duration=min_duration,
+                    max_duration=max_duration,
                     sort=sort,
                     limit=per_page,
                     offset=offset,
@@ -210,6 +225,27 @@ async def list_images(
         tag_subq = select(image_tags.c.image_id).join(Tag).where(Tag.name == tag_name)
         filters.append(Image.id.not_in(tag_subq))
 
+    # Resolution filters
+    if min_width is not None:
+        filters.append(Image.width >= min_width)
+    if min_height is not None:
+        filters.append(Image.height >= min_height)
+
+    # Orientation filter
+    if orientation:
+        if orientation == 'landscape':
+            filters.append(Image.width > Image.height)
+        elif orientation == 'portrait':
+            filters.append(Image.height > Image.width)
+        elif orientation == 'square':
+            filters.append(Image.width == Image.height)
+
+    # Duration filter (for videos)
+    if min_duration is not None:
+        filters.append(Image.duration >= min_duration)
+    if max_duration is not None:
+        filters.append(Image.duration <= max_duration)
+
     if filters:
         query = query.where(and_(*filters))
 
@@ -244,6 +280,7 @@ async def list_images(
         "images": [
             {
                 "id": img.id,
+                "directory_id": img.files[0].watch_directory_id if img.files else None,
                 "filename": img.filename,
                 "original_filename": img.original_filename,
                 "width": img.width,
