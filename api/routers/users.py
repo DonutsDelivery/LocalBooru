@@ -3,7 +3,8 @@ User management router - manage user accounts for network access authentication.
 
 All endpoints in this router are localhost-only (enforced by middleware).
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, Literal
 from sqlalchemy import select
@@ -14,6 +15,9 @@ import hashlib
 
 from ..database import get_db
 from ..models import User, AccessLevel
+from ..services.rate_limit import login_rate_limiter
+from ..services.auth import create_token, decode_token
+from ..middleware.access_control import get_client_ip
 
 router = APIRouter()
 
@@ -57,6 +61,41 @@ def verify_password(password: str, stored_hash: str) -> bool:
         return hash_bytes.hex() == hash_hex
     except (ValueError, AttributeError):
         return False
+
+
+def validate_password(password: str) -> None:
+    """
+    Validate password strength requirements.
+
+    Requirements:
+        - At least 8 characters
+        - At least one uppercase letter
+        - At least one lowercase letter
+        - At least one number
+
+    Raises:
+        HTTPException: If password doesn't meet requirements
+    """
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters"
+        )
+    if not any(c.isupper() for c in password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must contain at least one uppercase letter"
+        )
+    if not any(c.islower() for c in password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must contain at least one lowercase letter"
+        )
+    if not any(c.isdigit() for c in password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must contain at least one number"
+        )
 
 
 class UserCreate(BaseModel):
@@ -125,9 +164,8 @@ async def create_user(user_data: UserCreate, db: AsyncSession = Depends(get_db))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Username already exists")
 
-    # Validate password
-    if len(user_data.password) < 4:
-        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+    # Validate password strength
+    validate_password(user_data.password)
 
     # Create user
     user = User(
@@ -189,8 +227,7 @@ async def update_user(user_id: int, updates: UserUpdate, db: AsyncSession = Depe
 
     # Apply updates
     if updates.password is not None:
-        if len(updates.password) < 4:
-            raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+        validate_password(updates.password)
         user.password_hash = hash_password(updates.password)
 
     if updates.is_active is not None:
@@ -241,39 +278,99 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/login")
-async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(
+    credentials: LoginRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
     """
     Authenticate a user.
 
     Note: This endpoint is accessible from all access levels since
     authentication is needed for remote access.
+
+    Rate limited to 5 failed attempts per IP per 15 minutes.
     """
+    client_ip = get_client_ip(request)
+
+    # Check if this IP is rate limited
+    is_limited, retry_after = login_rate_limiter.is_rate_limited(client_ip)
+    if is_limited:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many failed login attempts. Please try again later."},
+            headers={"Retry-After": str(retry_after)}
+        )
+
     result = await db.execute(
         select(User).where(User.username == credentials.username)
     )
     user = result.scalar_one_or_none()
 
     if not user:
+        login_rate_limiter.record_failed_attempt(client_ip)
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     if not user.is_active:
+        login_rate_limiter.record_failed_attempt(client_ip)
         raise HTTPException(status_code=401, detail="Account is disabled")
 
     if not verify_password(credentials.password, user.password_hash):
+        login_rate_limiter.record_failed_attempt(client_ip)
         raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    # Successful login - clear any failed attempts for this IP
+    login_rate_limiter.clear_attempts(client_ip)
 
     # Update last login
     user.last_login = datetime.utcnow()
     await db.commit()
 
-    # TODO: Return a session token for authenticated access
-    # For now, just return success
+    # Generate JWT session token
+    access_level = user.access_level.value if user.access_level else "local_network"
+    token = create_token(
+        user_id=user.id,
+        username=user.username,
+        access_level=access_level,
+        can_write=user.can_write
+    )
+
     return {
         "success": True,
+        "token": token,
         "user": {
             "id": user.id,
             "username": user.username,
-            "access_level": user.access_level.value if user.access_level else "local_network",
+            "access_level": access_level,
             "can_write": user.can_write
+        }
+    }
+
+
+class VerifyTokenRequest(BaseModel):
+    """Request body for token verification"""
+    token: str
+
+
+@router.post("/verify")
+async def verify_token(request: VerifyTokenRequest):
+    """
+    Verify a JWT token and return the user info if valid.
+
+    This endpoint can be used by clients to check if their token is still valid
+    and to get the current user information without making a database query.
+    """
+    payload = decode_token(request.token)
+
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    return {
+        "valid": True,
+        "user": {
+            "id": payload["user_id"],
+            "username": payload["username"],
+            "access_level": payload["access_level"],
+            "can_write": payload["can_write"]
         }
     }

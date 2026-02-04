@@ -4,25 +4,30 @@ A local image library with automatic AI tagging, designed for organizing and bro
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/ZhvPhXrdZ4) - Help, feature requests, and discussions
 
-![Gallery View](screenshots/gallery.png)
+🌐 **[Visit Website](https://donutsdelivery.online/#localbooru)**
+
+![Gallery View](https://donutsdelivery.online/assets/mockups/thumbs/localbooru-mockup-1.svg)
 
 ## Download
 
 | Platform | Download |
 |----------|----------|
-| **Windows** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Windows.zip) &#124; [Installer](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Setup.exe) |
-| **Linux** | [AppImage](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.AppImage) |
-| **macOS** | [Apple Silicon](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.dmg) &#124; [Intel](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-x64.dmg) |
+| **Windows** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Windows.zip) &#124; [Portable (EXE)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Portable.exe) &#124; [Installer](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Setup.exe) |
+| **Linux** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.zip) &#124; [AppImage](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.AppImage) &#124; [.deb](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.deb) &#124; [.rpm](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.rpm) |
+| **macOS** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.zip) &#124; [DMG (Apple Silicon)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.dmg) |
 
 ### USB Portable Mode
 
-The **Portable (ZIP)** version automatically stores all data next to the app - no setup needed:
+The **Portable** versions automatically store all data next to the app - no setup needed:
 
 1. Download and extract to your USB drive or any folder
 2. Run the app - a `data` folder is created automatically
 3. Copy the entire folder to any computer and your library comes with you
 
-The installer version uses AppData instead (shared across updates).
+**Windows**: Fully self-contained with bundled Python.
+**Linux/macOS**: Requires system Python 3.10+ with pip installed.
+
+The installer versions use AppData/home directory instead (shared across updates).
 
 ## Features
 
@@ -37,15 +42,11 @@ The installer version uses AppData instead (shared across updates).
 - **Favorites** - Mark your best images and filter to show only favorites
 - **Pruning** - Clean up non-favorited images by moving them to a dumpster folder
 
-![Watch Directories](screenshots/directories.png)
-
 ### Modern Interface
 - **Masonry grid** - Beautiful responsive gallery layout
 - **Lightbox viewer** - Full-screen image viewing with keyboard navigation
 - **Dark theme** - Easy on the eyes for extended browsing sessions
 - **Filter sidebar** - Filter by tags, ratings, age range, and directories
-
-![Settings](screenshots/settings.png)
 
 ### Flexible Access
 - **Desktop app** - Native Electron application for Windows, macOS, and Linux
@@ -132,10 +133,47 @@ npm run build:win
 ## Tech Stack
 
 - **Frontend**: React + Vite
-- **Desktop**: Electron
+- **Desktop**: Tauri (Rust) / Electron (legacy)
 - **Backend**: Python FastAPI
 - **Database**: SQLite
-- **AI/ML**: PyTorch, Transformers, YOLO
+- **AI/ML**: ONNX Runtime, InsightFace
+- **Video**: GStreamer
+
+## Building from Source
+
+### Tauri (Recommended)
+
+```bash
+# Install Rust (if not installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Install Tauri CLI
+cargo install tauri-cli
+
+# Prepare Python bundle
+node scripts/prepare-python-bundle-linux.js
+
+# Build for Linux
+./scripts/build-tauri-linux.sh
+
+# Or build specific formats
+./scripts/build-tauri-linux.sh --appimage
+./scripts/build-tauri-linux.sh --deb
+./scripts/build-tauri-linux.sh --rpm
+```
+
+See [docs/LINUX_PACKAGING.md](docs/LINUX_PACKAGING.md) for detailed build instructions and system dependencies.
+
+### Electron (Legacy)
+
+```bash
+# Build for current platform
+npm run build
+
+# Build for specific platforms
+npm run build:linux
+npm run build:win
+```
 
 ## License
 

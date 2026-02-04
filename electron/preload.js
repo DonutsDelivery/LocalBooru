@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   installUpdate: () => ipcRenderer.invoke('updater:install'),
   getVersion: () => ipcRenderer.invoke('updater:get-version'),
+  isPortable: () => ipcRenderer.invoke('updater:is-portable'),
   onUpdaterStatus: (callback) => {
     const handler = (_, data) => callback(data);
     ipcRenderer.on('updater:status', handler);

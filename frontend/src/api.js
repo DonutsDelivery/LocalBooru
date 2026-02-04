@@ -3,10 +3,18 @@
  */
 import axios from 'axios'
 import { isMobileApp, getActiveServer } from './serverManager'
+import { validateServerCertificate, isHttps } from './sslPinning'
 
 // Current server config (cached for synchronous access)
 let currentServerUrl = null
 let currentServerAuth = null
+let currentCertFingerprint = null  // TLS certificate fingerprint for pinning
+let certValidated = false  // Whether certificate has been validated this session
+
+// Detect if running in Tauri
+function isTauriApp() {
+  return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
+}
 
 // Get API URL - same origin when served from backend, fallback for dev
 function getApiUrl() {
@@ -15,8 +23,13 @@ function getApiUrl() {
     return `${currentServerUrl}/api`
   }
 
-  // Check if we're running on localhost with Vite dev server (port 5173/5174)
-  const isDevServer = window.location.port === '5173' || window.location.port === '5174'
+  // Tauri app - always use localhost backend
+  if (isTauriApp()) {
+    return 'http://127.0.0.1:8790/api'
+  }
+
+  // Check if we're running on localhost with Vite dev server (port 5173/5174/5175)
+  const isDevServer = ['5173', '5174', '5175'].includes(window.location.port)
 
   if (isDevServer) {
     // Dev mode - Vite dev server, need to point to backend
@@ -35,6 +48,8 @@ export async function updateServerConfig() {
   const server = await getActiveServer()
   if (server) {
     currentServerUrl = server.url
+    currentCertFingerprint = server.certFingerprint || null
+    certValidated = false  // Reset validation on server change
     if (server.username && server.password) {
       currentServerAuth = 'Basic ' + btoa(`${server.username}:${server.password}`)
     } else {
@@ -42,9 +57,16 @@ export async function updateServerConfig() {
     }
     // Update axios base URL
     api.defaults.baseURL = `${server.url}/api`
+
+    // Validate certificate on first connection to HTTPS server
+    if (isHttps(server.url) && currentCertFingerprint) {
+      console.log('[API] Server uses HTTPS with certificate pinning')
+    }
   } else {
     currentServerUrl = null
     currentServerAuth = null
+    currentCertFingerprint = null
+    certValidated = false
     api.defaults.baseURL = null
   }
 }
@@ -61,10 +83,25 @@ const api = axios.create({
   timeout: 60000  // 60s timeout for busy servers
 })
 
-// Add request interceptor for auth on mobile
-api.interceptors.request.use((config) => {
-  if (isMobileApp() && currentServerAuth) {
-    config.headers['Authorization'] = currentServerAuth
+// Add request interceptor for auth on mobile and certificate validation
+api.interceptors.request.use(async (config) => {
+  if (isMobileApp()) {
+    // Add auth header if available
+    if (currentServerAuth) {
+      config.headers['Authorization'] = currentServerAuth
+    }
+
+    // Validate certificate on first request to HTTPS server with stored fingerprint
+    if (isHttps(currentServerUrl) && currentCertFingerprint && !certValidated) {
+      const result = await validateServerCertificate(currentServerUrl, currentCertFingerprint)
+      if (!result.valid) {
+        // Certificate validation failed - reject the request
+        console.error('[API] Certificate validation failed:', result.error)
+        throw new axios.Cancel(`Certificate validation failed: ${result.error}`)
+      }
+      certValidated = true
+      console.log('[API] Certificate validated successfully')
+    }
   }
   return config
 })
@@ -134,6 +171,12 @@ export async function fetchImages({
   max_age,
   has_faces,
   timeframe,
+  filename,
+  min_width,
+  min_height,
+  orientation,
+  min_duration,
+  max_duration,
   sort = 'newest',
   page = 1,
   per_page = 50
@@ -148,6 +191,12 @@ export async function fetchImages({
   if (max_age !== undefined && max_age !== null) params.append('max_age', max_age)
   if (has_faces !== undefined && has_faces !== null) params.append('has_faces', has_faces)
   if (timeframe) params.append('timeframe', timeframe)
+  if (filename) params.append('filename', filename)
+  if (min_width !== undefined && min_width !== null) params.append('min_width', min_width)
+  if (min_height !== undefined && min_height !== null) params.append('min_height', min_height)
+  if (orientation) params.append('orientation', orientation)
+  if (min_duration !== undefined && min_duration !== null) params.append('min_duration', min_duration)
+  if (max_duration !== undefined && max_duration !== null) params.append('max_duration', max_duration)
   params.append('sort', sort)
   params.append('page', page)
   params.append('per_page', per_page)
@@ -174,8 +223,12 @@ export async function updateRating(imageId, rating) {
 // Alias for Lightbox compatibility
 export const changeRating = updateRating
 
-export async function deleteImage(imageId, deleteFile = false) {
-  const response = await api.delete(`/images/${imageId}?delete_file=${deleteFile}`)
+export async function deleteImage(imageId, deleteFile = false, directoryId = null) {
+  let url = `/images/${imageId}?delete_file=${deleteFile}`
+  if (directoryId) {
+    url += `&directory_id=${directoryId}`
+  }
+  const response = await api.delete(url)
   return response.data
 }
 
@@ -233,6 +286,46 @@ export async function discardImagePreview(imageId) {
   return response.data
 }
 
+// Video preview frames API with rate limiting
+// Limit concurrent requests to prevent exhausting DB connection pool
+const previewFrameQueue = {
+  maxConcurrent: 3,
+  running: 0,
+  queue: [],
+
+  async enqueue(fn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ fn, resolve, reject })
+      this.process()
+    })
+  },
+
+  async process() {
+    if (this.running >= this.maxConcurrent || this.queue.length === 0) return
+
+    const { fn, resolve, reject } = this.queue.shift()
+    this.running++
+
+    try {
+      const result = await fn()
+      resolve(result)
+    } catch (err) {
+      reject(err)
+    } finally {
+      this.running--
+      this.process()
+    }
+  }
+}
+
+export async function fetchPreviewFrames(imageId, directoryId = null) {
+  return previewFrameQueue.enqueue(async () => {
+    const params = directoryId ? `?directory_id=${directoryId}` : ''
+    const response = await api.get(`/images/${imageId}/preview-frames${params}`)
+    return response.data
+  })
+}
+
 // Tags API
 export async function fetchTags({ q, category, page = 1, per_page = 50, sort = 'count' } = {}) {
   const params = new URLSearchParams()
@@ -256,10 +349,25 @@ export async function getTagStats() {
   return response.data
 }
 
-// Directories API
-export async function fetchDirectories() {
+// Directories API (with caching to avoid redundant calls)
+let directoriesCache = null
+let directoriesCacheTime = 0
+const DIRECTORIES_CACHE_TTL = 5000 // 5 seconds
+
+export async function fetchDirectories(forceRefresh = false) {
+  const now = Date.now()
+  if (!forceRefresh && directoriesCache && (now - directoriesCacheTime) < DIRECTORIES_CACHE_TTL) {
+    return directoriesCache
+  }
   const response = await api.get('/directories')
+  directoriesCache = response.data
+  directoriesCacheTime = now
   return response.data
+}
+
+export function invalidateDirectoriesCache() {
+  directoriesCache = null
+  directoriesCacheTime = 0
 }
 
 export async function addDirectory(path, options = {}) {
@@ -269,6 +377,7 @@ export async function addDirectory(path, options = {}) {
     recursive: options.recursive ?? true,
     auto_tag: options.auto_tag ?? true
   })
+  invalidateDirectoriesCache()
   return response.data
 }
 
@@ -278,16 +387,35 @@ export async function addParentDirectory(path, options = {}) {
     recursive: options.recursive ?? true,
     auto_tag: options.auto_tag ?? true
   })
+  invalidateDirectoriesCache()
   return response.data
 }
 
 export async function updateDirectory(id, updates) {
   const response = await api.patch(`/directories/${id}`, updates)
+  invalidateDirectoriesCache()
+  return response.data
+}
+
+export async function updateDirectoryPath(id, newPath) {
+  const response = await api.patch(`/directories/${id}/path`, { new_path: newPath })
+  invalidateDirectoriesCache()
   return response.data
 }
 
 export async function removeDirectory(id, keepImages = false) {
   const response = await api.delete(`/directories/${id}?keep_images=${keepImages}`)
+  invalidateDirectoriesCache()
+  return response.data
+}
+
+export async function bulkDeleteDirectories(directoryIds, keepImages = false) {
+  // Long timeout for bulk operations with many images
+  const response = await api.post('/directories/bulk-delete',
+    { directory_ids: directoryIds, keep_images: keepImages },
+    { timeout: 600000 }  // 10 minute timeout for large deletions
+  )
+  invalidateDirectoriesCache()
   return response.data
 }
 
@@ -324,8 +452,14 @@ export async function verifyFiles() {
   return response.data
 }
 
-export async function tagUntagged() {
-  const response = await api.post('/library/tag-untagged')
+export async function tagUntagged(directoryId = null) {
+  const params = directoryId ? { directory_id: directoryId } : {}
+  const response = await api.post('/library/tag-untagged', null, { params })
+  return response.data
+}
+
+export async function clearDirectoryTagQueue(directoryId) {
+  const response = await api.delete(`/library/queue/pending/directory/${directoryId}`)
   return response.data
 }
 
@@ -351,6 +485,26 @@ export async function resumeQueue() {
 
 export async function cleanMissingFiles() {
   const response = await api.post('/library/clean-missing')
+  return response.data
+}
+
+export async function verifyDirectoryFiles(directoryId) {
+  const response = await api.post(`/directories/${directoryId}/verify`)
+  return response.data
+}
+
+export async function repairDirectoryPaths(directoryId) {
+  const response = await api.post(`/directories/${directoryId}/repair`)
+  return response.data
+}
+
+export async function bulkVerifyDirectories(directoryIds) {
+  const response = await api.post('/directories/bulk-verify', { directory_ids: directoryIds })
+  return response.data
+}
+
+export async function bulkRepairDirectories(directoryIds) {
+  const response = await api.post('/directories/bulk-repair', { directory_ids: directoryIds })
   return response.data
 }
 
@@ -458,6 +612,13 @@ export function getMediaUrl(path) {
     return `${currentServerUrl}${cleanPath}`
   }
 
+  // Dev mode - Vite dev server needs full URL to backend
+  const isDevServer = window.location.port === '5173' || window.location.port === '5174'
+  if (isDevServer) {
+    const cleanPath = path.startsWith('/') ? path : `/${path}`
+    return `http://127.0.0.1:8790${cleanPath}`
+  }
+
   // On web, relative URLs work fine
   return path
 }
@@ -505,13 +666,26 @@ export async function getMigrationInfo() {
   return response.data
 }
 
-export async function validateMigration(mode) {
-  const response = await api.post('/settings/migration/validate', { mode })
+export async function getMigrationDirectories(mode) {
+  const response = await api.get('/settings/migration/directories', { params: { mode } })
   return response.data
 }
 
-export async function startMigration(mode) {
-  const response = await api.post('/settings/migration/start', { mode })
+export async function validateMigration(mode, directoryIds = null) {
+  const payload = { mode }
+  if (directoryIds && directoryIds.length > 0) {
+    payload.directory_ids = directoryIds
+  }
+  const response = await api.post('/settings/migration/validate', payload)
+  return response.data
+}
+
+export async function startMigration(mode, directoryIds = null) {
+  const payload = { mode }
+  if (directoryIds && directoryIds.length > 0) {
+    payload.directory_ids = directoryIds
+  }
+  const response = await api.post('/settings/migration/start', payload)
   return response.data
 }
 
@@ -532,6 +706,23 @@ export async function deleteSourceData(mode) {
 
 export async function verifyMigration(mode) {
   const response = await api.post('/settings/migration/verify', { mode })
+  return response.data
+}
+
+// Import API (add directories to existing database)
+export async function validateImport(mode, directoryIds) {
+  const response = await api.post('/settings/migration/import/validate', {
+    mode,
+    directory_ids: directoryIds
+  })
+  return response.data
+}
+
+export async function startImport(mode, directoryIds) {
+  const response = await api.post('/settings/migration/import/start', {
+    mode,
+    directory_ids: directoryIds
+  })
   return response.data
 }
 
@@ -556,4 +747,100 @@ export function subscribeToMigrationEvents(onEvent) {
   return () => {
     eventSource.close()
   }
+}
+
+// Optical Flow Interpolation API
+export async function getOpticalFlowConfig() {
+  const response = await api.get('/settings/optical-flow')
+  return response.data
+}
+
+export async function updateOpticalFlowConfig(config) {
+  const response = await api.post('/settings/optical-flow', config)
+  return response.data
+}
+
+export async function playVideoInterpolated(filePath, startPosition = 0, qualityPreset = null) {
+  // Longer timeout since buffering can take time
+  const response = await api.post('/settings/optical-flow/play', {
+    file_path: filePath,
+    start_position: startPosition,
+    quality_preset: qualityPreset
+  }, {
+    timeout: 60000  // 60 second timeout for initial buffering
+  })
+  return response.data
+}
+
+export async function stopInterpolatedStream() {
+  const response = await api.post('/settings/optical-flow/stop')
+  return response.data
+}
+
+// SVP (SmoothVideo Project) Interpolation API
+export async function getSVPConfig() {
+  const response = await api.get('/settings/svp')
+  return response.data
+}
+
+export async function updateSVPConfig(config) {
+  const response = await api.post('/settings/svp', config)
+  return response.data
+}
+
+export async function playVideoSVP(filePath, startPosition = 0, qualityPreset = null) {
+  // Longer timeout since SVP processing can take time
+  const response = await api.post('/settings/svp/play', {
+    file_path: filePath,
+    start_position: startPosition,
+    quality_preset: qualityPreset
+  }, {
+    timeout: 60000  // 60 second timeout for initial buffering
+  })
+  return response.data
+}
+
+export async function stopSVPStream() {
+  const response = await api.post('/settings/svp/stop')
+  return response.data
+}
+
+// Simple FFmpeg-based transcoding (fallback when SVP/OpticalFlow not available)
+export async function playVideoTranscode(filePath, startPosition = 0, qualityPreset = null) {
+  const response = await api.post('/settings/transcode/play', {
+    file_path: filePath,
+    start_position: startPosition,
+    quality_preset: qualityPreset
+  }, {
+    timeout: 60000  // 60 second timeout for buffering
+  })
+  return response.data
+}
+
+export async function stopTranscodeStream() {
+  const response = await api.post('/settings/transcode/stop')
+  return response.data
+}
+
+// Get video info including VFR detection
+export async function getVideoInfo(filePath) {
+  const response = await api.post('/settings/video-info', {
+    file_path: filePath
+  })
+  return response.data
+}
+
+// Utility endpoints
+export async function getFileDimensions(filePath) {
+  const response = await api.get('/settings/util/dimensions', {
+    params: { file_path: filePath }
+  })
+  return response.data
+}
+
+export async function getFileInfo(filePath) {
+  const response = await api.get('/images/media/file-info', {
+    params: { path: filePath }
+  })
+  return response.data
 }

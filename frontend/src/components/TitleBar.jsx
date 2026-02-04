@@ -1,37 +1,51 @@
 /**
  * Custom Title Bar Component
  * Replaces the native OS title bar for a consistent look
- * Only renders in Electron environment
+ * Only renders in Electron/Tauri environment or mobile app
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { isMobileApp } from '../serverManager';
+import { getDesktopAPI, isDesktopApp, isTauri } from '../tauriAPI';
 import './TitleBar.css';
 
 const TITLE_BAR_HEIGHT = 32;
 
-export default function TitleBar() {
+export default function TitleBar({ onSwitchServer }) {
   const [isMaximized, setIsMaximized] = useState(false);
   const isElectron = window.electronAPI?.isElectron;
+  const isTauriApp = isTauri();
+  const isDesktop = isElectron || isTauriApp;
+  const isMobile = isMobileApp();
+  const apiRef = useRef(null);
+
+  // Get desktop API on mount
+  useEffect(() => {
+    apiRef.current = getDesktopAPI();
+  }, []);
 
   // Set CSS variable for title bar height offset
   useEffect(() => {
-    if (isElectron) {
+    if (isDesktop || isMobile) {
       document.documentElement.style.setProperty('--title-bar-height', `${TITLE_BAR_HEIGHT}px`);
     } else {
       document.documentElement.style.setProperty('--title-bar-height', '0px');
     }
-  }, [isElectron]);
+  }, [isDesktop, isMobile]);
 
   // Check initial maximized state
   useEffect(() => {
-    if (!isElectron) return;
+    if (!isDesktop) return;
     const checkMaximized = async () => {
-      const maximized = await window.electronAPI.isMaximized();
-      setIsMaximized(maximized);
+      const api = apiRef.current;
+      if (api?.isMaximized) {
+        const maximized = await api.isMaximized();
+        setIsMaximized(maximized);
+      }
     };
     checkMaximized();
-  }, [isElectron]);
+  }, [isDesktop]);
 
-  // Check for updates when window gains focus
+  // Check for updates when window gains focus (Electron only for now)
   useEffect(() => {
     if (!isElectron) return;
 
@@ -43,26 +57,71 @@ export default function TitleBar() {
     return () => window.removeEventListener('focus', handleFocus);
   }, [isElectron]);
 
-  // Only render in Electron
-  if (!isElectron) {
+  // On mobile app, show minimal title bar with switch server button
+  if (isMobile) {
+    return (
+      <div className="title-bar mobile">
+        <div className="title-bar-drag">
+          <div className="title-bar-icon">
+            <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
+              <rect x="10" y="10" width="44" height="44" rx="6" fill="var(--bg-tertiary)" stroke="currentColor" strokeWidth="3"/>
+              <circle cx="22" cy="22" r="6" fill="currentColor"/>
+              <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="currentColor" opacity="0.85"/>
+            </svg>
+          </div>
+          <span className="title-bar-title">LocalBooru</span>
+        </div>
+
+        <div className="title-bar-controls">
+          <button
+            className="title-bar-btn switch-server"
+            onClick={onSwitchServer}
+            title="Switch Server"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+              <line x1="6" y1="6" x2="6.01" y2="6"/>
+              <line x1="6" y1="18" x2="6.01" y2="18"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Only render full title bar in Electron or Tauri
+  if (!isDesktop) {
     return null;
   }
 
-  const handleMinimize = () => {
-    window.electronAPI.minimizeWindow();
+  const handleMinimize = async () => {
+    const api = apiRef.current;
+    if (api?.minimizeWindow) {
+      await api.minimizeWindow();
+    }
   };
 
   const handleMaximize = async () => {
-    const maximized = await window.electronAPI.maximizeWindow();
-    setIsMaximized(maximized);
+    const api = apiRef.current;
+    if (api?.maximizeWindow) {
+      const maximized = await api.maximizeWindow();
+      setIsMaximized(maximized);
+    }
   };
 
-  const handleClose = () => {
-    window.electronAPI.closeWindow();
+  const handleClose = async () => {
+    const api = apiRef.current;
+    if (api?.closeWindow) {
+      await api.closeWindow();
+    }
   };
 
-  const handleQuit = () => {
-    window.electronAPI.quitApp();
+  const handleQuit = async () => {
+    const api = apiRef.current;
+    if (api?.quitApp) {
+      await api.quitApp();
+    }
   };
 
   return (

@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react'
 import {
   getMigrationInfo,
+  getMigrationDirectories,
   validateMigration,
   startMigration,
+  validateImport,
+  startImport,
   getMigrationStatus,
   deleteSourceData,
   cleanupMigration,
   subscribeToMigrationEvents
 } from '../api'
+import { getDesktopAPI, isDesktopApp } from '../tauriAPI'
 import './MigrationSettings.css'
 
 function formatBytes(bytes) {
@@ -26,6 +30,12 @@ export default function MigrationSettings() {
   const [result, setResult] = useState(null)
   const [validation, setValidation] = useState(null)
   const [error, setError] = useState(null)
+
+  // Directory selection state
+  const [directories, setDirectories] = useState([])
+  const [selectedDirIds, setSelectedDirIds] = useState(new Set())
+  const [loadingDirs, setLoadingDirs] = useState(false)
+  const [dirMode, setDirMode] = useState(null) // Which mode we loaded directories for
 
   useEffect(() => {
     loadInfo()
@@ -87,10 +97,80 @@ export default function MigrationSettings() {
     }
   }
 
+  async function loadDirectories(mode) {
+    try {
+      setLoadingDirs(true)
+      setError(null)
+      const data = await getMigrationDirectories(mode)
+      if (data.success) {
+        setDirectories(data.directories)
+        setDirMode(mode)
+        // Select all by default
+        setSelectedDirIds(new Set(data.directories.map(d => d.id)))
+      } else {
+        setError('Failed to load directories: ' + data.error)
+      }
+    } catch (e) {
+      setError('Failed to load directories: ' + e.message)
+    } finally {
+      setLoadingDirs(false)
+    }
+  }
+
+  function toggleDirectory(id) {
+    setSelectedDirIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+    // Clear validation when selection changes
+    setValidation(null)
+  }
+
+  function selectAll() {
+    setSelectedDirIds(new Set(directories.map(d => d.id)))
+    setValidation(null)
+  }
+
+  function deselectAll() {
+    setSelectedDirIds(new Set())
+    setValidation(null)
+  }
+
+  // Calculate selected counts
+  const selectedDirs = directories.filter(d => selectedDirIds.has(d.id))
+  const selectedImageCount = selectedDirs.reduce((sum, d) => sum + d.image_count, 0)
+  const selectedThumbSize = selectedDirs.reduce((sum, d) => sum + d.thumbnail_size, 0)
+
   async function handleValidate(mode) {
     try {
       setError(null)
-      const result = await validateMigration(mode)
+      // Load directories if not already loaded for this mode
+      if (dirMode !== mode) {
+        await loadDirectories(mode)
+      }
+
+      const directoryIds = selectedDirIds.size > 0 ? Array.from(selectedDirIds) : null
+
+      // Determine if this should be an import (destination has data) or migration
+      const isImport = (mode === 'system_to_portable' && info.portable_has_data) ||
+                       (mode === 'portable_to_system' && info.system_has_data)
+
+      let result
+      if (isImport && directoryIds && directoryIds.length > 0) {
+        // Import: add directories to existing database
+        result = await validateImport(mode, directoryIds)
+        result.isImport = true
+      } else {
+        // Migration: requires empty destination
+        result = await validateMigration(mode, directoryIds)
+        result.isImport = false
+      }
+
       setValidation({ mode, ...result })
     } catch (e) {
       setError('Validation failed: ' + e.message)
@@ -98,7 +178,23 @@ export default function MigrationSettings() {
   }
 
   async function handleStartMigration(mode) {
-    if (!confirm(`Start migration?\n\nThis will copy all your data to the ${mode === 'system_to_portable' ? 'portable' : 'system'} location.`)) {
+    const dirCount = selectedDirIds.size
+    const isSelective = dirCount > 0 && dirCount < directories.length
+
+    // Determine if this should be an import (destination has data) or migration
+    const isImport = (mode === 'system_to_portable' && info.portable_has_data) ||
+                     (mode === 'portable_to_system' && info.system_has_data)
+
+    const actionWord = isImport ? 'import' : 'migration'
+    let confirmMsg = `Start ${actionWord}?\n\nThis will ${isImport ? 'add selected directories to' : 'copy data to'} the ${mode === 'system_to_portable' ? 'portable' : 'system'} location.`
+    if (isSelective || isImport) {
+      confirmMsg += `\n\n${dirCount} of ${directories.length} directories selected (${selectedImageCount} images)`
+    }
+    if (isImport && validation?.images_to_skip > 0) {
+      confirmMsg += `\n\nNote: ${validation.images_to_skip} duplicate images will be skipped.`
+    }
+
+    if (!confirm(confirmMsg)) {
       return
     }
 
@@ -108,14 +204,24 @@ export default function MigrationSettings() {
       setResult(null)
       setMigrating(true)
 
-      const response = await startMigration(mode)
+      const directoryIds = selectedDirIds.size > 0 ? Array.from(selectedDirIds) : null
+
+      let response
+      if (isImport && directoryIds && directoryIds.length > 0) {
+        response = await startImport(mode, directoryIds)
+        response.isImport = true
+      } else {
+        response = await startMigration(mode, directoryIds)
+        response.isImport = false
+      }
+
       if (!response.success) {
         setMigrating(false)
         setError(response.error)
       }
     } catch (e) {
       setMigrating(false)
-      setError('Failed to start migration: ' + e.message)
+      setError('Failed to start: ' + e.message)
     }
   }
 
@@ -168,8 +274,9 @@ export default function MigrationSettings() {
   }
 
   const isPortable = info.current_mode === 'portable'
-  const canMigrateToPortable = !isPortable && info.portable_path && info.system_has_data && !info.portable_has_data
-  const canMigrateToSystem = isPortable && info.portable_has_data && !info.system_has_data
+  // Allow migration even if destination has data (for selective/merge migrations)
+  const canMigrateToPortable = info.portable_path && info.system_has_data
+  const canMigrateToSystem = info.portable_has_data
 
   return (
     <div className="migration-settings">
@@ -251,16 +358,30 @@ export default function MigrationSettings() {
           <div className={`migration-result ${result.success ? 'success' : 'error'}`}>
             {result.success ? (
               <>
-                <h3>Migration Complete!</h3>
-                <p>Copied {result.files_copied} files ({formatBytes(result.bytes_copied)})</p>
+                <h3>{result.import === true ? 'Import' : 'Migration'} Complete!</h3>
+                {result.import === true ? (
+                  <>
+                    <p>Imported {result.directories_imported || 0} directories with {result.images_imported || 0} images</p>
+                    {(result.images_skipped || 0) > 0 && (
+                      <p>{result.images_skipped} duplicate images were skipped</p>
+                    )}
+                    <p>Tags: {result.tags_created || 0} created, {result.tags_reused || 0} reused</p>
+                    <p>Copied {result.files_copied || 0} files ({formatBytes(result.bytes_copied || 0)})</p>
+                  </>
+                ) : (
+                  <p>Copied {result.files_copied || 0} files ({formatBytes(result.bytes_copied || 0)})</p>
+                )}
                 <p><strong>Important:</strong> Restart LocalBooru to use the new data location.</p>
                 <div className="result-actions">
-                  {window.electronAPI?.restartBackend && (
+                  {isDesktopApp() && (
                     <button
                       onClick={async () => {
                         if (!confirm('Restart LocalBooru?\n\nThe app will restart and use the new data location.')) return
                         try {
-                          await window.electronAPI.restartBackend()
+                          const api = getDesktopAPI()
+                          if (api?.restartBackend) {
+                            await api.restartBackend()
+                          }
                           // Reload the page after backend restarts
                           setTimeout(() => window.location.reload(), 2000)
                         } catch (e) {
@@ -303,7 +424,7 @@ export default function MigrationSettings() {
                 <p className="warning">Run LocalBooru from a portable installation to enable this option.</p>
               )}
               {info.portable_has_data && (
-                <p className="warning">Portable location already has data. Remove it first to migrate.</p>
+                <p className="info">Portable location has existing data. Selected directories will be merged.</p>
               )}
               {!info.system_has_data && (
                 <p className="warning">No data in system location to migrate.</p>
@@ -312,18 +433,42 @@ export default function MigrationSettings() {
               {canMigrateToPortable && (
                 <>
                   <button onClick={() => handleValidate('system_to_portable')}>
-                    Check Migration
+                    {loadingDirs && dirMode !== 'system_to_portable' ? 'Loading...' : 'Check Migration'}
                   </button>
+
+                  {/* Directory selection - show after loading directories */}
+                  {dirMode === 'system_to_portable' && directories.length > 0 && (
+                    <DirectorySelector
+                      directories={directories}
+                      selectedIds={selectedDirIds}
+                      onToggle={toggleDirectory}
+                      onSelectAll={selectAll}
+                      onDeselectAll={deselectAll}
+                      selectedImageCount={selectedImageCount}
+                      selectedThumbSize={selectedThumbSize}
+                    />
+                  )}
+
                   {validation?.mode === 'system_to_portable' && (
                     <div className="validation-result">
                       {validation.valid ? (
                         <>
-                          <p className="success">Ready to migrate {formatBytes(validation.bytes_to_copy)} ({validation.files_to_copy} files)</p>
+                          <p className="success">
+                            Ready to {validation.isImport ? 'import' : 'migrate'} {formatBytes(validation.bytes_to_copy)} ({validation.files_to_copy} files)
+                            {(validation.selective || validation.isImport) && ` from ${validation.directory_count} directories`}
+                          </p>
+                          {validation.isImport && (
+                            <p className="info">
+                              {validation.images_to_import} images to import
+                              {validation.images_to_skip > 0 && `, ${validation.images_to_skip} duplicates will be skipped`}
+                            </p>
+                          )}
                           <button
                             onClick={() => handleStartMigration('system_to_portable')}
                             className="primary-btn"
+                            disabled={selectedDirIds.size === 0}
                           >
-                            Start Migration
+                            Start {validation.isImport ? 'Import' : 'Migration'}
                           </button>
                         </>
                       ) : (
@@ -340,11 +485,8 @@ export default function MigrationSettings() {
               <h3>Portable → System</h3>
               <p>Copy all data to the system location for a standard installation.</p>
 
-              {!isPortable && (
-                <p className="warning">Run LocalBooru from a portable installation to enable this option.</p>
-              )}
               {info.system_has_data && (
-                <p className="warning">System location already has data. Remove it first to migrate.</p>
+                <p className="info">System location has existing data. Selected directories will be merged.</p>
               )}
               {!info.portable_has_data && (
                 <p className="warning">No data in portable location to migrate.</p>
@@ -353,18 +495,42 @@ export default function MigrationSettings() {
               {canMigrateToSystem && (
                 <>
                   <button onClick={() => handleValidate('portable_to_system')}>
-                    Check Migration
+                    {loadingDirs && dirMode !== 'portable_to_system' ? 'Loading...' : 'Check Migration'}
                   </button>
+
+                  {/* Directory selection - show after loading directories */}
+                  {dirMode === 'portable_to_system' && directories.length > 0 && (
+                    <DirectorySelector
+                      directories={directories}
+                      selectedIds={selectedDirIds}
+                      onToggle={toggleDirectory}
+                      onSelectAll={selectAll}
+                      onDeselectAll={deselectAll}
+                      selectedImageCount={selectedImageCount}
+                      selectedThumbSize={selectedThumbSize}
+                    />
+                  )}
+
                   {validation?.mode === 'portable_to_system' && (
                     <div className="validation-result">
                       {validation.valid ? (
                         <>
-                          <p className="success">Ready to migrate {formatBytes(validation.bytes_to_copy)} ({validation.files_to_copy} files)</p>
+                          <p className="success">
+                            Ready to {validation.isImport ? 'import' : 'migrate'} {formatBytes(validation.bytes_to_copy)} ({validation.files_to_copy} files)
+                            {(validation.selective || validation.isImport) && ` from ${validation.directory_count} directories`}
+                          </p>
+                          {validation.isImport && (
+                            <p className="info">
+                              {validation.images_to_import} images to import
+                              {validation.images_to_skip > 0 && `, ${validation.images_to_skip} duplicates will be skipped`}
+                            </p>
+                          )}
                           <button
                             onClick={() => handleStartMigration('portable_to_system')}
                             className="primary-btn"
+                            disabled={selectedDirIds.size === 0}
                           >
-                            Start Migration
+                            Start {validation.isImport ? 'Import' : 'Migration'}
                           </button>
                         </>
                       ) : (
@@ -384,10 +550,64 @@ export default function MigrationSettings() {
         <ul className="migration-notes">
           <li>Migration copies your database, thumbnails, settings, and cached data.</li>
           <li>Your original image files are NOT moved - they stay in your watch directories.</li>
-          <li>After migration, restart LocalBooru to use the new data location.</li>
+          <li>You can select which watch directories to include.</li>
+          <li><strong>Import vs Migration:</strong> If the destination already has data, selected directories will be imported (merged) into the existing database. Duplicate images are automatically skipped.</li>
+          <li>After migration/import, restart LocalBooru to use the new data location.</li>
           <li>You can delete the source data after verifying the migration was successful.</li>
         </ul>
       </section>
+    </div>
+  )
+}
+
+// Directory selection component
+function DirectorySelector({
+  directories,
+  selectedIds,
+  onToggle,
+  onSelectAll,
+  onDeselectAll,
+  selectedImageCount,
+  selectedThumbSize
+}) {
+  return (
+    <div className="directory-selector">
+      <div className="directory-selector-header">
+        <h4>Select Watch Directories to Migrate</h4>
+        <div className="directory-selector-actions">
+          <button type="button" onClick={onSelectAll} className="small-btn">Select All</button>
+          <button type="button" onClick={onDeselectAll} className="small-btn">Deselect All</button>
+        </div>
+      </div>
+
+      <div className="directory-list">
+        {directories.map(dir => (
+          <label key={dir.id} className={`directory-item ${!dir.path_accessible ? 'inaccessible' : ''}`}>
+            <input
+              type="checkbox"
+              checked={selectedIds.has(dir.id)}
+              onChange={() => onToggle(dir.id)}
+            />
+            <div className="directory-info">
+              <span className="directory-name">{dir.name}</span>
+              <span className="directory-path">{dir.path}</span>
+              <span className="directory-stats">
+                {dir.image_count} images, {formatBytes(dir.thumbnail_size)} thumbnails
+              </span>
+              {dir.warning && (
+                <span className="directory-warning">
+                  {dir.warning}
+                </span>
+              )}
+            </div>
+          </label>
+        ))}
+      </div>
+
+      <div className="directory-summary">
+        <strong>Selected:</strong> {selectedIds.size} of {directories.length} directories
+        ({selectedImageCount} images, {formatBytes(selectedThumbSize)} thumbnails)
+      </div>
     </div>
   )
 }

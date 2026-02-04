@@ -8,7 +8,7 @@
   transition: all 0.2s ease;
 }
 
-.media-item:hover {
+.media-item.loaded:hover {
   transform: translateY(-4px) scale(1.01);
   box-shadow: var(--shadow-lg), 0 0 20px rgba(255, 98, 164, 0.15), 0 0 40px rgba(0, 255, 163, 0.1);
   border-color: rgba(255, 98, 164, 0.3);
@@ -546,4 +546,22 @@ button.rating-badge.clickable.updating {
 .media-item.selectable .favorite-indicator {
   right: auto;
   left: 40px;
+}
+
+/* Thumbnail generating placeholder */
+.thumbnail-generating {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  min-height: 150px;
+}
+
+.thumbnail-generating svg {
+  width: 48px;
+  height: 48px;
+  color: var(--text-muted);
+  opacity: 0.5;
 }

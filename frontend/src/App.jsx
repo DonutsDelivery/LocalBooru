@@ -2,8 +2,10 @@
  * LocalBooru - Local image library with auto-tagging
  * Simplified single-user version
  */
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { BrowserRouter, Routes, Route, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { BrowserRouter, Routes, Route, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+import { App as CapacitorApp } from '@capacitor/app'
+import { isMobileApp } from './serverManager'
 import MasonryGrid from './components/MasonryGrid'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
@@ -11,243 +13,51 @@ import TitleBar from './components/TitleBar'
 import ComfyUIConfigModal from './components/ComfyUIConfigModal'
 import NetworkSettings from './components/NetworkSettings'
 import ServerSettings from './components/ServerSettings'
+import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
+import OpticalFlowSettings from './components/OpticalFlowSettings'
 import QRConnect from './components/QRConnect'
-import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
+import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
+import DirectoriesPage from './pages/DirectoriesPage'
 import './App.css'
 
+// Column count calculation (mirrors MasonryGrid logic, extended for high-res screens)
+const baseColumnCounts = {
+  3840: 10, 3200: 9, 2400: 8, 1800: 7, 1400: 6, 1200: 5, 900: 4, 600: 3, 0: 2
+}
+const tileSizeAdjustments = { 1: 3, 2: 1, 3: 0, 4: -2, 5: -4 }
+const tileWidths = { 1: 200, 2: 250, 3: 300, 4: 450, 5: 600 }
 
-// Directory management page
-function DirectoriesPage() {
-  const [directories, setDirectories] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [scanning, setScanning] = useState({})
-  const [pruning, setPruning] = useState({})
-  const [comfyuiConfigDir, setComfyuiConfigDir] = useState(null)
-  const [stats, setStats] = useState(null)
-
-  const refreshDirectories = async () => {
-    const { fetchDirectories } = await import('./api')
-    const data = await fetchDirectories()
-    setDirectories(data.directories || [])
-  }
-
-  useEffect(() => {
-    refreshDirectories()
-      .catch(console.error)
-      .finally(() => setLoading(false))
-    getLibraryStats().then(setStats).catch(console.error)
-  }, [])
-
-  const handleAddDirectory = async () => {
-    if (window.electronAPI) {
-      const path = await window.electronAPI.addDirectory()
-      if (path) {
-        const { addDirectory } = await import('./api')
-        await addDirectory(path)
-        await refreshDirectories()
-      }
-    } else {
-      alert('Directory picker only available in Electron app')
+function getColumnCount(width, tileSize) {
+  const adjustment = tileSizeAdjustments[tileSize] || 0
+  const breakpoints = Object.keys(baseColumnCounts).map(Number).sort((a, b) => b - a)
+  for (const bp of breakpoints) {
+    if (width >= bp) {
+      return Math.max(1, baseColumnCounts[bp] + adjustment)
     }
   }
+  return Math.max(1, 2 + adjustment)
+}
 
-  const handleAddParentDirectory = async () => {
-    if (window.electronAPI) {
-      const path = await window.electronAPI.addDirectory()
-      if (path) {
-        const { addParentDirectory } = await import('./api')
-        const result = await addParentDirectory(path)
-        alert(result.message)
-        await refreshDirectories()
-      }
-    } else {
-      alert('Directory picker only available in Electron app')
-    }
-  }
-
-  const handleRescan = async (dirId) => {
-    setScanning(prev => ({ ...prev, [dirId]: true }))
-    try {
-      const { scanDirectory } = await import('./api')
-      await scanDirectory(dirId)
-      await refreshDirectories()
-    } catch (error) {
-      console.error('Scan failed:', error)
-      alert('Scan failed: ' + error.message)
-    } finally {
-      setScanning(prev => ({ ...prev, [dirId]: false }))
-    }
-  }
-
-  const handleRemove = async (dirId, dirName) => {
-    if (!confirm(`Remove "${dirName}" from watch list?\n\nImages will be removed from library.\nActual files on disk will NOT be deleted.`)) {
-      return
-    }
-    try {
-      const { removeDirectory } = await import('./api')
-      await removeDirectory(dirId, false)
-      await refreshDirectories()
-    } catch (error) {
-      console.error('Remove failed:', error)
-      alert('Remove failed: ' + error.message)
-    }
-  }
-
-  const handlePrune = async (dirId, dirName, favoritedCount) => {
-    const nonFavorited = directories.find(d => d.id === dirId)?.image_count - favoritedCount
-    const savedDumpsterPath = localStorage.getItem('localbooru_dumpster_path') || null
-    const dumpsterInfo = savedDumpsterPath ? `\nDumpster: ${savedDumpsterPath}` : ''
-    if (!confirm(`Prune "${dirName}"?\n\nThis will move ${nonFavorited} non-favorited images to the dumpster folder.\nFavorited images (${favoritedCount}) will be kept.${dumpsterInfo}`)) {
-      return
-    }
-    setPruning(prev => ({ ...prev, [dirId]: true }))
-    try {
-      const { pruneDirectory } = await import('./api')
-      const result = await pruneDirectory(dirId, savedDumpsterPath)
-      alert(`Pruned ${result.pruned} images to:\n${result.dumpster_path}`)
-      await refreshDirectories()
-      getLibraryStats().then(setStats).catch(console.error)
-    } catch (error) {
-      console.error('Prune failed:', error)
-      alert('Prune failed: ' + error.message)
-    } finally {
-      setPruning(prev => ({ ...prev, [dirId]: false }))
-    }
-  }
-
-  return (
-    <div className="app">
-      <div className="main-container">
-        <Sidebar stats={stats} />
-        <main className="content with-sidebar">
-          <div className="page directories-page">
-            <h1>Watch Directories</h1>
-            <p>Add folders to automatically import and tag images.</p>
-
-            <div className="directory-buttons">
-              <button onClick={handleAddDirectory} className="add-directory-btn">
-                + Add Directory
-              </button>
-              <button onClick={handleAddParentDirectory} className="add-directory-btn">
-                + Add Parent Directory
-              </button>
-            </div>
-
-            {loading ? (
-              <p>Loading...</p>
-            ) : directories.length === 0 ? (
-              <p className="empty-state">No directories added yet. Add a folder to get started!</p>
-            ) : (
-              <ul className="directory-list">
-                {directories.map(dir => (
-                  <li key={dir.id} className={`directory-item ${dir.enabled ? '' : 'disabled'}`}>
-                    <div className="directory-info">
-                      <strong>{dir.name}</strong>
-                      <span className="directory-path">{dir.path}</span>
-                      <span className="directory-stats">{dir.image_count} images</span>
-                      <div className="directory-diagnostics">
-                        <span className="diagnostic" title="Images with age detection">
-                          Age: {dir.age_detected_pct}%
-                        </span>
-                        <span className="diagnostic" title="Images with booru tags">
-                          Tagged: {dir.tagged_pct}%
-                        </span>
-                        <span className="diagnostic" title="Favorited images">
-                          Favorites: {dir.favorited_count}
-                        </span>
-                        <button
-                          className="diagnostic toggle-btn"
-                          onClick={() => {
-                            const newValue = !dir.auto_age_detect
-                            setDirectories(dirs => dirs.map(d =>
-                              d.id === dir.id ? {...d, auto_age_detect: newValue} : d
-                            ))
-                            updateDirectory(dir.id, { auto_age_detect: newValue })
-                              .catch(err => {
-                                console.error('Failed to update:', err)
-                                refreshDirectories()
-                              })
-                          }}
-                        >
-                          {dir.auto_age_detect ? '☑' : '☐'} Age Detect
-                        </button>
-                        <button
-                          className="diagnostic toggle-btn public-toggle"
-                          onClick={() => {
-                            const newValue = !dir.public_access
-                            setDirectories(dirs => dirs.map(d =>
-                              d.id === dir.id ? {...d, public_access: newValue} : d
-                            ))
-                            updateDirectory(dir.id, { public_access: newValue })
-                              .catch(err => {
-                                console.error('Failed to update:', err)
-                                refreshDirectories()
-                              })
-                          }}
-                          title="Allow public network access to this directory"
-                        >
-                          {dir.public_access ? '☑' : '☐'} Public
-                        </button>
-                      </div>
-                    </div>
-                    <div className="directory-actions">
-                      <button
-                        className="rescan-btn"
-                        onClick={() => handleRescan(dir.id)}
-                        disabled={scanning[dir.id]}
-                      >
-                        {scanning[dir.id] ? 'Scanning...' : 'Rescan'}
-                      </button>
-                      <button
-                        className="prune-btn"
-                        onClick={() => handlePrune(dir.id, dir.name || dir.path, dir.favorited_count)}
-                        disabled={pruning[dir.id] || dir.image_count === 0}
-                        title="Move non-favorited images to dumpster"
-                      >
-                        {pruning[dir.id] ? 'Pruning...' : 'Prune'}
-                      </button>
-                      <button
-                        className="comfyui-btn"
-                        onClick={() => setComfyuiConfigDir(dir)}
-                        title="Configure ComfyUI metadata extraction"
-                      >
-                        ComfyUI
-                      </button>
-                      <button
-                        className="remove-btn"
-                        onClick={() => handleRemove(dir.id, dir.name || dir.path)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <div className="directory-status">
-                      {!dir.path_exists && <span className="warning">Path not found</span>}
-                      {dir.enabled ? '✓ Active' : 'Disabled'}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </main>
-      </div>
-
-      {/* ComfyUI Configuration Modal */}
-      {comfyuiConfigDir && (
-        <ComfyUIConfigModal
-          directoryId={comfyuiConfigDir.id}
-          directoryName={comfyuiConfigDir.name || comfyuiConfigDir.path}
-          onClose={() => setComfyuiConfigDir(null)}
-          onSave={refreshDirectories}
-        />
-      )}
-    </div>
-  )
+// Calculate how many items to load based on viewport and tile size
+function calculatePerPage(tileSize) {
+  const width = window.innerWidth
+  const height = window.innerHeight
+  const columns = getColumnCount(width, tileSize)
+  const tileWidth = tileWidths[tileSize] || 300
+  // Assume average aspect ratio of 1.33 (4:3), so tile height ≈ tileWidth * 0.75
+  // Add some for captions/padding
+  const avgTileHeight = tileWidth * 0.75 + 40
+  const rows = Math.ceil(height / avgTileHeight)
+  // Load enough for 2x viewport to ensure smooth scrolling
+  const needed = columns * rows * 2
+  // Minimum 50, maximum 400 (enough for 4K with small tiles)
+  return Math.min(400, Math.max(50, needed))
 }
 
 // Settings page with tabs
 function SettingsPage() {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('general')
   const [queueStatus, setQueueStatus] = useState(null)
   const [queuePaused, setQueuePaused] = useState(false)
@@ -321,7 +131,14 @@ function SettingsPage() {
         <Sidebar stats={stats} />
         <main className="content with-sidebar">
           <div className="page settings-page">
-            <h1>Settings</h1>
+            <div className="page-header">
+              <button className="back-btn mobile-only" onClick={() => navigate('/')} aria-label="Back to gallery">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
+              <h1>Settings</h1>
+            </div>
 
             {/* Settings Tabs */}
             <div className="settings-tabs">
@@ -330,6 +147,12 @@ function SettingsPage() {
                 onClick={() => setActiveTab('general')}
               >
                 General
+              </button>
+              <button
+                className={`settings-tab ${activeTab === 'video' ? 'active' : ''}`}
+                onClick={() => setActiveTab('video')}
+              >
+                Video
               </button>
               <button
                 className={`settings-tab ${activeTab === 'network' ? 'active' : ''}`}
@@ -357,21 +180,28 @@ function SettingsPage() {
               </button>
             </div>
 
-            {/* Network Tab Content */}
-            {activeTab === 'network' && <NetworkSettings />}
+            {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
+            <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
+              <OpticalFlowSettings />
+            </div>
 
-            {/* Data/Migration Tab Content */}
-            {activeTab === 'data' && <MigrationSettings />}
+            <div className={`settings-tab-content ${activeTab === 'network' ? 'active' : ''}`}>
+              <NetworkSettings />
+            </div>
 
-            {/* Servers Tab Content (for mobile app) */}
-            {activeTab === 'servers' && <ServerSettings />}
+            <div className={`settings-tab-content ${activeTab === 'data' ? 'active' : ''}`}>
+              <MigrationSettings />
+            </div>
 
-            {/* Mobile App QR Code */}
-            {activeTab === 'mobile' && <QRConnect />}
+            <div className={`settings-tab-content ${activeTab === 'servers' ? 'active' : ''}`}>
+              <ServerSettings />
+            </div>
 
-            {/* General Tab Content */}
-            {activeTab === 'general' && (
-            <>
+            <div className={`settings-tab-content ${activeTab === 'mobile' ? 'active' : ''}`}>
+              <QRConnect />
+            </div>
+
+            <div className={`settings-tab-content ${activeTab === 'general' ? 'active' : ''}`}>
             <section>
               <h2>Age Detection (Optional)</h2>
               <p className="setting-description">
@@ -519,19 +349,24 @@ function SettingsPage() {
               </section>
             )}
 
-            {window.electronAPI?.isElectron && (
+            {(window.electronAPI?.isElectron || window.__TAURI_INTERNALS__) && (
               <section>
                 <h2>Application</h2>
-                <button onClick={() => {
+                <button onClick={async () => {
                   if (!confirm('Quit LocalBooru completely?\n\nThis will stop the background server and close the application.')) return
-                  window.electronAPI.quitApp()
+                  if (window.electronAPI?.quitApp) {
+                    window.electronAPI.quitApp()
+                  } else if (window.__TAURI_INTERNALS__) {
+                    const { getDesktopAPI } = await import('./tauriAPI')
+                    const api = getDesktopAPI()
+                    if (api?.quitApp) api.quitApp()
+                  }
                 }} className="danger-btn">
                   Quit Application
                 </button>
               </section>
             )}
-            </>
-            )}
+            </div>
           </div>
         </main>
       </div>
@@ -547,6 +382,7 @@ function Gallery() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [total, setTotal] = useState(0)
+  const [filtersInitialized, setFiltersInitialized] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
@@ -559,6 +395,26 @@ function Gallery() {
     lightboxIndexRef.current = lightboxIndex
   }, [lightboxIndex])
 
+  // Handle browser back button for lightbox (works on mobile and desktop)
+  useEffect(() => {
+    const handlePopState = (e) => {
+      // If lightbox is open and we're going back, close it
+      if (lightboxIndexRef.current !== null && !e.state?.lightbox) {
+        setLightboxIndex(null)
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // Keep hasMore in sync with actual images count (fixes stale closure bugs)
+  useEffect(() => {
+    if (total > 0) {
+      setHasMore(images.length < total)
+    }
+  }, [images.length, total])
+
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedImages, setSelectedImages] = useState(new Set())
@@ -569,6 +425,21 @@ function Gallery() {
   const [moveDirectories, setMoveDirectories] = useState([])
   const [selectedMoveDir, setSelectedMoveDir] = useState(null)
 
+  // Tile size state (1 = smallest/most columns, 5 = largest/fewest columns)
+  const [tileSize, setTileSize] = useState(() => {
+    const saved = localStorage.getItem('localbooru_tileSize')
+    return saved ? parseInt(saved, 10) : 3
+  })
+
+  // Navigation jump state
+  const [jumpInput, setJumpInput] = useState('')
+  const [isJumping, setIsJumping] = useState(false)
+
+  // Save tile size to localStorage
+  useEffect(() => {
+    localStorage.setItem('localbooru_tileSize', tileSize.toString())
+  }, [tileSize])
+
   const currentTags = searchParams.get('tags') || ''
   const currentRating = searchParams.get('rating') || 'pg,pg13,r,x,xxx'
   const favoritesOnly = searchParams.get('favorites') === 'true'
@@ -577,11 +448,33 @@ function Gallery() {
   const currentMinAge = searchParams.get('min_age') ? parseInt(searchParams.get('min_age')) : null
   const currentMaxAge = searchParams.get('max_age') ? parseInt(searchParams.get('max_age')) : null
   const currentTimeframe = searchParams.get('timeframe') || null
+  const currentFilename = searchParams.get('filename') || ''
+  const currentOrientation = searchParams.get('orientation') || null
+  // Resolution is stored as "widthxheight" in URL, e.g., "1920x1080"
+  const resolutionParam = searchParams.get('resolution')
+  const currentResolution = useMemo(() => {
+    if (!resolutionParam) return null
+    const [width, height] = resolutionParam.split('x').map(Number)
+    if (width && height) return { width, height }
+    return null
+  }, [resolutionParam])
+  // Duration is stored as "min-max" in URL, e.g., "60-300" for 1-5 minutes
+  const durationParam = searchParams.get('duration')
+  const currentDuration = useMemo(() => {
+    if (!durationParam) return null
+    const [min, max] = durationParam.split('-').map(v => v === 'null' ? null : Number(v))
+    return { min: min ?? null, max: max ?? null }
+  }, [durationParam])
 
-  // Load saved filters from localStorage on mount
+  // Track if we're waiting for localStorage params to be applied to URL
+  const [pendingParamsFromStorage, setPendingParamsFromStorage] = useState(false)
+
+  // Load saved filters from localStorage on mount (intentionally runs once)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const saved = localStorage.getItem('localbooru_filters')
-    if (saved && !window.location.search) {
+    const hasUrlParams = searchParams.toString().length > 0
+    if (saved && !hasUrlParams) {
       try {
         const filters = JSON.parse(saved)
         const params = {}
@@ -592,17 +485,32 @@ function Gallery() {
         if (filters.directory) params.directory = filters.directory
         if (filters.min_age !== null && filters.min_age !== undefined) params.min_age = filters.min_age
         if (filters.max_age !== null && filters.max_age !== undefined) params.max_age = filters.max_age
+        if (filters.resolution) params.resolution = `${filters.resolution.width}x${filters.resolution.height}`
+        if (filters.orientation) params.orientation = filters.orientation
+        if (filters.duration) params.duration = `${filters.duration.min ?? 'null'}-${filters.duration.max ?? 'null'}`
         if (Object.keys(params).length > 0) {
+          setPendingParamsFromStorage(true)
           setSearchParams(params)
+          return // Don't initialize yet - wait for params to be applied
         }
       } catch (e) {
         console.error('Failed to load saved filters:', e)
       }
     }
+    setFiltersInitialized(true)
   }, [])
 
-  // Save filters to localStorage when they change
+  // Initialize filters once localStorage params have been applied to URL
   useEffect(() => {
+    if (pendingParamsFromStorage && searchParams.toString()) {
+      setPendingParamsFromStorage(false)
+      setFiltersInitialized(true)
+    }
+  }, [pendingParamsFromStorage, searchParams])
+
+  // Save filters to localStorage when they change (only after initial load to avoid overwriting)
+  useEffect(() => {
+    if (!filtersInitialized) return
     const filters = {
       tags: currentTags || null,
       rating: currentRating,
@@ -610,10 +518,13 @@ function Gallery() {
       sort: currentSort,
       directory: currentDirectoryId,
       min_age: currentMinAge,
-      max_age: currentMaxAge
+      max_age: currentMaxAge,
+      resolution: currentResolution,
+      orientation: currentOrientation,
+      duration: currentDuration
     }
     localStorage.setItem('localbooru_filters', JSON.stringify(filters))
-  }, [currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge, currentResolution, currentOrientation, currentDuration])
 
   // Touch handling for mobile sidebar
   const touchStartX = useRef(null)
@@ -649,9 +560,15 @@ function Gallery() {
         min_age: currentMinAge,
         max_age: currentMaxAge,
         timeframe: currentTimeframe,
+        filename: currentFilename,
+        min_width: currentResolution?.width,
+        min_height: currentResolution?.height,
+        orientation: currentOrientation,
+        min_duration: currentDuration?.min,
+        max_duration: currentDuration?.max,
         sort: currentSort,
         page: pageNum,
-        per_page: 50
+        per_page: calculatePerPage(tileSize)
       })
 
       if (append) {
@@ -665,14 +582,13 @@ function Gallery() {
         setImages(result.images)
       }
       setTotal(result.total)
-      const loadedCount = append ? images.length + result.images.length : result.images.length
-      setHasMore(loadedCount < result.total)
+      // Note: hasMore is computed by useEffect based on actual images.length
       setPage(pageNum)
     } catch (error) {
       console.error('Failed to load images:', error)
     }
     setLoading(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize])
 
   // Update a single image in the images array
   const handleImageUpdate = useCallback((imageId, updates) => {
@@ -714,8 +630,9 @@ function Gallery() {
   }, [])
 
   useEffect(() => {
+    if (!filtersInitialized) return
     loadImages(1, false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, loadImages])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, loadImages])
 
   useEffect(() => {
     loadTags()
@@ -780,6 +697,64 @@ function Gallery() {
     }
   }
 
+  // Jump to a specific image number in the results
+  const jumpToImage = useCallback(async (targetIndex) => {
+    if (targetIndex < 1 || targetIndex > total) return
+
+    setIsJumping(true)
+    const perPage = calculatePerPage(tileSize)
+    const targetPage = Math.ceil(targetIndex / perPage)
+
+    try {
+      const result = await fetchImages({
+        tags: currentTags,
+        rating: currentRating,
+        favorites_only: favoritesOnly,
+        directory_id: currentDirectoryId,
+        min_age: currentMinAge,
+        max_age: currentMaxAge,
+        timeframe: currentTimeframe,
+        filename: currentFilename,
+        min_width: currentResolution?.width,
+        min_height: currentResolution?.height,
+        orientation: currentOrientation,
+        min_duration: currentDuration?.min,
+        max_duration: currentDuration?.max,
+        sort: currentSort,
+        page: targetPage,
+        per_page: perPage
+      })
+
+      setImages(result.images)
+      setTotal(result.total)
+      setPage(targetPage)
+
+      // Scroll to top since we're showing a new set of images
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (error) {
+      console.error('Failed to jump to image:', error)
+    }
+    setIsJumping(false)
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, total, tileSize])
+
+  // Handle jump by offset (for +/- 100 buttons)
+  const handleJumpByOffset = useCallback((offset) => {
+    const perPage = calculatePerPage(tileSize)
+    const currentFirstImage = (page - 1) * perPage + 1
+    const targetIndex = Math.max(1, Math.min(total, currentFirstImage + offset))
+    jumpToImage(targetIndex)
+  }, [page, total, jumpToImage, tileSize])
+
+  // Handle direct jump from input
+  const handleJumpSubmit = useCallback((e) => {
+    e.preventDefault()
+    const targetIndex = parseInt(jumpInput, 10)
+    if (!isNaN(targetIndex) && targetIndex >= 1 && targetIndex <= total) {
+      jumpToImage(targetIndex)
+      setJumpInput('')
+    }
+  }, [jumpInput, total, jumpToImage])
+
   const handleTagClick = (tagName) => {
     const currentTagList = currentTags ? currentTags.split(',').map(t => t.trim()) : []
     let newTagList
@@ -801,7 +776,7 @@ function Gallery() {
     setSearchParams(params)
   }
 
-  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe) => {
+  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe, filename, resolution, orientation, duration) => {
     const params = {}
     if (tags) params.tags = tags
     if (rating && rating !== 'pg,pg13,r,x,xxx') params.rating = rating
@@ -811,18 +786,32 @@ function Gallery() {
     if (minAge !== null && minAge !== undefined) params.min_age = minAge
     if (maxAge !== null && maxAge !== undefined) params.max_age = maxAge
     if (timeframe) params.timeframe = timeframe
+    if (filename) params.filename = filename
+    if (resolution) params.resolution = `${resolution.width}x${resolution.height}`
+    if (orientation) params.orientation = orientation
+    if (duration) params.duration = `${duration.min ?? 'null'}-${duration.max ?? 'null'}`
     setSearchParams(params)
   }
 
   const handleImageClick = (imageId) => {
+    // Push history state so back button closes lightbox
+    window.history.pushState({ lightbox: true, imageId }, '')
     setLightboxIndex(imageId)
     // Keep sidebar visible to show image details
   }
 
-  const handleLightboxClose = () => {
+  const handleLightboxClose = useCallback(() => {
     // Scroll to the image that was being viewed
     const imageId = lightboxIndex
-    setLightboxIndex(null)
+
+    // Go back in history to trigger popstate which closes the lightbox
+    // This ensures hardware back button and X button behave consistently
+    if (window.history.state?.lightbox) {
+      window.history.back()
+    } else {
+      // Fallback: close directly if no history state (shouldn't normally happen)
+      setLightboxIndex(null)
+    }
 
     // Use requestAnimationFrame to scroll after the lightbox closes and DOM updates
     requestAnimationFrame(() => {
@@ -831,7 +820,7 @@ function Gallery() {
         imageElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
     })
-  }
+  }, [lightboxIndex])
 
   const handleLightboxNav = async (direction) => {
     const currentIdx = images.findIndex(img => img.id === lightboxIndex)
@@ -852,9 +841,15 @@ function Gallery() {
           min_age: currentMinAge,
           max_age: currentMaxAge,
           timeframe: currentTimeframe,
+          filename: currentFilename,
+          min_width: currentResolution?.width,
+          min_height: currentResolution?.height,
+          orientation: currentOrientation,
+          min_duration: currentDuration?.min,
+          max_duration: currentDuration?.max,
           sort: currentSort,
           page: nextPage,
-          per_page: 50
+          per_page: calculatePerPage(tileSize)
         })
 
         if (result.images.length > 0) {
@@ -864,8 +859,8 @@ function Gallery() {
 
           if (newImages.length > 0) {
             setImages(prev => [...prev, ...newImages])
-            const newLoadedCount = images.length + newImages.length
-            setHasMore(newLoadedCount < result.total)
+            setTotal(result.total)  // Update total in case it changed
+            // Note: hasMore is computed by useEffect based on actual images.length
             setPage(nextPage)
             // Navigate to the first new image
             setLightboxIndex(newImages[0].id)
@@ -1039,6 +1034,10 @@ function Gallery() {
           initialMaxAge={currentMaxAge}
           initialSort={currentSort}
           initialTimeframe={currentTimeframe}
+          initialFilename={currentFilename}
+          initialResolution={currentResolution}
+          initialOrientation={currentOrientation}
+          initialDuration={currentDuration}
           total={total}
           stats={stats}
           lightboxMode={lightboxIndex !== null}
@@ -1065,21 +1064,86 @@ function Gallery() {
               isSelectable={selectionMode}
               selectedImages={selectedImages}
               onSelectImage={handleSelectImage}
+              tileSize={tileSize}
             />
           )}
 
-          {/* Floating select button */}
-          <button
-            className={`floating-select-btn ${selectionMode ? 'active' : ''}`}
-            onClick={toggleSelectionMode}
-            title={selectionMode ? 'Exit selection mode' : 'Enter selection mode'}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-              {selectionMode && <path d="M9 12l2 2 4-4"/>}
-            </svg>
-            {selectionMode ? 'Done' : 'Select'}
-          </button>
+          {/* Floating controls: tile size slider, navigation, and select button */}
+          <div className="floating-controls">
+            <div className="tile-size-control" title="Adjust tile size">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="tile-size-icon">
+                <rect x="3" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/>
+                <rect x="14" y="14" width="7" height="7" rx="1"/>
+              </svg>
+              <input
+                type="range"
+                min="1"
+                max="5"
+                value={tileSize}
+                onChange={(e) => setTileSize(parseInt(e.target.value, 10))}
+                className="tile-size-slider"
+              />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="tile-size-icon">
+                <rect x="4" y="4" width="16" height="16" rx="2"/>
+              </svg>
+            </div>
+
+            {/* Navigation controls */}
+            {total > 50 && (
+              <div className="nav-jump-control">
+                <button
+                  className="nav-jump-btn"
+                  onClick={() => handleJumpByOffset(-100)}
+                  disabled={isJumping || page === 1}
+                  title="Jump back 100 images"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="18 15 12 9 6 15"/>
+                  </svg>
+                </button>
+                <form onSubmit={handleJumpSubmit} className="nav-jump-form">
+                  <span className="nav-position">
+                    {((page - 1) * 50 + 1).toLocaleString()}-{Math.min(page * 50, total).toLocaleString()}
+                  </span>
+                  <span className="nav-separator">/</span>
+                  <input
+                    type="number"
+                    className="nav-jump-input"
+                    placeholder={total.toLocaleString()}
+                    value={jumpInput}
+                    onChange={(e) => setJumpInput(e.target.value)}
+                    min="1"
+                    max={total}
+                    title="Type a number and press Enter to jump"
+                  />
+                </form>
+                <button
+                  className="nav-jump-btn"
+                  onClick={() => handleJumpByOffset(100)}
+                  disabled={isJumping || page * 50 >= total}
+                  title="Jump forward 100 images"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            <button
+              className={`floating-select-btn ${selectionMode ? 'active' : ''}`}
+              onClick={toggleSelectionMode}
+              title={selectionMode ? 'Exit selection mode' : 'Enter selection mode'}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                {selectionMode && <path d="M9 12l2 2 4-4"/>}
+              </svg>
+              {selectionMode ? 'Done' : 'Select'}
+            </button>
+          </div>
         </main>
 
         {/* Batch action bar - shown when images are selected */}
@@ -1250,18 +1314,36 @@ function Gallery() {
 function App() {
   const [mobileReady, setMobileReady] = useState(false)
   const [showServerSetup, setShowServerSetup] = useState(false)
+  const [servers, setServers] = useState([])
+  const [serverStatuses, setServerStatuses] = useState({})
 
   // Initialize server configuration for mobile app
   useEffect(() => {
     async function initMobile() {
-      const { isMobileApp, getActiveServer } = await import('./serverManager')
+      const { isMobileApp, getServers, getActiveServer, setActiveServerId, pingAllServers } = await import('./serverManager')
       const { updateServerConfig } = await import('./api')
 
       if (isMobileApp()) {
-        await updateServerConfig()
-        const server = await getActiveServer()
-        if (!server) {
+        const serverList = await getServers()
+
+        if (serverList.length === 0) {
+          // No servers - show add server UI
           setShowServerSetup(true)
+        } else {
+          // Ping all servers in parallel
+          const statuses = await pingAllServers(serverList)
+          const onlineServers = serverList.filter(s => statuses[s.id] === 'online')
+
+          if (onlineServers.length === 1) {
+            // Exactly 1 online - auto-connect
+            await setActiveServerId(onlineServers[0].id)
+            await updateServerConfig()
+          } else {
+            // 0 or 2+ online - show selection with status
+            setServers(serverList)
+            setServerStatuses(statuses)
+            setShowServerSetup(true)
+          }
         }
       }
       setMobileReady(true)
@@ -1281,8 +1363,34 @@ function App() {
     )
   }
 
-  // Show server setup for mobile when no server configured
+  // Handle disconnect/switch server
+  const handleDisconnect = () => {
+    setShowServerSetup(true)
+    // Re-fetch servers and their statuses
+    import('./serverManager').then(async ({ getServers, pingAllServers }) => {
+      const serverList = await getServers()
+      setServers(serverList)
+      if (serverList.length > 0) {
+        const statuses = await pingAllServers(serverList)
+        setServerStatuses(statuses)
+      }
+    })
+  }
+
+  // Show server setup/selection for mobile
   if (showServerSetup) {
+    // If we have servers with statuses, show the selection screen
+    if (servers.length > 0) {
+      return (
+        <ServerSelectScreen
+          servers={servers}
+          serverStatuses={serverStatuses}
+          onConnect={() => setShowServerSetup(false)}
+        />
+      )
+    }
+
+    // Otherwise show the add server screen
     return (
       <div className="app server-setup-screen">
         <div className="server-setup-content">
@@ -1302,8 +1410,9 @@ function App() {
 
   return (
     <>
-      <TitleBar />
+      <TitleBar onSwitchServer={handleDisconnect} />
       <BrowserRouter>
+        <BackButtonHandler />
         <Routes>
           <Route path="/" element={<Gallery />} />
           <Route path="/directories" element={<DirectoriesPage />} />
@@ -1312,6 +1421,35 @@ function App() {
       </BrowserRouter>
     </>
   )
+}
+
+// Handle hardware back button on mobile
+function BackButtonHandler() {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (!isMobileApp()) return
+
+    const handleBackButton = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+      // If there's history to go back to, use it
+      if (canGoBack) {
+        window.history.back()
+      } else if (location.pathname !== '/') {
+        // On a sub-page with no history, navigate to home
+        navigate('/')
+      } else {
+        // On home with no history - minimize app (Android default behavior)
+        CapacitorApp.minimizeApp()
+      }
+    })
+
+    return () => {
+      handleBackButton.then(listener => listener.remove())
+    }
+  }, [navigate, location.pathname])
+
+  return null
 }
 
 export default App

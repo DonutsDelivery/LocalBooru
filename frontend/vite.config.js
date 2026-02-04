@@ -7,5 +7,6 @@ export default defineConfig({
   base: './', // Use relative paths for Electron
   server: {
     port: 5174, // Avoid conflict with other dev servers on 5173
+    strictPort: false, // Allow fallback to next available port
   },
 })

@@ -37,6 +37,16 @@ async def lifespan(app: FastAPI):
     # Clear stuck "installing" flag from previous crash (thread won't survive restart)
     set_setting(AGE_DETECTION_INSTALLING, "false")
 
+    # Generate or load TLS certificate for HTTPS
+    from .services.certificate import get_or_create_certificate, get_certificate_fingerprint
+    try:
+        cert_path, key_path = get_or_create_certificate()
+        fingerprint = get_certificate_fingerprint()
+        if fingerprint:
+            print(f"[Startup] TLS Certificate fingerprint: {fingerprint}")
+    except Exception as e:
+        print(f"[Startup] Warning: Could not create TLS certificate: {e}")
+
     await init_db()
 
     # Ensure directories exist
@@ -51,13 +61,53 @@ async def lifespan(app: FastAPI):
     from .services.directory_watcher import directory_watcher
     await directory_watcher.start()
 
+    # Kill any orphaned SVP processes from previous runs
+    print("[Startup] Cleaning up orphaned SVP processes...")
+    from .services.svp_stream import kill_orphaned_svp_processes
+    kill_orphaned_svp_processes()
+
     yield
 
-    # Shutdown
+    # Shutdown - cleanup all resources gracefully
+    print("\n" + "="*50)
     print("Shutting down LocalBooru API...")
+    print("="*50)
+
+    # Stop directory watcher first (prevents new imports)
+    print("[Shutdown] Stopping directory watcher...")
     await directory_watcher.stop()
+
+    # Stop background task queue
+    print("[Shutdown] Stopping task queue...")
     await task_queue.stop()
+
+    # Stop SVP streams
+    print("[Shutdown] Stopping SVP streams...")
+    from .services.svp_stream import stop_all_svp_streams
+    stop_all_svp_streams()
+
+    # Stop optical flow streams and cleanup thread pool
+    print("[Shutdown] Stopping optical flow streams...")
+    from .services.optical_flow_stream import shutdown as shutdown_optical_flow
+    shutdown_optical_flow()
+
+    # Cleanup video preview thread pool
+    print("[Shutdown] Stopping video preview service...")
+    from .services.video_preview import shutdown as shutdown_video_preview
+    shutdown_video_preview()
+
+    # Cleanup importer thread pool
+    print("[Shutdown] Stopping importer service...")
+    from .services.importer import shutdown as shutdown_importer
+    shutdown_importer()
+
+    # Close database connections
+    print("[Shutdown] Closing database connections...")
     await close_db()
+
+    print("="*50)
+    print("LocalBooru shutdown complete.")
+    print("="*50 + "\n")
 
 
 app = FastAPI(
