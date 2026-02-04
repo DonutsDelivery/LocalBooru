@@ -4,7 +4,7 @@ Background task queue for LocalBooru - handles tagging, file verification, etc.
 import asyncio
 import json
 from datetime import datetime, timedelta
-from sqlalchemy import select, update, and_, not_, or_
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import AsyncSessionLocal
@@ -14,59 +14,25 @@ from ..config import get_settings
 settings = get_settings()
 
 
-def is_gpu_busy() -> bool:
-    """Check if GPU is being used by video streaming/encoding.
-
-    Returns True if any SVP, optical flow, or transcode streams are active.
-    """
-    try:
-        from .svp_stream import _active_svp_streams
-        if _active_svp_streams:
-            return True
-    except ImportError:
-        pass
-
-    try:
-        from .optical_flow_stream import _active_streams
-        if _active_streams:
-            return True
-    except ImportError:
-        pass
-
-    try:
-        from .transcode_stream import _active_transcode_streams
-        if _active_transcode_streams:
-            return True
-    except ImportError:
-        pass
-
-    return False
-
-
 class BackgroundTaskQueue:
     """In-process background task processor with Tag Guardian"""
 
     def __init__(self):
         self.running = False
-        self.paused = False  # Manual pause by user
-        self.auto_paused = False  # Auto-pause due to GPU busy
+        self.paused = False
         self.worker_task = None
         self.guardian_task = None
         self.concurrency = settings.task_queue_concurrency
 
     def pause(self):
-        """Pause task processing (manual)"""
+        """Pause task processing"""
         self.paused = True
-        print("[TaskQueue] Paused (manual)")
+        print("[TaskQueue] Paused")
 
     def resume(self):
-        """Resume task processing (manual)"""
+        """Resume task processing"""
         self.paused = False
-        print("[TaskQueue] Resumed (manual)")
-
-    def is_paused(self) -> bool:
-        """Check if queue is paused (manual or auto)"""
-        return self.paused or self.auto_paused
+        print("[TaskQueue] Resumed")
 
     async def start(self):
         """Start the background worker"""
@@ -111,21 +77,8 @@ class BackgroundTaskQueue:
         while self.running:
             loop_count += 1
 
-            # Check if manually paused
+            # Check if paused
             if self.paused:
-                await asyncio.sleep(1)
-                continue
-
-            # Check if GPU is busy (auto-pause for video streaming)
-            gpu_busy = is_gpu_busy()
-            if gpu_busy and not self.auto_paused:
-                self.auto_paused = True
-                print("[TaskQueue] Auto-paused (GPU busy with video streaming)")
-            elif not gpu_busy and self.auto_paused:
-                self.auto_paused = False
-                print("[TaskQueue] Auto-resumed (GPU available)")
-
-            if self.auto_paused:
                 await asyncio.sleep(1)
                 continue
 
@@ -136,7 +89,7 @@ class BackgroundTaskQueue:
                     task_ids = [t.id for t in tasks]
 
                 if loop_count % 10 == 0:
-                    print(f"[TaskQueue] Heartbeat: loop={loop_count}, pending={len(task_ids)}, paused={self.paused}, auto_paused={self.auto_paused}", flush=True)
+                    print(f"[TaskQueue] Heartbeat: loop={loop_count}, pending tasks found={len(task_ids)}, paused={self.paused}", flush=True)
 
                 if not task_ids:
                     await asyncio.sleep(1)
@@ -176,8 +129,8 @@ class BackgroundTaskQueue:
         print("[TagGuardian] Started monitoring for untagged images")
 
         while self.running:
-            # Skip guardian work when paused (manual or auto)
-            if self.is_paused():
+            # Skip guardian work when paused
+            if self.paused:
                 await asyncio.sleep(settings.tag_guardian_interval)
                 continue
 
@@ -199,17 +152,13 @@ class BackgroundTaskQueue:
         from ..models import image_tags
 
         # 1. Find untagged images (no entries in image_tags, file exists)
-        # Skip video files - tagger only works on images
-        video_extensions = ('.webm', '.mp4', '.mov', '.avi', '.mkv')
         tagged_subq = select(image_tags.c.image_id).distinct()
         untagged_query = (
             select(Image.id, ImageFile.original_path)
             .join(ImageFile, ImageFile.image_id == Image.id)
             .where(
                 Image.id.not_in(tagged_subq),
-                ImageFile.file_exists == True,
-                # Exclude video files from tagging
-                *[not_(ImageFile.original_path.ilike(f'%{ext}')) for ext in video_extensions]
+                ImageFile.file_exists == True
             )
             .limit(settings.tag_guardian_batch_size)
         )
@@ -333,27 +282,19 @@ class BackgroundTaskQueue:
         payload = json.loads(task.payload)
         image_id = payload['image_id']
         image_path = payload['image_path']
-        directory_id = payload.get('directory_id')  # New: directory-specific images
 
         # Import tagger here to avoid circular imports
         from .tagger import tag_image
-        await tag_image(image_path, db, image_id, directory_id=directory_id)
+        await tag_image(image_path, db, image_id)
 
     async def _process_scan_task(self, task: TaskQueue, db: AsyncSession):
         """Scan a directory for images"""
-        from ..models import WatchDirectory
-
         payload = json.loads(task.payload)
         directory_id = payload['directory_id']
         directory_path = payload['directory_path']
-        clean_deleted = payload.get('clean_deleted', False)
-
-        # Get recursive setting from directory config
-        directory = await db.get(WatchDirectory, directory_id)
-        recursive = directory.recursive if directory else True
 
         from .file_tracker import scan_directory
-        await scan_directory(directory_id, directory_path, db, recursive=recursive, clean_deleted=clean_deleted)
+        await scan_directory(directory_id, directory_path, db)
 
     async def _process_verify_task(self, task: TaskQueue, db: AsyncSession):
         """Verify file locations still exist"""
@@ -374,68 +315,33 @@ class BackgroundTaskQueue:
         payload = json.loads(task.payload)
         image_id = payload['image_id']
         image_path = payload['image_path']
-        directory_id = payload.get('directory_id')  # New: directory-specific images
 
         from .age_detector import detect_ages
-        from ..models import Image, DirectoryImage
-        from ..database import directory_db_manager
+        from ..models import Image
 
         result = await detect_ages(image_path)
         if result is None:
             return
 
-        if directory_id:
-            # Update image in directory database
-            dir_db = await directory_db_manager.get_session(directory_id)
-            try:
-                image_result = await dir_db.execute(
-                    select(DirectoryImage).where(DirectoryImage.id == image_id)
-                )
-                image = image_result.scalar_one_or_none()
-                if image:
-                    image.num_faces = result.num_faces
-                    if result.min_age is not None:
-                        image.min_detected_age = result.min_age
-                        image.max_detected_age = result.max_age
-                        image.detected_ages = json.dumps(result.ages)
-                        image.age_detection_data = json.dumps(result.to_dict())
-                    await dir_db.commit()
-            finally:
-                await dir_db.close()
-        else:
-            # Legacy: Update image in main database
-            image_result = await db.execute(
-                select(Image).where(Image.id == image_id)
-            )
-            image = image_result.scalar_one_or_none()
-            if image:
-                image.num_faces = result.num_faces
-                if result.min_age is not None:
-                    image.min_detected_age = result.min_age
-                    image.max_detected_age = result.max_age
-                    image.detected_ages = json.dumps(result.ages)
-                    image.age_detection_data = json.dumps(result.to_dict())
-                await db.commit()
+        # Update image with age detection results
+        image_result = await db.execute(
+            select(Image).where(Image.id == image_id)
+        )
+        image = image_result.scalar_one_or_none()
+        if image:
+            image.num_faces = result.num_faces
+            if result.min_age is not None:
+                image.min_detected_age = result.min_age
+                image.max_detected_age = result.max_age
+                image.detected_ages = json.dumps(result.ages)
+                image.age_detection_data = json.dumps(result.to_dict())
+            await db.commit()
 
     async def _process_metadata_task(self, task: TaskQueue, db: AsyncSession):
-        """Extract AI generation metadata from an image.
-
-        Also handles 'complete_import' flag for fast-imported images that need
-        dimensions, thumbnails, etc. calculated in background.
-        """
+        """Extract AI generation metadata from an image"""
         payload = json.loads(task.payload)
         image_id = payload['image_id']
         image_path = payload['image_path']
-        directory_id = payload.get('directory_id')
-        complete_import = payload.get('complete_import', False)
-        auto_tag = payload.get('auto_tag', True)
-
-        # Handle fast-import completion first
-        if complete_import and directory_id:
-            await self._complete_fast_import(image_id, image_path, directory_id, auto_tag, db)
-            return
-
-        # Regular metadata extraction
         comfyui_prompt_node_ids = payload.get('comfyui_prompt_node_ids', [])
         comfyui_negative_node_ids = payload.get('comfyui_negative_node_ids', [])
         format_hint = payload.get('format_hint', 'auto')
@@ -450,81 +356,17 @@ class BackgroundTaskQueue:
             comfyui_prompt_node_ids,
             comfyui_negative_node_ids,
             format_hint,
-            extract_tags,
-            directory_id=directory_id
+            extract_tags
         )
 
+        # Log result for debugging
         if result.status == 'success':
             tag_info = f" (added {len(added_tags)} tags)" if added_tags else ""
             print(f"[TaskQueue] Metadata extracted for image {image_id}{tag_info}")
         elif result.status == 'config_mismatch':
             print(f"[TaskQueue] ComfyUI config mismatch for image {image_id}: {result.message}")
-
-    async def _complete_fast_import(self, image_id: int, image_path: str, directory_id: int, auto_tag: bool, db: AsyncSession):
-        """Complete a fast-imported image: calculate dimensions, generate thumbnail."""
-        from pathlib import Path
-        from ..database import directory_db_manager
-        from ..models import DirectoryImage
-        from ..config import get_settings
-        from .importer import (
-            is_video_file, get_image_dimensions_async, calculate_perceptual_hash_async,
-            generate_thumbnail_async, generate_video_thumbnail_async
-        )
-        from .video_preview import get_video_duration_async
-
-        settings = get_settings()
-
-        if not Path(image_path).exists():
-            return
-
-        dir_db = await directory_db_manager.get_session(directory_id)
-        try:
-            # Get the image record
-            result = await dir_db.execute(
-                select(DirectoryImage).where(DirectoryImage.id == image_id)
-            )
-            image = result.scalar_one_or_none()
-            if not image:
-                return
-
-            is_video = is_video_file(image_path)
-
-            # Calculate dimensions and perceptual hash
-            if is_video:
-                duration = await get_video_duration_async(image_path)
-                image.duration = duration
-            else:
-                dimensions, phash = await asyncio.gather(
-                    get_image_dimensions_async(image_path),
-                    calculate_perceptual_hash_async(image_path)
-                )
-                if dimensions:
-                    image.width, image.height = dimensions
-                image.perceptual_hash = phash
-
-            await dir_db.commit()
-
-            # Generate thumbnail
-            thumbnails_dir = Path(settings.thumbnails_dir)
-            thumbnails_dir.mkdir(parents=True, exist_ok=True)
-            thumbnail_path = thumbnails_dir / f"{image.file_hash[:16]}.webp"
-
-            if is_video:
-                await generate_video_thumbnail_async(image_path, str(thumbnail_path))
-            else:
-                await generate_thumbnail_async(image_path, str(thumbnail_path))
-
-            # Queue tagging if enabled
-            if auto_tag:
-                await enqueue_task(
-                    TaskType.tag,
-                    {'image_id': image_id, 'directory_id': directory_id, 'image_path': image_path},
-                    priority=1,
-                    db=db
-                )
-
-        finally:
-            await dir_db.close()
+        elif result.status == 'no_metadata':
+            pass  # Silent - most images won't have metadata
 
 
 # Global task queue instance

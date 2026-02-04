@@ -19,13 +19,11 @@
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.0.0",
     "@capacitor/android": "^8.0.1",
-    "@capacitor/app": "^8.0.0",
     "@capacitor/cli": "^7.4.5",
     "@capacitor/core": "^8.0.1",
     "@capacitor/ios": "^8.0.1",
     "@capacitor/preferences": "^8.0.0",
     "axios": "^1.13.2",
-    "hls.js": "^1.6.15",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

@@ -17,33 +17,8 @@ from ..database import AsyncSessionLocal
 
 # Supported image extensions
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif'}
-VIDEO_EXTENSIONS = {'.mp4', '.webm', '.mov', '.avi', '.mkv'}
+VIDEO_EXTENSIONS = {'.mp4', '.webm', '.mov'}
 SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
-
-
-def is_video_thumbnail(name: str) -> bool:
-    """Check if file is a video thumbnail (e.g., video.mp4.png, clip.webm.jpg).
-
-    These are auto-generated thumbnail files that shouldn't be imported.
-    Detects files with 2+ dots that end with an image extension.
-    """
-    name = name.lower()
-
-    # Get the extension
-    if '.' not in name:
-        return False
-
-    ext = '.' + name.rsplit('.', 1)[-1]
-
-    # Must end with an image extension
-    if ext not in IMAGE_EXTENSIONS:
-        return False
-
-    # Check if filename has 2+ dots (e.g., "video.mp4.png", "file.something.jpg")
-    if name.count('.') >= 2:
-        return True
-
-    return False
 
 
 class DirectoryEventHandler(FileSystemEventHandler):
@@ -58,15 +33,9 @@ class DirectoryEventHandler(FileSystemEventHandler):
         self._debounce_delay = 1.0  # Wait 1 second for file to finish writing
 
     def _is_supported_file(self, path: str) -> bool:
-        """Check if file has a supported extension and is not a video thumbnail"""
-        p = Path(path)
-        ext = p.suffix.lower()
-        if ext not in SUPPORTED_EXTENSIONS:
-            return False
-        # Filter out video thumbnails (e.g., video.mp4.png)
-        if is_video_thumbnail(p.name):
-            return False
-        return True
+        """Check if file has a supported extension"""
+        ext = Path(path).suffix.lower()
+        return ext in SUPPORTED_EXTENSIONS
 
     def _schedule_import(self, file_path: str):
         """Schedule file import with debouncing"""
@@ -249,39 +218,22 @@ class DirectoryWatcher:
                     if files_to_check:
                         print(f"[Watcher] Found {len(files_to_check)} new files in {directory.name or directory.path}")
 
-                        # Process files concurrently with semaphore
-                        SCAN_CONCURRENCY = 4  # Limited to prevent disk I/O saturation
-                        semaphore = asyncio.Semaphore(SCAN_CONCURRENCY)
-
-                        async def import_one(file_path: Path) -> str:
-                            async with semaphore:
-                                try:
-                                    async with AsyncSessionLocal() as import_db:
-                                        import_result = await import_image(
-                                            str(file_path),
-                                            import_db,
-                                            watch_directory_id=directory.id,
-                                            auto_tag=directory.auto_tag
-                                        )
-                                        return import_result['status']
-                                except Exception as e:
-                                    print(f"[Watcher] Error importing {file_path.name}: {e}")
-                                    return 'error'
-
-                        # Process in batches of 100 for progress reporting
-                        BATCH_SIZE = 100
-                        for i in range(0, len(files_to_check), BATCH_SIZE):
-                            batch = files_to_check[i:i + BATCH_SIZE]
-                            results = await asyncio.gather(*[import_one(f) for f in batch])
-
-                            for status in results:
-                                if status == 'imported':
-                                    total_imported += 1
-                                elif status == 'duplicate':
-                                    total_duplicates += 1
-
-                            if len(files_to_check) > 100:
-                                print(f"[Watcher] Progress: {min(i + BATCH_SIZE, len(files_to_check))}/{len(files_to_check)} files")
+                        for file_path in files_to_check:
+                            # Use a separate session for each import to avoid cascade failures
+                            try:
+                                async with AsyncSessionLocal() as import_db:
+                                    import_result = await import_image(
+                                        str(file_path),
+                                        import_db,
+                                        watch_directory_id=directory.id,
+                                        auto_tag=directory.auto_tag
+                                    )
+                                    if import_result['status'] == 'imported':
+                                        total_imported += 1
+                                    elif import_result['status'] == 'duplicate':
+                                        total_duplicates += 1
+                            except Exception as e:
+                                print(f"[Watcher] Error importing {file_path.name}: {e}")
 
                     # Update last_scanned_at
                     directory.last_scanned_at = datetime.now(timezone.utc)

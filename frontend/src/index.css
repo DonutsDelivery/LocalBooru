@@ -61,24 +61,20 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-*, *::before, *::after {
+* {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
 html, body {
-  box-sizing: content-box !important;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  overflow-x: hidden;
   background: var(--bg-primary);
-  padding: 0 !important;
-  margin: 0 !important;
-  border: none !important;
 }
 
 #root {
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
@@ -115,7 +111,7 @@ input, select {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -125,10 +121,6 @@ input, select {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-light);
-}
-
-::-webkit-scrollbar-corner {
-  background: var(--bg-primary);
 }
 
 /* Selection */
