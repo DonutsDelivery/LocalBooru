@@ -463,10 +463,12 @@ function Gallery() {
   // Track if we're waiting for localStorage params to be applied to URL
   const [pendingParamsFromStorage, setPendingParamsFromStorage] = useState(false)
 
-  // Load saved filters from localStorage on mount
+  // Load saved filters from localStorage on mount (intentionally runs once)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const saved = localStorage.getItem('localbooru_filters')
-    if (saved && !window.location.search) {
+    const hasUrlParams = searchParams.toString().length > 0
+    if (saved && !hasUrlParams) {
       try {
         const filters = JSON.parse(saved)
         const params = {}
@@ -494,7 +496,7 @@ function Gallery() {
 
   // Initialize filters once localStorage params have been applied to URL
   useEffect(() => {
-    if (pendingParamsFromStorage && window.location.search) {
+    if (pendingParamsFromStorage && searchParams.toString()) {
       setPendingParamsFromStorage(false)
       setFiltersInitialized(true)
     }

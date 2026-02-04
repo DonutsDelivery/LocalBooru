@@ -20,50 +20,46 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
   const [previewLoaded, setPreviewLoaded] = useState(false)
   const frameIntervalRef = useRef(null)
   const previewFetchedRef = useRef(false)
+  const isHoveringRef = useRef(false) // Track hover state for late-loading frames
+  const previewFramesRef = useRef([]) // Ref for closure-safe access in intervals
 
   // Compute derived values (safe before hooks)
   const thumbnailUrl = image?.thumbnail_url ? getMediaUrl(image.thumbnail_url) : ''
-  const isVideoFile = isVideo(image?.filename)
+  const isVideoFile = isVideo(image?.original_filename)
   const fileStatus = image?.file_status || 'available'
 
   // Determine if we should use preview frames for hover animation
   const usePreviewFrames = isVideoFile && previewLoaded && previewFrames.length > 0
 
-  // Fetch preview frames for videos on mount (with staggered delay to avoid connection pool exhaustion)
-  useEffect(() => {
-    if (!image || !isVideo(image.filename) || previewFetchedRef.current) return
-
+  // Fetch preview frames for videos - only when needed (on hover)
+  const fetchFramesIfNeeded = useCallback(async () => {
+    if (!image || !isVideo(image.original_filename) || previewFetchedRef.current) return
     previewFetchedRef.current = true
 
-    const loadPreviewFrames = async () => {
-      try {
-        const data = await fetchPreviewFrames(image.id, image.directory_id)
-        if (data.frames && data.frames.length > 0) {
-          // Preload all frame images
-          const frameUrls = data.frames.map(url => getMediaUrl(url))
-          setPreviewFrames(frameUrls)
+    try {
+      const data = await fetchPreviewFrames(image.id, image.directory_id)
+      if (data.frames && data.frames.length > 0) {
+        const frameUrls = data.frames.map(url => getMediaUrl(url))
+        previewFramesRef.current = frameUrls
+        setPreviewFrames(frameUrls)
 
-          // Preload frames in background
-          frameUrls.forEach(url => {
+        // Preload frames and wait for all to load before enabling slideshow
+        const loadPromises = frameUrls.map(url => {
+          return new Promise((resolve) => {
             const img = new Image()
+            img.onload = resolve
+            img.onerror = resolve // Still resolve on error to not block
             img.src = url
           })
-          setPreviewLoaded(true)
-        } else if (data.generating) {
-          // Frames are being generated - retry after a delay
-          setTimeout(loadPreviewFrames, 3000)
-        }
-      } catch (err) {
-        // Silent fail - will show thumbnail
-        // Don't log connection pool errors as they're expected during heavy load
+        })
+
+        await Promise.all(loadPromises)
+
+        setPreviewLoaded(true)
       }
+    } catch (err) {
+      // Silently fail - preview frames are optional
     }
-
-    // Stagger initial requests with random delay (0-500ms) to avoid thundering herd
-    const delay = Math.random() * 500
-    const timeoutId = setTimeout(loadPreviewFrames, delay)
-
-    return () => clearTimeout(timeoutId)
   }, [image])
 
   // Cleanup interval on unmount
@@ -76,26 +72,43 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
   }, [])
 
   const handleMouseEnter = useCallback(() => {
-    if (usePreviewFrames) {
+    isHoveringRef.current = true
+
+    // Only fetch preview frames if we have a valid thumbnail (item is properly loaded)
+    if (isVideoFile && !previewFetchedRef.current && thumbnailUrl && loaded && !error) {
+      fetchFramesIfNeeded()
+    }
+
+    const frames = previewFramesRef.current
+    if (usePreviewFrames && !frameIntervalRef.current && frames.length > 0) {
       // Start frame slideshow for videos with preview frames
       setCurrentFrame(0)
       frameIntervalRef.current = setInterval(() => {
-        setCurrentFrame(prev => (prev + 1) % previewFrames.length)
-      }, 300) // 300ms per frame
+        setCurrentFrame(prev => (prev + 1) % previewFramesRef.current.length)
+      }, 600)
     }
-    // Videos without preview frames just show static thumbnail - no video loading
-  }, [usePreviewFrames, previewFrames.length])
+  }, [usePreviewFrames, isVideoFile, fetchFramesIfNeeded, thumbnailUrl, loaded, error])
 
   const handleMouseLeave = useCallback(() => {
-    if (usePreviewFrames) {
-      // Stop frame slideshow and reset
-      if (frameIntervalRef.current) {
-        clearInterval(frameIntervalRef.current)
-        frameIntervalRef.current = null
-      }
-      setCurrentFrame(-1) // Back to thumbnail
+    isHoveringRef.current = false
+    // Stop frame slideshow and reset
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current)
+      frameIntervalRef.current = null
     }
-  }, [usePreviewFrames])
+    setCurrentFrame(-1) // Back to thumbnail
+  }, [])
+
+  // Start slideshow when frames become available while already hovering
+  useEffect(() => {
+    const frames = previewFramesRef.current
+    if (isHoveringRef.current && usePreviewFrames && !frameIntervalRef.current && frames.length > 0) {
+      setCurrentFrame(0)
+      frameIntervalRef.current = setInterval(() => {
+        setCurrentFrame(prev => (prev + 1) % previewFramesRef.current.length)
+      }, 600)
+    }
+  }, [usePreviewFrames, previewFrames.length])
 
   // Handle click - either select or open lightbox
   const handleClick = (e) => {
@@ -123,8 +136,9 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
 
   // Get the current display image
   const getCurrentDisplaySrc = () => {
-    if (currentFrame >= 0 && previewFrames[currentFrame]) {
-      return previewFrames[currentFrame]
+    const frames = previewFramesRef.current
+    if (currentFrame >= 0 && frames[currentFrame]) {
+      return frames[currentFrame]
     }
     return thumbnailUrl
   }

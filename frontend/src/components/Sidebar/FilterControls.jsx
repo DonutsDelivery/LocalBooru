@@ -1,15 +1,24 @@
 /**
  * FilterControls - Rating, age range, timeframe, and favorites toggle controls
  */
+import { useState } from 'react'
 
 // Rating definitions for LocalBooru (all ratings shown)
 export const ALL_RATINGS = ['pg', 'pg13', 'r', 'x', 'xxx']
 
-// Sort options
+// Sort options - organized by category
 export const SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest' },
-  { value: 'oldest', label: 'Oldest' },
-  { value: 'random', label: 'Random' }
+  { value: 'newest', label: 'Date (Newest)', group: 'Date' },
+  { value: 'oldest', label: 'Date (Oldest)', group: 'Date' },
+  { value: 'filename_asc', label: 'Filename (A-Z)', group: 'Name' },
+  { value: 'filename_desc', label: 'Filename (Z-A)', group: 'Name' },
+  { value: 'filesize_largest', label: 'File Size (Largest)', group: 'Size' },
+  { value: 'filesize_smallest', label: 'File Size (Smallest)', group: 'Size' },
+  { value: 'resolution_high', label: 'Resolution (Highest)', group: 'Resolution' },
+  { value: 'resolution_low', label: 'Resolution (Lowest)', group: 'Resolution' },
+  { value: 'duration_longest', label: 'Duration (Longest)', group: 'Duration' },
+  { value: 'duration_shortest', label: 'Duration (Shortest)', group: 'Duration' },
+  { value: 'random', label: 'Random', group: 'Other' }
 ]
 
 // Age range constants
@@ -73,9 +82,6 @@ function FilterControls({
   setMinAge,
   setMaxAge,
   onAgeChange,
-  // Sort controls
-  sortBy,
-  onSortChange,
   // Timeframe
   timeframe,
   onTimeframeChange,
@@ -90,22 +96,49 @@ function FilterControls({
   // Search results
   total
 }) {
+  const [advancedExpanded, setAdvancedExpanded] = useState(false)
+
+  // Count active advanced filters
+  const activeAdvancedCount = [
+    minAge !== null || maxAge !== null, // Age range modified
+    timeframe !== null,                  // Timeframe set
+    resolution !== null,                 // Resolution set
+    orientation !== null,                // Orientation set
+    duration !== null                    // Duration set
+  ].filter(Boolean).length
+
   return (
     <>
       {/* Directory Filter */}
       <div className="directory-filter">
-        <select
-          value={selectedDirectory || ''}
-          onChange={(e) => onDirectoryChange(e.target.value)}
-          className="directory-select"
-        >
-          <option value="">All Directories</option>
+        <div className="directory-filter-list">
+          <button
+            type="button"
+            className={`directory-filter-btn ${!selectedDirectory ? 'active' : ''}`}
+            onClick={() => onDirectoryChange('')}
+          >
+            <svg className="directory-filter-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+            </svg>
+            <span className="directory-filter-name">All Directories</span>
+          </button>
           {directories.map(dir => (
-            <option key={dir.id} value={dir.id}>
-              {dir.name}{dir.image_count > 0 ? ` (${dir.image_count})` : ''}
-            </option>
+            <button
+              key={dir.id}
+              type="button"
+              className={`directory-filter-btn ${selectedDirectory === dir.id ? 'active' : ''}`}
+              onClick={() => onDirectoryChange(String(dir.id))}
+            >
+              <svg className="directory-filter-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+              </svg>
+              <span className="directory-filter-name">{dir.name}</span>
+              {dir.image_count > 0 && (
+                <span className="directory-filter-count">{dir.image_count}</span>
+              )}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
       {/* Filename Search */}
@@ -168,142 +201,149 @@ function FilterControls({
         ))}
       </div>
 
-      {/* Age Range Slider */}
-      <div className="age-filter">
-        <div className="age-filter-header">
-          <span className="age-filter-label">Age Range:</span>
-          <span className="age-filter-value">
-            {minAge || MIN_AGE_LIMIT} - {maxAge ? maxAge : '80+'}
-          </span>
-        </div>
-        <div className="age-slider-container">
-          <input
-            type="range"
-            min={MIN_AGE_LIMIT}
-            max={MAX_AGE_LIMIT}
-            value={minAge || MIN_AGE_LIMIT}
-            onChange={(e) => {
-              const val = parseInt(e.target.value)
-              const newMin = val === MIN_AGE_LIMIT ? null : val
-              setMinAge(newMin)
-            }}
-            onMouseUp={onAgeChange}
-            onTouchEnd={onAgeChange}
-            className="age-slider age-slider-min"
-          />
-          <input
-            type="range"
-            min={MIN_AGE_LIMIT}
-            max={MAX_AGE_LIMIT}
-            value={maxAge || MAX_AGE_LIMIT}
-            onChange={(e) => {
-              const val = parseInt(e.target.value)
-              const newMax = val === MAX_AGE_LIMIT ? null : val
-              setMaxAge(newMax)
-            }}
-            onMouseUp={onAgeChange}
-            onTouchEnd={onAgeChange}
-            className="age-slider age-slider-max"
-          />
-        </div>
-      </div>
+      {/* Advanced Filters Toggle */}
+      <button
+        type="button"
+        className={`advanced-filters-toggle ${advancedExpanded ? 'expanded' : ''}`}
+        onClick={() => setAdvancedExpanded(!advancedExpanded)}
+      >
+        <svg className="advanced-filters-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/>
+        </svg>
+        <span>More Filters</span>
+        {activeAdvancedCount > 0 && (
+          <span className="advanced-filters-count">{activeAdvancedCount}</span>
+        )}
+        <svg className="advanced-filters-chevron" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+        </svg>
+      </button>
 
-      {/* Sort Controls */}
-      <div className="sort-controls">
-        <div className="sort-buttons">
-          {SORT_OPTIONS.map(option => (
-            <button
-              key={option.value}
-              type="button"
-              className={`sort-btn ${sortBy === option.value ? 'active' : ''}`}
-              onClick={() => onSortChange(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Advanced Filters Content */}
+      <div className={`advanced-filters-content ${advancedExpanded ? 'expanded' : ''}`}>
+        <div className="advanced-filters-inner">
+          {/* Age Range Slider */}
+          <div className="age-filter">
+            <div className="age-filter-header">
+              <span className="age-filter-label">Age Range:</span>
+              <span className="age-filter-value">
+                {minAge || MIN_AGE_LIMIT} - {maxAge ? maxAge : '80+'}
+              </span>
+            </div>
+            <div className="age-slider-container">
+              <input
+                type="range"
+                min={MIN_AGE_LIMIT}
+                max={MAX_AGE_LIMIT}
+                value={minAge || MIN_AGE_LIMIT}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value)
+                  const newMin = val === MIN_AGE_LIMIT ? null : val
+                  setMinAge(newMin)
+                }}
+                onMouseUp={onAgeChange}
+                onTouchEnd={onAgeChange}
+                className="age-slider age-slider-min"
+              />
+              <input
+                type="range"
+                min={MIN_AGE_LIMIT}
+                max={MAX_AGE_LIMIT}
+                value={maxAge || MAX_AGE_LIMIT}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value)
+                  const newMax = val === MAX_AGE_LIMIT ? null : val
+                  setMaxAge(newMax)
+                }}
+                onMouseUp={onAgeChange}
+                onTouchEnd={onAgeChange}
+                className="age-slider age-slider-max"
+              />
+            </div>
+          </div>
 
-      {/* Timeframe Filter */}
-      <div className="timeframe-filter">
-        <div className="timeframe-buttons">
-          {TIMEFRAME_OPTIONS.map(option => {
-            const isActive = timeframe === option.value
-            return (
-              <button
-                key={option.value || 'all'}
-                type="button"
-                className={`timeframe-btn ${isActive ? 'active' : ''}`}
-                onClick={() => onTimeframeChange(isActive && option.value !== null ? null : option.value)}
-              >
-                {option.label}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+          {/* Timeframe Filter */}
+          <div className="timeframe-filter">
+            <div className="timeframe-buttons">
+              {TIMEFRAME_OPTIONS.map(option => {
+                const isActive = timeframe === option.value
+                return (
+                  <button
+                    key={option.value || 'all'}
+                    type="button"
+                    className={`timeframe-btn ${isActive ? 'active' : ''}`}
+                    onClick={() => onTimeframeChange(isActive && option.value !== null ? null : option.value)}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
 
-      {/* Resolution Filter */}
-      <div className="resolution-filter">
-        <span className="filter-label">Min Resolution</span>
-        <div className="resolution-buttons">
-          {RESOLUTION_OPTIONS.map(option => {
-            const isActive = option.value === null
-              ? resolution === null
-              : resolution?.width === option.value?.width && resolution?.height === option.value?.height
-            return (
-              <button
-                key={option.label}
-                type="button"
-                className={`resolution-btn ${isActive ? 'active' : ''}`}
-                onClick={() => onResolutionChange(isActive && option.value !== null ? null : option.value)}
-              >
-                {option.label}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+          {/* Resolution Filter */}
+          <div className="resolution-filter">
+            <span className="filter-label">Min Resolution</span>
+            <div className="resolution-buttons">
+              {RESOLUTION_OPTIONS.map(option => {
+                const isActive = option.value === null
+                  ? resolution === null
+                  : resolution?.width === option.value?.width && resolution?.height === option.value?.height
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    className={`resolution-btn ${isActive ? 'active' : ''}`}
+                    onClick={() => onResolutionChange(isActive && option.value !== null ? null : option.value)}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
 
-      {/* Orientation Filter */}
-      <div className="orientation-filter">
-        <span className="filter-label">Orientation</span>
-        <div className="orientation-buttons">
-          {ORIENTATION_OPTIONS.map(option => {
-            const isActive = orientation === option.value
-            return (
-              <button
-                key={option.value || 'any'}
-                type="button"
-                className={`orientation-btn ${isActive ? 'active' : ''}`}
-                onClick={() => onOrientationChange(isActive && option.value !== null ? null : option.value)}
-              >
-                {option.label}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+          {/* Orientation Filter */}
+          <div className="orientation-filter">
+            <span className="filter-label">Orientation</span>
+            <div className="orientation-buttons">
+              {ORIENTATION_OPTIONS.map(option => {
+                const isActive = orientation === option.value
+                return (
+                  <button
+                    key={option.value || 'any'}
+                    type="button"
+                    className={`orientation-btn ${isActive ? 'active' : ''}`}
+                    onClick={() => onOrientationChange(isActive && option.value !== null ? null : option.value)}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
 
-      {/* Duration Filter (for videos) */}
-      <div className="duration-filter">
-        <span className="filter-label">Video Duration</span>
-        <div className="duration-buttons">
-          {DURATION_OPTIONS.map(option => {
-            const isActive = option.value === null
-              ? duration === null
-              : duration?.min === option.value?.min && duration?.max === option.value?.max
-            return (
-              <button
-                key={option.label}
-                type="button"
-                className={`duration-btn ${isActive ? 'active' : ''}`}
-                onClick={() => onDurationChange(isActive && option.value !== null ? null : option.value)}
-              >
-                {option.label}
-              </button>
-            )
-          })}
+          {/* Duration Filter (for videos) */}
+          <div className="duration-filter">
+            <span className="filter-label">Video Duration</span>
+            <div className="duration-buttons">
+              {DURATION_OPTIONS.map(option => {
+                const isActive = option.value === null
+                  ? duration === null
+                  : duration?.min === option.value?.min && duration?.max === option.value?.max
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    className={`duration-btn ${isActive ? 'active' : ''}`}
+                    onClick={() => onDurationChange(isActive && option.value !== null ? null : option.value)}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -135,29 +135,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
   }, [image?.id, image?.is_favorite])
 
-  // Double-click handler: zoom to fill or reset (images), toggle display mode (videos)
+  // Double-click handler: zoom to fill or reset (images), toggle fullscreen (videos)
   const handleDoubleClick = useCallback((e) => {
     // Don't zoom if clicking on interactive elements
     if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-adjustments, .lightbox-video-controls')) return
 
     resetHideTimer()
 
-    // Special handling for videos - zone-based actions
+    // Videos: double-click toggles fullscreen (VLC behavior)
     if (isVideo(image?.original_filename)) {
-      const rect = e.currentTarget.getBoundingClientRect()
-      const clickX = e.clientX - rect.left
-      const width = rect.width
-
-      if (clickX < width * 0.4) {
-        // Left 40%: skip back 10 seconds
-        playback.seekVideo(-10)
-      } else if (clickX > width * 0.6) {
-        // Right 40%: skip forward 10 seconds
-        playback.seekVideo(10)
-      } else {
-        // Center 20%: toggle display mode (fit/original)
-        playback.setVideoDisplayMode(playback.videoDisplayMode === 'fit' ? 'original' : 'fit')
-      }
+      handleToggleFullscreen()
       return
     }
 
@@ -179,7 +166,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       // Reset zoom
       zoomPan.setZoom({ scale: 1, x: 0, y: 0 })
     }
-  }, [zoomPan, resetHideTimer, image?.original_filename, playback])
+  }, [zoomPan, resetHideTimer, image?.original_filename, handleToggleFullscreen])
 
   // Toggle favorite
   const handleToggleFavorite = useCallback(async () => {
@@ -444,6 +431,76 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         return
       }
 
+      const isVideoFile = isVideo(image?.original_filename)
+
+      // VLC-like video controls
+      if (isVideoFile && mediaRef.current) {
+        switch (e.key) {
+          case ' ':
+            e.preventDefault()
+            playback.toggleVideoPlay()
+            return
+          case 'ArrowLeft':
+            e.preventDefault()
+            if (e.ctrlKey || e.metaKey) {
+              playback.seekVideo(-30) // Ctrl+Left: -30s
+            } else if (e.shiftKey) {
+              playback.seekVideo(-1) // Shift+Left: -1s
+            } else {
+              playback.seekVideo(-5) // Left: -5s
+            }
+            return
+          case 'ArrowRight':
+            e.preventDefault()
+            if (e.ctrlKey || e.metaKey) {
+              playback.seekVideo(30) // Ctrl+Right: +30s
+            } else if (e.shiftKey) {
+              playback.seekVideo(1) // Shift+Right: +1s
+            } else {
+              playback.seekVideo(5) // Right: +5s
+            }
+            return
+          case 'ArrowUp':
+            e.preventDefault()
+            playback.adjustVolume(0.05) // Volume +5%
+            return
+          case 'ArrowDown':
+            e.preventDefault()
+            playback.adjustVolume(-0.05) // Volume -5%
+            return
+          case 'm':
+          case 'M':
+            e.preventDefault()
+            playback.toggleMute()
+            return
+          case 'f':
+          case 'F':
+            e.preventDefault()
+            handleToggleFullscreen()
+            return
+          case '+':
+          case '=':
+          case ']':
+            e.preventDefault()
+            playback.increaseSpeed() // Speed +0.25x
+            return
+          case '-':
+          case '[':
+            e.preventDefault()
+            playback.decreaseSpeed() // Speed -0.25x
+            return
+          case 'Backspace':
+            e.preventDefault()
+            playback.resetSpeed() // Reset to 1.0x
+            return
+          case 'e':
+          case 'E':
+            e.preventDefault()
+            playback.frameAdvance() // Frame advance (when paused)
+            return
+        }
+      }
+
       switch (e.key) {
         case 'Escape':
           onClose()
@@ -457,13 +514,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           onNav(1)
           break
         case 'f':
-          handleToggleFavorite()
-          break
-        case ' ':
-          // Space toggles video play/pause
-          if (isVideo(image?.original_filename) && mediaRef.current) {
-            e.preventDefault()
-            playback.toggleVideoPlay()
+          // Only toggle favorite for images (videos use F for fullscreen)
+          if (!isVideoFile) {
+            handleToggleFavorite()
           }
           break
         case 'Delete':
@@ -480,7 +533,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, playback, image?.original_filename])
+  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, playback, image?.original_filename, handleToggleFullscreen])
 
   // Auto-focus Cancel button when delete dialog opens
   useEffect(() => {
@@ -717,21 +770,54 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             </svg>
           </button>
         )}
-        <button
-          className={`lightbox-btn lightbox-fullscreen ${isFullscreen ? 'active' : ''}`}
-          onClick={handleToggleFullscreen}
-          title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-        >
-          {isFullscreen ? (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>
-            </svg>
-          )}
-        </button>
+        {isVideoFile ? (
+          /* Videos: cycle display mode button */
+          <button
+            className={`lightbox-btn lightbox-display-mode ${playback.videoDisplayMode !== 'fit' ? 'active' : ''}`}
+            onClick={playback.cycleDisplayMode}
+            title={`Display: ${playback.videoDisplayMode} (click to cycle)`}
+          >
+            {playback.videoDisplayMode === 'fit' ? (
+              /* Fit icon - arrows pointing inward */
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M9 9l-3-3M9 9H6M9 9V6"/>
+                <path d="M15 9l3-3M15 9h3M15 9V6"/>
+                <path d="M9 15l-3 3M9 15H6M9 15v3"/>
+                <path d="M15 15l3 3M15 15h3M15 15v3"/>
+              </svg>
+            ) : playback.videoDisplayMode === 'original' ? (
+              /* Original/1:1 icon */
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <text x="12" y="16" textAnchor="middle" fontSize="10" fill="currentColor" stroke="none">1:1</text>
+              </svg>
+            ) : (
+              /* Fill/crop icon */
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M7 3v18M17 3v18" strokeDasharray="3 3"/>
+              </svg>
+            )}
+          </button>
+        ) : (
+          /* Images: fullscreen toggle button */
+          <button
+            className={`lightbox-btn lightbox-fullscreen ${isFullscreen ? 'active' : ''}`}
+            onClick={handleToggleFullscreen}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
+            {isFullscreen ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>
+              </svg>
+            )}
+          </button>
+        )}
         <button className="lightbox-btn lightbox-close" onClick={onClose} title="Close (Esc)">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
@@ -902,7 +988,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 <button
                   className="video-control-btn video-mute-btn"
                   onClick={playback.toggleMute}
-                  title={playback.isMuted ? 'Unmute' : 'Mute'}
+                  title={playback.isMuted ? 'Unmute (M)' : 'Mute (M)'}
                 >
                   {playback.isMuted || playback.volume === 0 ? (
                     <svg viewBox="0 0 24 24" fill="currentColor">
@@ -929,8 +1015,29 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   title={`Volume: ${Math.round((playback.isMuted ? 0 : playback.volume) * 100)}%`}
                 />
               </div>
+              <button
+                className={`video-control-btn video-fullscreen-btn ${isFullscreen ? 'active' : ''}`}
+                onClick={handleToggleFullscreen}
+                title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
+              >
+                {isFullscreen ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>
+                  </svg>
+                )}
+              </button>
               </div>
             </div>
+            {/* Playback speed badge */}
+            {playback.playbackSpeed !== 1.0 && (
+              <div className="playback-speed-badge">
+                {playback.playbackSpeed.toFixed(2).replace(/\.?0+$/, '')}x
+              </div>
+            )}
             {/* Optical flow loading indicator */}
             {streaming.opticalFlowLoading && (
               <div className="interpolate-loading">
@@ -999,9 +1106,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         )}
       </div>
 
-      <div className="lightbox-counter">
-        {currentIndex + 1} / {total}
-      </div>
+      {!isVideoFile && (
+        <div className="lightbox-counter">
+          {currentIndex + 1} / {total}
+        </div>
+      )}
 
       {/* Copy feedback toast */}
       {copyFeedback && (

@@ -29,6 +29,7 @@ export function useVideoPlayback(mediaRef, streamState) {
   const [videoNaturalSize, setVideoNaturalSize] = useState({ width: 0, height: 0 })
   const [volume, setVolume] = useState(1)
   const [isMuted, setIsMuted] = useState(false)
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0)
   const timelineRef = useRef(null)
 
   // Helper to get the current absolute playback time (accounting for stream offsets)
@@ -322,6 +323,61 @@ export function useVideoPlayback(mediaRef, streamState) {
     }
   }, [mediaRef, isMuted])
 
+  // Increase playback speed
+  const increaseSpeed = useCallback(() => {
+    if (!mediaRef.current) return
+    const newSpeed = Math.min(4.0, playbackSpeed + 0.25)
+    setPlaybackSpeed(newSpeed)
+    mediaRef.current.playbackRate = newSpeed
+  }, [mediaRef, playbackSpeed])
+
+  // Decrease playback speed
+  const decreaseSpeed = useCallback(() => {
+    if (!mediaRef.current) return
+    const newSpeed = Math.max(0.25, playbackSpeed - 0.25)
+    setPlaybackSpeed(newSpeed)
+    mediaRef.current.playbackRate = newSpeed
+  }, [mediaRef, playbackSpeed])
+
+  // Reset playback speed to 1.0x
+  const resetSpeed = useCallback(() => {
+    if (!mediaRef.current) return
+    setPlaybackSpeed(1.0)
+    mediaRef.current.playbackRate = 1.0
+  }, [mediaRef])
+
+  // Frame advance (when paused)
+  const frameAdvance = useCallback(() => {
+    if (!mediaRef.current || isPlaying) return
+    const newTime = Math.min(duration, mediaRef.current.currentTime + (1/30))
+    mediaRef.current.currentTime = newTime
+    setCurrentTime(newTime)
+  }, [mediaRef, isPlaying, duration])
+
+  // Adjust volume by delta
+  const adjustVolume = useCallback((delta) => {
+    if (!mediaRef.current) return
+    const newVolume = Math.max(0, Math.min(1, volume + delta))
+    setVolume(newVolume)
+    mediaRef.current.volume = newVolume
+    if (newVolume > 0 && isMuted) {
+      setIsMuted(false)
+      mediaRef.current.muted = false
+    }
+  }, [mediaRef, volume, isMuted])
+
+  // Cycle video display mode
+  const cycleDisplayMode = useCallback(() => {
+    setVideoDisplayMode(prev => {
+      switch (prev) {
+        case 'fit': return 'original'
+        case 'original': return 'fill'
+        case 'fill': return 'fit'
+        default: return 'fit'
+      }
+    })
+  }, [])
+
   // Reset playback state
   const resetPlaybackState = useCallback(() => {
     setIsPlaying(true)
@@ -330,7 +386,11 @@ export function useVideoPlayback(mediaRef, streamState) {
     setIsSeeking(false)
     setVideoDisplayMode('fit')
     setVideoNaturalSize({ width: 0, height: 0 })
-  }, [])
+    setPlaybackSpeed(1.0)
+    if (mediaRef.current) {
+      mediaRef.current.playbackRate = 1.0
+    }
+  }, [mediaRef])
 
   return {
     isPlaying,
@@ -345,6 +405,7 @@ export function useVideoPlayback(mediaRef, streamState) {
     videoNaturalSize,
     volume,
     isMuted,
+    playbackSpeed,
     timelineRef,
     getCurrentAbsoluteTime,
     seekVideo,
@@ -361,6 +422,12 @@ export function useVideoPlayback(mediaRef, streamState) {
     handleSeekTouchEnd,
     handleVolumeChange,
     toggleMute,
+    increaseSpeed,
+    decreaseSpeed,
+    resetSpeed,
+    frameAdvance,
+    adjustVolume,
+    cycleDisplayMode,
     resetPlaybackState
   }
 }

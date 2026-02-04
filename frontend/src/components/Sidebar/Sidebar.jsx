@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { fetchDirectories, getFileDimensions } from '../../api'
 import PromptSection from './PromptSection'
-import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_OPTIONS, ORIENTATION_OPTIONS, DURATION_OPTIONS } from './FilterControls'
+import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_OPTIONS, ORIENTATION_OPTIONS, DURATION_OPTIONS, SORT_OPTIONS } from './FilterControls'
 import TagSearch from './TagSearch'
 import '../Sidebar.css'
 
@@ -270,30 +270,45 @@ function Sidebar({
         )}
 
         <nav className="sidebar-nav">
-          <NavLink to="/" end className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <NavLink to="/" end className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Gallery">
             <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>
+              {/* Picture icon with sun and mountain - matches app logo */}
+              <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="2"/>
+              <circle cx="8.5" cy="8.5" r="2.5"/>
+              <path d="M21 15l-5-5L5 21h14a2 2 0 002-2v-4z"/>
             </svg>
-            <span className="nav-text">Gallery</span>
-            {stats && <span className="nav-count">{stats.total_images.toLocaleString()}</span>}
           </NavLink>
-          <NavLink to="/directories" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <NavLink to="/directories" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Directories">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
             </svg>
-            Directories
           </NavLink>
-          <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <NavLink to="/settings" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Settings">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
             </svg>
-            Settings
           </NavLink>
         </nav>
 
         {/* Search Section - only show on gallery page */}
         {isGalleryPage && <div className="sidebar-section search-section">
           <form onSubmit={handleSearchSubmit}>
+            {/* Sort dropdown - always visible */}
+            <div className="sort-controls">
+              <span className="filter-label">Sort By</span>
+              <select
+                value={sortBy}
+                onChange={(e) => handleSortChange(e.target.value)}
+                className="sort-select"
+              >
+                {SORT_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Collapsible Filters Header */}
             <button
               type="button"
@@ -330,8 +345,6 @@ function Sidebar({
                   setMinAge={setMinAge}
                   setMaxAge={setMaxAge}
                   onAgeChange={handleAgeChange}
-                  sortBy={sortBy}
-                  onSortChange={handleSortChange}
                   timeframe={timeframe}
                   onTimeframeChange={handleTimeframeChange}
                   resolution={resolution}

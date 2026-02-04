@@ -580,6 +580,16 @@ video.lightbox-media {
   background: rgba(100, 181, 246, 0.3);
 }
 
+/* Display mode button (for videos) */
+.lightbox-display-mode.active {
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.2);
+}
+
+.lightbox-display-mode:hover {
+  background: rgba(76, 175, 80, 0.3);
+}
+
 /* Delete dialog button focus states for keyboard navigation */
 .lightbox-confirm-cancel:focus,
 .lightbox-confirm-delete:focus {
@@ -705,6 +715,42 @@ video.lightbox-media {
 
 .svp-error {
   background: rgba(156, 39, 176, 0.9) !important;
+}
+
+/* Playback speed badge */
+.playback-speed-badge {
+  position: absolute;
+  top: 80px;
+  left: 20px;
+  background: rgba(255, 152, 0, 0.9);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  z-index: 10;
+  letter-spacing: 0.5px;
+  animation: badge-fade-in 0.3s ease-out;
+}
+
+/* Auto-hide speed badge with UI */
+.lightbox.ui-hidden .playback-speed-badge {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* Video fullscreen button in controls bar */
+.video-fullscreen-btn {
+  margin-left: 4px;
+}
+
+.video-fullscreen-btn.active {
+  color: #64b5f6;
+}
+
+.video-fullscreen-btn svg {
+  width: 22px;
+  height: 22px;
 }
 
 /* Custom video controls */
@@ -894,6 +940,7 @@ video.lightbox-media {
 
 /* Timeline/progress bar */
 .video-timeline {
+  position: relative;
   flex: 1;
   height: 20px;
   display: flex;
@@ -968,7 +1015,7 @@ video.lightbox-media {
   position: absolute;
   bottom: 100%;
   transform: translateX(-50%);
-  margin-bottom: 12px;
+  margin-bottom: 4px;
   display: flex;
   flex-direction: column;
   align-items: center;

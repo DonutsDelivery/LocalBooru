@@ -2,7 +2,7 @@
 Image listing, search, and filtering endpoints.
 """
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import select, func, desc, asc, or_, and_
+from sqlalchemy import select, func, desc, asc, or_, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional
@@ -256,6 +256,47 @@ async def list_images(
     elif sort == "oldest":
         query = query.order_by(
             asc(func.coalesce(Image.file_modified_at, Image.created_at)),
+            asc(Image.id)
+        )
+    elif sort == "filename_asc":
+        query = query.order_by(
+            asc(func.lower(Image.original_filename)),
+            asc(Image.id)
+        )
+    elif sort == "filename_desc":
+        query = query.order_by(
+            desc(func.lower(Image.original_filename)),
+            desc(Image.id)
+        )
+    elif sort == "filesize_largest":
+        query = query.order_by(
+            desc(func.coalesce(Image.file_size, 0)),
+            desc(Image.id)
+        )
+    elif sort == "filesize_smallest":
+        query = query.order_by(
+            asc(func.coalesce(Image.file_size, 0)),
+            asc(Image.id)
+        )
+    elif sort == "resolution_high":
+        query = query.order_by(
+            desc(func.coalesce(Image.width, 0) * func.coalesce(Image.height, 0)),
+            desc(Image.id)
+        )
+    elif sort == "resolution_low":
+        query = query.order_by(
+            asc(func.coalesce(Image.width, 0) * func.coalesce(Image.height, 0)),
+            asc(Image.id)
+        )
+    elif sort == "duration_longest":
+        query = query.order_by(
+            desc(func.coalesce(Image.duration, 0)),
+            desc(Image.id)
+        )
+    elif sort == "duration_shortest":
+        query = query.order_by(
+            asc(case((Image.duration.is_(None), 1), else_=0)),
+            asc(func.coalesce(Image.duration, 0)),
             asc(Image.id)
         )
     elif sort == "random":

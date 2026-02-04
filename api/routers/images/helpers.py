@@ -7,7 +7,7 @@ Architecture:
 - For cross-directory queries, we aggregate results from multiple DBs
 """
 from fastapi import Request
-from sqlalchemy import select, func, desc, asc, or_, and_
+from sqlalchemy import select, func, desc, asc, or_, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
@@ -257,6 +257,49 @@ async def query_directory_images(
         elif sort == "oldest":
             query = query.order_by(
                 asc(func.coalesce(DirectoryImage.file_modified_at, DirectoryImage.created_at)),
+                asc(DirectoryImage.id)
+            )
+        elif sort == "filename_asc":
+            query = query.order_by(
+                asc(func.lower(DirectoryImage.original_filename)),
+                asc(DirectoryImage.id)
+            )
+        elif sort == "filename_desc":
+            query = query.order_by(
+                desc(func.lower(DirectoryImage.original_filename)),
+                desc(DirectoryImage.id)
+            )
+        elif sort == "filesize_largest":
+            query = query.order_by(
+                desc(func.coalesce(DirectoryImage.file_size, 0)),
+                desc(DirectoryImage.id)
+            )
+        elif sort == "filesize_smallest":
+            query = query.order_by(
+                asc(func.coalesce(DirectoryImage.file_size, 0)),
+                asc(DirectoryImage.id)
+            )
+        elif sort == "resolution_high":
+            # Sort by total pixels (width * height)
+            query = query.order_by(
+                desc(func.coalesce(DirectoryImage.width, 0) * func.coalesce(DirectoryImage.height, 0)),
+                desc(DirectoryImage.id)
+            )
+        elif sort == "resolution_low":
+            query = query.order_by(
+                asc(func.coalesce(DirectoryImage.width, 0) * func.coalesce(DirectoryImage.height, 0)),
+                asc(DirectoryImage.id)
+            )
+        elif sort == "duration_longest":
+            query = query.order_by(
+                desc(func.coalesce(DirectoryImage.duration, 0)),
+                desc(DirectoryImage.id)
+            )
+        elif sort == "duration_shortest":
+            # Put items with duration first, then sort ascending
+            query = query.order_by(
+                asc(case((DirectoryImage.duration.is_(None), 1), else_=0)),
+                asc(func.coalesce(DirectoryImage.duration, 0)),
                 asc(DirectoryImage.id)
             )
         elif sort == "random":
