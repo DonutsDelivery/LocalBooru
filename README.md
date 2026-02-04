@@ -42,15 +42,11 @@ The installer versions use AppData/home directory instead (shared across updates
 - **Favorites** - Mark your best images and filter to show only favorites
 - **Pruning** - Clean up non-favorited images by moving them to a dumpster folder
 
-![Watch Directories](screenshots/directories.png)
-
 ### Modern Interface
 - **Masonry grid** - Beautiful responsive gallery layout
 - **Lightbox viewer** - Full-screen image viewing with keyboard navigation
 - **Dark theme** - Easy on the eyes for extended browsing sessions
 - **Filter sidebar** - Filter by tags, ratings, age range, and directories
-
-![Settings](screenshots/settings.png)
 
 ### Flexible Access
 - **Desktop app** - Native Electron application for Windows, macOS, and Linux
