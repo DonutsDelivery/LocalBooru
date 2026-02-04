@@ -4,7 +4,9 @@ A local image library with automatic AI tagging, designed for organizing and bro
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/ZhvPhXrdZ4) - Help, feature requests, and discussions
 
-![Gallery View](screenshots/gallery.png)
+🌐 **[Visit Website](https://donutsdelivery.online/#localbooru)**
+
+![Gallery View](https://donutsdelivery.online/assets/mockups/thumbs/localbooru-mockup-1.svg)
 
 ## Download
 
