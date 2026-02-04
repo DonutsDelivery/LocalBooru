@@ -40,22 +40,26 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
       const data = await fetchPreviewFrames(image.id, image.directory_id)
       if (data.frames && data.frames.length > 0) {
         const frameUrls = data.frames.map(url => getMediaUrl(url))
-        previewFramesRef.current = frameUrls
-        setPreviewFrames(frameUrls)
 
-        // Preload frames and wait for all to load before enabling slideshow
-        const loadPromises = frameUrls.map(url => {
+        // Preload frames and only keep ones that successfully load
+        const loadResults = await Promise.all(frameUrls.map(url => {
           return new Promise((resolve) => {
             const img = new Image()
-            img.onload = resolve
-            img.onerror = resolve // Still resolve on error to not block
+            img.onload = () => resolve(url)
+            img.onerror = () => resolve(null) // Return null for failed loads
             img.src = url
           })
-        })
+        }))
 
-        await Promise.all(loadPromises)
+        // Filter out failed frames
+        const validFrames = loadResults.filter(url => url !== null)
 
-        setPreviewLoaded(true)
+        // Only enable slideshow if we have valid frames
+        if (validFrames.length > 0) {
+          previewFramesRef.current = validFrames
+          setPreviewFrames(validFrames)
+          setPreviewLoaded(true)
+        }
       }
     } catch (err) {
       // Silently fail - preview frames are optional
@@ -74,20 +78,19 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
   const handleMouseEnter = useCallback(() => {
     isHoveringRef.current = true
 
-    // Only fetch preview frames if we have a valid thumbnail (item is properly loaded)
-    if (isVideoFile && !previewFetchedRef.current && thumbnailUrl && loaded && !error) {
-      fetchFramesIfNeeded()
-    }
-
+    // If frames already loaded from previous hover, start slideshow
     const frames = previewFramesRef.current
-    if (usePreviewFrames && !frameIntervalRef.current && frames.length > 0) {
-      // Start frame slideshow for videos with preview frames
+    if (previewLoaded && frames.length > 0 && !frameIntervalRef.current) {
       setCurrentFrame(0)
       frameIntervalRef.current = setInterval(() => {
         setCurrentFrame(prev => (prev + 1) % previewFramesRef.current.length)
       }, 600)
     }
-  }, [usePreviewFrames, isVideoFile, fetchFramesIfNeeded, thumbnailUrl, loaded, error])
+    // If not yet fetched, start fetching in background (slideshow will work on next hover)
+    else if (isVideoFile && !previewFetchedRef.current && thumbnailUrl && loaded && !error) {
+      fetchFramesIfNeeded()
+    }
+  }, [previewLoaded, isVideoFile, fetchFramesIfNeeded, thumbnailUrl, loaded, error])
 
   const handleMouseLeave = useCallback(() => {
     isHoveringRef.current = false
@@ -99,16 +102,8 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     setCurrentFrame(-1) // Back to thumbnail
   }, [])
 
-  // Start slideshow when frames become available while already hovering
-  useEffect(() => {
-    const frames = previewFramesRef.current
-    if (isHoveringRef.current && usePreviewFrames && !frameIntervalRef.current && frames.length > 0) {
-      setCurrentFrame(0)
-      frameIntervalRef.current = setInterval(() => {
-        setCurrentFrame(prev => (prev + 1) % previewFramesRef.current.length)
-      }, 600)
-    }
-  }, [usePreviewFrames, previewFrames.length])
+  // Note: Slideshow only starts on subsequent hovers after frames are loaded
+  // This prevents flickering issues during initial frame fetch
 
   // Handle click - either select or open lightbox
   const handleClick = (e) => {

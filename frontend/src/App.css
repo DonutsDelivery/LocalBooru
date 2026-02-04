@@ -655,13 +655,14 @@
   flex: 1;
   min-width: 0;
   height: 100%;
-  padding: 20px;
-  padding-top: calc(var(--title-bar-height, 0px) + 20px);
+  padding: 0;
+  padding-top: var(--title-bar-height, 0px);
   transition: margin-left 0.3s ease;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  background: var(--bg-primary);
 }
 
 .content > .page {
@@ -676,8 +677,8 @@
 .content > .masonry-container {
   flex: 1 1 0;
   min-height: 0;
-  height: 100%;
   overflow-y: auto;
+  background: var(--bg-primary);
 }
 
 .content.with-sidebar {
@@ -866,7 +867,7 @@
 
 @media (max-width: 768px) {
   .content {
-    padding: 15px;
+    padding: 0;
   }
 }
 
