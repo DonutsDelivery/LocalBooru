@@ -7,7 +7,7 @@ function FolderItem({ folder, onClick }) {
   const thumbnailUrl = folder.thumbnail_url ? getMediaUrl(folder.thumbnail_url) : ''
 
   return (
-    <div className={`folder-item ${loaded ? 'loaded' : 'loading'}`} onClick={onClick} data-folder-path={folder.path}>
+    <div className={`folder-item ${loaded ? 'loaded' : 'loading'}`} onClick={onClick} data-folder-path={folder.path || '__unfiled__'}>
       {!loaded && <div className="folder-loading-placeholder" />}
       {thumbnailUrl && (
         <img

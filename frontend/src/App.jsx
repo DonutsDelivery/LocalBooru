@@ -844,9 +844,10 @@ function Gallery() {
   const enteredFolderPathRef = useRef(null)
 
   const handleFolderClick = useCallback((folderPath) => {
-    enteredFolderPathRef.current = folderPath
+    const urlValue = folderPath || '__unfiled__'
+    enteredFolderPathRef.current = urlValue
     const params = Object.fromEntries(searchParams)
-    params.folder = folderPath
+    params.folder = urlValue
     setSearchParams(params)
     requestAnimationFrame(() => {
       const el = document.querySelector('.content.with-sidebar > .masonry-container')
@@ -1153,7 +1154,7 @@ function Gallery() {
                 Folders
               </button>
               <span className="folder-breadcrumb-separator">/</span>
-              <span className="folder-breadcrumb-name">{currentFolder.split('/').pop()}</span>
+              <span className="folder-breadcrumb-name">{currentFolder === '__unfiled__' ? 'Unfiled' : currentFolder.split('/').pop()}</span>
             </div>
           )}
           {!loading && images.length === 0 ? (

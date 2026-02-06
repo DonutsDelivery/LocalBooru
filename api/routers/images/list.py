@@ -252,7 +252,10 @@ async def list_images(
 
     # Import source filter (for folder grouping)
     if import_source is not None:
-        filters.append(Image.import_source == import_source)
+        if import_source == '__unfiled__':
+            filters.append(Image.import_source.is_(None))
+        else:
+            filters.append(Image.import_source == import_source)
 
     if filters:
         query = query.where(and_(*filters))
@@ -435,25 +438,25 @@ async def list_folders(
                 # A tag didn't exist, skip this directory
                 continue
 
-            # Query: group by import_source, get count
+            # Query: group by import_source, get count (includes NULL as a group)
             count_query = (
                 select(
                     DirectoryImage.import_source,
                     func.count(DirectoryImage.id).label('count')
                 )
                 .where(and_(*filters) if filters else True)
-                .where(DirectoryImage.import_source.isnot(None))
                 .group_by(DirectoryImage.import_source)
             )
             count_result = await dir_db.execute(count_query)
 
             for row in count_result:
-                path = row[0]
+                path = row[0]  # May be None for unfiled images
+                key = path or ''  # Use empty string as key for unfiled
                 count = row[1]
-                if path in folders_map:
-                    folders_map[path]['count'] += count
+                if key in folders_map:
+                    folders_map[key]['count'] += count
                 else:
-                    folders_map[path] = {
+                    folders_map[key] = {
                         'count': count,
                         'thumbnail_url': None,
                         'width': None,
@@ -463,29 +466,29 @@ async def list_folders(
                     }
 
             # For each folder path, get the newest image as representative thumbnail
-            for path in list(folders_map.keys()):
-                if folders_map[path]['thumbnail_url'] is not None:
+            for key in list(folders_map.keys()):
+                if folders_map[key]['thumbnail_url'] is not None:
                     continue  # Already have a thumbnail from a previous dir
+
+                if key == '':
+                    source_filter = DirectoryImage.import_source.is_(None)
+                else:
+                    source_filter = DirectoryImage.import_source == key
 
                 thumb_query = (
                     select(DirectoryImage)
-                    .where(
-                        and_(
-                            DirectoryImage.import_source == path,
-                            *filters
-                        )
-                    )
+                    .where(and_(source_filter, *filters))
                     .order_by(desc(func.coalesce(DirectoryImage.file_modified_at, DirectoryImage.created_at)))
                     .limit(1)
                 )
                 thumb_result = await dir_db.execute(thumb_query)
                 thumb_img = thumb_result.scalar_one_or_none()
                 if thumb_img:
-                    folders_map[path]['thumbnail_url'] = f"/api/images/{thumb_img.id}/thumbnail?directory_id={dir_id}"
-                    folders_map[path]['width'] = thumb_img.width
-                    folders_map[path]['height'] = thumb_img.height
-                    folders_map[path]['created_at'] = thumb_img.created_at
-                    folders_map[path]['directory_id'] = dir_id
+                    folders_map[key]['thumbnail_url'] = f"/api/images/{thumb_img.id}/thumbnail?directory_id={dir_id}"
+                    folders_map[key]['width'] = thumb_img.width
+                    folders_map[key]['height'] = thumb_img.height
+                    folders_map[key]['created_at'] = thumb_img.created_at
+                    folders_map[key]['directory_id'] = dir_id
 
         except Exception as e:
             print(f"[Folders] Error querying directory {dir_id}: {e}")
@@ -494,18 +497,21 @@ async def list_folders(
             await dir_db.close()
 
     # Build sorted folder list (alphabetical by folder name)
+    # Skip single-item folders — not worth grouping
     folders = []
-    for path, data in folders_map.items():
+    for key, data in folders_map.items():
+        if data['count'] <= 1:
+            continue
         folders.append({
-            'path': path,
-            'name': os.path.basename(path) or path,
+            'path': key or None,
+            'name': os.path.basename(key) if key else 'Unfiled',
             'count': data['count'],
             'thumbnail_url': data['thumbnail_url'],
             'width': data['width'],
             'height': data['height'],
         })
 
-    folders.sort(key=lambda f: f['name'].lower())
+    folders.sort(key=lambda f: (f['path'] is None, f['name'].lower()))
 
     return {
         "folders": folders,

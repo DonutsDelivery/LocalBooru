@@ -243,7 +243,10 @@ async def query_directory_images(
 
         # Import source filter (for folder grouping)
         if import_source is not None:
-            filters.append(DirectoryImage.import_source == import_source)
+            if import_source == '__unfiled__':
+                filters.append(DirectoryImage.import_source.is_(None))
+            else:
+                filters.append(DirectoryImage.import_source == import_source)
 
         if filters:
             query = query.where(and_(*filters))
