@@ -1,5 +1,6 @@
 import { useEffect, useRef, useMemo, useState } from 'react'
 import MediaItem from './MediaItem'
+import FolderItem from './FolderItem'
 import './MasonryGrid.css'
 
 // Base column counts for tileSize = 3 (medium, the default)
@@ -101,6 +102,7 @@ function getSkeletonCounts(columns) {
 function MasonryGrid({
   images,
   onImageClick,
+  onFolderClick,
   onLoadMore,
   loading,
   hasMore,
@@ -228,18 +230,22 @@ function MasonryGrid({
         {columnData.map((column, colIdx) => (
           <div key={colIdx} className="masonry-column">
             {column.items.map((image) => (
-              <div key={`${image.id}-${image.is_favorite}`}>
-                <MediaItem
-                  image={image}
-                  onClick={() => onImageClick(image.id)}
-                  user={user}
-                  onRatingChange={onImageUpdate}
-                  onReject={onImageUpdate}
-                  showStatus={showStatus}
-                  isSelectable={isSelectable}
-                  isSelected={selectedImages.has(image.id)}
-                  onSelect={onSelectImage}
-                />
+              <div key={image._isFolder ? `folder-${image.path}` : `${image.id}-${image.is_favorite}`}>
+                {image._isFolder ? (
+                  <FolderItem folder={image} onClick={() => onFolderClick(image.path)} />
+                ) : (
+                  <MediaItem
+                    image={image}
+                    onClick={() => onImageClick(image.id)}
+                    user={user}
+                    onRatingChange={onImageUpdate}
+                    onReject={onImageUpdate}
+                    showStatus={showStatus}
+                    isSelectable={isSelectable}
+                    isSelected={selectedImages.has(image.id)}
+                    onSelect={onSelectImage}
+                  />
+                )}
               </div>
             ))}
             {/* Skeleton placeholders to fill shorter columns while loading */}

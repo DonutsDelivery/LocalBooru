@@ -17,7 +17,7 @@ import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
 import OpticalFlowSettings from './components/OpticalFlowSettings'
 import QRConnect from './components/QRConnect'
-import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
+import { fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
 import DirectoriesPage from './pages/DirectoriesPage'
 import './App.css'
 
@@ -466,6 +466,10 @@ function Gallery() {
     return { min: min ?? null, max: max ?? null }
   }, [durationParam])
 
+  // Folder grouping URL params
+  const groupByFolders = searchParams.get('group') === 'folders'
+  const currentFolder = searchParams.get('folder') || null
+
   // Track if we're waiting for localStorage params to be applied to URL
   const [pendingParamsFromStorage, setPendingParamsFromStorage] = useState(false)
 
@@ -488,6 +492,7 @@ function Gallery() {
         if (filters.resolution) params.resolution = `${filters.resolution.width}x${filters.resolution.height}`
         if (filters.orientation) params.orientation = filters.orientation
         if (filters.duration) params.duration = `${filters.duration.min ?? 'null'}-${filters.duration.max ?? 'null'}`
+        if (filters.groupByFolders) params.group = 'folders'
         if (Object.keys(params).length > 0) {
           setPendingParamsFromStorage(true)
           setSearchParams(params)
@@ -521,10 +526,11 @@ function Gallery() {
       max_age: currentMaxAge,
       resolution: currentResolution,
       orientation: currentOrientation,
-      duration: currentDuration
+      duration: currentDuration,
+      groupByFolders: groupByFolders
     }
     localStorage.setItem('localbooru_filters', JSON.stringify(filters))
-  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge, currentResolution, currentOrientation, currentDuration])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge, currentResolution, currentOrientation, currentDuration, groupByFolders])
 
   // Touch handling for mobile sidebar
   const touchStartX = useRef(null)
@@ -548,8 +554,42 @@ function Gallery() {
     touchStartX.current = null
   }, [sidebarOpen, lightboxIndex])
 
+  // Load folders for folder grouping view
+  const loadFolders = useCallback(async () => {
+    setLoading(true)
+    try {
+      const result = await fetchFolders({
+        directory_id: currentDirectoryId,
+        rating: currentRating,
+        favorites_only: favoritesOnly,
+        tags: currentTags,
+      })
+      const folderItems = result.folders.map(f => ({
+        ...f,
+        _isFolder: true,
+        // Use thumbnail dimensions for masonry column balancing
+        id: `folder-${f.path}`,
+      }))
+      setImages(folderItems)
+      setTotal(result.total)
+      setHasMore(false)
+      setPage(1)
+    } catch (error) {
+      console.error('Failed to load folders:', error)
+    }
+    setLoading(false)
+  }, [currentDirectoryId, currentRating, favoritesOnly, currentTags])
+
   // Load images
   const loadImages = useCallback(async (pageNum = 1, append = false) => {
+    // If folder grouping is active and no specific folder selected, load folders instead
+    if (groupByFolders && !currentFolder) {
+      if (pageNum === 1 && !append) {
+        return loadFolders()
+      }
+      return
+    }
+
     setLoading(true)
     try {
       const result = await fetchImages({
@@ -566,6 +606,7 @@ function Gallery() {
         orientation: currentOrientation,
         min_duration: currentDuration?.min,
         max_duration: currentDuration?.max,
+        import_source: currentFolder,
         sort: currentSort,
         page: pageNum,
         per_page: calculatePerPage(tileSize)
@@ -588,7 +629,7 @@ function Gallery() {
       console.error('Failed to load images:', error)
     }
     setLoading(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders])
 
   // Update a single image in the images array
   const handleImageUpdate = useCallback((imageId, updates) => {
@@ -632,7 +673,7 @@ function Gallery() {
   useEffect(() => {
     if (!filtersInitialized) return
     loadImages(1, false)
-  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, loadImages])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, groupByFolders, currentFolder, loadImages])
 
   useEffect(() => {
     loadTags()
@@ -720,6 +761,7 @@ function Gallery() {
         orientation: currentOrientation,
         min_duration: currentDuration?.min,
         max_duration: currentDuration?.max,
+        import_source: currentFolder,
         sort: currentSort,
         page: targetPage,
         per_page: perPage
@@ -773,6 +815,8 @@ function Gallery() {
     if (currentDirectoryId) params.directory = currentDirectoryId
     if (currentMinAge !== null) params.min_age = currentMinAge
     if (currentMaxAge !== null) params.max_age = currentMaxAge
+    if (groupByFolders) params.group = 'folders'
+    if (currentFolder) params.folder = currentFolder
     setSearchParams(params)
   }
 
@@ -790,8 +834,57 @@ function Gallery() {
     if (resolution) params.resolution = `${resolution.width}x${resolution.height}`
     if (orientation) params.orientation = orientation
     if (duration) params.duration = `${duration.min ?? 'null'}-${duration.max ?? 'null'}`
+    // Preserve folder grouping state across filter changes
+    if (groupByFolders) params.group = 'folders'
+    if (currentFolder) params.folder = currentFolder
     setSearchParams(params)
   }
+
+  // Track which folder was entered so we can scroll back to it on exit
+  const enteredFolderPathRef = useRef(null)
+
+  const handleFolderClick = useCallback((folderPath) => {
+    enteredFolderPathRef.current = folderPath
+    const params = Object.fromEntries(searchParams)
+    params.folder = folderPath
+    setSearchParams(params)
+    requestAnimationFrame(() => {
+      const el = document.querySelector('.content.with-sidebar > .masonry-container')
+      if (el) el.scrollTop = 0
+    })
+  }, [searchParams, setSearchParams])
+
+  const handleBackToFolders = useCallback(() => {
+    const targetPath = enteredFolderPathRef.current
+    const params = Object.fromEntries(searchParams)
+    delete params.folder
+    setSearchParams(params)
+    if (targetPath) {
+      // Wait for folder tiles to render, then scroll to the one we came from
+      const tryScroll = () => {
+        const el = document.querySelector(`[data-folder-path="${CSS.escape(targetPath)}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        } else {
+          // Tiles may not have rendered yet, retry
+          requestAnimationFrame(tryScroll)
+        }
+      }
+      requestAnimationFrame(tryScroll)
+    }
+  }, [searchParams, setSearchParams])
+
+  const handleToggleGroupByFolders = useCallback(() => {
+    const params = Object.fromEntries(searchParams)
+    if (params.group === 'folders') {
+      delete params.group
+      delete params.folder
+    } else {
+      params.group = 'folders'
+      delete params.folder
+    }
+    setSearchParams(params)
+  }, [searchParams, setSearchParams])
 
   const handleImageClick = (imageId) => {
     // Push history state so back button closes lightbox
@@ -847,6 +940,7 @@ function Gallery() {
           orientation: currentOrientation,
           min_duration: currentDuration?.min,
           max_duration: currentDuration?.max,
+          import_source: currentFolder,
           sort: currentSort,
           page: nextPage,
           per_page: calculatePerPage(tileSize)
@@ -1038,6 +1132,8 @@ function Gallery() {
           initialResolution={currentResolution}
           initialOrientation={currentOrientation}
           initialDuration={currentDuration}
+          initialGroupByFolders={groupByFolders}
+          onToggleGroupByFolders={handleToggleGroupByFolders}
           total={total}
           stats={stats}
           lightboxMode={lightboxIndex !== null}
@@ -1048,15 +1144,28 @@ function Gallery() {
         {!sidebarOpen && <div className="swipe-hint" />}
 
         <main className="content with-sidebar">
+          {currentFolder && (
+            <div className="folder-breadcrumb">
+              <button className="folder-back-btn" onClick={handleBackToFolders}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Folders
+              </button>
+              <span className="folder-breadcrumb-separator">/</span>
+              <span className="folder-breadcrumb-name">{currentFolder.split('/').pop()}</span>
+            </div>
+          )}
           {!loading && images.length === 0 ? (
             <div className="no-results">
-              <h2>No images found</h2>
+              <h2>{groupByFolders && !currentFolder ? 'No folders found' : 'No images found'}</h2>
               <p>Try adjusting your search filters or add some directories to watch.</p>
             </div>
           ) : (
             <MasonryGrid
               images={images}
               onImageClick={handleImageClick}
+              onFolderClick={handleFolderClick}
               onLoadMore={handleLoadMore}
               loading={loading}
               hasMore={hasMore}

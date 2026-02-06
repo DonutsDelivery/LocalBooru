@@ -28,6 +28,8 @@ function Sidebar({
   initialResolution,
   initialOrientation,
   initialDuration,
+  initialGroupByFolders,
+  onToggleGroupByFolders,
   total,
   stats,
   lightboxMode,
@@ -159,6 +161,9 @@ function Sidebar({
     setResolution(null)
     setOrientation(null)
     setDuration(null)
+    if (initialGroupByFolders && onToggleGroupByFolders) {
+      onToggleGroupByFolders()
+    }
     onSearch('', ALL_RATINGS.join(','), 'newest', false, null, null, null, null, '', null, null, null)
   }
 
@@ -352,6 +357,8 @@ function Sidebar({
                   onSearchSubmit={handleSearchSubmit}
                   favoritesOnly={favoritesOnly}
                   onToggleFavorites={toggleFavorites}
+                  groupByFolders={initialGroupByFolders}
+                  onToggleGroupByFolders={onToggleGroupByFolders}
                   selectedRatings={selectedRatings}
                   onToggleRating={toggleRating}
                   minAge={minAge}

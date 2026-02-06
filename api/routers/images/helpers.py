@@ -96,6 +96,7 @@ async def query_directory_images(
     orientation: str = None,
     min_duration: int = None,
     max_duration: int = None,
+    import_source: str = None,
     sort: str = "newest",
     limit: int = 100,
     offset: int = 0,
@@ -240,6 +241,10 @@ async def query_directory_images(
         if max_duration is not None:
             filters.append(DirectoryImage.duration <= max_duration)
 
+        # Import source filter (for folder grouping)
+        if import_source is not None:
+            filters.append(DirectoryImage.import_source == import_source)
+
         if filters:
             query = query.where(and_(*filters))
 
@@ -301,6 +306,16 @@ async def query_directory_images(
                 asc(case((DirectoryImage.duration.is_(None), 1), else_=0)),
                 asc(func.coalesce(DirectoryImage.duration, 0)),
                 asc(DirectoryImage.id)
+            )
+        elif sort == "folder_asc":
+            query = query.order_by(
+                asc(func.coalesce(func.lower(DirectoryImage.import_source), '')),
+                asc(DirectoryImage.id)
+            )
+        elif sort == "folder_desc":
+            query = query.order_by(
+                desc(func.coalesce(func.lower(DirectoryImage.import_source), '')),
+                desc(DirectoryImage.id)
             )
         elif sort == "random":
             query = query.order_by(func.random())

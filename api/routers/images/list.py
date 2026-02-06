@@ -1,6 +1,7 @@
 """
 Image listing, search, and filtering endpoints.
 """
+import os
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select, func, desc, asc, or_, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +10,8 @@ from typing import Optional
 
 from ...database import get_db, directory_db_manager
 from ...models import (
-    Image, Tag, ImageFile, image_tags, Rating, FileStatus, WatchDirectory
+    Image, Tag, ImageFile, image_tags, Rating, FileStatus, WatchDirectory,
+    DirectoryImage, DirectoryImageFile, directory_image_tags
 )
 from .helpers import query_directory_images, check_image_public_access
 
@@ -37,6 +39,7 @@ async def list_images(
     orientation: Optional[str] = Query(None, description="Filter by orientation: landscape, portrait, square"),
     min_duration: Optional[int] = Query(None, ge=0, description="Minimum video duration in seconds"),
     max_duration: Optional[int] = Query(None, ge=0, description="Maximum video duration in seconds"),
+    import_source: Optional[str] = Query(None, description="Filter to images from a specific source folder"),
     sort: str = "newest",
     db: AsyncSession = Depends(get_db)
 ):
@@ -81,6 +84,7 @@ async def list_images(
             orientation=orientation,
             min_duration=min_duration,
             max_duration=max_duration,
+            import_source=import_source,
             sort=sort,
             limit=per_page,
             offset=offset,
@@ -131,6 +135,7 @@ async def list_images(
                     orientation=orientation,
                     min_duration=min_duration,
                     max_duration=max_duration,
+                    import_source=import_source,
                     sort=sort,
                     limit=per_page,
                     offset=offset,
@@ -245,6 +250,10 @@ async def list_images(
     if max_duration is not None:
         filters.append(Image.duration <= max_duration)
 
+    # Import source filter (for folder grouping)
+    if import_source is not None:
+        filters.append(Image.import_source == import_source)
+
     if filters:
         query = query.where(and_(*filters))
 
@@ -299,6 +308,16 @@ async def list_images(
             asc(func.coalesce(Image.duration, 0)),
             asc(Image.id)
         )
+    elif sort == "folder_asc":
+        query = query.order_by(
+            asc(func.coalesce(func.lower(Image.import_source), '')),
+            asc(Image.id)
+        )
+    elif sort == "folder_desc":
+        query = query.order_by(
+            desc(func.coalesce(func.lower(Image.import_source), '')),
+            desc(Image.id)
+        )
     elif sort == "random":
         query = query.order_by(func.random())
 
@@ -352,4 +371,143 @@ async def list_images(
         "page": page,
         "per_page": per_page,
         "total_pages": (total + per_page - 1) // per_page
+    }
+
+
+@router.get("/folders")
+async def list_folders(
+    request: Request,
+    directory_id: Optional[int] = Query(None, description="Filter to a specific directory"),
+    rating: Optional[str] = None,
+    favorites_only: bool = False,
+    tags: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List folders grouped by import_source with counts and representative thumbnails.
+    Respects the same filters as list_images so folder counts reflect active filters.
+    """
+    tag_names = [t.strip().lower().replace(" ", "_") for t in (tags or "").split(",") if t.strip()]
+    rating_list = [r for r in (rating or "").split(",") if r in [e.value for e in Rating]]
+
+    # Aggregate folder data across directory databases
+    folders_map = {}  # path -> { count, thumbnail_url, width, height, created_at, directory_id }
+
+    all_dir_ids = directory_db_manager.get_all_directory_ids()
+    dir_ids_to_query = [directory_id] if directory_id is not None else all_dir_ids
+
+    for dir_id in dir_ids_to_query:
+        if not directory_db_manager.db_exists(dir_id):
+            continue
+        dir_db = await directory_db_manager.get_session(dir_id)
+        try:
+            # Build filters matching list_images logic
+            filters = []
+
+            # Exclude missing files
+            has_non_missing_file = select(DirectoryImageFile.image_id).where(
+                DirectoryImageFile.file_status != FileStatus.missing
+            )
+            filters.append(DirectoryImage.id.in_(has_non_missing_file))
+
+            if favorites_only:
+                filters.append(DirectoryImage.is_favorite == True)
+
+            if rating_list:
+                filters.append(DirectoryImage.rating.in_([Rating(r) for r in rating_list]))
+
+            # Tag filters
+            if tag_names:
+                for tag_name in tag_names:
+                    tag_query = select(Tag.id).where(Tag.name == tag_name)
+                    tag_result = await db.execute(tag_query)
+                    tag_id = tag_result.scalar_one_or_none()
+                    if tag_id:
+                        tag_subq = select(directory_image_tags.c.image_id).where(
+                            directory_image_tags.c.tag_id == tag_id
+                        )
+                        filters.append(DirectoryImage.id.in_(tag_subq))
+                    else:
+                        filters = None
+                        break
+
+            if filters is None:
+                # A tag didn't exist, skip this directory
+                continue
+
+            # Query: group by import_source, get count
+            count_query = (
+                select(
+                    DirectoryImage.import_source,
+                    func.count(DirectoryImage.id).label('count')
+                )
+                .where(and_(*filters) if filters else True)
+                .where(DirectoryImage.import_source.isnot(None))
+                .group_by(DirectoryImage.import_source)
+            )
+            count_result = await dir_db.execute(count_query)
+
+            for row in count_result:
+                path = row[0]
+                count = row[1]
+                if path in folders_map:
+                    folders_map[path]['count'] += count
+                else:
+                    folders_map[path] = {
+                        'count': count,
+                        'thumbnail_url': None,
+                        'width': None,
+                        'height': None,
+                        'created_at': None,
+                        'directory_id': dir_id
+                    }
+
+            # For each folder path, get the newest image as representative thumbnail
+            for path in list(folders_map.keys()):
+                if folders_map[path]['thumbnail_url'] is not None:
+                    continue  # Already have a thumbnail from a previous dir
+
+                thumb_query = (
+                    select(DirectoryImage)
+                    .where(
+                        and_(
+                            DirectoryImage.import_source == path,
+                            *filters
+                        )
+                    )
+                    .order_by(desc(func.coalesce(DirectoryImage.file_modified_at, DirectoryImage.created_at)))
+                    .limit(1)
+                )
+                thumb_result = await dir_db.execute(thumb_query)
+                thumb_img = thumb_result.scalar_one_or_none()
+                if thumb_img:
+                    folders_map[path]['thumbnail_url'] = f"/api/images/{thumb_img.id}/thumbnail?directory_id={dir_id}"
+                    folders_map[path]['width'] = thumb_img.width
+                    folders_map[path]['height'] = thumb_img.height
+                    folders_map[path]['created_at'] = thumb_img.created_at
+                    folders_map[path]['directory_id'] = dir_id
+
+        except Exception as e:
+            print(f"[Folders] Error querying directory {dir_id}: {e}")
+            continue
+        finally:
+            await dir_db.close()
+
+    # Build sorted folder list (alphabetical by folder name)
+    folders = []
+    for path, data in folders_map.items():
+        folders.append({
+            'path': path,
+            'name': os.path.basename(path) or path,
+            'count': data['count'],
+            'thumbnail_url': data['thumbnail_url'],
+            'width': data['width'],
+            'height': data['height'],
+        })
+
+    folders.sort(key=lambda f: f['name'].lower())
+
+    return {
+        "folders": folders,
+        "total": len(folders)
     }

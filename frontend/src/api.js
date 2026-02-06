@@ -177,6 +177,7 @@ export async function fetchImages({
   orientation,
   min_duration,
   max_duration,
+  import_source,
   sort = 'newest',
   page = 1,
   per_page = 50
@@ -197,11 +198,22 @@ export async function fetchImages({
   if (orientation) params.append('orientation', orientation)
   if (min_duration !== undefined && min_duration !== null) params.append('min_duration', min_duration)
   if (max_duration !== undefined && max_duration !== null) params.append('max_duration', max_duration)
+  if (import_source) params.append('import_source', import_source)
   params.append('sort', sort)
   params.append('page', page)
   params.append('per_page', per_page)
 
   const response = await api.get(`/images?${params}`)
+  return response.data
+}
+
+export async function fetchFolders({ directory_id, rating, favorites_only, tags } = {}) {
+  const params = new URLSearchParams()
+  if (directory_id) params.append('directory_id', directory_id)
+  if (rating) params.append('rating', rating)
+  if (favorites_only) params.append('favorites_only', 'true')
+  if (tags) params.append('tags', tags)
+  const response = await api.get(`/images/folders?${params}`)
   return response.data
 }
 

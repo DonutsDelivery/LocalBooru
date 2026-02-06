@@ -18,6 +18,8 @@ export const SORT_OPTIONS = [
   { value: 'resolution_low', label: 'Resolution (Lowest)', group: 'Resolution' },
   { value: 'duration_longest', label: 'Duration (Longest)', group: 'Duration' },
   { value: 'duration_shortest', label: 'Duration (Shortest)', group: 'Duration' },
+  { value: 'folder_asc', label: 'Folder (A-Z)', group: 'Folder' },
+  { value: 'folder_desc', label: 'Folder (Z-A)', group: 'Folder' },
   { value: 'random', label: 'Random', group: 'Other' }
 ]
 
@@ -73,6 +75,9 @@ function FilterControls({
   // Favorites toggle
   favoritesOnly,
   onToggleFavorites,
+  // Group by folders toggle
+  groupByFolders,
+  onToggleGroupByFolders,
   // Rating buttons
   selectedRatings,
   onToggleRating,
@@ -183,6 +188,19 @@ function FilterControls({
           Favorites
         </span>
         <div className={`toggle-switch ${favoritesOnly ? 'active' : ''}`} onClick={onToggleFavorites}>
+          <div className="toggle-knob" />
+        </div>
+      </label>
+
+      {/* Group by Folders Toggle */}
+      <label className="toggle-row">
+        <span className="toggle-label">
+          <svg viewBox="0 0 24 24" fill="currentColor" className="toggle-icon">
+            <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+          </svg>
+          Group by Folders
+        </span>
+        <div className={`toggle-switch ${groupByFolders ? 'active' : ''}`} onClick={onToggleGroupByFolders}>
           <div className="toggle-knob" />
         </div>
       </label>
