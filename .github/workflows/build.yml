@@ -495,8 +495,90 @@ jobs:
             dist/latest.yml
           if-no-files-found: warn
 
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Build frontend
+        run: cd frontend && npx vite build
+
+      - name: Sync Capacitor
+        run: cd frontend && npx cap sync android
+
+      - name: Inject version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+
+          GRADLE="frontend/android/app/build.gradle"
+          sed -i "s/versionCode 1/versionCode $VERSION_CODE/" "$GRADLE"
+          sed -i "s/versionName \"1.0\"/versionName \"$VERSION\"/" "$GRADLE"
+
+          echo "Set versionName=$VERSION versionCode=$VERSION_CODE"
+
+      - name: Decode keystore
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > frontend/android/app/release.keystore
+
+      - name: Build signed release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd frontend/android
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$PWD/app/release.keystore \
+            -Pandroid.injected.signing.store.password=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.ANDROID_KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Build debug APK
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          cd frontend/android
+          ./gradlew assembleDebug
+
+      - name: Rename APK
+        run: |
+          if [ -f frontend/android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp frontend/android/app/build/outputs/apk/release/app-release.apk LocalBooru.apk
+          else
+            cp frontend/android/app/build/outputs/apk/debug/app-debug.apk LocalBooru.apk
+          fi
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-builds
+          path: LocalBooru.apk
+          if-no-files-found: warn
+
   release:
-    needs: [build-linux, build-mac, build-windows]
+    needs: [build-linux, build-mac, build-windows, build-android]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -517,6 +599,7 @@ jobs:
             artifacts/linux-builds/*
             artifacts/mac-builds/*
             artifacts/windows-builds/*
+            artifacts/android-builds/*
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
           generate_release_notes: true
