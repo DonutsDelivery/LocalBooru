@@ -136,7 +136,7 @@ thumbnails_dir.mkdir(exist_ok=True)
 app.mount("/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
 
 # Include routers - all under /api prefix to avoid conflicts with frontend SPA routes
-from .routers import images, tags, directories, library, network, users
+from .routers import images, tags, directories, library, network, users, app_update
 from .routers import settings as settings_router
 
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
@@ -146,6 +146,7 @@ app.include_router(library.router, prefix="/api/library", tags=["Library"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(network.router, prefix="/api/network", tags=["Network"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
+app.include_router(app_update.router, prefix="/api/app/update", tags=["App Update"])
 
 
 @app.get("/api")

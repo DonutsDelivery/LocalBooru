@@ -49,6 +49,9 @@ yolov8n.pt
 .claude/get-shit-done/
 .claude/commands/gsd/
 
+# APK updates (served to mobile clients)
+/updates/*.apk
+
 # Dev/test files
 bench.py
 bench2.py
