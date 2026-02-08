@@ -578,7 +578,7 @@ jobs:
           if-no-files-found: warn
 
   release:
-    needs: [build-linux, build-mac, build-windows, build-android]
+    needs: [build-linux, build-mac, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -599,7 +599,6 @@ jobs:
             artifacts/linux-builds/*
             artifacts/mac-builds/*
             artifacts/windows-builds/*
-            artifacts/android-builds/*
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
           generate_release_notes: true
