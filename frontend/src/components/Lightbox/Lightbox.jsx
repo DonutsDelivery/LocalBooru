@@ -4,12 +4,13 @@ import { getDesktopAPI } from '../../tauriAPI'
 import SVPSideMenu from '../SVPSideMenu'
 import QualitySelector from '../QualitySelector'
 import '../Lightbox.css'
-import { isVideo, formatTime } from './utils/helpers'
+import { isVideo, needsTranscode, formatTime } from './utils/helpers'
 import { useUIVisibility } from './hooks/useUIVisibility'
 import { useZoomPan } from './hooks/useZoomPan'
 import { useVideoStreaming } from './hooks/useVideoStreaming'
 import { useVideoPlayback } from './hooks/useVideoPlayback'
 import { useTimelinePreview } from './hooks/useTimelinePreview'
+import { useWhisperSubtitles } from './hooks/useWhisperSubtitles'
 
 function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
   const [processing, setProcessing] = useState(false)
@@ -30,6 +31,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // SVP side menu state
   const [showSVPMenu, setShowSVPMenu] = useState(false)
+
+  // Subtitle menu state
+  const [showSubtitleMenu, setShowSubtitleMenu] = useState(false)
 
   // Quality selector state
   const [showQualitySelector, setShowQualitySelector] = useState(false)
@@ -83,6 +87,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     playback.duration
   )
 
+  // Whisper subtitle hook
+  const subtitles = useWhisperSubtitles(mediaRef, image)
+
   // Preload next 3 images (skip videos) for smoother navigation
   useEffect(() => {
     if (!images || images.length === 0) return
@@ -127,7 +134,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     zoomPan.resetZoom()
     playback.resetPlaybackState()
     streaming.resetStreamingState(image && !isVideo(image.filename))
+    subtitles.stopSubtitlesStream()
+    setShowSubtitleMenu(false)
   }, [image?.id])
+
+  // Auto-generate subtitles when opening a video (if enabled)
+  useEffect(() => {
+    if (image && isVideo(image.filename)) {
+      subtitles.autoGenerate()
+    }
+  }, [image?.id, subtitles.whisperConfig?.auto_generate])
 
   // Track favorite state for current image
   useEffect(() => {
@@ -500,6 +516,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             e.preventDefault()
             playback.frameAdvance() // Frame advance (when paused)
             return
+          case 'c':
+          case 'C':
+            e.preventDefault()
+            subtitles.toggleSubtitles()
+            return
         }
       }
 
@@ -535,7 +556,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, playback, image?.original_filename, handleToggleFullscreen])
+  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, playback, image?.original_filename, handleToggleFullscreen, subtitles])
 
   // Auto-focus Cancel button when delete dialog opens
   useEffect(() => {
@@ -864,7 +885,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <video
               key={image.id}
               ref={mediaRef}
-              src={streaming.svpConfigLoaded && !streaming.svpStreamUrl && !streaming.opticalFlowStreamUrl && !streaming.transcodeStreamUrl && !streaming.svpLoading && currentQuality === 'original' && (!streaming.svpConfig?.enabled || streaming.svpError) && (!streaming.opticalFlowConfig?.enabled || streaming.opticalFlowError) ? getMediaUrl(image.url) : undefined}
+              src={streaming.svpConfigLoaded && !streaming.svpStreamUrl && !streaming.opticalFlowStreamUrl && !streaming.transcodeStreamUrl && !streaming.svpLoading && currentQuality === 'original' && (!streaming.svpConfig?.enabled || streaming.svpError) && (!streaming.opticalFlowConfig?.enabled || streaming.opticalFlowError) && !needsTranscode(image.filename) ? getMediaUrl(image.url) : undefined}
               autoPlay
               playsInline
               loop
@@ -975,6 +996,42 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 </div>
               </div>
               <span className="video-time">{formatTime(playback.duration, true)}</span>
+              <div className="subtitle-btn-container">
+                <button
+                  className={`video-control-btn subtitle-btn ${subtitles.subtitlesEnabled ? 'active' : ''} ${subtitles.installing ? 'installing' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    subtitles.toggleSubtitles()
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setShowSubtitleMenu(!showSubtitleMenu)
+                  }}
+                  disabled={subtitles.installing}
+                  title={subtitles.installing ? 'Installing faster-whisper...' : subtitles.subtitlesEnabled ? 'Hide subtitles (C) | Right-click: language' : 'Show subtitles (C) | Right-click: language'}
+                >
+                  {subtitles.generating || subtitles.installing ? (
+                    <div className="subtitle-spinner" />
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12zM6 10h2v2H6v-2zm0 4h8v2H6v-2zm10 0h2v2h-2v-2zm-6-4h8v2h-8v-2z"/>
+                    </svg>
+                  )}
+                </button>
+                <button
+                  className="subtitle-menu-arrow"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowSubtitleMenu(!showSubtitleMenu)
+                  }}
+                  title="Subtitle language & task"
+                >
+                  <svg viewBox="0 0 12 8" fill="currentColor">
+                    <path d="M1.41 7.41L6 2.83l4.59 4.58L12 6 6 0 0 6l1.41 1.41z"/>
+                  </svg>
+                </button>
+              </div>
               <button
                 className="video-control-btn quality-btn"
                 onClick={(e) => {
@@ -1084,6 +1141,26 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             {streaming.svpError && (
               <div className="interpolate-error-toast svp-error">
                 SVP: {streaming.svpError}
+              </div>
+            )}
+            {/* Subtitle install progress */}
+            {subtitles.installing && (
+              <div className="subtitle-progress-badge installing">
+                <div className="subtitle-progress-spinner" />
+                <span>Installing faster-whisper...</span>
+              </div>
+            )}
+            {/* Subtitle generation progress */}
+            {subtitles.generating && (
+              <div className="subtitle-progress-badge">
+                <div className="subtitle-progress-spinner" />
+                <span>Subtitles: {Math.round(subtitles.progress)}%</span>
+              </div>
+            )}
+            {/* Subtitle error toast */}
+            {subtitles.error && (
+              <div className="interpolate-error-toast subtitle-error">
+                {subtitles.error}
               </div>
             )}
           </div>
@@ -1211,6 +1288,81 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           onQualityChange={handleQualityChange}
           sourceResolution={streaming.sourceResolution}
         />
+      )}
+
+      {/* Subtitle language/task menu */}
+      {showSubtitleMenu && (
+        <>
+          <div className="subtitle-menu-popup" onClick={(e) => e.stopPropagation()}>
+            <div className="subtitle-menu-header">Subtitles</div>
+            <div className="subtitle-menu-section">
+              <div className="subtitle-menu-label">Source Language</div>
+              <div className="subtitle-menu-options">
+                {[
+                  { value: '', label: 'Auto-detect' },
+                  { value: 'ja', label: 'Japanese' },
+                  { value: 'en', label: 'English' },
+                  { value: 'zh', label: 'Chinese' },
+                  { value: 'ko', label: 'Korean' },
+                  { value: 'de', label: 'German' },
+                  { value: 'fr', label: 'French' },
+                  { value: 'es', label: 'Spanish' },
+                  { value: 'ru', label: 'Russian' },
+                ].map(lang => (
+                  <button
+                    key={lang.value}
+                    className={`subtitle-menu-option ${subtitles.subtitleLanguage === lang.value ? 'active' : ''}`}
+                    onClick={() => {
+                      const newLang = lang.value
+                      const currentTask = subtitles.subtitleTask
+                      setShowSubtitleMenu(false)
+                      if (newLang !== subtitles.subtitleLanguage) {
+                        subtitles.restartWithSettings(newLang, currentTask)
+                      }
+                    }}
+                  >
+                    <span>{lang.label}</span>
+                    {subtitles.subtitleLanguage === lang.value && (
+                      <svg className="subtitle-menu-check" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="subtitle-menu-section">
+              <div className="subtitle-menu-label">Output</div>
+              <div className="subtitle-menu-options">
+                {[
+                  { value: 'translate', label: 'Translate to English' },
+                  { value: 'transcribe', label: 'Transcribe (original language)' },
+                ].map(t => (
+                  <button
+                    key={t.value}
+                    className={`subtitle-menu-option ${subtitles.subtitleTask === t.value ? 'active' : ''}`}
+                    onClick={() => {
+                      const newTask = t.value
+                      const currentLang = subtitles.subtitleLanguage
+                      setShowSubtitleMenu(false)
+                      if (newTask !== subtitles.subtitleTask) {
+                        subtitles.restartWithSettings(currentLang, newTask)
+                      }
+                    }}
+                  >
+                    <span>{t.label}</span>
+                    {subtitles.subtitleTask === t.value && (
+                      <svg className="subtitle-menu-check" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="subtitle-menu-backdrop" onClick={() => setShowSubtitleMenu(false)} />
+        </>
       )}
     </div>
   )

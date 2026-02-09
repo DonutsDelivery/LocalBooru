@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { isMobileApp } from '../serverManager';
 import { getDesktopAPI, isDesktopApp, isTauri } from '../tauriAPI';
-import UpdateBanner from './UpdateBanner';
+// import UpdateBanner from './UpdateBanner';
 import './TitleBar.css';
 
 const TITLE_BAR_HEIGHT = 32;
@@ -89,7 +89,7 @@ export default function TitleBar({ onSwitchServer }) {
             </button>
           </div>
         </div>
-        <UpdateBanner />
+        {/* <UpdateBanner /> */}
       </>
     );
   }

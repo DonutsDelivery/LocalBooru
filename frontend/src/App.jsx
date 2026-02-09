@@ -16,6 +16,7 @@ import ServerSettings from './components/ServerSettings'
 import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
 import OpticalFlowSettings from './components/OpticalFlowSettings'
+import WhisperSubtitleSettings from './components/WhisperSubtitleSettings'
 import QRConnect from './components/QRConnect'
 import { fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
 import DirectoriesPage from './pages/DirectoriesPage'
@@ -183,6 +184,7 @@ function SettingsPage() {
             {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
             <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
               <OpticalFlowSettings />
+              <WhisperSubtitleSettings />
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'network' ? 'active' : ''}`}>

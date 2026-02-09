@@ -11,7 +11,7 @@ import {
   playVideoTranscode,
   stopTranscodeStream
 } from '../../../api'
-import { isVideo } from '../utils/helpers'
+import { isVideo, needsTranscode } from '../utils/helpers'
 
 /**
  * Hook for managing HLS/SVP/OpticalFlow video streaming
@@ -48,6 +48,12 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
 
   // Source resolution (from original video)
   const [sourceResolution, setSourceResolution] = useState(null)
+
+  // Track which streams were ever started (for cleanup - avoid unnecessary stop calls)
+  const hadSvpStreamRef = useRef(false)
+  const hadOpticalFlowStreamRef = useRef(false)
+  const hadTranscodeStreamRef = useRef(false)
+  const transcodeStartingRef = useRef(false)  // Synchronous lock to prevent double-starts in auto-start effect
 
   // Refs for callbacks (used by auto-start effect)
   const startSVPStreamRef = useRef(null)
@@ -233,6 +239,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       const result = await playVideoInterpolated(image.file_path, playbackPosition, currentQuality)
 
       if (result.success && result.stream_url) {
+        hadOpticalFlowStreamRef.current = true
         setOpticalFlowStreamUrl(result.stream_url)
         if (result.source_resolution) setSourceResolution(result.source_resolution)
       } else {
@@ -291,6 +298,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       console.log('[startSVPStream] API result:', result)
 
       if (result.success && result.stream_url) {
+        hadSvpStreamRef.current = true
         // Set offset BEFORE stream URL so handleTimeUpdate uses correct offset
         setSvpStartOffset(playbackPosition)
         // Store the known total duration from API for proper timeline display
@@ -335,14 +343,29 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     await stopSVPStream()
   }, [])
 
+  // Use a ref for currentQuality so the auto-start effect doesn't re-fire on quality changes.
+  // Quality changes are handled by handleQualityChange — auto-start only handles new image opens.
+  const currentQualityRef = useRef(currentQuality)
+  currentQualityRef.current = currentQuality
+
   // Auto-start interpolated stream when video opens
   // Priority: SVP (if enabled) > Optical Flow (if enabled) > Transcode (if quality != original)
+  // NOTE: currentQuality is intentionally NOT a dependency — quality changes are handled by handleQualityChange
   useEffect(() => {
+    // Wait until both configs have loaded from the API before auto-starting.
+    // Without this gate, the effect fires 3 times during startup:
+    //   1. initial mount (both configs null)
+    //   2. svpConfig loads (undefined→false)
+    //   3. opticalFlowConfig loads (undefined→false)
+    // Each fire starts a transcode that kills the previous one via stop_all_transcode_streams().
+    if (svpConfig === null || opticalFlowConfig === null) return
+
     if (image && isVideo(image.filename)) {
+      const quality = currentQualityRef.current
       console.log('[Auto-start] Checking...', {
         svpEnabled: svpConfig?.enabled,
         opticalFlowEnabled: opticalFlowConfig?.enabled,
-        currentQuality
+        currentQuality: quality
       })
       // Prefer SVP if enabled
       if (svpConfig?.enabled) {
@@ -354,12 +377,16 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
         console.log('[Auto-start] Starting OpticalFlow stream...')
         startInterpolatedStreamRef.current()
       }
-      // If quality is not original and no interpolation enabled, use transcode
-      else if (currentQuality && currentQuality !== 'original' && !transcodeStreamUrl) {
-        console.log('[Auto-start] Starting transcode stream for quality:', currentQuality)
+      // If quality is not original, use transcode
+      else if ((!transcodeStreamUrl) && quality !== 'original') {
+        // Use ref lock to prevent concurrent transcode starts (effect re-fires as configs load)
+        if (transcodeStartingRef.current) return
+        transcodeStartingRef.current = true
+        console.log('[Auto-start] Starting transcode stream for quality:', quality)
         // Start transcode stream (position 0 for new video - reset effect already set currentTime to 0)
-        playVideoTranscode(image.file_path, 0, currentQuality).then(result => {
+        playVideoTranscode(image.file_path, 0, quality).then(result => {
           if (result.success) {
+            hadTranscodeStreamRef.current = true
             // Set offset BEFORE stream URL so handleTimeUpdate uses correct offset
             setTranscodeStartOffset(0)
             if (result.duration) setTranscodeTotalDuration(result.duration)
@@ -370,11 +397,13 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
           }
         }).catch(err => {
           console.error('[Auto-start] Transcode error:', err)
+        }).finally(() => {
+          transcodeStartingRef.current = false
         })
       }
       // Otherwise play direct (original quality, no interpolation)
     }
-  }, [image?.id, svpConfig?.enabled, opticalFlowConfig?.enabled, currentQuality])
+  }, [image?.id, svpConfig?.enabled, opticalFlowConfig?.enabled])
 
   // Setup HLS player when optical flow stream is active
   useEffect(() => {
@@ -666,10 +695,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
         transcodeHlsRef.current.destroy()
         transcodeHlsRef.current = null
       }
-      // Stop backend streams on unmount
-      stopSVPStream().catch(() => {})
-      stopInterpolatedStream().catch(() => {})
-      stopTranscodeStream().catch(() => {})
+      // Only stop backend streams that were actually started
+      if (hadSvpStreamRef.current) stopSVPStream().catch(() => {})
+      if (hadOpticalFlowStreamRef.current) stopInterpolatedStream().catch(() => {})
+      if (hadTranscodeStreamRef.current) stopTranscodeStream().catch(() => {})
     }
   }, [])
 
@@ -686,6 +715,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     setSvpPendingSeek(null)
     setSvpStartOffset(0)
     svpStartingRef.current = false  // Reset lock for new video
+    transcodeStartingRef.current = false  // Reset lock for new video
     streamTransitioningRef.current = false  // Reset transition flag for new video
     setSourceResolution(null)  // Reset so it gets set from original video, not stream
     setTranscodeTotalDuration(null)
@@ -726,28 +756,47 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     console.log('[Lightbox] Current absolute time:', absoluteTime)
 
     try {
-      if (qualityId === 'original') {
+      if (qualityId === 'original' && !needsTranscode(image?.filename)) {
         console.log('[Lightbox] Switching to original quality')
-        // Stop streams and load direct video
+        // Stop streams and destroy HLS instances before setting direct src.
+        // HLS.js attaches a MediaSource to the video element — we must destroy
+        // it before setting a plain src, otherwise the video won't load.
         if (svpStreamUrl) {
           await stopSVPStream()
+          if (svpHlsRef.current) {
+            svpHlsRef.current.destroy()
+            svpHlsRef.current = null
+          }
           setSvpStreamUrl(null)
           setSvpStartOffset(0)
         }
         if (opticalFlowStreamUrl) {
           await stopInterpolatedStream()
+          if (hlsRef.current) {
+            hlsRef.current.destroy()
+            hlsRef.current = null
+          }
           setOpticalFlowStreamUrl(null)
         }
         if (transcodeStreamUrl) {
           await stopTranscodeStream()
+          if (transcodeHlsRef.current) {
+            transcodeHlsRef.current.destroy()
+            transcodeHlsRef.current = null
+          }
           setTranscodeStreamUrl(null)
           setTranscodeStartOffset(0)
         }
 
         if (mediaRef.current && image) {
-          mediaRef.current.src = getMediaUrl(image.url)
-          mediaRef.current.currentTime = absoluteTime
-          mediaRef.current.play().catch(() => {})
+          const video = mediaRef.current
+          video.src = getMediaUrl(image.url)
+          // Wait for metadata to load before seeking and playing — calling play()
+          // immediately after setting src fails silently because the source hasn't loaded yet.
+          video.addEventListener('loadedmetadata', () => {
+            video.currentTime = absoluteTime
+            video.play().catch(() => {})
+          }, { once: true })
         }
       } else {
         // Restart stream with new quality at the current absolute position
@@ -804,6 +853,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
             const result = await playVideoSVP(image.file_path, absoluteTime, qualityId)
             console.log('[Lightbox] SVP play result:', result)
             if (result.success) {
+              hadSvpStreamRef.current = true
               // Set offset BEFORE stream URL so handleTimeUpdate uses correct offset
               setSvpStartOffset(absoluteTime)
               if (result.duration) setSvpTotalDuration(result.duration)
@@ -819,6 +869,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
             const result = await playVideoInterpolated(image.file_path, absoluteTime, qualityId)
             console.log('[Lightbox] OpticalFlow play result:', result)
             if (result.success) {
+              hadOpticalFlowStreamRef.current = true
               setOpticalFlowStreamUrl(result.stream_url)
             } else {
               console.error('[Lightbox] OpticalFlow play failed:', result.error)
@@ -830,6 +881,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
             const result = await playVideoTranscode(image.file_path, absoluteTime, qualityId)
             console.log('[Lightbox] Transcode play result:', result)
             if (result.success) {
+              hadTranscodeStreamRef.current = true
               // Set offset BEFORE stream URL so handleTimeUpdate uses correct offset
               setTranscodeStartOffset(absoluteTime)
               if (result.duration) setTranscodeTotalDuration(result.duration)

@@ -5,8 +5,8 @@ const config: CapacitorConfig = {
   appName: 'LocalBooru',
   webDir: 'dist',
   server: {
-    // Use https scheme for security (self-signed certs allowed via network config)
-    androidScheme: 'https',
+    // Use http scheme to allow loading resources from local http servers
+    androidScheme: 'http',
   },
   plugins: {
     Preferences: {

@@ -47,6 +47,9 @@ library_events = EventBroadcaster()
 # Migration event broadcaster instance
 migration_events = EventBroadcaster()
 
+# Subtitle event broadcaster instance
+subtitle_events = EventBroadcaster()
+
 
 # Event types
 class EventType:
@@ -61,3 +64,11 @@ class MigrationEventType:
     PROGRESS = "migration_progress"
     COMPLETED = "migration_completed"
     ERROR = "migration_error"
+
+
+class SubtitleEventType:
+    STARTED = "subtitle_started"
+    CUE = "subtitle_cue"
+    PROGRESS = "subtitle_progress"
+    COMPLETED = "subtitle_completed"
+    ERROR = "subtitle_error"

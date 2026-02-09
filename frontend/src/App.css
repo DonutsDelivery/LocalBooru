@@ -640,6 +640,7 @@
 
 .app {
   height: calc(100vh - var(--title-bar-height, 0px));
+  margin-top: var(--title-bar-height, 0px);
   display: flex;
   flex-direction: column;
 }
@@ -656,7 +657,6 @@
   min-width: 0;
   height: 100%;
   padding: 0;
-  padding-top: var(--title-bar-height, 0px);
   transition: margin-left 0.3s ease;
   display: flex;
   flex-direction: column;

@@ -2,7 +2,14 @@
 export const isVideo = (filename) => {
   if (!filename) return false
   const ext = filename.toLowerCase().split('.').pop()
-  return ['webm', 'mp4', 'mov'].includes(ext)
+  return ['webm', 'mp4', 'mov', 'mkv'].includes(ext)
+}
+
+// Check if video format needs transcoding (not natively playable in browsers)
+// Note: MKV removed — Tauri/WebKitGTK plays MKV natively via GStreamer,
+// and users can select a quality preset to trigger transcoding if needed.
+export const needsTranscode = (filename) => {
+  return false
 }
 
 // Format time as MM:SS

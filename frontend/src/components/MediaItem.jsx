@@ -6,7 +6,7 @@ import './MediaItem.css'
 const isVideo = (filename) => {
   if (!filename) return false
   const ext = filename.toLowerCase().split('.').pop()
-  return ['webm', 'mp4', 'mov'].includes(ext)
+  return ['webm', 'mp4', 'mov', 'mkv'].includes(ext)
 }
 
 function MediaItem({ image, onClick, isSelectable = false, isSelected = false, onSelect }) {

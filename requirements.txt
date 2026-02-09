@@ -43,3 +43,6 @@ gdown>=5.1.0
 # Install one of these for optimal performance:
 # rife-ncnn-vulkan-python  # Original package
 rife-ncnn-vulkan-python-tntwise>=1.4.0  # Updated fork with more features
+
+# Whisper-based subtitle generation
+faster-whisper>=1.0.0

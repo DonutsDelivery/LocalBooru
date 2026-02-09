@@ -4,7 +4,7 @@ Network configuration router - manage local network and public access settings.
 Most endpoints in this router are localhost-only (enforced by middleware).
 Exception: /verify-handshake is accessible from the local network for mobile app trust verification.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from typing import Optional, Literal
 
@@ -92,7 +92,7 @@ async def get_network_config():
 
 
 @router.get("/qr-data")
-async def get_qr_data():
+async def get_qr_data(request: Request):
     """
     Get data for QR code to connect mobile app.
 
@@ -102,8 +102,9 @@ async def get_qr_data():
     settings = get_network_settings()
     local_ip = get_local_ip()
 
-    # Check if HTTPS is enabled (certificate exists)
-    has_https = certificate_exists()
+    # Detect actual protocol from the incoming request — certificate may exist on disk
+    # but uvicorn might not be configured with SSL (e.g. dev mode)
+    has_https = request.url.scheme == "https"
     protocol = "https" if has_https else "http"
 
     # Build local URL (always include if we have an IP)
@@ -127,7 +128,7 @@ async def get_qr_data():
     # Generate handshake nonce for verification
     nonce, nonce_expires = create_handshake_nonce()
 
-    # Get TLS certificate fingerprint for certificate pinning
+    # Get TLS certificate fingerprint for certificate pinning (only when actually serving HTTPS)
     cert_fingerprint = get_certificate_fingerprint() if has_https else None
 
     return {

@@ -300,8 +300,8 @@ class SVPStream:
                 '-keyint_min', str(self.target_fps),
                 '-f', 'hls',
                 '-hls_time', '4',
-                '-hls_list_size', '0',
-                '-hls_flags', 'append_list+split_by_time',
+                '-hls_list_size', '20',
+                '-hls_flags', 'delete_segments+append_list+split_by_time',
                 '-hls_segment_filename', str(self._temp_dir / 'segment_%03d.ts'),
                 str(self.playlist_path)
             ])

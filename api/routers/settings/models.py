@@ -264,3 +264,78 @@ class TranscodePlayRequest(BaseModel):
     file_path: str
     start_position: float = 0.0
     quality_preset: Optional[str] = None
+
+
+# =============================================================================
+# Whisper Subtitle Settings
+# =============================================================================
+
+DEFAULT_WHISPER_SETTINGS = {
+    "enabled": False,
+    "auto_generate": False,
+    "model_size": "medium",
+    "language": "ja",
+    "task": "translate",  # "transcribe" or "translate"
+    "chunk_duration": 30,
+    "beam_size": 8,
+    "device": "auto",  # "auto", "cuda", "cpu"
+    "compute_type": "auto",  # "auto", "float16", "int8_float16", "int8"
+    "vad_filter": True,
+    "suppress_nst": True,  # suppress non-speech tokens
+    "cache_subtitles": True,
+    "installing": False,  # transient: pip install in progress
+    "install_progress": "",  # transient: install status message
+    # Subtitle appearance
+    "subtitle_font": "Trebuchet MS",
+    "subtitle_font_size": 1.3,  # rem
+    "subtitle_style": "outline",  # "outline", "background", "outline_background"
+    "subtitle_color": "#ffffff",
+    "subtitle_outline_color": "#000000",
+    "subtitle_bg_opacity": 0.75,
+}
+
+
+def get_whisper_settings() -> dict:
+    """Get whisper subtitle settings with defaults"""
+    settings = load_settings()
+    whisper = settings.get("whisper", {})
+    return {**DEFAULT_WHISPER_SETTINGS, **whisper}
+
+
+def save_whisper_settings(whisper_settings: dict):
+    """Save whisper subtitle settings"""
+    settings = load_settings()
+    settings["whisper"] = whisper_settings
+    save_settings(settings)
+
+
+# =============================================================================
+# Pydantic Models - Whisper Subtitles
+# =============================================================================
+
+class WhisperConfigUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    auto_generate: Optional[bool] = None
+    model_size: Optional[str] = None
+    language: Optional[str] = None
+    task: Optional[str] = None
+    chunk_duration: Optional[int] = None
+    beam_size: Optional[int] = None
+    device: Optional[str] = None
+    compute_type: Optional[str] = None
+    vad_filter: Optional[bool] = None
+    suppress_nst: Optional[bool] = None
+    cache_subtitles: Optional[bool] = None
+    subtitle_font: Optional[str] = None
+    subtitle_font_size: Optional[float] = None
+    subtitle_style: Optional[str] = None
+    subtitle_color: Optional[str] = None
+    subtitle_outline_color: Optional[str] = None
+    subtitle_bg_opacity: Optional[float] = None
+
+
+class WhisperSubtitleRequest(BaseModel):
+    file_path: str
+    language: Optional[str] = None  # override config language
+    task: Optional[str] = None  # override config task
+    start_position: float = 0.0  # start transcription from this timestamp

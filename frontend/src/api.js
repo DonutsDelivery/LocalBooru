@@ -32,8 +32,8 @@ function getApiUrl() {
   const isDevServer = ['5173', '5174', '5175'].includes(window.location.port)
 
   if (isDevServer) {
-    // Dev mode - Vite dev server, need to point to backend
-    return 'http://127.0.0.1:8790/api'
+    // Dev mode - Vite proxy forwards /api to backend (same-origin)
+    return '/api'
   }
 
   // Production - frontend served from backend, use relative URL
@@ -619,12 +619,12 @@ export function getMediaUrl(path) {
 
   // On mobile, prepend server URL for relative paths
   if (isMobileApp() && currentServerUrl) {
-    // Remove leading slash if present to avoid double slashes
     const cleanPath = path.startsWith('/') ? path : `/${path}`
     return `${currentServerUrl}${cleanPath}`
   }
 
-  // Dev mode - Vite dev server needs full URL to backend
+  // Dev mode - serve media directly from backend (proper range request support)
+  // Only VTT files in <track> elements need the Vite proxy (same-origin requirement)
   const isDevServer = window.location.port === '5173' || window.location.port === '5174'
   if (isDevServer) {
     const cleanPath = path.startsWith('/') ? path : `/${path}`
@@ -638,7 +638,7 @@ export function getMediaUrl(path) {
 export function isVideo(filename) {
   if (!filename) return false
   const ext = filename.split('.').pop()?.toLowerCase()
-  return ['mp4', 'webm', 'mov', 'avi'].includes(ext)
+  return ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)
 }
 
 export function isAnimated(filename) {
@@ -840,6 +840,59 @@ export async function getVideoInfo(filePath) {
     file_path: filePath
   })
   return response.data
+}
+
+// Whisper Subtitle API
+export async function getWhisperConfig() {
+  const response = await api.get('/settings/whisper')
+  return response.data
+}
+
+export async function updateWhisperConfig(config) {
+  const response = await api.post('/settings/whisper', config)
+  return response.data
+}
+
+export async function installWhisper() {
+  const response = await api.post('/settings/whisper/install')
+  return response.data
+}
+
+export async function generateSubtitles(filePath, language = null, task = null, startPosition = 0) {
+  const response = await api.post('/settings/whisper/generate', {
+    file_path: filePath,
+    language,
+    task,
+    start_position: startPosition
+  })
+  return response.data
+}
+
+export async function stopSubtitles() {
+  const response = await api.post('/settings/whisper/stop')
+  return response.data
+}
+
+export function subscribeToSubtitleEvents(streamId, onEvent) {
+  const apiUrl = getApiUrl()
+  const eventSource = new EventSource(`${apiUrl}/settings/whisper/events/${streamId}`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      onEvent(data)
+    } catch (e) {
+      console.error('[Subtitle SSE] Failed to parse event:', e)
+    }
+  }
+
+  eventSource.onerror = (error) => {
+    console.error('[Subtitle SSE] Connection error:', error)
+  }
+
+  return () => {
+    eventSource.close()
+  }
 }
 
 // Utility endpoints

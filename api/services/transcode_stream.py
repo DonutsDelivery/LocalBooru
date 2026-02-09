@@ -246,7 +246,11 @@ class TranscodeStream:
                 if len(parts) >= 3:
                     self._width = int(parts[0])
                     self._height = int(parts[1])
-                    self._duration = float(parts[2]) if parts[2] else 0
+                    # Stream-level duration may be "N/A" for containers like MKV
+                    try:
+                        self._duration = float(parts[2]) if parts[2] and parts[2] != 'N/A' else 0
+                    except (ValueError, TypeError):
+                        self._duration = 0
                     # Parse avg_frame_rate (e.g., "25000/1001" or "30/1")
                     if len(parts) >= 4 and parts[3]:
                         try:
@@ -258,6 +262,26 @@ class TranscodeStream:
                         except (ValueError, ZeroDivisionError):
                             self._avg_fps = 30  # Default fallback
                     logger.info(f"[Transcode {self.stream_id}] Detected: {self._width}x{self._height}, {self._duration}s, {self._avg_fps:.2f}fps")
+
+            # If stream-level duration is missing (MKV, etc.), query format-level duration
+            if self._duration <= 0:
+                fmt_result = await asyncio.create_subprocess_exec(
+                    'ffprobe',
+                    '-v', 'error',
+                    '-show_entries', 'format=duration',
+                    '-of', 'csv=p=0',
+                    self.video_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                fmt_stdout, _ = await fmt_result.communicate()
+                if fmt_result.returncode == 0:
+                    dur_str = fmt_stdout.decode('utf-8').strip()
+                    try:
+                        self._duration = float(dur_str) if dur_str and dur_str != 'N/A' else 0
+                        logger.info(f"[Transcode {self.stream_id}] Format-level duration: {self._duration}s")
+                    except (ValueError, TypeError):
+                        pass
 
             # Check for audio stream
             audio_result = await asyncio.create_subprocess_exec(
@@ -326,6 +350,9 @@ class TranscodeStream:
         # Always pad to multiple of 2
         vf_filters.append('pad=ceil(iw/2)*2:ceil(ih/2)*2')
 
+        # Ensure yuv420p pixel format for encoder compatibility (handles 10-bit, yuv444, etc.)
+        vf_filters.append('format=yuv420p')
+
         if vf_filters:
             cmd.extend(['-vf', ','.join(vf_filters)])
 
@@ -380,16 +407,19 @@ class TranscodeStream:
 
         # Audio codec (only if video has audio)
         if self._has_audio:
-            cmd.extend(['-c:a', 'aac', '-b:a', '192k'])
+            cmd.extend(['-c:a', 'aac', '-ar', '48000', '-ac', '2', '-b:a', '192k'])
         else:
             cmd.extend(['-an'])  # No audio
 
         # HLS format - use shorter segments for faster startup
+        # Use a sliding window to limit disk usage: keep only recent segments,
+        # delete old ones. Seeking restarts the stream anyway, so we don't need
+        # all historical segments. 20 segments × 2s = 40s buffer (~100-200MB max).
         cmd.extend([
             '-f', 'hls',
             '-hls_time', '2',  # 2-second segments for faster startup
-            '-hls_list_size', '0',  # Keep all segments
-            '-hls_flags', 'append_list',  # Append to playlist as segments are created
+            '-hls_list_size', '20',  # Keep last 20 segments in playlist
+            '-hls_flags', 'delete_segments+append_list',  # Delete old segments from disk
             '-hls_segment_filename', str(self.hls_dir / 'segment_%d.ts'),
             str(self.hls_dir / 'playlist.m3u8')
         ])
