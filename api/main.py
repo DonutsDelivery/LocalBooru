@@ -38,8 +38,8 @@ async def lifespan(app: FastAPI):
     set_setting(AGE_DETECTION_INSTALLING, "false")
 
     # Generate or load TLS certificate for HTTPS
-    from .services.certificate import get_or_create_certificate, get_certificate_fingerprint
     try:
+        from .services.certificate import get_or_create_certificate, get_certificate_fingerprint
         cert_path, key_path = get_or_create_certificate()
         fingerprint = get_certificate_fingerprint()
         if fingerprint:
