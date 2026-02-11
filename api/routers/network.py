@@ -16,6 +16,7 @@ from ..services.network import (
     upnp_manager
 )
 from ..services.auth import get_server_fingerprint, create_handshake_nonce, verify_handshake_nonce
+from ..services.certificate import get_certificate_fingerprint
 
 router = APIRouter()
 
@@ -130,11 +131,7 @@ async def get_qr_data(request: Request):
     # Get TLS certificate fingerprint for certificate pinning (only when actually serving HTTPS)
     cert_fingerprint = None
     if has_https:
-        try:
-            from ..services.certificate import get_certificate_fingerprint
-            cert_fingerprint = get_certificate_fingerprint()
-        except ImportError:
-            pass  # cryptography not available
+        cert_fingerprint = get_certificate_fingerprint()
 
     return {
         "type": "localbooru",

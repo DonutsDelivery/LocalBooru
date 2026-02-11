@@ -267,7 +267,7 @@ jobs:
 
           Write-Host "Installing dependencies..."
           # Install most dependencies (skip insightface which requires C++ build tools)
-          & "$BUNDLE_DIR\python.exe" -m pip install fastapi uvicorn[standard] sqlalchemy aiosqlite pillow imagehash onnxruntime opencv-python-headless numpy pydantic pydantic-settings python-multipart httpx PyJWT watchdog miniupnpc xxhash --no-warn-script-location
+          & "$BUNDLE_DIR\python.exe" -m pip install fastapi uvicorn[standard] sqlalchemy aiosqlite pillow imagehash onnxruntime opencv-python-headless numpy pydantic pydantic-settings python-multipart httpx PyJWT cryptography watchdog miniupnpc xxhash --no-warn-script-location
 
           # Try to install optional packages (may fail on some systems, that's OK)
           Write-Host "Attempting to install insightface..."
