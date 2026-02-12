@@ -41,19 +41,23 @@ async def repair_directory_paths(directory_id: int, db: AsyncSession = Depends(g
 
     # Step 1: Scan filesystem and build filename -> path mapping (fast - no hashing)
     # Use os.walk to include hidden directories (rglob skips them)
+    # Track all paths per filename to detect ambiguous matches
     dir_path = Path(directory.path)
-    name_to_path = {}
+    name_to_paths = {}
 
     if directory.recursive:
         for root, dirs, files in os.walk(dir_path):
             for fname in files:
                 fpath = Path(root) / fname
                 if is_media_file(fpath):
-                    name_to_path[fname] = str(fpath)
+                    name_to_paths.setdefault(fname, []).append(str(fpath))
     else:
         for fpath in dir_path.iterdir():
             if fpath.is_file() and is_media_file(fpath):
-                name_to_path[fpath.name] = str(fpath)
+                name_to_paths.setdefault(fpath.name, []).append(str(fpath))
+
+    # Build unambiguous mapping (only filenames with exactly one match)
+    name_to_path = {k: v[0] for k, v in name_to_paths.items() if len(v) == 1}
 
     # Step 2: Check each DB record and fix/remove
     dir_db = await directory_db_manager.get_session(directory_id)
@@ -75,7 +79,7 @@ async def repair_directory_paths(directory_id: int, db: AsyncSession = Depends(g
                 valid += 1
                 continue
 
-            # Path is invalid - try to find by filename
+            # Path is invalid - try to find by filename (only if unambiguous)
             filename = current_path.name
             if filename in name_to_path:
                 file_record.original_path = name_to_path[filename]
@@ -211,19 +215,23 @@ async def bulk_repair_directories(data: BulkVerifyRequest, db: AsyncSession = De
 
         # Scan filesystem and build filename -> path mapping
         # Use os.walk to include hidden directories (rglob skips them)
+        # Track all paths per filename to detect ambiguous matches
         dir_path = Path(directory.path)
-        name_to_path = {}
+        name_to_paths = {}
 
         if directory.recursive:
             for root, dirs, files in os.walk(dir_path):
                 for fname in files:
                     fpath = Path(root) / fname
                     if is_media_file(fpath):
-                        name_to_path[fname] = str(fpath)
+                        name_to_paths.setdefault(fname, []).append(str(fpath))
         else:
             for fpath in dir_path.iterdir():
                 if fpath.is_file() and is_media_file(fpath):
-                    name_to_path[fpath.name] = str(fpath)
+                    name_to_paths.setdefault(fpath.name, []).append(str(fpath))
+
+        # Build unambiguous mapping (only filenames with exactly one match)
+        name_to_path = {k: v[0] for k, v in name_to_paths.items() if len(v) == 1}
 
         # Check each DB record and fix/remove
         dir_db = await directory_db_manager.get_session(directory_id)
@@ -245,7 +253,7 @@ async def bulk_repair_directories(data: BulkVerifyRequest, db: AsyncSession = De
                     valid += 1
                     continue
 
-                # Path is invalid - try to find by filename
+                # Path is invalid - try to find by filename (only if unambiguous)
                 filename = current_path.name
                 if filename in name_to_path:
                     file_record.original_path = name_to_path[filename]

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Set
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
+from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent, FileDeletedEvent
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -133,6 +133,27 @@ class DirectoryEventHandler(FileSystemEventHandler):
             return
         if self._is_supported_file(event.src_path):
             self._schedule_import(event.src_path)
+
+    def on_deleted(self, event):
+        """Handle file deletion events"""
+        if event.is_directory:
+            return
+        if self._is_supported_file(event.src_path):
+            asyncio.run_coroutine_threadsafe(
+                self._handle_deletion(event.src_path),
+                self.loop
+            )
+
+    async def _handle_deletion(self, file_path: str):
+        """Remove DB records for a deleted file"""
+        from .file_tracker import mark_file_missing
+
+        try:
+            async with AsyncSessionLocal() as db:
+                await mark_file_missing(file_path, db, directory_id=self.directory_id)
+                print(f"[Watcher] Removed: {Path(file_path).name}")
+        except Exception as e:
+            print(f"[Watcher] Failed to remove {file_path}: {e}")
 
     def on_moved(self, event):
         """Handle file move/rename events (file moved INTO directory)"""

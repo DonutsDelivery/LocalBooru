@@ -21,18 +21,62 @@ router = APIRouter()
 
 @router.post("/clean-missing")
 async def clean_missing_files(db: AsyncSession = Depends(get_db)):
-    """Remove all images with missing files from the library"""
+    """Remove all images with missing files from the library.
+
+    Checks both the main database (legacy) and all per-directory databases.
+    """
     cleaned = 0
+    dir_cleaned = 0
     tasks_cleaned = 0
 
-    # Find all ImageFile entries
+    # --- Clean per-directory databases ---
+    for dir_id in directory_db_manager.get_all_directory_ids():
+        if not directory_db_manager.db_exists(dir_id):
+            continue
+
+        dir_db = await directory_db_manager.get_session(dir_id)
+        try:
+            query = select(DirectoryImageFile)
+            result = await dir_db.execute(query)
+            file_records = result.scalars().all()
+
+            for file_record in file_records:
+                if Path(file_record.original_path).exists():
+                    continue
+
+                # Check for other valid file references
+                other_query = select(DirectoryImageFile).where(
+                    DirectoryImageFile.image_id == file_record.image_id,
+                    DirectoryImageFile.id != file_record.id
+                )
+                other_result = await dir_db.execute(other_query)
+                other_files = other_result.scalars().all()
+                has_valid_ref = any(Path(f.original_path).exists() for f in other_files)
+
+                if has_valid_ref:
+                    await dir_db.delete(file_record)
+                else:
+                    image = await dir_db.get(DirectoryImage, file_record.image_id)
+                    await dir_db.delete(file_record)
+                    if image:
+                        thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
+                        if thumbnail_path.exists():
+                            thumbnail_path.unlink()
+                        await dir_db.delete(image)
+
+                dir_cleaned += 1
+
+            await dir_db.commit()
+        finally:
+            await dir_db.close()
+
+    # --- Clean main database (legacy) ---
     query = select(ImageFile)
     result = await db.execute(query)
     all_files = result.scalars().all()
 
     for image_file in all_files:
         if not Path(image_file.original_path).exists():
-            # Check if image has other valid file references
             other_query = select(ImageFile).where(
                 ImageFile.image_id == image_file.image_id,
                 ImageFile.id != image_file.id
@@ -40,14 +84,11 @@ async def clean_missing_files(db: AsyncSession = Depends(get_db)):
             other_result = await db.execute(other_query)
             other_files = other_result.scalars().all()
 
-            # Check if any other reference exists
             has_valid_ref = any(Path(f.original_path).exists() for f in other_files)
 
             if has_valid_ref:
-                # Just delete this stale reference
                 await db.delete(image_file)
             else:
-                # No valid references - delete the image too
                 image = await db.get(Image, image_file.image_id)
                 if image:
                     thumbnail_path = get_data_dir() / 'thumbnails' / f"{image.file_hash[:16]}.webp"
@@ -77,7 +118,7 @@ async def clean_missing_files(db: AsyncSession = Depends(get_db)):
             pass
 
     await db.commit()
-    return {"cleaned": cleaned, "tasks_cleaned": tasks_cleaned}
+    return {"cleaned": cleaned, "directory_cleaned": dir_cleaned, "tasks_cleaned": tasks_cleaned}
 
 
 @router.post("/clean-orphans")
