@@ -47,3 +47,8 @@ rife-ncnn-vulkan-python-tntwise>=1.4.0  # Updated fork with more features
 
 # Whisper-based subtitle generation
 faster-whisper>=1.0.0
+
+# Chromecast & DLNA casting
+pychromecast>=14.0.0
+async-upnp-client>=0.38.0
+aiohttp>=3.9.0

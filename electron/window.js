@@ -72,7 +72,7 @@ async function createWindow(options = {}) {
       minWidth: 800,
       minHeight: 600,
       frame: false,  // Custom title bar
-      backgroundColor: '#141414',  // Match --bg-primary to prevent white flash
+      transparent: true,  // Transparent window for rounded corners
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         nodeIntegration: false,

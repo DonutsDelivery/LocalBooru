@@ -397,8 +397,10 @@ class WhisperSubtitleRequest(BaseModel):
 # =============================================================================
 
 DEFAULT_CAST_SETTINGS = {
-    "enabled": False,
+    "enabled": True,
     "cast_media_port": 8792,
+    "installing": False,
+    "install_progress": "",
 }
 
 

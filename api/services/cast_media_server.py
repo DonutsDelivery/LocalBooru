@@ -383,10 +383,11 @@ def _create_app() -> web.Application:
     """Build the aiohttp application with all routes."""
     app = web.Application()
     app.router.add_route("OPTIONS", "/{path_info:.*}", _handle_options)
-    app.router.add_get("/media/{media_id}/file", _handle_media_file)
-    app.router.add_head("/media/{media_id}/file", _handle_media_file)
-    app.router.add_get("/media/{media_id}/hls/{filename}", _handle_hls)
-    app.router.add_get("/media/{media_id}/subs/{filename}", _handle_subs)
+    app.router.add_route("GET", "/media/{media_id}/file", _handle_media_file)
+    app.router.add_route("HEAD", "/media/{media_id}/file", _handle_media_file)
+    app.router.add_route("GET", "/media/{media_id}/hls/{filename}", _handle_hls)
+    app.router.add_route("HEAD", "/media/{media_id}/hls/{filename}", _handle_hls)
+    app.router.add_route("GET", "/media/{media_id}/subs/{filename}", _handle_subs)
     return app
 
 

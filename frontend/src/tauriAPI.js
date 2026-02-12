@@ -177,6 +177,17 @@ const tauriAPI = {
   },
 
   // Window controls for custom title bar
+  startDragging: async () => {
+    await tauriReady
+    if (!tauriWindow) return
+    try {
+      const currentWindow = tauriWindow.getCurrentWindow()
+      await currentWindow.startDragging()
+    } catch (e) {
+      console.error('[TauriAPI] startDragging failed:', e)
+    }
+  },
+
   minimizeWindow: async () => {
     await tauriReady
     if (!tauriWindow) return

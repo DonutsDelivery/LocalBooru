@@ -1053,6 +1053,11 @@ export async function updateCastConfig(config) {
   return response.data
 }
 
+export async function installCastDeps() {
+  const response = await api.post('/settings/cast/install')
+  return response.data
+}
+
 export async function getCastDevices() {
   const response = await api.get('/cast/devices')
   return response.data

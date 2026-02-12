@@ -36,6 +36,7 @@ _discovered_devices: List[CastDevice] = []
 _discovery_task: Optional[asyncio.Task] = None
 _last_scan_time: float = 0.0
 _scanning: bool = False
+_scan_complete: Optional[asyncio.Event] = None
 
 CACHE_TTL = 30  # seconds
 
@@ -53,22 +54,23 @@ async def _discover_chromecasts() -> List[CastDevice]:
     try:
         import pychromecast
     except ImportError:
-        logger.debug("[CastDiscovery] pychromecast not installed, skipping Chromecast scan")
+        logger.warning("[CastDiscovery] pychromecast not installed, skipping Chromecast scan")
         return []
 
     devices: List[CastDevice] = []
     try:
         chromecasts, browser = await asyncio.to_thread(
-            pychromecast.get_chromecasts, timeout=5
+            pychromecast.get_chromecasts, timeout=10
         )
         for cc in chromecasts:
+            ci = cc.cast_info
             devices.append(CastDevice(
                 id=f"chromecast-{cc.uuid}",
-                name=cc.name,
+                name=ci.friendly_name or cc.name,
                 type="chromecast",
-                model=cc.model_name or "Chromecast",
-                ip=cc.host,
-                port=cc.port,
+                model=ci.model_name or "Chromecast",
+                ip=ci.host,
+                port=ci.port,
             ))
         # Stop the browser's background listener so it doesn't leak
         browser.stop_discovery()
@@ -93,7 +95,7 @@ async def _discover_dlna() -> List[CastDevice]:
         from async_upnp_client.search import async_search
         from async_upnp_client.aiohttp import AiohttpRequester
     except ImportError:
-        logger.debug("[CastDiscovery] async_upnp_client not installed, skipping DLNA scan")
+        logger.warning("[CastDiscovery] async_upnp_client not installed, skipping DLNA scan")
         return []
 
     devices: List[CastDevice] = []
@@ -168,8 +170,9 @@ async def _discover_dlna() -> List[CastDevice]:
 
 async def _run_scan() -> List[CastDevice]:
     """Run both Chromecast and DLNA scans concurrently and merge results."""
-    global _scanning
+    global _scanning, _scan_complete
     _scanning = True
+    _scan_complete = asyncio.Event()
     try:
         chromecast_task = asyncio.create_task(_discover_chromecasts())
         dlna_task = asyncio.create_task(_discover_dlna())
@@ -191,6 +194,7 @@ async def _run_scan() -> List[CastDevice]:
         return merged
     finally:
         _scanning = False
+        _scan_complete.set()
 
 
 # ---------------------------------------------------------------------------
@@ -242,10 +246,16 @@ async def stop_discovery() -> None:
 async def get_devices() -> List[CastDevice]:
     """Return the current cached device list.
 
-    If the cache is stale (older than CACHE_TTL) and no scan is running,
-    triggers a one-off refresh before returning.
+    If a scan is in progress, waits for it to complete before returning.
+    If the cache is stale and no scan is running, triggers a fresh scan.
     """
     global _discovered_devices, _last_scan_time
+    # If a scan is in progress, wait for it to finish rather than returning stale/empty results
+    if _scanning and _scan_complete is not None:
+        try:
+            await asyncio.wait_for(_scan_complete.wait(), timeout=15)
+        except asyncio.TimeoutError:
+            logger.warning("[CastDiscovery] Timed out waiting for in-progress scan")
     age = time.monotonic() - _last_scan_time
     if age > CACHE_TTL and not _scanning:
         _discovered_devices = await _run_scan()

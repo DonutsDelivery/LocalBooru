@@ -1,14 +1,19 @@
-import { useState, useEffect } from 'react'
-import { getCastConfig, updateCastConfig } from '../api'
+import { useState, useEffect, useRef } from 'react'
+import { getCastConfig, updateCastConfig, installCastDeps } from '../api'
 import './OpticalFlowSettings.css'
 
 export default function CastSettings() {
   const [config, setConfig] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [installing, setInstalling] = useState(false)
+  const pollRef = useRef(null)
 
   useEffect(() => {
     loadConfig()
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
   }, [])
 
   async function loadConfig() {
@@ -16,10 +21,43 @@ export default function CastSettings() {
       setLoading(true)
       const data = await getCastConfig()
       setConfig(data)
+      // Start polling if install is in progress
+      if (data.installing) {
+        setInstalling(true)
+        startPolling()
+      }
     } catch (e) {
       console.error('Failed to load cast config:', e)
     }
     setLoading(false)
+  }
+
+  function startPolling() {
+    if (pollRef.current) return
+    pollRef.current = setInterval(async () => {
+      try {
+        const data = await getCastConfig()
+        setConfig(data)
+        if (!data.installing) {
+          clearInterval(pollRef.current)
+          pollRef.current = null
+          setInstalling(false)
+        }
+      } catch (e) {
+        console.error('Poll error:', e)
+      }
+    }, 2000)
+  }
+
+  async function handleInstall() {
+    try {
+      setInstalling(true)
+      await installCastDeps()
+      startPolling()
+    } catch (e) {
+      console.error('Failed to start install:', e)
+      setInstalling(false)
+    }
   }
 
   async function handleToggle(field, value) {
@@ -72,10 +110,29 @@ export default function CastSettings() {
 
       {missingDeps.length > 0 && (
         <div style={{ marginBottom: '12px', padding: '8px 12px', background: 'rgba(255,107,107,0.1)', borderRadius: '6px', fontSize: '0.9em' }}>
-          Install missing dependencies:
-          <code style={{ display: 'block', marginTop: '4px', padding: '4px 8px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
-            pip install {missingDeps.join(' ')}
-          </code>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>Missing: {missingDeps.join(', ')}</span>
+            <button
+              onClick={handleInstall}
+              disabled={installing}
+              style={{
+                padding: '4px 12px',
+                background: installing ? 'var(--bg-tertiary)' : 'var(--accent)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: installing ? 'default' : 'pointer',
+                fontSize: '0.85em',
+              }}
+            >
+              {installing ? 'Installing...' : 'Install'}
+            </button>
+          </div>
+          {config.install_progress && (
+            <p style={{ margin: '4px 0 0', fontSize: '0.85em', opacity: 0.8 }}>
+              {config.install_progress}
+            </p>
+          )}
         </div>
       )}
 

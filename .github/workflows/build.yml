@@ -293,7 +293,7 @@ jobs:
 
           Write-Host "Installing dependencies..."
           # Install most dependencies (skip insightface which requires C++ build tools)
-          & "$BUNDLE_DIR\python.exe" -m pip install fastapi uvicorn[standard] sqlalchemy aiosqlite pillow imagehash onnxruntime opencv-python-headless numpy pydantic pydantic-settings python-multipart httpx PyJWT cryptography watchdog miniupnpc xxhash --no-warn-script-location
+          & "$BUNDLE_DIR\python.exe" -m pip install fastapi uvicorn[standard] sqlalchemy aiosqlite pillow imagehash onnxruntime opencv-python-headless numpy pydantic pydantic-settings python-multipart httpx PyJWT cryptography watchdog miniupnpc xxhash pychromecast async-upnp-client aiohttp --no-warn-script-location
 
           # Try to install optional packages (may fail on some systems, that's OK)
           Write-Host "Attempting to install insightface..."
@@ -509,6 +509,45 @@ jobs:
       - name: Build Windows packages
         run: npx electron-builder --win --publish never
 
+      - name: Install NSIS
+        uses: negrutiu/nsis-install@v2
+
+      - name: Build portable launcher
+        shell: pwsh
+        run: |
+          # Read version from package.json
+          $pkg = Get-Content "package.json" -Raw | ConvertFrom-Json
+          $version = $pkg.version
+
+          # 1. Compile the tiny stub launcher
+          Write-Host "Compiling portable stub..."
+          makensis scripts\portable-stub.nsi
+          if ($LASTEXITCODE -ne 0) { throw "Failed to compile portable-stub.nsi" }
+
+          # 2. Extract the zip that electron-builder produced
+          Write-Host "Extracting Windows zip for portable packaging..."
+          $zipFile = Get-ChildItem "dist\*-Windows.zip" | Select-Object -First 1
+          if (-not $zipFile) { throw "Could not find dist/*-Windows.zip" }
+          Expand-Archive -Path $zipFile.FullName -DestinationPath "dist\portable-unpacked" -Force
+
+          # 3. Place the stub inside the unpacked files (it gets extracted alongside the app)
+          Write-Host "Placing portable stub inside app files..."
+          Copy-Item "dist\portable-stub.exe" "dist\portable-unpacked\.portable-stub.exe"
+
+          # 4. Compile the big self-extracting launcher
+          #    NSIS resolves File paths relative to the script dir, so use absolute paths
+          $repoRoot = (Get-Location).Path
+          Write-Host "Compiling portable launcher (VERSION=$version)..."
+          makensis /DVERSION=$version "/DAPP_FILES=$repoRoot\dist\portable-unpacked" "/DICON_FILE=$repoRoot\assets\icon.ico" scripts\portable-launcher.nsi
+          if ($LASTEXITCODE -ne 0) { throw "Failed to compile portable-launcher.nsi" }
+
+          # 5. Clean up intermediate files
+          Remove-Item "dist\portable-stub.exe" -Force
+          Remove-Item "dist\portable-unpacked" -Recurse -Force
+
+          $size = (Get-Item "dist\LocalBooru-Portable.exe").Length / 1MB
+          Write-Host "Portable launcher ready! Size: $([math]::Round($size, 2)) MB"
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -519,88 +558,6 @@ jobs:
             dist/*.appx
             dist/*.blockmap
             dist/latest.yml
-          if-no-files-found: warn
-
-  build-android:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install frontend dependencies
-        run: cd frontend && npm ci
-
-      - name: Build frontend
-        run: cd frontend && npx vite build
-
-      - name: Sync Capacitor
-        run: cd frontend && npx cap sync android
-
-      - name: Inject version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          PATCH=$(echo "$VERSION" | cut -d. -f3)
-          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
-
-          GRADLE="frontend/android/app/build.gradle"
-          sed -i "s/versionCode 1/versionCode $VERSION_CODE/" "$GRADLE"
-          sed -i "s/versionName \"1.0\"/versionName \"$VERSION\"/" "$GRADLE"
-
-          echo "Set versionName=$VERSION versionCode=$VERSION_CODE"
-
-      - name: Decode keystore
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > frontend/android/app/release.keystore
-
-      - name: Build signed release APK
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          cd frontend/android
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=$PWD/app/release.keystore \
-            -Pandroid.injected.signing.store.password=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.ANDROID_KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.ANDROID_KEY_PASSWORD }}
-
-      - name: Build debug APK
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: |
-          cd frontend/android
-          ./gradlew assembleDebug
-
-      - name: Rename APK
-        run: |
-          if [ -f frontend/android/app/build/outputs/apk/release/app-release.apk ]; then
-            cp frontend/android/app/build/outputs/apk/release/app-release.apk LocalBooru.apk
-          else
-            cp frontend/android/app/build/outputs/apk/debug/app-debug.apk LocalBooru.apk
-          fi
-
-      - name: Upload Android artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-builds
-          path: LocalBooru.apk
           if-no-files-found: warn
 
   release:

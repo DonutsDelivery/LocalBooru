@@ -7,9 +7,10 @@ and format compatibility checking.
 import asyncio
 import logging
 import time
-import uuid
+import uuid as uuid_mod
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +89,12 @@ class ChromecastBackend:
         def _blocking_connect():
             # pychromecast.get_chromecast_from_host expects a tuple:
             # (host, port, uuid, model_name, friendly_name)
-            # We pass None/empty for fields we don't know — pychromecast
-            # will fill them in from the device itself.
             friendly_name = kwargs.get("friendly_name", "")
+            device_uuid = kwargs.get("device_uuid")
+            if isinstance(device_uuid, str):
+                device_uuid = UUID(device_uuid)
             cast = pychromecast.get_chromecast_from_host(
-                (host, port, None, None, friendly_name),
+                (host, port, device_uuid, None, friendly_name),
                 tries=2,
                 timeout=10,
             )
@@ -104,7 +106,9 @@ class ChromecastBackend:
         self._connected = True
 
         # Install status listener for live updates
-        self._status_listener = _ChromecastStatusListener(self)
+        # Capture the event loop now (we're on the main async thread)
+        loop = asyncio.get_running_loop()
+        self._status_listener = _ChromecastStatusListener(self, loop)
         self._mc.register_status_listener(self._status_listener)
 
         logger.info(f"[Cast/Chromecast] Connected to {host}:{port}")
@@ -120,28 +124,22 @@ class ChromecastBackend:
             raise RuntimeError("Not connected to Chromecast")
 
         def _blocking_play():
-            # Build subtitle track if provided
-            subtitle_tracks = None
-            if subtitle_url:
-                subtitle_tracks = [{
-                    "trackId": 1,
-                    "type": "TEXT",
-                    "trackContentId": subtitle_url,
-                    "trackContentType": "text/vtt",
-                    "subtype": "SUBTITLES",
-                    "name": "Subtitles",
-                    "language": "en",
-                }]
-
+            # BUFFERED = seekable file with known duration
+            # LIVE = live stream (default in pychromecast, but wrong for local files)
             self._mc.play_media(
                 url,
                 content_type,
                 title=title or "LocalBooru Cast",
                 subtitles=subtitle_url,
-                subtitle_tracks=subtitle_tracks,
+                subtitles_lang="en-US",
+                subtitles_mime="text/vtt",
                 autoplay=True,
+                stream_type="BUFFERED",
             )
             self._mc.block_until_active(timeout=15)
+            # Subtitles must be explicitly enabled after media is active
+            if subtitle_url:
+                self._mc.enable_subtitle(1)
 
         await asyncio.to_thread(_blocking_play)
         logger.info(f"[Cast/Chromecast] Playing: {title or url}")
@@ -210,10 +208,15 @@ class ChromecastBackend:
 
 
 class _ChromecastStatusListener:
-    """Listener that broadcasts Chromecast media status changes via SSE."""
+    """Listener that broadcasts Chromecast media status changes via SSE.
 
-    def __init__(self, backend: ChromecastBackend):
+    pychromecast fires callbacks from a background thread, so we use
+    call_soon_threadsafe() to schedule async broadcasts on the event loop.
+    """
+
+    def __init__(self, backend: ChromecastBackend, loop: asyncio.AbstractEventLoop):
         self._backend = backend
+        self._loop = loop
 
     def new_media_status(self, status):
         """Called by pychromecast when media status changes."""
@@ -237,15 +240,26 @@ class _ChromecastStatusListener:
                 "title": status.title if status else None,
             }
 
-            # Schedule the async broadcast from a sync callback
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(cast_events.broadcast(CastEventType.STATUS, data))
-            except RuntimeError:
-                # No running loop — fire-and-forget via new event loop (rare edge case)
-                pass
+            self._loop.call_soon_threadsafe(
+                asyncio.ensure_future,
+                cast_events.broadcast(CastEventType.STATUS, data),
+            )
         except Exception as e:
             logger.debug(f"[Cast/Chromecast] Status listener error: {e}")
+
+    def load_media_failed(self, queue_item_id, error_code):
+        """Called by pychromecast when media loading fails."""
+        logger.error(f"[Cast/Chromecast] Media load failed: item={queue_item_id}, error={error_code}")
+        try:
+            from .events import cast_events, CastEventType
+            self._loop.call_soon_threadsafe(
+                asyncio.ensure_future,
+                cast_events.broadcast(CastEventType.ERROR, {
+                    "error": f"Media load failed (code {error_code})",
+                }),
+            )
+        except Exception as e:
+            logger.debug(f"[Cast/Chromecast] Error broadcasting load failure: {e}")
 
 
 # =============================================================================
@@ -529,7 +543,7 @@ class CastSession:
             hls_dir = self._transcode_stream.hls_dir
 
         # 3. Register media with cast media server (single registration)
-        media_id = str(uuid.uuid4())[:8]
+        media_id = str(uuid_mod.uuid4())[:8]
         register_media(
             media_id=media_id,
             file_path=file_path,
@@ -568,11 +582,14 @@ class CastSession:
 
         device_type = device.type.lower()
         if device_type == "chromecast":
+            # Extract UUID from device id (format: "chromecast-{uuid}")
+            device_uuid = device.id.replace("chromecast-", "", 1) if device.id.startswith("chromecast-") else None
             self.backend = ChromecastBackend()
             await self.backend.connect(
                 host=device.ip,
                 port=device.port or 8009,
                 friendly_name=device.name,
+                device_uuid=device_uuid,
             )
         elif device_type == "dlna":
             self.backend = DLNABackend()

@@ -85,6 +85,17 @@ html, body {
   overflow: hidden;
 }
 
+/* Desktop app: transparent window with rounded corners */
+html.desktop-app,
+html.desktop-app body {
+  background: transparent !important;
+}
+
+html.desktop-app #root {
+  border-radius: var(--window-radius);
+  clip-path: inset(0 round var(--window-radius));
+}
+
 a {
   color: var(--accent);
   text-decoration: none;

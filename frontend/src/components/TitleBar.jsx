@@ -3,10 +3,10 @@
  * Replaces the native OS title bar for a consistent look
  * Only renders in Electron/Tauri environment or mobile app
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { isMobileApp } from '../serverManager';
 import { getDesktopAPI, isDesktopApp, isTauri } from '../tauriAPI';
-// import UpdateBanner from './UpdateBanner';
+import UpdateBanner from './UpdateBanner';
 import './TitleBar.css';
 
 const TITLE_BAR_HEIGHT = 32;
@@ -24,12 +24,15 @@ export default function TitleBar({ onSwitchServer }) {
     apiRef.current = getDesktopAPI();
   }, []);
 
-  // Set CSS variable for title bar height offset
+  // Set CSS variable for title bar height offset + desktop class for transparent window
   useEffect(() => {
     if (isDesktop || isMobile) {
       document.documentElement.style.setProperty('--title-bar-height', `${TITLE_BAR_HEIGHT}px`);
     } else {
       document.documentElement.style.setProperty('--title-bar-height', '0px');
+    }
+    if (isDesktop) {
+      document.documentElement.classList.add('desktop-app');
     }
   }, [isDesktop, isMobile]);
 
@@ -57,6 +60,16 @@ export default function TitleBar({ onSwitchServer }) {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [isElectron]);
+
+  // Programmatic drag for Tauri (data-tauri-drag-region only works on direct element, not children)
+  const handleDragMouseDown = useCallback((e) => {
+    // Only handle left mouse button
+    if (e.button !== 0) return;
+    const api = apiRef.current;
+    if (api?.startDragging) {
+      api.startDragging();
+    }
+  }, []);
 
   // On mobile app, show minimal title bar with switch server button
   if (isMobile) {
@@ -89,7 +102,7 @@ export default function TitleBar({ onSwitchServer }) {
             </button>
           </div>
         </div>
-        {/* <UpdateBanner /> */}
+        <UpdateBanner />
       </>
     );
   }
@@ -130,7 +143,10 @@ export default function TitleBar({ onSwitchServer }) {
 
   return (
     <div className="title-bar">
-      <div className="title-bar-drag">
+      <div
+        className="title-bar-drag"
+        onMouseDown={isTauriApp ? handleDragMouseDown : undefined}
+      >
         <div className="title-bar-icon">
           <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
             <rect x="10" y="10" width="44" height="44" rx="6" fill="var(--bg-tertiary)" stroke="currentColor" strokeWidth="3"/>
@@ -138,7 +154,7 @@ export default function TitleBar({ onSwitchServer }) {
             <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="currentColor" opacity="0.85"/>
           </svg>
         </div>
-        <span className="title-bar-title">LocalBooru</span>
+        <span className="title-bar-title">LocalBooru {isTauriApp ? '(Tauri)' : isElectron ? '(Electron)' : ''}</span>
       </div>
 
       <div className="title-bar-controls">
