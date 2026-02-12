@@ -1889,3 +1889,300 @@ video::cue {
 .share-popover-start-btn:hover {
   background: #81d4fa;
 }
+
+/* =============================================================================
+   Cast UI (Chromecast / DLNA)
+   ============================================================================= */
+
+.lightbox-cast-container {
+  position: relative;
+}
+
+.lightbox-btn.lightbox-cast.active {
+  color: #4fc3f7;
+}
+
+/* Device picker dropdown */
+.cast-device-picker {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  min-width: 260px;
+  z-index: 50;
+  animation: dropdown-fade 0.15s ease-out;
+  overflow: hidden;
+}
+
+.cast-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cast-picker-refresh {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.cast-picker-refresh svg {
+  width: 16px;
+  height: 16px;
+}
+
+.cast-picker-refresh:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.cast-picker-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.cast-picker-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.cast-picker-device {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.cast-picker-device:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cast-device-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cast-device-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.cast-device-icon.chromecast {
+  color: #4fc3f7;
+}
+
+.cast-device-icon.dlna {
+  color: #81c784;
+}
+
+.cast-device-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cast-device-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cast-device-model {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: capitalize;
+}
+
+.cast-picker-empty {
+  padding: 20px 14px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.85rem;
+}
+
+/* Cast remote control overlay */
+.cast-overlay {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 20, 20, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 16px 20px;
+  min-width: 320px;
+  max-width: 420px;
+  z-index: 30;
+  animation: dropdown-fade 0.2s ease-out;
+}
+
+.cast-overlay-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  color: #4fc3f7;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.cast-overlay-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.cast-overlay-controls {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.cast-control-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: white;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.cast-control-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.cast-control-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.cast-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cast-time {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  text-align: center;
+}
+
+.cast-timeline {
+  flex: 1;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.cast-timeline-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+
+.cast-timeline-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: #4fc3f7;
+  border-radius: 2px;
+  transition: width 0.3s linear;
+}
+
+.cast-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cast-volume-icon {
+  width: 18px;
+  height: 18px;
+  color: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+}
+
+.cast-volume-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  outline: none;
+}
+
+.cast-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+}
+
+.cast-stop-btn {
+  width: 100%;
+  padding: 8px;
+  background: rgba(255, 107, 107, 0.15);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: 8px;
+  color: #ff6b6b;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.cast-stop-btn:hover {
+  background: rgba(255, 107, 107, 0.25);
+}

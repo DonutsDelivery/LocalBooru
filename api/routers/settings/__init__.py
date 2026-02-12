@@ -12,6 +12,7 @@ from .video import router as video_router
 from .tagging import router as tagging_router
 from .import_export import router as import_export_router
 from .whisper import router as whisper_router
+from .cast import router as cast_router
 from .saved_searches import router as saved_searches_router
 
 # Import functions and constants that main.py and other services need
@@ -42,6 +43,9 @@ from .models import (
     save_saved_searches,
     get_whisper_settings,
     save_whisper_settings,
+    get_cast_settings,
+    save_cast_settings,
+    DEFAULT_CAST_SETTINGS,
     get_default_local_port,
     DEFAULT_NETWORK_SETTINGS,
     DEFAULT_OPTICAL_FLOW_SETTINGS,
@@ -70,4 +74,5 @@ router.include_router(video_router)
 router.include_router(tagging_router)
 router.include_router(import_export_router)
 router.include_router(whisper_router)
+router.include_router(cast_router)
 router.include_router(saved_searches_router)

@@ -83,3 +83,14 @@ class SubtitleEventType:
     PROGRESS = "subtitle_progress"
     COMPLETED = "subtitle_completed"
     ERROR = "subtitle_error"
+
+
+# Cast event broadcaster instance
+cast_events = EventBroadcaster()
+
+
+class CastEventType:
+    STATUS = "cast_status"
+    CONNECTED = "cast_connected"
+    DISCONNECTED = "cast_disconnected"
+    ERROR = "cast_error"

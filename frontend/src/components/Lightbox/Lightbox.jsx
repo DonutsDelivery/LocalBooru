@@ -13,6 +13,7 @@ import { useTimelinePreview } from './hooks/useTimelinePreview'
 import { useWhisperSubtitles } from './hooks/useWhisperSubtitles'
 import { useAutoAdvance } from './hooks/useAutoAdvance'
 import { useShareStream } from './hooks/useShareStream'
+import { useCastSession } from './hooks/useCastSession'
 
 function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
   const [processing, setProcessing] = useState(false)
@@ -123,6 +124,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     directoryId: image?.directory_id,
     isVideoFile: isVideo(image?.original_filename),
   })
+
+  // Cast session hook (Chromecast / DLNA)
+  const casting = useCastSession(mediaRef, image)
 
   // Preload next 3 images (skip videos) for smoother navigation
   useEffect(() => {
@@ -871,6 +875,68 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           )}
           {collectionFeedback && <div className="collection-feedback">{collectionFeedback}</div>}
         </div>
+        {isVideo(image?.original_filename) && casting.castConfig?.enabled && (
+          <div className="lightbox-cast-container">
+            <button
+              className={`lightbox-btn lightbox-cast ${casting.isCasting ? 'active' : ''}`}
+              onClick={casting.toggleDevicePicker}
+              title={casting.isCasting ? 'Casting active' : 'Cast to device'}
+            >
+              <svg viewBox="0 0 24 24" fill={casting.isCasting ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
+                <line x1="2" y1="20" x2="2.01" y2="20"/>
+              </svg>
+            </button>
+            {casting.showDevicePicker && !casting.isCasting && (
+              <div className="cast-device-picker" onClick={(e) => e.stopPropagation()}>
+                <div className="cast-picker-header">
+                  <span>Cast to</span>
+                  <button className="cast-picker-refresh" onClick={casting.refreshDevices} disabled={casting.devicesLoading}>
+                    {casting.devicesLoading ? (
+                      <div className="cast-picker-spinner" />
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                {casting.devices.length > 0 ? (
+                  <div className="cast-picker-list">
+                    {casting.devices.map(device => (
+                      <button
+                        key={device.id}
+                        className="cast-picker-device"
+                        onClick={() => casting.startCasting(device.id)}
+                      >
+                        <span className={`cast-device-icon ${device.type}`}>
+                          {device.type === 'chromecast' ? (
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm18-7H5v1.63c3.96 1.28 7.09 4.41 8.37 8.37H19V7zM1 10v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                            </svg>
+                          ) : (
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/>
+                            </svg>
+                          )}
+                        </span>
+                        <div className="cast-device-info">
+                          <span className="cast-device-name">{device.name}</span>
+                          <span className="cast-device-model">{device.model || device.type}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="cast-picker-empty">
+                    {casting.devicesLoading ? 'Scanning...' : 'No devices found'}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {isVideo(image?.original_filename) && (
           <div className="lightbox-share-container">
             <button
@@ -1465,6 +1531,75 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             {subtitles.error && (
               <div className="interpolate-error-toast subtitle-error">
                 {subtitles.error}
+              </div>
+            )}
+            {/* Cast remote control overlay */}
+            {casting.isCasting && (
+              <div className="cast-overlay" onClick={(e) => e.stopPropagation()}>
+                <div className="cast-overlay-header">
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="cast-overlay-icon">
+                    <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm18-7H5v1.63c3.96 1.28 7.09 4.41 8.37 8.37H19V7zM1 10v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                  </svg>
+                  <span>Casting to TV</span>
+                </div>
+                <div className="cast-overlay-controls">
+                  <button
+                    className="cast-control-btn"
+                    onClick={() => casting.castStatus?.state === 'playing' ? casting.castPause() : casting.castResume()}
+                  >
+                    {casting.castStatus?.state === 'playing' ? (
+                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    )}
+                  </button>
+                </div>
+                {/* Cast timeline */}
+                {casting.castStatus?.duration > 0 && (
+                  <div className="cast-timeline-row">
+                    <span className="cast-time">{formatTime(casting.castStatus.current_time || 0)}</span>
+                    <div
+                      className="cast-timeline"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const pct = (e.clientX - rect.left) / rect.width
+                        casting.castSeek(pct * casting.castStatus.duration)
+                      }}
+                    >
+                      <div className="cast-timeline-track">
+                        <div
+                          className="cast-timeline-progress"
+                          style={{ width: `${(casting.castStatus.current_time / casting.castStatus.duration) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                    <span className="cast-time">{formatTime(casting.castStatus.duration)}</span>
+                  </div>
+                )}
+                {/* Cast volume */}
+                <div className="cast-volume-row">
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="cast-volume-icon">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+                  </svg>
+                  <input
+                    type="range"
+                    className="cast-volume-slider"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={casting.castStatus?.volume ?? 1}
+                    onChange={(e) => casting.castVolume(parseFloat(e.target.value))}
+                  />
+                </div>
+                <button className="cast-stop-btn" onClick={casting.stopCasting}>
+                  Stop Casting
+                </button>
+              </div>
+            )}
+            {/* Cast error toast */}
+            {casting.castError && (
+              <div className="interpolate-error-toast cast-error">
+                {casting.castError}
               </div>
             )}
             {/* Resume playback toast */}

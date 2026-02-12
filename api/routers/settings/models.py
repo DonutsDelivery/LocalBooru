@@ -390,3 +390,36 @@ class WhisperSubtitleRequest(BaseModel):
     language: Optional[str] = None  # override config language
     task: Optional[str] = None  # override config task
     start_position: float = 0.0  # start transcription from this timestamp
+
+
+# =============================================================================
+# Cast Settings (Chromecast + DLNA)
+# =============================================================================
+
+DEFAULT_CAST_SETTINGS = {
+    "enabled": False,
+    "cast_media_port": 8792,
+}
+
+
+def get_cast_settings() -> dict:
+    """Get cast settings with defaults"""
+    settings = load_settings()
+    cast = settings.get("cast", {})
+    return {**DEFAULT_CAST_SETTINGS, **cast}
+
+
+def save_cast_settings(cast_settings: dict):
+    """Save cast settings"""
+    settings = load_settings()
+    settings["cast"] = cast_settings
+    save_settings(settings)
+
+
+# =============================================================================
+# Pydantic Models - Cast
+# =============================================================================
+
+class CastConfigUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    cast_media_port: Optional[int] = None

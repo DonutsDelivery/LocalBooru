@@ -1042,6 +1042,69 @@ export function getShareHlsUrl(token) {
   return `${window.location.origin}/api/share/${token}/hls/playlist.m3u8`
 }
 
+// Cast API (Chromecast & DLNA)
+export async function getCastConfig() {
+  const response = await api.get('/settings/cast')
+  return response.data
+}
+
+export async function updateCastConfig(config) {
+  const response = await api.post('/settings/cast', config)
+  return response.data
+}
+
+export async function getCastDevices() {
+  const response = await api.get('/cast/devices')
+  return response.data
+}
+
+export async function refreshCastDevices() {
+  const response = await api.post('/cast/devices/refresh')
+  return response.data
+}
+
+export async function castPlay(deviceId, filePath, imageId = null, directoryId = null) {
+  const response = await api.post('/cast/play', {
+    device_id: deviceId,
+    file_path: filePath,
+    image_id: imageId,
+    directory_id: directoryId,
+  })
+  return response.data
+}
+
+export async function castControl(action, value = null) {
+  const response = await api.post('/cast/control', { action, value })
+  return response.data
+}
+
+export async function castStop() {
+  const response = await api.post('/cast/stop')
+  return response.data
+}
+
+export function subscribeToCastEvents(onEvent) {
+  const apiUrl = getApiUrl()
+  const eventSource = new EventSource(`${apiUrl}/cast/status`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      onEvent(data)
+    } catch (e) {
+      console.error('[Cast SSE] Failed to parse event:', e)
+    }
+  }
+
+  eventSource.onerror = (error) => {
+    console.error('[Cast SSE] Connection error:', error)
+  }
+
+  return () => {
+    eventSource.close()
+  }
+}
+
 // Health check (used for Tauri startup readiness polling)
 export async function healthCheck() {
   const baseUrl = isTauriApp() ? 'http://127.0.0.1:8790' : ''

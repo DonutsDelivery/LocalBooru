@@ -17,6 +17,7 @@ import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
 import OpticalFlowSettings from './components/OpticalFlowSettings'
 import WhisperSubtitleSettings from './components/WhisperSubtitleSettings'
+import CastSettings from './components/CastSettings'
 import QRConnect from './components/QRConnect'
 import ContinueWatching from './components/ContinueWatching'
 import { fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, healthCheck } from './api'
@@ -268,6 +269,7 @@ function SettingsPage() {
               <VideoPlaybackSettings />
               <OpticalFlowSettings />
               <WhisperSubtitleSettings />
+              <CastSettings />
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'network' ? 'active' : ''}`}>

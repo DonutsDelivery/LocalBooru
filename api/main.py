@@ -66,6 +66,14 @@ async def lifespan(app: FastAPI):
     from .services.svp_stream import kill_orphaned_svp_processes
     kill_orphaned_svp_processes()
 
+    # Start cast device discovery if casting is enabled
+    from .routers.settings.models import get_cast_settings
+    cast_config = get_cast_settings()
+    if cast_config.get("enabled"):
+        print("[Startup] Starting cast device discovery...")
+        from .services.cast_discovery import start_discovery
+        await start_discovery()
+
     yield
 
     # Shutdown - cleanup all resources gracefully
@@ -100,6 +108,18 @@ async def lifespan(app: FastAPI):
     print("[Shutdown] Stopping importer service...")
     from .services.importer import shutdown as shutdown_importer
     shutdown_importer()
+
+    # Stop cast session and media server
+    print("[Shutdown] Stopping cast services...")
+    from .services.cast_session import stop_cast
+    try:
+        await stop_cast()
+    except Exception:
+        pass
+    from .services.cast_discovery import stop_discovery
+    await stop_discovery()
+    from .services.cast_media_server import stop_server
+    await stop_server()
 
     # Stop share sessions
     print("[Shutdown] Stopping share sessions...")
@@ -141,7 +161,7 @@ thumbnails_dir.mkdir(exist_ok=True)
 app.mount("/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
 
 # Include routers - all under /api prefix to avoid conflicts with frontend SPA routes
-from .routers import images, tags, directories, library, network, users, app_update, watch_history, collections, share
+from .routers import images, tags, directories, library, network, users, app_update, watch_history, collections, share, cast
 from .routers import settings as settings_router
 
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
@@ -155,6 +175,7 @@ app.include_router(app_update.router, prefix="/api/app/update", tags=["App Updat
 app.include_router(watch_history.router, prefix="/api/watch-history", tags=["Watch History"])
 app.include_router(collections.router, prefix="/api/collections", tags=["Collections"])
 app.include_router(share.router, prefix="/api/share", tags=["Share Stream"])
+app.include_router(cast.router, prefix="/api/cast", tags=["Cast"])
 
 
 @app.get("/api")
