@@ -13,15 +13,42 @@ from .models import (
     save_optical_flow_settings,
     get_svp_settings,
     save_svp_settings,
+    get_video_playback_settings,
+    save_video_playback_settings,
     parse_quality_preset,
     OpticalFlowConfigUpdate,
     InterpolationPlayRequest,
     SVPConfigUpdate,
     SVPPlayRequest,
     TranscodePlayRequest,
+    VideoPlaybackConfigUpdate,
 )
 
 router = APIRouter()
+
+
+# =============================================================================
+# Video Playback Settings (auto-advance, etc.)
+# =============================================================================
+
+@router.get("/video-playback")
+async def get_video_playback_config():
+    """Get video playback configuration"""
+    return get_video_playback_settings()
+
+
+@router.post("/video-playback")
+async def update_video_playback_config(config: VideoPlaybackConfigUpdate):
+    """Update video playback configuration"""
+    current = get_video_playback_settings()
+
+    if config.auto_advance_enabled is not None:
+        current["auto_advance_enabled"] = config.auto_advance_enabled
+    if config.auto_advance_delay is not None:
+        current["auto_advance_delay"] = max(1, min(30, config.auto_advance_delay))
+
+    save_video_playback_settings(current)
+    return {"success": True, **current}
 
 
 # =============================================================================
@@ -140,7 +167,7 @@ async def play_video_interpolated(request: InterpolationPlayRequest):
         else:
             return {"success": False, "error": "Failed to start interpolated stream"}
 
-    except Exception as e:
+    except (OSError, ValueError) as e:
         return {"success": False, "error": f"Stream error: {str(e)}"}
 
 
@@ -634,7 +661,7 @@ async def play_video_transcode(request: TranscodePlayRequest):
         if success:
             # Wait briefly for initial buffer
             import asyncio
-            for _ in range(50):  # Wait up to 5 seconds
+            for _ in range(200):  # Wait up to 20 seconds (4K HEVC can be slow)
                 if stream.playlist_ready:
                     break
                 if stream.error:
@@ -642,6 +669,9 @@ async def play_video_transcode(request: TranscodePlayRequest):
                 if not stream._running:
                     return {"success": False, "error": stream.error or "Encoding failed"}
                 await asyncio.sleep(0.1)
+
+            if not stream.playlist_ready:
+                return {"success": False, "error": "Playlist not ready in time (encoding may be too slow for this file)"}
 
             # Return success
             return {
@@ -821,7 +851,7 @@ async def get_video_info(request: VideoInfoRequest):
                     "pix_fmt": stream.get("pix_fmt"),
                     **vfr_info
                 }
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
         pass
 
     return {"success": True, **vfr_info}

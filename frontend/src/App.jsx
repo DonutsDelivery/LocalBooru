@@ -18,27 +18,14 @@ import MigrationSettings from './components/MigrationSettings'
 import OpticalFlowSettings from './components/OpticalFlowSettings'
 import WhisperSubtitleSettings from './components/WhisperSubtitleSettings'
 import QRConnect from './components/QRConnect'
-import { fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
+import ContinueWatching from './components/ContinueWatching'
+import { fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, healthCheck } from './api'
 import DirectoriesPage from './pages/DirectoriesPage'
+import CollectionsPage from './pages/CollectionsPage'
+import CollectionDetailPage from './pages/CollectionDetailPage'
+import WatchPage from './pages/WatchPage'
+import { getColumnCount, tileWidths } from './utils/gridLayout'
 import './App.css'
-
-// Column count calculation (mirrors MasonryGrid logic, extended for high-res screens)
-const baseColumnCounts = {
-  3840: 10, 3200: 9, 2400: 8, 1800: 7, 1400: 6, 1200: 5, 900: 4, 600: 3, 0: 2
-}
-const tileSizeAdjustments = { 1: 3, 2: 1, 3: 0, 4: -2, 5: -4 }
-const tileWidths = { 1: 200, 2: 250, 3: 300, 4: 450, 5: 600 }
-
-function getColumnCount(width, tileSize) {
-  const adjustment = tileSizeAdjustments[tileSize] || 0
-  const breakpoints = Object.keys(baseColumnCounts).map(Number).sort((a, b) => b - a)
-  for (const bp of breakpoints) {
-    if (width >= bp) {
-      return Math.max(1, baseColumnCounts[bp] + adjustment)
-    }
-  }
-  return Math.max(1, 2 + adjustment)
-}
 
 // Calculate how many items to load based on viewport and tile size
 function calculatePerPage(tileSize) {
@@ -54,6 +41,101 @@ function calculatePerPage(tileSize) {
   const needed = columns * rows * 2
   // Minimum 50, maximum 400 (enough for 4K with small tiles)
   return Math.min(400, Math.max(50, needed))
+}
+
+// Autostart toggle for Tauri desktop builds
+function AutostartToggle() {
+  const [enabled, setEnabled] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!window.__TAURI_INTERNALS__) return
+    import('@tauri-apps/plugin-autostart').then(({ isEnabled }) => {
+      isEnabled().then(val => { setEnabled(val); setLoading(false) })
+        .catch(() => setLoading(false))
+    })
+  }, [])
+
+  const toggle = async () => {
+    const { enable, disable } = await import('@tauri-apps/plugin-autostart')
+    if (enabled) {
+      await disable()
+      setEnabled(false)
+    } else {
+      await enable()
+      setEnabled(true)
+    }
+  }
+
+  if (loading) return null
+
+  return (
+    <div className="toggle-setting" style={{ marginBottom: '12px' }}>
+      <label>
+        <input type="checkbox" checked={enabled} onChange={toggle} />
+        Start on system login
+      </label>
+    </div>
+  )
+}
+
+// Video playback settings component (auto-advance)
+function VideoPlaybackSettings() {
+  const [config, setConfig] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    import('./api').then(({ getVideoPlaybackConfig }) => {
+      getVideoPlaybackConfig().then(setConfig).catch(console.error)
+    })
+  }, [])
+
+  const handleToggle = async (field, value) => {
+    setSaving(true)
+    try {
+      const { updateVideoPlaybackConfig } = await import('./api')
+      const result = await updateVideoPlaybackConfig({ [field]: value })
+      setConfig(result)
+    } catch (e) {
+      console.error('Failed to save video playback config:', e)
+    }
+    setSaving(false)
+  }
+
+  if (!config) return null
+
+  return (
+    <section className="optical-flow-settings">
+      <h2>Video Playback</h2>
+      <div className="toggle-setting">
+        <label>
+          <input
+            type="checkbox"
+            checked={config.auto_advance_enabled}
+            onChange={(e) => handleToggle('auto_advance_enabled', e.target.checked)}
+            disabled={saving}
+          />
+          Auto-advance to next video when current one ends
+        </label>
+      </div>
+      {config.auto_advance_enabled && (
+        <div className="optical-flow-field">
+          <label>
+            Countdown delay (seconds)
+            <input
+              type="number"
+              min="1"
+              max="30"
+              value={config.auto_advance_delay}
+              onChange={(e) => handleToggle('auto_advance_delay', parseInt(e.target.value) || 5)}
+              disabled={saving}
+              style={{ width: '60px', marginLeft: '8px' }}
+            />
+          </label>
+        </div>
+      )}
+    </section>
+  )
 }
 
 // Settings page with tabs
@@ -183,6 +265,7 @@ function SettingsPage() {
 
             {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
             <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
+              <VideoPlaybackSettings />
               <OpticalFlowSettings />
               <WhisperSubtitleSettings />
             </div>
@@ -354,6 +437,7 @@ function SettingsPage() {
             {(window.electronAPI?.isElectron || window.__TAURI_INTERNALS__) && (
               <section>
                 <h2>Application</h2>
+                {window.__TAURI_INTERNALS__ && <AutostartToggle />}
                 <button onClick={async () => {
                   if (!confirm('Quit LocalBooru completely?\n\nThis will stop the background server and close the application.')) return
                   if (window.electronAPI?.quitApp) {
@@ -1032,6 +1116,7 @@ function Gallery() {
       setSelectedImages(new Set())
     } catch (error) {
       console.error('Batch retag failed:', error)
+      alert(`Batch retag failed: ${error.message || 'Unknown error'}`)
     }
     setBatchActionLoading(false)
   }
@@ -1046,6 +1131,7 @@ function Gallery() {
       setSelectedImages(new Set())
     } catch (error) {
       console.error('Batch age detect failed:', error)
+      alert(`Batch age detection failed: ${error.message || 'Unknown error'}`)
     }
     setBatchActionLoading(false)
   }
@@ -1159,6 +1245,9 @@ function Gallery() {
               <span className="folder-breadcrumb-name">{currentFolder === '__unfiled__' ? 'Unfiled' : currentFolder.split('/').pop()}</span>
             </div>
           )}
+          {/* Continue Watching row */}
+          <ContinueWatching onImageClick={handleImageClick} />
+
           {!loading && images.length === 0 ? (
             <div className="no-results">
               <h2>{groupByFolders && !currentFolder ? 'No folders found' : 'No images found'}</h2>
@@ -1424,10 +1513,51 @@ function Gallery() {
 }
 
 function App() {
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
+  const [backendReady, setBackendReady] = useState(!isTauri)
   const [mobileReady, setMobileReady] = useState(false)
   const [showServerSetup, setShowServerSetup] = useState(false)
   const [servers, setServers] = useState([])
   const [serverStatuses, setServerStatuses] = useState({})
+
+  // Poll backend health until ready (Tauri only — backend starts async)
+  useEffect(() => {
+    if (!isTauri || backendReady) return
+    let cancelled = false
+    const poll = async () => {
+      while (!cancelled) {
+        try {
+          await healthCheck()
+          if (!cancelled) setBackendReady(true)
+          return
+        } catch {
+          await new Promise(r => setTimeout(r, 500))
+        }
+      }
+    }
+    poll()
+    return () => { cancelled = true }
+  }, [isTauri, backendReady])
+
+  // Re-validate backend health when window regains focus (Tauri only)
+  // Catches backend crashes that happened while window was hidden in tray
+  useEffect(() => {
+    if (!isTauri || !backendReady) return
+    let unlisten
+    const setup = async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window')
+        const appWindow = getCurrentWindow()
+        unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
+          if (focused) {
+            healthCheck().catch(() => setBackendReady(false))
+          }
+        })
+      } catch { /* not in Tauri context */ }
+    }
+    setup()
+    return () => { if (unlisten) unlisten() }
+  }, [isTauri, backendReady])
 
   // Initialize server configuration for mobile app
   useEffect(() => {
@@ -1462,6 +1592,18 @@ function App() {
     }
     initMobile()
   }, [])
+
+  // Show loading while backend starts (Tauri)
+  if (!backendReady) {
+    return (
+      <div className="app loading-screen">
+        <div className="loading-content">
+          <h1>LocalBooru</h1>
+          <p>Starting backend...</p>
+        </div>
+      </div>
+    )
+  }
 
   // Show loading while initializing mobile
   if (!mobileReady) {
@@ -1528,6 +1670,9 @@ function App() {
         <Routes>
           <Route path="/" element={<Gallery />} />
           <Route path="/directories" element={<DirectoriesPage />} />
+          <Route path="/collections" element={<CollectionsPage />} />
+          <Route path="/collections/:id" element={<CollectionDetailPage />} />
+          <Route path="/watch/:token" element={<WatchPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </BrowserRouter>

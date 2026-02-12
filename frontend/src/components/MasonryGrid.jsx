@@ -1,40 +1,8 @@
 import { useEffect, useRef, useMemo, useState } from 'react'
 import MediaItem from './MediaItem'
 import FolderItem from './FolderItem'
+import { getColumnCount } from '../utils/gridLayout'
 import './MasonryGrid.css'
-
-// Base column counts for tileSize = 3 (medium, the default)
-const baseColumnCounts = {
-  2400: 8,
-  1800: 7,
-  1400: 6,
-  1200: 5,
-  900: 4,
-  600: 3,
-  0: 2  // Below 600px
-}
-
-// Column adjustments for each tile size level
-const tileSizeAdjustments = {
-  1: 3,   // +3 columns (smallest tiles)
-  2: 1,   // +1 columns
-  3: 0,   // base (medium)
-  4: -2,  // -2 columns
-  5: -4   // -4 columns (largest tiles)
-}
-
-// Calculate column count based on window width and tile size
-function getColumnCount(width, tileSize) {
-  const adjustment = tileSizeAdjustments[tileSize] || 0
-  const breakpoints = Object.keys(baseColumnCounts).map(Number).sort((a, b) => b - a)
-
-  for (const bp of breakpoints) {
-    if (width >= bp) {
-      return Math.max(1, baseColumnCounts[bp] + adjustment)
-    }
-  }
-  return Math.max(1, 2 + adjustment)
-}
 
 // Distribute images into columns based on aspect ratio to balance heights
 // Returns both items and normalized heights for each column
@@ -75,12 +43,6 @@ function distributeToColumns(images, columnCount) {
 
     columns[shortestIdx].items.push(image)
     columns[shortestIdx].height += itemHeight
-  }
-
-  // Debug log
-  if (images.length > 0) {
-    console.log(`Masonry: ${withDimensions}/${images.length} images have dimensions (${withoutDimensions} missing)`)
-    console.log('Column heights:', columns.map(c => c.height.toFixed(2)))
   }
 
   return columns

@@ -47,6 +47,8 @@ EXEMPT_PREFIXES = [
     "/redoc",
     "/assets",  # Static frontend assets
     "/icon.png",
+    "/api/share/",  # Share stream endpoints (must be accessible without auth from any network)
+    "/watch/",  # Share viewer SPA route
 ]
 
 # Endpoints exempt from authentication (chicken-egg problem for login)
@@ -145,9 +147,10 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
 
-        # Log ALL incoming requests for debugging
+        # Log request paths at DEBUG level to avoid path exposure in production
         client = request.client.host if request.client else "unknown"
-        print(f"[AccessControl] INCOMING: {method} {path} from {client}")
+        import logging
+        logging.getLogger(__name__).debug(f"[AccessControl] INCOMING: {method} {path} from {client}")
 
         try:
             # Always allow OPTIONS requests (CORS preflight)

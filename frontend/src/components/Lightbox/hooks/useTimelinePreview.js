@@ -10,7 +10,6 @@ export function useTimelinePreview(imageId, directoryId, duration) {
   const [hoverX, setHoverX] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const fetchedRef = useRef(false)
-  const timelineRef = useRef(null)
 
   // Fetch preview frames when image changes
   useEffect(() => {
@@ -92,7 +91,6 @@ export function useTimelinePreview(imageId, directoryId, duration) {
     hoverTime,
     hoverX,
     isLoading,
-    timelineRef,
     handleTimelineHover,
     handleTimelineHoverEnd,
     getCurrentFrame,

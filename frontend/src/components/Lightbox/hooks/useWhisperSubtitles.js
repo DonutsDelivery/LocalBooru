@@ -109,6 +109,16 @@ export function useWhisperSubtitles(mediaRef, image) {
     }
   }, [error])
 
+  // Cleanup SSE on image change (close stale EventSource before new one opens)
+  useEffect(() => {
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current()
+        unsubscribeRef.current = null
+      }
+    }
+  }, [image?.id])
+
   // Cleanup SSE, install poll, and backend stream on unmount
   useEffect(() => {
     return () => {

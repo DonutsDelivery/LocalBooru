@@ -1,5 +1,8 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
+use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tokio::sync::Mutex;
 
 mod backend;
@@ -7,6 +10,27 @@ mod commands;
 pub mod video;
 
 use backend::BackendManager;
+
+/// Show a hidden window and force WebKit to recomposite (Linux workaround)
+fn show_window(window: &tauri::WebviewWindow) {
+    let _ = window.show();
+    let _ = window.unminimize();
+
+    // Linux WebKit2GTK workaround: nudge the size to force recomposite
+    // Without this, the window may appear blank after hide/show
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(size) = window.inner_size() {
+            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                width: size.width + 1,
+                height: size.height,
+            }));
+            let _ = window.set_size(tauri::Size::Physical(size));
+        }
+    }
+
+    let _ = window.set_focus();
+}
 use commands::{
     backend_get_local_ip, backend_get_network_settings, backend_get_port, backend_health_check,
     backend_restart, backend_start, backend_status, backend_stop, BackendState,
@@ -43,10 +67,34 @@ use video::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Single instance: if app is already running, focus existing window instead
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Ignore callback if we're in the process of quitting
+            if let Some(quit_flag) = app.try_state::<Arc<AtomicBool>>() {
+                if quit_flag.load(Ordering::SeqCst) {
+                    log::info!("Single-instance callback during shutdown, ignoring");
+                    return;
+                }
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                show_window(&window);
+            }
+        }));
+    }
+
+    builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
             // Set up logging in debug builds
             if cfg!(debug_assertions) {
@@ -92,11 +140,96 @@ pub fn run() {
             // Get the main window and configure it
             let window = app.get_webview_window("main").unwrap();
 
-            // Open devtools in debug mode
-            #[cfg(debug_assertions)]
-            window.open_devtools();
+            // Devtools available via right-click > Inspect in debug mode
+            let _ = &window;
 
             log::info!("LocalBooru Tauri app started");
+
+            // Quit flag — only true when user selects "Quit" from tray
+            let quit_flag = Arc::new(AtomicBool::new(false));
+
+            // Store quit flag in app state for the window event handler
+            app.manage(quit_flag.clone());
+
+            // Build tray icon with context menu
+            let open_item = MenuItem::with_id(app, "open", "Open LocalBooru", true, None::<&str>)?;
+            let browser_item = MenuItem::with_id(app, "browser", "Open in Browser", true, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open_item, &browser_item, &separator, &quit_item])?;
+
+            let quit_flag_menu = quit_flag.clone();
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
+            let _tray = TrayIconBuilder::new()
+                .icon(tray_icon)
+                .menu(&menu)
+                .tooltip("LocalBooru")
+                .on_menu_event(move |app_handle, event| {
+                    match event.id.as_ref() {
+                        "open" => {
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                show_window(&window);
+                            }
+                        }
+                        "browser" => {
+                            // Read actual port from backend manager state
+                            let app_handle = app_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let state: tauri::State<BackendState> = app_handle.state();
+                                let manager = state.0.lock().await;
+                                let port = manager.get_port();
+                                let url = format!("http://127.0.0.1:{}", port);
+                                #[cfg(target_os = "linux")]
+                                let _ = std::process::Command::new("xdg-open")
+                                    .arg(&url)
+                                    .spawn();
+                                #[cfg(target_os = "macos")]
+                                let _ = std::process::Command::new("open")
+                                    .arg(&url)
+                                    .spawn();
+                                #[cfg(target_os = "windows")]
+                                let _ = std::process::Command::new("cmd")
+                                    .args(["/c", "start", &url])
+                                    .spawn();
+                            });
+                        }
+                        "quit" => {
+                            quit_flag_menu.store(true, Ordering::SeqCst);
+                            let app_handle = app_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let state: tauri::State<BackendState> = app_handle.state();
+                                let manager = state.0.lock().await;
+                                // Quick stop with 3s timeout — don't block exit
+                                let result = tokio::time::timeout(
+                                    std::time::Duration::from_secs(3),
+                                    manager.stop(),
+                                ).await;
+                                match result {
+                                    Ok(Err(e)) => log::error!("Error stopping backend: {}", e),
+                                    Err(_) => {
+                                        log::warn!("Backend stop timed out, force killing...");
+                                        manager.force_kill().await;
+                                    }
+                                    _ => {}
+                                }
+                                app_handle.exit(0);
+                            });
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event {
+                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            show_window(&window);
+                        }
+                    }
+                })
+                .build(app)?;
 
             // Start the backend automatically
             let app_handle = app.handle().clone();
@@ -111,19 +244,18 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Handle app close - stop backend gracefully
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                log::info!("Window close requested, stopping backend...");
-                let app_handle = window.app_handle().clone();
-
-                // Stop the backend when window closes
-                tauri::async_runtime::spawn(async move {
-                    let state: tauri::State<BackendState> = app_handle.state();
-                    let manager = state.0.lock().await;
-                    if let Err(e) = manager.stop().await {
-                        log::error!("Error stopping backend: {}", e);
-                    }
-                });
+            // Hide to tray on close (unless quit was requested)
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let quit_flag: tauri::State<Arc<AtomicBool>> = window.app_handle().state();
+                if quit_flag.load(Ordering::SeqCst) {
+                    // Real quit — let the close proceed, backend stopped by tray handler
+                    log::info!("Quit requested, closing window...");
+                } else {
+                    // Hide to tray instead of closing
+                    log::info!("Window close requested, hiding to tray...");
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![

@@ -11,6 +11,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from typing import Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,29 +19,34 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Active SVP streams registry
+# Active SVP streams registry (protected by _streams_lock)
 _active_svp_streams: Dict[str, 'SVPStream'] = {}
+_streams_lock = threading.Lock()
 
 
 def get_active_svp_stream(stream_id: str) -> Optional['SVPStream']:
     """Get an active SVP stream by ID."""
-    return _active_svp_streams.get(stream_id)
+    with _streams_lock:
+        return _active_svp_streams.get(stream_id)
 
 
 def register_stream(stream: 'SVPStream') -> None:
     """Register a stream in the active streams registry."""
-    _active_svp_streams[stream.stream_id] = stream
+    with _streams_lock:
+        _active_svp_streams[stream.stream_id] = stream
 
 
 def unregister_stream(stream_id: str) -> None:
     """Unregister a stream from the active streams registry."""
-    if stream_id in _active_svp_streams:
-        del _active_svp_streams[stream_id]
+    with _streams_lock:
+        _active_svp_streams.pop(stream_id, None)
 
 
 def stop_all_svp_streams() -> None:
     """Stop all active SVP streams."""
-    for stream in list(_active_svp_streams.values()):
+    with _streams_lock:
+        streams = list(_active_svp_streams.values())
+    for stream in streams:
         stream.stop()
     # Also kill any orphaned processes
     kill_orphaned_svp_processes()

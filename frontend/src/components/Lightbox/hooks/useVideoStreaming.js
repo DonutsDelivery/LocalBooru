@@ -11,7 +11,7 @@ import {
   playVideoTranscode,
   stopTranscodeStream
 } from '../../../api'
-import { isVideo, needsTranscode } from '../utils/helpers'
+import { isVideo } from '../utils/helpers'
 
 /**
  * Hook for managing HLS/SVP/OpticalFlow video streaming
@@ -43,6 +43,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
   const [transcodeStreamUrl, setTranscodeStreamUrl] = useState(null)
   const [transcodeTotalDuration, setTranscodeTotalDuration] = useState(null)
   const [transcodeStartOffset, setTranscodeStartOffset] = useState(0)
+  const [transcodeBufferedDuration, setTranscodeBufferedDuration] = useState(0)
   const transcodeHlsRef = useRef(null)
   const streamTransitioningRef = useRef(false)  // Block time updates during stream transitions
 
@@ -54,6 +55,14 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
   const hadOpticalFlowStreamRef = useRef(false)
   const hadTranscodeStreamRef = useRef(false)
   const transcodeStartingRef = useRef(false)  // Synchronous lock to prevent double-starts in auto-start effect
+  const [codecFallbackActive, setCodecFallbackActive] = useState(false)  // True when browser can't decode video codec
+  const codecFallbackStartedRef = useRef(false)  // Ref guard to prevent double-start
+  const [streamError, setStreamError] = useState(null)  // Generic stream error toast
+
+  // Cleanup coordination: ensures old backend processes are stopped before new ones start
+  const cleanupDoneRef = useRef(true)
+  const isFirstRenderRef = useRef(true)
+  const [cleanupSeq, setCleanupSeq] = useState(0)
 
   // Refs for callbacks (used by auto-start effect)
   const startSVPStreamRef = useRef(null)
@@ -106,6 +115,16 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       return () => clearTimeout(timer)
     }
   }, [opticalFlowError])
+
+  // Auto-dismiss stream error toast after 5 seconds
+  useEffect(() => {
+    if (streamError) {
+      const timer = setTimeout(() => {
+        setStreamError(null)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [streamError])
 
   // Helper to get the current absolute playback time (accounting for stream offsets)
   const getCurrentAbsoluteTime = useCallback(() => {
@@ -186,6 +205,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
 
     // Clear current stream state
     setTranscodeStreamUrl(null)
+    setTranscodeBufferedDuration(0)
 
     try {
       // Start new stream from target position
@@ -325,9 +345,63 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     // Note: svpLoading stays true until MANIFEST_PARSED fires in the useEffect
   }, [image, svpConfig, svpStreamUrl, svpLoading, opticalFlowStreamUrl, transcodeStreamUrl, currentQuality, getCurrentAbsoluteTime])
 
-  // Update refs after callbacks are defined (used by auto-start effect)
+  // Update refs after callbacks are defined (used by auto-start effect and SVP menu restart)
   startSVPStreamRef.current = startSVPStream
   startInterpolatedStreamRef.current = startInterpolatedStream
+
+  // Cleanup old streams when image changes.
+  // MUST be declared BEFORE the auto-start effect so React runs it first.
+  // This ensures backend processes (FFmpeg, SVP) are stopped before new ones start.
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false
+      return  // No cleanup needed on first mount
+    }
+
+    let cancelled = false
+    cleanupDoneRef.current = false
+
+    // Synchronous: destroy HLS instances immediately to stop network requests
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
+    if (svpHlsRef.current) { svpHlsRef.current.destroy(); svpHlsRef.current = null }
+    if (transcodeHlsRef.current) { transcodeHlsRef.current.destroy(); transcodeHlsRef.current = null }
+
+    // Reset all streaming state for the new video
+    setOpticalFlowError(null)
+    setOpticalFlowStreamUrl(null)
+    setOpticalFlowLoading(false)
+    setStreamError(null)
+    setSvpError(null)
+    setSvpStreamUrl(null)
+    setSvpTotalDuration(null)
+    setSvpBufferedDuration(0)
+    setSvpPendingSeek(null)
+    setSvpStartOffset(0)
+    setSvpLoading(false)
+    svpStartingRef.current = false
+    transcodeStartingRef.current = false
+    streamTransitioningRef.current = false
+    setCodecFallbackActive(false)
+    codecFallbackStartedRef.current = false
+    setSourceResolution(null)
+    setTranscodeTotalDuration(null)
+    setTranscodeStartOffset(0)
+    setTranscodeBufferedDuration(0)
+    setTranscodeStreamUrl(null)
+
+    // Async: stop all backend processes, then signal auto-start can proceed
+    Promise.all([
+      stopSVPStream().catch(() => {}),
+      stopInterpolatedStream().catch(() => {}),
+      stopTranscodeStream().catch(() => {})
+    ]).then(() => {
+      if (cancelled) return  // Component unmounted during cleanup
+      cleanupDoneRef.current = true
+      setCleanupSeq(s => s + 1)
+    })
+
+    return () => { cancelled = true }
+  }, [image?.id])
 
   // Stop SVP stream
   const stopSVP = useCallback(async () => {
@@ -352,6 +426,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
   // Priority: SVP (if enabled) > Optical Flow (if enabled) > Transcode (if quality != original)
   // NOTE: currentQuality is intentionally NOT a dependency — quality changes are handled by handleQualityChange
   useEffect(() => {
+    // Wait for cleanup to complete before starting new streams. Without this,
+    // stop_all_*_streams() from cleanup could kill the newly started stream.
+    if (!cleanupDoneRef.current) return
+
     // Wait until both configs have loaded from the API before auto-starting.
     // Without this gate, the effect fires 3 times during startup:
     //   1. initial mount (both configs null)
@@ -403,13 +481,14 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       }
       // Otherwise play direct (original quality, no interpolation)
     }
-  }, [image?.id, svpConfig?.enabled, opticalFlowConfig?.enabled])
+  }, [image?.id, cleanupSeq, svpConfig?.enabled, opticalFlowConfig?.enabled])
 
   // Setup HLS player when optical flow stream is active
   useEffect(() => {
     if (!opticalFlowStreamUrl || !mediaRef.current) return
 
     const video = mediaRef.current
+    let cancelled = false
 
     if (Hls.isSupported()) {
       // Pause video during transition to prevent playing old buffered content
@@ -427,7 +506,9 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
-        backBufferLength: 30
+        backBufferLength: 30,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
       })
 
       // Use getMediaUrl to handle dev mode (different ports for frontend/backend)
@@ -435,12 +516,16 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       hls.attachMedia(video)
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (cancelled) return
         video.play().catch(() => {})
       })
 
       hls.on(Hls.Events.ERROR, (event, data) => {
+        if (cancelled) return
         if (data.fatal) {
           console.error('HLS fatal error:', data)
+          hls.destroy()
+          hlsRef.current = null
           setOpticalFlowError('Stream playback error.')
           setOpticalFlowStreamUrl(null)
         }
@@ -459,6 +544,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     }
 
     return () => {
+      cancelled = true
       if (hlsRef.current) {
         hlsRef.current.destroy()
         hlsRef.current = null
@@ -488,11 +574,16 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
-        backBufferLength: 30
+        backBufferLength: 30,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
       })
 
+      const transcodeUrl = getMediaUrl(transcodeStreamUrl)
+      let manifestRetries = 0
+
       // Use getMediaUrl to handle dev mode (different ports for frontend/backend)
-      hls.loadSource(getMediaUrl(transcodeStreamUrl))
+      hls.loadSource(transcodeUrl)
       hls.attachMedia(video)
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -501,10 +592,31 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
         video.play().catch(() => {})
       })
 
+      // Track available duration from HLS manifest for seek handling
+      hls.on(Hls.Events.LEVEL_UPDATED, (event, data) => {
+        const levelDetails = data.details
+        if (levelDetails && levelDetails.totalduration) {
+          setTranscodeBufferedDuration(levelDetails.totalduration)
+        }
+      })
+
       hls.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
+          // HLS.js refuses to retry 404s — manually retry for manifest not-ready
+          if (data.details === 'manifestLoadError' && data.response?.code === 404 && manifestRetries < 15) {
+            manifestRetries++
+            console.log(`[Transcode] Playlist not ready, retry ${manifestRetries}/15...`)
+            setTimeout(() => {
+              if (transcodeHlsRef.current === hls) {
+                hls.loadSource(transcodeUrl)
+              }
+            }, 1000)
+            return
+          }
           console.error('Transcode HLS fatal error:', data)
           streamTransitioningRef.current = false
+          hls.destroy()
+          transcodeHlsRef.current = null
           setTranscodeStreamUrl(null)
         }
       })
@@ -611,7 +723,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       })
 
       let retryCount = 0
-      const maxRetries = 60  // Allow up to 60 retries (1 min) for large files indexing
+      const maxRetries = 10  // Cap retries to avoid infinite retry loops
 
       hls.on(Hls.Events.ERROR, (event, data) => {
         if (cancelled) return
@@ -624,13 +736,15 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
 
           if ((isManifestError || isNetworkError) && retryCount < maxRetries) {
             retryCount++
-            console.log(`[SVP HLS] Fatal error, manual retry ${retryCount}/${maxRetries}:`, data.details)
+            // Exponential backoff: 1s, 2s, 4s, 8s... capped at 30s
+            const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 30000)
+            console.log(`[SVP HLS] Fatal error, manual retry ${retryCount}/${maxRetries} in ${delay}ms:`, data.details)
             // HLS.js stops after fatal error - must manually restart loading
             setTimeout(() => {
               if (!cancelled) {
                 hls.startLoad()
               }
-            }, 1000)
+            }, delay)
           } else {
             // Give up - either not a retryable error, or retries exhausted
             console.error('[SVP HLS] Giving up after fatal error:', data)
@@ -707,6 +821,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     // Reset optical flow state for new video
     setOpticalFlowError(null)
     setOpticalFlowStreamUrl(null)
+    setStreamError(null)
     // Reset SVP state for new video
     setSvpError(null)
     setSvpStreamUrl(null)
@@ -717,9 +832,12 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     svpStartingRef.current = false  // Reset lock for new video
     transcodeStartingRef.current = false  // Reset lock for new video
     streamTransitioningRef.current = false  // Reset transition flag for new video
+    setCodecFallbackActive(false)  // Reset codec fallback for new video
+    codecFallbackStartedRef.current = false
     setSourceResolution(null)  // Reset so it gets set from original video, not stream
     setTranscodeTotalDuration(null)
     setTranscodeStartOffset(0)
+    setTranscodeBufferedDuration(0)
     setTranscodeStreamUrl(null)
     // Cleanup HLS instances
     if (hlsRef.current) {
@@ -736,9 +854,11 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     }
     // Stop backend streams if requested
     if (shouldStopStreams) {
-      stopSVPStream().catch(() => {})
-      stopInterpolatedStream().catch(() => {})
-      stopTranscodeStream().catch(() => {})
+      await Promise.all([
+        stopSVPStream().catch(() => {}),
+        stopInterpolatedStream().catch(() => {}),
+        stopTranscodeStream().catch(() => {})
+      ])
     }
   }, [])
 
@@ -756,7 +876,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     console.log('[Lightbox] Current absolute time:', absoluteTime)
 
     try {
-      if (qualityId === 'original' && !needsTranscode(image?.filename)) {
+      if (qualityId === 'original') {
         console.log('[Lightbox] Switching to original quality')
         // Stop streams and destroy HLS instances before setting direct src.
         // HLS.js attaches a MediaSource to the video element — we must destroy
@@ -861,7 +981,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
               setSvpStreamUrl(result.stream_url)
             } else {
               console.error('[Lightbox] SVP play failed:', result.error)
-              alert('Failed to start SVP stream: ' + result.error)
+              setStreamError('Failed to start SVP stream: ' + result.error)
             }
           } else if (opticalFlowConfig?.enabled) {
             // OpticalFlow is enabled, try to use it
@@ -873,7 +993,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
               setOpticalFlowStreamUrl(result.stream_url)
             } else {
               console.error('[Lightbox] OpticalFlow play failed:', result.error)
-              alert('Failed to start OpticalFlow stream: ' + result.error)
+              setStreamError('Failed to start OpticalFlow stream: ' + result.error)
             }
           } else {
             // Neither SVP nor OpticalFlow enabled, use simple transcode
@@ -889,7 +1009,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
               setTranscodeStreamUrl(result.stream_url)
             } else {
               console.error('[Lightbox] Transcode play failed:', result.error)
-              alert('Failed to transcode video: ' + result.error)
+              setStreamError('Failed to transcode video: ' + result.error)
             }
           }
         }
@@ -898,6 +1018,42 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       console.error('Failed to change quality:', err)
     }
   }, [image, mediaRef, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, svpConfig, opticalFlowConfig, getCurrentAbsoluteTime])
+
+  // Check if browser can't decode the video codec (e.g. HEVC on Linux WebKitGTK/Chromium)
+  // Called from Lightbox onCanPlay — if videoWidth is 0, the video track isn't decoding
+  const checkCodecFallback = useCallback((video) => {
+    // Only check when playing direct (no stream active, original quality)
+    if (svpStreamUrl || opticalFlowStreamUrl || transcodeStreamUrl) return
+    // Use ref guard to prevent multiple starts (state update is async)
+    if (codecFallbackStartedRef.current) return
+    if (!image || !isVideo(image.filename)) return
+
+    if (video.videoWidth === 0 && video.videoHeight === 0 && video.readyState >= 2) {
+      console.warn('[Codec] Browser cannot decode video codec, falling back to transcode')
+      codecFallbackStartedRef.current = true
+      setCodecFallbackActive(true)
+
+      // Stop audio-only playback immediately so user doesn't hear disembodied audio
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+
+      // Auto-start transcoding at original quality (re-encode to H.264, same resolution)
+      playVideoTranscode(image.file_path, 0, null).then(result => {
+        if (result.success) {
+          hadTranscodeStreamRef.current = true
+          setTranscodeStartOffset(0)
+          if (result.duration) setTranscodeTotalDuration(result.duration)
+          if (result.source_resolution) setSourceResolution(result.source_resolution)
+          setTranscodeStreamUrl(result.stream_url)
+        } else {
+          console.error('[Codec] Transcode fallback failed:', result.error)
+        }
+      }).catch(err => {
+        console.error('[Codec] Transcode fallback error:', err)
+      })
+    }
+  }, [image, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl])
 
   return {
     // Optical flow state
@@ -925,6 +1081,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     transcodeStreamUrl,
     transcodeTotalDuration,
     transcodeStartOffset,
+    transcodeBufferedDuration,
     // Other
     sourceResolution,
     setSourceResolution,
@@ -938,6 +1095,9 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     startSVPStreamRef,
     stopSVP,
     resetStreamingState,
-    handleQualityChange
+    handleQualityChange,
+    codecFallbackActive,
+    checkCodecFallback,
+    streamError
   }
 }

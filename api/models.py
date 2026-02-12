@@ -7,7 +7,7 @@ Architecture:
 - Per-directory databases (directories/{id}.db): Directory-local models using `DirectoryBase`
   - DirectoryImage, DirectoryImageFile, directory_image_tags
 """
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Table, Enum
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Table, Enum, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 from .database import Base
@@ -279,6 +279,58 @@ class TaskQueue(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class Collection(Base):
+    """User-created groupings of images"""
+    __tablename__ = "collections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    cover_image_id = Column(Integer, ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+    item_count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    cover_image = relationship("Image", foreign_keys=[cover_image_id])
+    items = relationship("CollectionItem", back_populates="collection", cascade="all, delete-orphan")
+
+
+class CollectionItem(Base):
+    """Items within a collection with ordering"""
+    __tablename__ = "collection_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    collection_id = Column(Integer, ForeignKey("collections.id", ondelete="CASCADE"), nullable=False, index=True)
+    image_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
+    sort_order = Column(Integer, default=0)
+    added_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    collection = relationship("Collection", back_populates="items")
+    image = relationship("Image")
+
+    __table_args__ = (
+        UniqueConstraint('collection_id', 'image_id', name='uq_collection_image'),
+    )
+
+
+class WatchHistory(Base):
+    """Track video watch progress for resume functionality"""
+    __tablename__ = "watch_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    playback_position = Column(Float, default=0.0)  # Seconds into video
+    duration = Column(Float, default=0.0)  # Total video duration
+    completed = Column(Boolean, default=False, index=True)
+    last_watched = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    image = relationship("Image")
 
 
 class Settings(Base):

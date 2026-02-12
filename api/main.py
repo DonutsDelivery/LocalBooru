@@ -4,7 +4,7 @@ LocalBooru API - Simplified single-user local image library
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from contextlib import asynccontextmanager
 from pathlib import Path
 import os
@@ -101,6 +101,11 @@ async def lifespan(app: FastAPI):
     from .services.importer import shutdown as shutdown_importer
     shutdown_importer()
 
+    # Stop share sessions
+    print("[Shutdown] Stopping share sessions...")
+    from .services.share_session import _cleanup_on_exit as cleanup_share_sessions
+    cleanup_share_sessions()
+
     # Close database connections
     print("[Shutdown] Closing database connections...")
     await close_db()
@@ -136,7 +141,7 @@ thumbnails_dir.mkdir(exist_ok=True)
 app.mount("/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
 
 # Include routers - all under /api prefix to avoid conflicts with frontend SPA routes
-from .routers import images, tags, directories, library, network, users, app_update
+from .routers import images, tags, directories, library, network, users, app_update, watch_history, collections, share
 from .routers import settings as settings_router
 
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
@@ -147,6 +152,9 @@ app.include_router(settings_router.router, prefix="/api/settings", tags=["Settin
 app.include_router(network.router, prefix="/api/network", tags=["Network"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(app_update.router, prefix="/api/app/update", tags=["App Update"])
+app.include_router(watch_history.router, prefix="/api/watch-history", tags=["Watch History"])
+app.include_router(collections.router, prefix="/api/collections", tags=["Collections"])
+app.include_router(share.router, prefix="/api/share", tags=["Share Stream"])
 
 
 @app.get("/api")
@@ -161,6 +169,14 @@ async def api_root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+# Standalone watch page for share stream viewers (served directly, no SPA needed)
+_WATCH_HTML_PATH = Path(__file__).parent / "templates" / "watch.html"
+
+@app.get("/watch/{token}")
+async def watch_page(token: str):
+    return HTMLResponse(_WATCH_HTML_PATH.read_text())
 
 
 @app.get("/debug/paths")

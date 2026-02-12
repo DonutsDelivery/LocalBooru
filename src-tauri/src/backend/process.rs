@@ -280,6 +280,13 @@ pub fn spawn_backend(
     .stdout(Stdio::piped())
     .stderr(Stdio::piped());
 
+    // Unix: create a new process group so we can kill all children cleanly
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
     // Windows-specific: hide console window
     #[cfg(target_os = "windows")]
     {
@@ -308,9 +315,14 @@ pub fn kill_uvicorn_processes() {
         .output();
 }
 
-/// Force kill a specific process by PID
+/// Force kill a specific process and its process group by PID
 #[cfg(not(target_os = "windows"))]
 pub fn force_kill_process(pid: u32) {
+    // Kill the entire process group (negative PID) to clean up worker processes
+    let _ = Command::new("kill")
+        .args(["-9", &format!("-{}", pid)])
+        .output();
+    // Also kill the specific PID in case it wasn't in a group
     let _ = Command::new("kill")
         .args(["-9", &pid.to_string()])
         .output();
@@ -323,12 +335,12 @@ pub fn force_kill_process(pid: u32) {
         .output();
 }
 
-/// Gracefully terminate a process
+/// Gracefully terminate a process and its process group
 #[cfg(not(target_os = "windows"))]
 pub fn graceful_kill_process(pid: u32) {
-    // Send SIGINT first (Ctrl+C equivalent)
+    // Send SIGINT to the process group (Ctrl+C equivalent for all children)
     let _ = Command::new("kill")
-        .args(["-2", &pid.to_string()])
+        .args(["-2", &format!("-{}", pid)])
         .output();
 }
 

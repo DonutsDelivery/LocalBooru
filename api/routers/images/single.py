@@ -34,19 +34,37 @@ router = APIRouter()
 # =============================================================================
 
 @router.get("/media/file-info")
-async def get_file_info(path: str = Query(...)):
+async def get_file_info(path: str = Query(...), db: AsyncSession = Depends(get_db)):
     """Get file information (size) for a file path"""
     try:
-        file_path = Path(path)
+        file_path = Path(path).resolve()
+
+        # Validate path is within a known watch directory to prevent path traversal
+        watch_dirs = await db.execute(select(WatchDirectory))
+        allowed = False
+        for wd in watch_dirs.scalars().all():
+            wd_path = Path(wd.path).resolve()
+            try:
+                file_path.relative_to(wd_path)
+                allowed = True
+                break
+            except ValueError:
+                continue
+
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Path is not within a watched directory")
+
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="File not found")
         if not file_path.is_file():
             raise HTTPException(status_code=400, detail="Path is not a file")
         size = file_path.stat().st_size
         return {"size": size, "path": str(file_path)}
+    except HTTPException:
+        raise
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid file path")
-    except Exception as e:
+    except OSError as e:
         raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
 
 

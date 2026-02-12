@@ -1,9 +1,10 @@
-import { useCallback, useState, useRef } from 'react'
+import { useCallback, useState, useRef, useEffect } from 'react'
+import { savePlaybackPosition } from '../../../api'
 
 /**
  * Hook for managing video playback state and controls
  */
-export function useVideoPlayback(mediaRef, streamState) {
+export function useVideoPlayback(mediaRef, streamState, imageId) {
   const {
     svpStreamUrl,
     svpStartOffset,
@@ -12,10 +13,12 @@ export function useVideoPlayback(mediaRef, streamState) {
     setSvpPendingSeek,
     transcodeStreamUrl,
     transcodeStartOffset,
+    transcodeBufferedDuration,
     svpTotalDuration,
     transcodeTotalDuration,
     opticalFlowStreamUrl,
     streamTransitioningRef,
+    getCurrentAbsoluteTime,
     restartSVPFromPosition,
     restartTranscodeFromPosition
   } = streamState
@@ -31,18 +34,32 @@ export function useVideoPlayback(mediaRef, streamState) {
   const [isMuted, setIsMuted] = useState(false)
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0)
   const timelineRef = useRef(null)
+  const lastSavedPositionRef = useRef(0)
+  const saveIntervalRef = useRef(null)
 
-  // Helper to get the current absolute playback time (accounting for stream offsets)
-  const getCurrentAbsoluteTime = useCallback(() => {
-    if (!mediaRef.current) return 0
-    const hlsTime = mediaRef.current.currentTime
-    if (svpStreamUrl) {
-      return hlsTime + svpStartOffset
-    } else if (transcodeStreamUrl) {
-      return hlsTime + transcodeStartOffset
+  // Save playback position periodically (every 10s) and on pause/end/cleanup
+  useEffect(() => {
+    if (!imageId) return
+
+    const savePosition = () => {
+      if (!mediaRef.current) return
+      const pos = getCurrentAbsoluteTime()
+      const dur = duration
+      if (dur <= 0 || pos <= 0) return
+      // Avoid redundant saves within 5s of the same position
+      if (Math.abs(pos - lastSavedPositionRef.current) < 5) return
+      lastSavedPositionRef.current = pos
+      savePlaybackPosition(imageId, pos, dur).catch(() => {})
     }
-    return hlsTime
-  }, [mediaRef, svpStreamUrl, svpStartOffset, transcodeStreamUrl, transcodeStartOffset])
+
+    saveIntervalRef.current = setInterval(savePosition, 10000)
+
+    return () => {
+      clearInterval(saveIntervalRef.current)
+      // Save on cleanup (navigation away)
+      savePosition()
+    }
+  }, [imageId, duration, mediaRef, getCurrentAbsoluteTime])
 
   // Seek forward/backward
   const seekVideo = useCallback((seconds) => {
@@ -70,8 +87,19 @@ export function useVideoPlayback(mediaRef, streamState) {
       return
     }
 
-    // For transcode streams, restart from new position (no buffered range tracking yet)
+    // For transcode streams, check if we can seek within buffered content
     if (transcodeStreamUrl) {
+      const bufferedEnd = transcodeStartOffset + transcodeBufferedDuration
+      const bufferedStart = transcodeStartOffset
+
+      if (newTime >= bufferedStart - 1 && newTime <= bufferedEnd + 2) {
+        // Seek within current stream
+        const hlsTime = newTime - transcodeStartOffset
+        mediaRef.current.currentTime = Math.max(0, hlsTime)
+        setCurrentTime(newTime)
+        return
+      }
+
       restartTranscodeFromPosition(newTime)
       return
     }
@@ -80,7 +108,7 @@ export function useVideoPlayback(mediaRef, streamState) {
     setSvpPendingSeek(null)
     mediaRef.current.currentTime = newTime
     setCurrentTime(newTime)
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, getCurrentAbsoluteTime, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
+  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, getCurrentAbsoluteTime, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
 
   // Toggle video play/pause
   const toggleVideoPlay = useCallback(() => {
@@ -102,7 +130,15 @@ export function useVideoPlayback(mediaRef, streamState) {
 
   const handleVideoPause = useCallback(() => {
     setIsPlaying(false)
-  }, [])
+    // Save position on pause
+    if (imageId && mediaRef.current && duration > 0) {
+      const pos = getCurrentAbsoluteTime()
+      if (pos > 0) {
+        lastSavedPositionRef.current = pos
+        savePlaybackPosition(imageId, pos, duration).catch(() => {})
+      }
+    }
+  }, [imageId, mediaRef, duration, getCurrentAbsoluteTime])
 
   // Update current time as video plays
   const handleTimeUpdate = useCallback(() => {
@@ -200,9 +236,20 @@ export function useVideoPlayback(mediaRef, streamState) {
       return
     }
 
-    // For transcode streams, restart from new position
+    // For transcode streams, check if we can seek within buffered content
     if (transcodeStreamUrl) {
-      console.log(`[Transcode] Seeking to ${newTime.toFixed(1)}s, restarting stream...`)
+      const bufferedEnd = transcodeStartOffset + transcodeBufferedDuration
+      const bufferedStart = transcodeStartOffset
+
+      if (newTime >= bufferedStart - 1 && newTime <= bufferedEnd + 2) {
+        // Seek within current stream
+        const hlsTime = newTime - transcodeStartOffset
+        mediaRef.current.currentTime = Math.max(0, hlsTime)
+        setCurrentTime(newTime)
+        return
+      }
+
+      console.log(`[Transcode] Seeking to ${newTime.toFixed(1)}s, buffered range: ${bufferedStart.toFixed(1)}-${bufferedEnd.toFixed(1)}s. Restarting stream...`)
       restartTranscodeFromPosition(newTime)
       return
     }
@@ -211,7 +258,7 @@ export function useVideoPlayback(mediaRef, streamState) {
     setSvpPendingSeek(null)
     mediaRef.current.currentTime = newTime
     setCurrentTime(newTime)
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
+  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
 
   const handleSeekStart = useCallback((e) => {
     setIsSeeking(true)
@@ -220,12 +267,50 @@ export function useVideoPlayback(mediaRef, streamState) {
 
   const handleSeekMove = useCallback((e) => {
     if (!isSeeking) return
-    handleSeek(e)
-  }, [isSeeking, handleSeek])
+    // Only update display time during drag — actual seek happens on mouseup
+    if (!mediaRef.current || !duration || !timelineRef.current) return
+    const rect = timelineRef.current.getBoundingClientRect()
+    const clickX = e.clientX - rect.left
+    const percent = Math.max(0, Math.min(1, clickX / rect.width))
+    const newTime = percent * duration
+    setCurrentTime(newTime)
+  }, [isSeeking, mediaRef, duration])
 
   const handleSeekEnd = useCallback(() => {
+    if (!isSeeking) return
     setIsSeeking(false)
-  }, [])
+
+    // Seek to final position
+    if (!mediaRef.current || !duration) return
+
+    if (svpStreamUrl) {
+      const bufferedEnd = svpStartOffset + svpBufferedDuration
+      const bufferedStart = svpStartOffset
+      if (currentTime < bufferedStart - 1 || currentTime > bufferedEnd + 2) {
+        restartSVPFromPosition(currentTime)
+        return
+      }
+      const hlsTime = currentTime - svpStartOffset
+      setSvpPendingSeek(null)
+      mediaRef.current.currentTime = Math.max(0, hlsTime)
+      return
+    }
+
+    if (transcodeStreamUrl) {
+      const bufferedEnd = transcodeStartOffset + transcodeBufferedDuration
+      const bufferedStart = transcodeStartOffset
+      if (currentTime >= bufferedStart - 1 && currentTime <= bufferedEnd + 2) {
+        const hlsTime = currentTime - transcodeStartOffset
+        mediaRef.current.currentTime = Math.max(0, hlsTime)
+        return
+      }
+      restartTranscodeFromPosition(currentTime)
+      return
+    }
+
+    setSvpPendingSeek(null)
+    mediaRef.current.currentTime = currentTime
+  }, [isSeeking, mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, currentTime, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
 
   // Touch handlers for video timeline (mobile)
   const handleSeekTouchStart = useCallback((e) => {
@@ -251,13 +336,23 @@ export function useVideoPlayback(mediaRef, streamState) {
       return
     }
     if (transcodeStreamUrl) {
+      const bufferedEnd = transcodeStartOffset + transcodeBufferedDuration
+      const bufferedStart = transcodeStartOffset
+
+      if (newTime >= bufferedStart - 1 && newTime <= bufferedEnd + 2) {
+        const hlsTime = newTime - transcodeStartOffset
+        mediaRef.current.currentTime = Math.max(0, hlsTime)
+        setCurrentTime(newTime)
+        return
+      }
+
       restartTranscodeFromPosition(newTime)
       return
     }
     setSvpPendingSeek(null)
     mediaRef.current.currentTime = newTime
     setCurrentTime(newTime)
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
+  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
 
   const handleSeekTouchMove = useCallback((e) => {
     if (!isSeeking) return
@@ -294,12 +389,21 @@ export function useVideoPlayback(mediaRef, streamState) {
       return
     }
     if (transcodeStreamUrl) {
+      const bufferedEnd = transcodeStartOffset + transcodeBufferedDuration
+      const bufferedStart = transcodeStartOffset
+
+      if (currentTime >= bufferedStart - 1 && currentTime <= bufferedEnd + 2) {
+        const hlsTime = currentTime - transcodeStartOffset
+        mediaRef.current.currentTime = Math.max(0, hlsTime)
+        return
+      }
+
       restartTranscodeFromPosition(currentTime)
       return
     }
     setSvpPendingSeek(null)
     mediaRef.current.currentTime = currentTime
-  }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, currentTime, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
+  }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, currentTime, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
 
   // Handle volume change
   const handleVolumeChange = useCallback((e) => {

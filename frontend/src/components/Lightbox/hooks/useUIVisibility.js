@@ -35,19 +35,19 @@ export function useUIVisibility(containerRef) {
   }, [resetHideTimer])
 
   // Fullscreen toggle handler
+  // Use document.documentElement so the entire page goes fullscreen,
+  // allowing sibling elements like the sidebar to remain visible
   const handleToggleFullscreen = useCallback(async () => {
-    if (!containerRef.current) return
-
     try {
       if (!document.fullscreenElement) {
-        await containerRef.current.requestFullscreen()
+        await document.documentElement.requestFullscreen()
       } else {
         await document.exitFullscreen()
       }
     } catch (err) {
       console.error('Fullscreen error:', err)
     }
-  }, [containerRef])
+  }, [])
 
   // Listen for fullscreen changes
   useEffect(() => {

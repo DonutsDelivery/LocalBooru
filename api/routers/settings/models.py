@@ -26,7 +26,7 @@ def load_settings() -> dict:
         try:
             with open(settings_file, 'r') as f:
                 return json.load(f)
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
     return {}
 
@@ -267,6 +267,47 @@ class TranscodePlayRequest(BaseModel):
 
 
 # =============================================================================
+# Saved Searches
+# =============================================================================
+
+def get_saved_searches() -> list:
+    """Get saved searches from settings"""
+    settings = load_settings()
+    return settings.get("saved_searches", [])
+
+
+def save_saved_searches(searches: list):
+    """Save searches list to settings"""
+    settings = load_settings()
+    settings["saved_searches"] = searches
+    save_settings(settings)
+
+
+# =============================================================================
+# Video Playback Settings (auto-advance, etc.)
+# =============================================================================
+
+DEFAULT_VIDEO_PLAYBACK_SETTINGS = {
+    "auto_advance_enabled": False,
+    "auto_advance_delay": 5,
+}
+
+
+def get_video_playback_settings() -> dict:
+    """Get video playback settings with defaults"""
+    settings = load_settings()
+    playback = settings.get("video_playback", {})
+    return {**DEFAULT_VIDEO_PLAYBACK_SETTINGS, **playback}
+
+
+def save_video_playback_settings(playback_settings: dict):
+    """Save video playback settings"""
+    settings = load_settings()
+    settings["video_playback"] = playback_settings
+    save_settings(settings)
+
+
+# =============================================================================
 # Whisper Subtitle Settings
 # =============================================================================
 
@@ -312,6 +353,16 @@ def save_whisper_settings(whisper_settings: dict):
 # =============================================================================
 # Pydantic Models - Whisper Subtitles
 # =============================================================================
+
+class SavedSearchCreate(BaseModel):
+    name: str
+    filters: dict
+
+
+class VideoPlaybackConfigUpdate(BaseModel):
+    auto_advance_enabled: Optional[bool] = None
+    auto_advance_delay: Optional[int] = None
+
 
 class WhisperConfigUpdate(BaseModel):
     enabled: Optional[bool] = None

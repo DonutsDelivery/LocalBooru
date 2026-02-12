@@ -835,8 +835,7 @@ video.lightbox-media.video-display-original {
   z-index: 20;
 }
 
-/* Show controls on hover or when UI is visible */
-.lightbox-video-container:hover .lightbox-video-controls,
+/* Show controls when UI is visible */
 .lightbox:not(.ui-hidden) .lightbox-video-controls {
   opacity: 1;
 }
@@ -847,10 +846,6 @@ video.lightbox-media.video-display-original {
   pointer-events: none;
 }
 
-.lightbox.ui-hidden .lightbox-video-container:hover .lightbox-video-controls {
-  opacity: 1;
-  pointer-events: auto;
-}
 
 /* Centered playback controls row */
 .video-playback-controls {
@@ -946,6 +941,48 @@ video.lightbox-media.video-display-original {
 .video-control-btn svg {
   width: 28px;
   height: 28px;
+}
+
+/* SVP toggle button */
+.svp-toggle-btn {
+  position: relative;
+}
+
+.svp-toggle-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.svp-toggle-btn.active {
+  color: #CE93D8;
+  background: rgba(156, 39, 176, 0.2);
+}
+
+.svp-toggle-btn.active:hover {
+  background: rgba(156, 39, 176, 0.35);
+}
+
+.svp-toggle-btn:not(.active):hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.svp-toggle-btn.loading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.svp-toggle-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #CE93D8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Quality button */
@@ -1409,4 +1446,446 @@ video::cue {
   .subtitle-menu-arrow {
     display: none;
   }
+}
+
+/* Auto-advance overlay */
+.auto-advance-overlay {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 12px 16px;
+  z-index: 20;
+  animation: autoAdvanceSlideIn 0.3s ease-out;
+  backdrop-filter: blur(10px);
+}
+
+@keyframes autoAdvanceSlideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.auto-advance-thumbnail {
+  width: 80px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.auto-advance-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auto-advance-text {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.auto-advance-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.auto-advance-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.auto-advance-btn.cancel {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.auto-advance-btn.cancel:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.auto-advance-btn.advance {
+  background: #4fc3f7;
+  color: #000;
+  font-weight: 600;
+}
+
+.auto-advance-btn.advance:hover {
+  background: #81d4fa;
+}
+
+/* Resume playback toast */
+.resume-toast {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 10px 16px;
+  z-index: 20;
+  animation: autoAdvanceSlideIn 0.3s ease-out;
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.resume-toast-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.resume-toast-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  background: #4fc3f7;
+  color: #000;
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+
+.resume-toast-btn:hover {
+  background: #81d4fa;
+}
+
+.resume-toast-btn.dismiss {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  font-weight: 400;
+}
+
+.resume-toast-btn.dismiss:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Collection picker */
+.lightbox-collection-container {
+  position: relative;
+}
+
+.lightbox-collection.active {
+  color: #4fc3f7;
+  background: rgba(79, 195, 247, 0.2);
+}
+
+.collection-picker {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  min-width: 220px;
+  z-index: 50;
+  animation: dropdown-fade 0.15s ease-out;
+  overflow: hidden;
+}
+
+.collection-picker-header {
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.collection-picker-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.collection-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.collection-picker-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.collection-picker-count {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.75rem;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.collection-picker-create {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.collection-picker-create input {
+  flex: 1;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: white;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.collection-picker-create input:focus {
+  border-color: rgba(79, 195, 247, 0.5);
+}
+
+.collection-picker-create input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.collection-picker-create button {
+  padding: 6px 12px;
+  background: #4fc3f7;
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.collection-picker-create button:hover {
+  background: #81d4fa;
+}
+
+.collection-picker-create button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.collection-feedback {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  padding: 4px 12px;
+  background: rgba(76, 175, 80, 0.9);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 6px;
+  white-space: nowrap;
+  animation: badge-fade-in 0.2s ease-out;
+  z-index: 50;
+}
+
+/* Share stream popover */
+.lightbox-share-container {
+  position: relative;
+}
+
+.lightbox-share.active {
+  color: #66bb6a;
+  background: rgba(76, 175, 80, 0.2);
+}
+
+.share-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  min-width: 280px;
+  z-index: 50;
+  animation: dropdown-fade 0.15s ease-out;
+  overflow: hidden;
+}
+
+.share-popover-header {
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.share-popover-link {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+}
+
+.share-popover-link input {
+  flex: 1;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: white;
+  font-size: 0.78rem;
+  font-family: monospace;
+  outline: none;
+  min-width: 0;
+}
+
+.share-popover-link input:focus {
+  border-color: rgba(79, 195, 247, 0.5);
+}
+
+.share-popover-link button {
+  padding: 6px 12px;
+  background: #4fc3f7;
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.share-popover-link button:hover {
+  background: #81d4fa;
+}
+
+.share-popover-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  color: rgba(255, 152, 0, 0.9);
+  background: rgba(255, 152, 0, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.share-popover-notice.share-notice-ok {
+  color: rgba(76, 175, 80, 0.9);
+  background: rgba(76, 175, 80, 0.08);
+}
+
+.share-notice-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.share-popover-tailscale {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.6);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.share-popover-tailscale a {
+  color: #4fc3f7;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.share-popover-tailscale a:hover {
+  text-decoration: underline;
+}
+
+.share-tailscale-hint {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.share-operator-cmd {
+  display: block;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: #ffcc00;
+  user-select: all;
+  margin: 4px 0;
+}
+
+.share-popover-stop {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 6px 10px 10px;
+  padding: 6px;
+  background: rgba(244, 67, 54, 0.15);
+  color: #ef9a9a;
+  border: 1px solid rgba(244, 67, 54, 0.25);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.share-popover-stop:hover {
+  background: rgba(244, 67, 54, 0.25);
+}
+
+.share-popover-start {
+  padding: 10px 14px 14px;
+}
+
+.share-popover-start p {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.4;
+}
+
+.share-popover-start-btn {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  background: #4fc3f7;
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.share-popover-start-btn:hover {
+  background: #81d4fa;
 }

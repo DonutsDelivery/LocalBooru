@@ -1,16 +1,18 @@
-import { useEffect, useCallback, useState, useRef } from 'react'
-import { getMediaUrl, getSVPConfig, stopSVPStream, stopInterpolatedStream } from '../../api'
+import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
+import { getMediaUrl, getSVPConfig, updateSVPConfig, stopSVPStream, stopInterpolatedStream, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo } from '../../api'
 import { getDesktopAPI } from '../../tauriAPI'
 import SVPSideMenu from '../SVPSideMenu'
 import QualitySelector from '../QualitySelector'
 import '../Lightbox.css'
-import { isVideo, needsTranscode, formatTime } from './utils/helpers'
+import { isVideo, formatTime } from './utils/helpers'
 import { useUIVisibility } from './hooks/useUIVisibility'
 import { useZoomPan } from './hooks/useZoomPan'
 import { useVideoStreaming } from './hooks/useVideoStreaming'
 import { useVideoPlayback } from './hooks/useVideoPlayback'
 import { useTimelinePreview } from './hooks/useTimelinePreview'
 import { useWhisperSubtitles } from './hooks/useWhisperSubtitles'
+import { useAutoAdvance } from './hooks/useAutoAdvance'
+import { useShareStream } from './hooks/useShareStream'
 
 function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
   const [processing, setProcessing] = useState(false)
@@ -34,6 +36,21 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Subtitle menu state
   const [showSubtitleMenu, setShowSubtitleMenu] = useState(false)
+
+  // Resume playback state
+  const [resumePosition, setResumePosition] = useState(null) // {position, duration}
+  const resumeTimerRef = useRef(null)
+
+  // Collection picker state
+  const [showCollectionPicker, setShowCollectionPicker] = useState(false)
+  const [collectionsList, setCollectionsList] = useState([])
+  const [collectionFeedback, setCollectionFeedback] = useState(null)
+  const [newCollectionName, setNewCollectionName] = useState('')
+
+  // Share popover state
+  const [showSharePopover, setShowSharePopover] = useState(false)
+  const [shareNetworkInfo, setShareNetworkInfo] = useState(null)
+  const [shareCopied, setShareCopied] = useState(false)
 
   // Quality selector state
   const [showQualitySelector, setShowQualitySelector] = useState(false)
@@ -69,13 +86,15 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setSvpPendingSeek: streaming.setSvpPendingSeek,
     transcodeStreamUrl: streaming.transcodeStreamUrl,
     transcodeStartOffset: streaming.transcodeStartOffset,
+    transcodeBufferedDuration: streaming.transcodeBufferedDuration,
     svpTotalDuration: streaming.svpTotalDuration,
     transcodeTotalDuration: streaming.transcodeTotalDuration,
     opticalFlowStreamUrl: streaming.opticalFlowStreamUrl,
     streamTransitioningRef: streaming.streamTransitioningRef,
+    getCurrentAbsoluteTime: streaming.getCurrentAbsoluteTime,
     restartSVPFromPosition: streaming.restartSVPFromPosition,
     restartTranscodeFromPosition: streaming.restartTranscodeFromPosition
-  })
+  }, image?.id)
 
   // Zoom and pan hook
   const zoomPan = useZoomPan(mediaRef, containerRef, resetHideTimer, image)
@@ -89,6 +108,21 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Whisper subtitle hook
   const subtitles = useWhisperSubtitles(mediaRef, image)
+
+  // Auto-advance hook
+  const autoAdvance = useAutoAdvance(mediaRef, {
+    onNav,
+    currentIndex,
+    totalImages: images.length,
+    isVideoFile: isVideo(image?.original_filename),
+  })
+
+  // Share stream hook (host side)
+  const shareStream = useShareStream(mediaRef, {
+    imageId: image?.id,
+    directoryId: image?.directory_id,
+    isVideoFile: isVideo(image?.original_filename),
+  })
 
   // Preload next 3 images (skip videos) for smoother navigation
   useEffect(() => {
@@ -127,15 +161,32 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [currentIndex, images])
 
   // Reset adjustments, preview, zoom, video state, and interpolation when changing images
+  // Note: streaming cleanup is handled internally by useVideoStreaming (coordinated with auto-start)
   useEffect(() => {
     setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
     setShowAdjustments(false)
     setPreviewUrl(null)
     zoomPan.resetZoom()
     playback.resetPlaybackState()
-    streaming.resetStreamingState(image && !isVideo(image.filename))
     subtitles.stopSubtitlesStream()
     setShowSubtitleMenu(false)
+  }, [image?.id])
+
+  // Check for resume position when opening a video
+  useEffect(() => {
+    if (!image || !isVideo(image.filename)) return
+    setResumePosition(null)
+    clearTimeout(resumeTimerRef.current)
+
+    getPlaybackPosition(image.id).then(data => {
+      if (data.position > 10 && !data.completed) {
+        setResumePosition(data)
+        // Auto-dismiss after 5s
+        resumeTimerRef.current = setTimeout(() => setResumePosition(null), 5000)
+      }
+    }).catch(() => {})
+
+    return () => clearTimeout(resumeTimerRef.current)
   }, [image?.id])
 
   // Auto-generate subtitles when opening a video (if enabled)
@@ -278,12 +329,101 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     resetHideTimer()
   }, [image?.original_filename, playback, resetHideTimer])
 
+  // Collection picker handlers
+  const handleOpenCollectionPicker = useCallback(async () => {
+    if (showCollectionPicker) {
+      setShowCollectionPicker(false)
+      return
+    }
+    try {
+      const data = await fetchCollections()
+      setCollectionsList(data.collections || [])
+    } catch (e) { /* ignore */ }
+    setShowCollectionPicker(true)
+  }, [showCollectionPicker])
+
+  const handleAddToCollection = useCallback(async (collectionId) => {
+    if (!image) return
+    try {
+      await addToCollection(collectionId, [image.id])
+      setCollectionFeedback('Added!')
+      setTimeout(() => setCollectionFeedback(null), 1500)
+      setShowCollectionPicker(false)
+    } catch (e) {
+      console.error('Failed to add to collection:', e)
+    }
+  }, [image])
+
+  const handleQuickCreateCollection = useCallback(async () => {
+    if (!newCollectionName.trim() || !image) return
+    try {
+      const result = await createCollection(newCollectionName.trim())
+      await addToCollection(result.id, [image.id])
+      setCollectionFeedback('Created & added!')
+      setTimeout(() => setCollectionFeedback(null), 1500)
+      setShowCollectionPicker(false)
+      setNewCollectionName('')
+    } catch (e) {
+      console.error('Failed to create collection:', e)
+    }
+  }, [newCollectionName, image])
+
+  // Share stream handlers
+  const handleToggleSharePopover = useCallback(() => {
+    setShowSharePopover(prev => !prev)
+  }, [])
+
+  const handleStartSharing = useCallback(async () => {
+    await shareStream.startSharing()
+    try {
+      const info = await getShareNetworkInfo()
+      setShareNetworkInfo(info)
+    } catch (e) { /* ignore */ }
+  }, [shareStream])
+
+  const handleStopSharing = useCallback(async () => {
+    await shareStream.stopSharing()
+  }, [shareStream])
+
+  const handleCopyShareLink = useCallback(() => {
+    if (shareStream.shareUrl) {
+      navigator.clipboard.writeText(shareStream.shareUrl).then(() => {
+        setShareCopied(true)
+        setTimeout(() => setShareCopied(false), 2000)
+      })
+    }
+  }, [shareStream.shareUrl])
+
   // Handle quality change
   const handleQualityChange = useCallback(async (qualityId) => {
     setCurrentQuality(qualityId)
     localStorage.setItem('video_quality_preference', qualityId)
     await streaming.handleQualityChange(qualityId, playback.setCurrentTime)
   }, [streaming, playback])
+
+  // Toggle SVP on/off
+  const handleToggleSVP = useCallback(async () => {
+    const newEnabled = !streaming.svpConfig?.enabled
+    try {
+      const updatedConfig = await updateSVPConfig({ enabled: newEnabled })
+      streaming.setSvpConfig(updatedConfig)
+
+      if (newEnabled) {
+        // Auto-start effect watches svpConfig.enabled and will start the stream
+      } else {
+        // Stop SVP stream
+        if (streaming.svpStreamUrl) {
+          await stopSVPStream()
+          streaming.setSvpStreamUrl(null)
+        }
+        streaming.setSvpError(null)
+        streaming.setSvpLoading(false)
+        streaming.svpStartingRef.current = false
+      }
+    } catch (err) {
+      console.error('Failed to toggle SVP:', err)
+    }
+  }, [streaming, image])
 
   // Generate preview of adjustments
   const handleGeneratePreview = useCallback(async () => {
@@ -612,10 +752,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Handle video canplay event - ensure video plays even if autoPlay is blocked
   // Also reset hide timer to ensure auto-hide works on mobile/Capacitor
+  // Also check if browser can decode the video codec (fallback to transcode if not)
   const handleVideoCanPlay = useCallback((e) => {
     e.target.play().catch(() => {})
     resetHideTimer()
-  }, [resetHideTimer])
+    streaming.checkCodecFallback(e.target)
+  }, [resetHideTimer, streaming.checkCodecFallback])
 
   // Handle video context menu
   const handleVideoContextMenu = useCallback((e) => {
@@ -629,6 +771,24 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       })
     }
   }, [image?.url, image?.file_path])
+
+  // Determine if we should play the video directly (no streaming)
+  const shouldPlayDirect = useMemo(() => {
+    return streaming.svpConfigLoaded
+      && !streaming.svpStreamUrl
+      && !streaming.opticalFlowStreamUrl
+      && !streaming.transcodeStreamUrl
+      && !streaming.svpLoading
+      && !streaming.codecFallbackActive
+      && currentQuality === 'original'
+      && (!streaming.svpConfig?.enabled || streaming.svpError)
+      && (!streaming.opticalFlowConfig?.enabled || streaming.opticalFlowError)
+  }, [
+    streaming.svpConfigLoaded, streaming.svpStreamUrl, streaming.opticalFlowStreamUrl,
+    streaming.transcodeStreamUrl, streaming.svpLoading, streaming.codecFallbackActive,
+    currentQuality, streaming.svpConfig?.enabled, streaming.svpError,
+    streaming.opticalFlowConfig?.enabled, streaming.opticalFlowError
+  ])
 
   if (!image) return null
 
@@ -673,6 +833,120 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
           </svg>
         </button>
+        <div className="lightbox-collection-container">
+          <button
+            className={`lightbox-btn lightbox-collection ${showCollectionPicker ? 'active' : ''}`}
+            onClick={handleOpenCollectionPicker}
+            title="Add to collection"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6z"/>
+              <rect x="6" y="2" width="16" height="16" rx="2"/>
+              <path d="M14 6v8M10 10h8"/>
+            </svg>
+          </button>
+          {showCollectionPicker && (
+            <div className="collection-picker" onClick={(e) => e.stopPropagation()}>
+              <div className="collection-picker-header">Add to Collection</div>
+              {collectionsList.length > 0 && (
+                <div className="collection-picker-list">
+                  {collectionsList.map(c => (
+                    <button key={c.id} className="collection-picker-item" onClick={() => handleAddToCollection(c.id)}>
+                      {c.name} <span className="collection-picker-count">({c.item_count})</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="collection-picker-create">
+                <input
+                  type="text"
+                  placeholder="New collection..."
+                  value={newCollectionName}
+                  onChange={(e) => setNewCollectionName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleQuickCreateCollection() }}
+                />
+                <button onClick={handleQuickCreateCollection} disabled={!newCollectionName.trim()}>Create</button>
+              </div>
+            </div>
+          )}
+          {collectionFeedback && <div className="collection-feedback">{collectionFeedback}</div>}
+        </div>
+        {isVideo(image?.original_filename) && (
+          <div className="lightbox-share-container">
+            <button
+              className={`lightbox-btn lightbox-share ${shareStream.isSharing ? 'active' : ''}`}
+              onClick={handleToggleSharePopover}
+              title={shareStream.isSharing ? 'Sharing active' : 'Share stream'}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+            </button>
+            {showSharePopover && (
+              <div className="share-popover" onClick={(e) => e.stopPropagation()}>
+                <div className="share-popover-header">Share Stream</div>
+                {shareStream.isSharing ? (
+                  <>
+                    <div className="share-popover-link">
+                      <input
+                        type="text"
+                        readOnly
+                        value={shareStream.shareUrl || ''}
+                        onClick={(e) => e.target.select()}
+                      />
+                      <button onClick={handleCopyShareLink}>
+                        {shareCopied ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    {shareNetworkInfo && !shareNetworkInfo.tailscale_installed && (
+                      <div className="share-popover-notice">
+                        <span className="share-notice-icon">&#9888;</span>
+                        <span>LAN only — not reachable from the internet.</span>
+                      </div>
+                    )}
+                    {shareNetworkInfo && shareNetworkInfo.tailscale_installed && shareNetworkInfo.tailscale_url && (
+                      <div className="share-popover-notice share-notice-ok">
+                        <span className="share-notice-icon">&#10003;</span>
+                        <span>{shareNetworkInfo.tailscale_https ? 'Shareable over internet (HTTPS)' : 'Shareable over internet'}</span>
+                      </div>
+                    )}
+                    {shareNetworkInfo && shareNetworkInfo.tailscale_installed && shareNetworkInfo.tailscale_needs_operator && (
+                      <div className="share-popover-tailscale">
+                        <span>Enable HTTPS share links:</span>
+                        <code className="share-operator-cmd">sudo tailscale set --operator=$USER</code>
+                        <span className="share-tailscale-hint">Run once, then restart LocalBooru</span>
+                      </div>
+                    )}
+                    {shareNetworkInfo && !shareNetworkInfo.tailscale_installed && (
+                      <div className="share-popover-tailscale">
+                        <span>Want to share over the internet?</span>
+                        <a
+                          href={`https://tailscale.com/download/${shareNetworkInfo.os}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Set up Tailscale &rarr;
+                        </a>
+                        <span className="share-tailscale-hint">Free, takes ~2 minutes</span>
+                      </div>
+                    )}
+                    <button className="share-popover-stop" onClick={handleStopSharing}>
+                      Stop Sharing
+                    </button>
+                  </>
+                ) : (
+                  <div className="share-popover-start">
+                    <p>Generate a link to watch this video in sync with others on your network.</p>
+                    <button className="share-popover-start-btn" onClick={handleStartSharing}>
+                      Start Sharing
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <button
           className="lightbox-btn lightbox-delete"
           onClick={() => setShowDeleteConfirm(true)}
@@ -885,10 +1159,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <video
               key={image.id}
               ref={mediaRef}
-              src={streaming.svpConfigLoaded && !streaming.svpStreamUrl && !streaming.opticalFlowStreamUrl && !streaming.transcodeStreamUrl && !streaming.svpLoading && currentQuality === 'original' && (!streaming.svpConfig?.enabled || streaming.svpError) && (!streaming.opticalFlowConfig?.enabled || streaming.opticalFlowError) && !needsTranscode(image.filename) ? getMediaUrl(image.url) : undefined}
+              src={shouldPlayDirect ? getMediaUrl(image.url) : undefined}
               autoPlay
               playsInline
-              loop
+              loop={!autoAdvance.isEnabled}
               className={`lightbox-media video-display-${playback.videoDisplayMode} ${streaming.svpStreamUrl ? 'svp-streaming' : streaming.opticalFlowStreamUrl ? 'interpolated-streaming' : streaming.transcodeStreamUrl ? 'transcode-streaming' : ''}`}
               style={zoomPan.getZoomTransform()}
               onClick={handleVideoClick}
@@ -975,6 +1249,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 )}
                 <div className="video-timeline-track">
                   {/* Buffer indicator for SVP streams - shows how much is available */}
+                  {/* Buffer indicator for transcode streams */}
+                  {streaming.transcodeStreamUrl && streaming.transcodeBufferedDuration > 0 && playback.duration > 0 && (
+                    <div
+                      className="video-timeline-buffer"
+                      style={{
+                        left: `${(streaming.transcodeStartOffset / playback.duration) * 100}%`,
+                        width: `${(streaming.transcodeBufferedDuration / playback.duration) * 100}%`
+                      }}
+                    />
+                  )}
                   {/* Buffer indicator for SVP streams - shows the buffered range */}
                   {streaming.svpStreamUrl && streaming.svpBufferedDuration > 0 && playback.duration > 0 && (
                     <div
@@ -1032,6 +1316,20 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   </svg>
                 </button>
               </div>
+              <button
+                className={`video-control-btn svp-toggle-btn ${streaming.svpConfig?.enabled ? 'active' : ''} ${streaming.svpLoading ? 'loading' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleToggleSVP()
+                }}
+                title={streaming.svpConfig?.enabled ? 'Disable SVP interpolation' : 'Enable SVP interpolation'}
+              >
+                {streaming.svpLoading ? (
+                  <div className="svp-toggle-spinner" />
+                ) : (
+                  <span className="svp-toggle-label">SVP</span>
+                )}
+              </button>
               <button
                 className="video-control-btn quality-btn"
                 onClick={(e) => {
@@ -1143,6 +1441,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 SVP: {streaming.svpError}
               </div>
             )}
+            {/* Generic stream error toast */}
+            {streaming.streamError && (
+              <div className="interpolate-error-toast">
+                {streaming.streamError}
+              </div>
+            )}
             {/* Subtitle install progress */}
             {subtitles.installing && (
               <div className="subtitle-progress-badge installing">
@@ -1161,6 +1465,39 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             {subtitles.error && (
               <div className="interpolate-error-toast subtitle-error">
                 {subtitles.error}
+              </div>
+            )}
+            {/* Resume playback toast */}
+            {resumePosition && (
+              <div className="resume-toast" onClick={(e) => e.stopPropagation()}>
+                <span>Resume from {formatTime(resumePosition.position)}?</span>
+                <div className="resume-toast-actions">
+                  <button className="resume-toast-btn" onClick={() => {
+                    playback.seekVideo(resumePosition.position - playback.currentTime)
+                    setResumePosition(null)
+                  }}>Resume</button>
+                  <button className="resume-toast-btn dismiss" onClick={() => setResumePosition(null)}>Start Over</button>
+                </div>
+              </div>
+            )}
+            {/* Auto-advance countdown overlay */}
+            {autoAdvance.countdown !== null && (
+              <div className="auto-advance-overlay" onClick={(e) => e.stopPropagation()}>
+                {/* Next item thumbnail preview */}
+                {images[currentIndex + 1] && (
+                  <img
+                    className="auto-advance-thumbnail"
+                    src={getMediaUrl(images[currentIndex + 1].thumbnail_url)}
+                    alt=""
+                  />
+                )}
+                <div className="auto-advance-info">
+                  <span className="auto-advance-text">Next in {autoAdvance.countdown}s</span>
+                  <div className="auto-advance-actions">
+                    <button className="auto-advance-btn cancel" onClick={autoAdvance.cancelCountdown}>Cancel</button>
+                    <button className="auto-advance-btn advance" onClick={autoAdvance.advanceNow}>Play Now</button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

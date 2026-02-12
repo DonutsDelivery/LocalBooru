@@ -415,7 +415,7 @@ class InterpolatedStream:
 
             return True
 
-        except Exception as e:
+        except (OSError, ValueError, ImportError) as e:
             logger.error(f"[Stream {self.stream_id}] Failed to start: {e}")
             self._error = str(e)
             self.stop()

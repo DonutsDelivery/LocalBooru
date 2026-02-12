@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { fetchDirectories, getFileDimensions } from '../../api'
+import { fetchDirectories, getFileDimensions, getSavedSearches, createSavedSearch, deleteSavedSearch } from '../../api'
 import { getDesktopAPI, isDesktopApp } from '../../tauriAPI'
 import PromptSection from './PromptSection'
 import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_OPTIONS, ORIENTATION_OPTIONS, DURATION_OPTIONS, SORT_OPTIONS } from './FilterControls'
@@ -65,10 +65,22 @@ function Sidebar({
     return saved !== null ? JSON.parse(saved) : false
   })
 
+  // Saved searches state
+  const [savedSearches, setSavedSearches] = useState([])
+  const [showSaveInput, setShowSaveInput] = useState(false)
+  const [saveSearchName, setSaveSearchName] = useState('')
+
   // Load directories
   useEffect(() => {
     fetchDirectories().then(data => {
       setDirectories(data.directories || [])
+    }).catch(console.error)
+  }, [])
+
+  // Load saved searches
+  useEffect(() => {
+    getSavedSearches().then(data => {
+      setSavedSearches(data.searches || [])
     }).catch(console.error)
   }, [])
 
@@ -165,6 +177,77 @@ function Sidebar({
       onToggleGroupByFolders()
     }
     onSearch('', ALL_RATINGS.join(','), 'newest', false, null, null, null, null, '', null, null, null)
+  }
+
+  // Save current filters as a named search
+  const handleSaveSearch = async () => {
+    if (!saveSearchName.trim()) return
+    const filters = {
+      tags: currentTags || '',
+      rating: selectedRatings.join(','),
+      sort: sortBy,
+      favorites_only: favoritesOnly,
+      directory_id: selectedDirectory,
+      min_age: minAge,
+      max_age: maxAge,
+      timeframe,
+      filename: filenameSearch,
+      orientation,
+    }
+    // Only include non-null resolution/duration
+    if (resolution) filters.resolution = resolution
+    if (duration) filters.duration = duration
+
+    try {
+      const result = await createSavedSearch(saveSearchName.trim(), filters)
+      setSavedSearches(prev => [...prev, result.search])
+      setShowSaveInput(false)
+      setSaveSearchName('')
+    } catch (e) {
+      console.error('Failed to save search:', e)
+    }
+  }
+
+  // Apply a saved search
+  const handleApplySavedSearch = (search) => {
+    const f = search.filters || {}
+    const ratings = f.rating || ALL_RATINGS.join(',')
+    setSelectedRatings(ratings.split(',').filter(r => ALL_RATINGS.includes(r)))
+    setSortBy(f.sort || 'newest')
+    setFavoritesOnly(f.favorites_only || false)
+    setSelectedDirectory(f.directory_id || null)
+    setMinAge(f.min_age || null)
+    setMaxAge(f.max_age || null)
+    setTimeframe(f.timeframe || null)
+    setFilenameSearch(f.filename || '')
+    setResolution(f.resolution || null)
+    setOrientation(f.orientation || null)
+    setDuration(f.duration || null)
+    onSearch(
+      f.tags || '',
+      ratings,
+      f.sort || 'newest',
+      f.favorites_only || false,
+      f.directory_id || null,
+      f.min_age || null,
+      f.max_age || null,
+      f.timeframe || null,
+      f.filename || '',
+      f.resolution || null,
+      f.orientation || null,
+      f.duration || null
+    )
+  }
+
+  // Delete a saved search
+  const handleDeleteSavedSearch = async (e, searchId) => {
+    e.stopPropagation()
+    try {
+      await deleteSavedSearch(searchId)
+      setSavedSearches(prev => prev.filter(s => s.id !== searchId))
+    } catch (e) {
+      console.error('Failed to delete saved search:', e)
+    }
   }
 
   const handleSortChange = (newSortBy) => {
@@ -302,12 +385,38 @@ function Sidebar({
               <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
             </svg>
           </NavLink>
+          <NavLink to="/collections" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Collections">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/>
+            </svg>
+          </NavLink>
           <NavLink to="/settings" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Settings">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
             </svg>
           </NavLink>
         </nav>
+
+        {/* Saved Searches */}
+        {isGalleryPage && savedSearches.length > 0 && (
+          <div className="sidebar-section saved-searches-section">
+            <div className="saved-searches-chips">
+              {savedSearches.map(search => (
+                <button
+                  key={search.id}
+                  className="saved-search-chip"
+                  onClick={() => handleApplySavedSearch(search)}
+                  title={search.name}
+                >
+                  <span>{search.name}</span>
+                  <span className="saved-search-delete" onClick={(e) => handleDeleteSavedSearch(e, search.id)}>
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Search Section - only show on gallery page */}
         {isGalleryPage && <div className="sidebar-section search-section">
@@ -389,7 +498,25 @@ function Sidebar({
               <button type="button" className="clear-button" onClick={handleClear}>
                 Clear
               </button>
+              <button type="button" className="save-search-button" onClick={() => setShowSaveInput(!showSaveInput)} title="Save current filters">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                  <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                </svg>
+              </button>
             </div>
+            {showSaveInput && (
+              <div className="save-search-input">
+                <input
+                  type="text"
+                  placeholder="Search name..."
+                  value={saveSearchName}
+                  onChange={(e) => setSaveSearchName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveSearch() } }}
+                  autoFocus
+                />
+                <button onClick={handleSaveSearch} disabled={!saveSearchName.trim()}>Save</button>
+              </div>
+            )}
           </form>
         </div>}
 

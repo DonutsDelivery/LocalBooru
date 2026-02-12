@@ -36,6 +36,19 @@ jobs:
       - name: Build frontend
         run: npm run build:frontend
 
+      - name: Verify frontend build
+        run: |
+          echo "Frontend build contents:"
+          ls -la frontend/dist/
+          echo ""
+          echo "Checking for /api in JS bundle:"
+          if grep -rl "/api" frontend/dist/assets/*.js > /dev/null 2>&1; then
+            echo "SUCCESS: Found /api in JS bundle"
+          else
+            echo "ERROR: /api NOT found in any JS bundle!"
+            exit 1
+          fi
+
       - name: Prepare Python bundle
         run: |
           echo "Creating Python virtual environment bundle..."
@@ -149,6 +162,19 @@ jobs:
 
       - name: Build frontend
         run: npm run build:frontend
+
+      - name: Verify frontend build
+        run: |
+          echo "Frontend build contents:"
+          ls -la frontend/dist/
+          echo ""
+          echo "Checking for /api in JS bundle:"
+          if grep -rl "/api" frontend/dist/assets/*.js > /dev/null 2>&1; then
+            echo "SUCCESS: Found /api in JS bundle"
+          else
+            echo "ERROR: /api NOT found in any JS bundle!"
+            exit 1
+          fi
 
       - name: Build macOS packages
         run: npx electron-builder --mac --publish never

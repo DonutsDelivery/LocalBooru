@@ -201,8 +201,15 @@ class TranscodeStream:
             if not self.playlist_ready:
                 logger.warning(f"[Transcode {self.stream_id}] Playlist not ready after {max_wait}s")
 
-            # Wait for process to complete
-            stdout, stderr = await process.communicate()
+            # Wait for process to complete (with timeout to avoid hanging forever)
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=7200)
+            except asyncio.TimeoutError:
+                logger.warning(f"[Transcode {self.stream_id}] FFmpeg timed out after 2 hours, killing")
+                process.kill()
+                stdout, stderr = await process.communicate()
+                self.error = "FFmpeg timed out"
+                return
 
             if process.returncode != 0:
                 error_output = stderr.decode('utf-8', errors='replace')
@@ -412,14 +419,14 @@ class TranscodeStream:
             cmd.extend(['-an'])  # No audio
 
         # HLS format - use shorter segments for faster startup
-        # Use a sliding window to limit disk usage: keep only recent segments,
-        # delete old ones. Seeking restarts the stream anyway, so we don't need
-        # all historical segments. 20 segments × 2s = 40s buffer (~100-200MB max).
+        # Keep all segments on disk so the browser can seek backward within
+        # already-transcoded content without restarting FFmpeg. Segments are
+        # cleaned up when stop() removes the temp directory.
         cmd.extend([
             '-f', 'hls',
             '-hls_time', '2',  # 2-second segments for faster startup
-            '-hls_list_size', '20',  # Keep last 20 segments in playlist
-            '-hls_flags', 'delete_segments+append_list',  # Delete old segments from disk
+            '-hls_list_size', '0',  # Keep all segments in playlist
+            '-hls_flags', 'append_list',  # Append to playlist, keep all segments
             '-hls_segment_filename', str(self.hls_dir / 'segment_%d.ts'),
             str(self.hls_dir / 'playlist.m3u8')
         ])
@@ -431,19 +438,22 @@ class TranscodeStream:
         logger.info(f"[Transcode {self.stream_id}] Stopping")
         self._running = False
 
-        # Kill FFmpeg process first
+        # Kill FFmpeg process first (sync-safe, no event loop needed)
         if self._process:
             try:
-                self._process.terminate()
-                # Give it a moment to terminate gracefully
-                import asyncio
-                try:
-                    asyncio.get_event_loop().run_until_complete(
-                        asyncio.wait_for(self._process.wait(), timeout=2)
-                    )
-                except (asyncio.TimeoutError, RuntimeError):
-                    # Force kill if it doesn't terminate
-                    self._process.kill()
+                pid = self._process.pid
+                if pid:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass  # Already dead
+                    else:
+                        # Brief wait, then force kill if still alive
+                        time.sleep(0.5)
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass  # Already terminated
             except Exception as e:
                 logger.warning(f"[Transcode {self.stream_id}] Error killing process: {e}")
             self._process = None

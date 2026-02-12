@@ -20,7 +20,7 @@ use super::health::{
     wait_for_ready,
 };
 use super::process::{
-    force_kill_process, graceful_kill_process, kill_uvicorn_processes, spawn_backend,
+    force_kill_process, graceful_kill_process, spawn_backend,
 };
 
 /// Backend manager state
@@ -106,20 +106,33 @@ impl BackendManager {
 
     /// Start the backend server
     pub async fn start(&self) -> Result<(), String> {
-        // Check if already running
+        // Check if already running (our own process)
         if self.is_running().await {
             log::info!("[Backend] Already running");
             return Ok(());
         }
 
-        // AGGRESSIVE cleanup - kill ALL uvicorn processes
-        log::info!("[Backend] Cleaning up any existing uvicorn processes...");
-        kill_uvicorn_processes();
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        // Check if an existing backend is already healthy on this port
+        // (e.g. from a previous app instance that hid to tray, or autostart)
+        if health_check(self.port).await {
+            log::info!("[Backend] Existing backend already healthy on port {}, reusing it", self.port);
+            return Ok(());
+        }
 
-        // Standard zombie kill on port
-        if let Err(e) = kill_zombie_processes(self.port).await {
-            log::warn!("[Backend] Warning: Could not free port: {}", e);
+        // If port is occupied but not healthy, wait — it might still be starting up
+        if !is_port_free(self.port) {
+            log::info!("[Backend] Port {} is occupied but not healthy, waiting for it...", self.port);
+            for i in 0..10 {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                if health_check(self.port).await {
+                    log::info!("[Backend] Backend became healthy after {}ms, reusing it", (i + 1) * 500);
+                    return Ok(());
+                }
+            }
+            // Still not healthy after 5s — kill only the process on this port (not all uvicorn)
+            log::warn!("[Backend] Port {} occupied by unresponsive process, cleaning up...", self.port);
+            kill_processes_on_port(self.port);
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
         log::info!("[Backend] Starting server on port {}", self.port);
@@ -295,13 +308,12 @@ impl BackendManager {
     fn force_kill_internal(&self, process_guard: &mut Option<Child>) {
         if let Some(child) = process_guard.as_mut() {
             let pid = child.id();
-            force_kill_process(pid);
+            force_kill_process(pid); // Kills process group (all workers)
             let _ = child.kill();
         }
         *process_guard = None;
 
-        // Also kill any zombie uvicorn processes
-        kill_uvicorn_processes();
+        // Kill any leftover process on our specific port (not all uvicorn system-wide)
         kill_processes_on_port(self.port);
     }
 
@@ -331,11 +343,11 @@ impl BackendManager {
 
 impl Drop for BackendManager {
     fn drop(&mut self) {
-        // Synchronous cleanup on drop
-        if let Ok(mut guard) = self.process.try_lock() {
-            if guard.is_some() {
-                self.force_kill_internal(&mut guard);
-            }
+        // Synchronous cleanup on drop — use blocking_lock to ensure process is killed
+        // even if the mutex is temporarily held elsewhere (avoids zombie processes)
+        let mut guard = self.process.blocking_lock();
+        if guard.is_some() {
+            self.force_kill_internal(&mut guard);
         }
     }
 }

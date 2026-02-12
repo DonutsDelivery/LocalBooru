@@ -391,6 +391,7 @@
   flex: 1;
   overflow-y: auto;
   scrollbar-width: auto;
+  scrollbar-gutter: stable;
   scrollbar-color: var(--border) transparent;
   display: flex;
   flex-direction: column;
@@ -1477,6 +1478,7 @@
 .sort-select {
   width: 100%;
   padding: 8px 12px;
+  padding-right: 32px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-secondary);
@@ -1484,6 +1486,12 @@
   font-size: 0.85rem;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
 }
 
 .sort-select:hover {
@@ -2009,4 +2017,117 @@
 .sidebar-support svg {
   width: 14px;
   height: 14px;
+}
+
+/* Saved Searches */
+.saved-searches-section {
+  padding: 8px 12px 4px;
+}
+
+.saved-searches-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.saved-search-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(79, 195, 247, 0.15);
+  border: 1px solid rgba(79, 195, 247, 0.3);
+  border-radius: 12px;
+  color: #4fc3f7;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+}
+
+.saved-search-chip:hover {
+  background: rgba(79, 195, 247, 0.25);
+}
+
+.saved-search-delete {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  opacity: 0.6;
+}
+
+.saved-search-chip:hover .saved-search-delete {
+  display: inline-flex;
+}
+
+.saved-search-delete:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.saved-search-delete svg {
+  width: 10px;
+  height: 10px;
+}
+
+.save-search-button {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text-secondary, #999);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s ease;
+}
+
+.save-search-button:hover {
+  border-color: rgba(79, 195, 247, 0.4);
+  color: #4fc3f7;
+}
+
+.save-search-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.save-search-input {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.save-search-input input {
+  flex: 1;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: var(--text-primary, #e0e0e0);
+  font-size: 0.8rem;
+}
+
+.save-search-input input:focus {
+  border-color: rgba(79, 195, 247, 0.5);
+  outline: none;
+}
+
+.save-search-input button {
+  padding: 5px 12px;
+  background: #4fc3f7;
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.save-search-input button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

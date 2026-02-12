@@ -648,7 +648,7 @@ export function isAnimated(filename) {
 }
 
 // Subscribe to library events via Server-Sent Events
-export function subscribeToLibraryEvents(onEvent) {
+export function subscribeToLibraryEvents(onEvent, onError) {
   const apiUrl = getApiUrl()
   // apiUrl already includes /api, so just append the path
   const eventSource = new EventSource(`${apiUrl}/library/events`)
@@ -664,6 +664,7 @@ export function subscribeToLibraryEvents(onEvent) {
 
   eventSource.onerror = (error) => {
     console.error('[SSE] Connection error:', error)
+    if (onError) onError(error)
   }
 
   // Return cleanup function
@@ -759,6 +760,99 @@ export function subscribeToMigrationEvents(onEvent) {
   return () => {
     eventSource.close()
   }
+}
+
+// Collections API
+export async function fetchCollections() {
+  const response = await api.get('/collections')
+  return response.data
+}
+
+export async function createCollection(name, description = null) {
+  const response = await api.post('/collections', { name, description })
+  return response.data
+}
+
+export async function fetchCollection(id, page = 1, perPage = 50) {
+  const response = await api.get(`/collections/${id}?page=${page}&per_page=${perPage}`)
+  return response.data
+}
+
+export async function updateCollection(id, updates) {
+  const response = await api.patch(`/collections/${id}`, updates)
+  return response.data
+}
+
+export async function deleteCollection(id) {
+  const response = await api.delete(`/collections/${id}`)
+  return response.data
+}
+
+export async function addToCollection(collectionId, imageIds) {
+  const response = await api.post(`/collections/${collectionId}/items`, { image_ids: imageIds })
+  return response.data
+}
+
+export async function removeFromCollection(collectionId, imageIds) {
+  const response = await api.delete(`/collections/${collectionId}/items`, { data: { image_ids: imageIds } })
+  return response.data
+}
+
+export async function reorderCollection(collectionId, imageIds) {
+  const response = await api.patch(`/collections/${collectionId}/items/reorder`, { image_ids: imageIds })
+  return response.data
+}
+
+// Saved Searches API
+export async function getSavedSearches() {
+  const response = await api.get('/settings/saved-searches')
+  return response.data
+}
+
+export async function createSavedSearch(name, filters) {
+  const response = await api.post('/settings/saved-searches', { name, filters })
+  return response.data
+}
+
+export async function deleteSavedSearch(searchId) {
+  const response = await api.delete(`/settings/saved-searches/${searchId}`)
+  return response.data
+}
+
+// Watch History API
+export async function savePlaybackPosition(imageId, position, duration) {
+  const response = await api.post(`/watch-history/${imageId}`, { position, duration })
+  return response.data
+}
+
+export async function getContinueWatching() {
+  const response = await api.get('/watch-history/continue-watching')
+  return response.data
+}
+
+export async function getPlaybackPosition(imageId) {
+  const response = await api.get(`/watch-history/${imageId}`)
+  return response.data
+}
+
+export async function clearWatchHistory(imageId = null) {
+  if (imageId) {
+    const response = await api.delete(`/watch-history/${imageId}`)
+    return response.data
+  }
+  const response = await api.delete('/watch-history')
+  return response.data
+}
+
+// Video Playback Config API (auto-advance, etc.)
+export async function getVideoPlaybackConfig() {
+  const response = await api.get('/settings/video-playback')
+  return response.data
+}
+
+export async function updateVideoPlaybackConfig(config) {
+  const response = await api.post('/settings/video-playback', config)
+  return response.data
 }
 
 // Optical Flow Interpolation API
@@ -893,6 +987,66 @@ export function subscribeToSubtitleEvents(streamId, onEvent) {
   return () => {
     eventSource.close()
   }
+}
+
+// Share Stream API
+export async function createShareSession(imageId, directoryId = null) {
+  const response = await api.post('/share/create', { image_id: imageId, directory_id: directoryId })
+  return response.data
+}
+
+export async function stopShareSession(token) {
+  const response = await api.delete(`/share/${token}`)
+  return response.data
+}
+
+export async function syncShareState(token, state) {
+  const response = await api.post(`/share/${token}/sync`, state)
+  return response.data
+}
+
+export async function getShareInfo(token) {
+  const response = await api.get(`/share/${token}/info`)
+  return response.data
+}
+
+export async function getShareNetworkInfo() {
+  const response = await api.get('/share/network-info')
+  return response.data
+}
+
+export function subscribeToShareEvents(token, onEvent) {
+  // Use page origin for absolute URL (viewer may be on different machine)
+  const eventSource = new EventSource(`${window.location.origin}/api/share/${token}/events`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      onEvent(data)
+    } catch (e) {
+      console.error('[Share SSE] Failed to parse event:', e)
+    }
+  }
+
+  eventSource.onerror = (error) => {
+    console.error('[Share SSE] Connection error:', error)
+  }
+
+  return () => {
+    eventSource.close()
+  }
+}
+
+export function getShareHlsUrl(token) {
+  // Use page origin for absolute URL (viewer may be on different machine)
+  return `${window.location.origin}/api/share/${token}/hls/playlist.m3u8`
+}
+
+// Health check (used for Tauri startup readiness polling)
+export async function healthCheck() {
+  const baseUrl = isTauriApp() ? 'http://127.0.0.1:8790' : ''
+  const response = await axios.get(`${baseUrl}/health`, { timeout: 2000 })
+  return response.data
 }
 
 // Utility endpoints
