@@ -144,28 +144,22 @@ class ChromecastBackend:
             )
             active = self._mc.block_until_active(timeout=30)
             if not active:
-                # Media didn't become active — check why
+                # Timeout doesn't mean failure — HLS streams and large files
+                # may take longer. The status listener will report the real state.
                 ms = self._mc.status
                 state = ms.player_state if ms else "UNKNOWN"
                 idle_reason = ms.idle_reason if ms else "UNKNOWN"
-                logger.error(
-                    f"[Cast/Chromecast] Media did not become active within 30s. "
+                logger.warning(
+                    f"[Cast/Chromecast] Media not active within 30s (may still load). "
                     f"State={state}, idle_reason={idle_reason}, URL={url}"
                 )
-                return False
 
             # Subtitles must be explicitly enabled after media is active
-            if subtitle_url:
+            if subtitle_url and active:
                 self._mc.enable_subtitle(1)
-            return True
 
-        active = await asyncio.to_thread(_blocking_play)
-        if not active:
-            raise RuntimeError(
-                f"Chromecast failed to load media. "
-                f"Verify the cast media server is reachable: {url}"
-            )
-        logger.info(f"[Cast/Chromecast] Playing: {title or url}")
+        await asyncio.to_thread(_blocking_play)
+        logger.info(f"[Cast/Chromecast] Play command sent: {title or url}")
 
     async def pause(self) -> None:
         if not self._mc:
