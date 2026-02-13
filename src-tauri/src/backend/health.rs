@@ -16,7 +16,12 @@ struct HealthResponse {
 
 /// Check if backend is healthy and responding with valid content
 pub async fn health_check(port: u16) -> bool {
-    let url = format!("http://127.0.0.1:{}/health", port);
+    health_check_host("127.0.0.1", port).await
+}
+
+/// Check if backend is healthy on a specific host address
+pub async fn health_check_host(host: &str, port: u16) -> bool {
+    let url = format!("http://{}:{}/health", host, port);
 
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(2))

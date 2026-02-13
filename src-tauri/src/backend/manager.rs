@@ -16,7 +16,7 @@ use super::config::{
     get_local_ip, get_network_settings, get_settings_path, NetworkSettings,
 };
 use super::health::{
-    health_check, is_port_free, kill_zombie_processes, kill_processes_on_port,
+    health_check, health_check_host, is_port_free, kill_zombie_processes, kill_processes_on_port,
     wait_for_ready,
 };
 use super::process::{
@@ -115,8 +115,27 @@ impl BackendManager {
         // Check if an existing backend is already healthy on this port
         // (e.g. from a previous app instance that hid to tray, or autostart)
         if health_check(self.port).await {
-            log::info!("[Backend] Existing backend already healthy on port {}, reusing it", self.port);
-            return Ok(());
+            let bind_host = get_bind_host(self.portable_data_dir.as_ref());
+
+            // If we need network access, verify the existing backend is bound to all interfaces
+            if bind_host == "0.0.0.0" {
+                let local_ip = self.get_local_ip();
+                if local_ip != "127.0.0.1" && !health_check_host(&local_ip, self.port).await {
+                    log::warn!(
+                        "[Backend] Existing backend on port {} is localhost-only but network access is enabled, restarting it",
+                        self.port
+                    );
+                    kill_processes_on_port(self.port);
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    // Fall through to start a new backend with correct bind host
+                } else {
+                    log::info!("[Backend] Existing backend already healthy on port {}, reusing it", self.port);
+                    return Ok(());
+                }
+            } else {
+                log::info!("[Backend] Existing backend already healthy on port {}, reusing it", self.port);
+                return Ok(());
+            }
         }
 
         // If port is occupied but not healthy, wait — it might still be starting up
@@ -125,12 +144,21 @@ impl BackendManager {
             for i in 0..10 {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 if health_check(self.port).await {
+                    // Don't reuse if bind host doesn't match (same check as above)
+                    let bind_host = get_bind_host(self.portable_data_dir.as_ref());
+                    if bind_host == "0.0.0.0" {
+                        let local_ip = self.get_local_ip();
+                        if local_ip != "127.0.0.1" && !health_check_host(&local_ip, self.port).await {
+                            log::warn!("[Backend] Backend on port {} is localhost-only but network access needed, replacing it", self.port);
+                            break;
+                        }
+                    }
                     log::info!("[Backend] Backend became healthy after {}ms, reusing it", (i + 1) * 500);
                     return Ok(());
                 }
             }
-            // Still not healthy after 5s — kill only the process on this port (not all uvicorn)
-            log::warn!("[Backend] Port {} occupied by unresponsive process, cleaning up...", self.port);
+            // Still not healthy or wrong bind host — kill and replace
+            log::warn!("[Backend] Port {} occupied by incompatible/unresponsive process, cleaning up...", self.port);
             kill_processes_on_port(self.port);
             tokio::time::sleep(Duration::from_millis(500)).await;
         }

@@ -172,6 +172,15 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
             traceback.print_exc()
             raise
 
+        try:
+            return await self._handle_access_control(request, call_next, client_ip, access_level, path, method)
+        except Exception as e:
+            print(f"[AccessControl] EXCEPTION in access control for {method} {path} from {client_ip}: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    async def _handle_access_control(self, request, call_next, client_ip, access_level, path, method):
         # Store in request state for use by route handlers
         request.state.client_ip = client_ip
         request.state.access_level = access_level
