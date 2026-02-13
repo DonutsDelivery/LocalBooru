@@ -398,7 +398,6 @@ class WhisperSubtitleRequest(BaseModel):
 
 DEFAULT_CAST_SETTINGS = {
     "enabled": True,
-    "cast_media_port": 8792,
     "installing": False,
     "install_progress": "",
 }
@@ -424,4 +423,3 @@ def save_cast_settings(cast_settings: dict):
 
 class CastConfigUpdate(BaseModel):
     enabled: Optional[bool] = None
-    cast_media_port: Optional[int] = None

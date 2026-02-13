@@ -57,8 +57,6 @@ async def update_cast_config(config: CastConfigUpdate):
 
     if config.enabled is not None:
         current["enabled"] = config.enabled
-    if config.cast_media_port is not None:
-        current["cast_media_port"] = max(1024, min(65535, config.cast_media_port))
 
     save_cast_settings(current)
     return {"success": True, **current}

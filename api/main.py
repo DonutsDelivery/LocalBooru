@@ -109,7 +109,7 @@ async def lifespan(app: FastAPI):
     from .services.importer import shutdown as shutdown_importer
     shutdown_importer()
 
-    # Stop cast session and media server
+    # Stop cast session
     print("[Shutdown] Stopping cast services...")
     from .services.cast_session import stop_cast
     try:
@@ -118,8 +118,6 @@ async def lifespan(app: FastAPI):
         pass
     from .services.cast_discovery import stop_discovery
     await stop_discovery()
-    from .services.cast_media_server import stop_server
-    await stop_server()
 
     # Stop share sessions
     print("[Shutdown] Stopping share sessions...")
@@ -153,6 +151,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Range", "Content-Length", "Accept-Ranges"],
 )
 
 # Mount static files for thumbnails
@@ -176,6 +175,7 @@ app.include_router(watch_history.router, prefix="/api/watch-history", tags=["Wat
 app.include_router(collections.router, prefix="/api/collections", tags=["Collections"])
 app.include_router(share.router, prefix="/api/share", tags=["Share Stream"])
 app.include_router(cast.router, prefix="/api/cast", tags=["Cast"])
+app.include_router(cast.cast_media_router, prefix="/api/cast-media", tags=["Cast Media"])
 
 
 @app.get("/api")

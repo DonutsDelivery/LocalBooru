@@ -149,26 +149,6 @@ export default function CastSettings() {
         </label>
       </div>
 
-      {/* Port config (only show when enabled) */}
-      {config.enabled && (
-        <div className="optical-flow-field" style={{ marginTop: '12px' }}>
-          <label>
-            Cast media server port
-            <input
-              type="number"
-              min="1024"
-              max="65535"
-              value={config.cast_media_port}
-              onChange={(e) => handleToggle('cast_media_port', parseInt(e.target.value) || 8792)}
-              disabled={saving}
-              style={{ width: '80px', marginLeft: '8px' }}
-            />
-          </label>
-          <p className="setting-description" style={{ marginTop: '4px', fontSize: '0.85em' }}>
-            HTTP-only server for delivering media to cast devices. Only active during casting.
-          </p>
-        </div>
-      )}
     </section>
   )
 }

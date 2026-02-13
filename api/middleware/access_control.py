@@ -48,6 +48,7 @@ EXEMPT_PREFIXES = [
     "/assets",  # Static frontend assets
     "/icon.png",
     "/api/share/",  # Share stream endpoints (must be accessible without auth from any network)
+    "/api/cast-media/",  # Cast media serving (Chromecast/DLNA devices fetch media directly)
     "/watch/",  # Share viewer SPA route
 ]
 

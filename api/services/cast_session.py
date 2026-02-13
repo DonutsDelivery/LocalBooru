@@ -6,7 +6,6 @@ and format compatibility checking.
 """
 import asyncio
 import logging
-import time
 import uuid as uuid_mod
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
@@ -123,6 +122,13 @@ class ChromecastBackend:
         if not self._mc:
             raise RuntimeError("Not connected to Chromecast")
 
+        logger.info(
+            f"[Cast/Chromecast] play_media -> URL={url} "
+            f"content_type={content_type} "
+            f"subtitles={subtitle_url} "
+            f"stream_type=BUFFERED"
+        )
+
         def _blocking_play():
             # BUFFERED = seekable file with known duration
             # LIVE = live stream (default in pychromecast, but wrong for local files)
@@ -136,12 +142,29 @@ class ChromecastBackend:
                 autoplay=True,
                 stream_type="BUFFERED",
             )
-            self._mc.block_until_active(timeout=15)
+            active = self._mc.block_until_active(timeout=30)
+            if not active:
+                # Media didn't become active — check why
+                ms = self._mc.status
+                state = ms.player_state if ms else "UNKNOWN"
+                idle_reason = ms.idle_reason if ms else "UNKNOWN"
+                logger.error(
+                    f"[Cast/Chromecast] Media did not become active within 30s. "
+                    f"State={state}, idle_reason={idle_reason}, URL={url}"
+                )
+                return False
+
             # Subtitles must be explicitly enabled after media is active
             if subtitle_url:
                 self._mc.enable_subtitle(1)
+            return True
 
-        await asyncio.to_thread(_blocking_play)
+        active = await asyncio.to_thread(_blocking_play)
+        if not active:
+            raise RuntimeError(
+                f"Chromecast failed to load media. "
+                f"Verify the cast media server is reachable: {url}"
+            )
         logger.info(f"[Cast/Chromecast] Playing: {title or url}")
 
     async def pause(self) -> None:
@@ -232,6 +255,17 @@ class _ChromecastStatusListener:
             player_state = status.player_state if status else "IDLE"
             state = state_map.get(player_state, "idle")
 
+            # Log ALL state transitions with full detail for debugging
+            idle_reason = getattr(status, "idle_reason", None) if status else None
+            content_id = getattr(status, "content_id", None) if status else None
+            logger.info(
+                f"[Cast/Chromecast] Status: state={player_state} "
+                f"idle_reason={idle_reason} "
+                f"content_id={content_id} "
+                f"time={status.current_time if status else 0}/"
+                f"{status.duration if status else 0}"
+            )
+
             data = {
                 "state": state,
                 "current_time": status.current_time if status and status.current_time else 0,
@@ -239,6 +273,19 @@ class _ChromecastStatusListener:
                 "volume": 0,
                 "title": status.title if status else None,
             }
+
+            # If idle with error, broadcast as error event too
+            if state == "idle" and idle_reason == "ERROR":
+                logger.error(
+                    f"[Cast/Chromecast] Media playback ERROR. "
+                    f"idle_reason={idle_reason}, content_id={content_id}"
+                )
+                self._loop.call_soon_threadsafe(
+                    asyncio.ensure_future,
+                    cast_events.broadcast(CastEventType.ERROR, {
+                        "error": f"Chromecast reported error (idle_reason={idle_reason})",
+                    }),
+                )
 
             self._loop.call_soon_threadsafe(
                 asyncio.ensure_future,
@@ -490,28 +537,28 @@ class CastSession:
         """
         from .events import cast_events, CastEventType
         from .cast_media_server import (
-            start_server,
             register_media,
             get_media_url,
             is_chromecast_compatible,
-            is_running as media_server_running,
         )
         from .cast_discovery import get_devices
         from .transcode_stream import TranscodeStream
-        from ..routers.settings.models import get_cast_settings
+        from ..routers.settings.models import get_network_settings
 
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"Media file not found: {file_path}")
 
-        # 1. Start cast media server if not already running
-        if not media_server_running():
-            settings = get_cast_settings()
-            port = settings.get("cast_media_port", 8792)
-            await start_server(port=port)
-            logger.info(f"[CastSession] Started cast media server on port {port}")
+        # Verify the main server is reachable from LAN (cast devices need it)
+        network = get_network_settings()
+        if not network.get("local_network_enabled") and not network.get("public_network_enabled"):
+            raise RuntimeError(
+                "Local network access must be enabled for casting. "
+                "Cast devices need to reach the media server over the network. "
+                "Enable it in Settings > Network."
+            )
 
-        # 2. Check format compatibility and find subtitles
+        # 1. Check format compatibility and find subtitles
         compatible = is_chromecast_compatible(file_path)
         content_type = _guess_content_type(file_path)
         subtitle_vtt = self._find_subtitle_file(path)
@@ -542,7 +589,7 @@ class CastSession:
 
             hls_dir = self._transcode_stream.hls_dir
 
-        # 3. Register media with cast media server (single registration)
+        # 2. Register media with cast media server (single registration)
         media_id = str(uuid_mod.uuid4())[:8]
         register_media(
             media_id=media_id,
@@ -565,7 +612,7 @@ class CastSession:
             self.subtitle_url = get_media_url(media_id, "subs") + subtitle_vtt.name
             logger.info(f"[CastSession] Found subtitle: {subtitle_vtt.name}")
 
-        # 4. Look up device from discovery and create appropriate backend
+        # 3. Look up device from discovery and create appropriate backend
         devices = await get_devices()
         device = None
         for d in devices:
@@ -599,7 +646,7 @@ class CastSession:
         else:
             raise ValueError(f"Unsupported device type: {device_type}")
 
-        # 5. Start playback
+        # 4. Start playback
         title = path.stem
         if image_id is not None:
             title = f"LocalBooru #{image_id} - {path.stem}"
@@ -613,7 +660,7 @@ class CastSession:
 
         self._active = True
 
-        # 6. Broadcast connected event
+        # 5. Broadcast connected event
         await cast_events.broadcast(CastEventType.CONNECTED, {
             "device_id": device_id,
             "device_name": device.name,
