@@ -1226,6 +1226,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               key={image.id}
               ref={mediaRef}
               src={shouldPlayDirect ? getMediaUrl(image.url) : undefined}
+              preload="auto"
               autoPlay
               playsInline
               loop={!autoAdvance.isEnabled}

@@ -104,11 +104,14 @@ export function useVideoPlayback(mediaRef, streamState, imageId) {
       return
     }
 
-    // Normal video seek
-    setSvpPendingSeek(null)
-    mediaRef.current.currentTime = newTime
+    // Normal video seek (direct play) - use fastSeek for speed when available
+    if (mediaRef.current.fastSeek) {
+      mediaRef.current.fastSeek(newTime)
+    } else {
+      mediaRef.current.currentTime = newTime
+    }
     setCurrentTime(newTime)
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, getCurrentAbsoluteTime, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
+  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, getCurrentAbsoluteTime, restartSVPFromPosition, restartTranscodeFromPosition])
 
   // Toggle video play/pause
   const toggleVideoPlay = useCallback(() => {
@@ -254,11 +257,14 @@ export function useVideoPlayback(mediaRef, streamState, imageId) {
       return
     }
 
-    // Normal video seek (direct playback)
-    setSvpPendingSeek(null)
-    mediaRef.current.currentTime = newTime
+    // Normal video seek (direct playback) - use fastSeek for speed when available
+    if (mediaRef.current.fastSeek) {
+      mediaRef.current.fastSeek(newTime)
+    } else {
+      mediaRef.current.currentTime = newTime
+    }
     setCurrentTime(newTime)
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
+  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition])
 
   const handleSeekStart = useCallback((e) => {
     setIsSeeking(true)
@@ -308,9 +314,9 @@ export function useVideoPlayback(mediaRef, streamState, imageId) {
       return
     }
 
-    setSvpPendingSeek(null)
+    // Direct play - precise seek to final position
     mediaRef.current.currentTime = currentTime
-  }, [isSeeking, mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, currentTime, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
+  }, [isSeeking, mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, currentTime, restartSVPFromPosition, restartTranscodeFromPosition])
 
   // Touch handlers for video timeline (mobile)
   const handleSeekTouchStart = useCallback((e) => {
@@ -349,10 +355,14 @@ export function useVideoPlayback(mediaRef, streamState, imageId) {
       restartTranscodeFromPosition(newTime)
       return
     }
-    setSvpPendingSeek(null)
-    mediaRef.current.currentTime = newTime
+    // Direct play - use fastSeek for speed when available
+    if (mediaRef.current.fastSeek) {
+      mediaRef.current.fastSeek(newTime)
+    } else {
+      mediaRef.current.currentTime = newTime
+    }
     setCurrentTime(newTime)
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
+  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition])
 
   const handleSeekTouchMove = useCallback((e) => {
     if (!isSeeking) return
@@ -401,9 +411,9 @@ export function useVideoPlayback(mediaRef, streamState, imageId) {
       restartTranscodeFromPosition(currentTime)
       return
     }
-    setSvpPendingSeek(null)
+    // Direct play - precise seek to final position
     mediaRef.current.currentTime = currentTime
-  }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, currentTime, restartSVPFromPosition, restartTranscodeFromPosition, setSvpPendingSeek])
+  }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, currentTime, restartSVPFromPosition, restartTranscodeFromPosition])
 
   // Handle volume change
   const handleVolumeChange = useCallback((e) => {
@@ -411,6 +421,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId) {
     setVolume(newVolume)
     if (mediaRef.current) {
       mediaRef.current.volume = newVolume
+      mediaRef.current.muted = newVolume === 0
       setIsMuted(newVolume === 0)
     }
   }, [mediaRef])
