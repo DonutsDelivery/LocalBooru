@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::addons::manager::AddonManager;
 use crate::db::pool::{create_main_pool, DbPool};
 use crate::db::directory_db::DirectoryDbManager;
 use crate::db::schema::init_main_db;
@@ -26,6 +27,8 @@ struct AppStateInner {
     events: SharedEvents,
     /// Background task queue
     task_queue: Arc<BackgroundTaskQueue>,
+    /// Addon manager (sidecar lifecycle + registry)
+    addon_manager: AddonManager,
 }
 
 impl AppState {
@@ -52,6 +55,9 @@ impl AppState {
         // Create task queue
         let task_queue = Arc::new(BackgroundTaskQueue::new());
 
+        // Create addon manager
+        let addon_manager = AddonManager::new(data_dir);
+
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 main_pool,
@@ -60,6 +66,7 @@ impl AppState {
                 port,
                 events,
                 task_queue,
+                addon_manager,
             }),
         })
     }
@@ -102,5 +109,10 @@ impl AppState {
     /// Get the task queue Arc (for starting the worker).
     pub fn task_queue_arc(&self) -> Arc<BackgroundTaskQueue> {
         self.inner.task_queue.clone()
+    }
+
+    /// Get the addon manager.
+    pub fn addon_manager(&self) -> &AddonManager {
+        &self.inner.addon_manager
     }
 }

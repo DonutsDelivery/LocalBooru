@@ -1,3 +1,4 @@
+pub mod addons;
 pub mod app_update;
 pub mod collections;
 pub mod directories;

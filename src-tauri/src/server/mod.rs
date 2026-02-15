@@ -50,7 +50,8 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         .nest("/api/settings", crate::routes::settings::router())
         .nest("/api/network", crate::routes::network::router())
         .nest("/api/watch-history", crate::routes::watch_history::router())
-        .nest("/api/app-update", crate::routes::app_update::router());
+        .nest("/api/app-update", crate::routes::app_update::router())
+        .nest("/api/addons", crate::routes::addons::router());
 
     // Serve thumbnails as static files
     let thumbnails_dir = state.thumbnails_dir();

@@ -5,6 +5,7 @@ use tauri::Manager;
 use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 
+pub mod addons;
 mod commands;
 pub mod db;
 pub mod routes;
