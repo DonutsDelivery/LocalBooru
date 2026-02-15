@@ -457,6 +457,19 @@ async def _fast_import_to_directory_db(
         except IntegrityError:
             await dir_db.rollback()
             return {'status': 'duplicate', 'directory_id': directory_id, 'message': 'Duplicate file (race)'}
+        except OperationalError as e:
+            if "database is locked" in str(e):
+                await dir_db.rollback()
+                # Retry once after backoff
+                await asyncio.sleep(1.0)
+                dir_db.add(image)
+                try:
+                    await dir_db.flush()
+                except (OperationalError, IntegrityError):
+                    await dir_db.rollback()
+                    return {'status': 'error', 'directory_id': directory_id, 'message': 'Database busy, will retry on next scan'}
+            else:
+                raise
 
         # Create file reference
         image_file = DirectoryImageFile(
@@ -470,6 +483,18 @@ async def _fast_import_to_directory_db(
         except IntegrityError:
             await dir_db.rollback()
             return {'status': 'duplicate', 'directory_id': directory_id, 'message': 'Duplicate path (race)'}
+        except OperationalError as e:
+            if "database is locked" in str(e):
+                await dir_db.rollback()
+                await asyncio.sleep(1.0)
+                dir_db.add(image_file)
+                try:
+                    await dir_db.commit()
+                except (OperationalError, IntegrityError):
+                    await dir_db.rollback()
+                    return {'status': 'error', 'directory_id': directory_id, 'message': 'Database busy, will retry on next scan'}
+            else:
+                raise
 
         image_id = image.id
 
@@ -615,6 +640,18 @@ async def _import_to_directory_db(
         except IntegrityError:
             await dir_db.rollback()
             return {'status': 'duplicate', 'directory_id': directory_id, 'message': 'Duplicate file (race)'}
+        except OperationalError as e:
+            if "database is locked" in str(e):
+                await dir_db.rollback()
+                await asyncio.sleep(1.0)
+                dir_db.add(image)
+                try:
+                    await dir_db.flush()
+                except (OperationalError, IntegrityError):
+                    await dir_db.rollback()
+                    return {'status': 'error', 'directory_id': directory_id, 'message': 'Database busy, will retry on next scan'}
+            else:
+                raise
 
         # Create file reference in directory database
         image_file = DirectoryImageFile(
@@ -628,6 +665,18 @@ async def _import_to_directory_db(
         except IntegrityError:
             await dir_db.rollback()
             return {'status': 'duplicate', 'directory_id': directory_id, 'message': 'Duplicate path (race)'}
+        except OperationalError as e:
+            if "database is locked" in str(e):
+                await dir_db.rollback()
+                await asyncio.sleep(1.0)
+                dir_db.add(image_file)
+                try:
+                    await dir_db.commit()
+                except (OperationalError, IntegrityError):
+                    await dir_db.rollback()
+                    return {'status': 'error', 'directory_id': directory_id, 'message': 'Database busy, will retry on next scan'}
+            else:
+                raise
 
         # Generate thumbnail
         thumbnails_dir = Path(settings.thumbnails_dir)

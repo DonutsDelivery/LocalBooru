@@ -109,23 +109,33 @@ class DirectoryEventHandler(FileSystemEventHandler):
             self._pending_files.discard(file_path)
 
     async def _import_file(self, file_path: str):
-        """Import a file into the library"""
+        """Import a file into the library with retry for database locks"""
         from .importer import import_image
 
-        async with AsyncSessionLocal() as db:
-            try:
-                result = await import_image(
-                    file_path,
-                    db,
-                    watch_directory_id=self.directory_id,
-                    auto_tag=self.auto_tag
-                )
-                if result['status'] == 'imported':
-                    print(f"[Watcher] Imported: {Path(file_path).name}")
-                elif result['status'] == 'duplicate':
-                    print(f"[Watcher] Duplicate: {Path(file_path).name}")
-            except Exception as e:
-                print(f"[Watcher] Failed to import {file_path}: {e}")
+        for attempt in range(3):
+            async with AsyncSessionLocal() as db:
+                try:
+                    result = await import_image(
+                        file_path,
+                        db,
+                        watch_directory_id=self.directory_id,
+                        auto_tag=self.auto_tag
+                    )
+                    if result['status'] == 'imported':
+                        print(f"[Watcher] Imported: {Path(file_path).name}")
+                    elif result['status'] == 'duplicate':
+                        pass  # Silently skip duplicates
+                    elif result['status'] == 'error' and 'busy' in result.get('message', '').lower():
+                        if attempt < 2:
+                            await asyncio.sleep(1.0 * (attempt + 1))
+                            continue
+                    return
+                except Exception as e:
+                    if "database is locked" in str(e) and attempt < 2:
+                        await asyncio.sleep(1.0 * (attempt + 1))
+                        continue
+                    print(f"[Watcher] Failed to import {file_path}: {e}")
+                    return
 
     def on_created(self, event):
         """Handle file creation events"""
@@ -335,8 +345,13 @@ class DirectoryWatcher:
                 self._add_parent_watch(parent_path)
 
     async def _startup_scan(self):
-        """Scan watched directories for files added while app was closed"""
+        """Scan watched directories for files added while app was closed.
+
+        Skips directories that already have a scan task queued or processing
+        to avoid concurrent imports that cause SQLite lock contention.
+        """
         from .importer import import_image
+        from ..models import TaskQueue, TaskType, TaskStatus
 
         print("[Watcher] Starting startup scan for new files...")
 
@@ -347,10 +362,31 @@ class DirectoryWatcher:
                 )
                 directories = result.scalars().all()
 
+                # Check which directories already have a scan task queued/running
+                scan_tasks = await db.execute(
+                    select(TaskQueue.payload).where(
+                        TaskQueue.task_type == TaskType.scan_directory,
+                        TaskQueue.status.in_([TaskStatus.pending, TaskStatus.processing])
+                    )
+                )
+                import json as json_module
+                scanning_dir_ids = set()
+                for (payload_str,) in scan_tasks:
+                    try:
+                        payload = json_module.loads(payload_str)
+                        scanning_dir_ids.add(payload.get('directory_id'))
+                    except Exception:
+                        pass
+
                 total_imported = 0
                 total_duplicates = 0
 
                 for directory in directories:
+                    # Skip directories with a scan task already queued/running
+                    if directory.id in scanning_dir_ids:
+                        print(f"[Watcher] Skipping {directory.name or directory.path} — scan task already queued")
+                        continue
+
                     path = Path(directory.path)
                     if not path.exists():
                         print(f"[Watcher] Skipping non-existent path: {directory.path}")
@@ -387,8 +423,8 @@ class DirectoryWatcher:
                     if files_to_check:
                         print(f"[Watcher] Found {len(files_to_check)} new files in {directory.name or directory.path}")
 
-                        # Process files concurrently with semaphore
-                        SCAN_CONCURRENCY = 4  # Limited to prevent disk I/O saturation
+                        # Process files with limited concurrency to prevent SQLite lock contention
+                        SCAN_CONCURRENCY = 2
                         semaphore = asyncio.Semaphore(SCAN_CONCURRENCY)
 
                         async def import_one(file_path: Path) -> str:

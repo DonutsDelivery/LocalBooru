@@ -24,7 +24,8 @@ from ..database import AsyncSessionLocal, directory_db_manager
 settings = get_settings()
 
 # Concurrency for imports within a directory scan
-SCAN_CONCURRENCY = 4  # Reduced to prevent disk I/O saturation during imports
+# Keep low (2) to prevent SQLite lock contention — each import writes to the same per-directory DB
+SCAN_CONCURRENCY = 2
 BATCH_SIZE = 100  # Process N imports per batch
 
 # Supported image extensions

@@ -24,7 +24,7 @@ pub async fn health_check_host(host: &str, port: u16) -> bool {
     let url = format!("http://{}:{}/health", host, port);
 
     let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
         .build()
     {
         Ok(c) => c,
