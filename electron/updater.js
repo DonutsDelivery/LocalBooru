@@ -16,10 +16,27 @@ let mainWindow = null;
 let isPortable = false;
 let portableDataDir = null;
 let pendingUpdate = null; // Stores info about downloaded portable update
+let isDownloading = false; // Guards against re-entrant downloads
 
 // GitHub repo info (from package.json publish config)
 const GITHUB_OWNER = 'DonutsDelivery';
 const GITHUB_REPO = 'LocalBooru';
+
+/**
+ * Compare two semver strings. Returns:
+ *  -1 if a < b, 0 if equal, 1 if a > b
+ */
+function compareSemver(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const va = pa[i] || 0;
+    const vb = pb[i] || 0;
+    if (va < vb) return -1;
+    if (va > vb) return 1;
+  }
+  return 0;
+}
 
 /**
  * Get the correct asset name for the current platform (portable ZIP)
@@ -198,8 +215,8 @@ async function checkForPortableUpdate() {
 
   console.log(`[Updater] Current: ${currentVersion}, Latest: ${latestVersion}`);
 
-  // Simple version comparison (assumes semver-like format)
-  if (latestVersion === currentVersion) {
+  // Only offer update if latest is strictly newer than current
+  if (compareSemver(latestVersion, currentVersion) <= 0) {
     return { available: false, version: currentVersion };
   }
 
@@ -222,7 +239,7 @@ async function checkForPortableUpdate() {
 /**
  * Download and prepare portable update
  */
-async function downloadPortableUpdate(updateInfo, onProgress) {
+async function downloadPortableUpdate(updateInfo, onProgress, onStatus) {
   const updatesDir = path.join(portableDataDir, 'updates');
   const extractedDir = path.join(updatesDir, 'extracted');
   const zipPath = path.join(updatesDir, updateInfo.assetName);
@@ -236,6 +253,9 @@ async function downloadPortableUpdate(updateInfo, onProgress) {
   await downloadFile(updateInfo.downloadUrl, zipPath, onProgress);
 
   console.log('[Updater] Extracting update...');
+
+  // Notify frontend that extraction is in progress
+  if (onStatus) onStatus({ status: 'extracting' });
 
   // Extract the ZIP
   await extractZip(zipPath, extractedDir);
@@ -512,12 +532,14 @@ function initPortableUpdater() {
   // Check for updates on startup (with delay)
   setTimeout(async () => {
     try {
-      // If update was already downloaded this session, keep that status
-      if (pendingUpdate) {
-        mainWindow?.webContents.send('updater:status', {
-          status: 'downloaded',
-          version: pendingUpdate.version
-        });
+      // Don't interfere with an active download or already-downloaded update
+      if (isDownloading || pendingUpdate) {
+        if (pendingUpdate) {
+          mainWindow?.webContents.send('updater:status', {
+            status: 'downloaded',
+            version: pendingUpdate.version
+          });
+        }
         return;
       }
 
@@ -548,7 +570,10 @@ function initPortableUpdater() {
 ipcMain.handle('updater:check', async () => {
   try {
     if (isPortable) {
-      // If update was already downloaded this session, don't reset to 'available'
+      // Don't interfere with an active download or already-downloaded update
+      if (isDownloading) {
+        return { success: true, available: false };
+      }
       if (pendingUpdate) {
         mainWindow?.webContents.send('updater:status', {
           status: 'downloaded',
@@ -578,7 +603,7 @@ ipcMain.handle('updater:check', async () => {
 ipcMain.handle('updater:download', async () => {
   try {
     if (isPortable) {
-      // If already downloaded, just re-emit the status
+      // If already downloaded or downloading, don't start again
       if (pendingUpdate) {
         mainWindow?.webContents.send('updater:status', {
           status: 'downloaded',
@@ -586,20 +611,33 @@ ipcMain.handle('updater:download', async () => {
         });
         return { success: true };
       }
+      if (isDownloading) {
+        return { success: true }; // Already in progress
+      }
 
       const updateInfo = await checkForPortableUpdate();
       if (!updateInfo.available) {
         return { success: false, error: 'No update available' };
       }
 
-      await downloadPortableUpdate(updateInfo, (progress) => {
-        mainWindow?.webContents.send('updater:status', {
-          status: 'downloading',
-          progress: progress.percent,
-          transferred: progress.transferred,
-          total: progress.total
-        });
-      });
+      isDownloading = true;
+
+      await downloadPortableUpdate(
+        updateInfo,
+        (progress) => {
+          mainWindow?.webContents.send('updater:status', {
+            status: 'downloading',
+            progress: progress.percent,
+            transferred: progress.transferred,
+            total: progress.total
+          });
+        },
+        (status) => {
+          mainWindow?.webContents.send('updater:status', status);
+        }
+      );
+
+      isDownloading = false;
 
       mainWindow?.webContents.send('updater:status', {
         status: 'downloaded',
@@ -612,6 +650,7 @@ ipcMain.handle('updater:download', async () => {
       return { success: true };
     }
   } catch (err) {
+    isDownloading = false;
     mainWindow?.webContents.send('updater:status', {
       status: 'error',
       error: err.message

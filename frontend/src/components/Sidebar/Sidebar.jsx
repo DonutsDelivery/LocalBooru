@@ -356,6 +356,11 @@ function Sidebar({
                 {Math.round(updateStatus.progress || 0)}%
               </span>
             )}
+            {updateStatus?.status === 'extracting' && (
+              <span className="update-badge downloading">
+                Extracting...
+              </span>
+            )}
             {updateStatus?.status === 'downloaded' && (
               <button
                 className="update-badge ready"
