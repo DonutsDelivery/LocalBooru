@@ -21,7 +21,7 @@ launch:
     Goto done
 
 error:
-    MessageBox MB_OK|MB_ICONERROR "LocalBooru application files not found.$\r$\n$\r$\nExpected: $0$\r$\n$\r$\nPlease re-download LocalBooru-Portable.exe."
+    MessageBox MB_OK|MB_ICONSTOP "LocalBooru not found. Please re-download LocalBooru-Portable.exe."
 
 done:
 SectionEnd

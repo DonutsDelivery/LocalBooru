@@ -68,7 +68,7 @@ launch:
     Goto done
 
 error:
-    MessageBox MB_OK|MB_ICONERROR "LocalBooru.exe not found after extraction.$\r$\n$\r$\nExpected: $INSTDIR\LocalBooru.exe$\r$\n$\r$\nThe archive may be corrupted. Please re-download."
+    MessageBox MB_OK|MB_ICONSTOP "LocalBooru.exe not found after extraction. The archive may be corrupted. Please re-download."
 
 done:
 SectionEnd
