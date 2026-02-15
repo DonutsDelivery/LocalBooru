@@ -4,6 +4,8 @@ OpenCV-based optical flow implementations.
 Contains:
 - GPUNativeInterpolator: Full GPU pipeline with NVIDIA Optical Flow
 """
+from __future__ import annotations
+
 import logging
 from typing import Optional
 import numpy as np
