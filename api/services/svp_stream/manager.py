@@ -64,7 +64,12 @@ def kill_orphaned_svp_processes() -> None:
 
 
 def _kill_orphaned_unix() -> None:
-    """Kill orphaned SVP processes on Linux/macOS using pgrep + SIGKILL."""
+    """Kill orphaned SVP processes on Linux/macOS.
+
+    Only kills processes whose parent is PID 1 (truly orphaned/reparented to init).
+    This avoids killing SVP processes belonging to another running backend instance.
+    """
+    my_pid = str(os.getpid())
     for pattern in ['svp_process\\.(py|vpy)', 'ffmpeg.*svp_stream']:
         result = subprocess.run(
             ['pgrep', '-f', pattern],
@@ -73,12 +78,21 @@ def _kill_orphaned_unix() -> None:
         if result.returncode == 0:
             pids = result.stdout.strip().split('\n')
             for pid in pids:
-                if pid:
-                    try:
+                if not pid or pid == my_pid:
+                    continue
+                try:
+                    # Check if process is truly orphaned (parent is init/PID 1)
+                    # or is a child of our own process
+                    ppid_result = subprocess.run(
+                        ['ps', '-o', 'ppid=', '-p', pid],
+                        capture_output=True, text=True, timeout=2
+                    )
+                    ppid = ppid_result.stdout.strip()
+                    if ppid in ('1', my_pid):
                         os.kill(int(pid), signal.SIGKILL)
-                        logger.info(f"Killed orphaned process: {pid}")
-                    except (ProcessLookupError, ValueError):
-                        pass
+                        logger.info(f"Killed orphaned process: {pid} (ppid={ppid})")
+                except (ProcessLookupError, ValueError, subprocess.TimeoutExpired):
+                    pass
 
 
 def _kill_orphaned_windows() -> None:

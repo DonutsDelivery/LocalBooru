@@ -14,7 +14,6 @@ const {
 
 const {
   spawnBackend,
-  killUvicornProcesses,
   forceKillProcess,
   gracefulKillProcess
 } = require('./process');
@@ -122,14 +121,8 @@ class BackendManager {
       return;
     }
 
-    // AGGRESSIVE cleanup - kill ALL uvicorn processes, not just on our port
-    // This prevents zombie processes from previous sessions
-    console.log('[Backend] Cleaning up any existing uvicorn processes...');
-    killUvicornProcesses();
-    // Give OS time to release the port
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Now do the standard zombie kill on port
+    // Clean up zombie processes on OUR port only (not all uvicorn system-wide)
+    // This allows multiple instances (portable + system) to coexist
     try {
       await this.killZombieProcesses();
     } catch (e) {
@@ -316,11 +309,7 @@ class BackendManager {
       this.process = null;
     }
 
-    // ALSO kill any other uvicorn processes that might be zombies
-    // This is aggressive but prevents the blank window issue
-    killUvicornProcesses();
-
-    // Kill anything on our port
+    // Kill anything on our port (not all uvicorn system-wide)
     killProcessesOnPort(this.port);
   }
 
