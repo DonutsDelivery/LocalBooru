@@ -245,7 +245,12 @@ async def add_parent_directory(data: ParentDirectoryCreate, db: AsyncSession = D
         existing = await db.execute(
             select(WatchDirectory).where(WatchDirectory.path == str(subdir))
         )
-        if existing.scalar_one_or_none():
+        existing_dir = existing.scalar_one_or_none()
+        if existing_dir:
+            # Update parent_path on existing directory so parent watch covers it
+            if not existing_dir.parent_path:
+                existing_dir.parent_path = str(parent_path)
+                await db.commit()
             skipped.append(str(subdir))
             continue
 
@@ -256,6 +261,7 @@ async def add_parent_directory(data: ParentDirectoryCreate, db: AsyncSession = D
             recursive=data.recursive,
             auto_tag=data.auto_tag,
             auto_age_detect=data.auto_age_detect,
+            parent_path=str(parent_path),
             enabled=True
         )
         db.add(directory)

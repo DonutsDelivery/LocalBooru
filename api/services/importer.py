@@ -18,7 +18,7 @@ import imagehash
 import xxhash
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, IntegrityError
 
 from ..models import (
     Image, ImageFile, Tag, image_tags, TaskType, WatchDirectory,
@@ -452,7 +452,11 @@ async def _fast_import_to_directory_db(
             file_modified_at=file_modified_at
         )
         dir_db.add(image)
-        await dir_db.flush()
+        try:
+            await dir_db.flush()
+        except IntegrityError:
+            await dir_db.rollback()
+            return {'status': 'duplicate', 'directory_id': directory_id, 'message': 'Duplicate file (race)'}
 
         # Create file reference
         image_file = DirectoryImageFile(
@@ -461,7 +465,11 @@ async def _fast_import_to_directory_db(
             file_exists=True
         )
         dir_db.add(image_file)
-        await dir_db.commit()
+        try:
+            await dir_db.commit()
+        except IntegrityError:
+            await dir_db.rollback()
+            return {'status': 'duplicate', 'directory_id': directory_id, 'message': 'Duplicate path (race)'}
 
         image_id = image.id
 
@@ -602,7 +610,11 @@ async def _import_to_directory_db(
             file_modified_at=file_modified_at
         )
         dir_db.add(image)
-        await dir_db.flush()
+        try:
+            await dir_db.flush()
+        except IntegrityError:
+            await dir_db.rollback()
+            return {'status': 'duplicate', 'directory_id': directory_id, 'message': 'Duplicate file (race)'}
 
         # Create file reference in directory database
         image_file = DirectoryImageFile(
@@ -611,7 +623,11 @@ async def _import_to_directory_db(
             file_exists=True
         )
         dir_db.add(image_file)
-        await dir_db.commit()
+        try:
+            await dir_db.commit()
+        except IntegrityError:
+            await dir_db.rollback()
+            return {'status': 'duplicate', 'directory_id': directory_id, 'message': 'Duplicate path (race)'}
 
         # Generate thumbnail
         thumbnails_dir = Path(settings.thumbnails_dir)
@@ -791,7 +807,11 @@ async def _import_to_main_db(
         file_modified_at=file_modified_at
     )
     db.add(image)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        return {'status': 'duplicate', 'message': 'Duplicate file (race)'}
 
     image_file = ImageFile(
         image_id=image.id,

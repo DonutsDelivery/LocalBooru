@@ -293,6 +293,14 @@ async def init_db():
         except Exception:
             pass
 
+        # Parent directory tracking for auto-watch
+        try:
+            await conn.execute(text(
+                "ALTER TABLE watch_directories ADD COLUMN parent_path TEXT"
+            ))
+        except Exception:
+            pass
+
         # Performance indexes for tagging queries
         try:
             await conn.execute(text(

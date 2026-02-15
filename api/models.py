@@ -219,6 +219,9 @@ class WatchDirectory(Base):
     comfyui_negative_node_ids = Column(Text, nullable=True)  # JSON: ["273"]
     metadata_format = Column(String(50), default="auto")  # auto, a1111, comfyui, none
 
+    # Parent directory tracking (for auto-watch of new subdirectories)
+    parent_path = Column(Text, nullable=True)  # Set when added via "add parent"; None for standalone
+
     # Network access control
     public_access = Column(Boolean, default=False)  # Allow public network access to this directory
 

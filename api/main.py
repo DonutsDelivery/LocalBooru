@@ -27,9 +27,13 @@ async def lifespan(app: FastAPI):
     # Add persistent packages directory to path (for age detection deps that survive updates)
     from .routers.settings import (
         ensure_packages_in_path, set_setting, AGE_DETECTION_INSTALLING,
-        get_packages_dir, patch_mivolo_for_timm_compat
+        get_packages_dir, patch_mivolo_for_timm_compat,
+        ensure_defaults_written
     )
     ensure_packages_in_path()
+
+    # Ensure settings.json contains all defaults (self-documenting for manual editing)
+    ensure_defaults_written()
 
     # Apply mivolo patches for timm compatibility (for existing installs)
     patch_mivolo_for_timm_compat(get_packages_dir())

@@ -10,6 +10,18 @@ from pathlib import Path
 from ...database import get_data_dir
 
 
+# Keys that are transient (runtime-only) and should not be persisted to disk
+TRANSIENT_KEYS = {
+    "age_detection_installing",
+    "age_detection_install_progress",
+}
+
+TRANSIENT_SUBKEYS = {
+    "whisper": {"installing", "install_progress"},
+    "cast": {"installing", "install_progress"},
+}
+
+
 # =============================================================================
 # Settings File Management
 # =============================================================================
@@ -31,11 +43,33 @@ def load_settings() -> dict:
     return {}
 
 
+def _strip_transient(settings: dict) -> dict:
+    """Remove transient keys from settings before writing to disk."""
+    result = {k: v for k, v in settings.items() if k not in TRANSIENT_KEYS}
+    for category, keys in TRANSIENT_SUBKEYS.items():
+        if category in result and isinstance(result[category], dict):
+            result[category] = {k: v for k, v in result[category].items() if k not in keys}
+    return result
+
+
 def save_settings(settings: dict):
-    """Save settings to JSON file"""
+    """Save settings to JSON file, always including all defaults."""
+    all_defaults = get_all_defaults()
+    # Deep merge: defaults first, then user settings on top
+    merged = {}
+    for key, value in all_defaults.items():
+        if isinstance(value, dict) and isinstance(settings.get(key), dict):
+            merged[key] = {**value, **settings[key]}
+        else:
+            merged[key] = settings.get(key, value)
+    # Preserve any extra top-level keys from settings not in defaults
+    for key, value in settings.items():
+        if key not in merged:
+            merged[key] = value
+    merged = _strip_transient(merged)
     settings_file = get_settings_file()
     with open(settings_file, 'w') as f:
-        json.dump(settings, f, indent=2)
+        json.dump(merged, f, indent=2)
 
 
 def get_setting(key: str, default: str = None) -> Optional[str]:
@@ -48,6 +82,33 @@ def set_setting(key: str, value: str):
     """Set a setting value"""
     settings = load_settings()
     settings[key] = value
+    save_settings(settings)
+
+
+def get_all_defaults() -> dict:
+    """Return the full settings dict with all categories and their default values."""
+    return {
+        "age_detection_enabled": "false",
+        "age_detection_installed": "false",
+        "network": {**DEFAULT_NETWORK_SETTINGS},
+        "optical_flow": {**DEFAULT_OPTICAL_FLOW_SETTINGS},
+        "svp": {**DEFAULT_SVP_SETTINGS},
+        "video_playback": {**DEFAULT_VIDEO_PLAYBACK_SETTINGS},
+        "whisper": {k: v for k, v in DEFAULT_WHISPER_SETTINGS.items()
+                    if k not in TRANSIENT_SUBKEYS.get("whisper", set())},
+        "cast": {k: v for k, v in DEFAULT_CAST_SETTINGS.items()
+                 if k not in TRANSIENT_SUBKEYS.get("cast", set())},
+        "saved_searches": [],
+    }
+
+
+def ensure_defaults_written():
+    """Ensure settings.json contains all default values.
+
+    Called at startup to populate the file for new installs and
+    to add any new settings introduced in updates.
+    """
+    settings = load_settings()
     save_settings(settings)
 
 
