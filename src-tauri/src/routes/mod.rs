@@ -1,7 +1,10 @@
+pub mod app_update;
 pub mod collections;
 pub mod directories;
 pub mod images;
 pub mod library;
+pub mod network;
+pub mod settings;
 pub mod tags;
 pub mod users;
 pub mod watch_history;
