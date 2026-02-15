@@ -1,6 +1,6 @@
 [package]
 name = "localbooru"
-version = "0.3.10"
+version = "2.0.0"
 description = "Local image library with automatic tagging"
 authors = ["DonutsDelivery <donutsdelivery@users.noreply.github.com>"]
 license = "MIT"
@@ -8,8 +8,6 @@ repository = "https://github.com/DonutsDelivery/LocalBooru"
 edition = "2021"
 rust-version = "1.77.2"
 default-run = "localbooru"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "localbooru_lib"
@@ -25,27 +23,55 @@ log = "0.4"
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
-
-# Backend management dependencies
-tokio = { version = "1", features = ["sync", "time", "rt"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-dirs = "5"
-
-# GStreamer video playback (prototype)
-gstreamer = "0.23"
-gstreamer-video = "0.23"
-gstreamer-app = "0.23"
-gstreamer-player = "0.23"
-gstreamer-pbutils = "0.23"  # For media discovery and VFR analysis
-
-# Utilities
-uuid = { version = "1.0", features = ["v4"] }
-
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
+
+# Async runtime (full features for axum server)
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+
+# HTTP server
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "fs", "compression-gzip", "trace"] }
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
+
+# Image processing
+image = "0.25"
+fast_image_resize = "5"
+img_hash = "3"
+
+# Hashing (xxhash for quick file hash, compatible with Python impl)
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
+
+# File watching
+notify = "7"
+notify-debouncer-mini = "0.5"
+
+# HTTP client (for addon proxy, updates)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Utilities
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+dashmap = "6"
+walkdir = "2"
+mime_guess = "2"
+dirs = "5"
+
+# Auth
+jsonwebtoken = "9"
+
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!

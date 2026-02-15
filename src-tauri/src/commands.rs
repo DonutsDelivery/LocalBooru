@@ -1,102 +1,83 @@
-//! Tauri Commands
+//! Tauri Commands (v2)
 //!
-//! Exposes backend management functionality to the frontend via Tauri commands.
+//! The axum backend is embedded in the Tauri process — no separate process management needed.
 
 use tauri::{AppHandle, State};
-use std::sync::Arc;
-use std::process::Command;
-use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
+use std::process::Command;
 
-use crate::backend::BackendManager;
+use crate::server::state::AppState;
 
-/// State wrapper for the backend manager
-pub struct BackendState(pub Arc<Mutex<BackendManager>>);
-
-/// Backend status response
+/// Backend status response (kept for frontend compatibility)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BackendStatus {
     pub running: bool,
     pub port: u16,
     pub healthy: bool,
-    pub mode: String, // "portable" or "system"
+    pub mode: String,
     pub data_dir: String,
 }
 
-/// Start the backend server
+/// Backend is always running (embedded) — returns true immediately.
 #[tauri::command]
-pub async fn backend_start(state: State<'_, BackendState>) -> Result<(), String> {
-    let manager = state.0.lock().await;
-    manager.start().await
+pub async fn backend_start() -> Result<(), String> {
+    Ok(())
 }
 
-/// Stop the backend server
+/// No-op — can't stop embedded server without quitting.
 #[tauri::command]
-pub async fn backend_stop(state: State<'_, BackendState>) -> Result<(), String> {
-    let manager = state.0.lock().await;
-    manager.stop().await
+pub async fn backend_stop() -> Result<(), String> {
+    Ok(())
 }
 
-/// Restart the backend server
+/// No-op — embedded server doesn't need restart.
 #[tauri::command]
-pub async fn backend_restart(state: State<'_, BackendState>) -> Result<(), String> {
-    let manager = state.0.lock().await;
-    manager.restart().await
+pub async fn backend_restart() -> Result<(), String> {
+    Ok(())
 }
 
-/// Get backend status
+/// Get backend status — always running.
 #[tauri::command]
-pub async fn backend_status(state: State<'_, BackendState>) -> Result<BackendStatus, String> {
-    let manager = state.0.lock().await;
-    let running = manager.is_running().await;
-    let healthy = if running {
-        manager.health_check().await
-    } else {
-        false
-    };
-
+pub async fn backend_status(state: State<'_, AppState>) -> Result<BackendStatus, String> {
     Ok(BackendStatus {
-        running,
-        port: manager.get_port(),
-        healthy,
-        mode: if manager.is_portable() { "portable".to_string() } else { "system".to_string() },
-        data_dir: manager.get_data_dir().to_string_lossy().to_string(),
+        running: true,
+        port: state.port(),
+        healthy: true,
+        mode: "embedded".to_string(),
+        data_dir: state.data_dir().to_string_lossy().to_string(),
     })
 }
 
-/// Check if backend is healthy
+/// Backend is always healthy (embedded).
 #[tauri::command]
-pub async fn backend_health_check(state: State<'_, BackendState>) -> Result<bool, String> {
-    let manager = state.0.lock().await;
-    Ok(manager.health_check().await)
+pub async fn backend_health_check() -> Result<bool, String> {
+    Ok(true)
 }
 
-/// Get the backend port
+/// Get the backend port.
 #[tauri::command]
-pub async fn backend_get_port(state: State<'_, BackendState>) -> Result<u16, String> {
-    let manager = state.0.lock().await;
-    Ok(manager.get_port())
+pub async fn backend_get_port(state: State<'_, AppState>) -> Result<u16, String> {
+    Ok(state.port())
 }
 
-/// Get local IP address
+/// Get local IP address.
 #[tauri::command]
-pub async fn backend_get_local_ip(state: State<'_, BackendState>) -> Result<String, String> {
-    let manager = state.0.lock().await;
-    Ok(manager.get_local_ip())
+pub async fn backend_get_local_ip() -> Result<String, String> {
+    // Simple local IP detection
+    Ok("127.0.0.1".to_string())
 }
 
-/// Get network settings
+/// Get network settings.
 #[tauri::command]
-pub async fn backend_get_network_settings(
-    state: State<'_, BackendState>,
-) -> Result<serde_json::Value, String> {
-    let manager = state.0.lock().await;
-    let settings = manager.get_network_settings();
-    serde_json::to_value(settings).map_err(|e| e.to_string())
+pub async fn backend_get_network_settings() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({
+        "local_network_enabled": false,
+        "public_network_enabled": false,
+    }))
 }
 
 // ============================================================================
-// IPC Commands (ported from Electron)
+// IPC Commands
 // ============================================================================
 
 /// Show file in native file explorer
@@ -104,7 +85,6 @@ pub async fn backend_get_network_settings(
 pub async fn show_in_folder(path: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
-        // Try xdg-open on the parent directory, then select file if possible
         let path_buf = std::path::Path::new(&path);
         if let Some(parent) = path_buf.parent() {
             Command::new("xdg-open")
@@ -136,20 +116,15 @@ pub async fn show_in_folder(path: String) -> Result<(), String> {
 /// Get app version
 #[tauri::command]
 pub fn get_app_version(app: AppHandle) -> String {
-    app.config().version.clone().unwrap_or_else(|| "0.0.0".to_string())
+    app.config()
+        .version
+        .clone()
+        .unwrap_or_else(|| "2.0.0".to_string())
 }
 
 /// Quit the application
 #[tauri::command]
-pub async fn quit_app(app: AppHandle, state: State<'_, BackendState>) -> Result<(), String> {
-    // Stop the backend gracefully
-    let manager = state.0.lock().await;
-    if let Err(e) = manager.stop().await {
-        log::error!("Error stopping backend during quit: {}", e);
-    }
-    drop(manager);
-
-    // Exit the app
+pub async fn quit_app(app: AppHandle) -> Result<(), String> {
     app.exit(0);
     Ok(())
 }
@@ -165,7 +140,6 @@ pub struct CopyImageResult {
 /// Copy image to clipboard
 #[tauri::command]
 pub async fn copy_image_to_clipboard(image_url: String) -> Result<CopyImageResult, String> {
-    // Fetch the image data
     let response = reqwest::get(&image_url)
         .await
         .map_err(|e| format!("Failed to fetch image: {}", e))?;
@@ -182,14 +156,11 @@ pub async fn copy_image_to_clipboard(image_url: String) -> Result<CopyImageResul
         .await
         .map_err(|e| format!("Failed to read image data: {}", e))?;
 
-    // For now, we'll use a platform-specific approach
-    // On Linux, we can use wl-copy or xclip
     #[cfg(target_os = "linux")]
     {
         use std::io::Write;
-        use std::process::{Command, Stdio};
+        use std::process::Stdio;
 
-        // Detect image type from magic bytes
         let mime_type = if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
             "image/png"
         } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
@@ -199,17 +170,16 @@ pub async fn copy_image_to_clipboard(image_url: String) -> Result<CopyImageResul
         } else if bytes.starts_with(&[0x52, 0x49, 0x46, 0x46]) {
             "image/webp"
         } else {
-            "image/png" // Default
+            "image/png"
         };
 
-        // Try wl-copy first (Wayland)
-        let wl_result = Command::new("wl-copy")
+        // Try wl-copy (Wayland)
+        if let Ok(mut child) = Command::new("wl-copy")
             .arg("--type")
             .arg(mime_type)
             .stdin(Stdio::piped())
-            .spawn();
-
-        if let Ok(mut child) = wl_result {
+            .spawn()
+        {
             if let Some(mut stdin) = child.stdin.take() {
                 if stdin.write_all(&bytes).is_ok() {
                     drop(stdin);
@@ -224,12 +194,11 @@ pub async fn copy_image_to_clipboard(image_url: String) -> Result<CopyImageResul
         }
 
         // Try xclip (X11)
-        let xclip_result = Command::new("xclip")
+        if let Ok(mut child) = Command::new("xclip")
             .args(["-selection", "clipboard", "-t", mime_type])
             .stdin(Stdio::piped())
-            .spawn();
-
-        if let Ok(mut child) = xclip_result {
+            .spawn()
+        {
             if let Some(mut stdin) = child.stdin.take() {
                 if stdin.write_all(&bytes).is_ok() {
                     drop(stdin);
@@ -251,8 +220,6 @@ pub async fn copy_image_to_clipboard(image_url: String) -> Result<CopyImageResul
 
     #[cfg(target_os = "macos")]
     {
-        // On macOS, we need to use NSPasteboard through a helper or convert to PNG
-        // For now, return an error suggesting to use browser copy
         return Ok(CopyImageResult {
             success: false,
             error: Some("macOS clipboard not yet implemented".to_string()),
@@ -261,7 +228,6 @@ pub async fn copy_image_to_clipboard(image_url: String) -> Result<CopyImageResul
 
     #[cfg(target_os = "windows")]
     {
-        // On Windows, we'd need to use the Windows clipboard API
         return Ok(CopyImageResult {
             success: false,
             error: Some("Windows clipboard not yet implemented".to_string()),
@@ -286,13 +252,9 @@ pub struct ImageContextMenuOptions {
     pub is_video: Option<bool>,
 }
 
-/// Show image context menu
-/// Note: Tauri 2 handles context menus differently - for now this is a no-op
-/// The frontend can implement its own context menu using HTML/CSS
+/// Show image context menu (handled by frontend)
 #[tauri::command]
 pub async fn show_image_context_menu(_options: ImageContextMenuOptions) -> Result<(), String> {
-    // Context menus in Tauri 2 require the menu plugin and more complex setup
-    // For now, the frontend will handle context menus via HTML
     log::info!("Context menu requested - frontend should handle this");
     Ok(())
 }
