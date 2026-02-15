@@ -2186,3 +2186,67 @@ video::cue {
 .cast-stop-btn:hover {
   background: rgba(255, 107, 107, 0.25);
 }
+
+/* =============================================================================
+   Video Tap Zones & Drag-to-Seek
+   ============================================================================= */
+
+/* Drag-to-seek overlay — centered pill during drag */
+.video-seek-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  color: white;
+  font-size: 1.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 12px 28px;
+  border-radius: 16px;
+  pointer-events: none;
+  z-index: 20;
+  user-select: none;
+}
+
+/* Tap seek indicator — positioned left/right, fades out */
+.video-tap-seek-indicator {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(4px);
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 8px 16px;
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 20;
+  user-select: none;
+  animation: seekIndicatorFadeOut 0.6s ease-out forwards;
+}
+
+.video-tap-seek-indicator.left {
+  left: 12%;
+}
+
+.video-tap-seek-indicator.right {
+  right: 12%;
+}
+
+@keyframes seekIndicatorFadeOut {
+  0% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+  70% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.9);
+  }
+}

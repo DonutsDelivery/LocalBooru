@@ -14,6 +14,7 @@ import { useWhisperSubtitles } from './hooks/useWhisperSubtitles'
 import { useAutoAdvance } from './hooks/useAutoAdvance'
 import { useShareStream } from './hooks/useShareStream'
 import { useCastSession } from './hooks/useCastSession'
+import { useVideoGestures } from './hooks/useVideoGestures'
 
 function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
   const [processing, setProcessing] = useState(false)
@@ -127,6 +128,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Cast session hook (Chromecast / DLNA)
   const casting = useCastSession(mediaRef, image)
+
+  // Video gesture hook (tap zones + drag-to-seek)
+  const gestures = useVideoGestures(playback, resetHideTimer)
 
   // Preload next 3 images (skip videos) for smoother navigation
   useEffect(() => {
@@ -324,14 +328,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setTimeout(() => setCopyFeedback(null), 1500)
   }, [image])
 
-  // Handle click on video to play/pause
+  // Handle click on video — delegated to gesture hook (tap zones)
   const handleVideoClick = useCallback((e) => {
     if (!isVideo(image?.original_filename)) return
-    // Don't toggle play if clicking on controls
-    if (e.target.closest('.lightbox-video-controls')) return
-    playback.toggleVideoPlay()
-    resetHideTimer()
-  }, [image?.original_filename, playback, resetHideTimer])
+    gestures.handleVideoClick(e)
+  }, [image?.original_filename, gestures])
 
   // Collection picker handlers
   const handleOpenCollectionPicker = useCallback(async () => {
@@ -1221,7 +1222,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         ) : isVideoFile ? (
-          <div className="lightbox-video-container">
+          <div
+            className="lightbox-video-container"
+            onTouchStart={gestures.handleTouchStart}
+            onTouchMove={gestures.handleTouchMove}
+            onTouchEnd={gestures.handleTouchEnd}
+          >
             <video
               key={image.id}
               ref={mediaRef}
@@ -1240,6 +1246,21 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onCanPlay={handleVideoCanPlay}
               onContextMenu={handleVideoContextMenu}
             />
+            {/* Drag-to-seek overlay */}
+            {gestures.dragSeek && (
+              <div className="video-seek-overlay">
+                {gestures.dragSeek.amount > 0 ? '+' : ''}{gestures.dragSeek.amount}s
+              </div>
+            )}
+            {/* Tap seek indicator (left/right flash) */}
+            {gestures.seekIndicator && (
+              <div
+                key={gestures.seekIndicator.key}
+                className={`video-tap-seek-indicator ${gestures.seekIndicator.side}`}
+              >
+                {gestures.seekIndicator.amount > 0 ? '+' : ''}{gestures.seekIndicator.amount}s
+              </div>
+            )}
             {/* Custom video controls */}
             <div
               className="lightbox-video-controls"

@@ -105,12 +105,17 @@ export function useVideoPlayback(mediaRef, streamState, imageId) {
     }
 
     // Normal video seek (direct play) - use fastSeek for speed when available
+    const wasPlaying = !mediaRef.current.paused
     if (mediaRef.current.fastSeek) {
       mediaRef.current.fastSeek(newTime)
     } else {
       mediaRef.current.currentTime = newTime
     }
     setCurrentTime(newTime)
+    // Rapid seeks can cause the browser to stall in a paused state — nudge it back
+    if (wasPlaying) {
+      mediaRef.current.play().catch(() => {})
+    }
   }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, getCurrentAbsoluteTime, restartSVPFromPosition, restartTranscodeFromPosition])
 
   // Toggle video play/pause
