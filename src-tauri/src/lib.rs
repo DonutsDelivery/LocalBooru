@@ -152,19 +152,20 @@ pub fn run() {
             log::info!("[Startup] Data dir: {}", data_dir.display());
             log::info!("[Startup] Frontend dir: {:?}", frontend_dir);
 
-            // ── Start background services ──
-            // Start task queue worker
-            app_state.task_queue_arc().start(app_state.clone());
+            tauri::async_runtime::spawn(async move {
+                // Start directory watcher (needs tokio runtime for internal spawns)
+                let mut watcher = services::directory_watcher::DirectoryWatcher::new(app_state.clone());
+                watcher.start();
 
-            // Start directory watcher
-            let mut watcher = services::directory_watcher::DirectoryWatcher::new(app_state.clone());
-            watcher.start();
-            app.manage(std::sync::Mutex::new(watcher));
+                // Start task queue worker (needs tokio runtime)
+                app_state.task_queue_arc().start(app_state.clone());
 
-            tokio::spawn(async move {
                 if let Err(e) = server::start_server(app_state, frontend_dir).await {
                     log::error!("Axum server error: {}", e);
                 }
+
+                // Watcher stays alive until server shuts down
+                drop(watcher);
             });
 
             // ── Window setup ──
