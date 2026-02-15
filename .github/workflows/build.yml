@@ -49,7 +49,15 @@ jobs:
             exit 1
           fi
 
+      - name: Cache Python bundle
+        id: cache-python-linux
+        uses: actions/cache@v4
+        with:
+          path: python-venv-linux
+          key: python-linux-${{ hashFiles('requirements.txt') }}
+
       - name: Prepare Python bundle
+        if: steps.cache-python-linux.outputs.cache-hit != 'true'
         run: |
           echo "Creating Python virtual environment bundle..."
           BUNDLE_DIR="python-venv-linux"
@@ -244,7 +252,15 @@ jobs:
             exit 1
           }
 
+      - name: Cache Python bundle
+        id: cache-python-win
+        uses: actions/cache@v4
+        with:
+          path: python-embed
+          key: python-win-embed-3.11.9-${{ hashFiles('requirements.txt') }}
+
       - name: Prepare Python bundle
+        if: steps.cache-python-win.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $PYTHON_VERSION = "3.11.9"
@@ -363,7 +379,15 @@ jobs:
 
           Write-Host "ML models will be downloaded on-demand (saves ~186MB in installer)"
 
+      - name: Cache FFmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg
+          key: ffmpeg-win64-n7.1
+
       - name: Download FFmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-7.1.zip"
@@ -385,7 +409,15 @@ jobs:
           Write-Host "FFmpeg ready:"
           Get-ChildItem "ffmpeg"
 
+      - name: Cache VapourSynth
+        id: cache-vs
+        uses: actions/cache@v4
+        with:
+          path: vapoursynth
+          key: vapoursynth-R73-py3.12.8-ffms2-5.0-svpflow-4.3.0.168
+
       - name: Set up VapourSynth portable
+        if: steps.cache-vs.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $VS_DIR = "vapoursynth"
@@ -435,6 +467,7 @@ jobs:
           Write-Host "VapourSynth portable ready! Size: $([math]::Round($size, 2)) MB"
 
       - name: Download VS source filter plugins
+        if: steps.cache-vs.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $PLUGINS_DIR = "vapoursynth\vs-plugins"
@@ -478,6 +511,7 @@ jobs:
           Get-ChildItem "$PLUGINS_DIR"
 
       - name: Download SVPflow plugins
+        if: steps.cache-vs.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $PLUGINS_DIR = "vapoursynth\vs-plugins"
