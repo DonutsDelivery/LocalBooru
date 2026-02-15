@@ -9,6 +9,7 @@ mod commands;
 pub mod db;
 pub mod routes;
 pub mod server;
+pub mod services;
 
 use commands::{
     backend_start, backend_stop, backend_restart, backend_status,
@@ -149,6 +150,15 @@ pub fn run() {
             let frontend_dir = get_frontend_dir();
             log::info!("[Startup] Data dir: {}", data_dir.display());
             log::info!("[Startup] Frontend dir: {:?}", frontend_dir);
+
+            // ── Start background services ──
+            // Start task queue worker
+            app_state.task_queue_arc().start(app_state.clone());
+
+            // Start directory watcher
+            let mut watcher = services::directory_watcher::DirectoryWatcher::new(app_state.clone());
+            watcher.start();
+            app.manage(std::sync::Mutex::new(watcher));
 
             tokio::spawn(async move {
                 if let Err(e) = server::start_server(app_state, frontend_dir).await {

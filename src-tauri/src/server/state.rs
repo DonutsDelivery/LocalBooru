@@ -4,6 +4,8 @@ use std::sync::Arc;
 use crate::db::pool::{create_main_pool, DbPool};
 use crate::db::directory_db::DirectoryDbManager;
 use crate::db::schema::init_main_db;
+use crate::services::events::{SharedEvents, create_events};
+use crate::services::task_queue::BackgroundTaskQueue;
 
 /// Shared application state available to all axum handlers.
 #[derive(Clone)]
@@ -13,13 +15,17 @@ pub struct AppState {
 
 struct AppStateInner {
     /// Main library database pool
-    pub main_pool: DbPool,
+    main_pool: DbPool,
     /// Per-directory database manager
-    pub directory_db: DirectoryDbManager,
+    directory_db: DirectoryDbManager,
     /// Data directory path (e.g. ~/.localbooru)
-    pub data_dir: PathBuf,
+    data_dir: PathBuf,
     /// Server port
-    pub port: u16,
+    port: u16,
+    /// Event broadcasters (SSE)
+    events: SharedEvents,
+    /// Background task queue
+    task_queue: Arc<BackgroundTaskQueue>,
 }
 
 impl AppState {
@@ -40,12 +46,20 @@ impl AppState {
         // Create directory database manager
         let directory_db = DirectoryDbManager::new(data_dir);
 
+        // Create event broadcasters
+        let events = create_events();
+
+        // Create task queue
+        let task_queue = Arc::new(BackgroundTaskQueue::new());
+
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 main_pool,
                 directory_db,
                 data_dir: data_dir.to_path_buf(),
                 port,
+                events,
+                task_queue,
             }),
         })
     }
@@ -73,5 +87,20 @@ impl AppState {
     /// Get the server port.
     pub fn port(&self) -> u16 {
         self.inner.port
+    }
+
+    /// Get the event broadcasters.
+    pub fn events(&self) -> Option<&SharedEvents> {
+        Some(&self.inner.events)
+    }
+
+    /// Get the background task queue.
+    pub fn task_queue(&self) -> Option<&BackgroundTaskQueue> {
+        Some(&*self.inner.task_queue)
+    }
+
+    /// Get the task queue Arc (for starting the worker).
+    pub fn task_queue_arc(&self) -> Arc<BackgroundTaskQueue> {
+        self.inner.task_queue.clone()
     }
 }
