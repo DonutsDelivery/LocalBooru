@@ -101,11 +101,16 @@ pub async fn start_server(
     frontend_dir: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = state.port();
-    let app = build_router(state, frontend_dir);
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Bind to 0.0.0.0 if local network access is enabled, otherwise localhost only
+    let bind_addr = if state.is_lan_enabled() {
+        [0, 0, 0, 0]
+    } else {
+        [127, 0, 0, 1]
+    };
+    let addr = SocketAddr::from((bind_addr, port));
     log::info!("[Server] Starting axum server on {}", addr);
 
+    let app = build_router(state, frontend_dir);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(
         listener,

@@ -422,11 +422,7 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
         }
 
         TASK_AGE_DETECT => {
-            // Age detection requires the age-detector addon sidecar.
-            log::info!(
-                "[TaskQueue] Skipping {} task (addon not available)",
-                task_type
-            );
+            execute_age_detect_task(state, payload).await?;
         }
 
         TASK_EXTRACT_METADATA => {
@@ -434,17 +430,39 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
             let directory_id = payload["directory_id"].as_i64();
             let complete_import = payload["complete_import"].as_bool().unwrap_or(false);
 
+            // Resolve image path from payload or directory DB
+            let mut image_path = payload["image_path"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+
+            if image_path.is_empty() {
+                if let (Some(img_id), Some(dir_id)) = (image_id, directory_id) {
+                    let state_clone = state.clone();
+                    let resolved = tokio::task::spawn_blocking(move || -> Option<String> {
+                        let pool = state_clone.directory_db().get_pool(dir_id).ok()?;
+                        let conn = pool.get().ok()?;
+                        conn.query_row(
+                            "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_exists = 1 LIMIT 1",
+                            rusqlite::params![img_id],
+                            |row| row.get::<_, String>(0),
+                        ).ok()
+                    }).await.unwrap_or(None);
+
+                    if let Some(path) = resolved {
+                        image_path = path;
+                    }
+                }
+            }
+
             // Complete fast import first if requested (hash, dimensions, thumbnail)
             if complete_import {
                 if let (Some(img_id), Some(dir_id)) = (image_id, directory_id) {
-                    let image_path = payload["image_path"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_string();
+                    let path = image_path.clone();
                     let state_clone = state.clone();
 
                     tokio::task::spawn_blocking(move || {
-                        complete_fast_import(&state_clone, img_id, dir_id, &image_path)
+                        complete_fast_import(&state_clone, img_id, dir_id, &path)
                     })
                     .await??;
                 }
@@ -452,11 +470,6 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
 
             // Extract AI generation metadata (A1111 / ComfyUI)
             if let Some(img_id) = image_id {
-                let image_path = payload["image_path"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
-
                 if !image_path.is_empty() && std::path::Path::new(&image_path).exists() {
                     let state_clone = state.clone();
                     let dir_id = directory_id;
@@ -491,16 +504,46 @@ async fn execute_tag_task(state: &AppState, payload: &Value) -> Result<(), AppEr
         .as_i64()
         .ok_or_else(|| AppError::Internal("Missing image_id in tag task".into()))?;
     let directory_id = payload["directory_id"].as_i64();
-    let image_path = payload["image_path"]
+    let mut image_path = payload["image_path"]
         .as_str()
         .unwrap_or("")
         .to_string();
+
+    // Resolve image path from directory DB if not in the payload
+    if image_path.is_empty() {
+        if let Some(dir_id) = directory_id {
+            let state_clone = state.clone();
+            let resolved = tokio::task::spawn_blocking(move || -> Option<String> {
+                let pool = state_clone.directory_db().get_pool(dir_id).ok()?;
+                let conn = pool.get().ok()?;
+                conn.query_row(
+                    "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_exists = 1 LIMIT 1",
+                    rusqlite::params![image_id],
+                    |row| row.get::<_, String>(0),
+                ).ok()
+            }).await.unwrap_or(None);
+
+            if let Some(path) = resolved {
+                image_path = path;
+            }
+        }
+    }
 
     if image_path.is_empty() || !std::path::Path::new(&image_path).exists() {
         log::warn!(
             "[TaskQueue] Tag task for image #{}: file not found at '{}'",
             image_id, image_path
         );
+        return Ok(());
+    }
+
+    // Skip video files — the auto-tagger only handles images
+    let ext = std::path::Path::new(&image_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if matches!(ext.as_str(), "mp4" | "webm" | "mkv" | "avi" | "mov") {
         return Ok(());
     }
 
@@ -671,6 +714,136 @@ async fn execute_tag_task(state: &AppState, payload: &Value) -> Result<(), AppEr
     Ok(())
 }
 
+// ─── TASK_AGE_DETECT handler ─────────────────────────────────────────────────
+
+/// Execute an age detection task by sending the image to the age-detector sidecar.
+///
+/// Expected payload: { "image_id": N, "directory_id": N }
+/// The sidecar returns: { "num_faces": N, "faces": [...], "min_age": N, "max_age": N, "detected_ages": "..." }
+/// Results are written to the directory DB's images table.
+async fn execute_age_detect_task(state: &AppState, payload: &Value) -> Result<(), AppError> {
+    let image_id = payload["image_id"]
+        .as_i64()
+        .ok_or_else(|| AppError::Internal("Missing image_id in age_detect task".into()))?;
+    let directory_id = payload["directory_id"].as_i64();
+
+    // Resolve image path
+    let mut image_path = payload["image_path"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    if image_path.is_empty() {
+        if let Some(dir_id) = directory_id {
+            let state_clone = state.clone();
+            let resolved = tokio::task::spawn_blocking(move || -> Option<String> {
+                let pool = state_clone.directory_db().get_pool(dir_id).ok()?;
+                let conn = pool.get().ok()?;
+                conn.query_row(
+                    "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_exists = 1 LIMIT 1",
+                    rusqlite::params![image_id],
+                    |row| row.get::<_, String>(0),
+                ).ok()
+            }).await.unwrap_or(None);
+
+            if let Some(path) = resolved {
+                image_path = path;
+            }
+        }
+    }
+
+    if image_path.is_empty() || !std::path::Path::new(&image_path).exists() {
+        log::warn!(
+            "[TaskQueue] Age detect task for image #{}: file not found at '{}'",
+            image_id, image_path
+        );
+        return Ok(());
+    }
+
+    // Skip video files
+    let ext = std::path::Path::new(&image_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if matches!(ext.as_str(), "mp4" | "webm" | "mkv" | "avi" | "mov") {
+        return Ok(());
+    }
+
+    // Check if age-detector addon is running
+    let addon_status = state.addon_manager().get_addon_status("age-detector");
+    if addon_status != AddonStatus::Running {
+        log::info!(
+            "[TaskQueue] Skipping age detect for image #{} (age-detector not running)",
+            image_id
+        );
+        return Ok(());
+    }
+
+    let base_url = match state.addon_manager().addon_url("age-detector") {
+        Some(url) => url,
+        None => return Ok(()),
+    };
+
+    let detect_url = format!("{}/detect", base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| AppError::Internal(format!("HTTP client error: {}", e)))?;
+
+    let response = client
+        .post(&detect_url)
+        .json(&serde_json::json!({ "file_path": image_path }))
+        .send()
+        .await;
+
+    let response = match response {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("[TaskQueue] Failed to reach age-detector for image #{}: {}", image_id, e);
+            return Ok(());
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        log::warn!("[TaskQueue] age-detector returned {} for image #{}: {}", status, image_id, body);
+        return Ok(());
+    }
+
+    let result: Value = response.json().await.map_err(|e| {
+        AppError::Internal(format!("Failed to parse age-detector response for image #{}: {}", image_id, e))
+    })?;
+
+    let num_faces = result["num_faces"].as_i64().unwrap_or(0);
+    let min_age = result["min_age"].as_i64();
+    let max_age = result["max_age"].as_i64();
+    let detected_ages = result["detected_ages"].as_str().unwrap_or("").to_string();
+    let detection_data = serde_json::to_string(&result).unwrap_or_default();
+
+    // Write results to directory DB
+    if let Some(dir_id) = directory_id {
+        let state_clone = state.clone();
+        tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+            let pool = state_clone.directory_db().get_pool(dir_id)?;
+            let conn = pool.get()?;
+            conn.execute(
+                "UPDATE images SET num_faces = ?1, min_detected_age = ?2, max_detected_age = ?3,
+                 detected_ages = ?4, age_detection_data = ?5 WHERE id = ?6",
+                params![num_faces, min_age, max_age, &detected_ages, &detection_data, image_id],
+            )?;
+            log::info!(
+                "[TaskQueue] Age detection for image #{}: {} faces, ages {}",
+                image_id, num_faces, detected_ages
+            );
+            Ok(())
+        }).await??;
+    }
+
+    Ok(())
+}
+
 // ─── Tag guardian ────────────────────────────────────────────────────────────
 
 /// Periodic background task that finds images with no tags and re-queues
@@ -725,7 +898,7 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
                 Err(_) => continue,
             };
 
-            // Find images with no tags in this directory
+            // Find images with no tags in this directory (exclude video files)
             let mut img_stmt = dir_conn.prepare(
                 "SELECT i.id, if2.original_path
                  FROM images i
@@ -733,6 +906,11 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
                  LEFT JOIN image_files if2 ON i.id = if2.image_id
                  WHERE it.image_id IS NULL
                  AND if2.file_exists = 1
+                 AND LOWER(if2.original_path) NOT LIKE '%.mp4'
+                 AND LOWER(if2.original_path) NOT LIKE '%.webm'
+                 AND LOWER(if2.original_path) NOT LIKE '%.mkv'
+                 AND LOWER(if2.original_path) NOT LIKE '%.avi'
+                 AND LOWER(if2.original_path) NOT LIKE '%.mov'
                  LIMIT 50"
             )?;
 

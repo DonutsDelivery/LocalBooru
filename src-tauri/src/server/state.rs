@@ -329,4 +329,22 @@ impl AppState {
     pub fn set_family_mode_locked(&self, locked: bool) {
         self.inner.family_mode_locked.store(locked, Ordering::Relaxed);
     }
+
+    /// Check if local network access is enabled in settings.json.
+    /// Used to determine whether to bind to 0.0.0.0 or 127.0.0.1.
+    pub fn is_lan_enabled(&self) -> bool {
+        let settings_path = self.inner.data_dir.join("settings.json");
+        let contents = match std::fs::read_to_string(&settings_path) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        let obj: serde_json::Value = match serde_json::from_str(&contents) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        obj.get("network")
+            .and_then(|n| n.get("local_network_enabled"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
 }

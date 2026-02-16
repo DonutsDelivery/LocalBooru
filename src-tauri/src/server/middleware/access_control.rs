@@ -31,8 +31,19 @@ const EXEMPT_PREFIXES: &[&str] = &[
 /// Endpoints under localhost-only prefixes that should still be accessible from network.
 const LOCALHOST_EXEMPTIONS: &[&str] = &[
     "/api/network/verify-handshake",
-    "/api/settings/svp",
+    "/api/network/qr-data",
+    "/api/settings/saved-searches",
     "/api/settings/family-mode",
+    "/api/settings/video-playback",
+    "/api/settings/optical-flow",
+    "/api/settings/svp",
+    "/api/settings/whisper",
+    "/api/settings/cast",
+    "/api/settings/transcode",
+    "/api/settings/video-info",
+    "/api/settings/util",
+    "/api/users/login",
+    "/api/users/verify",
 ];
 
 /// Write HTTP methods that require elevated access.

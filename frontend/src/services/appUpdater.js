@@ -39,7 +39,7 @@ export async function checkForUpdate() {
   const currentVersion = info.version;
 
   const res = await fetch(
-    `${baseUrl}/app/update/check?platform=android&current_version=${currentVersion}`
+    `${baseUrl}/app-update/check?platform=android&current_version=${currentVersion}`
   );
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
   const data = await res.json();
@@ -55,7 +55,7 @@ export async function checkForUpdate() {
     available: true,
     currentVersion,
     latestVersion: serverVersion,
-    downloadUrl: `${baseUrl}/app/update/download`,
+    downloadUrl: `${baseUrl}/app-update/download`,
   };
 }
 
