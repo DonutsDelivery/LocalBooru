@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::sync::RwLock;
 
@@ -62,6 +63,8 @@ struct AppStateInner {
     http_client: reqwest::Client,
     /// Directory watcher (set after AppState construction to break circular dep)
     directory_watcher: std::sync::OnceLock<Arc<DirectoryWatcher>>,
+    /// Family mode lock state (true = locked, hides non-family-safe content)
+    family_mode_locked: AtomicBool,
 }
 
 /// Load the JWT secret from `settings.json` in `data_dir`, or generate a new
@@ -101,6 +104,30 @@ fn generate_jwt_secret() -> String {
     use rand::Rng;
     let bytes: [u8; 32] = rand::thread_rng().gen();
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Determine whether family mode should start locked based on settings.json.
+/// Returns true if family_mode.enabled && family_mode.auto_lock_on_start.
+fn load_family_mode_initial_lock(data_dir: &Path) -> bool {
+    let settings_path = data_dir.join("settings.json");
+    if !settings_path.exists() {
+        return false;
+    }
+    let contents = match std::fs::read_to_string(&settings_path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let obj: serde_json::Value = match serde_json::from_str(&contents) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let fm = match obj.get("family_mode") {
+        Some(v) => v,
+        None => return false,
+    };
+    let enabled = fm.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let auto_lock = fm.get("auto_lock_on_start").and_then(|v| v.as_bool()).unwrap_or(true);
+    enabled && auto_lock
 }
 
 impl AppState {
@@ -160,6 +187,9 @@ impl AppState {
         // Create shared HTTP client (connection pool reused across requests)
         let http_client = reqwest::Client::new();
 
+        // Determine initial family mode lock state from settings
+        let family_mode_locked = load_family_mode_initial_lock(data_dir);
+
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 main_pool,
@@ -180,6 +210,7 @@ impl AppState {
                 handshake_manager,
                 http_client,
                 directory_watcher: std::sync::OnceLock::new(),
+                family_mode_locked: AtomicBool::new(family_mode_locked),
             }),
         })
     }
@@ -287,5 +318,15 @@ impl AppState {
     /// Get the directory watcher, if set.
     pub fn directory_watcher(&self) -> Option<&Arc<DirectoryWatcher>> {
         self.inner.directory_watcher.get()
+    }
+
+    /// Check if family mode is currently locked.
+    pub fn is_family_mode_locked(&self) -> bool {
+        self.inner.family_mode_locked.load(Ordering::Relaxed)
+    }
+
+    /// Set the family mode lock state.
+    pub fn set_family_mode_locked(&self, locked: bool) {
+        self.inner.family_mode_locked.store(locked, Ordering::Relaxed);
     }
 }

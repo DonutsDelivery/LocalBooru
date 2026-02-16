@@ -23,13 +23,13 @@ function getApiUrl() {
     return `${currentServerUrl}/api`
   }
 
-  // Tauri app - always use localhost backend
-  if (isTauriApp()) {
-    return 'http://127.0.0.1:8790/api'
-  }
+  // Check if we're running on a Vite dev server
+  const isDevServer = ['5173', '5174', '5175', '5210'].includes(window.location.port)
 
-  // Check if we're running on localhost with Vite dev server (port 5173/5174/5175)
-  const isDevServer = ['5173', '5174', '5175'].includes(window.location.port)
+  // Tauri app - use Vite proxy in dev, direct URL in production
+  if (isTauriApp()) {
+    return isDevServer ? '/api' : 'http://127.0.0.1:8790/api'
+  }
 
   if (isDevServer) {
     // Dev mode - Vite proxy forwards /api to backend (same-origin)
@@ -546,6 +546,29 @@ export async function installAgeDetection() {
   return response.data
 }
 
+// Family Mode API
+export async function getFamilyModeStatus() {
+  const response = await api.get('/settings/family-mode')
+  return response.data
+}
+
+export async function configureFamilyMode(config) {
+  const response = await api.post('/settings/family-mode', config)
+  return response.data
+}
+
+export async function unlockFamilyMode(pin) {
+  const response = await api.post('/settings/family-mode/unlock', { pin })
+  invalidateDirectoriesCache()
+  return response.data
+}
+
+export async function lockFamilyMode() {
+  const response = await api.post('/settings/family-mode/lock')
+  invalidateDirectoriesCache()
+  return response.data
+}
+
 // Network API
 export async function getNetworkConfig() {
   const response = await api.get('/network')
@@ -625,7 +648,7 @@ export function getMediaUrl(path) {
 
   // Dev mode - serve media directly from backend (proper range request support)
   // Only VTT files in <track> elements need the Vite proxy (same-origin requirement)
-  const isDevServer = window.location.port === '5173' || window.location.port === '5174'
+  const isDevServer = ['5173', '5174', '5175', '5210'].includes(window.location.port)
   if (isDevServer) {
     const cleanPath = path.startsWith('/') ? path : `/${path}`
     return `http://127.0.0.1:8790${cleanPath}`
@@ -820,8 +843,10 @@ export async function deleteSavedSearch(searchId) {
 }
 
 // Watch History API
-export async function savePlaybackPosition(imageId, position, duration) {
-  const response = await api.post(`/watch-history/${imageId}`, { position, duration })
+export async function savePlaybackPosition(imageId, position, duration, directoryId = null) {
+  const body = { position, duration }
+  if (directoryId) body.directory_id = directoryId
+  const response = await api.post(`/watch-history/${imageId}`, body)
   return response.data
 }
 
@@ -1108,6 +1133,37 @@ export function subscribeToCastEvents(onEvent) {
   return () => {
     eventSource.close()
   }
+}
+
+// Addons API
+export async function getAddons() {
+  const response = await api.get('/addons')
+  return response.data
+}
+
+export async function getAddon(id) {
+  const response = await api.get(`/addons/${id}`)
+  return response.data
+}
+
+export async function installAddon(id) {
+  const response = await api.post(`/addons/${id}/install`)
+  return response.data
+}
+
+export async function uninstallAddon(id) {
+  const response = await api.post(`/addons/${id}/uninstall`)
+  return response.data
+}
+
+export async function startAddon(id) {
+  const response = await api.post(`/addons/${id}/start`)
+  return response.data
+}
+
+export async function stopAddon(id) {
+  const response = await api.post(`/addons/${id}/stop`)
+  return response.data
 }
 
 // Health check (used for Tauri startup readiness polling)

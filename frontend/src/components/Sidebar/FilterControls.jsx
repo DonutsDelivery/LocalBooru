@@ -5,6 +5,7 @@ import { useState } from 'react'
 
 // Rating definitions for LocalBooru (all ratings shown)
 export const ALL_RATINGS = ['pg', 'pg13', 'r', 'x', 'xxx']
+export const NSFW_RATINGS = ['r', 'x', 'xxx']
 
 // Sort options - organized by category
 export const SORT_OPTIONS = [
@@ -99,7 +100,9 @@ function FilterControls({
   duration,
   onDurationChange,
   // Search results
-  total
+  total,
+  // Family mode
+  familyLocked
 }) {
   const [advancedExpanded, setAdvancedExpanded] = useState(false)
 
@@ -207,7 +210,7 @@ function FilterControls({
 
       {/* Rating Buttons */}
       <div className="rating-buttons">
-        {ALL_RATINGS.map(rating => (
+        {ALL_RATINGS.filter(r => !familyLocked || !NSFW_RATINGS.includes(r)).map(rating => (
           <button
             key={rating}
             type="button"

@@ -32,6 +32,7 @@ const EXEMPT_PREFIXES: &[&str] = &[
 const LOCALHOST_EXEMPTIONS: &[&str] = &[
     "/api/network/verify-handshake",
     "/api/settings/svp",
+    "/api/settings/family-mode",
 ];
 
 /// Write HTTP methods that require elevated access.
@@ -64,6 +65,27 @@ pub fn classify_ip(ip: &std::net::IpAddr) -> &'static str {
                 }
                 "public"
             }
+        }
+    }
+}
+
+// ─── Access tier ────────────────────────────────────────────────────────────
+
+/// Typed access tier derived from a client IP address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessTier {
+    Localhost,
+    LocalNetwork,
+    Public,
+}
+
+impl AccessTier {
+    /// Classify a client IP into an access tier.
+    pub fn from_ip(ip: &std::net::IpAddr) -> Self {
+        match classify_ip(ip) {
+            "localhost" => Self::Localhost,
+            "local_network" => Self::LocalNetwork,
+            _ => Self::Public,
         }
     }
 }

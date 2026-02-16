@@ -45,7 +45,9 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             parent_path TEXT,
             public_access INTEGER NOT NULL DEFAULT 0,
             show_images INTEGER NOT NULL DEFAULT 1,
-            show_videos INTEGER NOT NULL DEFAULT 1
+            show_videos INTEGER NOT NULL DEFAULT 1,
+            family_safe INTEGER NOT NULL DEFAULT 1,
+            lan_visible INTEGER NOT NULL DEFAULT 1
         );
 
         -- Images (main/legacy — per-directory DBs are primary now)
@@ -173,7 +175,8 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             duration REAL NOT NULL DEFAULT 0.0,
             completed INTEGER NOT NULL DEFAULT 0,
             last_watched TEXT NOT NULL DEFAULT (datetime('now')),
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            directory_id INTEGER
         );
 
         CREATE INDEX IF NOT EXISTS idx_watch_history_image_id ON watch_history(image_id);

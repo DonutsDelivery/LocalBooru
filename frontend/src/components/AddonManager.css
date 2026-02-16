@@ -1,0 +1,176 @@
+.addon-manager .addon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.addon-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.addon-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.addon-card-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.addon-description {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  flex: 1;
+}
+
+.addon-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Status badges */
+.addon-status {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.addon-status.not-installed {
+  background: rgba(158, 158, 158, 0.15);
+  color: var(--text-muted);
+}
+
+.addon-status.installed {
+  background: rgba(255, 193, 7, 0.15);
+  color: #ffc107;
+}
+
+.addon-status.running {
+  background: rgba(76, 175, 80, 0.15);
+  color: #4CAF50;
+}
+
+.addon-status.starting {
+  background: rgba(33, 150, 243, 0.15);
+  color: #2196F3;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.addon-status.error {
+  background: rgba(244, 67, 54, 0.15);
+  color: #f44336;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Action buttons */
+.addon-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.addon-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+.addon-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.addon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.addon-btn.install {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: 600;
+}
+
+.addon-btn.install:hover:not(:disabled) {
+  filter: brightness(1.1);
+  color: #000;
+}
+
+.addon-btn.start {
+  background: rgba(76, 175, 80, 0.15);
+  border-color: rgba(76, 175, 80, 0.3);
+  color: #4CAF50;
+}
+
+.addon-btn.start:hover:not(:disabled) {
+  background: rgba(76, 175, 80, 0.25);
+  border-color: #4CAF50;
+}
+
+.addon-btn.stop {
+  background: rgba(255, 193, 7, 0.15);
+  border-color: rgba(255, 193, 7, 0.3);
+  color: #ffc107;
+}
+
+.addon-btn.stop:hover:not(:disabled) {
+  background: rgba(255, 193, 7, 0.25);
+  border-color: #ffc107;
+}
+
+.addon-btn.uninstall {
+  background: rgba(244, 67, 54, 0.1);
+  border-color: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+}
+
+.addon-btn.uninstall:hover:not(:disabled) {
+  background: rgba(244, 67, 54, 0.2);
+  border-color: #f44336;
+}
+
+.addon-btn.starting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spinner-small {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

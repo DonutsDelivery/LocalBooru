@@ -15,8 +15,10 @@ import { isVideo } from '../utils/helpers'
 
 /**
  * Hook for managing HLS/SVP/OpticalFlow video streaming
+ * @param {object} addonStatus - { svpInstalled, opticalFlowInstalled } from useAddonStatus
  */
-export function useVideoStreaming(mediaRef, image, currentQuality) {
+export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus = {}) {
+  const { svpInstalled = false, opticalFlowInstalled = false } = addonStatus
   // HLS streaming ref
   const hlsRef = useRef(null)
 
@@ -68,33 +70,44 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
   const startSVPStreamRef = useRef(null)
   const startInterpolatedStreamRef = useRef(null)
 
-  // Load optical flow config on mount
+  // Load optical flow config on mount (only if addon installed)
   useEffect(() => {
+    if (!opticalFlowInstalled) {
+      setOpticalFlowConfig({ enabled: false })
+      return
+    }
     async function loadOpticalFlowConfig() {
       try {
         const config = await getOpticalFlowConfig()
         setOpticalFlowConfig(config)
       } catch (err) {
         console.error('Failed to load optical flow config:', err)
+        setOpticalFlowConfig({ enabled: false })
       }
     }
     loadOpticalFlowConfig()
-  }, [])
+  }, [opticalFlowInstalled])
 
-  // Load SVP config on mount
+  // Load SVP config on mount (only if addon installed)
   useEffect(() => {
+    if (!svpInstalled) {
+      setSvpConfig({ enabled: false })
+      setSvpConfigLoaded(true)
+      return
+    }
     async function loadSVPConfig() {
       try {
         const config = await getSVPConfig()
         setSvpConfig(config)
       } catch (err) {
         console.error('Failed to load SVP config:', err)
+        setSvpConfig({ enabled: false })
       } finally {
         setSvpConfigLoaded(true)
       }
     }
     loadSVPConfig()
-  }, [])
+  }, [svpInstalled])
 
   // Auto-dismiss SVP error toast after 5 seconds
   useEffect(() => {
@@ -140,7 +153,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
 
   // Restart SVP stream from a specific position (for seeking beyond buffered content)
   const restartSVPFromPosition = useCallback(async (targetTime) => {
-    if (!image || !svpConfig?.enabled) return
+    if (!svpInstalled || !image || !svpConfig?.enabled) return
 
     console.log(`[SVP] Restarting stream from ${targetTime.toFixed(1)}s`)
 
@@ -186,7 +199,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       setSvpError(err.message || 'Failed to restart SVP stream')
       setSvpLoading(false)
     }
-  }, [image, svpConfig])
+  }, [image, svpConfig, svpInstalled])
 
   // Restart transcode stream from a specific position (for seeking beyond buffered content)
   const restartTranscodeFromPosition = useCallback(async (targetTime) => {
@@ -234,6 +247,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
 
   // Start optical flow interpolation for video (called automatically when enabled)
   const startInterpolatedStream = useCallback(async (startPosition = null) => {
+    if (!opticalFlowInstalled) return  // Addon not installed
     if (!image || !opticalFlowConfig?.enabled || !isVideo(image.filename)) return
     if (opticalFlowStreamUrl || opticalFlowLoading) return // Already active or starting
 
@@ -271,11 +285,12 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     }
 
     setOpticalFlowLoading(false)
-  }, [image, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading, svpStreamUrl, transcodeStreamUrl, currentQuality, getCurrentAbsoluteTime])
+  }, [image, opticalFlowInstalled, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading, svpStreamUrl, transcodeStreamUrl, currentQuality, getCurrentAbsoluteTime])
 
   // Start SVP interpolation for video (called manually via button or auto-start)
   // Optional startPosition parameter - if not provided, defaults to 0 for new videos or current position for mode switches
   const startSVPStream = useCallback(async (startPosition = null) => {
+    if (!svpInstalled) return  // Addon not installed
     console.log('[startSVPStream] Called', { image: image?.id, enabled: svpConfig?.enabled, isVideo: isVideo(image?.filename), startPosition })
     if (!image || !svpConfig?.enabled || !isVideo(image.filename)) {
       console.log('[startSVPStream] Early return: missing image/config/not video')
@@ -343,7 +358,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
       svpStartingRef.current = false
     }
     // Note: svpLoading stays true until MANIFEST_PARSED fires in the useEffect
-  }, [image, svpConfig, svpStreamUrl, svpLoading, opticalFlowStreamUrl, transcodeStreamUrl, currentQuality, getCurrentAbsoluteTime])
+  }, [image, svpInstalled, svpConfig, svpStreamUrl, svpLoading, opticalFlowStreamUrl, transcodeStreamUrl, currentQuality, getCurrentAbsoluteTime])
 
   // Update refs after callbacks are defined (used by auto-start effect and SVP menu restart)
   startSVPStreamRef.current = startSVPStream
@@ -966,8 +981,8 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
         } else {
           // No stream currently playing, starting fresh
           console.log('[Lightbox] No active stream, starting new one with quality')
-          // Try SVP first (if enabled), fall back to OpticalFlow (if enabled), or use transcode
-          if (svpConfig?.enabled) {
+          // Try SVP first (if enabled + installed), fall back to OpticalFlow (if enabled + installed), or use transcode
+          if (svpInstalled && svpConfig?.enabled) {
             // SVP is enabled, try to use it
             console.log('[Lightbox] Starting new SVP stream with quality')
             const result = await playVideoSVP(image.file_path, absoluteTime, qualityId)
@@ -983,8 +998,8 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
               console.error('[Lightbox] SVP play failed:', result.error)
               setStreamError('Failed to start SVP stream: ' + result.error)
             }
-          } else if (opticalFlowConfig?.enabled) {
-            // OpticalFlow is enabled, try to use it
+          } else if (opticalFlowInstalled && opticalFlowConfig?.enabled) {
+            // OpticalFlow is enabled + installed, try to use it
             console.log('[Lightbox] Starting new OpticalFlow stream with quality')
             const result = await playVideoInterpolated(image.file_path, absoluteTime, qualityId)
             console.log('[Lightbox] OpticalFlow play result:', result)
@@ -1017,7 +1032,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality) {
     } catch (err) {
       console.error('Failed to change quality:', err)
     }
-  }, [image, mediaRef, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, svpConfig, opticalFlowConfig, getCurrentAbsoluteTime])
+  }, [image, mediaRef, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, svpInstalled, svpConfig, opticalFlowInstalled, opticalFlowConfig, getCurrentAbsoluteTime])
 
   // Check if browser can't decode the video codec (e.g. HEVC on Linux WebKitGTK/Chromium)
   // Called from Lightbox onCanPlay — if videoWidth is 0, the video track isn't decoding

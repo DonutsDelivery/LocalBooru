@@ -12,7 +12,7 @@ use std::path::Path;
 
 use crate::db::schema::init_directory_db;
 use crate::server::error::AppError;
-use crate::server::middleware::classify_ip;
+use crate::server::middleware::AccessTier;
 use crate::server::state::AppState;
 use crate::services::{file_tracker, importer, metadata, task_queue};
 
@@ -59,6 +59,8 @@ pub struct DirectoryUpdate {
     pub public_access: Option<bool>,
     pub show_images: Option<bool>,
     pub show_videos: Option<bool>,
+    pub family_safe: Option<bool>,
+    pub lan_visible: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -120,8 +122,7 @@ async fn list_directories(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Result<Json<Value>, AppError> {
-    let access_level = classify_ip(&addr.ip());
-    let is_public = access_level == "public";
+    let client_ip = addr.ip();
 
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
@@ -131,7 +132,7 @@ async fn list_directories(
         let mut stmt = main_conn.prepare(
             "SELECT id, path, name, enabled, recursive, auto_tag, auto_age_detect,
                     last_scanned_at, created_at, public_access, show_images, show_videos,
-                    parent_path, metadata_format
+                    parent_path, metadata_format, family_safe, lan_visible
              FROM watch_directories ORDER BY created_at",
         )?;
 
@@ -151,6 +152,8 @@ async fn list_directories(
                 let show_videos: bool = row.get::<_, Option<bool>>(11)?.unwrap_or(true);
                 let _parent_path: Option<String> = row.get(12)?;
                 let metadata_format: Option<String> = row.get(13)?;
+                let family_safe: bool = row.get::<_, Option<bool>>(14)?.unwrap_or(true);
+                let lan_visible: bool = row.get::<_, Option<bool>>(15)?.unwrap_or(true);
 
                 // Get image count from per-directory DB
                 let mut image_count: i64 = 0;
@@ -220,20 +223,29 @@ async fn list_directories(
                     "show_images": show_images,
                     "show_videos": show_videos,
                     "metadata_format": metadata_format.unwrap_or_else(|| "auto".into()),
+                    "family_safe": family_safe,
+                    "lan_visible": lan_visible,
                     "uses_per_directory_db": true
                 }))
             })?
             .filter_map(|r| r.ok())
             .collect();
 
-        // Filter to public_access directories for public IP clients
-        let filtered = if is_public {
-            dirs.into_iter()
-                .filter(|d| d["public_access"].as_bool().unwrap_or(false))
-                .collect()
-        } else {
-            dirs
-        };
+        // Filter directories based on access tier and family mode
+        let tier = AccessTier::from_ip(&client_ip);
+        let family_locked = state_clone.is_family_mode_locked();
+
+        let filtered: Vec<Value> = dirs.into_iter().filter(|d| {
+            // Family mode: hide non-family-safe when locked
+            if family_locked && !d["family_safe"].as_bool().unwrap_or(true) {
+                return false;
+            }
+            match tier {
+                AccessTier::Localhost => true,
+                AccessTier::LocalNetwork => d["lan_visible"].as_bool().unwrap_or(true),
+                AccessTier::Public => d["public_access"].as_bool().unwrap_or(false),
+            }
+        }).collect();
 
         Ok::<_, AppError>(Json(json!({ "directories": filtered })))
     })
@@ -469,7 +481,8 @@ async fn get_directory(
 
         let dir = conn.query_row(
             "SELECT id, path, name, enabled, recursive, auto_tag, auto_age_detect,
-                    last_scanned_at, created_at, public_access, show_images, show_videos, metadata_format
+                    last_scanned_at, created_at, public_access, show_images, show_videos,
+                    metadata_format, family_safe, lan_visible
              FROM watch_directories WHERE id = ?1",
             params![directory_id],
             |row| {
@@ -487,6 +500,8 @@ async fn get_directory(
                     "show_images": row.get::<_, Option<bool>>(10)?.unwrap_or(true),
                     "show_videos": row.get::<_, Option<bool>>(11)?.unwrap_or(true),
                     "metadata_format": row.get::<_, Option<String>>(12)?.unwrap_or_else(|| "auto".into()),
+                    "family_safe": row.get::<_, Option<bool>>(13)?.unwrap_or(true),
+                    "lan_visible": row.get::<_, Option<bool>>(14)?.unwrap_or(true),
                     "path_exists": Path::new(&row.get::<_, String>(1)?).exists()
                 }))
             },
@@ -551,6 +566,14 @@ async fn update_directory(
         if let Some(show_videos) = data.show_videos {
             sets.push("show_videos = ?");
             sql_params.push(Box::new(show_videos));
+        }
+        if let Some(family_safe) = data.family_safe {
+            sets.push("family_safe = ?");
+            sql_params.push(Box::new(family_safe));
+        }
+        if let Some(lan_visible) = data.lan_visible {
+            sets.push("lan_visible = ?");
+            sql_params.push(Box::new(lan_visible));
         }
 
         if sets.is_empty() {

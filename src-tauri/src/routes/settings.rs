@@ -1,21 +1,24 @@
 use axum::body::Body;
-use axum::extract::{Path as AxumPath, Query, State};
+use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Json, Response};
 use axum::routing::{delete, get, post};
 use axum::Router;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use crate::addons::manager::AddonStatus;
 use crate::server::error::AppError;
+use crate::server::middleware::AccessTier;
 use crate::server::state::AppState;
 use crate::services::transcode::QualityPreset;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(get_all_settings).post(update_settings))
+        .nest("/family-mode", family_mode_router())
         .route(
             "/saved-searches",
             get(list_saved_searches).post(create_saved_search),
@@ -72,6 +75,187 @@ pub fn router() -> Router<AppState> {
             "/whisper/events/{stream_id}",
             get(bridge_whisper_events),
         )
+}
+
+// ─── Family mode sub-router ──────────────────────────────────────────────────
+
+fn family_mode_router() -> Router<AppState> {
+    Router::new()
+        .route("/", get(get_family_mode).post(configure_family_mode))
+        .route("/unlock", post(unlock_family_mode))
+        .route("/lock", post(lock_family_mode))
+}
+
+// ─── Family mode PIN hashing ─────────────────────────────────────────────────
+
+fn hash_pin(pin: &str) -> Result<String, AppError> {
+    use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
+    use argon2::Argon2;
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let hash = argon2
+        .hash_password(pin.as_bytes(), &salt)
+        .map_err(|e| AppError::Internal(format!("PIN hashing error: {}", e)))?;
+    Ok(hash.to_string())
+}
+
+fn verify_pin(pin: &str, stored_hash: &str) -> Result<bool, AppError> {
+    use argon2::password_hash::{PasswordHash, PasswordVerifier};
+    use argon2::Argon2;
+    let parsed_hash = PasswordHash::new(stored_hash)
+        .map_err(|e| AppError::Internal(format!("Invalid stored hash: {}", e)))?;
+    Ok(Argon2::default()
+        .verify_password(pin.as_bytes(), &parsed_hash)
+        .is_ok())
+}
+
+// ─── Family mode request models ──────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct FamilyModeConfigure {
+    enabled: Option<bool>,
+    pin: Option<String>,
+    auto_lock_on_start: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FamilyModeUnlock {
+    pin: String,
+}
+
+// ─── Family mode handlers ────────────────────────────────────────────────────
+
+/// GET /family-mode — Get family mode status.
+async fn get_family_mode(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    let data_dir = state.data_dir().to_path_buf();
+    let is_locked = state.is_family_mode_locked();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let config = get_config_section(&data_dir, "family_mode");
+        let enabled = config.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        let has_pin = config
+            .get("pin_hash")
+            .map(|v| !v.is_null() && v.as_str().map(|s| !s.is_empty()).unwrap_or(false))
+            .unwrap_or(false);
+        let auto_lock_on_start = config
+            .get("auto_lock_on_start")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        json!({
+            "enabled": enabled,
+            "is_locked": is_locked,
+            "has_pin": has_pin,
+            "auto_lock_on_start": auto_lock_on_start
+        })
+    })
+    .await?;
+
+    Ok(Json(result))
+}
+
+/// POST /family-mode — Configure family mode (localhost only).
+async fn configure_family_mode(
+    State(state): State<AppState>,
+    connect_info: ConnectInfo<SocketAddr>,
+    Json(body): Json<FamilyModeConfigure>,
+) -> Result<Json<Value>, AppError> {
+    // Enforce localhost-only access
+    let tier = AccessTier::from_ip(&connect_info.0.ip());
+    if tier != AccessTier::Localhost {
+        return Err(AppError::Forbidden(
+            "Family mode configuration is only accessible from localhost".into(),
+        ));
+    }
+
+    let data_dir = state.data_dir().to_path_buf();
+
+    // Build the update payload
+    let mut update = json!({});
+    if let Some(enabled) = body.enabled {
+        update["enabled"] = json!(enabled);
+    }
+    if let Some(auto_lock_on_start) = body.auto_lock_on_start {
+        update["auto_lock_on_start"] = json!(auto_lock_on_start);
+    }
+    if let Some(ref pin) = body.pin {
+        if pin.len() < 4 {
+            return Err(AppError::BadRequest(
+                "PIN must be at least 4 characters".into(),
+            ));
+        }
+        let pin_hash = hash_pin(pin)?;
+        update["pin_hash"] = json!(pin_hash);
+    }
+
+    let result = tokio::task::spawn_blocking(move || {
+        update_config_section(&data_dir, "family_mode", &update)
+    })
+    .await??;
+
+    // If disabling family mode, also unlock it
+    if body.enabled == Some(false) {
+        state.set_family_mode_locked(false);
+        if let Some(events) = state.events() {
+            events
+                .library
+                .broadcast("family_mode", json!({"is_locked": false}));
+        }
+    }
+
+    Ok(Json(result))
+}
+
+/// POST /family-mode/unlock — Unlock family mode by verifying PIN.
+async fn unlock_family_mode(
+    State(state): State<AppState>,
+    Json(body): Json<FamilyModeUnlock>,
+) -> Result<Json<Value>, AppError> {
+    let data_dir = state.data_dir().to_path_buf();
+    let pin = body.pin;
+
+    let stored_hash = tokio::task::spawn_blocking(move || {
+        let config = get_config_section(&data_dir, "family_mode");
+        config
+            .get("pin_hash")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    })
+    .await?;
+
+    let stored_hash = stored_hash.ok_or_else(|| {
+        AppError::BadRequest("No PIN has been configured for family mode".into())
+    })?;
+
+    let valid = verify_pin(&pin, &stored_hash)?;
+    if !valid {
+        return Err(AppError::Forbidden("Invalid PIN".into()));
+    }
+
+    state.set_family_mode_locked(false);
+    if let Some(events) = state.events() {
+        events
+            .library
+            .broadcast("family_mode", json!({"is_locked": false}));
+    }
+
+    Ok(Json(json!({ "success": true, "is_locked": false })))
+}
+
+/// POST /family-mode/lock — Lock family mode (no PIN needed).
+async fn lock_family_mode(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    state.set_family_mode_locked(true);
+    if let Some(events) = state.events() {
+        events
+            .library
+            .broadcast("family_mode", json!({"is_locked": true}));
+    }
+
+    Ok(Json(json!({ "success": true, "is_locked": true })))
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -162,6 +346,11 @@ fn get_defaults() -> Value {
         },
         "age_detection": {
             "enabled": false
+        },
+        "family_mode": {
+            "enabled": false,
+            "pin_hash": null,
+            "auto_lock_on_start": true
         }
     })
 }

@@ -1,4 +1,6 @@
-use axum::extract::{Path as AxumPath, Query, State};
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::response::Json;
 use axum::routing::{get, patch, post};
 use axum::Router;
@@ -7,7 +9,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::server::error::AppError;
+use crate::server::middleware::AccessTier;
 use crate::server::state::AppState;
+use crate::server::utils::get_visible_directory_ids;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -107,6 +111,7 @@ async fn create_collection(
 /// GET /api/collections/:collection_id
 async fn get_collection(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     AxumPath(collection_id): AxumPath<i64>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<Value>, AppError> {
@@ -114,9 +119,15 @@ async fn get_collection(
     let per_page = params.per_page.unwrap_or(50).clamp(1, 200);
     let offset = (page - 1) * per_page;
 
+    let client_ip = addr.ip();
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;
+
+        // Build visible directory set for filtering
+        let tier = AccessTier::from_ip(&client_ip);
+        let family_locked = state_clone.is_family_mode_locked();
+        let visible_dir_ids = get_visible_directory_ids(&conn, tier, family_locked)?;
 
         // Get collection info
         let collection = conn.query_row(
@@ -153,6 +164,13 @@ async fn get_collection(
             let mut found = false;
             let all_dir_ids = state_clone.directory_db().get_all_directory_ids();
             for dir_id in &all_dir_ids {
+                // Skip directories not visible to this client
+                if let Some(ref visible_ids) = visible_dir_ids {
+                    if !visible_ids.contains(dir_id) {
+                        continue;
+                    }
+                }
+
                 if !state_clone.directory_db().db_exists(*dir_id) {
                     continue;
                 }

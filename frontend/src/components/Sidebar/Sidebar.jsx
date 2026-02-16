@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { fetchDirectories, getFileDimensions, getSavedSearches, createSavedSearch, deleteSavedSearch } from '../../api'
 import { getDesktopAPI, isDesktopApp } from '../../tauriAPI'
 import PromptSection from './PromptSection'
 import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_OPTIONS, ORIENTATION_OPTIONS, DURATION_OPTIONS, SORT_OPTIONS } from './FilterControls'
 import TagSearch from './TagSearch'
+import FamilyModeLock from '../FamilyModeLock'
 import '../Sidebar.css'
 
 function Sidebar({
@@ -34,10 +35,14 @@ function Sidebar({
   stats,
   lightboxMode,
   lightboxHover,
-  onMouseLeave
+  onMouseLeave,
+  settingsTab,
+  onSettingsTabChange,
+  onFamilyModeChange
 }) {
   const location = useLocation()
   const isGalleryPage = location.pathname === '/'
+  const isSettingsPage = location.pathname === '/settings'
   const [hovering, setHovering] = useState(false)
   const [directories, setDirectories] = useState([])
   const [selectedDirectory, setSelectedDirectory] = useState(initialDirectoryId || null)
@@ -65,17 +70,25 @@ function Sidebar({
     return saved !== null ? JSON.parse(saved) : false
   })
 
+  // Family mode state
+  const [familyLocked, setFamilyLocked] = useState(false)
+  const SFW_RATINGS = ['pg', 'pg13']
+
   // Saved searches state
   const [savedSearches, setSavedSearches] = useState([])
   const [showSaveInput, setShowSaveInput] = useState(false)
   const [saveSearchName, setSaveSearchName] = useState('')
 
   // Load directories
-  useEffect(() => {
+  const refreshDirectories = useCallback(() => {
     fetchDirectories().then(data => {
       setDirectories(data.directories || [])
     }).catch(console.error)
   }, [])
+
+  useEffect(() => {
+    refreshDirectories()
+  }, [refreshDirectories])
 
   // Load saved searches
   useEffect(() => {
@@ -150,20 +163,48 @@ function Sidebar({
 
   const isVisible = !collapsed || hovering || mobileOpen
 
+  // Handle family mode lock state changes
+  const handleFamilyLockChange = useCallback((isLocked) => {
+    setFamilyLocked(isLocked)
+    refreshDirectories()
+    if (isLocked) {
+      // Force SFW-only ratings and trigger search
+      setSelectedRatings(SFW_RATINGS)
+      if (onSearch) {
+        onSearch(currentTags || '', SFW_RATINGS.join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
+      }
+    } else {
+      // Restore all ratings on unlock
+      setSelectedRatings([...ALL_RATINGS])
+      if (onSearch) {
+        onSearch(currentTags || '', ALL_RATINGS.join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
+      }
+    }
+  }, [refreshDirectories, onSearch, currentTags, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration])
+
   // Memoize activeTags to prevent unnecessary re-renders and useEffect triggers
   const activeTags = useMemo(() =>
     currentTags ? currentTags.split(',').map(t => t.trim()) : []
   , [currentTags])
 
+  // Get effective ratings (filter out NSFW when family mode locked)
+  const getEffectiveRatings = () => {
+    const ratings = familyLocked
+      ? selectedRatings.filter(r => !['r', 'x', 'xxx'].includes(r))
+      : selectedRatings
+    return ratings.length > 0 ? ratings : (familyLocked ? SFW_RATINGS : [...ALL_RATINGS])
+  }
+
   const handleSearchSubmit = (e) => {
     e.preventDefault()
-    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
   }
 
   const handleClear = () => {
     setFilenameSearch('')
-    setSelectedRatings([...ALL_RATINGS])
+    const defaultRatings = familyLocked ? SFW_RATINGS : [...ALL_RATINGS]
+    setSelectedRatings(defaultRatings)
     setSortBy('newest')
     setFavoritesOnly(false)
     setSelectedDirectory(null)
@@ -176,7 +217,7 @@ function Sidebar({
     if (initialGroupByFolders && onToggleGroupByFolders) {
       onToggleGroupByFolders()
     }
-    onSearch('', ALL_RATINGS.join(','), 'newest', false, null, null, null, null, '', null, null, null)
+    onSearch('', defaultRatings.join(','), 'newest', false, null, null, null, null, '', null, null, null)
   }
 
   // Save current filters as a named search
@@ -252,38 +293,38 @@ function Sidebar({
 
   const handleSortChange = (newSortBy) => {
     setSortBy(newSortBy)
-    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, newSortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
   }
 
   const handleDirectoryChange = (dirId) => {
     const newDirId = dirId === '' ? null : parseInt(dirId)
     setSelectedDirectory(newDirId)
-    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, newDirId, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
   }
 
   const handleTimeframeChange = (newTimeframe) => {
     setTimeframe(newTimeframe)
-    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, newTimeframe, filenameSearch, resolution, orientation, duration)
   }
 
   const handleResolutionChange = (newResolution) => {
     setResolution(newResolution)
-    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, newResolution, orientation, duration)
   }
 
   const handleOrientationChange = (newOrientation) => {
     setOrientation(newOrientation)
-    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, newOrientation, duration)
   }
 
   const handleDurationChange = (newDuration) => {
     setDuration(newDuration)
-    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, newDuration)
   }
 
@@ -292,7 +333,7 @@ function Sidebar({
       const isSelected = prev.includes(rating)
       if (isSelected) {
         const newRatings = prev.filter(r => r !== rating)
-        if (newRatings.length === 0) return [...ALL_RATINGS]
+        if (newRatings.length === 0) return familyLocked ? [...SFW_RATINGS] : [...ALL_RATINGS]
         return newRatings
       }
       return [...prev, rating]
@@ -302,18 +343,18 @@ function Sidebar({
   const toggleFavorites = () => {
     const newFavOnly = !favoritesOnly
     setFavoritesOnly(newFavOnly)
-    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, sortBy, newFavOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
   }
 
   const handleFilenameSearchClear = () => {
     setFilenameSearch('')
-    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, '', resolution, orientation, duration)
   }
 
   const handleAgeChange = () => {
-    const ratingParam = selectedRatings.length > 0 ? selectedRatings.join(',') : ''
+    const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
   }
 
@@ -402,6 +443,20 @@ function Sidebar({
           </NavLink>
         </nav>
 
+        {/* Settings Navigation */}
+        {isSettingsPage && onSettingsTabChange && (
+          <div className="sidebar-section settings-nav">
+            {[['general','General'], ['video','Video'], ['network','Network'],
+              ['servers','Servers'], ['mobile','Mobile'], ['data','Data'], ['addons','Addons']
+            ].map(([key, label]) => (
+              <button key={key}
+                className={`settings-nav-item ${settingsTab === key ? 'active' : ''}`}
+                onClick={() => { onSettingsTabChange(key); if (onClose) onClose() }}
+              >{label}</button>
+            ))}
+          </div>
+        )}
+
         {/* Saved Searches */}
         {isGalleryPage && savedSearches.length > 0 && (
           <div className="sidebar-section saved-searches-section">
@@ -489,6 +544,7 @@ function Sidebar({
                   duration={duration}
                   onDurationChange={handleDurationChange}
                   total={0}
+                  familyLocked={familyLocked}
                 />
               </div>
             </div>
@@ -689,6 +745,9 @@ function Sidebar({
             onTagClick={onTagClick}
           />
         )}
+
+        {/* Family mode lock/unlock */}
+        <FamilyModeLock onStateChange={onFamilyModeChange} onLockChange={handleFamilyLockChange} />
 
         {/* Support link */}
         <div className="sidebar-support">

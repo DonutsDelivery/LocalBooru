@@ -18,8 +18,9 @@ use serde_json::{json, Value};
 
 use crate::addons::manager::AddonStatus;
 use crate::server::error::AppError;
+use crate::server::middleware::AccessTier;
 use crate::server::state::AppState;
-use crate::server::utils::get_local_ip;
+use crate::server::utils::{get_local_ip, get_visible_directory_ids};
 
 // ─── Cast state types ────────────────────────────────────────────────────────
 
@@ -192,6 +193,16 @@ async fn play(
     let directory_id_opt = body.directory_id;
 
     let (file_path, resolved_directory_id) = tokio::task::spawn_blocking(move || {
+        // Build visible directory set (cast always originates from localhost, but
+        // family mode still applies — we don't want to cast hidden content)
+        let family_locked = state_clone.is_family_mode_locked();
+        let visible_dir_ids = if family_locked {
+            let main_conn = state_clone.main_db().get()?;
+            get_visible_directory_ids(&main_conn, AccessTier::Localhost, family_locked)?
+        } else {
+            None
+        };
+
         // Determine which directory IDs to search
         let dir_ids_to_search: Vec<i64> = match directory_id_opt {
             Some(dir_id) => {
@@ -201,9 +212,24 @@ async fn play(
                         dir_id
                     )));
                 }
+                // Check visibility
+                if let Some(ref visible) = visible_dir_ids {
+                    if !visible.contains(&dir_id) {
+                        return Err(AppError::NotFound(format!(
+                            "Directory {} not found",
+                            dir_id
+                        )));
+                    }
+                }
                 vec![dir_id]
             }
-            None => state_clone.directory_db().get_all_directory_ids(),
+            None => {
+                let all_ids = state_clone.directory_db().get_all_directory_ids();
+                match &visible_dir_ids {
+                    Some(visible) => all_ids.into_iter().filter(|id| visible.contains(id)).collect(),
+                    None => all_ids,
+                }
+            }
         };
 
         // Search through directories for the image

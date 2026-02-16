@@ -7,8 +7,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::server::error::AppError;
-use crate::server::middleware::classify_ip;
+use crate::server::middleware::AccessTier;
 use crate::server::state::AppState;
+use crate::server::utils::get_visible_directory_ids;
 
 use super::helpers::{query_directory_images, ImageQueryParams};
 
@@ -104,34 +105,26 @@ pub async fn list_images(
         show_videos: true,
     };
 
-    // Determine access level from client IP
-    let access_level = classify_ip(&addr.ip());
-    let is_public = access_level == "public";
-
+    // Determine visibility based on access tier + family mode
+    let client_ip = addr.ip();
     let directory_id = q.directory_id;
     let state_clone = state.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        // Build set of public directory IDs if needed for access filtering
-        let public_dir_ids: Option<HashSet<i64>> = if is_public {
+        let tier = AccessTier::from_ip(&client_ip);
+        let family_locked = state_clone.is_family_mode_locked();
+
+        // Build set of visible directory IDs based on access tier + family mode
+        let visible_dir_ids: Option<HashSet<i64>> = {
             let main_conn = state_clone.main_db().get()?;
-            let mut stmt = main_conn.prepare(
-                "SELECT id FROM watch_directories WHERE public_access = 1"
-            )?;
-            let ids: HashSet<i64> = stmt
-                .query_map([], |row| row.get::<_, i64>(0))?
-                .filter_map(|r| r.ok())
-                .collect();
-            Some(ids)
-        } else {
-            None
+            get_visible_directory_ids(&main_conn, tier, family_locked)?
         };
 
         // If specific directory requested
         if let Some(dir_id) = directory_id {
             // Public access check: deny if directory is not public
-            if let Some(ref public_ids) = public_dir_ids {
-                if !public_ids.contains(&dir_id) {
+            if let Some(ref visible_ids) = visible_dir_ids {
+                if !visible_ids.contains(&dir_id) {
                     return Ok((vec![], 0i64));
                 }
             }
@@ -176,8 +169,8 @@ pub async fn list_images(
         if !all_dir_ids.is_empty() && directory_id.is_none() {
             for dir_id in &all_dir_ids {
                 // Skip non-public directories for public access
-                if let Some(ref public_ids) = public_dir_ids {
-                    if !public_ids.contains(dir_id) {
+                if let Some(ref visible_ids) = visible_dir_ids {
+                    if !visible_ids.contains(dir_id) {
                         continue;
                     }
                 }
@@ -235,7 +228,7 @@ pub async fn list_images(
 
         // Fallback: query main/legacy DB
         let main_conn = state_clone.main_db().get()?;
-        query_main_db_images(&main_conn, &params, public_dir_ids.as_ref())
+        query_main_db_images(&main_conn, &params, visible_dir_ids.as_ref())
     })
     .await??;
 
@@ -480,7 +473,7 @@ pub struct ListFoldersQuery {
 fn query_main_db_images(
     conn: &rusqlite::Connection,
     params: &ImageQueryParams,
-    public_dir_ids: Option<&HashSet<i64>>,
+    visible_dir_ids: Option<&HashSet<i64>>,
 ) -> Result<(Vec<serde_json::Value>, i64), AppError> {
     let mut where_clauses: Vec<String> = Vec::new();
     let mut sql_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -490,12 +483,12 @@ fn query_main_db_images(
         .push("i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing')".into());
 
     // Access control: only images from public directories when accessed from public IP
-    if let Some(public_ids) = public_dir_ids {
-        if public_ids.is_empty() {
+    if let Some(visible_ids) = visible_dir_ids {
+        if visible_ids.is_empty() {
             // No public directories — return nothing
             return Ok((vec![], 0));
         }
-        let id_list: Vec<String> = public_ids.iter().map(|id| id.to_string()).collect();
+        let id_list: Vec<String> = visible_ids.iter().map(|id| id.to_string()).collect();
         where_clauses.push(format!(
             "i.id IN (SELECT image_id FROM image_files WHERE watch_directory_id IN ({}))",
             id_list.join(",")

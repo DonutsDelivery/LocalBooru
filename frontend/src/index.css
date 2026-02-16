@@ -119,6 +119,14 @@ input, select {
   font-size: inherit;
 }
 
+select {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 12px;

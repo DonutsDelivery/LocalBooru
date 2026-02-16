@@ -1,4 +1,6 @@
-use axum::extract::{Path as AxumPath, Query, State};
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::response::Json;
 use axum::routing::{delete, get};
 use axum::Router;
@@ -7,7 +9,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::server::error::AppError;
+use crate::server::middleware::AccessTier;
 use crate::server::state::AppState;
+use crate::server::utils::get_visible_directory_ids;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -24,6 +28,8 @@ struct SavePositionBody {
     #[serde(alias = "position")]
     playback_position: f64,
     duration: f64,
+    #[serde(default)]
+    directory_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -57,9 +63,9 @@ async fn save_position(
         };
 
         conn.execute(
-            "INSERT OR REPLACE INTO watch_history (image_id, playback_position, duration, completed, last_watched)
-             VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP)",
-            params![image_id, body.playback_position, body.duration, completed],
+            "INSERT OR REPLACE INTO watch_history (image_id, playback_position, duration, completed, last_watched, directory_id)
+             VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP, ?5)",
+            params![image_id, body.playback_position, body.duration, completed, body.directory_id],
         )?;
 
         let progress = if body.duration > 0.0 {
@@ -84,25 +90,58 @@ async fn save_position(
 /// GET /api/watch-history/continue-watching — List videos with partial progress.
 ///
 /// Returns watch history entries that are not completed, ordered by most recently watched.
+/// Filters by directory visibility based on the client's access tier and family mode.
 /// Only returns playback info (image_id, position, duration, progress); the frontend
 /// hydrates image details separately since images live in per-directory databases.
 async fn continue_watching(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<ContinueWatchingQuery>,
 ) -> Result<Json<Value>, AppError> {
+    let client_ip = addr.ip();
     let state_clone = state.clone();
     let limit = params.limit.clamp(1, 100);
 
     let result = tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;
 
-        let mut stmt = conn.prepare(
-            "SELECT image_id, playback_position, duration, completed, last_watched
-             FROM watch_history
-             WHERE completed = 0 AND playback_position > 0
-             ORDER BY last_watched DESC
-             LIMIT ?1",
-        )?;
+        let tier = AccessTier::from_ip(&client_ip);
+        let family_locked = state_clone.is_family_mode_locked();
+        let visible_dir_ids = get_visible_directory_ids(&conn, tier, family_locked)?;
+
+        // Build query with optional directory visibility filter
+        let (sql, use_visible_filter) = match &visible_dir_ids {
+            None => (
+                // No filtering needed (localhost + unlocked)
+                "SELECT wh.image_id, wh.playback_position, wh.duration, wh.completed, wh.last_watched, wh.directory_id
+                 FROM watch_history wh
+                 WHERE wh.completed = 0 AND wh.playback_position > 0
+                 ORDER BY wh.last_watched DESC
+                 LIMIT ?1".to_string(),
+                false,
+            ),
+            Some(ids) => {
+                if ids.is_empty() {
+                    return Ok::<_, AppError>(json!({ "items": [], "total": 0 }));
+                }
+                let id_list: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+                (
+                    format!(
+                        "SELECT wh.image_id, wh.playback_position, wh.duration, wh.completed, wh.last_watched, wh.directory_id
+                         FROM watch_history wh
+                         WHERE wh.completed = 0 AND wh.playback_position > 0
+                           AND (wh.directory_id IS NULL OR wh.directory_id IN ({}))
+                         ORDER BY wh.last_watched DESC
+                         LIMIT ?1",
+                        id_list.join(",")
+                    ),
+                    true,
+                )
+            }
+        };
+        let _ = use_visible_filter;
+
+        let mut stmt = conn.prepare(&sql)?;
 
         let items: Vec<Value> = stmt
             .query_map(params![limit], |row| {
@@ -119,7 +158,8 @@ async fn continue_watching(
                     "duration": duration,
                     "progress": progress,
                     "completed": row.get::<_, bool>(3)?,
-                    "last_watched": row.get::<_, Option<String>>(4)?
+                    "last_watched": row.get::<_, Option<String>>(4)?,
+                    "directory_id": row.get::<_, Option<i64>>(5)?
                 }))
             })?
             .filter_map(|r| r.ok())

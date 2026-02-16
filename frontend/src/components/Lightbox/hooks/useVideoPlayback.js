@@ -4,7 +4,7 @@ import { savePlaybackPosition } from '../../../api'
 /**
  * Hook for managing video playback state and controls
  */
-export function useVideoPlayback(mediaRef, streamState, imageId) {
+export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
   const {
     svpStreamUrl,
     svpStartOffset,
@@ -49,7 +49,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId) {
       // Avoid redundant saves within 5s of the same position
       if (Math.abs(pos - lastSavedPositionRef.current) < 5) return
       lastSavedPositionRef.current = pos
-      savePlaybackPosition(imageId, pos, dur).catch(() => {})
+      savePlaybackPosition(imageId, pos, dur, directoryId).catch(() => {})
     }
 
     saveIntervalRef.current = setInterval(savePosition, 10000)
@@ -59,7 +59,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId) {
       // Save on cleanup (navigation away)
       savePosition()
     }
-  }, [imageId, duration, mediaRef, getCurrentAbsoluteTime])
+  }, [imageId, directoryId, duration, mediaRef, getCurrentAbsoluteTime])
 
   // Seek forward/backward
   const seekVideo = useCallback((seconds) => {
@@ -143,7 +143,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId) {
       const pos = getCurrentAbsoluteTime()
       if (pos > 0) {
         lastSavedPositionRef.current = pos
-        savePlaybackPosition(imageId, pos, duration).catch(() => {})
+        savePlaybackPosition(imageId, pos, duration, directoryId).catch(() => {})
       }
     }
   }, [imageId, mediaRef, duration, getCurrentAbsoluteTime])

@@ -18,6 +18,7 @@ import MigrationSettings from './components/MigrationSettings'
 import OpticalFlowSettings from './components/OpticalFlowSettings'
 import WhisperSubtitleSettings from './components/WhisperSubtitleSettings'
 import CastSettings from './components/CastSettings'
+import AddonManager from './components/AddonManager'
 import QRConnect from './components/QRConnect'
 import ContinueWatching from './components/ContinueWatching'
 import { fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, healthCheck } from './api'
@@ -26,6 +27,7 @@ import CollectionsPage from './pages/CollectionsPage'
 import CollectionDetailPage from './pages/CollectionDetailPage'
 import WatchPage from './pages/WatchPage'
 import { getColumnCount, tileWidths } from './utils/gridLayout'
+import { useAllAddonStatuses } from './hooks/useAddonStatus'
 import './App.css'
 
 // Calculate how many items to load based on viewport and tile size
@@ -139,14 +141,110 @@ function VideoPlaybackSettings() {
   )
 }
 
+// Family mode settings component
+function FamilyModeSettings() {
+  const [config, setConfig] = useState(null)
+  const [pin, setPin] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    import('./api').then(({ getFamilyModeStatus }) => {
+      getFamilyModeStatus().then(setConfig).catch(console.error)
+    })
+  }, [])
+
+  const handleSave = async (updates) => {
+    setSaving(true)
+    try {
+      const { configureFamilyMode } = await import('./api')
+      const result = await configureFamilyMode(updates)
+      setConfig(result)
+    } catch (e) {
+      console.error('Failed to save family mode config:', e)
+      alert('Failed to save: ' + (e.response?.data?.detail || e.message))
+    }
+    setSaving(false)
+  }
+
+  if (!config) return null
+
+  return (
+    <section>
+      <h2>Family Mode</h2>
+      <p className="setting-description">
+        Hide non-family-safe directories when locked. Auto-locks on app restart.
+      </p>
+      <div className="toggle-setting">
+        <label>
+          <input
+            type="checkbox"
+            checked={config.enabled}
+            onChange={(e) => handleSave({ enabled: e.target.checked })}
+            disabled={saving}
+          />
+          Enable family mode
+        </label>
+      </div>
+      {config.enabled && (
+        <>
+          <div className="toggle-setting">
+            <label>
+              <input
+                type="checkbox"
+                checked={config.auto_lock_on_start}
+                onChange={(e) => handleSave({ auto_lock_on_start: e.target.checked })}
+                disabled={saving}
+              />
+              Auto-lock on app start
+            </label>
+          </div>
+          <div style={{ marginTop: '12px' }}>
+            <label style={{ display: 'block', marginBottom: '4px' }}>
+              {config.has_pin ? 'Change PIN' : 'Set PIN'}
+            </label>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                type="password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                placeholder={config.has_pin ? 'New PIN (min 4 chars)' : 'Set PIN (min 4 chars)'}
+                className="setting-input"
+                style={{ width: '200px' }}
+                minLength={4}
+              />
+              <button
+                onClick={() => {
+                  if (pin.length < 4) {
+                    alert('PIN must be at least 4 characters')
+                    return
+                  }
+                  handleSave({ pin })
+                  setPin('')
+                }}
+                disabled={saving || pin.length < 4}
+              >
+                {config.has_pin ? 'Update' : 'Set'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
 // Settings page with tabs
 function SettingsPage() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('general')
+  const [showContinueWatching, setShowContinueWatching] = useState(() => {
+    return localStorage.getItem('localbooru_continueWatching') !== 'false'
+  })
   const [queueStatus, setQueueStatus] = useState(null)
   const [queuePaused, setQueuePaused] = useState(false)
   const [stats, setStats] = useState(null)
   const [dumpsterPath, setDumpsterPath] = useState('')
+  const { isInstalled } = useAllAddonStatuses()
   const [ageDetection, setAgeDetection] = useState({
     enabled: false,
     installed: false,
@@ -209,10 +307,25 @@ function SettingsPage() {
     }
   }
 
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
   return (
     <div className="app">
       <div className="main-container">
-        <Sidebar stats={stats} />
+        {sidebarOpen && (
+          <div
+            className="sidebar-backdrop"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+        <Sidebar
+          stats={stats}
+          settingsTab={activeTab}
+          onSettingsTabChange={setActiveTab}
+          mobileOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
+        {!sidebarOpen && <div className="swipe-hint" onClick={() => setSidebarOpen(true)} />}
         <main className="content with-sidebar">
           <div className="page settings-page">
             <div className="page-header">
@@ -221,55 +334,20 @@ function SettingsPage() {
                   <path d="M19 12H5M12 19l-7-7 7-7"/>
                 </svg>
               </button>
+              <button className="menu-btn mobile-only" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+              </button>
               <h1>Settings</h1>
-            </div>
-
-            {/* Settings Tabs */}
-            <div className="settings-tabs">
-              <button
-                className={`settings-tab ${activeTab === 'general' ? 'active' : ''}`}
-                onClick={() => setActiveTab('general')}
-              >
-                General
-              </button>
-              <button
-                className={`settings-tab ${activeTab === 'video' ? 'active' : ''}`}
-                onClick={() => setActiveTab('video')}
-              >
-                Video
-              </button>
-              <button
-                className={`settings-tab ${activeTab === 'network' ? 'active' : ''}`}
-                onClick={() => setActiveTab('network')}
-              >
-                Network
-              </button>
-              <button
-                className={`settings-tab ${activeTab === 'servers' ? 'active' : ''}`}
-                onClick={() => setActiveTab('servers')}
-              >
-                Servers
-              </button>
-              <button
-                className={`settings-tab ${activeTab === 'mobile' ? 'active' : ''}`}
-                onClick={() => setActiveTab('mobile')}
-              >
-                Mobile
-              </button>
-              <button
-                className={`settings-tab ${activeTab === 'data' ? 'active' : ''}`}
-                onClick={() => setActiveTab('data')}
-              >
-                Data
-              </button>
             </div>
 
             {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
             <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
               <VideoPlaybackSettings />
-              <OpticalFlowSettings />
-              <WhisperSubtitleSettings />
-              <CastSettings />
+              {isInstalled('frame-interpolation') && <OpticalFlowSettings />}
+              {isInstalled('whisper-subtitles') && <WhisperSubtitleSettings />}
+              {isInstalled('cast') && <CastSettings />}
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'network' ? 'active' : ''}`}>
@@ -288,7 +366,30 @@ function SettingsPage() {
               <QRConnect />
             </div>
 
+            <div className={`settings-tab-content ${activeTab === 'addons' ? 'active' : ''}`}>
+              <AddonManager />
+            </div>
+
             <div className={`settings-tab-content ${activeTab === 'general' ? 'active' : ''}`}>
+            <section>
+              <h2>Interface</h2>
+              <div className="toggle-setting">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showContinueWatching}
+                    onChange={(e) => {
+                      setShowContinueWatching(e.target.checked)
+                      localStorage.setItem('localbooru_continueWatching', e.target.checked)
+                      window.dispatchEvent(new Event('localbooru-settings-changed'))
+                    }}
+                  />
+                  Show "Continue Watching" panel
+                </label>
+              </div>
+            </section>
+            <FamilyModeSettings />
+            {isInstalled('age-detector') && (
             <section>
               <h2>Age Detection (Optional)</h2>
               <p className="setting-description">
@@ -379,6 +480,7 @@ function SettingsPage() {
                 )}
               </div>
             </section>
+            )}
 
             <section>
               <h2>Dumpster Location</h2>
@@ -463,6 +565,7 @@ function SettingsPage() {
 }
 
 function Gallery() {
+  const { isInstalled: isAddonInstalled } = useAllAddonStatuses()
   const [searchParams, setSearchParams] = useSearchParams()
   const [images, setImages] = useState([])
   const [tags, setTags] = useState([])
@@ -512,6 +615,20 @@ function Gallery() {
   const [showMoveModal, setShowMoveModal] = useState(false)
   const [moveDirectories, setMoveDirectories] = useState([])
   const [selectedMoveDir, setSelectedMoveDir] = useState(null)
+
+  // Continue watching panel toggle
+  const [showContinueWatching, setShowContinueWatching] = useState(() => {
+    const saved = localStorage.getItem('localbooru_continueWatching')
+    return saved !== 'false'
+  })
+
+  useEffect(() => {
+    const handler = () => {
+      setShowContinueWatching(localStorage.getItem('localbooru_continueWatching') !== 'false')
+    }
+    window.addEventListener('localbooru-settings-changed', handler)
+    return () => window.removeEventListener('localbooru-settings-changed', handler)
+  }, [])
 
   // Tile size state (1 = smallest/most columns, 5 = largest/fewest columns)
   const [tileSize, setTileSize] = useState(() => {
@@ -1230,9 +1347,10 @@ function Gallery() {
           lightboxMode={lightboxIndex !== null}
           lightboxHover={lightboxSidebarHover}
           onMouseLeave={() => setLightboxSidebarHover(false)}
+          onFamilyModeChange={() => { loadImages(1, false); loadTags() }}
         />
 
-        {!sidebarOpen && <div className="swipe-hint" />}
+        {!sidebarOpen && <div className="swipe-hint" onClick={() => setSidebarOpen(true)} />}
 
         <main className="content with-sidebar">
           {currentFolder && (
@@ -1248,7 +1366,7 @@ function Gallery() {
             </div>
           )}
           {/* Continue Watching row */}
-          <ContinueWatching onImageClick={handleImageClick} />
+          {showContinueWatching && <ContinueWatching onImageClick={handleImageClick} />}
 
           {!loading && images.length === 0 ? (
             <div className="no-results">
@@ -1356,6 +1474,7 @@ function Gallery() {
               {selectedImages.size} selected
             </div>
             <div className="batch-action-buttons">
+              {isAddonInstalled('auto-tagger') && (
               <button
                 className="batch-btn"
                 onClick={handleBatchRetag}
@@ -1368,6 +1487,8 @@ function Gallery() {
                 </svg>
                 Retag
               </button>
+              )}
+              {isAddonInstalled('age-detector') && (
               <button
                 className="batch-btn"
                 onClick={handleBatchAgeDetect}
@@ -1380,6 +1501,7 @@ function Gallery() {
                 </svg>
                 Age Detect
               </button>
+              )}
               <button
                 className="batch-btn"
                 onClick={openMoveModal}

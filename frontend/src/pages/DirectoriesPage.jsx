@@ -8,6 +8,7 @@ import Sidebar from '../components/Sidebar'
 import ComfyUIConfigModal from '../components/ComfyUIConfigModal'
 import { getLibraryStats, updateDirectory, tagUntagged, clearDirectoryTagQueue } from '../api'
 import { getDesktopAPI, isDesktopApp } from '../tauriAPI'
+import { useAddonStatus } from '../hooks/useAddonStatus'
 
 function DirectoriesPage() {
   const navigate = useNavigate()
@@ -22,6 +23,8 @@ function DirectoriesPage() {
   const [batchLoading, setBatchLoading] = useState(false)
   const [repairing, setRepairing] = useState({})
   const [taggingActive, setTaggingActive] = useState({})
+  const { installed: taggerInstalled } = useAddonStatus('auto-tagger')
+  const { installed: ageDetectorInstalled } = useAddonStatus('age-detector')
 
   const refreshDirectories = async () => {
     const { fetchDirectories } = await import('../api')
@@ -300,7 +303,8 @@ function DirectoriesPage() {
     try {
       const { bulkRepairDirectories } = await import('../api')
       const result = await bulkRepairDirectories(Array.from(selectedDirs))
-      alert(`Batch repair complete:\n${result.totals.valid} files OK\n${result.totals.repaired} paths fixed\n${result.totals.removed} missing removed`)
+      const orphan = result.totals.orphan_thumbnails || 0
+      alert(`Batch repair complete:\n${result.totals.valid} files OK\n${result.totals.repaired} paths fixed\n${result.totals.removed} missing removed${orphan > 0 ? `\n${orphan} orphan thumbnails cleaned` : ''}`)
       await refreshDirectories()
     } catch (e) {
       console.error('Batch repair failed:', e)
@@ -386,6 +390,7 @@ function DirectoriesPage() {
 
                     {/* Toggles row: actionable settings */}
                     <div className="directory-toggles">
+                      {taggerInstalled && (
                       <button
                         className={`toggle-btn tag-btn ${taggingActive[dir.id] ? 'active' : ''}`}
                         onClick={async () => {
@@ -411,6 +416,8 @@ function DirectoriesPage() {
                       >
                         {taggingActive[dir.id] ? '⏹' : '▶'} Tag
                       </button>
+                      )}
+                      {ageDetectorInstalled && (
                       <button
                         className={`toggle-btn ${dir.auto_age_detect ? 'active' : ''}`}
                         onClick={() => {
@@ -428,6 +435,7 @@ function DirectoriesPage() {
                       >
                         {dir.auto_age_detect ? '☑' : '☐'} Age Detect
                       </button>
+                      )}
                       <button
                         className={`toggle-btn ${dir.public_access ? 'active' : ''}`}
                         onClick={() => {
@@ -478,6 +486,40 @@ function DirectoriesPage() {
                         title="Show videos from this directory in gallery"
                       >
                         {dir.show_videos ? '☑' : '☐'} Videos
+                      </button>
+                      <button
+                        className={`toggle-btn ${dir.family_safe ? 'active' : ''}`}
+                        onClick={() => {
+                          const newValue = !dir.family_safe
+                          setDirectories(dirs => dirs.map(d =>
+                            d.id === dir.id ? {...d, family_safe: newValue} : d
+                          ))
+                          updateDirectory(dir.id, { family_safe: newValue })
+                            .catch(err => {
+                              console.error('Failed to update:', err)
+                              refreshDirectories()
+                            })
+                        }}
+                        title="Mark as family-safe (shown when family mode is locked)"
+                      >
+                        {dir.family_safe ? '☑' : '☐'} Family Safe
+                      </button>
+                      <button
+                        className={`toggle-btn ${dir.lan_visible ? 'active' : ''}`}
+                        onClick={() => {
+                          const newValue = !dir.lan_visible
+                          setDirectories(dirs => dirs.map(d =>
+                            d.id === dir.id ? {...d, lan_visible: newValue} : d
+                          ))
+                          updateDirectory(dir.id, { lan_visible: newValue })
+                            .catch(err => {
+                              console.error('Failed to update:', err)
+                              refreshDirectories()
+                            })
+                        }}
+                        title="Allow LAN network access to this directory"
+                      >
+                        {dir.lan_visible ? '☑' : '☐'} LAN
                       </button>
                     </div>
 
