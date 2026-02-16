@@ -343,6 +343,15 @@ impl AddonManager {
         let app_dir = self.addon_dir(id);
         let port = manifest.port;
 
+        // Always deploy the latest embedded app.py before starting.
+        // This ensures addons installed before their app.py existed get
+        // the source, and running addons pick up code updates on restart.
+        if let Some(source) = super::sources::get_addon_source(id) {
+            if let Err(e) = std::fs::write(app_dir.join("app.py"), source) {
+                log::warn!("[AddonManager] Failed to deploy app.py for '{}': {}", id, e);
+            }
+        }
+
         if !python.exists() {
             self.set_status(id, AddonStatus::Error("venv python not found".into()));
             return Err("Virtual environment python binary not found".into());

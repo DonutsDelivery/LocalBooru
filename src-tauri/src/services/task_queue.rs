@@ -239,7 +239,7 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
 
         // Fetch highest-priority pending task
         let result = conn.query_row(
-            "SELECT id, task_type, payload, attempts FROM task_queue
+            "SELECT id, task_type, payload, COALESCE(attempts, 0) FROM task_queue
              WHERE status = ?1
              ORDER BY priority DESC, created_at ASC
              LIMIT 1",
@@ -1045,7 +1045,7 @@ pub fn enqueue_task(
 
     let payload_str = serde_json::to_string(payload).unwrap_or_default();
     conn.execute(
-        "INSERT INTO task_queue (task_type, payload, status, priority, created_at) VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+        "INSERT INTO task_queue (task_type, payload, status, priority, attempts, created_at) VALUES (?1, ?2, ?3, ?4, 0, datetime('now'))",
         params![task_type, &payload_str, STATUS_PENDING, priority],
     )?;
 

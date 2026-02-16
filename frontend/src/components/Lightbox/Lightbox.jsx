@@ -15,6 +15,7 @@ import { useAutoAdvance } from './hooks/useAutoAdvance'
 import { useShareStream } from './hooks/useShareStream'
 import { useCastSession } from './hooks/useCastSession'
 import { useVideoGestures } from './hooks/useVideoGestures'
+import { useAddonStatus } from '../../hooks/useAddonStatus'
 
 function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
   const [processing, setProcessing] = useState(false)
@@ -76,8 +77,15 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     handleToggleFullscreen
   } = useUIVisibility(containerRef)
 
-  // Video streaming hook
-  const streaming = useVideoStreaming(mediaRef, image, currentQuality)
+  // Addon install status (hide UI when addon not installed, gate streaming)
+  const { installed: whisperInstalled } = useAddonStatus('whisper-subtitles')
+  const { installed: castInstalled } = useAddonStatus('cast')
+  const { installed: svpInstalled } = useAddonStatus('svp')
+  const { installed: opticalFlowInstalled } = useAddonStatus('frame-interpolation')
+
+
+  // Video streaming hook (needs addon status to avoid starting streams for uninstalled addons)
+  const streaming = useVideoStreaming(mediaRef, image, currentQuality, { svpInstalled, opticalFlowInstalled })
 
   // Video playback hook - pass streaming state
   const playback = useVideoPlayback(mediaRef, {
@@ -96,7 +104,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     getCurrentAbsoluteTime: streaming.getCurrentAbsoluteTime,
     restartSVPFromPosition: streaming.restartSVPFromPosition,
     restartTranscodeFromPosition: streaming.restartTranscodeFromPosition
-  }, image?.id)
+  }, image?.id, image?.directory_id)
 
   // Zoom and pan hook
   const zoomPan = useZoomPan(mediaRef, containerRef, resetHideTimer, image)
@@ -876,7 +884,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           )}
           {collectionFeedback && <div className="collection-feedback">{collectionFeedback}</div>}
         </div>
-        {isVideo(image?.original_filename) && casting.castConfig?.enabled && (
+        {castInstalled && isVideo(image?.original_filename) && casting.castConfig?.enabled && (
           <div className="lightbox-cast-container">
             <button
               className={`lightbox-btn lightbox-cast ${casting.isCasting ? 'active' : ''}`}
@@ -1122,7 +1130,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         )}
-        {isVideoFile && (
+        {isVideoFile && (svpInstalled || opticalFlowInstalled) && (
           <button
             className="lightbox-btn lightbox-svp"
             onClick={() => setShowSVPMenu(true)}
@@ -1368,6 +1376,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 </div>
               </div>
               <span className="video-time">{formatTime(playback.duration, true)}</span>
+              {whisperInstalled && (
               <div className="subtitle-btn-container">
                 <button
                   className={`video-control-btn subtitle-btn ${subtitles.subtitlesEnabled ? 'active' : ''} ${subtitles.installing ? 'installing' : ''}`}
@@ -1404,6 +1413,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   </svg>
                 </button>
               </div>
+              )}
+              {svpInstalled && (
               <button
                 className={`video-control-btn svp-toggle-btn ${streaming.svpConfig?.enabled ? 'active' : ''} ${streaming.svpLoading ? 'loading' : ''}`}
                 onClick={(e) => {
@@ -1418,6 +1429,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   <span className="svp-toggle-label">SVP</span>
                 )}
               </button>
+              )}
+              {streaming.codecFallbackActive && (
               <button
                 className="video-control-btn quality-btn"
                 onClick={(e) => {
@@ -1430,6 +1443,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54h2.79v2.71h2V13.83h2.79l-2.75-3.54zM7 9h2v2H7z"/>
                 </svg>
               </button>
+              )}
               <div className="video-volume-container">
                 <button
                   className="video-control-btn video-mute-btn"
@@ -1734,7 +1748,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       )}
 
       {/* SVP side menu */}
-      {isVideoFile && (
+      {isVideoFile && svpInstalled && (
         <SVPSideMenu
           isOpen={showSVPMenu}
           onClose={async () => {
@@ -1774,7 +1788,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       )}
 
       {/* Quality selector */}
-      {isVideoFile && (
+      {isVideoFile && streaming.codecFallbackActive && (
         <QualitySelector
           isOpen={showQualitySelector}
           onClose={() => setShowQualitySelector(false)}
@@ -1785,7 +1799,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       )}
 
       {/* Subtitle language/task menu */}
-      {showSubtitleMenu && (
+      {whisperInstalled && showSubtitleMenu && (
         <>
           <div className="subtitle-menu-popup" onClick={(e) => e.stopPropagation()}>
             <div className="subtitle-menu-header">Subtitles</div>

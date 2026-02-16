@@ -96,6 +96,22 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
         description: "Add index on collection_items.image_id",
         sql: "CREATE INDEX IF NOT EXISTS idx_collection_items_image_id ON collection_items(image_id);",
     },
+    // v2: Add family_safe and lan_visible to watch_directories
+    Migration {
+        description: "Add family_safe and lan_visible to watch_directories",
+        sql: "ALTER TABLE watch_directories ADD COLUMN family_safe INTEGER NOT NULL DEFAULT 1;\
+              ALTER TABLE watch_directories ADD COLUMN lan_visible INTEGER NOT NULL DEFAULT 1;",
+    },
+    // v3: Add directory_id to watch_history for visibility filtering
+    Migration {
+        description: "Add directory_id to watch_history for visibility filtering",
+        sql: "ALTER TABLE watch_history ADD COLUMN directory_id INTEGER;",
+    },
+    // v4: Fix NULL attempts in task_queue (column may have been added without NOT NULL)
+    Migration {
+        description: "Fix NULL attempts in task_queue",
+        sql: "UPDATE task_queue SET attempts = 0 WHERE attempts IS NULL;",
+    },
 ];
 
 /// Run all pending migrations on the main library database.
