@@ -323,13 +323,6 @@ pub struct WatchHistoryEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Setting {
-    pub key: String,
-    pub value: Option<String>,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id: i64,
     pub username: String,
@@ -339,30 +332,6 @@ pub struct User {
     pub can_write: bool,
     pub created_at: String,
     pub last_login: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BooruInstance {
-    pub id: i64,
-    pub name: String,
-    pub base_url: String,
-    pub instance_type: String,
-    pub auth_method: String,
-    pub auth_token: Option<String>,
-    pub is_enabled: bool,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExternalUpload {
-    pub id: i64,
-    pub image_id: i64,
-    pub booru_id: i64,
-    pub external_id: Option<String>,
-    pub external_url: Option<String>,
-    pub uploaded_at: Option<String>,
-    pub status: String,
-    pub error_message: Option<String>,
 }
 
 /// Image file record from a per-directory database.

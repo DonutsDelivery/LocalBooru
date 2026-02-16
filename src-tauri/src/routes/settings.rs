@@ -302,7 +302,7 @@ async fn list_saved_searches(
             .get("saved_searches")
             .cloned()
             .unwrap_or_else(|| json!([]));
-        searches
+        json!({ "searches": searches })
     })
     .await?;
 
@@ -356,7 +356,7 @@ async fn create_saved_search(
         }
 
         save_settings_to_file(&data_dir, &settings)?;
-        Ok::<_, AppError>(new_search)
+        Ok::<_, AppError>(json!({ "search": new_search }))
     })
     .await??;
 
@@ -443,24 +443,28 @@ async fn update_video_playback(
 
 // ─── Optical flow ────────────────────────────────────────────────────────────
 
-/// GET /optical-flow — Get optical flow configuration + backend status stub.
+/// GET /optical-flow — Get optical flow configuration + backend status from addon.
 async fn get_optical_flow(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, AppError> {
     let data_dir = state.data_dir().to_path_buf();
+    let addon_mgr = state.addon_manager();
+
+    let addon_info = addon_mgr.get_addon("frame-interpolation");
+    let (installed, running) = match &addon_info {
+        Some(info) => (info.installed, info.status == AddonStatus::Running),
+        None => (false, false),
+    };
 
     let result = tokio::task::spawn_blocking(move || {
         let mut config = get_config_section(&data_dir, "optical_flow");
-        // Stub backend status — real detection requires the addon sidecar
         if let Some(obj) = config.as_object_mut() {
             obj.insert(
                 "backend".into(),
                 json!({
-                    "cv2_cuda_available": false,
-                    "cuda_available": false,
-                    "gpu_backend": null,
-                    "cv2_available": false,
-                    "any_backend_available": false
+                    "installed": installed,
+                    "running": running,
+                    "any_backend_available": running
                 }),
             );
         }
@@ -509,11 +513,18 @@ async fn update_optical_flow(
 
 // ─── SVP ─────────────────────────────────────────────────────────────────────
 
-/// GET /svp — Get SVP configuration + status stub.
+/// GET /svp — Get SVP configuration + status from addon.
 async fn get_svp(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, AppError> {
     let data_dir = state.data_dir().to_path_buf();
+    let addon_mgr = state.addon_manager();
+
+    let addon_info = addon_mgr.get_addon("svp");
+    let (installed, running) = match &addon_info {
+        Some(info) => (info.installed, info.status == AddonStatus::Running),
+        None => (false, false),
+    };
 
     let result = tokio::task::spawn_blocking(move || {
         let mut config = get_config_section(&data_dir, "svp");
@@ -521,17 +532,9 @@ async fn get_svp(
             obj.insert(
                 "status".into(),
                 json!({
-                    "ready": false,
-                    "vapoursynth_available": false,
-                    "svp_plugins_available": false,
-                    "vspipe_available": false,
-                    "source_filter_available": false,
-                    "nvenc_available": false,
-                    "nvof_ready": false,
-                    "bestsource_available": false,
-                    "ffms2_available": false,
-                    "lsmas_available": false,
-                    "missing": []
+                    "installed": installed,
+                    "running": running,
+                    "ready": running
                 }),
             );
             obj.insert(
@@ -593,11 +596,18 @@ async fn update_svp(
 
 // ─── Whisper ─────────────────────────────────────────────────────────────────
 
-/// GET /whisper — Get whisper subtitle configuration + status stub.
+/// GET /whisper — Get whisper subtitle configuration + status from addon.
 async fn get_whisper(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, AppError> {
     let data_dir = state.data_dir().to_path_buf();
+    let addon_mgr = state.addon_manager();
+
+    let addon_info = addon_mgr.get_addon(WHISPER_ADDON_ID);
+    let (installed, running) = match &addon_info {
+        Some(info) => (info.installed, info.status == AddonStatus::Running),
+        None => (false, false),
+    };
 
     let result = tokio::task::spawn_blocking(move || {
         let mut config = get_config_section(&data_dir, "whisper");
@@ -605,8 +615,9 @@ async fn get_whisper(
             obj.insert(
                 "status".into(),
                 json!({
-                    "faster_whisper_installed": false,
-                    "cuda_available": false
+                    "installed": installed,
+                    "running": running,
+                    "faster_whisper_installed": installed
                 }),
             );
         }
@@ -692,22 +703,30 @@ async fn update_whisper(
 
 // ─── Cast ────────────────────────────────────────────────────────────────────
 
-/// GET /cast — Get cast configuration + status stub.
+/// GET /cast — Get cast configuration + status from addon.
 async fn get_cast(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, AppError> {
     let data_dir = state.data_dir().to_path_buf();
+    let addon_mgr = state.addon_manager();
+
+    let addon_info = addon_mgr.get_addon("cast");
+    let (installed, running) = match &addon_info {
+        Some(info) => (info.installed, info.status == AddonStatus::Running),
+        None => (false, false),
+    };
 
     let result = tokio::task::spawn_blocking(move || {
         let mut config = get_config_section(&data_dir, "cast");
         if let Some(obj) = config.as_object_mut() {
             obj.insert("installing".into(), json!(false));
+            obj.insert("installed".into(), json!(installed));
+            obj.insert("running".into(), json!(running));
             obj.insert(
                 "status".into(),
                 json!({
-                    "pychromecast_installed": false,
-                    "upnp_installed": false,
-                    "aiohttp_installed": false
+                    "installed": installed,
+                    "running": running
                 }),
             );
         }
@@ -1220,7 +1239,7 @@ async fn bridge_post(
 
     let url = format!("{}{}", base_url.trim_end_matches('/'), sidecar_path);
 
-    let client = reqwest::Client::new();
+    let client = state.http_client();
     let response = client
         .post(&url)
         .json(body)
@@ -1282,7 +1301,7 @@ async fn bridge_stream(
 
     let url = format!("{}{}", base_url.trim_end_matches('/'), sidecar_path);
 
-    let client = reqwest::Client::new();
+    let client = state.http_client();
     let response = client.get(&url).send().await.map_err(|e| {
         AppError::ServiceUnavailable(format!("Failed to reach addon '{}': {}", addon_id, e))
     })?;
@@ -1439,7 +1458,14 @@ async fn bridge_whisper_install(
 #[derive(Debug, Deserialize)]
 struct WhisperGenerateRequest {
     file_path: String,
-    image_id: i64,
+    #[serde(default)]
+    image_id: Option<i64>,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    task: Option<String>,
+    #[serde(default)]
+    start_position: Option<f64>,
 }
 
 /// POST /whisper/generate — Start subtitle generation for a video file.
@@ -1468,12 +1494,23 @@ async fn bridge_whisper_generate(
     .await?;
 
     // Build the request body for the sidecar
-    let sidecar_body = json!({
+    let mut sidecar_body = json!({
         "file_path": body.file_path,
-        "image_id": body.image_id,
         "stream_id": stream_id,
         "config": whisper_config,
     });
+    if let Some(image_id) = body.image_id {
+        sidecar_body["image_id"] = json!(image_id);
+    }
+    if let Some(ref language) = body.language {
+        sidecar_body["language"] = json!(language);
+    }
+    if let Some(ref task) = body.task {
+        sidecar_body["task"] = json!(task);
+    }
+    if let Some(start_position) = body.start_position {
+        sidecar_body["start_position"] = json!(start_position);
+    }
 
     // Proxy to the whisper addon
     let base_url = state
@@ -1487,8 +1524,8 @@ async fn bridge_whisper_generate(
 
     let url = format!("{}/whisper/generate", base_url.trim_end_matches('/'));
 
-    let client = reqwest::Client::new();
-    let response = client
+    let response = state
+        .http_client()
         .post(&url)
         .json(&sidecar_body)
         .send()
@@ -1573,8 +1610,7 @@ async fn bridge_whisper_vtt(
         stream_id
     );
 
-    let client = reqwest::Client::new();
-    let response = client.get(&url).send().await.map_err(|e| {
+    let response = state.http_client().get(&url).send().await.map_err(|e| {
         AppError::ServiceUnavailable(format!(
             "Failed to reach whisper addon: {}",
             e
@@ -1627,8 +1663,8 @@ async fn bridge_whisper_events(
         stream_id
     );
 
-    let client = reqwest::Client::new();
-    let response = client
+    let response = state
+        .http_client()
         .get(&url)
         .header("Accept", "text/event-stream")
         .send()

@@ -21,6 +21,7 @@ use tokio::sync::broadcast;
 use crate::routes::images::helpers::find_image_directory;
 use crate::server::error::AppError;
 use crate::server::state::AppState;
+use crate::server::utils::get_local_ip;
 
 // ---- Data model ----
 
@@ -430,16 +431,3 @@ async fn hls_playlist(
         .unwrap())
 }
 
-// ---- Helpers ----
-
-/// Detect the primary local (non-loopback) IPv4 address.
-///
-/// Connects a UDP socket to a public IP (no data sent) to determine which
-/// local interface the OS would route through.
-fn get_local_ip() -> Option<String> {
-    use std::net::UdpSocket;
-    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
-    let addr = socket.local_addr().ok()?;
-    Some(addr.ip().to_string())
-}

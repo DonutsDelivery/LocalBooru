@@ -46,8 +46,7 @@ pub async fn proxy_to_addon(
         .map_err(|e| AppError::BadRequest(format!("Failed to read request body: {}", e)))?;
 
     // 4. Build the outgoing reqwest request
-    let client = reqwest::Client::new();
-    let mut outgoing = client.request(method, &target_url);
+    let mut outgoing = state.http_client().request(method, &target_url);
 
     // Forward Content-Type header
     if let Some(ct) = headers.get("content-type") {

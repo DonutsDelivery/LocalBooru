@@ -34,6 +34,8 @@ struct AppStateInner {
     data_dir: PathBuf,
     /// Server port
     port: u16,
+    /// Per-install JWT signing secret (loaded from or generated into settings.json)
+    jwt_secret: String,
     /// Event broadcasters (SSE)
     events: SharedEvents,
     /// Background task queue
@@ -56,8 +58,49 @@ struct AppStateInner {
     migration_state: SharedMigrationState,
     /// Network handshake nonce manager (SSL pinning / QR verification)
     handshake_manager: SharedHandshakeManager,
+    /// Shared HTTP client (connection pool reused across requests)
+    http_client: reqwest::Client,
     /// Directory watcher (set after AppState construction to break circular dep)
     directory_watcher: std::sync::OnceLock<Arc<DirectoryWatcher>>,
+}
+
+/// Load the JWT secret from `settings.json` in `data_dir`, or generate a new
+/// one if absent. The secret is persisted so tokens survive server restarts.
+fn load_or_generate_jwt_secret(data_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let settings_path = data_dir.join("settings.json");
+
+    // Try to load existing secret from settings.json
+    if settings_path.exists() {
+        let contents = std::fs::read_to_string(&settings_path)?;
+        if let Ok(mut obj) = serde_json::from_str::<serde_json::Value>(&contents) {
+            if let Some(secret) = obj.get("jwt_secret").and_then(|v| v.as_str()) {
+                if !secret.is_empty() {
+                    return Ok(secret.to_owned());
+                }
+            }
+
+            // settings.json exists but has no jwt_secret — generate and merge
+            let secret = generate_jwt_secret();
+            obj.as_object_mut()
+                .ok_or("settings.json is not a JSON object")?
+                .insert("jwt_secret".into(), serde_json::Value::String(secret.clone()));
+            std::fs::write(&settings_path, serde_json::to_string_pretty(&obj)?)?;
+            return Ok(secret);
+        }
+    }
+
+    // No settings.json at all — create one with just the secret
+    let secret = generate_jwt_secret();
+    let obj = serde_json::json!({ "jwt_secret": secret });
+    std::fs::write(&settings_path, serde_json::to_string_pretty(&obj)?)?;
+    Ok(secret)
+}
+
+/// Generate a random 32-byte hex-encoded JWT secret.
+fn generate_jwt_secret() -> String {
+    use rand::Rng;
+    let bytes: [u8; 32] = rand::thread_rng().gen();
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 impl AppState {
@@ -77,6 +120,9 @@ impl AppState {
 
         // Create directory database manager
         let directory_db = DirectoryDbManager::new(data_dir);
+
+        // Load or generate per-install JWT secret
+        let jwt_secret = load_or_generate_jwt_secret(data_dir)?;
 
         // Create event broadcasters
         let events = create_events();
@@ -111,12 +157,16 @@ impl AppState {
         // Create handshake nonce manager
         let handshake_manager = Arc::new(HandshakeManager::new());
 
+        // Create shared HTTP client (connection pool reused across requests)
+        let http_client = reqwest::Client::new();
+
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 main_pool,
                 directory_db,
                 data_dir: data_dir.to_path_buf(),
                 port,
+                jwt_secret,
                 events,
                 task_queue,
                 addon_manager,
@@ -128,6 +178,7 @@ impl AppState {
                 model_registry,
                 migration_state,
                 handshake_manager,
+                http_client,
                 directory_watcher: std::sync::OnceLock::new(),
             }),
         })
@@ -156,6 +207,11 @@ impl AppState {
     /// Get the server port.
     pub fn port(&self) -> u16 {
         self.inner.port
+    }
+
+    /// Get the per-install JWT signing secret.
+    pub fn jwt_secret(&self) -> &str {
+        &self.inner.jwt_secret
     }
 
     /// Get the event broadcasters.
@@ -216,6 +272,11 @@ impl AppState {
     /// Get the network handshake nonce manager.
     pub fn handshake_manager(&self) -> &SharedHandshakeManager {
         &self.inner.handshake_manager
+    }
+
+    /// Get the shared HTTP client (reuses connection pool across requests).
+    pub fn http_client(&self) -> &reqwest::Client {
+        &self.inner.http_client
     }
 
     /// Set the directory watcher (called once after AppState construction).

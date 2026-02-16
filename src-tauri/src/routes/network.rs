@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 
 use crate::server::error::AppError;
 use crate::server::state::AppState;
+use crate::server::utils::get_local_ip;
 
 // ─── Handshake nonce manager ─────────────────────────────────────────────────
 
@@ -193,18 +194,6 @@ fn save_network_settings_to_file(data_dir: &Path, network: &Value) -> Result<(),
 }
 
 // ─── Network helpers ─────────────────────────────────────────────────────────
-
-/// Detect the primary local (non-loopback) IPv4 address.
-///
-/// Connects a UDP socket to a public IP (no data sent) to determine which
-/// local interface the OS would route through.
-fn get_local_ip() -> Option<String> {
-    use std::net::UdpSocket;
-    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
-    let addr = socket.local_addr().ok()?;
-    Some(addr.ip().to_string())
-}
 
 /// Get all local IPv4 addresses by scanning common private ranges.
 ///
@@ -452,61 +441,156 @@ async fn get_qr_data(State(state): State<AppState>) -> Result<Json<Value>, AppEr
     Ok(Json(result))
 }
 
-// ─── UPnP stubs ──────────────────────────────────────────────────────────────
-//
-// UPnP support depends on a UPnP service that hasn't been ported yet.
-// These stubs return sensible defaults so the frontend doesn't get 404s.
+// ─── UPnP (via igd-next) ─────────────────────────────────────────────────────
 
-/// POST /api/network/upnp/discover — Stub: discover UPnP gateway.
+/// Parse a protocol string ("TCP" / "UDP") into `igd_next::PortMappingProtocol`.
+fn parse_protocol(s: &str) -> Result<igd_next::PortMappingProtocol, AppError> {
+    match s.to_uppercase().as_str() {
+        "TCP" => Ok(igd_next::PortMappingProtocol::TCP),
+        "UDP" => Ok(igd_next::PortMappingProtocol::UDP),
+        other => Err(AppError::BadRequest(format!(
+            "Invalid protocol '{}'. Must be TCP or UDP",
+            other
+        ))),
+    }
+}
+
+/// POST /api/network/upnp/discover — Discover a UPnP/IGD gateway on the LAN.
 async fn upnp_discover() -> Result<Json<Value>, AppError> {
-    Ok(Json(json!({
-        "success": false,
-        "gateway_found": false,
-        "message": "UPnP service not yet available in v2"
-    })))
+    match igd_next::aio::tokio::search_gateway(Default::default()).await {
+        Ok(gateway) => Ok(Json(json!({
+            "success": true,
+            "gateway_found": true,
+            "gateway": {
+                "addr": gateway.addr.to_string(),
+                "root_url": gateway.root_url,
+                "control_url": gateway.control_url
+            }
+        }))),
+        Err(e) => Ok(Json(json!({
+            "success": false,
+            "gateway_found": false,
+            "error": format!("No UPnP gateway found: {}", e)
+        }))),
+    }
 }
 
-/// POST /api/network/upnp/open-port — Stub: open a port via UPnP.
+/// POST /api/network/upnp/open-port — Open (add) a port mapping via UPnP.
 async fn upnp_open_port(Json(body): Json<UPnPPortRequest>) -> Result<Json<Value>, AppError> {
-    let internal = body.internal_port.unwrap_or(body.external_port);
-    let protocol = body.protocol.as_deref().unwrap_or("TCP");
-    let description = body
-        .description
-        .as_deref()
-        .unwrap_or("LocalBooru");
+    let internal_port = body.internal_port.unwrap_or(body.external_port);
+    let protocol_str = body.protocol.as_deref().unwrap_or("TCP");
+    let description = body.description.as_deref().unwrap_or("LocalBooru");
+    let protocol = parse_protocol(protocol_str)?;
+
+    // Determine local IP to map the port to
+    let local_ip_str = get_local_ip().ok_or_else(|| {
+        AppError::Internal("Could not determine local IP address".into())
+    })?;
+    let local_addr: std::net::SocketAddr = format!("{}:{}", local_ip_str, internal_port)
+        .parse()
+        .map_err(|e| AppError::Internal(format!("Invalid local address: {}", e)))?;
+
+    // Discover gateway
+    let gateway = igd_next::aio::tokio::search_gateway(Default::default())
+        .await
+        .map_err(|e| AppError::Internal(format!("UPnP gateway discovery failed: {}", e)))?;
+
+    // lease_duration = 0 means "indefinite" per UPnP spec
+    let lease_duration = 0u32;
+
+    gateway
+        .add_port(protocol, body.external_port, local_addr, lease_duration, description)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to add UPnP port mapping: {}", e)))?;
 
     Ok(Json(json!({
-        "success": false,
+        "success": true,
         "external_port": body.external_port,
-        "internal_port": internal,
-        "protocol": protocol,
-        "description": description,
-        "error": "UPnP service not yet available in v2"
+        "internal_port": internal_port,
+        "protocol": protocol_str.to_uppercase(),
+        "description": description
     })))
 }
 
-/// DELETE /api/network/upnp/close-port/:external_port — Stub: close a UPnP port mapping.
+/// DELETE /api/network/upnp/close-port/:external_port — Remove a UPnP port mapping.
 async fn upnp_close_port(
     axum::extract::Path(external_port): axum::extract::Path<u16>,
 ) -> Result<Json<Value>, AppError> {
+    // Default to TCP; the original route only takes the port in the path
+    let protocol = igd_next::PortMappingProtocol::TCP;
+
+    let gateway = igd_next::aio::tokio::search_gateway(Default::default())
+        .await
+        .map_err(|e| AppError::Internal(format!("UPnP gateway discovery failed: {}", e)))?;
+
+    gateway
+        .remove_port(protocol, external_port)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to remove UPnP port mapping: {}", e)))?;
+
     Ok(Json(json!({
-        "success": false,
-        "external_port": external_port,
-        "error": "UPnP service not yet available in v2"
+        "success": true,
+        "external_port": external_port
     })))
 }
 
-/// GET /api/network/upnp/mappings — Stub: list UPnP port mappings.
+/// GET /api/network/upnp/mappings — List active UPnP port mappings from the gateway.
+///
+/// Uses `get_generic_port_mapping_entry` to enumerate mappings by index.
+/// Some routers may not support this action; we return what we can.
 async fn upnp_mappings() -> Result<Json<Value>, AppError> {
+    let gateway = match igd_next::aio::tokio::search_gateway(Default::default()).await {
+        Ok(gw) => gw,
+        Err(_) => {
+            return Ok(Json(json!({
+                "success": true,
+                "mappings": [],
+                "note": "No UPnP gateway found"
+            })));
+        }
+    };
+
+    let mut mappings = Vec::new();
+    // Enumerate port mappings by index until the gateway returns an error
+    // (SpecifiedArrayIndexInvalid signals end of list)
+    for index in 0u32.. {
+        match gateway.get_generic_port_mapping_entry(index).await {
+            Ok(entry) => {
+                mappings.push(json!({
+                    "remote_host": entry.remote_host,
+                    "external_port": entry.external_port,
+                    "protocol": entry.protocol.to_string(),
+                    "internal_port": entry.internal_port,
+                    "internal_client": entry.internal_client,
+                    "enabled": entry.enabled,
+                    "description": entry.port_mapping_description,
+                    "lease_duration": entry.lease_duration
+                }));
+            }
+            Err(_) => break,
+        }
+    }
+
     Ok(Json(json!({
-        "mappings": []
+        "success": true,
+        "mappings": mappings
     })))
 }
 
-/// GET /api/network/upnp/external-ip — Stub: get external IP via UPnP.
+/// GET /api/network/upnp/external-ip — Get the external (WAN) IP via UPnP.
 async fn upnp_external_ip() -> Result<Json<Value>, AppError> {
+    let gateway = igd_next::aio::tokio::search_gateway(Default::default())
+        .await
+        .map_err(|e| AppError::Internal(format!("UPnP gateway discovery failed: {}", e)))?;
+
+    let ip = gateway
+        .get_external_ip()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to get external IP: {}", e)))?;
+
     Ok(Json(json!({
-        "external_ip": null
+        "success": true,
+        "external_ip": ip.to_string()
     })))
 }
 

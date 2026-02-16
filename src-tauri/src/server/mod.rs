@@ -1,6 +1,7 @@
 pub mod state;
 pub mod middleware;
 pub mod error;
+pub mod utils;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -120,7 +121,7 @@ pub async fn start_server(
 async fn api_root() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "name": "LocalBooru",
-        "version": "2.0.0",
+        "version": env!("CARGO_PKG_VERSION"),
         "status": "running"
     }))
 }

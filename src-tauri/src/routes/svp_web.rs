@@ -280,7 +280,7 @@ async fn run_ytdlp_download(
                             file_path
                         );
                         // Fire-and-forget SVP play request via the sidecar bridge
-                        let client = reqwest::Client::new();
+                        let client = state.http_client();
                         if let Some(base_url) = addon_mgr.addon_url("svp") {
                             let play_url =
                                 format!("{}/svp/play", base_url.trim_end_matches('/'));

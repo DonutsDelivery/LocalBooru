@@ -242,6 +242,7 @@ pub async fn copy_image_to_clipboard(image_url: String) -> Result<CopyImageResul
 }
 
 /// Context menu options
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ImageContextMenuOptions {
     #[serde(rename = "imageUrl")]

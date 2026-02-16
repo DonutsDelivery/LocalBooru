@@ -5,7 +5,10 @@
 //! casting are handled by the Python sidecar; this module manages the Rust
 //! side of the state and proxies HTTP requests.
 
+use std::convert::Infallible;
+
 use axum::extract::State;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::Json;
 use axum::routing::{get, post};
 use axum::Router;
@@ -16,6 +19,7 @@ use serde_json::{json, Value};
 use crate::addons::manager::AddonStatus;
 use crate::server::error::AppError;
 use crate::server::state::AppState;
+use crate::server::utils::get_local_ip;
 
 // ─── Cast state types ────────────────────────────────────────────────────────
 
@@ -67,7 +71,7 @@ pub struct CastMedia {
 struct PlayRequest {
     device_id: String,
     image_id: i64,
-    directory_id: i64,
+    directory_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,22 +109,9 @@ fn addon_base_url() -> String {
     format!("http://127.0.0.1:{}", CAST_ADDON_PORT)
 }
 
-/// Detect the primary local (non-loopback) IPv4 address.
-///
-/// Connects a UDP socket to a public IP (no data sent) to determine which
-/// local interface the OS would route through.
-fn get_local_ip() -> Option<String> {
-    use std::net::UdpSocket;
-    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
-    let addr = socket.local_addr().ok()?;
-    Some(addr.ip().to_string())
-}
-
 /// Send a GET request to the cast addon and return the JSON response body.
-async fn addon_get(path: &str) -> Result<Value, AppError> {
+async fn addon_get(client: &reqwest::Client, path: &str) -> Result<Value, AppError> {
     let url = format!("{}{}", addon_base_url(), path);
-    let client = reqwest::Client::new();
     let resp = client.get(&url).send().await.map_err(|e| {
         AppError::ServiceUnavailable(format!("Failed to reach cast addon: {}", e))
     })?;
@@ -132,9 +123,8 @@ async fn addon_get(path: &str) -> Result<Value, AppError> {
 
 /// Send a POST request with a JSON body to the cast addon and return the JSON
 /// response body.
-async fn addon_post(path: &str, body: &Value) -> Result<Value, AppError> {
+async fn addon_post(client: &reqwest::Client, path: &str, body: &Value) -> Result<Value, AppError> {
     let url = format!("{}{}", addon_base_url(), path);
-    let client = reqwest::Client::new();
     let resp = client.post(&url).json(body).send().await.map_err(|e| {
         AppError::ServiceUnavailable(format!("Failed to reach cast addon: {}", e))
     })?;
@@ -160,7 +150,7 @@ async fn list_devices(
         })));
     }
 
-    let result = addon_get("/devices").await?;
+    let result = addon_get(state.http_client(), "/devices").await?;
     Ok(Json(result))
 }
 
@@ -176,7 +166,7 @@ async fn refresh_devices(
         ));
     }
 
-    let result = addon_post("/devices/refresh", &json!({})).await?;
+    let result = addon_post(state.http_client(), "/devices/refresh", &json!({})).await?;
     Ok(Json(result))
 }
 
@@ -195,39 +185,56 @@ async fn play(
         ));
     }
 
-    // Look up the media file path from the directory database
+    // Look up the media file path from the directory database.
+    // If directory_id is provided, look up directly; otherwise search all directories.
     let state_clone = state.clone();
     let image_id = body.image_id;
-    let directory_id = body.directory_id;
+    let directory_id_opt = body.directory_id;
 
-    let file_path = tokio::task::spawn_blocking(move || {
-        if !state_clone.directory_db().db_exists(directory_id) {
-            return Err(AppError::NotFound(format!(
-                "Directory {} not found",
-                directory_id
-            )));
-        }
+    let (file_path, resolved_directory_id) = tokio::task::spawn_blocking(move || {
+        // Determine which directory IDs to search
+        let dir_ids_to_search: Vec<i64> = match directory_id_opt {
+            Some(dir_id) => {
+                if !state_clone.directory_db().db_exists(dir_id) {
+                    return Err(AppError::NotFound(format!(
+                        "Directory {} not found",
+                        dir_id
+                    )));
+                }
+                vec![dir_id]
+            }
+            None => state_clone.directory_db().get_all_directory_ids(),
+        };
 
-        let dir_pool = state_clone
-            .directory_db()
-            .get_pool(directory_id)
-            .map_err(|e| AppError::Internal(format!("Failed to get directory pool: {}", e)))?;
-        let dir_conn = dir_pool.get()?;
+        // Search through directories for the image
+        for dir_id in &dir_ids_to_search {
+            if !state_clone.directory_db().db_exists(*dir_id) {
+                continue;
+            }
+            let dir_pool = match state_clone.directory_db().get_pool(*dir_id) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let dir_conn = match dir_pool.get() {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
 
-        let path: String = dir_conn
-            .query_row(
+            let result: Result<String, _> = dir_conn.query_row(
                 "SELECT original_path FROM image_files WHERE image_id = ?1 LIMIT 1",
                 params![image_id],
                 |row| row.get(0),
-            )
-            .map_err(|_| {
-                AppError::NotFound(format!(
-                    "Image {} not found in directory {}",
-                    image_id, directory_id
-                ))
-            })?;
+            );
 
-        Ok(path)
+            if let Ok(path) = result {
+                return Ok((path, *dir_id));
+            }
+        }
+
+        Err(AppError::NotFound(format!(
+            "Image {} not found in any directory",
+            image_id
+        )))
     })
     .await??;
 
@@ -239,7 +246,7 @@ async fn play(
     let port = state.port();
     let media_url = format!(
         "http://{}:{}/api/images/{}/file?directory_id={}",
-        local_ip, port, image_id, directory_id
+        local_ip, port, image_id, resolved_directory_id
     );
 
     // Proxy to the cast addon to start playback
@@ -248,7 +255,7 @@ async fn play(
         "media_url": media_url,
         "image_id": image_id,
     });
-    let result = addon_post("/play", &addon_body).await?;
+    let result = addon_post(state.http_client(), "/play", &addon_body).await?;
 
     // Update in-memory cast state
     {
@@ -320,7 +327,7 @@ async fn control(
         "action": body.action,
         "value": body.value,
     });
-    let result = addon_post("/control", &addon_body).await?;
+    let result = addon_post(state.http_client(), "/control", &addon_body).await?;
 
     // Update in-memory state based on the action
     {
@@ -358,7 +365,7 @@ async fn stop(
     // Attempt to proxy to the addon even if it might have stopped
     if is_addon_running(&state) {
         // Best-effort: if the addon fails to respond, we still clear local state
-        let _ = addon_post("/stop", &json!({})).await;
+        let _ = addon_post(state.http_client(), "/stop", &json!({})).await;
     }
 
     // Clear in-memory cast state
@@ -376,64 +383,76 @@ async fn stop(
     })))
 }
 
-/// GET /api/cast/status -- Get current cast state.
+/// GET /api/cast/status -- SSE stream of current cast state.
 ///
-/// Returns the in-memory cast state. If the addon is running, also queries it
-/// for live playback status and merges the results.
+/// Returns the in-memory cast state as an SSE stream, polling every 2 seconds.
+/// If the addon is running, also queries it for live playback status and merges
+/// the results. The JSON response shape is unchanged -- it is delivered as the
+/// `data` field of each SSE event.
 async fn status(
     State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
-    let cast_state = state.cast_state();
-    let state_guard = cast_state.read().await;
-    let local_state = state_guard.clone();
-    drop(state_guard);
+) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
+    let stream = async_stream::stream! {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
 
-    let mut response = json!({
-        "status": local_state.status,
-        "active_device": local_state.active_device,
-        "current_media": local_state.current_media,
-    });
+        loop {
+            interval.tick().await;
 
-    // If the addon is running and we're actively casting, query for live status
-    if is_addon_running(&state) && local_state.status != "idle" {
-        match addon_get("/status").await {
-            Ok(live) => {
-                response["live"] = live.clone();
+            let cast_state = state.cast_state();
+            let state_guard = cast_state.read().await;
+            let local_state = state_guard.clone();
+            drop(state_guard);
 
-                // Sync position from live status back into our in-memory state
-                if let Some(pos) = live.get("position").and_then(|v| v.as_f64()) {
-                    let cast_state = state.cast_state();
-                    let mut state_guard = cast_state.write().await;
-                    if let Some(ref mut media) = state_guard.current_media {
-                        media.position = pos;
-                    }
-                    // Sync status from addon (it may have stopped on its own)
-                    if let Some(addon_status) = live.get("status").and_then(|v| v.as_str()) {
-                        match addon_status {
-                            "idle" | "stopped" => {
-                                state_guard.status = "idle".to_string();
-                                state_guard.active_device = None;
-                                state_guard.current_media = None;
+            let mut response = json!({
+                "status": local_state.status,
+                "active_device": local_state.active_device,
+                "current_media": local_state.current_media,
+            });
+
+            // If the addon is running and we're actively casting, query for live status
+            if is_addon_running(&state) && local_state.status != "idle" {
+                match addon_get(state.http_client(), "/status").await {
+                    Ok(live) => {
+                        response["live"] = live.clone();
+
+                        // Sync position from live status back into our in-memory state
+                        if let Some(pos) = live.get("position").and_then(|v| v.as_f64()) {
+                            let cast_state = state.cast_state();
+                            let mut state_guard = cast_state.write().await;
+                            if let Some(ref mut media) = state_guard.current_media {
+                                media.position = pos;
                             }
-                            "paused" => {
-                                state_guard.status = "paused".to_string();
+                            // Sync status from addon (it may have stopped on its own)
+                            if let Some(addon_status) = live.get("status").and_then(|v| v.as_str()) {
+                                match addon_status {
+                                    "idle" | "stopped" => {
+                                        state_guard.status = "idle".to_string();
+                                        state_guard.active_device = None;
+                                        state_guard.current_media = None;
+                                    }
+                                    "paused" => {
+                                        state_guard.status = "paused".to_string();
+                                    }
+                                    "playing" | "casting" => {
+                                        state_guard.status = "casting".to_string();
+                                    }
+                                    _ => {}
+                                }
                             }
-                            "playing" | "casting" => {
-                                state_guard.status = "casting".to_string();
-                            }
-                            _ => {}
                         }
+                    }
+                    Err(_) => {
+                        // Addon is running but failed to respond -- include a warning
+                        response["live_status_error"] = json!("Failed to query live status from addon");
                     }
                 }
             }
-            Err(_) => {
-                // Addon is running but failed to respond -- include a warning
-                response["live_status_error"] = json!("Failed to query live status from addon");
-            }
+
+            response["addon_running"] = json!(is_addon_running(&state));
+
+            yield Ok(Event::default().data(response.to_string()));
         }
-    }
+    };
 
-    response["addon_running"] = json!(is_addon_running(&state));
-
-    Ok(Json(response))
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }

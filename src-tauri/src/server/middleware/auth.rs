@@ -5,6 +5,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::server::state::AppState;
+
 // ─── JWT shared types ─────────────────────────────────────────────────────────
 
 /// JWT claims payload. Shared between auth middleware and user routes.
@@ -17,17 +19,13 @@ pub struct Claims {
     pub exp: i64,
 }
 
-/// JWT signing secret.
-///
-/// TODO: generate per-install and store in settings/keyring.
-pub const JWT_SECRET: &str = "localbooru-v2-secret-key";
-
 /// Create a signed JWT token for the given user.
 pub fn create_jwt(
     user_id: i64,
     username: &str,
     access_level: &str,
     can_write: bool,
+    secret: &str,
 ) -> Result<String, crate::server::error::AppError> {
     let exp = chrono::Utc::now().timestamp() + 86400 * 30; // 30 days
     let claims = Claims {
@@ -41,19 +39,19 @@ pub fn create_jwt(
     jsonwebtoken::encode(
         &jsonwebtoken::Header::default(),
         &claims,
-        &jsonwebtoken::EncodingKey::from_secret(JWT_SECRET.as_bytes()),
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
     )
     .map_err(|e| crate::server::error::AppError::Internal(format!("JWT error: {}", e)))
 }
 
 /// Decode and validate a JWT token, returning the claims if valid.
-pub fn decode_jwt(token: &str) -> Result<Claims, crate::server::error::AppError> {
+pub fn decode_jwt(token: &str, secret: &str) -> Result<Claims, crate::server::error::AppError> {
     let mut validation = jsonwebtoken::Validation::default();
     validation.validate_exp = true;
 
     jsonwebtoken::decode::<Claims>(
         token,
-        &jsonwebtoken::DecodingKey::from_secret(JWT_SECRET.as_bytes()),
+        &jsonwebtoken::DecodingKey::from_secret(secret.as_bytes()),
         &validation,
     )
     .map(|data| data.claims)
@@ -113,16 +111,14 @@ impl IntoResponse for AuthRejection {
     }
 }
 
-impl<S> FromRequestParts<S> for AuthUser
-where
-    S: Send + Sync,
-{
+impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AuthRejection;
 
     fn from_request_parts(
         parts: &mut Parts,
-        _state: &S,
+        state: &AppState,
     ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
+        let secret = state.jwt_secret().to_owned();
         async move {
             // Extract the Authorization header
             let auth_header = parts
@@ -142,7 +138,7 @@ where
                 })?;
 
             // Decode and validate the JWT
-            let claims = decode_jwt(token).map_err(|e| AuthRejection {
+            let claims = decode_jwt(token, &secret).map_err(|e| AuthRejection {
                 message: format!("{}", e),
             })?;
 

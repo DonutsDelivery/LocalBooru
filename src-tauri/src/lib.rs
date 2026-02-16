@@ -164,6 +164,9 @@ pub fn run() {
                 // Start task queue worker (needs tokio runtime)
                 app_state.task_queue_arc().start(app_state.clone());
 
+                // Resume addons that were previously enabled (non-blocking per addon)
+                app_state.addon_manager().resume_addons().await;
+
                 if let Err(e) = server::start_server(app_state, frontend_dir).await {
                     log::error!("Axum server error: {}", e);
                 }

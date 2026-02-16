@@ -164,9 +164,11 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_collection_items_image_id ON collection_items(image_id);
 
         -- Watch history
+        -- Note: image_id has no FK constraint because images live in per-directory
+        -- SQLite databases, not in the main DB. Cross-database FKs aren't possible.
         CREATE TABLE IF NOT EXISTS watch_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            image_id INTEGER NOT NULL UNIQUE REFERENCES images(id) ON DELETE CASCADE,
+            image_id INTEGER NOT NULL UNIQUE,
             playback_position REAL NOT NULL DEFAULT 0.0,
             duration REAL NOT NULL DEFAULT 0.0,
             completed INTEGER NOT NULL DEFAULT 0,
@@ -176,13 +178,6 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
 
         CREATE INDEX IF NOT EXISTS idx_watch_history_image_id ON watch_history(image_id);
         CREATE INDEX IF NOT EXISTS idx_watch_history_completed ON watch_history(completed);
-
-        -- Settings (key-value store)
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
 
         -- Users (for network access auth)
         CREATE TABLE IF NOT EXISTS users (
@@ -198,31 +193,6 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-
-        -- Booru instances (federated uploads)
-        CREATE TABLE IF NOT EXISTS booru_instances (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            base_url TEXT NOT NULL,
-            instance_type TEXT NOT NULL DEFAULT 'donutbooru',
-            auth_method TEXT NOT NULL DEFAULT 'discord',
-            auth_token TEXT,
-            is_enabled INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        -- External uploads
-        CREATE TABLE IF NOT EXISTS external_uploads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
-            booru_id INTEGER NOT NULL REFERENCES booru_instances(id) ON DELETE CASCADE,
-            external_id TEXT,
-            external_url TEXT,
-            uploaded_at TEXT,
-            status TEXT NOT NULL DEFAULT 'pending'
-                CHECK(status IN ('pending','uploaded','failed','deleted')),
-            error_message TEXT
-        );
         ",
     )?;
 

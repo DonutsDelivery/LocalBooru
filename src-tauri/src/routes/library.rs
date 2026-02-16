@@ -392,11 +392,23 @@ async fn clear_all_pending(
 
 // ─── Batch task enqueue ──────────────────────────────────────────────────
 
+#[derive(Deserialize)]
+struct TagUntaggedParams {
+    directory_id: Option<i64>,
+}
+
 /// POST /api/library/tag-untagged — Enqueue TASK_TAG tasks for all untagged images.
-async fn tag_untagged(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn tag_untagged(
+    State(state): State<AppState>,
+    Query(params): Query<TagUntaggedParams>,
+) -> Result<Json<Value>, AppError> {
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
-        let dir_ids = state_clone.directory_db().get_all_directory_ids();
+        let dir_ids = if let Some(dir_id) = params.directory_id {
+            vec![dir_id]
+        } else {
+            state_clone.directory_db().get_all_directory_ids()
+        };
         let mut queued: i64 = 0;
 
         for dir_id in dir_ids {

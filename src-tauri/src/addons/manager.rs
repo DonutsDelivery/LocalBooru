@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as TokioMutex;
 
 use super::manifest::{get_addon_manifest, get_addon_registry};
@@ -43,6 +43,12 @@ pub enum AddonStatus {
     Running,
     Stopped,
     Error(String),
+}
+
+/// Persisted on-disk state for an addon (stored in `{addon_dir}/state.json`).
+#[derive(Serialize, Deserialize)]
+struct AddonPersistedState {
+    enabled: bool,
 }
 
 /// Manages the full lifecycle of all addon sidecar processes.
@@ -102,6 +108,80 @@ impl AddonManager {
     /// The venv directory for a specific addon.
     fn venv_dir(&self, id: &str) -> PathBuf {
         self.addon_dir(id).join("venv")
+    }
+
+    /// Path to the persisted state file for an addon: `{addon_dir}/state.json`.
+    fn state_file_path(&self, id: &str) -> PathBuf {
+        self.addon_dir(id).join("state.json")
+    }
+
+    /// Persist the enabled/disabled state for an addon to disk.
+    fn save_enabled_state(&self, id: &str, enabled: bool) {
+        let path = self.state_file_path(id);
+        let state = AddonPersistedState { enabled };
+        match serde_json::to_string_pretty(&state) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&path, json) {
+                    log::warn!(
+                        "[AddonManager] Failed to write state file for '{}': {}",
+                        id, e
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "[AddonManager] Failed to serialize state for '{}': {}",
+                    id, e
+                );
+            }
+        }
+    }
+
+    /// Read the persisted state for an addon, returning `None` if missing or invalid.
+    fn load_enabled_state(&self, id: &str) -> Option<bool> {
+        let path = self.state_file_path(id);
+        let contents = std::fs::read_to_string(&path).ok()?;
+        let state: AddonPersistedState = serde_json::from_str(&contents).ok()?;
+        Some(state.enabled)
+    }
+
+    /// Resume all addons that were previously enabled.
+    ///
+    /// Called once during app startup. Each addon that has a persisted
+    /// `{"enabled": true}` state and is installed will be started.
+    /// Failures are logged and do not prevent other addons from starting.
+    pub async fn resume_addons(&self) {
+        log::info!("[AddonManager] Checking for previously-enabled addons to resume...");
+
+        let mut resumed = 0u32;
+        for manifest in get_addon_registry() {
+            let id = manifest.id;
+
+            // Only attempt to resume installed addons that were previously enabled
+            let is_installed = self.venv_dir(id).exists();
+            let was_enabled = self.load_enabled_state(id).unwrap_or(false);
+
+            if is_installed && was_enabled {
+                log::info!("[AddonManager] Resuming previously-enabled addon '{}'", id);
+                match self.start_addon(id).await {
+                    Ok(()) => {
+                        resumed += 1;
+                        log::info!("[AddonManager] Successfully resumed addon '{}'", id);
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[AddonManager] Failed to resume addon '{}': {}",
+                            id, e
+                        );
+                    }
+                }
+            }
+        }
+
+        log::info!(
+            "[AddonManager] Addon resume complete ({} addon(s) started)",
+            resumed
+        );
     }
 
     /// List all addons with their current status and installation state.
@@ -289,6 +369,7 @@ impl AddonManager {
 
         if healthy {
             self.set_status(id, AddonStatus::Running);
+            self.save_enabled_state(id, true);
             log::info!("[AddonManager] Addon '{}' is running on port {}", id, port);
             Ok(())
         } else {
@@ -342,6 +423,7 @@ impl AddonManager {
             self.set_status(id, AddonStatus::NotInstalled);
         }
 
+        self.save_enabled_state(id, false);
         log::info!("[AddonManager] Addon '{}' stopped", id);
         Ok(())
     }

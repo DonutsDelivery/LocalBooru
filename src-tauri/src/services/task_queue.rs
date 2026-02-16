@@ -17,6 +17,7 @@ use crate::services::file_tracker;
 pub const TASK_TAG: &str = "tag";
 pub const TASK_SCAN_DIRECTORY: &str = "scan_directory";
 pub const TASK_VERIFY_FILES: &str = "verify_files";
+pub const TASK_UPLOAD: &str = "upload";
 pub const TASK_AGE_DETECT: &str = "age_detect";
 pub const TASK_EXTRACT_METADATA: &str = "extract_metadata";
 
@@ -404,6 +405,20 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
 
         TASK_TAG => {
             execute_tag_task(state, payload).await?;
+        }
+
+        TASK_UPLOAD => {
+            let image_id = payload["image_id"]
+                .as_i64()
+                .ok_or_else(|| AppError::Internal("Missing image_id in upload task".into()))?;
+            let directory_id = payload["directory_id"]
+                .as_i64()
+                .ok_or_else(|| AppError::Internal("Missing directory_id in upload task".into()))?;
+
+            log::info!(
+                "[TaskQueue] Upload task processed for image #{} in directory #{}",
+                image_id, directory_id
+            );
         }
 
         TASK_AGE_DETECT => {

@@ -21,6 +21,7 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct SavePositionBody {
+    #[serde(alias = "position")]
     playback_position: f64,
     duration: f64,
 }
@@ -144,7 +145,7 @@ async fn get_position(
     let result = tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;
 
-        conn.query_row(
+        let result = conn.query_row(
             "SELECT image_id, playback_position, duration, completed, last_watched
              FROM watch_history
              WHERE image_id = ?1",
@@ -166,8 +167,23 @@ async fn get_position(
                     "last_watched": row.get::<_, Option<String>>(4)?
                 }))
             },
-        )
-        .map_err(|_| AppError::NotFound(format!("No watch history for image {}", image_id)))
+        );
+
+        match result {
+            Ok(val) => Ok(val),
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                // No history yet — return defaults
+                Ok(json!({
+                    "image_id": image_id,
+                    "playback_position": 0.0,
+                    "duration": 0.0,
+                    "progress": 0.0,
+                    "completed": false,
+                    "last_watched": null
+                }))
+            }
+            Err(e) => Err(AppError::Internal(e.to_string())),
+        }
     })
     .await??;
 

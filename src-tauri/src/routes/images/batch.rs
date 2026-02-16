@@ -148,27 +148,117 @@ fn delete_single_image(state: &AppState, image_id: i64, delete_files: bool) -> R
     Ok(())
 }
 
-/// POST /api/images/batch/retag — Queue retagging (stub — needs task queue from Phase 3).
+/// POST /api/images/batch/retag — Queue retagging for multiple images.
 pub async fn batch_retag(
+    State(state): State<AppState>,
     Json(request): Json<BatchRetagRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // TODO: Implement when task queue service is available (Phase 3)
+    use crate::services::task_queue;
+
+    let state_clone = state.clone();
+    let total_requested = request.image_ids.len();
+
+    let (queued, errors) = tokio::task::spawn_blocking(move || {
+        let mut queued = 0i64;
+        let mut errors: Vec<serde_json::Value> = Vec::new();
+
+        for image_id in &request.image_ids {
+            let (dir_id, image_path) =
+                match find_image_path_for_metadata(&state_clone, *image_id) {
+                    Ok(info) => info,
+                    Err(e) => {
+                        errors.push(json!({"id": image_id, "error": e.to_string()}));
+                        continue;
+                    }
+                };
+
+            let payload = json!({
+                "image_id": image_id,
+                "directory_id": dir_id,
+                "image_path": image_path,
+            });
+
+            match task_queue::enqueue_task(
+                &state_clone,
+                task_queue::TASK_TAG,
+                &payload,
+                0,
+                Some(*image_id),
+            ) {
+                Ok(Some(_)) => queued += 1,
+                Ok(None) => {} // Duplicate, skip
+                Err(e) => {
+                    errors.push(json!({"id": image_id, "error": e.to_string()}));
+                }
+            }
+        }
+
+        Ok::<_, AppError>((queued, errors))
+    })
+    .await??;
+
     Ok(Json(json!({
-        "queued": 0,
-        "errors": [{"error": "Task queue not yet implemented"}],
-        "total_requested": request.image_ids.len()
+        "success": true,
+        "queued": queued,
+        "errors": errors,
+        "total_requested": total_requested
     })))
 }
 
-/// POST /api/images/batch/age-detect — Queue age detection (stub — needs addon system).
+/// POST /api/images/batch/age-detect — Queue age detection for multiple images.
 pub async fn batch_age_detect(
+    State(state): State<AppState>,
     Json(request): Json<BatchAgeDetectRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // TODO: Implement when addon system is available (Phase 5)
+    use crate::services::task_queue;
+
+    let state_clone = state.clone();
+    let total_requested = request.image_ids.len();
+
+    let (queued, errors) = tokio::task::spawn_blocking(move || {
+        let mut queued = 0i64;
+        let mut errors: Vec<serde_json::Value> = Vec::new();
+
+        for image_id in &request.image_ids {
+            let (dir_id, image_path) =
+                match find_image_path_for_metadata(&state_clone, *image_id) {
+                    Ok(info) => info,
+                    Err(e) => {
+                        errors.push(json!({"id": image_id, "error": e.to_string()}));
+                        continue;
+                    }
+                };
+
+            let payload = json!({
+                "image_id": image_id,
+                "directory_id": dir_id,
+                "image_path": image_path,
+            });
+
+            match task_queue::enqueue_task(
+                &state_clone,
+                task_queue::TASK_AGE_DETECT,
+                &payload,
+                0,
+                Some(*image_id),
+            ) {
+                Ok(Some(_)) => queued += 1,
+                Ok(None) => {} // Duplicate, skip
+                Err(e) => {
+                    errors.push(json!({"id": image_id, "error": e.to_string()}));
+                }
+            }
+        }
+
+        Ok::<_, AppError>((queued, errors))
+    })
+    .await??;
+
     Ok(Json(json!({
-        "queued": 0,
-        "errors": [{"error": "Age detection addon not available"}],
-        "total_requested": request.image_ids.len()
+        "success": true,
+        "queued": queued,
+        "errors": errors,
+        "total_requested": total_requested
     })))
 }
 

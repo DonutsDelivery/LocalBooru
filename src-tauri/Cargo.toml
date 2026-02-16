@@ -45,7 +45,6 @@ r2d2_sqlite = "0.25"
 
 # Image processing
 image = "0.25"
-fast_image_resize = "5"
 image_hasher = "3"
 
 # Hashing (xxhash for quick file hash, compatible with Python impl)
@@ -62,6 +61,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 async-stream = "0.3"
 futures-core = "0.3"
 
+# UPnP / IGD
+igd-next = { version = "0.15", features = ["aio_tokio"] }
+
 # Utilities
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -74,10 +76,6 @@ dirs = "5"
 jsonwebtoken = "9"
 argon2 = "0.5"
 rand = "0.8"
-
-# Tracing
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!

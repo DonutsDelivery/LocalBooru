@@ -327,6 +327,7 @@ async fn login(
         .rate_limiter()
         .check_rate_limit(&rate_limit_key, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECS)?;
 
+    let jwt_secret = state.jwt_secret().to_owned();
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;
@@ -367,7 +368,7 @@ async fn login(
         );
 
         // Generate JWT token
-        let token = create_jwt(id, &username, &access_level, can_write)?;
+        let token = create_jwt(id, &username, &access_level, can_write, &jwt_secret)?;
 
         Ok::<_, AppError>(Json(json!({
             "success": true,
@@ -384,8 +385,11 @@ async fn login(
 }
 
 /// POST /api/users/verify
-async fn verify_token(Json(body): Json<VerifyTokenRequest>) -> Result<Json<Value>, AppError> {
-    let claims = decode_jwt(&body.token)?;
+async fn verify_token(
+    State(state): State<AppState>,
+    Json(body): Json<VerifyTokenRequest>,
+) -> Result<Json<Value>, AppError> {
+    let claims = decode_jwt(&body.token, state.jwt_secret())?;
     Ok(Json(json!({
         "valid": true,
         "user": {

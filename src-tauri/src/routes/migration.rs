@@ -111,6 +111,28 @@ pub struct StartRequest {
     pub directory_ids: Vec<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DeleteSourceRequest {
+    #[allow(dead_code)]
+    pub mode: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportValidateRequest {
+    #[allow(dead_code)]
+    pub mode: String,
+    #[serde(default)]
+    pub directory_ids: Vec<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportStartRequest {
+    #[allow(dead_code)]
+    pub mode: String,
+    #[serde(default)]
+    pub directory_ids: Vec<i64>,
+}
+
 // ---- Router -----------------------------------------------------------------
 
 pub fn router() -> Router<AppState> {
@@ -123,6 +145,9 @@ pub fn router() -> Router<AppState> {
         .route("/stop", post(stop_migration))
         .route("/cleanup", post(cleanup_migration))
         .route("/verify", post(verify_migration))
+        .route("/delete-source", post(delete_source))
+        .route("/import/validate", post(validate_import))
+        .route("/import/start", post(start_import))
         .route("/events", get(migration_events))
 }
 
@@ -1168,6 +1193,285 @@ async fn verify_migration(
     .await??;
 
     Ok(Json(result))
+}
+
+/// POST /settings/migration/delete-source - Delete source per-directory databases after migration.
+///
+/// After a successful migration to the main DB, this removes the per-directory
+/// database files that are no longer needed. The `mode` field indicates the
+/// migration direction but the action is the same: delete all per-directory DBs
+/// whose data has already been migrated into the main DB.
+async fn delete_source(
+    State(state): State<AppState>,
+    Json(_body): Json<DeleteSourceRequest>,
+) -> Result<Json<Value>, AppError> {
+    // Only allow deletion when migration is completed (not running)
+    {
+        let migration = state.migration_state().read().await;
+        if migration.status == MigrationStatus::Running {
+            return Err(AppError::BadRequest(
+                "Cannot delete source data while migration is running".into(),
+            ));
+        }
+    }
+
+    let state_clone = state.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let dir_ids = state_clone.directory_db().get_all_directory_ids();
+        let mut deleted: i64 = 0;
+        let mut errors: Vec<String> = Vec::new();
+
+        for dir_id in &dir_ids {
+            match state_clone.directory_db().delete_directory_db(*dir_id) {
+                Ok(()) => {
+                    deleted += 1;
+                    log::info!("[Migration] Deleted source database for directory {}", dir_id);
+                }
+                Err(e) => {
+                    errors.push(format!(
+                        "Failed to delete database for directory {}: {}",
+                        dir_id, e
+                    ));
+                }
+            }
+        }
+
+        if errors.is_empty() {
+            Ok::<_, AppError>(json!({
+                "success": true,
+                "deleted": deleted,
+                "message": format!("Deleted {} source database(s)", deleted),
+            }))
+        } else {
+            Ok::<_, AppError>(json!({
+                "success": false,
+                "deleted": deleted,
+                "error": errors.join("; "),
+                "message": format!("Deleted {} database(s) with {} error(s)", deleted, errors.len()),
+            }))
+        }
+    })
+    .await??;
+
+    Ok(Json(result))
+}
+
+/// POST /settings/migration/import/validate - Validate import of directories into existing database.
+///
+/// Similar to validate_migration but for additive imports where the destination
+/// database already has data. Checks that requested directories exist and their
+/// per-directory databases are accessible.
+async fn validate_import(
+    State(state): State<AppState>,
+    Json(body): Json<ImportValidateRequest>,
+) -> Result<Json<Value>, AppError> {
+    // Check that migration is not already running
+    {
+        let migration = state.migration_state().read().await;
+        if migration.status == MigrationStatus::Running {
+            return Err(AppError::BadRequest(
+                "A migration is already in progress".into(),
+            ));
+        }
+    }
+
+    let state_clone = state.clone();
+    let requested_ids = body.directory_ids.clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let main_conn = state_clone.main_db().get()?;
+        let mut errors: Vec<String> = Vec::new();
+        let mut estimated_size: i64 = 0;
+        let mut image_count: i64 = 0;
+
+        // Determine which directories to validate
+        let dir_ids: Vec<i64> = if requested_ids.is_empty() {
+            // All directories
+            let mut stmt = main_conn.prepare("SELECT id FROM watch_directories")?;
+            let ids: Vec<i64> = stmt.query_map([], |row| row.get(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            ids
+        } else {
+            requested_ids
+        };
+
+        if dir_ids.is_empty() {
+            errors.push("No directories found to import".into());
+            return Ok::<_, AppError>(json!({
+                "valid": false,
+                "errors": errors,
+                "estimated_size": 0,
+                "image_count": 0,
+            }));
+        }
+
+        for dir_id in &dir_ids {
+            // Check directory exists in main DB
+            let dir_info: Result<(String, Option<String>), _> = main_conn.query_row(
+                "SELECT path, name FROM watch_directories WHERE id = ?1",
+                params![dir_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            );
+
+            let (dir_path, dir_name) = match dir_info {
+                Ok(info) => info,
+                Err(_) => {
+                    errors.push(format!("Directory ID {} not found in database", dir_id));
+                    continue;
+                }
+            };
+
+            let label = dir_name.unwrap_or_else(|| {
+                Path::new(&dir_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&dir_path)
+                    .to_string()
+            });
+
+            // Check filesystem path exists
+            if !Path::new(&dir_path).exists() {
+                errors.push(format!(
+                    "Directory '{}' path does not exist: {}",
+                    label, dir_path
+                ));
+            }
+
+            // Check per-directory DB is accessible
+            if !state_clone.directory_db().db_exists(*dir_id) {
+                errors.push(format!(
+                    "Directory '{}' (id={}) has no per-directory database",
+                    label, dir_id
+                ));
+                continue;
+            }
+
+            match state_clone.directory_db().get_pool(*dir_id) {
+                Ok(pool) => match pool.get() {
+                    Ok(conn) => {
+                        let count: i64 = conn
+                            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+                            .unwrap_or(0);
+                        let size: i64 = conn
+                            .query_row(
+                                "SELECT COALESCE(SUM(file_size), 0) FROM images",
+                                [],
+                                |r| r.get(0),
+                            )
+                            .unwrap_or(0);
+
+                        image_count += count;
+                        estimated_size += size;
+                    }
+                    Err(e) => {
+                        errors.push(format!(
+                            "Directory '{}' DB connection failed: {}",
+                            label, e
+                        ));
+                    }
+                },
+                Err(e) => {
+                    errors.push(format!(
+                        "Directory '{}' DB pool creation failed: {}",
+                        label, e
+                    ));
+                }
+            }
+        }
+
+        let valid = errors.is_empty();
+        Ok::<_, AppError>(json!({
+            "valid": valid,
+            "errors": errors,
+            "estimated_size": estimated_size,
+            "image_count": image_count,
+            "directory_count": dir_ids.len(),
+        }))
+    })
+    .await??;
+
+    Ok(Json(result))
+}
+
+/// POST /settings/migration/import/start - Start importing directories into the existing main database.
+///
+/// Similar to start_migration but explicitly additive: merges records from
+/// per-directory databases into the main database without requiring the
+/// destination to be empty. Uses file_hash to skip duplicates.
+async fn start_import(
+    State(state): State<AppState>,
+    Json(body): Json<ImportStartRequest>,
+) -> Result<Json<Value>, AppError> {
+    // Check that no migration is already running
+    {
+        let migration = state.migration_state().read().await;
+        if migration.status == MigrationStatus::Running {
+            return Err(AppError::BadRequest(
+                "A migration is already in progress".into(),
+            ));
+        }
+    }
+
+    let requested_ids = body.directory_ids.clone();
+
+    // Determine directory IDs to import
+    let dir_ids: Vec<i64> = if requested_ids.is_empty() {
+        let main_conn = state.main_db().get()?;
+        let mut stmt = main_conn.prepare("SELECT id FROM watch_directories")?;
+        let ids: Vec<i64> = stmt.query_map([], |row| row.get::<_, i64>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        ids
+    } else {
+        requested_ids
+    };
+
+    if dir_ids.is_empty() {
+        return Err(AppError::BadRequest("No directories to import".into()));
+    }
+
+    // Initialize migration state (reuse the same state tracker)
+    {
+        let mut migration = state.migration_state().write().await;
+        migration.status = MigrationStatus::Running;
+        migration.direction = MigrationDirection::ToMainDb;
+        migration.mode = Some(MigrationMode::Selective);
+        migration.directory_ids = Some(dir_ids.clone());
+        migration.progress = Some(MigrationProgress {
+            total: 0,
+            completed: 0,
+            current_directory: None,
+            current_directory_id: None,
+            directories_total: dir_ids.len() as i64,
+            directories_completed: 0,
+        });
+        migration.errors.clear();
+        migration.started_at = Some(Utc::now().to_rfc3339());
+        migration.completed_at = None;
+    }
+
+    // Broadcast start event
+    if let Some(events) = state.events() {
+        events.migration.broadcast(
+            migration_event_type::STARTED,
+            json!({
+                "mode": "import",
+                "directory_count": dir_ids.len(),
+            }),
+        );
+    }
+
+    // Spawn the background migration task (reuses the same migration logic)
+    let state_bg = state.clone();
+    tokio::spawn(async move {
+        run_migration(state_bg, dir_ids).await;
+    });
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "Import started",
+    })))
 }
 
 /// GET /settings/migration/events - SSE stream for real-time migration progress.

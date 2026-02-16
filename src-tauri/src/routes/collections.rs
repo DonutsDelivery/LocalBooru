@@ -220,36 +220,30 @@ async fn update_collection(
         let conn = state_clone.main_db().get()?;
         let now = chrono::Utc::now().to_rfc3339();
 
-        let mut sets = vec!["updated_at = ?1"];
-        let mut sql_params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(now)];
+        let mut sets = Vec::new();
+        let mut sql_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        // Always update timestamp
+        sql_params.push(Box::new(now));
+        sets.push(format!("updated_at = ?{}", sql_params.len()));
 
         if let Some(name) = &body.name {
-            sets.push("name = ?");
             sql_params.push(Box::new(name.clone()));
+            sets.push(format!("name = ?{}", sql_params.len()));
         }
         if let Some(desc) = &body.description {
-            sets.push("description = ?");
             sql_params.push(Box::new(desc.clone()));
+            sets.push(format!("description = ?{}", sql_params.len()));
         }
         if let Some(cover) = body.cover_image_id {
-            sets.push("cover_image_id = ?");
             sql_params.push(Box::new(cover));
+            sets.push(format!("cover_image_id = ?{}", sql_params.len()));
         }
 
         sql_params.push(Box::new(collection_id));
-
-        // Rebuild with positional params
-        let mut parts = Vec::new();
-        for (i, set) in sets.iter().enumerate() {
-            if set.contains('?') && !set.contains("?1") {
-                parts.push(set.replace('?', &format!("?{}", i + 1)));
-            } else {
-                parts.push(set.to_string());
-            }
-        }
         let sql = format!(
             "UPDATE collections SET {} WHERE id = ?{}",
-            parts.join(", "),
+            sets.join(", "),
             sql_params.len()
         );
 
