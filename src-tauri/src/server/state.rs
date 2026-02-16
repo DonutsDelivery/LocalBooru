@@ -7,6 +7,7 @@ use crate::db::directory_db::DirectoryDbManager;
 use crate::db::schema::init_main_db;
 use crate::services::events::{SharedEvents, create_events};
 use crate::services::task_queue::BackgroundTaskQueue;
+use crate::services::transcode::TranscodeManager;
 
 /// Shared application state available to all axum handlers.
 #[derive(Clone)]
@@ -29,6 +30,8 @@ struct AppStateInner {
     task_queue: Arc<BackgroundTaskQueue>,
     /// Addon manager (sidecar lifecycle + registry)
     addon_manager: AddonManager,
+    /// Transcode manager (FFmpeg HLS streaming)
+    transcode_manager: TranscodeManager,
 }
 
 impl AppState {
@@ -58,6 +61,9 @@ impl AppState {
         // Create addon manager
         let addon_manager = AddonManager::new(data_dir);
 
+        // Create transcode manager
+        let transcode_manager = TranscodeManager::new();
+
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 main_pool,
@@ -67,6 +73,7 @@ impl AppState {
                 events,
                 task_queue,
                 addon_manager,
+                transcode_manager,
             }),
         })
     }
@@ -114,5 +121,10 @@ impl AppState {
     /// Get the addon manager.
     pub fn addon_manager(&self) -> &AddonManager {
         &self.inner.addon_manager
+    }
+
+    /// Get the transcode manager.
+    pub fn transcode_manager(&self) -> &TranscodeManager {
+        &self.inner.transcode_manager
     }
 }

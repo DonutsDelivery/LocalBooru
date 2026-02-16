@@ -41,9 +41,9 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
         AddonManifest {
             id: "frame-interpolation",
             name: "Frame Interpolation",
-            description: "Increase video frame rate using RIFE neural network interpolation",
+            description: "Increase video frame rate using optical flow and neural network interpolation",
             port: 18004,
-            python_deps: &["rife-ncnn-vulkan-python-tntwise"],
+            python_deps: &["numpy", "opencv-python", "rife-ncnn-vulkan-python-tntwise"],
         },
         AddonManifest {
             id: "video-transcode",
@@ -65,6 +65,13 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             description: "Share media streams with other devices over the network",
             port: 18007,
             python_deps: &[],
+        },
+        AddonManifest {
+            id: "svp",
+            name: "SVP (SmoothVideo Project)",
+            description: "High quality frame interpolation using VapourSynth and SVPflow",
+            port: 18008,
+            python_deps: &["vapoursynth"],
         },
     ]
 });

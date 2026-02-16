@@ -190,6 +190,13 @@ impl AddonManager {
         deps.extend_from_slice(manifest.python_deps);
         sidecar::install_deps(&venv_dir, &deps)?;
 
+        // Deploy embedded app.py if available
+        if let Some(source) = super::sources::get_addon_source(id) {
+            std::fs::write(addon_dir.join("app.py"), source)
+                .map_err(|e| format!("Failed to write app.py: {}", e))?;
+            log::info!("[AddonManager] Deployed app.py for addon '{}'", id);
+        }
+
         // Update state
         self.set_status(id, AddonStatus::Installed);
 

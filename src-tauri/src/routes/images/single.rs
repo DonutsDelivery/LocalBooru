@@ -1,14 +1,16 @@
 use std::path::{Path, PathBuf};
 
 use axum::body::Body;
-use axum::extract::{Path as AxumPath, Query, State};
+use axum::extract::{Path as AxumPath, Query, Request, State};
 use axum::http::{header, StatusCode};
-use axum::response::{Json, Response};
+use axum::response::{IntoResponse, Json, Response};
 use rusqlite::params;
 use serde::Deserialize;
 use serde_json::json;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
+use tower::ServiceExt;
+use tower_http::services::ServeFile;
 
 use crate::server::error::AppError;
 use crate::server::state::AppState;
@@ -319,10 +321,14 @@ pub async fn get_image(
 }
 
 /// GET /api/images/:image_id/file — Serve the original image/video file.
+///
+/// Uses tower-http ServeFile for automatic Range header support (206 Partial Content),
+/// enabling seeking in video files.
 pub async fn get_image_file(
     State(state): State<AppState>,
     AxumPath(image_id): AxumPath<i64>,
     Query(q): Query<DirectoryQuery>,
+    request: Request,
 ) -> Result<Response, AppError> {
     let state_clone = state.clone();
     let directory_id = q.directory_id;
@@ -373,7 +379,17 @@ pub async fn get_image_file(
     })
     .await??;
 
-    serve_file(&file_path).await
+    if !file_path.exists() {
+        return Err(AppError::NotFound("File not found on disk".into()));
+    }
+
+    // ServeFile handles Range headers, ETag, 206 Partial Content automatically
+    let response = ServeFile::new(&file_path)
+        .oneshot(request)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to serve file: {}", e)))?;
+
+    Ok(response.into_response())
 }
 
 /// GET /api/images/:image_id/thumbnail — Serve the thumbnail.
@@ -721,13 +737,6 @@ pub struct DeleteQuery {
 }
 
 // ─── File serving helpers ───────────────────────────────────────────────────
-
-async fn serve_file(path: &Path) -> Result<Response, AppError> {
-    let mime = mime_guess::from_path(path)
-        .first_or_octet_stream()
-        .to_string();
-    serve_file_with_type(path, &mime).await
-}
 
 async fn serve_file_with_type(path: &Path, content_type: &str) -> Result<Response, AppError> {
     if !path.exists() {
