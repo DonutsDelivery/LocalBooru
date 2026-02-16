@@ -157,6 +157,10 @@ pub fn run() {
                 let mut watcher = services::directory_watcher::DirectoryWatcher::new(app_state.clone());
                 watcher.start();
 
+                // Store watcher in AppState so route handlers can register/unregister directories
+                let watcher_arc = std::sync::Arc::new(watcher);
+                app_state.set_directory_watcher(watcher_arc);
+
                 // Start task queue worker (needs tokio runtime)
                 app_state.task_queue_arc().start(app_state.clone());
 
@@ -164,8 +168,7 @@ pub fn run() {
                     log::error!("Axum server error: {}", e);
                 }
 
-                // Watcher stays alive until server shuts down
-                drop(watcher);
+                // Watcher stays alive via AppState Arc until server shuts down
             });
 
             // ── Window setup ──

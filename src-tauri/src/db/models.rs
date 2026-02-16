@@ -340,3 +340,41 @@ pub struct User {
     pub created_at: String,
     pub last_login: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BooruInstance {
+    pub id: i64,
+    pub name: String,
+    pub base_url: String,
+    pub instance_type: String,
+    pub auth_method: String,
+    pub auth_token: Option<String>,
+    pub is_enabled: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalUpload {
+    pub id: i64,
+    pub image_id: i64,
+    pub booru_id: i64,
+    pub external_id: Option<String>,
+    pub external_url: Option<String>,
+    pub uploaded_at: Option<String>,
+    pub status: String,
+    pub error_message: Option<String>,
+}
+
+/// Image file record from a per-directory database.
+/// Unlike [`ImageFile`], directory DBs do not have a `watch_directory_id` column
+/// since the directory is implicit from the database file itself.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectoryImageFile {
+    pub id: i64,
+    pub image_id: i64,
+    pub original_path: String,
+    pub file_exists: bool,
+    pub file_status: String,
+    pub last_verified_at: Option<String>,
+    pub created_at: String,
+}

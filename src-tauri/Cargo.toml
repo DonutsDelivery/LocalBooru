@@ -34,7 +34,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 
 # HTTP server
-axum = "0.8"
+axum = { version = "0.8", features = ["multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "fs", "compression-gzip", "trace"] }
 
@@ -46,7 +46,7 @@ r2d2_sqlite = "0.25"
 # Image processing
 image = "0.25"
 fast_image_resize = "5"
-img_hash = "3"
+image_hasher = "3"
 
 # Hashing (xxhash for quick file hash, compatible with Python impl)
 xxhash-rust = { version = "0.8", features = ["xxh64"] }
@@ -56,7 +56,7 @@ notify = "7"
 notify-debouncer-mini = "0.5"
 
 # HTTP client (for addon proxy, updates)
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 
 # Async streams (for SSE)
 async-stream = "0.3"
@@ -72,6 +72,8 @@ dirs = "5"
 
 # Auth
 jsonwebtoken = "9"
+argon2 = "0.5"
+rand = "0.8"
 
 # Tracing
 tracing = "0.1"

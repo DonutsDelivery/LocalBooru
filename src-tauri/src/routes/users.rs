@@ -1,10 +1,12 @@
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{ConnectInfo, Path as AxumPath, State};
+use axum::http::HeaderMap;
 use axum::response::Json;
 use axum::routing::{get, post};
 use axum::Router;
 use rusqlite::params;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::net::SocketAddr;
 
 use crate::server::error::AppError;
 use crate::server::state::AppState;
@@ -22,73 +24,29 @@ pub fn router() -> Router<AppState> {
 
 // ─── Password hashing ────────────────────────────────────────────────────────
 
-fn hash_password(password: &str) -> String {
-    use std::fmt::Write;
-    let salt: String = (0..32)
-        .map(|_| format!("{:x}", rand_byte()))
-        .collect();
+fn hash_password(password: &str) -> Result<String, AppError> {
+    use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
+    use argon2::Argon2;
 
-    let mut hash = [0u8; 32];
-    pbkdf2_sha256(password.as_bytes(), salt.as_bytes(), 100_000, &mut hash);
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let hash = argon2
+        .hash_password(password.as_bytes(), &salt)
+        .map_err(|e| AppError::Internal(format!("Password hashing error: {}", e)))?;
 
-    let hash_hex: String = hash.iter().fold(String::new(), |mut s, b| {
-        let _ = write!(s, "{:02x}", b);
-        s
-    });
-    format!("{}:{}", salt, hash_hex)
+    Ok(hash.to_string())
 }
 
-fn verify_password(password: &str, stored: &str) -> bool {
-    let parts: Vec<&str> = stored.splitn(2, ':').collect();
-    if parts.len() != 2 {
-        return false;
-    }
-    let (salt, expected_hex) = (parts[0], parts[1]);
+fn verify_password(password: &str, stored_hash: &str) -> Result<bool, AppError> {
+    use argon2::password_hash::{PasswordHash, PasswordVerifier};
+    use argon2::Argon2;
 
-    let mut hash = [0u8; 32];
-    pbkdf2_sha256(password.as_bytes(), salt.as_bytes(), 100_000, &mut hash);
+    let parsed_hash = PasswordHash::new(stored_hash)
+        .map_err(|e| AppError::Internal(format!("Invalid stored hash: {}", e)))?;
 
-    let actual_hex: String = hash.iter().fold(String::new(), |mut s, b| {
-        use std::fmt::Write;
-        let _ = write!(s, "{:02x}", b);
-        s
-    });
-    actual_hex == expected_hex
-}
-
-/// Simple PBKDF2-SHA256 implementation using hmac from ring-less approach.
-/// Uses the standard library's SHA-256 via a simple HMAC construction.
-fn pbkdf2_sha256(password: &[u8], salt: &[u8], iterations: u32, output: &mut [u8; 32]) {
-    // Simple HMAC-SHA256 based PBKDF2
-    // Using a basic implementation — for production, consider using a proper crypto crate
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    password.hash(&mut hasher);
-    salt.hash(&mut hasher);
-    let mut state = hasher.finish();
-
-    for i in 0..iterations {
-        let mut h = DefaultHasher::new();
-        state.hash(&mut h);
-        i.hash(&mut h);
-        state = h.finish();
-    }
-
-    // Fill output from final state
-    let bytes = state.to_le_bytes();
-    for (i, byte) in output.iter_mut().enumerate() {
-        *byte = bytes[i % 8] ^ (i as u8);
-    }
-}
-
-fn rand_byte() -> u8 {
-    use std::time::SystemTime;
-    let t = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    (t.subsec_nanos() % 256) as u8
+    Ok(Argon2::default()
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .is_ok())
 }
 
 fn validate_password(password: &str) -> Result<(), AppError> {
@@ -144,6 +102,33 @@ struct VerifyTokenRequest {
     token: String,
 }
 
+// ─── IP extraction ────────────────────────────────────────────────────────────
+
+/// Extract the client IP from the request, checking X-Forwarded-For first
+/// (for proxied connections), then falling back to ConnectInfo.
+fn extract_client_ip(headers: &HeaderMap, connect_info: &ConnectInfo<SocketAddr>) -> String {
+    // Check X-Forwarded-For header (first IP is the original client)
+    if let Some(forwarded_for) = headers.get("x-forwarded-for") {
+        if let Ok(value) = forwarded_for.to_str() {
+            if let Some(first_ip) = value.split(',').next() {
+                let trimmed = first_ip.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+    // Fall back to direct connection IP
+    connect_info.0.ip().to_string()
+}
+
+// ─── Rate limit constants ─────────────────────────────────────────────────────
+
+/// Maximum failed login attempts per IP before rate limiting kicks in.
+const LOGIN_MAX_ATTEMPTS: u32 = 5;
+/// Window in seconds for the login rate limiter (15 minutes).
+const LOGIN_WINDOW_SECS: u64 = 900;
+
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// GET /api/users
@@ -183,7 +168,7 @@ async fn create_user(
 ) -> Result<Json<Value>, AppError> {
     validate_password(&body.password)?;
 
-    let password_hash = hash_password(&body.password);
+    let password_hash = hash_password(&body.password)?;
     let access_level = body.access_level.unwrap_or_else(|| "local_network".into());
     let can_write = body.can_write.unwrap_or(false);
 
@@ -270,7 +255,7 @@ async fn update_user(
 
         if let Some(ref password) = body.password {
             validate_password(password)?;
-            let hash = hash_password(password);
+            let hash = hash_password(password)?;
             sql_params.push(Box::new(hash));
             sets.push(format!("password_hash = ?{}", sql_params.len()));
         }
@@ -329,8 +314,19 @@ async fn delete_user(
 /// POST /api/users/login
 async fn login(
     State(state): State<AppState>,
+    connect_info: ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<Value>, AppError> {
+    // Extract client IP for rate limiting
+    let client_ip = extract_client_ip(&headers, &connect_info);
+    let rate_limit_key = format!("login:{}", client_ip);
+
+    // Check rate limit before processing (counts all attempts including successful ones)
+    state
+        .rate_limiter()
+        .check_rate_limit(&rate_limit_key, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECS)?;
+
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;
@@ -352,15 +348,15 @@ async fn login(
 
         let (id, username, password_hash, is_active, access_level, can_write) = match user_row {
             Ok(row) => row,
-            Err(_) => return Err(AppError::BadRequest("Invalid username or password".into())),
+            Err(_) => return Err(AppError::Unauthorized("Invalid username or password".into())),
         };
 
         if !is_active {
-            return Err(AppError::BadRequest("Account is disabled".into()));
+            return Err(AppError::Unauthorized("Account is disabled".into()));
         }
 
-        if !verify_password(&body.password, &password_hash) {
-            return Err(AppError::BadRequest("Invalid username or password".into()));
+        if !verify_password(&body.password, &password_hash)? {
+            return Err(AppError::Unauthorized("Invalid username or password".into()));
         }
 
         // Update last login
@@ -401,51 +397,6 @@ async fn verify_token(Json(body): Json<VerifyTokenRequest>) -> Result<Json<Value
     })))
 }
 
-// ─── JWT helpers ─────────────────────────────────────────────────────────────
+// ─── JWT helpers (delegated to shared auth module) ───────────────────────────
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Claims {
-    user_id: i64,
-    username: String,
-    access_level: String,
-    can_write: bool,
-    exp: i64,
-}
-
-const JWT_SECRET: &str = "localbooru-v2-secret-key"; // TODO: generate per-install
-
-fn create_jwt(
-    user_id: i64,
-    username: &str,
-    access_level: &str,
-    can_write: bool,
-) -> Result<String, AppError> {
-    let exp = chrono::Utc::now().timestamp() + 86400 * 30; // 30 days
-    let claims = Claims {
-        user_id,
-        username: username.into(),
-        access_level: access_level.into(),
-        can_write,
-        exp,
-    };
-
-    jsonwebtoken::encode(
-        &jsonwebtoken::Header::default(),
-        &claims,
-        &jsonwebtoken::EncodingKey::from_secret(JWT_SECRET.as_bytes()),
-    )
-    .map_err(|e| AppError::Internal(format!("JWT error: {}", e)))
-}
-
-fn decode_jwt(token: &str) -> Result<Claims, AppError> {
-    let mut validation = jsonwebtoken::Validation::default();
-    validation.validate_exp = true;
-
-    jsonwebtoken::decode::<Claims>(
-        token,
-        &jsonwebtoken::DecodingKey::from_secret(JWT_SECRET.as_bytes()),
-        &validation,
-    )
-    .map(|data| data.claims)
-    .map_err(|_| AppError::BadRequest("Invalid or expired token".into()))
-}
+use crate::server::middleware::auth::{create_jwt, decode_jwt};

@@ -1,5 +1,7 @@
 use rusqlite::Connection;
 
+use crate::db::migrations::{run_main_migrations, run_directory_migrations};
+
 /// Initialize the main library database schema.
 /// Creates all tables and runs migrations (idempotent).
 pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
@@ -159,6 +161,7 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_collection_items_collection_id ON collection_items(collection_id);
+        CREATE INDEX IF NOT EXISTS idx_collection_items_image_id ON collection_items(image_id);
 
         -- Watch history
         CREATE TABLE IF NOT EXISTS watch_history (
@@ -222,6 +225,10 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
         ",
     )?;
+
+    // Run incremental migrations for existing databases
+    run_main_migrations(conn)?;
+
     Ok(())
 }
 
@@ -301,5 +308,9 @@ pub fn init_directory_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_image_tags_tag_id ON image_tags(tag_id);
         ",
     )?;
+
+    // Run incremental migrations for existing databases
+    run_directory_migrations(conn)?;
+
     Ok(())
 }

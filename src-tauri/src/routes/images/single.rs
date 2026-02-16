@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use axum::body::Body;
-use axum::extract::{Path as AxumPath, Query, Request, State};
+use axum::extract::{Multipart, Path as AxumPath, Query, Request, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use rusqlite::params;
@@ -14,6 +14,8 @@ use tower_http::services::ServeFile;
 
 use crate::server::error::AppError;
 use crate::server::state::AppState;
+use crate::services::importer;
+use crate::services::video_preview;
 
 use super::helpers::{find_image_directory, get_image_tags_from_directory};
 
@@ -379,8 +381,15 @@ pub async fn get_image_file(
     })
     .await??;
 
-    if !file_path.exists() {
-        return Err(AppError::NotFound("File not found on disk".into()));
+    // Check file availability — distinguish missing from drive offline
+    match crate::services::file_tracker::check_file_availability(file_path.to_str().unwrap_or("")) {
+        crate::services::file_tracker::FileStatus::Available => {}
+        crate::services::file_tracker::FileStatus::DriveOffline => {
+            return Err(AppError::ServiceUnavailable("Drive is offline".into()));
+        }
+        crate::services::file_tracker::FileStatus::Missing => {
+            return Err(AppError::NotFound("File not found on disk".into()));
+        }
     }
 
     // ServeFile handles Range headers, ETag, 206 Partial Content automatically
@@ -453,7 +462,44 @@ pub async fn get_image_thumbnail(
     if thumbnail_path.exists() {
         serve_file_with_type(&thumbnail_path, "image/webp").await
     } else {
-        Err(AppError::NotFound("Thumbnail not found".into()))
+        // Try to regenerate thumbnail from original file
+        let state_regen = state.clone();
+        let dir_id = directory_id;
+        let img_id = image_id;
+        let thumb_dir = state.thumbnails_dir().clone();
+        let hash = file_hash.clone();
+
+        let regenerated = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
+            // Find the original file path
+            let original_path: Option<String> = if let Some(did) = dir_id {
+                if state_regen.directory_db().db_exists(did) {
+                    let dir_pool = state_regen.directory_db().get_pool(did)?;
+                    let dir_conn = dir_pool.get()?;
+                    dir_conn.query_row(
+                        "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_status = 'available' LIMIT 1",
+                        params![img_id],
+                        |row| row.get(0),
+                    ).ok()
+                } else { None }
+            } else { None };
+
+            if let Some(ref path) = original_path {
+                if Path::new(path).exists() {
+                    let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
+                    let thumb_output = thumb_dir.join(&thumb_name);
+                    if crate::services::importer::generate_thumbnail(path, thumb_output.to_str().unwrap_or(""), 300) {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(false)
+        }).await??;
+
+        if regenerated {
+            serve_file_with_type(&thumbnail_path, "image/webp").await
+        } else {
+            Err(AppError::NotFound("Thumbnail not found".into()))
+        }
     }
 }
 
@@ -720,6 +766,9 @@ pub async fn delete_image(
             if thumb_path.exists() {
                 let _ = std::fs::remove_file(&thumb_path);
             }
+
+            // Delete video preview frames
+            video_preview::delete_preview_frames(state_clone.data_dir(), hash);
         }
 
         Ok(())
@@ -734,6 +783,332 @@ pub struct DeleteQuery {
     #[serde(default)]
     pub delete_file: bool,
     pub directory_id: Option<i64>,
+}
+
+/// POST /api/images/upload — Upload an image via multipart form data.
+pub async fn upload_image(
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let mut file_data: Option<(String, Vec<u8>)> = None;
+    let mut auto_tag = false;
+    let mut directory_id: Option<i64> = None;
+
+    // Parse multipart fields
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::BadRequest(format!("Multipart error: {}", e)))?
+    {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "file" => {
+                let filename = field
+                    .file_name()
+                    .unwrap_or("upload")
+                    .to_string();
+                let data = field
+                    .bytes()
+                    .await
+                    .map_err(|e| AppError::BadRequest(format!("Failed to read file: {}", e)))?;
+                file_data = Some((filename, data.to_vec()));
+            }
+            "auto_tag" => {
+                let val = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::BadRequest(format!("Failed to read auto_tag: {}", e)))?;
+                auto_tag = val == "true" || val == "1";
+            }
+            "directory_id" => {
+                let val = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::BadRequest(format!("Failed to read directory_id: {}", e)))?;
+                directory_id = val.parse::<i64>().ok();
+            }
+            _ => {}
+        }
+    }
+
+    let (filename, data) = file_data.ok_or_else(|| AppError::BadRequest("Missing file field".into()))?;
+
+    // Determine the target directory ID
+    let dir_id = match directory_id {
+        Some(id) => id,
+        None => {
+            // Use the first available directory
+            let dirs = state.directory_db().get_all_directory_ids();
+            if dirs.is_empty() {
+                return Err(AppError::BadRequest(
+                    "No watch directories configured. Add a directory first.".into(),
+                ));
+            }
+            dirs[0]
+        }
+    };
+
+    // Verify directory exists
+    if !state.directory_db().db_exists(dir_id) {
+        return Err(AppError::BadRequest(format!(
+            "Directory {} does not exist",
+            dir_id
+        )));
+    }
+
+    // Save to temp file
+    let ext = std::path::Path::new(&filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin");
+    let tmp_path = std::env::temp_dir().join(format!("localbooru_upload_{}.{}", uuid::Uuid::new_v4(), ext));
+
+    tokio::fs::write(&tmp_path, &data).await?;
+
+    // Import the file
+    let state_clone = state.clone();
+    let tmp_path_str = tmp_path.to_string_lossy().to_string();
+
+    let result = tokio::task::spawn_blocking(move || {
+        importer::import_image(&state_clone, &tmp_path_str, dir_id)
+    })
+    .await??;
+
+    // Clean up temp file
+    let _ = tokio::fs::remove_file(&tmp_path).await;
+
+    let image_id = result.image_id;
+    let status_str = match result.status {
+        importer::ImportStatus::Imported => "imported",
+        importer::ImportStatus::Duplicate => "duplicate",
+        importer::ImportStatus::Error => "error",
+    };
+
+    // Enqueue tagging task if requested and import was successful
+    if auto_tag && result.status == importer::ImportStatus::Imported {
+        if let Some(img_id) = image_id {
+            let payload = json!({
+                "image_id": img_id,
+                "directory_id": dir_id,
+            });
+            let _ = crate::services::task_queue::enqueue_task(
+                &state,
+                crate::services::task_queue::TASK_TAG,
+                &payload,
+                0,
+                Some(img_id),
+            );
+        }
+    }
+
+    Ok(Json(json!({
+        "status": status_str,
+        "image_id": image_id,
+        "directory_id": dir_id,
+        "filename": result.filename,
+        "message": result.message,
+    })))
+}
+
+/// GET /api/images/:image_id/preview-frames — Get list of video preview frame URLs.
+pub async fn get_preview_frames(
+    State(state): State<AppState>,
+    AxumPath(image_id): AxumPath<i64>,
+    Query(q): Query<DirectoryQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let state_clone = state.clone();
+    let directory_id = q.directory_id;
+
+    // Look up file_hash, filename, and original_path
+    let (file_hash, filename, original_path, found_dir_id) = tokio::task::spawn_blocking(move || {
+        // Try directory DB
+        if let Some(dir_id) = directory_id {
+            if state_clone.directory_db().db_exists(dir_id) {
+                let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+                let dir_conn = dir_pool.get()?;
+
+                if let Ok((hash, fname)) = dir_conn.query_row(
+                    "SELECT file_hash, filename FROM images WHERE id = ?1",
+                    params![image_id],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                ) {
+                    let path: Option<String> = dir_conn
+                        .query_row(
+                            "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_status = 'available' LIMIT 1",
+                            params![image_id],
+                            |row| row.get(0),
+                        )
+                        .ok();
+                    return Ok((hash, fname, path, directory_id));
+                }
+            }
+        }
+
+        // Search directory DBs
+        if let Some(found_dir) = find_image_directory(state_clone.directory_db(), image_id, None) {
+            let dir_pool = state_clone.directory_db().get_pool(found_dir)?;
+            let dir_conn = dir_pool.get()?;
+
+            if let Ok((hash, fname)) = dir_conn.query_row(
+                "SELECT file_hash, filename FROM images WHERE id = ?1",
+                params![image_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            ) {
+                let path: Option<String> = dir_conn
+                    .query_row(
+                        "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_status = 'available' LIMIT 1",
+                        params![image_id],
+                        |row| row.get(0),
+                    )
+                    .ok();
+                return Ok((hash, fname, path, Some(found_dir)));
+            }
+        }
+
+        // Legacy main DB
+        let main_conn = state_clone.main_db().get()?;
+        let (hash, fname) = main_conn
+            .query_row(
+                "SELECT file_hash, filename FROM images WHERE id = ?1",
+                params![image_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .map_err(|_| AppError::NotFound("Image not found".into()))?;
+
+        let path: Option<String> = main_conn
+            .query_row(
+                "SELECT original_path FROM image_files WHERE image_id = ?1 LIMIT 1",
+                params![image_id],
+                |row| row.get(0),
+            )
+            .ok();
+
+        Ok::<_, AppError>((hash, fname, path, None::<i64>))
+    })
+    .await??;
+
+    // Check if this is a video
+    let ext = filename
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_lowercase();
+    let video_extensions = ["webm", "mp4", "mov", "avi", "mkv"];
+    if !video_extensions.contains(&ext.as_str()) {
+        return Ok(Json(json!({
+            "frames": [],
+            "is_video": false,
+        })));
+    }
+
+    // Check for existing preview frames
+    let data_dir = state.data_dir().to_path_buf();
+    let existing = video_preview::get_preview_frames(&data_dir, &file_hash);
+
+    if !existing.is_empty() {
+        let dir_param = match found_dir_id {
+            Some(did) => format!("?directory_id={}", did),
+            None => String::new(),
+        };
+        let frame_urls: Vec<String> = (0..existing.len())
+            .map(|i| format!("/api/images/{}/preview-frame/{}{}", image_id, i, dir_param))
+            .collect();
+
+        return Ok(Json(json!({
+            "frames": frame_urls,
+            "is_video": true,
+            "count": existing.len(),
+            "generating": false,
+        })));
+    }
+
+    // No frames exist yet -- trigger background generation if source file is available
+    if let Some(ref path) = original_path {
+        let file_status = crate::services::file_tracker::check_file_availability(path);
+        if matches!(file_status, crate::services::file_tracker::FileStatus::Available) {
+            let video_path = path.clone();
+            let hash = file_hash.clone();
+            let dd = data_dir.clone();
+            tokio::task::spawn_blocking(move || {
+                video_preview::generate_video_previews(&video_path, &hash, &dd, 8);
+            });
+        }
+    }
+
+    Ok(Json(json!({
+        "frames": [],
+        "is_video": true,
+        "count": 0,
+        "generating": true,
+    })))
+}
+
+/// GET /api/images/:image_id/preview-frame/:frame_index — Serve a specific video preview frame.
+pub async fn get_preview_frame(
+    State(state): State<AppState>,
+    AxumPath((image_id, frame_index)): AxumPath<(i64, usize)>,
+    Query(q): Query<DirectoryQuery>,
+) -> Result<Response, AppError> {
+    if frame_index >= 8 {
+        return Err(AppError::BadRequest(
+            "Invalid frame index (must be 0-7)".into(),
+        ));
+    }
+
+    let state_clone = state.clone();
+    let directory_id = q.directory_id;
+
+    // Look up file_hash
+    let file_hash: String = tokio::task::spawn_blocking(move || {
+        // Try directory DB
+        if let Some(dir_id) = directory_id {
+            if state_clone.directory_db().db_exists(dir_id) {
+                let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+                let dir_conn = dir_pool.get()?;
+                if let Ok(hash) = dir_conn.query_row(
+                    "SELECT file_hash FROM images WHERE id = ?1",
+                    params![image_id],
+                    |row| row.get::<_, String>(0),
+                ) {
+                    return Ok(hash);
+                }
+            }
+        }
+
+        // Search directory DBs
+        if let Some(found_dir) = find_image_directory(state_clone.directory_db(), image_id, None) {
+            let dir_pool = state_clone.directory_db().get_pool(found_dir)?;
+            let dir_conn = dir_pool.get()?;
+            if let Ok(hash) = dir_conn.query_row(
+                "SELECT file_hash FROM images WHERE id = ?1",
+                params![image_id],
+                |row| row.get::<_, String>(0),
+            ) {
+                return Ok(hash);
+            }
+        }
+
+        // Legacy main DB
+        let main_conn = state_clone.main_db().get()?;
+        main_conn
+            .query_row(
+                "SELECT file_hash FROM images WHERE id = ?1",
+                params![image_id],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|_| AppError::NotFound("Image not found".into()))
+    })
+    .await??;
+
+    // Construct frame path
+    let preview_dir = video_preview::get_preview_dir(state.data_dir(), &file_hash);
+    let frame_path = preview_dir.join(format!("frame_{}.webp", frame_index));
+
+    if !frame_path.exists() {
+        return Err(AppError::NotFound("Preview frame not found".into()));
+    }
+
+    serve_file_with_type(&frame_path, "image/webp").await
 }
 
 // ─── File serving helpers ───────────────────────────────────────────────────

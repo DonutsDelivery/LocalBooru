@@ -249,7 +249,12 @@ pub async fn get_tag(
                 }))
             },
         )
-        .map_err(|_| AppError::NotFound("Tag not found".into()))
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound("Tag not found".into())
+            }
+            other => AppError::from(other),
+        })
     })
     .await??;
 
@@ -257,7 +262,7 @@ pub async fn get_tag(
 }
 
 #[derive(Debug, Deserialize)]
-pub struct UpdateCategoryBody {
+pub struct UpdateCategoryQuery {
     pub category: String,
 }
 
@@ -265,18 +270,18 @@ pub struct UpdateCategoryBody {
 pub async fn update_tag_category(
     State(state): State<AppState>,
     AxumPath(tag_name): AxumPath<String>,
-    Json(body): Json<UpdateCategoryBody>,
+    Query(params): Query<UpdateCategoryQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let valid = ["general", "character", "copyright", "artist", "meta"];
-    if !valid.contains(&body.category.as_str()) {
+    if !valid.contains(&params.category.as_str()) {
         return Err(AppError::BadRequest(format!(
             "Invalid category: {}",
-            body.category
+            params.category
         )));
     }
 
     let state_clone = state.clone();
-    let category = body.category.clone();
+    let category = params.category.clone();
 
     let result = tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;

@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
         .route("/folders", get(list::list_folders))
         // Static routes (must be before /{image_id})
         .route("/media/file-info", get(single::get_file_info))
+        .route("/upload", post(single::upload_image))
         // Batch endpoints
         .route("/batch/delete", post(batch::batch_delete))
         .route("/batch/retag", post(batch::batch_retag))
@@ -30,6 +31,8 @@ pub fn router() -> Router<AppState> {
         .route("/{image_id}/thumbnail", get(single::get_image_thumbnail))
         .route("/{image_id}/favorite", post(single::toggle_favorite))
         .route("/{image_id}/rating", patch(single::update_rating))
+        .route("/{image_id}/preview-frames", get(single::get_preview_frames))
+        .route("/{image_id}/preview-frame/{frame_index}", get(single::get_preview_frame))
         // Adjustment endpoints
         .route("/{image_id}/preview-adjust", post(adjustments::preview_adjust))
         .route("/{image_id}/preview", get(adjustments::get_preview))

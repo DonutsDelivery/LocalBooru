@@ -1,9 +1,13 @@
-use axum::extract::{Query, State};
+use std::collections::{HashMap, HashSet};
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, Query, State};
 use axum::response::Json;
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::server::error::AppError;
+use crate::server::middleware::classify_ip;
 use crate::server::state::AppState;
 
 use super::helpers::{query_directory_images, ImageQueryParams};
@@ -42,6 +46,7 @@ fn default_sort() -> String { "newest".into() }
 /// GET /api/images — List images with filtering and pagination.
 pub async fn list_images(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<ListImagesQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let tag_names: Vec<String> = q
@@ -99,12 +104,38 @@ pub async fn list_images(
         show_videos: true,
     };
 
+    // Determine access level from client IP
+    let access_level = classify_ip(&addr.ip());
+    let is_public = access_level == "public";
+
     let directory_id = q.directory_id;
     let state_clone = state.clone();
 
     let result = tokio::task::spawn_blocking(move || {
+        // Build set of public directory IDs if needed for access filtering
+        let public_dir_ids: Option<HashSet<i64>> = if is_public {
+            let main_conn = state_clone.main_db().get()?;
+            let mut stmt = main_conn.prepare(
+                "SELECT id FROM watch_directories WHERE public_access = 1"
+            )?;
+            let ids: HashSet<i64> = stmt
+                .query_map([], |row| row.get::<_, i64>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            Some(ids)
+        } else {
+            None
+        };
+
         // If specific directory requested
         if let Some(dir_id) = directory_id {
+            // Public access check: deny if directory is not public
+            if let Some(ref public_ids) = public_dir_ids {
+                if !public_ids.contains(&dir_id) {
+                    return Ok((vec![], 0i64));
+                }
+            }
+
             if state_clone.directory_db().db_exists(dir_id) {
                 // Get directory's media type settings
                 let main_conn = state_clone.main_db().get()?;
@@ -144,6 +175,13 @@ pub async fn list_images(
 
         if !all_dir_ids.is_empty() && directory_id.is_none() {
             for dir_id in &all_dir_ids {
+                // Skip non-public directories for public access
+                if let Some(ref public_ids) = public_dir_ids {
+                    if !public_ids.contains(dir_id) {
+                        continue;
+                    }
+                }
+
                 if !state_clone.directory_db().db_exists(*dir_id) {
                     continue;
                 }
@@ -197,7 +235,7 @@ pub async fn list_images(
 
         // Fallback: query main/legacy DB
         let main_conn = state_clone.main_db().get()?;
-        query_main_db_images(&main_conn, &params)
+        query_main_db_images(&main_conn, &params, public_dir_ids.as_ref())
     })
     .await??;
 
@@ -339,10 +377,10 @@ pub async fn list_folders(
                     continue; // Already have thumbnail
                 }
 
-                let source_filter = if key.is_empty() {
-                    "i.import_source IS NULL".to_string()
+                let (source_filter, source_param): (String, Option<String>) = if key.is_empty() {
+                    ("i.import_source IS NULL".to_string(), None)
                 } else {
-                    format!("i.import_source = '{}'", key.replace('\'', "''"))
+                    ("i.import_source = ?1".to_string(), Some(key.clone()))
                 };
 
                 let thumb_sql = format!(
@@ -352,13 +390,24 @@ pub async fn list_folders(
                 );
 
                 if let Ok(mut stmt) = dir_conn.prepare(&thumb_sql) {
-                    if let Ok(thumb) = stmt.query_row([], |row| {
-                        Ok((
-                            row.get::<_, i64>(0)?,
-                            row.get::<_, Option<i32>>(1)?,
-                            row.get::<_, Option<i32>>(2)?,
-                        ))
-                    }) {
+                    let thumb_result = if let Some(ref param_val) = source_param {
+                        stmt.query_row(rusqlite::params![param_val], |row| {
+                            Ok((
+                                row.get::<_, i64>(0)?,
+                                row.get::<_, Option<i32>>(1)?,
+                                row.get::<_, Option<i32>>(2)?,
+                            ))
+                        })
+                    } else {
+                        stmt.query_row([], |row| {
+                            Ok((
+                                row.get::<_, i64>(0)?,
+                                row.get::<_, Option<i32>>(1)?,
+                                row.get::<_, Option<i32>>(2)?,
+                            ))
+                        })
+                    };
+                    if let Ok(thumb) = thumb_result {
                         entry.1 = Some(format!(
                             "/api/images/{}/thumbnail?directory_id={}",
                             thumb.0, *dir_id
@@ -431,6 +480,7 @@ pub struct ListFoldersQuery {
 fn query_main_db_images(
     conn: &rusqlite::Connection,
     params: &ImageQueryParams,
+    public_dir_ids: Option<&HashSet<i64>>,
 ) -> Result<(Vec<serde_json::Value>, i64), AppError> {
     let mut where_clauses: Vec<String> = Vec::new();
     let mut sql_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -438,6 +488,19 @@ fn query_main_db_images(
     // Exclude missing files
     where_clauses
         .push("i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing')".into());
+
+    // Access control: only images from public directories when accessed from public IP
+    if let Some(public_ids) = public_dir_ids {
+        if public_ids.is_empty() {
+            // No public directories — return nothing
+            return Ok((vec![], 0));
+        }
+        let id_list: Vec<String> = public_ids.iter().map(|id| id.to_string()).collect();
+        where_clauses.push(format!(
+            "i.id IN (SELECT image_id FROM image_files WHERE watch_directory_id IN ({}))",
+            id_list.join(",")
+        ));
+    }
 
     if params.favorites_only {
         where_clauses.push("i.is_favorite = 1".into());
@@ -551,6 +614,8 @@ fn query_main_db_images(
         "resolution_low" => "ORDER BY COALESCE(i.width,0)*COALESCE(i.height,0) ASC, i.id ASC",
         "duration_longest" => "ORDER BY COALESCE(i.duration, 0) DESC, i.id DESC",
         "duration_shortest" => "ORDER BY CASE WHEN i.duration IS NULL THEN 1 ELSE 0 END ASC, COALESCE(i.duration, 0) ASC, i.id ASC",
+        "folder_asc" => "ORDER BY COALESCE(LOWER(i.import_source), '') ASC, i.id ASC",
+        "folder_desc" => "ORDER BY COALESCE(LOWER(i.import_source), '') DESC, i.id DESC",
         "random" => "ORDER BY RANDOM()",
         _ => "ORDER BY COALESCE(i.file_modified_at, i.created_at) DESC, i.id DESC",
     };
@@ -601,38 +666,261 @@ fn query_main_db_images(
         ))
     })?;
 
-    let images: Vec<serde_json::Value> = rows
+    // Collect image data into a Vec so we can batch-fetch additional info
+    struct LegacyImageRow {
+        id: i64,
+        filename: String,
+        original_filename: Option<String>,
+        file_hash: String,
+        width: Option<i32>,
+        height: Option<i32>,
+        file_size: Option<i64>,
+        duration: Option<f64>,
+        rating: String,
+        is_favorite: bool,
+        prompt: Option<String>,
+        negative_prompt: Option<String>,
+        model_name: Option<String>,
+        sampler: Option<String>,
+        seed: Option<String>,
+        steps: Option<i32>,
+        cfg_scale: Option<f64>,
+        num_faces: Option<i32>,
+        min_detected_age: Option<i32>,
+        max_detected_age: Option<i32>,
+        created_at: Option<String>,
+        import_source: Option<String>,
+    }
+
+    let image_rows: Vec<LegacyImageRow> = rows
         .filter_map(|r| r.ok())
-        .map(|r| {
+        .map(|r| LegacyImageRow {
+            id: r.0,
+            filename: r.1,
+            original_filename: r.2,
+            file_hash: r.3,
+            width: r.4,
+            height: r.5,
+            file_size: r.6,
+            duration: r.7,
+            rating: r.8,
+            is_favorite: r.9,
+            prompt: r.10,
+            negative_prompt: r.11,
+            model_name: r.12,
+            sampler: r.13,
+            seed: r.14,
+            steps: r.15,
+            cfg_scale: r.16,
+            num_faces: r.17,
+            min_detected_age: r.18,
+            max_detected_age: r.19,
+            created_at: r.20,
+            import_source: r.21,
+        })
+        .collect();
+
+    let image_ids: Vec<i64> = image_rows.iter().map(|img| img.id).collect();
+
+    // Batch fetch file info (file_path, file_status, watch_directory_id) from image_files
+    let file_info = get_legacy_file_info_batch(conn, &image_ids)?;
+
+    // Batch fetch tags from main DB's image_tags table
+    let tags_by_image = get_legacy_tags_batch(conn, &image_ids)?;
+
+    // Build directory name lookup for watch_directory_ids found in file_info
+    let dir_ids_needed: HashSet<i64> = file_info
+        .values()
+        .filter_map(|info| info.2)
+        .collect();
+    let dir_names = get_directory_names_batch(conn, &dir_ids_needed)?;
+
+    let images: Vec<serde_json::Value> = image_rows
+        .iter()
+        .map(|img| {
+            let (file_path, file_status, watch_dir_id) = file_info
+                .get(&img.id)
+                .map(|(p, s, d)| (Some(p.as_str()), s.as_str(), *d))
+                .unwrap_or((None, "unknown", None));
+
+            let directory_name = watch_dir_id.and_then(|did| dir_names.get(&did).cloned());
+
+            let tags_list = tags_by_image.get(&img.id).cloned().unwrap_or_default();
+
             json!({
-                "id": r.0,
+                "id": img.id,
                 "directory_id": serde_json::Value::Null,
-                "filename": r.1,
-                "original_filename": r.2,
-                "width": r.4,
-                "height": r.5,
-                "rating": r.8,
-                "is_favorite": r.9,
-                "thumbnail_url": format!("/api/images/{}/thumbnail", r.0),
-                "url": format!("/api/images/{}/file", r.0),
-                "file_status": "available",
-                "tags": [],
-                "num_faces": r.17,
-                "min_age": r.18,
-                "max_age": r.19,
-                "created_at": r.20,
-                "file_size": r.6,
-                "prompt": r.10,
-                "negative_prompt": r.11,
-                "model_name": r.12,
-                "sampler": r.13,
-                "seed": r.14,
-                "steps": r.15,
-                "cfg_scale": r.16,
-                "duration": r.7
+                "filename": img.filename,
+                "original_filename": img.original_filename,
+                "width": img.width,
+                "height": img.height,
+                "rating": img.rating,
+                "is_favorite": img.is_favorite,
+                "thumbnail_url": format!("/api/images/{}/thumbnail", img.id),
+                "url": format!("/api/images/{}/file", img.id),
+                "file_status": file_status,
+                "file_path": file_path,
+                "directory_name": directory_name,
+                "tags": tags_list,
+                "num_faces": img.num_faces,
+                "min_age": img.min_detected_age,
+                "max_age": img.max_detected_age,
+                "created_at": img.created_at,
+                "file_size": img.file_size,
+                "prompt": img.prompt,
+                "negative_prompt": img.negative_prompt,
+                "model_name": img.model_name,
+                "sampler": img.sampler,
+                "seed": img.seed,
+                "steps": img.steps,
+                "cfg_scale": img.cfg_scale,
+                "duration": img.duration,
+                "file_hash": img.file_hash,
+                "import_source": img.import_source
             })
         })
         .collect();
 
     Ok((images, total))
+}
+
+/// Get file path, status, and watch_directory_id for a batch of image IDs from the main DB.
+fn get_legacy_file_info_batch(
+    conn: &rusqlite::Connection,
+    image_ids: &[i64],
+) -> Result<HashMap<i64, (String, String, Option<i64>)>, AppError> {
+    let mut result = HashMap::new();
+    if image_ids.is_empty() {
+        return Ok(result);
+    }
+
+    let placeholders: Vec<String> = (1..=image_ids.len()).map(|i| format!("?{}", i)).collect();
+    let sql = format!(
+        "SELECT image_id, original_path, file_status, watch_directory_id
+         FROM image_files WHERE image_id IN ({})",
+        placeholders.join(",")
+    );
+    let params: Vec<&dyn rusqlite::types::ToSql> =
+        image_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params.as_slice(), |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<i64>>(3)?,
+        ))
+    })?;
+
+    for row in rows.flatten() {
+        result.entry(row.0).or_insert((row.1, row.2, row.3));
+    }
+
+    Ok(result)
+}
+
+/// Batch fetch tags for image IDs from the main DB's image_tags + tags tables.
+fn get_legacy_tags_batch(
+    conn: &rusqlite::Connection,
+    image_ids: &[i64],
+) -> Result<HashMap<i64, Vec<serde_json::Value>>, AppError> {
+    let mut result: HashMap<i64, Vec<serde_json::Value>> = HashMap::new();
+
+    if image_ids.is_empty() {
+        return Ok(result);
+    }
+
+    // Get all tag associations from the main DB image_tags table
+    let placeholders: Vec<String> = (1..=image_ids.len()).map(|i| format!("?{}", i)).collect();
+    let sql = format!(
+        "SELECT image_id, tag_id FROM image_tags WHERE image_id IN ({})",
+        placeholders.join(",")
+    );
+    let params: Vec<&dyn rusqlite::types::ToSql> =
+        image_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params.as_slice(), |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })?;
+
+    let mut all_tag_ids: HashSet<i64> = HashSet::new();
+    let mut associations: Vec<(i64, i64)> = Vec::new();
+
+    for row in rows.flatten() {
+        all_tag_ids.insert(row.1);
+        associations.push(row);
+    }
+
+    if all_tag_ids.is_empty() {
+        return Ok(result);
+    }
+
+    // Fetch tag details
+    let tag_ids: Vec<i64> = all_tag_ids.into_iter().collect();
+    let placeholders: Vec<String> = (1..=tag_ids.len()).map(|i| format!("?{}", i)).collect();
+    let sql = format!(
+        "SELECT id, name, category FROM tags WHERE id IN ({})",
+        placeholders.join(",")
+    );
+    let params: Vec<&dyn rusqlite::types::ToSql> =
+        tag_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+
+    let mut stmt = conn.prepare(&sql)?;
+    let tag_rows = stmt.query_map(params.as_slice(), |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+
+    let tags_by_id: HashMap<i64, (String, String)> = tag_rows
+        .flatten()
+        .map(|(id, name, cat)| (id, (name, cat)))
+        .collect();
+
+    // Build per-image tag lists
+    for (image_id, tag_id) in associations {
+        if let Some((name, category)) = tags_by_id.get(&tag_id) {
+            result
+                .entry(image_id)
+                .or_default()
+                .push(json!({"name": name, "category": category}));
+        }
+    }
+
+    Ok(result)
+}
+
+/// Batch fetch directory names by their IDs.
+fn get_directory_names_batch(
+    conn: &rusqlite::Connection,
+    dir_ids: &HashSet<i64>,
+) -> Result<HashMap<i64, String>, AppError> {
+    let mut result = HashMap::new();
+    if dir_ids.is_empty() {
+        return Ok(result);
+    }
+
+    let ids: Vec<i64> = dir_ids.iter().copied().collect();
+    let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
+    let sql = format!(
+        "SELECT id, COALESCE(name, path) FROM watch_directories WHERE id IN ({})",
+        placeholders.join(",")
+    );
+    let params: Vec<&dyn rusqlite::types::ToSql> =
+        ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params.as_slice(), |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    for row in rows.flatten() {
+        result.insert(row.0, row.1);
+    }
+
+    Ok(result)
 }

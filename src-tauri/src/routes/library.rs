@@ -33,6 +33,9 @@ pub fn router() -> Router<AppState> {
         )
         .route("/clear-duplicate-tasks", post(clear_duplicates))
         .route("/clear-pending-tasks", delete(clear_all_pending))
+        // Batch task enqueue
+        .route("/tag-untagged", post(tag_untagged))
+        .route("/detect-ages", post(detect_ages))
         // Maintenance
         .route("/clean-missing", post(clean_missing))
         .route("/regenerate-thumbnails", post(regenerate_thumbnails))
@@ -383,6 +386,96 @@ async fn clear_all_pending(
         };
 
         Ok::<_, AppError>(Json(json!({ "cancelled": cancelled })))
+    })
+    .await?
+}
+
+// ─── Batch task enqueue ──────────────────────────────────────────────────
+
+/// POST /api/library/tag-untagged — Enqueue TASK_TAG tasks for all untagged images.
+async fn tag_untagged(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    let state_clone = state.clone();
+    tokio::task::spawn_blocking(move || {
+        let dir_ids = state_clone.directory_db().get_all_directory_ids();
+        let mut queued: i64 = 0;
+
+        for dir_id in dir_ids {
+            if let Ok(pool) = state_clone.directory_db().get_pool(dir_id) {
+                if let Ok(conn) = pool.get() {
+                    // Find images with no tags
+                    let mut stmt = conn.prepare(
+                        "SELECT id FROM images WHERE id NOT IN (SELECT DISTINCT image_id FROM image_tags)",
+                    )?;
+
+                    let image_ids: Vec<i64> = stmt
+                        .query_map([], |row| row.get(0))
+                        .ok()
+                        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                        .unwrap_or_default();
+
+                    for image_id in image_ids {
+                        let payload = json!({
+                            "image_id": image_id,
+                            "directory_id": dir_id
+                        });
+                        if let Ok(Some(_)) = task_queue::enqueue_task(
+                            &state_clone,
+                            task_queue::TASK_TAG,
+                            &payload,
+                            5, // low priority
+                            Some(image_id),
+                        ) {
+                            queued += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok::<_, AppError>(Json(json!({ "queued": queued })))
+    })
+    .await?
+}
+
+/// POST /api/library/detect-ages — Enqueue TASK_AGE_DETECT tasks for all images.
+async fn detect_ages(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    let state_clone = state.clone();
+    tokio::task::spawn_blocking(move || {
+        let dir_ids = state_clone.directory_db().get_all_directory_ids();
+        let mut queued: i64 = 0;
+
+        for dir_id in dir_ids {
+            if let Ok(pool) = state_clone.directory_db().get_pool(dir_id) {
+                if let Ok(conn) = pool.get() {
+                    // Enqueue age detection for all images
+                    let mut stmt = conn.prepare("SELECT id FROM images")?;
+
+                    let image_ids: Vec<i64> = stmt
+                        .query_map([], |row| row.get(0))
+                        .ok()
+                        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                        .unwrap_or_default();
+
+                    for image_id in image_ids {
+                        let payload = json!({
+                            "image_id": image_id,
+                            "directory_id": dir_id
+                        });
+                        if let Ok(Some(_)) = task_queue::enqueue_task(
+                            &state_clone,
+                            task_queue::TASK_AGE_DETECT,
+                            &payload,
+                            5, // low priority
+                            Some(image_id),
+                        ) {
+                            queued += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok::<_, AppError>(Json(json!({ "queued": queued })))
     })
     .await?
 }

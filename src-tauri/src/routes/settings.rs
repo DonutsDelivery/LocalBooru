@@ -36,7 +36,8 @@ pub fn router() -> Router<AppState> {
         .route("/cast", get(get_cast).post(update_cast))
         .route("/age-detection/status", get(get_age_detection_status))
         .route("/age-detection/toggle", post(toggle_age_detection))
-        .route("/migration", get(get_migration))
+        .route("/age-detection/install", post(install_age_detection))
+        .route("/cast/install", post(install_cast))
         .route("/video-info", post(get_video_info_endpoint))
         // ─── Transcode streaming ────────────────────────────────────────
         .route("/transcode/play", post(start_transcode_stream))
@@ -58,6 +59,18 @@ pub fn router() -> Router<AppState> {
         .route(
             "/svp/stream/{stream_id}/{filename}",
             get(bridge_svp_stream),
+        )
+        // ─── Whisper subtitle streaming (sidecar bridge) ──────────────────
+        .route("/whisper/install", post(bridge_whisper_install))
+        .route("/whisper/generate", post(bridge_whisper_generate))
+        .route("/whisper/stop", post(bridge_whisper_stop))
+        .route(
+            "/whisper/vtt/{stream_id}/subtitles.vtt",
+            get(bridge_whisper_vtt),
+        )
+        .route(
+            "/whisper/events/{stream_id}",
+            get(bridge_whisper_events),
         )
 }
 
@@ -408,11 +421,16 @@ async fn get_video_playback(
     Ok(Json(result))
 }
 
-/// POST /video-playback — Update video playback configuration.
+/// POST /video-playback — Update video playback configuration with validation.
 async fn update_video_playback(
     State(state): State<AppState>,
-    Json(body): Json<Value>,
+    Json(mut body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
+    // Clamp auto_advance_delay to 1-30
+    if let Some(delay) = body.get("auto_advance_delay").and_then(|v| v.as_i64()) {
+        body["auto_advance_delay"] = json!(delay.clamp(1, 30));
+    }
+
     let data_dir = state.data_dir().to_path_buf();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -453,11 +471,32 @@ async fn get_optical_flow(
     Ok(Json(result))
 }
 
-/// POST /optical-flow — Update optical flow configuration.
+/// Valid quality presets for optical flow.
+const OPTICAL_FLOW_QUALITIES: &[&str] = &[
+    "low", "medium", "high", "svp", "gpu_native", "realtime", "fast", "balanced", "quality",
+];
+
+/// POST /optical-flow — Update optical flow configuration with validation.
 async fn update_optical_flow(
     State(state): State<AppState>,
-    Json(body): Json<Value>,
+    Json(mut body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
+    // Validate quality enum
+    if let Some(quality) = body.get("quality").and_then(|v| v.as_str()) {
+        if !OPTICAL_FLOW_QUALITIES.contains(&quality) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid quality '{}'. Must be one of: {}",
+                quality,
+                OPTICAL_FLOW_QUALITIES.join(", ")
+            )));
+        }
+    }
+
+    // Clamp target_fps to 15-120
+    if let Some(fps) = body.get("target_fps").and_then(|v| v.as_i64()) {
+        body["target_fps"] = json!(fps.clamp(15, 120));
+    }
+
     let data_dir = state.data_dir().to_path_buf();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -514,11 +553,34 @@ async fn get_svp(
     Ok(Json(result))
 }
 
-/// POST /svp — Update SVP configuration.
+/// Valid SVP shader values.
+const SVP_VALID_SHADERS: &[i64] = &[1, 2, 11, 13, 21, 23];
+
+/// POST /svp — Update SVP configuration with validation.
 async fn update_svp(
     State(state): State<AppState>,
-    Json(body): Json<Value>,
+    Json(mut body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
+    // Validate shader enum
+    if let Some(shader) = body.get("shader").and_then(|v| v.as_i64()) {
+        if !SVP_VALID_SHADERS.contains(&shader) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid shader {}. Must be one of: {}",
+                shader,
+                SVP_VALID_SHADERS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+    }
+
+    // Clamp target_fps to 15-144
+    if let Some(fps) = body.get("target_fps").and_then(|v| v.as_i64()) {
+        body["target_fps"] = json!(fps.clamp(15, 144));
+    }
+
     let data_dir = state.data_dir().to_path_buf();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -555,11 +617,69 @@ async fn get_whisper(
     Ok(Json(result))
 }
 
-/// POST /whisper — Update whisper subtitle configuration.
+/// Valid whisper model sizes.
+const WHISPER_MODEL_SIZES: &[&str] = &["tiny", "base", "small", "medium", "large-v2", "large-v3"];
+/// Valid whisper tasks.
+const WHISPER_TASKS: &[&str] = &["transcribe", "translate"];
+/// Valid whisper devices.
+const WHISPER_DEVICES: &[&str] = &["cpu", "cuda", "auto"];
+/// Valid whisper compute types.
+const WHISPER_COMPUTE_TYPES: &[&str] = &["float16", "float32", "int8", "int8_float16", "auto"];
+
+/// POST /whisper — Update whisper subtitle configuration with validation.
 async fn update_whisper(
     State(state): State<AppState>,
-    Json(body): Json<Value>,
+    Json(mut body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
+    // Validate model_size enum
+    if let Some(model_size) = body.get("model_size").and_then(|v| v.as_str()) {
+        if !WHISPER_MODEL_SIZES.contains(&model_size) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid model_size '{}'. Must be one of: {}",
+                model_size,
+                WHISPER_MODEL_SIZES.join(", ")
+            )));
+        }
+    }
+
+    // Validate task enum
+    if let Some(task) = body.get("task").and_then(|v| v.as_str()) {
+        if !WHISPER_TASKS.contains(&task) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid task '{}'. Must be one of: {}",
+                task,
+                WHISPER_TASKS.join(", ")
+            )));
+        }
+    }
+
+    // Validate device enum
+    if let Some(device) = body.get("device").and_then(|v| v.as_str()) {
+        if !WHISPER_DEVICES.contains(&device) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid device '{}'. Must be one of: {}",
+                device,
+                WHISPER_DEVICES.join(", ")
+            )));
+        }
+    }
+
+    // Validate compute_type enum
+    if let Some(compute_type) = body.get("compute_type").and_then(|v| v.as_str()) {
+        if !WHISPER_COMPUTE_TYPES.contains(&compute_type) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid compute_type '{}'. Must be one of: {}",
+                compute_type,
+                WHISPER_COMPUTE_TYPES.join(", ")
+            )));
+        }
+    }
+
+    // Clamp temperature to 0.0-1.0
+    if let Some(temp) = body.get("temperature").and_then(|v| v.as_f64()) {
+        body["temperature"] = json!(temp.clamp(0.0, 1.0));
+    }
+
     let data_dir = state.data_dir().to_path_buf();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -671,14 +791,52 @@ async fn toggle_age_detection(
     })))
 }
 
-// ─── Migration ───────────────────────────────────────────────────────────────
+// ─── Addon install bridges ───────────────────────────────────────────────
 
-/// GET /migration — Get migration status stub.
-async fn get_migration() -> Json<Value> {
-    Json(json!({
-        "current_mode": "system",
-        "status": null
-    }))
+/// POST /age-detection/install — Install the age-detection addon (create venv, install deps).
+async fn install_age_detection(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    let state_clone = state.clone();
+
+    tokio::task::spawn_blocking(move || {
+        state_clone
+            .addon_manager()
+            .install_addon("age-detector")
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to install age-detection addon: {}", e))
+            })
+    })
+    .await??;
+
+    Ok(Json(json!({
+        "status": "installed",
+        "addon_id": "age-detector",
+        "message": "Age detection addon installed successfully"
+    })))
+}
+
+/// POST /cast/install — Install the cast addon (create venv, install deps).
+async fn install_cast(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    let state_clone = state.clone();
+
+    tokio::task::spawn_blocking(move || {
+        state_clone
+            .addon_manager()
+            .install_addon("cast")
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to install cast addon: {}", e))
+            })
+    })
+    .await??;
+
+    Ok(Json(json!({
+        "status": "installed",
+        "addon_id": "cast",
+        "message": "Cast addon installed successfully"
+    })))
 }
 
 // ─── Video info ──────────────────────────────────────────────────────────────
@@ -1224,4 +1382,284 @@ async fn bridge_svp_stream(
         &format!("/svp/stream/{}/{}", stream_id, filename),
     )
     .await
+}
+
+// ─── Whisper subtitle bridge ─────────────────────────────────────────────────
+
+const WHISPER_ADDON_ID: &str = "whisper-subtitles";
+
+/// Check that the whisper addon is currently running and return an error if not.
+fn require_whisper_running(state: &AppState) -> Result<(), AppError> {
+    let status = state.addon_manager().get_addon_status(WHISPER_ADDON_ID);
+    if status != AddonStatus::Running {
+        return Err(AppError::ServiceUnavailable(
+            "Whisper addon is not running. Install and start it first.".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// POST /whisper/install — Install the whisper-subtitles addon (create venv, pip install faster-whisper).
+async fn bridge_whisper_install(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    let addon_info = state.addon_manager().get_addon(WHISPER_ADDON_ID);
+    let already_installed = addon_info
+        .as_ref()
+        .map(|info| info.installed)
+        .unwrap_or(false);
+
+    if already_installed {
+        return Ok(Json(json!({
+            "status": "installed",
+            "addon_id": WHISPER_ADDON_ID,
+            "message": "Whisper addon is already installed"
+        })));
+    }
+
+    let state_clone = state.clone();
+
+    tokio::task::spawn_blocking(move || {
+        state_clone
+            .addon_manager()
+            .install_addon(WHISPER_ADDON_ID)
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to install whisper addon: {}", e))
+            })
+    })
+    .await??;
+
+    Ok(Json(json!({
+        "status": "installed",
+        "addon_id": WHISPER_ADDON_ID,
+        "message": "Whisper addon installed successfully"
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+struct WhisperGenerateRequest {
+    file_path: String,
+    image_id: i64,
+}
+
+/// POST /whisper/generate — Start subtitle generation for a video file.
+///
+/// Generates a unique stream_id, proxies the request to the whisper sidecar,
+/// and returns URLs for the VTT file and SSE event stream.
+async fn bridge_whisper_generate(
+    State(state): State<AppState>,
+    Json(body): Json<WhisperGenerateRequest>,
+) -> Result<Json<Value>, AppError> {
+    require_whisper_running(&state)?;
+
+    let file_path = Path::new(&body.file_path);
+    if !file_path.exists() {
+        return Err(AppError::NotFound("Video file not found".into()));
+    }
+
+    // Generate a unique stream ID
+    let stream_id = uuid::Uuid::new_v4().to_string();
+
+    // Load whisper settings to pass along as generation config
+    let data_dir = state.data_dir().to_path_buf();
+    let whisper_config = tokio::task::spawn_blocking(move || {
+        get_config_section(&data_dir, "whisper")
+    })
+    .await?;
+
+    // Build the request body for the sidecar
+    let sidecar_body = json!({
+        "file_path": body.file_path,
+        "image_id": body.image_id,
+        "stream_id": stream_id,
+        "config": whisper_config,
+    });
+
+    // Proxy to the whisper addon
+    let base_url = state
+        .addon_manager()
+        .addon_url(WHISPER_ADDON_ID)
+        .ok_or_else(|| {
+            AppError::ServiceUnavailable(
+                "Whisper addon is not running. Install and start it first.".into(),
+            )
+        })?;
+
+    let url = format!("{}/whisper/generate", base_url.trim_end_matches('/'));
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .json(&sidecar_body)
+        .send()
+        .await
+        .map_err(|e| {
+            AppError::ServiceUnavailable(format!(
+                "Failed to reach whisper addon: {}",
+                e
+            ))
+        })?;
+
+    let status = response.status();
+    let result: Value = response.json().await.map_err(|e| {
+        AppError::Internal(format!(
+            "Invalid response from whisper addon: {}",
+            e
+        ))
+    })?;
+
+    if !status.is_success() {
+        let detail = result
+            .get("detail")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown whisper addon error");
+        return Err(AppError::Internal(detail.to_string()));
+    }
+
+    // Build response with URLs routed through the Rust server
+    let vtt_url = format!(
+        "/api/settings/whisper/vtt/{}/subtitles.vtt",
+        stream_id
+    );
+    let events_url = format!(
+        "/api/settings/whisper/events/{}",
+        stream_id
+    );
+
+    // Merge the sidecar response with our constructed URLs
+    let mut response_json = result;
+    response_json["stream_id"] = json!(stream_id);
+    response_json["vtt_url"] = json!(vtt_url);
+    response_json["events_url"] = json!(events_url);
+
+    Ok(Json(response_json))
+}
+
+/// POST /whisper/stop — Stop active whisper subtitle generation.
+async fn bridge_whisper_stop(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    require_whisper_running(&state)?;
+
+    bridge_post(
+        &state,
+        WHISPER_ADDON_ID,
+        "/whisper/stop",
+        &json!({}),
+        None,
+    )
+    .await
+}
+
+/// GET /whisper/vtt/{stream_id}/subtitles.vtt — Proxy the growing VTT file from the sidecar.
+///
+/// Sets Content-Type to text/vtt so browsers can consume it directly.
+async fn bridge_whisper_vtt(
+    State(state): State<AppState>,
+    AxumPath(stream_id): AxumPath<String>,
+) -> Result<Response, AppError> {
+    require_whisper_running(&state)?;
+
+    let base_url = state
+        .addon_manager()
+        .addon_url(WHISPER_ADDON_ID)
+        .ok_or_else(|| {
+            AppError::ServiceUnavailable("Whisper addon is not running".into())
+        })?;
+
+    let url = format!(
+        "{}/whisper/vtt/{}/subtitles.vtt",
+        base_url.trim_end_matches('/'),
+        stream_id
+    );
+
+    let client = reqwest::Client::new();
+    let response = client.get(&url).send().await.map_err(|e| {
+        AppError::ServiceUnavailable(format!(
+            "Failed to reach whisper addon: {}",
+            e
+        ))
+    })?;
+
+    let status = StatusCode::from_u16(response.status().as_u16())
+        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+
+    let body_bytes = response.bytes().await.map_err(|e| {
+        AppError::Internal(format!(
+            "Failed to read VTT response from whisper addon: {}",
+            e
+        ))
+    })?;
+
+    Ok(Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "text/vtt; charset=utf-8")
+        .header(header::CONTENT_LENGTH, body_bytes.len())
+        .header(
+            header::CACHE_CONTROL,
+            "no-cache, no-store, must-revalidate",
+        )
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .body(Body::from(body_bytes))
+        .unwrap())
+}
+
+/// GET /whisper/events/{stream_id} — SSE proxy for real-time subtitle cue events.
+///
+/// Connects to the whisper sidecar's SSE endpoint and forwards each event
+/// to the client. Each event contains a new subtitle cue as it's generated.
+async fn bridge_whisper_events(
+    State(state): State<AppState>,
+    AxumPath(stream_id): AxumPath<String>,
+) -> Result<Response, AppError> {
+    require_whisper_running(&state)?;
+
+    let base_url = state
+        .addon_manager()
+        .addon_url(WHISPER_ADDON_ID)
+        .ok_or_else(|| {
+            AppError::ServiceUnavailable("Whisper addon is not running".into())
+        })?;
+
+    let url = format!(
+        "{}/whisper/events/{}",
+        base_url.trim_end_matches('/'),
+        stream_id
+    );
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .header("Accept", "text/event-stream")
+        .send()
+        .await
+        .map_err(|e| {
+            AppError::ServiceUnavailable(format!(
+                "Failed to reach whisper addon SSE endpoint: {}",
+                e
+            ))
+        })?;
+
+    if !response.status().is_success() {
+        let status_code = response.status().as_u16();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::Internal(format!(
+            "Whisper addon SSE endpoint returned {}: {}",
+            status_code, body
+        )));
+    }
+
+    // Stream the SSE response body through to the client
+    let byte_stream = response.bytes_stream();
+
+    let body = Body::from_stream(byte_stream);
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/event-stream")
+        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .header(header::CONNECTION, "keep-alive")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .body(body)
+        .unwrap())
 }

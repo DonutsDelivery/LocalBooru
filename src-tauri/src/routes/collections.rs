@@ -1,6 +1,6 @@
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::response::Json;
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::Router;
 use rusqlite::params;
 use serde::Deserialize;
@@ -19,7 +19,7 @@ pub fn router() -> Router<AppState> {
                 .delete(delete_collection),
         )
         .route("/{collection_id}/items", post(add_items).delete(remove_items))
-        .route("/{collection_id}/items/reorder", post(reorder_items))
+        .route("/{collection_id}/items/reorder", patch(reorder_items))
 }
 
 #[derive(Deserialize)]
@@ -58,11 +58,15 @@ async fn list_collections(State(state): State<AppState>) -> Result<Json<Value>, 
 
         let collections: Vec<Value> = stmt
             .query_map([], |row| {
+                let cover_image_id: Option<i64> = row.get(3)?;
+                let cover_thumbnail_url = cover_image_id
+                    .map(|id| format!("/api/images/{}/thumbnail", id));
                 Ok(json!({
                     "id": row.get::<_, i64>(0)?,
                     "name": row.get::<_, String>(1)?,
                     "description": row.get::<_, Option<String>>(2)?,
-                    "cover_image_id": row.get::<_, Option<i64>>(3)?,
+                    "cover_image_id": cover_image_id,
+                    "cover_thumbnail_url": cover_thumbnail_url,
                     "item_count": row.get::<_, i64>(4)?,
                     "created_at": row.get::<_, Option<String>>(5)?,
                     "updated_at": row.get::<_, Option<String>>(6)?
@@ -131,7 +135,7 @@ async fn get_collection(
             },
         ).map_err(|_| AppError::NotFound("Collection not found".into()))?;
 
-        // Get items
+        // Get item IDs
         let mut stmt = conn.prepare(
             "SELECT ci.image_id FROM collection_items ci
              WHERE ci.collection_id = ?1
@@ -143,8 +147,59 @@ async fn get_collection(
             .filter_map(|r| r.ok())
             .collect();
 
+        // Hydrate image objects from directory DBs
+        let mut images: Vec<Value> = Vec::new();
+        for &img_id in &image_ids {
+            let mut found = false;
+            let all_dir_ids = state_clone.directory_db().get_all_directory_ids();
+            for dir_id in &all_dir_ids {
+                if !state_clone.directory_db().db_exists(*dir_id) {
+                    continue;
+                }
+                let dir_pool = match state_clone.directory_db().get_pool(*dir_id) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let dir_conn = match dir_pool.get() {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                if let Ok(img) = dir_conn.query_row(
+                    "SELECT id, filename, file_hash, width, height, file_size, duration,
+                            rating, is_favorite, view_count
+                     FROM images WHERE id = ?1",
+                    params![img_id],
+                    |row| {
+                        let hash: String = row.get(2)?;
+                        Ok(json!({
+                            "id": row.get::<_, i64>(0)?,
+                            "filename": row.get::<_, String>(1)?,
+                            "file_hash": hash,
+                            "width": row.get::<_, Option<i32>>(3)?,
+                            "height": row.get::<_, Option<i32>>(4)?,
+                            "file_size": row.get::<_, Option<i64>>(5)?,
+                            "duration": row.get::<_, Option<f64>>(6)?,
+                            "rating": row.get::<_, String>(7)?,
+                            "is_favorite": row.get::<_, bool>(8)?,
+                            "view_count": row.get::<_, i32>(9)?,
+                            "thumbnail_url": format!("/api/images/{}/thumbnail?directory_id={}", img_id, dir_id),
+                            "url": format!("/api/images/{}/file?directory_id={}", img_id, dir_id),
+                        }))
+                    },
+                ) {
+                    images.push(img);
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                // Fallback: include stub with ID so frontend knows something exists
+                images.push(json!({"id": img_id}));
+            }
+        }
+
         let mut result = collection;
-        result["images"] = json!(image_ids);
+        result["images"] = json!(images);
         result["page"] = json!(page);
         result["per_page"] = json!(per_page);
         result["has_more"] = json!(image_ids.len() as i64 == per_page);

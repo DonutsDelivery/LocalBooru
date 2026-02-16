@@ -48,10 +48,15 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         .nest("/api/collections", crate::routes::collections::router())
         .nest("/api/users", crate::routes::users::router())
         .nest("/api/settings", crate::routes::settings::router())
+        .nest("/api/settings/migration", crate::routes::migration::router())
+        .nest("/api/settings/svp/web", crate::routes::svp_web::router())
+        .nest("/api/settings/models", crate::routes::models::router())
         .nest("/api/network", crate::routes::network::router())
         .nest("/api/watch-history", crate::routes::watch_history::router())
         .nest("/api/app-update", crate::routes::app_update::router())
-        .nest("/api/addons", crate::routes::addons::router());
+        .nest("/api/addons", crate::routes::addons::router())
+        .nest("/api/cast", crate::routes::cast::router())
+        .nest("/api/share", crate::routes::share::router());
 
     // Serve thumbnails as static files
     let thumbnails_dir = state.thumbnails_dir();

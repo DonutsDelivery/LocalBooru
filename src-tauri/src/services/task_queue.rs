@@ -4,8 +4,9 @@ use std::time::Duration;
 
 use rusqlite::params;
 use serde_json::Value;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, Semaphore};
 
+use crate::addons::manager::AddonStatus;
 use crate::server::error::AppError;
 use crate::server::state::AppState;
 use crate::services::events::event_type;
@@ -23,6 +24,15 @@ pub const STATUS_PENDING: &str = "pending";
 pub const STATUS_PROCESSING: &str = "processing";
 pub const STATUS_COMPLETED: &str = "completed";
 pub const STATUS_FAILED: &str = "failed";
+
+/// Maximum number of retry attempts before a task is permanently failed.
+const MAX_RETRIES: i64 = 3;
+
+/// Default number of concurrent task workers.
+const DEFAULT_WORKERS: usize = 2;
+
+/// Settings key for configuring worker concurrency.
+const SETTINGS_WORKERS_KEY: &str = "task_queue_workers";
 
 // ─── BackgroundTaskQueue ─────────────────────────────────────────────────────
 
@@ -53,7 +63,7 @@ impl BackgroundTaskQueue {
 
     pub fn resume(&self) {
         self.paused.store(false, Ordering::SeqCst);
-        self.notify.notify_one(); // Wake the worker
+        self.notify.notify_waiters(); // Wake all workers
         log::info!("[TaskQueue] Resumed");
     }
 
@@ -61,12 +71,12 @@ impl BackgroundTaskQueue {
         self.running.load(Ordering::SeqCst)
     }
 
-    /// Wake the worker to check for new tasks immediately.
+    /// Wake the workers to check for new tasks immediately.
     pub fn wake(&self) {
-        self.notify.notify_one();
+        self.notify.notify_waiters();
     }
 
-    /// Start the background worker loop.
+    /// Start the background worker pool and tag guardian.
     pub fn start(&self, state: AppState) {
         if self.running.load(Ordering::SeqCst) {
             log::warn!("[TaskQueue] Already running");
@@ -74,63 +84,131 @@ impl BackgroundTaskQueue {
         }
 
         self.running.store(true, Ordering::SeqCst);
-        let paused = self.paused.clone();
-        let running = self.running.clone();
-        let notify = self.notify.clone();
 
         // Reset stuck tasks on startup
         if let Err(e) = reset_stuck_tasks(&state) {
             log::error!("[TaskQueue] Failed to reset stuck tasks: {}", e);
         }
 
-        tokio::spawn(async move {
-            log::info!("[TaskQueue] Worker started");
+        // Read worker count from settings
+        let num_workers = read_worker_count(&state);
 
-            loop {
-                if !running.load(Ordering::SeqCst) {
-                    break;
-                }
+        let semaphore = Arc::new(Semaphore::new(num_workers));
 
-                if paused.load(Ordering::SeqCst) {
-                    // Wait until resumed or notified
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                    continue;
-                }
+        log::info!(
+            "[TaskQueue] Starting {} worker(s)",
+            num_workers
+        );
 
-                // Try to process one task
-                match process_next_task(&state).await {
-                    Ok(true) => {
-                        // Processed a task, immediately check for more
+        // Spawn N worker tasks
+        for worker_id in 0..num_workers {
+            let paused = self.paused.clone();
+            let running = self.running.clone();
+            let notify = self.notify.clone();
+            let sem = semaphore.clone();
+            let state = state.clone();
+
+            tokio::spawn(async move {
+                log::info!("[TaskQueue] Worker {} started", worker_id);
+
+                loop {
+                    if !running.load(Ordering::SeqCst) {
+                        break;
+                    }
+
+                    if paused.load(Ordering::SeqCst) {
+                        tokio::time::sleep(Duration::from_secs(2)).await;
                         continue;
                     }
-                    Ok(false) => {
-                        // No tasks available, wait for notification or timeout
-                        tokio::select! {
-                            _ = notify.notified() => {},
-                            _ = tokio::time::sleep(Duration::from_secs(5)) => {},
+
+                    // Acquire semaphore permit to limit concurrency
+                    let _permit = match sem.acquire().await {
+                        Ok(p) => p,
+                        Err(_) => break, // Semaphore closed
+                    };
+
+                    match process_next_task(&state).await {
+                        Ok(true) => {
+                            // Processed a task, immediately check for more
+                            continue;
+                        }
+                        Ok(false) => {
+                            // No tasks available, wait for notification or timeout
+                            tokio::select! {
+                                _ = notify.notified() => {},
+                                _ = tokio::time::sleep(Duration::from_secs(5)) => {},
+                            }
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "[TaskQueue] Worker {} error: {}",
+                                worker_id, e
+                            );
+                            tokio::time::sleep(Duration::from_secs(2)).await;
                         }
                     }
-                    Err(e) => {
-                        log::error!("[TaskQueue] Error processing task: {}", e);
-                        tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+
+                log::info!("[TaskQueue] Worker {} stopped", worker_id);
+            });
+        }
+
+        // Spawn tag guardian background task
+        {
+            let running = self.running.clone();
+            let state = state.clone();
+
+            tokio::spawn(async move {
+                log::info!("[TaskQueue] Tag guardian started");
+
+                loop {
+                    // Sleep first — give the system time to start up
+                    tokio::time::sleep(Duration::from_secs(300)).await;
+
+                    if !running.load(Ordering::SeqCst) {
+                        break;
+                    }
+
+                    if let Err(e) = run_tag_guardian(&state).await {
+                        log::error!("[TaskQueue] Tag guardian error: {}", e);
                     }
                 }
-            }
 
-            log::info!("[TaskQueue] Worker stopped");
-        });
+                log::info!("[TaskQueue] Tag guardian stopped");
+            });
+        }
     }
 
     /// Stop the background worker.
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
-        self.notify.notify_one();
+        self.notify.notify_waiters();
     }
 }
 
 impl Default for BackgroundTaskQueue {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Read the configured worker count from the settings DB table.
+/// Falls back to DEFAULT_WORKERS if not set or invalid.
+fn read_worker_count(state: &AppState) -> usize {
+    let conn = match state.main_db().get() {
+        Ok(c) => c,
+        Err(_) => return DEFAULT_WORKERS,
+    };
+
+    let result = conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        params![SETTINGS_WORKERS_KEY],
+        |row| row.get::<_, String>(0),
+    );
+
+    match result {
+        Ok(val) => val.parse::<usize>().unwrap_or(DEFAULT_WORKERS).max(1),
+        Err(_) => DEFAULT_WORKERS,
     }
 }
 
@@ -155,12 +233,12 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
     let state_clone = state.clone();
 
     // Fetch next task (blocking DB operation)
-    let task_info = tokio::task::spawn_blocking(move || -> Result<Option<(i64, String, String)>, AppError> {
+    let task_info = tokio::task::spawn_blocking(move || -> Result<Option<(i64, String, String, i64)>, AppError> {
         let conn = state_clone.main_db().get()?;
 
         // Fetch highest-priority pending task
         let result = conn.query_row(
-            "SELECT id, task_type, payload FROM task_queue
+            "SELECT id, task_type, payload, attempts FROM task_queue
              WHERE status = ?1
              ORDER BY priority DESC, created_at ASC
              LIMIT 1",
@@ -170,6 +248,7 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
                     row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
                 ))
             },
         );
@@ -189,12 +268,15 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
     })
     .await??;
 
-    let (task_id, task_type, payload_str) = match task_info {
+    let (task_id, task_type, payload_str, attempts) = match task_info {
         Some(t) => t,
         None => return Ok(false),
     };
 
-    log::info!("[TaskQueue] Processing task #{} ({})", task_id, task_type);
+    log::info!(
+        "[TaskQueue] Processing task #{} ({}) [attempt {}]",
+        task_id, task_type, attempts + 1
+    );
 
     let payload: Value = serde_json::from_str(&payload_str).unwrap_or_default();
 
@@ -203,6 +285,7 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
 
     // Update task status
     let state_clone = state.clone();
+    let task_type_clone = task_type.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
         let conn = state_clone.main_db().get()?;
         match result {
@@ -214,11 +297,42 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                conn.execute(
-                    "UPDATE task_queue SET status = ?1, error_message = ?2, attempts = attempts + 1, completed_at = datetime('now') WHERE id = ?3",
-                    params![STATUS_FAILED, &error_msg, task_id],
-                )?;
-                log::error!("[TaskQueue] Task #{} failed: {}", task_id, error_msg);
+                let new_attempts = attempts + 1;
+
+                if new_attempts < MAX_RETRIES {
+                    // Retry: set back to pending with incremented attempts
+                    conn.execute(
+                        "UPDATE task_queue SET status = ?1, error_message = ?2, attempts = ?3 WHERE id = ?4",
+                        params![STATUS_PENDING, &error_msg, new_attempts, task_id],
+                    )?;
+
+                    // Exponential backoff: 1s, 2s, 4s (2^(attempt-1) seconds)
+                    let backoff = Duration::from_secs(1u64 << (new_attempts - 1));
+
+                    log::warn!(
+                        "[TaskQueue] Task #{} ({}) failed (attempt {}/{}), retrying in {:?}: {}",
+                        task_id, task_type_clone, new_attempts, MAX_RETRIES, backoff, error_msg
+                    );
+
+                    // Schedule the retry by spawning a delayed wake
+                    let state_for_wake = state_clone.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(backoff).await;
+                        if let Some(tq) = state_for_wake.task_queue() {
+                            tq.wake();
+                        }
+                    });
+                } else {
+                    // Permanently failed after all retries
+                    conn.execute(
+                        "UPDATE task_queue SET status = ?1, error_message = ?2, attempts = ?3, completed_at = datetime('now') WHERE id = ?4",
+                        params![STATUS_FAILED, &error_msg, new_attempts, task_id],
+                    )?;
+                    log::error!(
+                        "[TaskQueue] Task #{} ({}) permanently failed after {} attempts: {}",
+                        task_id, task_type_clone, new_attempts, error_msg
+                    );
+                }
             }
         }
         Ok(())
@@ -288,9 +402,12 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
             .await??;
         }
 
-        TASK_TAG | TASK_AGE_DETECT => {
-            // These tasks require addon services (Python sidecar).
-            // For now, log and skip — will be handled when addon system is built.
+        TASK_TAG => {
+            execute_tag_task(state, payload).await?;
+        }
+
+        TASK_AGE_DETECT => {
+            // Age detection requires the age-detector addon sidecar.
             log::info!(
                 "[TaskQueue] Skipping {} task (addon not available)",
                 task_type
@@ -298,12 +415,11 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
         }
 
         TASK_EXTRACT_METADATA => {
-            // Metadata extraction will be implemented when we add the metadata service.
-            // For fast imports, this completes the deferred work.
             let image_id = payload["image_id"].as_i64();
             let directory_id = payload["directory_id"].as_i64();
             let complete_import = payload["complete_import"].as_bool().unwrap_or(false);
 
+            // Complete fast import first if requested (hash, dimensions, thumbnail)
             if complete_import {
                 if let (Some(img_id), Some(dir_id)) = (image_id, directory_id) {
                     let image_path = payload["image_path"]
@@ -318,7 +434,24 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
                     .await??;
                 }
             }
-            // Actual metadata extraction (EXIF, ComfyUI, etc.) deferred to later phase
+
+            // Extract AI generation metadata (A1111 / ComfyUI)
+            if let Some(img_id) = image_id {
+                let image_path = payload["image_path"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+
+                if !image_path.is_empty() && std::path::Path::new(&image_path).exists() {
+                    let state_clone = state.clone();
+                    let dir_id = directory_id;
+
+                    tokio::task::spawn_blocking(move || {
+                        run_metadata_extraction(&state_clone, img_id, dir_id, &image_path)
+                    })
+                    .await??;
+                }
+            }
         }
 
         _ => {
@@ -328,6 +461,313 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
 
     Ok(())
 }
+
+// ─── TASK_TAG handler ────────────────────────────────────────────────────────
+
+/// Execute a tag task by sending the image to the auto-tagger addon sidecar.
+///
+/// Expected payload: { "image_id": N, "directory_id": N, "image_path": "..." }
+///
+/// The auto-tagger addon (port 18001) receives a POST to /predict with the
+/// image file path and returns predicted tags with confidence scores.
+/// If the addon is not running, the task is skipped (not failed).
+async fn execute_tag_task(state: &AppState, payload: &Value) -> Result<(), AppError> {
+    let image_id = payload["image_id"]
+        .as_i64()
+        .ok_or_else(|| AppError::Internal("Missing image_id in tag task".into()))?;
+    let directory_id = payload["directory_id"].as_i64();
+    let image_path = payload["image_path"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    if image_path.is_empty() || !std::path::Path::new(&image_path).exists() {
+        log::warn!(
+            "[TaskQueue] Tag task for image #{}: file not found at '{}'",
+            image_id, image_path
+        );
+        return Ok(());
+    }
+
+    // Check if auto-tagger addon is running
+    let addon_status = state.addon_manager().get_addon_status("auto-tagger");
+    if addon_status != AddonStatus::Running {
+        log::info!(
+            "[TaskQueue] Skipping tag task for image #{} (auto-tagger addon not running, status: {:?})",
+            image_id, addon_status
+        );
+        return Ok(());
+    }
+
+    let base_url = match state.addon_manager().addon_url("auto-tagger") {
+        Some(url) => url,
+        None => {
+            log::warn!(
+                "[TaskQueue] auto-tagger addon URL unavailable for image #{}",
+                image_id
+            );
+            return Ok(());
+        }
+    };
+
+    // Send image path to the auto-tagger sidecar
+    let predict_url = format!("{}/predict", base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| AppError::Internal(format!("Failed to create HTTP client: {}", e)))?;
+
+    let response = client
+        .post(&predict_url)
+        .json(&serde_json::json!({
+            "file_path": image_path,
+            "image_id": image_id,
+        }))
+        .send()
+        .await;
+
+    let response = match response {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!(
+                "[TaskQueue] Failed to reach auto-tagger for image #{}: {}",
+                image_id, e
+            );
+            return Ok(());
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        log::warn!(
+            "[TaskQueue] auto-tagger returned {} for image #{}: {}",
+            status, image_id, body
+        );
+        return Ok(());
+    }
+
+    // Parse the response — expected: { "tags": [{"name": "...", "confidence": 0.9, "category": "..."}, ...] }
+    let result: Value = response.json().await.map_err(|e| {
+        AppError::Internal(format!(
+            "Failed to parse auto-tagger response for image #{}: {}",
+            image_id, e
+        ))
+    })?;
+
+    let tags = match result.get("tags").and_then(|t| t.as_array()) {
+        Some(t) => t,
+        None => {
+            log::info!(
+                "[TaskQueue] auto-tagger returned no tags for image #{}",
+                image_id
+            );
+            return Ok(());
+        }
+    };
+
+    if tags.is_empty() {
+        log::info!(
+            "[TaskQueue] auto-tagger returned empty tags for image #{}",
+            image_id
+        );
+        return Ok(());
+    }
+
+    // Insert tags into the database
+    let state_clone = state.clone();
+    let tags_owned: Vec<Value> = tags.clone();
+    let dir_id = directory_id;
+
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let main_conn = state_clone.main_db().get()?;
+        let mut inserted = 0u32;
+
+        for tag_val in &tags_owned {
+            let tag_name = match tag_val.get("name").and_then(|n| n.as_str()) {
+                Some(n) => n.trim().to_lowercase(),
+                None => continue,
+            };
+            if tag_name.is_empty() {
+                continue;
+            }
+
+            let confidence = tag_val
+                .get("confidence")
+                .and_then(|c| c.as_f64())
+                .unwrap_or(0.0);
+            let category = tag_val
+                .get("category")
+                .and_then(|c| c.as_str())
+                .unwrap_or("general");
+
+            // Ensure the tag exists in the global tags table (upsert)
+            main_conn.execute(
+                "INSERT OR IGNORE INTO tags (name, category) VALUES (?1, ?2)",
+                params![&tag_name, category],
+            )?;
+
+            let tag_id: i64 = main_conn.query_row(
+                "SELECT id FROM tags WHERE name = ?1",
+                params![&tag_name],
+                |row| row.get(0),
+            )?;
+
+            // Insert into directory-level image_tags if we have a directory
+            if let Some(did) = dir_id {
+                if let Ok(dir_pool) = state_clone.directory_db().get_pool(did) {
+                    if let Ok(dir_conn) = dir_pool.get() {
+                        dir_conn.execute(
+                            "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
+                             VALUES (?1, ?2, ?3, 0)",
+                            params![image_id, tag_id, confidence],
+                        )?;
+                    }
+                }
+            }
+
+            // Also insert into main DB image_tags
+            main_conn.execute(
+                "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
+                 VALUES (?1, ?2, ?3, 0)",
+                params![image_id, tag_id, confidence],
+            )?;
+
+            // Update tag post count
+            main_conn.execute(
+                "UPDATE tags SET post_count = (
+                    SELECT COUNT(*) FROM image_tags WHERE tag_id = ?1
+                ) WHERE id = ?1",
+                params![tag_id],
+            )?;
+
+            inserted += 1;
+        }
+
+        log::info!(
+            "[TaskQueue] Tagged image #{}: {} tags inserted",
+            image_id, inserted
+        );
+
+        Ok(())
+    })
+    .await??;
+
+    Ok(())
+}
+
+// ─── Tag guardian ────────────────────────────────────────────────────────────
+
+/// Periodic background task that finds images with no tags and re-queues
+/// tag extraction tasks for them.
+///
+/// Scans each directory database for images that have zero entries in
+/// image_tags. For each untagged image, enqueues a TASK_TAG task (respecting
+/// the directory's auto_tag setting).
+async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
+    // Check if auto-tagger addon is running; no point queueing if it won't be handled
+    let addon_status = state.addon_manager().get_addon_status("auto-tagger");
+    if addon_status != AddonStatus::Running {
+        log::debug!("[TagGuardian] auto-tagger addon not running, skipping sweep");
+        return Ok(());
+    }
+
+    let state_clone = state.clone();
+
+    let queued = tokio::task::spawn_blocking(move || -> Result<u32, AppError> {
+        let main_conn = state_clone.main_db().get()?;
+
+        // Get all enabled directories with auto_tag enabled
+        let mut stmt = main_conn.prepare(
+            "SELECT id, path, auto_tag FROM watch_directories WHERE enabled = 1"
+        )?;
+
+        let dirs: Vec<(i64, String, bool)> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, bool>(2)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut total_queued = 0u32;
+
+        for (dir_id, dir_path, auto_tag) in &dirs {
+            if !auto_tag {
+                continue;
+            }
+
+            // Get the directory database
+            let dir_pool = match state_clone.directory_db().get_pool(*dir_id) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let dir_conn = match dir_pool.get() {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Find images with no tags in this directory
+            let mut img_stmt = dir_conn.prepare(
+                "SELECT i.id, if2.original_path
+                 FROM images i
+                 LEFT JOIN image_tags it ON i.id = it.image_id
+                 LEFT JOIN image_files if2 ON i.id = if2.image_id
+                 WHERE it.image_id IS NULL
+                 AND if2.file_exists = 1
+                 LIMIT 50"
+            )?;
+
+            let untagged: Vec<(i64, String)> = img_stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                    ))
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            for (image_id, image_path) in &untagged {
+                let payload = serde_json::json!({
+                    "image_id": image_id,
+                    "directory_id": dir_id,
+                    "image_path": image_path,
+                    "directory_path": dir_path,
+                });
+
+                match enqueue_task(&state_clone, TASK_TAG, &payload, 0, Some(*image_id)) {
+                    Ok(Some(_)) => total_queued += 1,
+                    Ok(None) => {} // Already queued (dedup)
+                    Err(e) => {
+                        log::warn!(
+                            "[TagGuardian] Failed to enqueue tag task for image #{}: {}",
+                            image_id, e
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(total_queued)
+    })
+    .await??;
+
+    if queued > 0 {
+        log::info!("[TagGuardian] Queued {} tag tasks for untagged images", queued);
+        // Wake workers to process the new tasks
+        if let Some(tq) = state.task_queue() {
+            tq.wake();
+        }
+    }
+
+    Ok(())
+}
+
+// ─── Metadata / import helpers ───────────────────────────────────────────────
 
 /// Complete a fast import by calculating full hash, dimensions, and thumbnail.
 fn complete_fast_import(
@@ -383,6 +823,159 @@ fn complete_fast_import(
     Ok(())
 }
 
+/// Run metadata extraction for a single image.
+///
+/// Looks up the directory's metadata_format and ComfyUI node ID configuration,
+/// then calls the metadata service to extract and save to DB.
+fn run_metadata_extraction(
+    state: &AppState,
+    image_id: i64,
+    directory_id: Option<i64>,
+    image_path: &str,
+) -> Result<(), AppError> {
+    use crate::services::metadata;
+
+    // Get directory-level configuration for metadata extraction
+    let (format_hint, comfyui_prompt_ids, comfyui_negative_ids) =
+        get_directory_metadata_config(state, directory_id)?;
+
+    // Get the appropriate database connection
+    let conn;
+    let pool;
+    if let Some(dir_id) = directory_id {
+        pool = state.directory_db().get_pool(dir_id)?;
+        conn = pool.get()?;
+    } else {
+        conn = state.main_db().get()?;
+    }
+
+    let prompt_refs: Vec<String> = comfyui_prompt_ids;
+    let negative_refs: Vec<String> = comfyui_negative_ids;
+
+    let prompt_slice: Option<&[String]> = if prompt_refs.is_empty() {
+        None
+    } else {
+        Some(&prompt_refs)
+    };
+    let negative_slice: Option<&[String]> = if negative_refs.is_empty() {
+        None
+    } else {
+        Some(&negative_refs)
+    };
+
+    match metadata::extract_and_save_metadata(
+        &conn,
+        image_id,
+        image_path,
+        prompt_slice,
+        negative_slice,
+        &format_hint,
+    ) {
+        Ok(result) => {
+            match result.status.as_str() {
+                "success" => {
+                    log::info!(
+                        "[TaskQueue] Metadata extracted for image #{} (format: {})",
+                        image_id,
+                        result
+                            .metadata
+                            .as_ref()
+                            .and_then(|m| m.source_format.as_deref())
+                            .unwrap_or("unknown")
+                    );
+                }
+                "no_metadata" => {
+                    log::debug!(
+                        "[TaskQueue] No AI metadata found in image #{}",
+                        image_id
+                    );
+                }
+                "config_mismatch" => {
+                    log::info!(
+                        "[TaskQueue] Metadata config mismatch for image #{}: {}",
+                        image_id,
+                        result.message.unwrap_or_default()
+                    );
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+        Err(e) => {
+            log::warn!(
+                "[TaskQueue] Metadata extraction error for image #{}: {}",
+                image_id,
+                e
+            );
+            // Non-fatal: don't fail the whole task for metadata issues
+            Ok(())
+        }
+    }
+}
+
+/// Read the directory's metadata configuration (format hint, ComfyUI node IDs).
+fn get_directory_metadata_config(
+    state: &AppState,
+    directory_id: Option<i64>,
+) -> Result<(String, Vec<String>, Vec<String>), AppError> {
+    let dir_id = match directory_id {
+        Some(id) => id,
+        None => return Ok(("auto".into(), vec![], vec![])),
+    };
+
+    let main_conn = state.main_db().get()?;
+
+    let result = main_conn.query_row(
+        "SELECT metadata_format, comfyui_prompt_node_ids, comfyui_negative_node_ids
+         FROM watch_directories WHERE id = ?1",
+        params![dir_id],
+        |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        },
+    );
+
+    match result {
+        Ok((format, prompt_ids_str, negative_ids_str)) => {
+            let format_hint = format.unwrap_or_else(|| "auto".into());
+
+            // Parse comma-separated node IDs
+            let prompt_ids = parse_node_ids(prompt_ids_str.as_deref());
+            let negative_ids = parse_node_ids(negative_ids_str.as_deref());
+
+            Ok((format_hint, prompt_ids, negative_ids))
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(("auto".into(), vec![], vec![])),
+        Err(e) => Err(AppError::from(e)),
+    }
+}
+
+/// Parse a comma-separated or JSON array string of node IDs into a Vec<String>.
+fn parse_node_ids(raw: Option<&str>) -> Vec<String> {
+    match raw {
+        None => vec![],
+        Some(s) if s.trim().is_empty() => vec![],
+        Some(s) => {
+            let trimmed = s.trim();
+            // Try JSON array first: ["3", "5"]
+            if trimmed.starts_with('[') {
+                if let Ok(ids) = serde_json::from_str::<Vec<String>>(trimmed) {
+                    return ids.into_iter().filter(|id| !id.is_empty()).collect();
+                }
+            }
+            // Fall back to comma-separated: "3,5" or "3, 5"
+            trimmed
+                .split(',')
+                .map(|id| id.trim().to_string())
+                .filter(|id| !id.is_empty())
+                .collect()
+        }
+    }
+}
+
 // ─── Enqueue helpers ─────────────────────────────────────────────────────────
 
 /// Enqueue a task to the background queue.
@@ -398,12 +991,34 @@ pub fn enqueue_task(
 ) -> Result<Option<i64>, AppError> {
     let conn = state.main_db().get()?;
 
-    // Deduplication check
+    // Deduplication check — use boundary-aware patterns to avoid false positives
+    // (e.g. image_id 1 must not match image_id 10 or 100).
+    // JSON payloads can have `"image_id":N,` (followed by comma) or `"image_id":N}`
+    // (last key in object), with optional spaces around the colon.
     if let Some(image_id) = dedupe_key {
+        // Build patterns that match the image_id with a boundary character after it:
+        // - comma (more keys follow): "image_id":N,...
+        // - closing brace (last key):  "image_id":N}
+        // Also handle optional space after the colon.
+        let pat_comma = format!("%\"image_id\":{},%", image_id);
+        let pat_comma_sp = format!("%\"image_id\": {},%", image_id);
+        let pat_brace = format!("%\"image_id\":{}}}%", image_id);
+        let pat_brace_sp = format!("%\"image_id\": {}}}%", image_id);
+        let patterns = [pat_comma, pat_comma_sp, pat_brace, pat_brace_sp];
+
         let exists: bool = conn
             .query_row(
-                "SELECT COUNT(*) FROM task_queue WHERE task_type = ?1 AND status = ?2 AND payload LIKE ?3",
-                params![task_type, STATUS_PENDING, format!("%\"image_id\":{}%", image_id)],
+                "SELECT COUNT(*) FROM task_queue
+                 WHERE task_type = ?1 AND status = ?2
+                 AND (payload LIKE ?3 OR payload LIKE ?4 OR payload LIKE ?5 OR payload LIKE ?6)",
+                params![
+                    task_type,
+                    STATUS_PENDING,
+                    &patterns[0],
+                    &patterns[1],
+                    &patterns[2],
+                    &patterns[3],
+                ],
                 |row| row.get::<_, i64>(0).map(|c| c > 0),
             )
             .unwrap_or(false);

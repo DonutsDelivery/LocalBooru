@@ -140,6 +140,9 @@ fn delete_single_image(state: &AppState, image_id: i64, delete_files: bool) -> R
         if thumb_path.exists() {
             let _ = std::fs::remove_file(&thumb_path);
         }
+
+        // Delete video preview frames
+        crate::services::video_preview::delete_preview_frames(state.data_dir(), hash);
     }
 
     Ok(())
@@ -169,16 +172,95 @@ pub async fn batch_age_detect(
     })))
 }
 
-/// POST /api/images/batch/extract-metadata — Queue metadata extraction (stub).
+/// POST /api/images/batch/extract-metadata — Queue metadata extraction for images.
 pub async fn batch_extract_metadata(
+    State(state): State<AppState>,
     Json(request): Json<BatchMetadataExtractRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // TODO: Implement when task queue service is available (Phase 3)
+    use crate::services::task_queue;
+
+    let state_clone = state.clone();
+    let total_requested = request.image_ids.len();
+
+    let (queued, errors) = tokio::task::spawn_blocking(move || {
+        let mut queued = 0i64;
+        let mut errors: Vec<serde_json::Value> = Vec::new();
+
+        for image_id in &request.image_ids {
+            // Find the directory and file path for this image
+            let (dir_id, image_path) =
+                match find_image_path_for_metadata(&state_clone, *image_id) {
+                    Ok(info) => info,
+                    Err(e) => {
+                        errors.push(json!({"id": image_id, "error": e.to_string()}));
+                        continue;
+                    }
+                };
+
+            let payload = json!({
+                "image_id": image_id,
+                "directory_id": dir_id,
+                "image_path": image_path,
+            });
+
+            match task_queue::enqueue_task(
+                &state_clone,
+                task_queue::TASK_EXTRACT_METADATA,
+                &payload,
+                0,
+                Some(*image_id),
+            ) {
+                Ok(Some(_)) => queued += 1,
+                Ok(None) => {} // Duplicate, skip
+                Err(e) => {
+                    errors.push(json!({"id": image_id, "error": e.to_string()}));
+                }
+            }
+        }
+
+        Ok::<_, AppError>((queued, errors))
+    })
+    .await??;
+
     Ok(Json(json!({
-        "queued": 0,
-        "errors": [{"error": "Task queue not yet implemented"}],
-        "total_requested": request.image_ids.len()
+        "queued": queued,
+        "errors": errors,
+        "total_requested": total_requested
     })))
+}
+
+/// Look up the directory ID and file path for an image (used by batch metadata).
+fn find_image_path_for_metadata(
+    state: &AppState,
+    image_id: i64,
+) -> Result<(Option<i64>, String), AppError> {
+    // Search directory DBs first
+    if let Some(dir_id) = find_image_directory(state.directory_db(), image_id, None) {
+        let dir_pool = state.directory_db().get_pool(dir_id)?;
+        let dir_conn = dir_pool.get()?;
+
+        let path: String = dir_conn
+            .query_row(
+                "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_exists = 1 LIMIT 1",
+                params![image_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| AppError::NotFound("No file path found for image".into()))?;
+
+        return Ok((Some(dir_id), path));
+    }
+
+    // Try main DB
+    let main_conn = state.main_db().get()?;
+    let path: String = main_conn
+        .query_row(
+            "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_exists = 1 LIMIT 1",
+            params![image_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| AppError::NotFound("Image not found".into()))?;
+
+    Ok((None, path))
 }
 
 /// POST /api/images/batch/move — Move images to a different directory.

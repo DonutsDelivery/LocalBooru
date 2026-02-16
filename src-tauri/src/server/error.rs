@@ -6,7 +6,9 @@ use axum::response::{IntoResponse, Response, Json};
 pub enum AppError {
     NotFound(String),
     BadRequest(String),
+    Unauthorized(String),
     Forbidden(String),
+    TooManyRequests(String),
     Internal(String),
     ServiceUnavailable(String),
 }
@@ -16,7 +18,9 @@ impl std::fmt::Display for AppError {
         match self {
             AppError::NotFound(m) => write!(f, "Not found: {}", m),
             AppError::BadRequest(m) => write!(f, "Bad request: {}", m),
+            AppError::Unauthorized(m) => write!(f, "Unauthorized: {}", m),
             AppError::Forbidden(m) => write!(f, "Forbidden: {}", m),
+            AppError::TooManyRequests(m) => write!(f, "Too many requests: {}", m),
             AppError::Internal(m) => write!(f, "Internal error: {}", m),
             AppError::ServiceUnavailable(m) => write!(f, "Service unavailable: {}", m),
         }
@@ -28,7 +32,9 @@ impl IntoResponse for AppError {
         let (status, message) = match self {
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, m),
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
+            AppError::Unauthorized(m) => (StatusCode::UNAUTHORIZED, m),
             AppError::Forbidden(m) => (StatusCode::FORBIDDEN, m),
+            AppError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, m),
             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
             AppError::ServiceUnavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
         };

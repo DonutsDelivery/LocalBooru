@@ -1,11 +1,16 @@
 pub mod addons;
 pub mod app_update;
+pub mod cast;
 pub mod collections;
 pub mod directories;
 pub mod images;
 pub mod library;
+pub mod migration;
+pub mod models;
 pub mod network;
 pub mod settings;
+pub mod share;
+pub mod svp_web;
 pub mod tags;
 pub mod users;
 pub mod watch_history;

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use notify::event::{ModifyKind, RenameMode};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rusqlite::params;
 use tokio::sync::mpsc;
@@ -23,6 +24,7 @@ pub struct DirectoryWatcher {
 struct WatchHandle {
     _watcher: RecommendedWatcher,
     _path: PathBuf,
+    recursive: bool,
 }
 
 impl DirectoryWatcher {
@@ -68,8 +70,8 @@ impl DirectoryWatcher {
             }
 
             // Run startup scan for recently modified files
-            for (dir_id, dir_path, _recursive) in &directories {
-                startup_scan(&state, *dir_id, dir_path);
+            for (dir_id, dir_path, recursive) in &directories {
+                startup_scan(&state, *dir_id, dir_path, *recursive);
             }
 
             // Wait for shutdown
@@ -106,6 +108,95 @@ impl DirectoryWatcher {
                 log::info!("[Watcher] Removed watch for directory {}", directory_id);
             }
         }
+    }
+
+    /// Re-read enabled directories from the DB and sync watches.
+    ///
+    /// Adds watches for newly-enabled directories and removes watches for
+    /// disabled/deleted ones. Call this after updating directory settings
+    /// (e.g., enabling/disabling, changing recursive flag).
+    pub fn refresh(&self) {
+        let directories = match load_enabled_directories(&self.state) {
+            Ok(dirs) => dirs,
+            Err(e) => {
+                log::error!("[Watcher] refresh: failed to load directories: {}", e);
+                return;
+            }
+        };
+
+        let new_ids: HashMap<i64, (String, bool)> = directories
+            .into_iter()
+            .map(|(id, path, recursive)| (id, (path, recursive)))
+            .collect();
+
+        let mut watches = match self.watches.lock() {
+            Ok(w) => w,
+            Err(_) => return,
+        };
+
+        // Remove watches for directories no longer enabled
+        let stale_ids: Vec<i64> = watches
+            .keys()
+            .filter(|id| !new_ids.contains_key(id))
+            .copied()
+            .collect();
+
+        for id in &stale_ids {
+            if watches.remove(id).is_some() {
+                log::info!("[Watcher] refresh: removed stale watch for directory {}", id);
+            }
+        }
+
+        // Detect directories whose recursive flag changed — need to re-add
+        let changed_ids: Vec<i64> = watches
+            .iter()
+            .filter_map(|(id, handle)| {
+                new_ids.get(id).and_then(|(_, new_recursive)| {
+                    if handle.recursive != *new_recursive {
+                        Some(*id)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+
+        for id in &changed_ids {
+            if watches.remove(id).is_some() {
+                log::info!(
+                    "[Watcher] refresh: removed watch for directory {} (recursive flag changed)",
+                    id
+                );
+            }
+        }
+
+        // Collect directories that need a watch added (new or changed)
+        // (We need to drop the lock before calling add_watch since it also locks)
+        let to_add: Vec<(i64, String, bool)> = new_ids
+            .into_iter()
+            .filter(|(id, _)| !watches.contains_key(id))
+            .map(|(id, (path, recursive))| (id, path, recursive))
+            .collect();
+
+        drop(watches);
+
+        for (dir_id, dir_path, recursive) in &to_add {
+            if let Err(e) = add_watch(&self.state, &self.watches, *dir_id, dir_path, *recursive) {
+                log::error!(
+                    "[Watcher] refresh: failed to add watch for directory {} ({}): {}",
+                    dir_id,
+                    dir_path,
+                    e
+                );
+            }
+        }
+
+        log::info!(
+            "[Watcher] refresh: watches synced (removed {}, re-added {}, added {}).",
+            stale_ids.len(),
+            changed_ids.len(),
+            to_add.len().saturating_sub(changed_ids.len())
+        );
     }
 }
 
@@ -171,6 +262,7 @@ fn add_watch(
             WatchHandle {
                 _watcher: watcher,
                 _path: dir_path,
+                recursive,
             },
         );
     }
@@ -187,6 +279,7 @@ fn add_watch(
 
 fn handle_fs_event(state: &AppState, directory_id: i64, event: Event) {
     match event.kind {
+        // New file created
         EventKind::Create(_) => {
             for path in &event.paths {
                 if path.is_file() && importer::is_media_file(path) {
@@ -201,6 +294,7 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event) {
             }
         }
 
+        // File removed
         EventKind::Remove(_) => {
             for path in &event.paths {
                 let file_path = path.to_string_lossy().to_string();
@@ -218,9 +312,40 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event) {
             }
         }
 
+        // File moved/renamed TO this directory — treat as new file
+        EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
+            for path in &event.paths {
+                if path.is_file() && importer::is_media_file(path) {
+                    let file_path = path.to_string_lossy().to_string();
+                    let state_clone = state.clone();
+
+                    tokio::spawn(async move {
+                        debounced_import(state_clone, directory_id, file_path).await;
+                    });
+                }
+            }
+        }
+
+        // File moved/renamed FROM this directory — treat as removal
+        EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
+            for path in &event.paths {
+                let file_path = path.to_string_lossy().to_string();
+                let state_clone = state.clone();
+
+                tokio::spawn(async move {
+                    if let Err(e) = tokio::task::spawn_blocking(move || {
+                        file_tracker::mark_file_missing(&state_clone, &file_path, directory_id)
+                    })
+                    .await
+                    {
+                        log::error!("[Watcher] Error marking moved-away file: {}", e);
+                    }
+                });
+            }
+        }
+
+        // Other modifications — import untracked media files
         EventKind::Modify(_) => {
-            // File modified — could be a new file being written.
-            // Treat like create if it's a media file we don't track yet.
             for path in &event.paths {
                 if path.is_file() && importer::is_media_file(path) {
                     let file_path = path.to_string_lossy().to_string();
@@ -262,7 +387,7 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event) {
     }
 }
 
-/// Wait for a file to stabilize (not being written to), then import it.
+/// Wait for a file to stabilize (not being written to), then import it with retry.
 async fn debounced_import(state: AppState, directory_id: i64, file_path: String) {
     // Wait 1 second for file to settle
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -285,40 +410,98 @@ async fn debounced_import(state: AppState, directory_id: i64, file_path: String)
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
 
-    let state_clone = state.clone();
-    let fp = file_path.clone();
+    // Import with retry (3 attempts, 500ms backoff) for database busy errors
+    let mut last_err: Option<String> = None;
 
-    match tokio::task::spawn_blocking(move || {
-        importer::import_image(&state_clone, &fp, directory_id)
-    })
-    .await
-    {
-        Ok(Ok(result)) => {
-            if result.status == importer::ImportStatus::Imported {
-                log::info!(
-                    "[Watcher] Imported: {}",
-                    std::path::Path::new(&file_path)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or(&file_path)
-                );
+    for attempt in 0..3u32 {
+        let state_clone = state.clone();
+        let fp = file_path.clone();
+
+        match tokio::task::spawn_blocking(move || {
+            importer::import_image(&state_clone, &fp, directory_id)
+        })
+        .await
+        {
+            Ok(Ok(result)) => {
+                if result.status == importer::ImportStatus::Imported {
+                    log::info!(
+                        "[Watcher] Imported: {}",
+                        std::path::Path::new(&file_path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(&file_path)
+                    );
+                }
+                return;
+            }
+            Ok(Err(e)) => {
+                let msg = format!("{}", e);
+                if (msg.contains("database is locked") || msg.contains("database is busy"))
+                    && attempt < 2
+                {
+                    let backoff_ms = 500 * (attempt as u64 + 1);
+                    log::warn!(
+                        "[Watcher] DB busy importing {}, retrying in {}ms (attempt {}/3)",
+                        file_path,
+                        backoff_ms,
+                        attempt + 1
+                    );
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    last_err = Some(msg);
+                    continue;
+                }
+                log::error!("[Watcher] Import error for {}: {}", file_path, e);
+                return;
+            }
+            Err(e) => {
+                log::error!("[Watcher] Task error: {}", e);
+                return;
             }
         }
-        Ok(Err(e)) => {
-            log::error!("[Watcher] Import error for {}: {}", file_path, e);
-        }
-        Err(e) => {
-            log::error!("[Watcher] Task error: {}", e);
-        }
+    }
+
+    if let Some(err) = last_err {
+        log::error!(
+            "[Watcher] Import failed after 3 retries for {}: {}",
+            file_path,
+            err
+        );
     }
 }
 
 /// Scan for files modified since the last scan time.
-fn startup_scan(state: &AppState, directory_id: i64, dir_path: &str) {
+///
+/// Respects the directory's `recursive` flag — only walks subdirectories
+/// if recursive=true. Skips directories that already have a pending
+/// `scan_directory` task to avoid duplicate work. Updates `last_scanned_at`
+/// after completion.
+fn startup_scan(state: &AppState, directory_id: i64, dir_path: &str, recursive: bool) {
     let conn = match state.main_db().get() {
         Ok(c) => c,
         Err(_) => return,
     };
+
+    // ── Duplicate scan prevention ────────────────────────────────────────
+    // Check if there's already a pending scan_directory task for this directory
+    let has_pending_scan: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM task_queue
+             WHERE task_type = 'scan_directory'
+               AND status IN ('pending', 'processing')
+               AND payload LIKE ?1",
+            params![format!("%\"directory_id\":{}%", directory_id)],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+
+    if has_pending_scan {
+        log::info!(
+            "[Watcher] Skipping startup scan for directory {} — scan task already queued",
+            directory_id
+        );
+        return;
+    }
 
     // Get last_scanned_at
     let last_scanned: Option<String> = conn
@@ -345,17 +528,20 @@ fn startup_scan(state: &AppState, directory_id: i64, dir_path: &str) {
         None => return,
     };
 
-    let dir_path = std::path::Path::new(dir_path);
+    let dir_path_owned = dir_path.to_string();
+    let dir_path = std::path::Path::new(&dir_path_owned);
     if !dir_path.exists() {
         return;
     }
 
+    // ── Recursive flag respect ───────────────────────────────────────────
+    // Only walk subdirectories if the directory has recursive=true.
     let mut new_files = Vec::new();
 
-    for entry in walkdir::WalkDir::new(dir_path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    let walker = walkdir::WalkDir::new(dir_path)
+        .max_depth(if recursive { usize::MAX } else { 1 });
+
+    for entry in walker.into_iter().filter_map(|e| e.ok()) {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -375,6 +561,8 @@ fn startup_scan(state: &AppState, directory_id: i64, dir_path: &str) {
     }
 
     if new_files.is_empty() {
+        // No new files, but still update last_scanned_at
+        update_last_scanned_at(state, directory_id);
         return;
     }
 
@@ -394,5 +582,33 @@ fn startup_scan(state: &AppState, directory_id: i64, dir_path: &str) {
             })
             .await;
         }
+
+        // ── Update last_scanned_at after scan completes ──────────────────
+        update_last_scanned_at(&state_clone, directory_id);
     });
+}
+
+/// Update the `last_scanned_at` timestamp for a directory to now.
+fn update_last_scanned_at(state: &AppState, directory_id: i64) {
+    let now = chrono::Utc::now().to_rfc3339();
+    if let Ok(conn) = state.main_db().get() {
+        match conn.execute(
+            "UPDATE watch_directories SET last_scanned_at = ?1 WHERE id = ?2",
+            params![&now, directory_id],
+        ) {
+            Ok(_) => {
+                log::debug!(
+                    "[Watcher] Updated last_scanned_at for directory {}",
+                    directory_id
+                );
+            }
+            Err(e) => {
+                log::error!(
+                    "[Watcher] Failed to update last_scanned_at for directory {}: {}",
+                    directory_id,
+                    e
+                );
+            }
+        }
+    }
 }

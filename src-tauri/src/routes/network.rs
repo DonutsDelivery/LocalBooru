@@ -1,14 +1,111 @@
 use std::path::Path;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use axum::extract::State;
 use axum::response::Json;
 use axum::routing::{delete, get, post};
 use axum::Router;
+use dashmap::DashMap;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::server::error::AppError;
 use crate::server::state::AppState;
+
+// ─── Handshake nonce manager ─────────────────────────────────────────────────
+
+/// Nonce entry with creation timestamp for expiry.
+struct NonceEntry {
+    created_at: Instant,
+}
+
+/// Manages handshake nonces for SSL pinning verification.
+///
+/// The QR code endpoint generates a nonce that the mobile client sends back
+/// via `verify-handshake` to prove it scanned the real QR code.
+/// Nonces are single-use and expire after `NONCE_TTL_SECS`.
+pub struct HandshakeManager {
+    /// Active nonces mapped to their creation time.
+    nonces: DashMap<String, NonceEntry>,
+}
+
+/// Nonce time-to-live in seconds (5 minutes).
+const NONCE_TTL_SECS: u64 = 300;
+
+impl HandshakeManager {
+    pub fn new() -> Self {
+        Self {
+            nonces: DashMap::new(),
+        }
+    }
+
+    /// Generate a new handshake nonce and return it.
+    pub fn generate_nonce(&self) -> String {
+        // Clean up expired nonces while we're here
+        self.sweep_expired();
+
+        let nonce = uuid::Uuid::new_v4().to_string();
+        self.nonces.insert(
+            nonce.clone(),
+            NonceEntry {
+                created_at: Instant::now(),
+            },
+        );
+        nonce
+    }
+
+    /// Verify and consume a nonce. Returns `Ok(())` if valid, error otherwise.
+    /// Nonces are single-use: a successful verification removes the nonce.
+    pub fn verify_nonce(&self, nonce: &str) -> Result<(), AppError> {
+        let entry = self.nonces.remove(nonce);
+
+        match entry {
+            Some((_, entry)) => {
+                let elapsed = Instant::now().duration_since(entry.created_at);
+                if elapsed > Duration::from_secs(NONCE_TTL_SECS) {
+                    Err(AppError::BadRequest("Handshake nonce has expired".into()))
+                } else {
+                    Ok(())
+                }
+            }
+            None => Err(AppError::BadRequest(
+                "Invalid handshake nonce. It may have already been used or never existed.".into(),
+            )),
+        }
+    }
+
+    /// Remove all expired nonces.
+    fn sweep_expired(&self) {
+        let now = Instant::now();
+        let ttl = Duration::from_secs(NONCE_TTL_SECS);
+
+        let stale: Vec<String> = self
+            .nonces
+            .iter()
+            .filter_map(|entry| {
+                if now.duration_since(entry.value().created_at) > ttl {
+                    Some(entry.key().clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for key in stale {
+            self.nonces.remove(&key);
+        }
+    }
+}
+
+impl Default for HandshakeManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Thread-safe shared handshake manager.
+pub type SharedHandshakeManager = Arc<HandshakeManager>;
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
@@ -23,7 +120,7 @@ pub fn router() -> Router<AppState> {
         .route("/upnp/close-port/{external_port}", delete(upnp_close_port))
         .route("/upnp/mappings", get(upnp_mappings))
         .route("/upnp/external-ip", get(upnp_external_ip))
-        // Handshake stub
+        // Handshake verification (SSL pinning / QR nonce)
         .route("/verify-handshake", post(verify_handshake))
 }
 
@@ -158,7 +255,6 @@ struct UPnPPortRequest {
 }
 
 #[derive(Deserialize)]
-#[allow(dead_code)]
 struct HandshakeVerifyRequest {
     nonce: String,
 }
@@ -300,9 +396,14 @@ async fn test_port(Json(body): Json<PortTestRequest>) -> Result<Json<Value>, App
 }
 
 /// GET /api/network/qr-data — Get QR code data for mobile app connection.
+///
+/// Generates a fresh handshake nonce embedded in the QR payload. The mobile
+/// client sends this nonce back via `/api/network/verify-handshake` to prove
+/// it scanned the real QR code (SSL pinning verification).
 async fn get_qr_data(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let data_dir = state.data_dir().to_path_buf();
     let port = state.port();
+    let handshake = state.handshake_manager().clone();
 
     let result = tokio::task::spawn_blocking(move || {
         let settings = get_network_settings_from_file(&data_dir);
@@ -317,7 +418,7 @@ async fn get_qr_data(State(state): State<AppState>) -> Result<Json<Value>, AppEr
             format!("http://{}:{}", ip, lp)
         });
 
-        // Public URL requires UPnP — not yet implemented
+        // Public URL requires UPnP -- not yet implemented
         let public_url: Option<String> = None;
 
         // Check if auth is required
@@ -327,7 +428,12 @@ async fn get_qr_data(State(state): State<AppState>) -> Result<Json<Value>, AppEr
             .unwrap_or("none");
         let auth_required = auth_level == "local_network" || auth_level == "always";
 
-        // Nonce and fingerprint are stubs until auth service is ported
+        // Generate handshake nonce for this QR scan
+        let nonce = handshake.generate_nonce();
+        let nonce_expires = chrono::Utc::now()
+            .checked_add_signed(chrono::Duration::seconds(NONCE_TTL_SECS as i64))
+            .map(|t| t.to_rfc3339());
+
         json!({
             "type": "localbooru",
             "version": 2,
@@ -337,8 +443,8 @@ async fn get_qr_data(State(state): State<AppState>) -> Result<Json<Value>, AppEr
             "auth": auth_required,
             "fingerprint": null,
             "cert_fingerprint": null,
-            "nonce": null,
-            "nonce_expires": null
+            "nonce": nonce,
+            "nonce_expires": nonce_expires
         })
     })
     .await?;
@@ -404,16 +510,21 @@ async fn upnp_external_ip() -> Result<Json<Value>, AppError> {
     })))
 }
 
-// ─── Handshake stub ──────────────────────────────────────────────────────────
+// ─── Handshake verification ──────────────────────────────────────────────────
 
-/// POST /api/network/verify-handshake — Stub: verify a handshake nonce.
+/// POST /api/network/verify-handshake — Verify a handshake nonce.
 ///
-/// This will be implemented once the auth/certificate services are ported.
+/// The mobile client sends the nonce from the QR code payload. The server
+/// verifies the nonce is valid and hasn't expired, then consumes it (single-use).
+/// This proves the client scanned the genuine QR code displayed on the server.
 async fn verify_handshake(
-    Json(_body): Json<HandshakeVerifyRequest>,
+    State(state): State<AppState>,
+    Json(body): Json<HandshakeVerifyRequest>,
 ) -> Result<Json<Value>, AppError> {
-    // Always fail verification until the auth service is ported
-    Err(AppError::BadRequest(
-        "Handshake verification not yet available in v2".into(),
-    ))
+    state.handshake_manager().verify_nonce(&body.nonce)?;
+
+    Ok(Json(json!({
+        "success": true,
+        "verified": true
+    })))
 }
