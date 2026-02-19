@@ -102,20 +102,18 @@ fn show_window(window: &tauri::WebviewWindow) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // ── Linux: Fully hardware-accelerated video pipeline in WebKitGTK ──
-    // The zero-copy path: VA-API decode → DMA-BUF → EGL texture import → GPU compositor
-    // All components must be enabled for this to work end-to-end.
+    // ── Linux: Video pipeline in WebKitGTK ──
+    // Prefer HW decoders (VA-API for zero-copy DMA-BUF, NVDEC as fallback).
+    // Software decoders kept as safety net at low priority.
     #[cfg(target_os = "linux")]
     {
-        // 1. VA-API decoders preferred (produce DMA-BUF output for zero-copy)
-        //    NVDEC as fallback, software decoders disabled.
+        // 1. Decoder ranking: VA-API > NVDEC > Vulkan > software (last resort)
         if std::env::var("GST_PLUGIN_FEATURE_RANK").is_err() {
             std::env::set_var(
                 "GST_PLUGIN_FEATURE_RANK",
                 "vah264dec:MAX,vah265dec:MAX,vaav1dec:MAX,vavp9dec:MAX,\
                  nvh264dec:PRIMARY+1,nvh265dec:PRIMARY+1,nvav1dec:PRIMARY+1,nvvp9dec:PRIMARY+1,\
-                 nvh264sldec:PRIMARY,nvh265sldec:PRIMARY,\
-                 avdec_h264:NONE,avdec_h265:NONE",
+                 avdec_h264:MARGINAL,avdec_h265:MARGINAL",
             );
         }
 
@@ -127,10 +125,7 @@ pub fn run() {
             std::env::set_var("LIBVA_DRIVER_NAME", "nvidia");
         }
 
-        // 3. DMA-BUF renderer for zero-copy GPU textures.
-        std::env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER");
-        std::env::remove_var("WEBKIT_DISABLE_COMPOSITING_MODE");
-        // Native Wayland with explicit sync disabled to avoid Error 71.
+        // 3. Native Wayland with explicit sync disabled to avoid Error 71.
         // WebKitGTK's GTK3 backend doesn't support Wayland explicit sync,
         // causing a protocol error crash regardless of compositor (KDE/GNOME).
         std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
