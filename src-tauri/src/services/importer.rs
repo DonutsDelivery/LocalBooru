@@ -521,7 +521,10 @@ pub fn import_image(
     let now = chrono::Utc::now().to_rfc3339();
 
     // Insert image record (with retry logic for busy DB)
-    with_db_retry("insert image record", || {
+    // Handle UNIQUE constraint on file_hash gracefully — if another process
+    // inserted the same hash between our check and INSERT, fall back to
+    // adding a file reference to the existing record.
+    let image_id = match with_db_retry("insert image record", || {
         dir_conn.execute(
             "INSERT INTO images (filename, original_filename, file_hash, perceptual_hash, width, height, file_size, duration, import_source, created_at, file_created_at, file_modified_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
@@ -540,9 +543,34 @@ pub fn import_image(
                 &file_modified_at,
             ],
         )
-    })?;
-
-    let image_id = dir_conn.last_insert_rowid();
+    }) {
+        Ok(_) => dir_conn.last_insert_rowid(),
+        Err(e) if e.to_string().contains("UNIQUE constraint failed: images.file_hash") => {
+            // Race condition: hash was inserted between our check and INSERT.
+            // Fall back to adding a file reference.
+            let existing_id: i64 = dir_conn
+                .query_row(
+                    "SELECT id FROM images WHERE file_hash = ?1",
+                    params![&quick_hash],
+                    |row| row.get(0),
+                )
+                .map_err(|e2| AppError::Internal(format!("Hash lookup after conflict: {}", e2)))?;
+            with_db_retry("insert duplicate file ref (race)", || {
+                dir_conn.execute(
+                    "INSERT OR IGNORE INTO image_files (image_id, original_path, file_exists, file_status) VALUES (?1, ?2, 1, 'available')",
+                    params![existing_id, file_path],
+                )
+            })?;
+            return Ok(ImportResult {
+                status: ImportStatus::Duplicate,
+                image_id: Some(existing_id),
+                directory_id: Some(directory_id),
+                filename: Some(filename),
+                message: Some("Duplicate file (race condition resolved)".into()),
+            });
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     // Insert file reference (with retry logic)
     with_db_retry("insert file reference", || {

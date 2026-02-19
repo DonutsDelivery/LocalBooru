@@ -1210,10 +1210,11 @@ fn repair_directory_inner(
     let mut name_to_paths: HashMap<String, Vec<String>> = HashMap::new();
 
     let walker: Box<dyn Iterator<Item = walkdir::DirEntry>> = if recursive {
-        Box::new(walkdir::WalkDir::new(&dir_path).into_iter().filter_map(|e| e.ok()))
+        Box::new(walkdir::WalkDir::new(&dir_path).follow_links(true).into_iter().filter_map(|e| e.ok()))
     } else {
         Box::new(
             walkdir::WalkDir::new(&dir_path)
+                .follow_links(true)
                 .max_depth(1)
                 .into_iter()
                 .filter_map(|e| e.ok()),
@@ -1484,10 +1485,11 @@ async fn get_comfyui_nodes(
 
         // Walk directory to find PNG files (up to 5 samples)
         let walker: Box<dyn Iterator<Item = walkdir::DirEntry>> = if recursive {
-            Box::new(walkdir::WalkDir::new(&dir_path).into_iter().filter_map(|e| e.ok()))
+            Box::new(walkdir::WalkDir::new(&dir_path).follow_links(true).into_iter().filter_map(|e| e.ok()))
         } else {
             Box::new(
                 walkdir::WalkDir::new(&dir_path)
+                    .follow_links(true)
                     .max_depth(1)
                     .into_iter()
                     .filter_map(|e| e.ok()),

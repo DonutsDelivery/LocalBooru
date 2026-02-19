@@ -237,10 +237,12 @@ fn add_watch(
 
     let state_clone = state.clone();
     let dir_id = directory_id;
+    // Capture the tokio runtime handle so we can spawn from the notify thread
+    let rt_handle = tokio::runtime::Handle::current();
 
     let mut watcher = notify::recommended_watcher(move |event: Result<Event, notify::Error>| {
         match event {
-            Ok(ev) => handle_fs_event(&state_clone, dir_id, ev),
+            Ok(ev) => handle_fs_event(&state_clone, dir_id, ev, &rt_handle),
             Err(e) => log::error!("[Watcher] Error in directory {}: {}", dir_id, e),
         }
     })
@@ -255,6 +257,27 @@ fn add_watch(
     watcher
         .watch(&dir_path, mode)
         .map_err(|e| format!("Failed to start watching: {}", e))?;
+
+    // notify's inotify backend doesn't follow symlinks when recursively
+    // discovering subdirectories. Walk the tree ourselves and add explicit
+    // watches for any symlinked directories so their contents are monitored.
+    if recursive {
+        for entry in walkdir::WalkDir::new(&dir_path)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.path_is_symlink() && entry.file_type().is_dir() {
+                if let Err(e) = watcher.watch(entry.path(), RecursiveMode::Recursive) {
+                    log::warn!(
+                        "[Watcher] Failed to watch symlinked dir {}: {}",
+                        entry.path().display(),
+                        e
+                    );
+                }
+            }
+        }
+    }
 
     if let Ok(mut w) = watches.lock() {
         w.insert(
@@ -277,7 +300,7 @@ fn add_watch(
     Ok(())
 }
 
-fn handle_fs_event(state: &AppState, directory_id: i64, event: Event) {
+fn handle_fs_event(state: &AppState, directory_id: i64, event: Event, rt: &tokio::runtime::Handle) {
     match event.kind {
         // New file created
         EventKind::Create(_) => {
@@ -287,7 +310,7 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event) {
                     let state_clone = state.clone();
 
                     // Debounced import — wait for file to stabilize
-                    tokio::spawn(async move {
+                    rt.spawn(async move {
                         debounced_import(state_clone, directory_id, file_path).await;
                     });
                 }
@@ -300,7 +323,7 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event) {
                 let file_path = path.to_string_lossy().to_string();
                 let state_clone = state.clone();
 
-                tokio::spawn(async move {
+                rt.spawn(async move {
                     if let Err(e) = tokio::task::spawn_blocking(move || {
                         file_tracker::mark_file_missing(&state_clone, &file_path, directory_id)
                     })
@@ -319,7 +342,7 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
 
-                    tokio::spawn(async move {
+                    rt.spawn(async move {
                         debounced_import(state_clone, directory_id, file_path).await;
                     });
                 }
@@ -332,7 +355,7 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event) {
                 let file_path = path.to_string_lossy().to_string();
                 let state_clone = state.clone();
 
-                tokio::spawn(async move {
+                rt.spawn(async move {
                     if let Err(e) = tokio::task::spawn_blocking(move || {
                         file_tracker::mark_file_missing(&state_clone, &file_path, directory_id)
                     })
@@ -351,7 +374,7 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
 
-                    tokio::spawn(async move {
+                    rt.spawn(async move {
                         // Check if already tracked before importing
                         let already_tracked = tokio::task::spawn_blocking({
                             let state = state_clone.clone();
@@ -539,6 +562,7 @@ fn startup_scan(state: &AppState, directory_id: i64, dir_path: &str, recursive: 
     let mut new_files = Vec::new();
 
     let walker = walkdir::WalkDir::new(dir_path)
+        .follow_links(true)
         .max_depth(if recursive { usize::MAX } else { 1 });
 
     for entry in walker.into_iter().filter_map(|e| e.ok()) {

@@ -102,6 +102,46 @@ fn show_window(window: &tauri::WebviewWindow) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // ── Linux: Fully hardware-accelerated video pipeline in WebKitGTK ──
+    // The zero-copy path: VA-API decode → DMA-BUF → EGL texture import → GPU compositor
+    // All components must be enabled for this to work end-to-end.
+    #[cfg(target_os = "linux")]
+    {
+        // 1. VA-API decoders preferred (produce DMA-BUF output for zero-copy)
+        //    NVDEC as fallback, software decoders disabled.
+        if std::env::var("GST_PLUGIN_FEATURE_RANK").is_err() {
+            std::env::set_var(
+                "GST_PLUGIN_FEATURE_RANK",
+                "vah264dec:MAX,vah265dec:MAX,vaav1dec:MAX,vavp9dec:MAX,\
+                 nvh264dec:PRIMARY+1,nvh265dec:PRIMARY+1,nvav1dec:PRIMARY+1,nvvp9dec:PRIMARY+1,\
+                 nvh264sldec:PRIMARY,nvh265sldec:PRIMARY,\
+                 avdec_h264:NONE,avdec_h265:NONE",
+            );
+        }
+
+        // 2. Enable nvidia-vaapi-driver's direct backend for GStreamer VA decoders
+        if std::env::var("GST_VA_ALL_DRIVERS").is_err() {
+            std::env::set_var("GST_VA_ALL_DRIVERS", "1");
+        }
+        if std::env::var("LIBVA_DRIVER_NAME").is_err() {
+            std::env::set_var("LIBVA_DRIVER_NAME", "nvidia");
+        }
+
+        // 3. DMA-BUF renderer for zero-copy GPU textures.
+        std::env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER");
+        std::env::remove_var("WEBKIT_DISABLE_COMPOSITING_MODE");
+        // Native Wayland with explicit sync disabled to avoid Error 71.
+        // WebKitGTK's GTK3 backend doesn't support Wayland explicit sync,
+        // causing a protocol error crash regardless of compositor (KDE/GNOME).
+        std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+        std::env::remove_var("GDK_BACKEND");
+
+        // 4. GStreamer GL: use EGL platform for DMA-BUF texture import
+        if std::env::var("GST_GL_PLATFORM").is_err() {
+            std::env::set_var("GST_GL_PLATFORM", "egl");
+        }
+    }
+
     let mut builder = tauri::Builder::default();
 
     // Single instance: focus existing window if already running
@@ -176,7 +216,23 @@ pub fn run() {
 
             // ── Window setup ──
             let window = app.get_webview_window("main").unwrap();
-            let _ = &window;
+
+            // Enable GPU-accelerated compositing in WebKitGTK.
+            // Combined with VA-API decoders + DMA-BUF renderer, this gives
+            // a zero-copy video path: NVDEC → DMA-BUF → GL texture → compositor.
+            #[cfg(target_os = "linux")]
+            {
+                use webkit2gtk::{WebViewExt, SettingsExt};
+                window.with_webview(|webview| {
+                    let wv = &webview.inner();
+                    if let Some(settings) = wv.settings() {
+                        settings.set_hardware_acceleration_policy(
+                            webkit2gtk::HardwareAccelerationPolicy::Always,
+                        );
+                        log::info!("[WebView] Hardware acceleration policy set to Always");
+                    }
+                }).ok();
+            }
 
             log::info!("LocalBooru v2 started (embedded Rust backend)");
 
@@ -216,6 +272,10 @@ pub fn run() {
                                 .spawn();
                         }
                         "quit" => {
+                            // Kill FFmpeg transcode processes before exiting
+                            if let Some(state) = app_handle.try_state::<AppState>() {
+                                state.transcode_manager().stop_all();
+                            }
                             quit_flag_menu.store(true, Ordering::SeqCst);
                             app_handle.exit(0);
                         }
@@ -245,6 +305,12 @@ pub fn run() {
                     log::info!("Quit requested, closing window...");
                 } else {
                     log::info!("Window close requested, hiding to tray...");
+                    // Pause all media before hiding so audio doesn't keep playing
+                    if let Some(wv) = window.app_handle().get_webview_window("main") {
+                        let _ = wv.eval(
+                            "document.querySelectorAll('video, audio').forEach(el => el.pause())"
+                        );
+                    }
                     api.prevent_close();
                     let _ = window.hide();
                 }

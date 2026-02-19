@@ -163,10 +163,13 @@ pub async fn list_images(
             }
         }
 
-        // No specific directory — query all directory DBs
+        // No specific directory — query all directory DBs and merge results
         let all_dir_ids = state_clone.directory_db().get_all_directory_ids();
 
         if !all_dir_ids.is_empty() && directory_id.is_none() {
+            let mut all_images: Vec<serde_json::Value> = Vec::new();
+            let mut total_count: i64 = 0;
+
             for dir_id in &all_dir_ids {
                 // Skip non-public directories for public access
                 if let Some(ref visible_ids) = visible_dir_ids {
@@ -200,9 +203,13 @@ pub async fn list_images(
                     )
                     .ok();
 
+                // Each directory needs to return enough items to cover the
+                // requested page after cross-directory merge-sorting.
                 let mut query_params = params.clone();
                 query_params.show_images = show_images;
                 query_params.show_videos = show_videos;
+                query_params.limit = offset + per_page;
+                query_params.offset = 0;
 
                 match query_directory_images(
                     &dir_pool,
@@ -211,10 +218,10 @@ pub async fn list_images(
                     dir_name.as_deref(),
                     &query_params,
                 ) {
-                    Ok((images, total)) if !images.is_empty() => {
-                        return Ok((images, total));
+                    Ok((images, dir_total)) => {
+                        total_count += dir_total;
+                        all_images.extend(images);
                     }
-                    Ok(_) => continue,
                     Err(e) => {
                         log::warn!("[Images] Error querying directory {}: {}", dir_id, e);
                         continue;
@@ -222,8 +229,19 @@ pub async fn list_images(
                 }
             }
 
-            // No images found in any directory
-            return Ok((vec![], 0));
+            // Sort merged results across all directories
+            sort_merged_images(&mut all_images, &params.sort);
+
+            // Apply pagination to the merged set
+            let start = offset as usize;
+            let end = (start + per_page as usize).min(all_images.len());
+            let page_images = if start < all_images.len() {
+                all_images[start..end].to_vec()
+            } else {
+                vec![]
+            };
+
+            return Ok((page_images, total_count));
         }
 
         // Fallback: query main/legacy DB
@@ -251,6 +269,7 @@ pub async fn list_images(
 /// GET /api/images/folders — List folders grouped by import_source.
 pub async fn list_folders(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<ListFoldersQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let tag_names: Vec<String> = q
@@ -274,15 +293,35 @@ pub async fn list_folders(
 
     let directory_id = q.directory_id;
     let favorites_only = q.favorites_only;
+    let client_ip = addr.ip();
 
     let state_clone = state.clone();
 
     let folders = tokio::task::spawn_blocking(move || {
+        // Apply family mode + access tier filtering (same as list_images)
+        let tier = AccessTier::from_ip(&client_ip);
+        let family_locked = state_clone.is_family_mode_locked();
+        let visible_dir_ids: Option<HashSet<i64>> = {
+            let main_conn = state_clone.main_db().get()?;
+            get_visible_directory_ids(&main_conn, tier, family_locked)?
+        };
+
         let all_dir_ids = state_clone.directory_db().get_all_directory_ids();
         let dir_ids_to_query = if let Some(did) = directory_id {
+            // If specific directory requested, check visibility
+            if let Some(ref visible_ids) = visible_dir_ids {
+                if !visible_ids.contains(&did) {
+                    return Ok::<_, AppError>(vec![]);
+                }
+            }
             vec![did]
         } else {
-            all_dir_ids
+            // Filter to only visible directories
+            if let Some(ref visible_ids) = visible_dir_ids {
+                all_dir_ids.into_iter().filter(|id| visible_ids.contains(id)).collect()
+            } else {
+                all_dir_ids
+            }
         };
 
         let main_conn = state_clone.main_db().get()?;
@@ -331,7 +370,10 @@ pub async fn list_folders(
 
             if !rating_list.is_empty() {
                 let quoted: Vec<String> = rating_list.iter().map(|r| format!("'{}'", r)).collect();
-                where_parts.push(format!("i.rating IN ({})", quoted.join(",")));
+                where_parts.push(format!(
+                    "(i.rating IN ({}) OR i.rating IS NULL)",
+                    quoted.join(",")
+                ));
             }
 
             // Tag filters
@@ -501,7 +543,10 @@ fn query_main_db_images(
 
     if !params.rating.is_empty() {
         let quoted: Vec<String> = params.rating.iter().map(|r| format!("'{}'", r)).collect();
-        where_clauses.push(format!("i.rating IN ({})", quoted.join(",")));
+        where_clauses.push(format!(
+            "(i.rating IN ({}) OR i.rating IS NULL)",
+            quoted.join(",")
+        ));
     }
 
     if let Some(min_age) = params.min_age {
@@ -885,6 +930,100 @@ fn get_legacy_tags_batch(
     }
 
     Ok(result)
+}
+
+/// Sort merged image results from multiple directories.
+fn sort_merged_images(images: &mut Vec<serde_json::Value>, sort: &str) {
+    match sort {
+        "newest" => images.sort_by(|a, b| {
+            let a_date = a["file_modified_at"].as_str().or(a["created_at"].as_str()).unwrap_or("");
+            let b_date = b["file_modified_at"].as_str().or(b["created_at"].as_str()).unwrap_or("");
+            b_date.cmp(a_date)
+                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+        }),
+        "oldest" => images.sort_by(|a, b| {
+            let a_date = a["file_modified_at"].as_str().or(a["created_at"].as_str()).unwrap_or("");
+            let b_date = b["file_modified_at"].as_str().or(b["created_at"].as_str()).unwrap_or("");
+            a_date.cmp(b_date)
+                .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+        }),
+        "filename_asc" => images.sort_by(|a, b| {
+            let a_name = a["original_filename"].as_str().unwrap_or("").to_lowercase();
+            let b_name = b["original_filename"].as_str().unwrap_or("").to_lowercase();
+            a_name.cmp(&b_name)
+                .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+        }),
+        "filename_desc" => images.sort_by(|a, b| {
+            let a_name = a["original_filename"].as_str().unwrap_or("").to_lowercase();
+            let b_name = b["original_filename"].as_str().unwrap_or("").to_lowercase();
+            b_name.cmp(&a_name)
+                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+        }),
+        "filesize_largest" => images.sort_by(|a, b| {
+            let a_size = a["file_size"].as_i64().unwrap_or(0);
+            let b_size = b["file_size"].as_i64().unwrap_or(0);
+            b_size.cmp(&a_size)
+                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+        }),
+        "filesize_smallest" => images.sort_by(|a, b| {
+            let a_size = a["file_size"].as_i64().unwrap_or(0);
+            let b_size = b["file_size"].as_i64().unwrap_or(0);
+            a_size.cmp(&b_size)
+                .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+        }),
+        "resolution_high" => images.sort_by(|a, b| {
+            let a_res = a["width"].as_i64().unwrap_or(0) * a["height"].as_i64().unwrap_or(0);
+            let b_res = b["width"].as_i64().unwrap_or(0) * b["height"].as_i64().unwrap_or(0);
+            b_res.cmp(&a_res)
+                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+        }),
+        "resolution_low" => images.sort_by(|a, b| {
+            let a_res = a["width"].as_i64().unwrap_or(0) * a["height"].as_i64().unwrap_or(0);
+            let b_res = b["width"].as_i64().unwrap_or(0) * b["height"].as_i64().unwrap_or(0);
+            a_res.cmp(&b_res)
+                .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+        }),
+        "duration_longest" => images.sort_by(|a, b| {
+            let a_dur = a["duration"].as_f64().unwrap_or(0.0);
+            let b_dur = b["duration"].as_f64().unwrap_or(0.0);
+            b_dur.partial_cmp(&a_dur).unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+        }),
+        "duration_shortest" => images.sort_by(|a, b| {
+            let a_null = a["duration"].is_null();
+            let b_null = b["duration"].is_null();
+            a_null.cmp(&b_null).then_with(|| {
+                let a_dur = a["duration"].as_f64().unwrap_or(0.0);
+                let b_dur = b["duration"].as_f64().unwrap_or(0.0);
+                a_dur.partial_cmp(&b_dur).unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+            })
+        }),
+        "folder_asc" => images.sort_by(|a, b| {
+            let a_src = a["import_source"].as_str().unwrap_or("").to_lowercase();
+            let b_src = b["import_source"].as_str().unwrap_or("").to_lowercase();
+            a_src.cmp(&b_src)
+                .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+        }),
+        "folder_desc" => images.sort_by(|a, b| {
+            let a_src = a["import_source"].as_str().unwrap_or("").to_lowercase();
+            let b_src = b["import_source"].as_str().unwrap_or("").to_lowercase();
+            b_src.cmp(&a_src)
+                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+        }),
+        "random" => {
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            images.shuffle(&mut rng);
+        }
+        // Default: newest
+        _ => images.sort_by(|a, b| {
+            let a_date = a["file_modified_at"].as_str().or(a["created_at"].as_str()).unwrap_or("");
+            let b_date = b["file_modified_at"].as_str().or(b["created_at"].as_str()).unwrap_or("");
+            b_date.cmp(a_date)
+                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+        }),
+    }
 }
 
 /// Batch fetch directory names by their IDs.

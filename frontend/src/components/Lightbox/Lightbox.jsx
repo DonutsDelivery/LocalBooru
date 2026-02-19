@@ -17,6 +17,68 @@ import { useCastSession } from './hooks/useCastSession'
 import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
 
+// DEBUG: Temporary FPS monitor overlay — press B to toggle bare mode (video only)
+function FPSMonitor({ videoRef, onToggleBare }) {
+  const statsRef = useRef(null)
+  const [bare, setBare] = useState(false)
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'b' && !e.target.closest('input,textarea')) { setBare(p => { const n = !p; onToggleBare(n); return n }) } }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onToggleBare])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    let lastPresented = 0, lastDropped = 0, rvfcCount = 0, rafCount = 0, lastTime = performance.now()
+    const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype
+    let rvfcId = null, rafId = null
+
+    if (hasRVFC) {
+      const onFrame = () => { rvfcCount++; rvfcId = video.requestVideoFrameCallback(onFrame) }
+      rvfcId = video.requestVideoFrameCallback(onFrame)
+    }
+
+    const onRaf = () => { rafCount++; rafId = requestAnimationFrame(onRaf) }
+    rafId = requestAnimationFrame(onRaf)
+
+    const iv = setInterval(() => {
+      if (!statsRef.current) return
+      const now = performance.now()
+      const dt = (now - lastTime) / 1000
+      const lines = []
+      lines.push(`rAF: ${(rafCount/dt).toFixed(1)} fps | ${bare ? 'BARE MODE' : 'press B for bare'}`)
+      rafCount = 0
+      if (!video.paused) {
+        const q = video.getVideoPlaybackQuality?.()
+        if (q) {
+          const newP = q.totalVideoFrames - lastPresented
+          const newD = q.droppedVideoFrames - lastDropped
+          lines.push(`Presented: ${(newP/dt).toFixed(1)} fps`)
+          lines.push(`Dropped: ${newD} (${q.droppedVideoFrames} total)`)
+          lastPresented = q.totalVideoFrames
+          lastDropped = q.droppedVideoFrames
+        }
+        if (hasRVFC) {
+          lines.push(`RVFC: ${(rvfcCount/dt).toFixed(1)} fps`)
+          rvfcCount = 0
+        }
+      }
+      lines.push(`Size: ${video.videoWidth}x${video.videoHeight}`)
+      statsRef.current.textContent = lines.join('\n')
+      lastTime = now
+    }, 1000)
+
+    return () => { clearInterval(iv); cancelAnimationFrame(rafId) }
+  }, [videoRef.current, bare])
+
+  return <pre ref={statsRef} style={{
+    position:'absolute',top:10,left:10,background:'rgba(0,0,0,0.8)',
+    color:'#0f0',font:'14px monospace',padding:10,borderRadius:4,
+    zIndex:9999,pointerEvents:'none',whiteSpace:'pre'
+  }}>Loading...</pre>
+}
+
 function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
   const [processing, setProcessing] = useState(false)
   const [isFavorited, setIsFavorited] = useState(false)
@@ -50,6 +112,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [collectionFeedback, setCollectionFeedback] = useState(null)
   const [newCollectionName, setNewCollectionName] = useState('')
 
+  // DEBUG: bare mode — hides all UI, just video + FPS counter
+  const [debugBare, setDebugBare] = useState(false)
+
   // Share popover state
   const [showSharePopover, setShowSharePopover] = useState(false)
   const [shareNetworkInfo, setShareNetworkInfo] = useState(null)
@@ -81,11 +146,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const { installed: whisperInstalled } = useAddonStatus('whisper-subtitles')
   const { installed: castInstalled } = useAddonStatus('cast')
   const { installed: svpInstalled } = useAddonStatus('svp')
-  const { installed: opticalFlowInstalled } = useAddonStatus('frame-interpolation')
-
-
-  // Video streaming hook (needs addon status to avoid starting streams for uninstalled addons)
-  const streaming = useVideoStreaming(mediaRef, image, currentQuality, { svpInstalled, opticalFlowInstalled })
+  // Video streaming hook
+  const streaming = useVideoStreaming(mediaRef, image, currentQuality, { svpInstalled })
 
   // Video playback hook - pass streaming state
   const playback = useVideoPlayback(mediaRef, {
@@ -125,6 +187,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     currentIndex,
     totalImages: images.length,
     isVideoFile: isVideo(image?.original_filename),
+    streamTransitioningRef: streaming.streamTransitioningRef,
   })
 
   // Share stream hook (host side)
@@ -824,7 +887,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       ref={containerRef}
     >
       {/* Top toolbar */}
-      <div className="lightbox-toolbar">
+      {!debugBare && <div className="lightbox-toolbar">
         <button
           className="lightbox-btn lightbox-menu"
           onClick={() => onSidebarHover && onSidebarHover(!sidebarOpen)}
@@ -1130,7 +1193,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         )}
-        {isVideoFile && (svpInstalled || opticalFlowInstalled) && (
+        {isVideoFile && svpInstalled && (
           <button
             className="lightbox-btn lightbox-svp"
             onClick={() => setShowSVPMenu(true)}
@@ -1196,7 +1259,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
           </svg>
         </button>
-      </div>
+      </div>}
 
       {/* Hover zone to trigger main sidebar */}
       <div
@@ -1254,6 +1317,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onCanPlay={handleVideoCanPlay}
               onContextMenu={handleVideoContextMenu}
             />
+            {/* DEBUG: FPS monitor — press B to toggle bare mode */}
+            <FPSMonitor videoRef={mediaRef} onToggleBare={setDebugBare} />
             {/* Drag-to-seek overlay */}
             {gestures.dragSeek && (
               <div className="video-seek-overlay">
@@ -1270,7 +1335,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               </div>
             )}
             {/* Custom video controls */}
-            <div
+            {!debugBare && <div
               className="lightbox-video-controls"
               onClick={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
@@ -1315,7 +1380,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               </div>
               {/* Timeline row */}
               <div className="video-controls-row">
-              <span className="video-time">{formatTime(playback.currentTime)}</span>
+              <span className="video-time" ref={playback.timeDisplayRef}>{formatTime(playback.currentTime)}</span>
               <div
                 ref={playback.timelineRef}
                 className={`video-timeline ${!playback.duration ? 'loading' : ''}`}
@@ -1366,10 +1431,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     />
                   )}
                   <div
+                    ref={playback.progressBarRef}
                     className="video-timeline-progress"
                     style={{ width: `${playback.duration ? (playback.currentTime / playback.duration) * 100 : 0}%` }}
                   />
                   <div
+                    ref={playback.playheadRef}
                     className="video-timeline-playhead"
                     style={{ left: `${playback.duration ? (playback.currentTime / playback.duration) * 100 : 0}%` }}
                   />
@@ -1430,20 +1497,18 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 )}
               </button>
               )}
-              {streaming.codecFallbackActive && (
               <button
-                className="video-control-btn quality-btn"
+                className={`video-control-btn quality-btn ${currentQuality !== 'original' ? 'active' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation()
                   setShowQualitySelector(!showQualitySelector)
                 }}
-                title="Quality"
+                title={`Quality: ${currentQuality === 'original' ? 'Original' : currentQuality}`}
               >
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54h2.79v2.71h2V13.83h2.79l-2.75-3.54zM7 9h2v2H7z"/>
                 </svg>
               </button>
-              )}
               <div className="video-volume-container">
                 <button
                   className="video-control-btn video-mute-btn"
@@ -1491,7 +1556,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 )}
               </button>
               </div>
-            </div>
+            </div>}
             {/* Playback speed badge */}
             {playback.playbackSpeed !== 1.0 && (
               <div className="playback-speed-badge">
@@ -1644,7 +1709,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 <span>Resume from {formatTime(resumePosition.position)}?</span>
                 <div className="resume-toast-actions">
                   <button className="resume-toast-btn" onClick={() => {
-                    playback.seekVideo(resumePosition.position - playback.currentTime)
+                    playback.seekVideo(resumePosition.position - playback.currentTimeRef.current)
                     setResumePosition(null)
                   }}>Resume</button>
                   <button className="resume-toast-btn dismiss" onClick={() => setResumePosition(null)}>Start Over</button>
@@ -1788,7 +1853,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       )}
 
       {/* Quality selector */}
-      {isVideoFile && streaming.codecFallbackActive && (
+      {isVideoFile && (
         <QualitySelector
           isOpen={showQualitySelector}
           onClose={() => setShowQualitySelector(false)}

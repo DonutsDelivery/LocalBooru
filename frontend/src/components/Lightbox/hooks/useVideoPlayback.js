@@ -1,5 +1,6 @@
 import { useCallback, useState, useRef, useEffect } from 'react'
 import { savePlaybackPosition } from '../../../api'
+import { formatTime } from '../utils/helpers'
 
 /**
  * Hook for managing video playback state and controls
@@ -25,7 +26,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
 
   // Video player state
   const [isPlaying, setIsPlaying] = useState(true) // Start autoplaying
-  const [currentTime, setCurrentTime] = useState(0)
+  const [_currentTime, _setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isSeeking, setIsSeeking] = useState(false)
   const [videoDisplayMode, setVideoDisplayMode] = useState('fit') // 'fit' | 'fill' | 'original'
@@ -36,6 +37,45 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
   const timelineRef = useRef(null)
   const lastSavedPositionRef = useRef(0)
   const saveIntervalRef = useRef(null)
+
+  // Refs for direct DOM updates during playback (bypasses React re-renders)
+  const currentTimeRef = useRef(0)
+  const durationRef = useRef(0)
+  const progressBarRef = useRef(null)
+  const playheadRef = useRef(null)
+  const timeDisplayRef = useRef(null)
+
+  // Wrapper for setCurrentTime that keeps ref in sync (used during seeking/interactions)
+  const setCurrentTime = useCallback((timeOrFn) => {
+    if (typeof timeOrFn === 'function') {
+      _setCurrentTime(prev => {
+        const result = timeOrFn(prev)
+        currentTimeRef.current = result
+        return result
+      })
+    } else {
+      currentTimeRef.current = timeOrFn
+      _setCurrentTime(timeOrFn)
+    }
+  }, [])
+
+  // Direct DOM update for timeline elements (no React re-render)
+  const updateTimeDisplay = useCallback((time) => {
+    currentTimeRef.current = time
+    const dur = durationRef.current
+    if (timeDisplayRef.current) {
+      timeDisplayRef.current.textContent = formatTime(time)
+    }
+    if (dur > 0) {
+      const pct = `${(time / dur) * 100}%`
+      if (progressBarRef.current) {
+        progressBarRef.current.style.width = pct
+      }
+      if (playheadRef.current) {
+        playheadRef.current.style.left = pct
+      }
+    }
+  }, [])
 
   // Save playback position periodically (every 10s) and on pause/end/cleanup
   useEffect(() => {
@@ -148,7 +188,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     }
   }, [imageId, mediaRef, duration, getCurrentAbsoluteTime])
 
-  // Update current time as video plays
+  // Update current time as video plays — direct DOM write, no React re-render
   const handleTimeUpdate = useCallback(() => {
     if (!mediaRef.current || isSeeking) return
     // Don't update time display while waiting for pending seek or during stream transition
@@ -160,8 +200,8 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     } else if (transcodeStreamUrl) {
       actualTime += transcodeStartOffset
     }
-    setCurrentTime(actualTime)
-  }, [mediaRef, isSeeking, svpPendingSeek, svpStreamUrl, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, streamTransitioningRef])
+    updateTimeDisplay(actualTime)
+  }, [mediaRef, isSeeking, svpPendingSeek, svpStreamUrl, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, streamTransitioningRef, updateTimeDisplay])
 
   // Get duration and natural size when video metadata loads
   const handleLoadedMetadata = useCallback((setSourceResolution) => {
@@ -182,11 +222,15 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     // 2. The new duration is longer (we got the full video duration)
     // This prevents HLS segment duration from shrinking the timeline on seek
     setDuration(prev => {
+      let result
       if (!prev || !isFinite(prev) || prev === 0) {
-        return newDuration
+        result = newDuration
+      } else {
+        // Keep the longer duration (full video vs HLS segment)
+        result = Math.max(prev, newDuration)
       }
-      // Keep the longer duration (full video vs HLS segment)
-      return Math.max(prev, newDuration)
+      durationRef.current = result
+      return result
     })
 
     const width = mediaRef.current.videoWidth
@@ -291,17 +335,18 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     if (!isSeeking) return
     setIsSeeking(false)
 
-    // Seek to final position
+    // Seek to final position (read from ref — always in sync via setCurrentTime wrapper)
     if (!mediaRef.current || !duration) return
+    const seekTime = currentTimeRef.current
 
     if (svpStreamUrl) {
       const bufferedEnd = svpStartOffset + svpBufferedDuration
       const bufferedStart = svpStartOffset
-      if (currentTime < bufferedStart - 1 || currentTime > bufferedEnd + 2) {
-        restartSVPFromPosition(currentTime)
+      if (seekTime < bufferedStart - 1 || seekTime > bufferedEnd + 2) {
+        restartSVPFromPosition(seekTime)
         return
       }
-      const hlsTime = currentTime - svpStartOffset
+      const hlsTime = seekTime - svpStartOffset
       setSvpPendingSeek(null)
       mediaRef.current.currentTime = Math.max(0, hlsTime)
       return
@@ -310,18 +355,18 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     if (transcodeStreamUrl) {
       const bufferedEnd = transcodeStartOffset + transcodeBufferedDuration
       const bufferedStart = transcodeStartOffset
-      if (currentTime >= bufferedStart - 1 && currentTime <= bufferedEnd + 2) {
-        const hlsTime = currentTime - transcodeStartOffset
+      if (seekTime >= bufferedStart - 1 && seekTime <= bufferedEnd + 2) {
+        const hlsTime = seekTime - transcodeStartOffset
         mediaRef.current.currentTime = Math.max(0, hlsTime)
         return
       }
-      restartTranscodeFromPosition(currentTime)
+      restartTranscodeFromPosition(seekTime)
       return
     }
 
     // Direct play - precise seek to final position
-    mediaRef.current.currentTime = currentTime
-  }, [isSeeking, mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, currentTime, restartSVPFromPosition, restartTranscodeFromPosition])
+    mediaRef.current.currentTime = seekTime
+  }, [isSeeking, mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition])
 
   // Touch handlers for video timeline (mobile)
   const handleSeekTouchStart = useCallback((e) => {
@@ -388,17 +433,18 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     e.preventDefault()
     setIsSeeking(false)
 
-    // Seek to final position
+    // Seek to final position (read from ref — always in sync via setCurrentTime wrapper)
     if (!mediaRef.current || !duration) return
+    const seekTime = currentTimeRef.current
 
     if (svpStreamUrl) {
       const bufferedEnd = svpStartOffset + svpBufferedDuration
       const bufferedStart = svpStartOffset
-      if (currentTime < bufferedStart - 1 || currentTime > bufferedEnd + 2) {
-        restartSVPFromPosition(currentTime)
+      if (seekTime < bufferedStart - 1 || seekTime > bufferedEnd + 2) {
+        restartSVPFromPosition(seekTime)
         return
       }
-      const hlsTime = currentTime - svpStartOffset
+      const hlsTime = seekTime - svpStartOffset
       setSvpPendingSeek(null)
       mediaRef.current.currentTime = Math.max(0, hlsTime)
       return
@@ -407,18 +453,18 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
       const bufferedEnd = transcodeStartOffset + transcodeBufferedDuration
       const bufferedStart = transcodeStartOffset
 
-      if (currentTime >= bufferedStart - 1 && currentTime <= bufferedEnd + 2) {
-        const hlsTime = currentTime - transcodeStartOffset
+      if (seekTime >= bufferedStart - 1 && seekTime <= bufferedEnd + 2) {
+        const hlsTime = seekTime - transcodeStartOffset
         mediaRef.current.currentTime = Math.max(0, hlsTime)
         return
       }
 
-      restartTranscodeFromPosition(currentTime)
+      restartTranscodeFromPosition(seekTime)
       return
     }
     // Direct play - precise seek to final position
-    mediaRef.current.currentTime = currentTime
-  }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, currentTime, restartSVPFromPosition, restartTranscodeFromPosition])
+    mediaRef.current.currentTime = seekTime
+  }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition])
 
   // Handle volume change
   const handleVolumeChange = useCallback((e) => {
@@ -503,6 +549,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     setIsPlaying(true)
     setCurrentTime(0)
     setDuration(0)
+    durationRef.current = 0
     setIsSeeking(false)
     setVideoDisplayMode('fit')
     setVideoNaturalSize({ width: 0, height: 0 })
@@ -510,12 +557,12 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     if (mediaRef.current) {
       mediaRef.current.playbackRate = 1.0
     }
-  }, [mediaRef])
+  }, [mediaRef, setCurrentTime])
 
   return {
     isPlaying,
     setIsPlaying,
-    currentTime,
+    currentTime: _currentTime,
     setCurrentTime,
     duration,
     setDuration,
@@ -527,6 +574,10 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     isMuted,
     playbackSpeed,
     timelineRef,
+    currentTimeRef,
+    progressBarRef,
+    playheadRef,
+    timeDisplayRef,
     getCurrentAbsoluteTime,
     seekVideo,
     toggleVideoPlay,

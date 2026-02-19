@@ -62,11 +62,13 @@ pub fn query_directory_images(
         where_clauses.push("i.is_favorite = 1".into());
     }
 
-    // Rating filter
+    // Rating filter — also include unrated (NULL) images so newly imported files aren't hidden
     if !params.rating.is_empty() {
-        // Use simple IN clause with values directly (ratings are validated)
         let quoted: Vec<String> = params.rating.iter().map(|r| format!("'{}'", r)).collect();
-        where_clauses.push(format!("i.rating IN ({})", quoted.join(",")));
+        where_clauses.push(format!(
+            "(i.rating IN ({}) OR i.rating IS NULL)",
+            quoted.join(",")
+        ));
     }
 
     // Age filters
@@ -231,7 +233,8 @@ pub fn query_directory_images(
         "SELECT i.id, i.filename, i.original_filename, i.file_hash, i.width, i.height,
                 i.file_size, i.duration, i.rating, i.is_favorite, i.prompt, i.negative_prompt,
                 i.model_name, i.sampler, i.seed, i.steps, i.cfg_scale, i.num_faces,
-                i.min_detected_age, i.max_detected_age, i.created_at, i.import_source
+                i.min_detected_age, i.max_detected_age, i.created_at, i.import_source,
+                i.file_modified_at
          FROM images i {} {} LIMIT ?{} OFFSET ?{}",
         where_sql,
         order_by,
@@ -270,6 +273,7 @@ pub fn query_directory_images(
             max_detected_age: row.get(19)?,
             created_at: row.get(20)?,
             import_source: row.get(21)?,
+            file_modified_at: row.get(22)?,
         })
     })?;
 
@@ -322,7 +326,8 @@ pub fn query_directory_images(
                 "cfg_scale": img.cfg_scale,
                 "duration": img.duration,
                 "file_hash": img.file_hash,
-                "import_source": img.import_source
+                "import_source": img.import_source,
+                "file_modified_at": img.file_modified_at
             })
         })
         .collect();
@@ -550,8 +555,8 @@ struct ImageRow {
     height: Option<i32>,
     file_size: Option<i64>,
     duration: Option<f64>,
-    rating: String,
-    is_favorite: bool,
+    rating: Option<String>,
+    is_favorite: Option<bool>,
     prompt: Option<String>,
     negative_prompt: Option<String>,
     model_name: Option<String>,
@@ -564,4 +569,5 @@ struct ImageRow {
     max_detected_age: Option<i32>,
     created_at: Option<String>,
     import_source: Option<String>,
+    file_modified_at: Option<String>,
 }

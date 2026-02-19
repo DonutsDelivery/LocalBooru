@@ -345,7 +345,7 @@ function SettingsPage() {
             {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
             <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
               <VideoPlaybackSettings />
-              {isInstalled('frame-interpolation') && <OpticalFlowSettings />}
+              <OpticalFlowSettings />
               {isInstalled('whisper-subtitles') && <WhisperSubtitleSettings />}
               {isInstalled('cast') && <CastSettings />}
             </div>

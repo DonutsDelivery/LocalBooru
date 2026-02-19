@@ -234,10 +234,14 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
     let state_clone = state.clone();
 
     // Fetch next task (blocking DB operation)
+    // Uses atomic UPDATE + SELECT to prevent two workers claiming the same task.
     let task_info = tokio::task::spawn_blocking(move || -> Result<Option<(i64, String, String, i64)>, AppError> {
         let conn = state_clone.main_db().get()?;
 
-        // Fetch highest-priority pending task
+        // Atomically claim the highest-priority pending task:
+        // 1. Find the best candidate
+        // 2. UPDATE it to 'processing' only if it's still 'pending'
+        // 3. Check changes() to confirm we actually claimed it
         let result = conn.query_row(
             "SELECT id, task_type, payload, COALESCE(attempts, 0) FROM task_queue
              WHERE status = ?1
@@ -256,11 +260,16 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
 
         match result {
             Ok(task) => {
-                // Mark as processing
-                conn.execute(
-                    "UPDATE task_queue SET status = ?1, started_at = datetime('now') WHERE id = ?2",
-                    params![STATUS_PROCESSING, task.0],
+                // Atomically claim: only update if still pending
+                let claimed = conn.execute(
+                    "UPDATE task_queue SET status = ?1, started_at = datetime('now')
+                     WHERE id = ?2 AND status = ?3",
+                    params![STATUS_PROCESSING, task.0, STATUS_PENDING],
                 )?;
+                if claimed == 0 {
+                    // Another worker already claimed it, try again
+                    return Ok(None);
+                }
                 Ok(Some(task))
             }
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),

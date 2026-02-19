@@ -49,7 +49,7 @@ pub fn router() -> Router<AppState> {
             "/transcode/stream/{stream_id}/{filename}",
             get(serve_transcode_file),
         )
-        // ─── Optical flow streaming (sidecar bridge) ────────────────────
+        // ─── Optical flow streaming (native FFmpeg minterpolate) ─────────
         .route("/optical-flow/play", post(bridge_optical_flow_play))
         .route("/optical-flow/stop", post(bridge_optical_flow_stop))
         .route(
@@ -632,28 +632,24 @@ async fn update_video_playback(
 
 // ─── Optical flow ────────────────────────────────────────────────────────────
 
-/// GET /optical-flow — Get optical flow configuration + backend status from addon.
+/// GET /optical-flow — Get optical flow configuration + backend status.
+///
+/// Frame interpolation is handled natively via FFmpeg's minterpolate filter,
+/// so no addon/sidecar is required.
 async fn get_optical_flow(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, AppError> {
     let data_dir = state.data_dir().to_path_buf();
-    let addon_mgr = state.addon_manager();
-
-    let addon_info = addon_mgr.get_addon("frame-interpolation");
-    let (installed, running) = match &addon_info {
-        Some(info) => (info.installed, info.status == AddonStatus::Running),
-        None => (false, false),
-    };
 
     let result = tokio::task::spawn_blocking(move || {
         let mut config = get_config_section(&data_dir, "optical_flow");
         if let Some(obj) = config.as_object_mut() {
+            // FFmpeg minterpolate is always available — no addon needed
             obj.insert(
                 "backend".into(),
                 json!({
-                    "installed": installed,
-                    "running": running,
-                    "any_backend_available": running
+                    "any_backend_available": true,
+                    "name": "ffmpeg_minterpolate"
                 }),
             );
         }
@@ -1295,6 +1291,8 @@ fn get_video_dimensions(path: &Path) -> Result<(u64, u64), String> {
 
 // ─── Transcode streaming ─────────────────────────────────────────────────────
 
+fn default_true() -> bool { true }
+
 #[derive(Debug, Deserialize)]
 struct TranscodePlayRequest {
     file_path: String,
@@ -1302,8 +1300,39 @@ struct TranscodePlayRequest {
     start_position: f64,
     #[serde(default)]
     quality_preset: Option<String>,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     force_cfr: bool,
+}
+
+/// Parse a quality preset string into FFmpeg parameters.
+fn parse_quality_preset(preset: Option<&str>) -> QualityPreset {
+    match preset {
+        Some("480p") => QualityPreset {
+            resolution: Some("480p".into()),
+            bitrate: Some("1536K".into()),
+        },
+        Some("720p") => QualityPreset {
+            resolution: Some("720p".into()),
+            bitrate: Some("4M".into()),
+        },
+        Some("1080p") => QualityPreset {
+            resolution: Some("1080p".into()),
+            bitrate: Some("8M".into()),
+        },
+        Some("1080p_enhanced") => QualityPreset {
+            resolution: Some("1080p".into()),
+            bitrate: Some("20M".into()),
+        },
+        Some("1440p") => QualityPreset {
+            resolution: Some("1440p".into()),
+            bitrate: Some("14M".into()),
+        },
+        Some("4k") | Some("2160p") => QualityPreset {
+            resolution: Some("4k".into()),
+            bitrate: Some("25M".into()),
+        },
+        _ => QualityPreset::default(), // Original quality, CRF mode
+    }
 }
 
 /// POST /transcode/play — Start an HLS transcode stream.
@@ -1317,29 +1346,7 @@ async fn start_transcode_stream(
     }
 
     // Parse quality preset
-    let quality = match body.quality_preset.as_deref() {
-        Some("480p") => QualityPreset {
-            resolution: Some("480p".into()),
-            bitrate: Some("1536K".into()),
-        },
-        Some("720p") => QualityPreset {
-            resolution: Some("720p".into()),
-            bitrate: Some("4M".into()),
-        },
-        Some("1080p") => QualityPreset {
-            resolution: Some("1080p".into()),
-            bitrate: Some("8M".into()),
-        },
-        Some("1440p") => QualityPreset {
-            resolution: Some("1440p".into()),
-            bitrate: Some("14M".into()),
-        },
-        Some("4k") | Some("2160p") => QualityPreset {
-            resolution: Some("4k".into()),
-            bitrate: Some("25M".into()),
-        },
-        _ => QualityPreset::default(), // Original quality, CRF mode
-    };
+    let quality = parse_quality_preset(body.quality_preset.as_deref());
 
     let info = state
         .transcode_manager()
@@ -1520,46 +1527,77 @@ async fn bridge_stream(
 
 // ─── Optical flow bridge ─────────────────────────────────────────────────────
 
-/// POST /optical-flow/play — Start optical flow interpolated stream via sidecar.
+/// POST /optical-flow/play — Start interpolated stream via FFmpeg minterpolate.
 async fn bridge_optical_flow_play(
     State(state): State<AppState>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    bridge_post(
-        &state,
-        "frame-interpolation",
-        "/optical-flow/play",
-        &body,
-        Some("optical-flow"),
-    )
-    .await
+    let file_path = body
+        .get("file_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("file_path is required".into()))?;
+
+    let path = Path::new(file_path);
+    if !path.exists() {
+        return Err(AppError::NotFound("Video file not found".into()));
+    }
+
+    let start_position = body
+        .get("start_position")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+
+    // Read target_fps from optical_flow config
+    let data_dir = state.data_dir().to_path_buf();
+    let config = tokio::task::spawn_blocking(move || {
+        get_config_section(&data_dir, "optical_flow")
+    })
+    .await?;
+    let target_fps = config
+        .get("target_fps")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(60) as u32;
+
+    // Parse quality preset (if provided)
+    let quality = parse_quality_preset(body.get("quality_preset").and_then(|v| v.as_str()));
+
+    let info = state
+        .transcode_manager()
+        .start_interpolated_stream(file_path, start_position, &quality, target_fps)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to start interpolated stream: {}", e)))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "stream_id": info.stream_id,
+        "stream_url": info.stream_url,
+        "duration": info.duration,
+        "start_position": info.start_position,
+        "source_resolution": {
+            "width": info.source_resolution.width,
+            "height": info.source_resolution.height,
+        }
+    })))
 }
 
-/// POST /optical-flow/stop — Stop optical flow streams via sidecar.
+/// POST /optical-flow/stop — Stop interpolated streams.
 async fn bridge_optical_flow_stop(
     State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
-    bridge_post(
-        &state,
-        "frame-interpolation",
-        "/optical-flow/stop",
-        &json!({}),
-        None,
-    )
-    .await
+) -> Json<Value> {
+    state.transcode_manager().stop_all();
+    Json(json!({ "success": true, "message": "All interpolated streams stopped" }))
 }
 
-/// GET /optical-flow/stream/{stream_id}/{filename} — Serve HLS files via sidecar.
+/// GET /optical-flow/stream/{stream_id}/{filename} — Serve HLS files.
+///
+/// Reuses the same TranscodeManager, so stream URLs from optical-flow/play
+/// also work through the transcode/stream endpoint. This endpoint is kept
+/// for backward compatibility with the frontend API paths.
 async fn bridge_optical_flow_stream(
     State(state): State<AppState>,
     AxumPath((stream_id, filename)): AxumPath<(String, String)>,
 ) -> Result<Response, AppError> {
-    bridge_stream(
-        &state,
-        "frame-interpolation",
-        &format!("/optical-flow/stream/{}/{}", stream_id, filename),
-    )
-    .await
+    serve_transcode_file(State(state), AxumPath((stream_id, filename))).await
 }
 
 // ─── SVP bridge ──────────────────────────────────────────────────────────────

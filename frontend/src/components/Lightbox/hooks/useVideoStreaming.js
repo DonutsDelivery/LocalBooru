@@ -15,10 +15,10 @@ import { isVideo } from '../utils/helpers'
 
 /**
  * Hook for managing HLS/SVP/OpticalFlow video streaming
- * @param {object} addonStatus - { svpInstalled, opticalFlowInstalled } from useAddonStatus
+ * @param {object} addonStatus - { svpInstalled } from useAddonStatus
  */
 export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus = {}) {
-  const { svpInstalled = false, opticalFlowInstalled = false } = addonStatus
+  const { svpInstalled = false } = addonStatus
   // HLS streaming ref
   const hlsRef = useRef(null)
 
@@ -70,12 +70,8 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   const startSVPStreamRef = useRef(null)
   const startInterpolatedStreamRef = useRef(null)
 
-  // Load optical flow config on mount (only if addon installed)
+  // Load optical flow config on mount (native FFmpeg minterpolate, no addon needed)
   useEffect(() => {
-    if (!opticalFlowInstalled) {
-      setOpticalFlowConfig({ enabled: false })
-      return
-    }
     async function loadOpticalFlowConfig() {
       try {
         const config = await getOpticalFlowConfig()
@@ -86,7 +82,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       }
     }
     loadOpticalFlowConfig()
-  }, [opticalFlowInstalled])
+  }, [])
 
   // Load SVP config on mount (only if addon installed)
   useEffect(() => {
@@ -247,7 +243,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
   // Start optical flow interpolation for video (called automatically when enabled)
   const startInterpolatedStream = useCallback(async (startPosition = null) => {
-    if (!opticalFlowInstalled) return  // Addon not installed
     if (!image || !opticalFlowConfig?.enabled || !isVideo(image.filename)) return
     if (opticalFlowStreamUrl || opticalFlowLoading) return // Already active or starting
 
@@ -285,7 +280,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     }
 
     setOpticalFlowLoading(false)
-  }, [image, opticalFlowInstalled, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading, svpStreamUrl, transcodeStreamUrl, currentQuality, getCurrentAbsoluteTime])
+  }, [image, opticalFlowConfig, opticalFlowStreamUrl, opticalFlowLoading, svpStreamUrl, transcodeStreamUrl, currentQuality, getCurrentAbsoluteTime])
 
   // Start SVP interpolation for video (called manually via button or auto-start)
   // Optional startPosition parameter - if not provided, defaults to 0 for new videos or current position for mode switches
@@ -520,7 +515,8 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
       const hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: true,
+        lowLatencyMode: false,
+        startPosition: 0,
         backBufferLength: 30,
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
@@ -532,7 +528,15 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (cancelled) return
-        video.play().catch(() => {})
+        if (video.readyState >= 3) {
+          video.play().catch(() => {})
+        } else {
+          const playOnReady = () => {
+            video.play().catch(() => {})
+            video.removeEventListener('canplay', playOnReady)
+          }
+          video.addEventListener('canplay', playOnReady)
+        }
       })
 
       hls.on(Hls.Events.ERROR, (event, data) => {
@@ -588,7 +592,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
       const hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: true,
+        // Don't use lowLatencyMode — it causes hls.js to start at the live edge
+        // of our growing HLS stream instead of segment 0, causing playback stalls
+        lowLatencyMode: false,
+        startPosition: 0,
         backBufferLength: 30,
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
@@ -604,7 +611,17 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         // Stream is ready, allow time updates again
         streamTransitioningRef.current = false
-        video.play().catch(() => {})
+        // Wait for enough data to be buffered before playing — calling play()
+        // at MANIFEST_PARSED often fails because no segments are buffered yet
+        if (video.readyState >= 3) {
+          video.play().catch(() => {})
+        } else {
+          const playOnReady = () => {
+            video.play().catch(() => {})
+            video.removeEventListener('canplay', playOnReady)
+          }
+          video.addEventListener('canplay', playOnReady)
+        }
       })
 
       // Track available duration from HLS manifest for seek handling
@@ -680,21 +697,19 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
       const hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: true,  // Enable low latency for live-style HLS playlist
+        lowLatencyMode: false,
+        startPosition: 0,
         backBufferLength: 30,
-        maxBufferLength: 30,           // Buffer up to 30 seconds ahead
-        maxMaxBufferLength: 60,        // Allow up to 60 seconds in buffer
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
         // Retry manifest loading while SVP produces initial segments
         manifestLoadingMaxRetry: 30,
-        manifestLoadingRetryDelay: 500,   // 500ms between retries (faster feedback)
+        manifestLoadingRetryDelay: 500,
         manifestLoadingMaxRetryTimeout: 60000,
-        // Also retry level/fragment loading
         levelLoadingMaxRetry: 10,
         levelLoadingRetryDelay: 500,
         fragLoadingMaxRetry: 10,
         fragLoadingRetryDelay: 500,
-        // Start playback even with small buffer
-        startPosition: 0,
       })
 
       // Attach media and load source
@@ -719,7 +734,15 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         // Stream is ready, allow time updates again
         streamTransitioningRef.current = false
         setSvpLoading(false)
-        video.play().catch(() => {})
+        if (video.readyState >= 3) {
+          video.play().catch(() => {})
+        } else {
+          const playOnReady = () => {
+            video.play().catch(() => {})
+            video.removeEventListener('canplay', playOnReady)
+          }
+          video.addEventListener('canplay', playOnReady)
+        }
       })
 
       hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
@@ -893,35 +916,24 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     try {
       if (qualityId === 'original') {
         console.log('[Lightbox] Switching to original quality')
-        // Stop streams and destroy HLS instances before setting direct src.
+        // Stop ALL backend streams unconditionally — not just those with a URL set.
+        // A transcode may be in-flight (API call returned but URL not yet set in state).
+        await Promise.all([
+          stopSVPStream().catch(() => {}),
+          stopInterpolatedStream().catch(() => {}),
+          stopTranscodeStream().catch(() => {}),
+        ])
+        // Destroy HLS instances before setting direct src.
         // HLS.js attaches a MediaSource to the video element — we must destroy
         // it before setting a plain src, otherwise the video won't load.
-        if (svpStreamUrl) {
-          await stopSVPStream()
-          if (svpHlsRef.current) {
-            svpHlsRef.current.destroy()
-            svpHlsRef.current = null
-          }
-          setSvpStreamUrl(null)
-          setSvpStartOffset(0)
-        }
-        if (opticalFlowStreamUrl) {
-          await stopInterpolatedStream()
-          if (hlsRef.current) {
-            hlsRef.current.destroy()
-            hlsRef.current = null
-          }
-          setOpticalFlowStreamUrl(null)
-        }
-        if (transcodeStreamUrl) {
-          await stopTranscodeStream()
-          if (transcodeHlsRef.current) {
-            transcodeHlsRef.current.destroy()
-            transcodeHlsRef.current = null
-          }
-          setTranscodeStreamUrl(null)
-          setTranscodeStartOffset(0)
-        }
+        if (svpHlsRef.current) { svpHlsRef.current.destroy(); svpHlsRef.current = null }
+        if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
+        if (transcodeHlsRef.current) { transcodeHlsRef.current.destroy(); transcodeHlsRef.current = null }
+        setSvpStreamUrl(null)
+        setSvpStartOffset(0)
+        setOpticalFlowStreamUrl(null)
+        setTranscodeStreamUrl(null)
+        setTranscodeStartOffset(0)
 
         if (mediaRef.current && image) {
           const video = mediaRef.current
@@ -998,7 +1010,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
               console.error('[Lightbox] SVP play failed:', result.error)
               setStreamError('Failed to start SVP stream: ' + result.error)
             }
-          } else if (opticalFlowInstalled && opticalFlowConfig?.enabled) {
+          } else if (opticalFlowConfig?.enabled) {
             // OpticalFlow is enabled + installed, try to use it
             console.log('[Lightbox] Starting new OpticalFlow stream with quality')
             const result = await playVideoInterpolated(image.file_path, absoluteTime, qualityId)
@@ -1032,7 +1044,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     } catch (err) {
       console.error('Failed to change quality:', err)
     }
-  }, [image, mediaRef, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, svpInstalled, svpConfig, opticalFlowInstalled, opticalFlowConfig, getCurrentAbsoluteTime])
+  }, [image, mediaRef, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, svpInstalled, svpConfig, opticalFlowConfig, getCurrentAbsoluteTime])
 
   // Check if browser can't decode the video codec (e.g. HEVC on Linux WebKitGTK/Chromium)
   // Called from Lightbox onCanPlay — if videoWidth is 0, the video track isn't decoding

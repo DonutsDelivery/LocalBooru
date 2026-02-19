@@ -13,7 +13,6 @@ export default function OpticalFlowSettings() {
   // Local form state
   const [enabled, setEnabled] = useState(false)
   const [targetFps, setTargetFps] = useState(60)
-  const [useGpu, setUseGpu] = useState(true)
   const [quality, setQuality] = useState('fast')
 
   useEffect(() => {
@@ -27,7 +26,6 @@ export default function OpticalFlowSettings() {
       setConfig(data)
       setEnabled(data.enabled || false)
       setTargetFps(data.target_fps || 60)
-      setUseGpu(data.use_gpu !== false)
       setQuality(data.quality || 'fast')
     } catch (err) {
       console.error('Failed to load optical flow config:', err)
@@ -42,7 +40,6 @@ export default function OpticalFlowSettings() {
       await updateOpticalFlowConfig({
         enabled,
         target_fps: targetFps,
-        use_gpu: useGpu,
         quality
       })
       await loadConfig()
@@ -65,78 +62,47 @@ export default function OpticalFlowSettings() {
   const hasChanges =
     enabled !== (config?.enabled || false) ||
     targetFps !== (config?.target_fps || 60) ||
-    useGpu !== (config?.use_gpu !== false) ||
     quality !== (config?.quality || 'fast')
-
-  const backend = config?.backend || {}
-  const hasOpenCVCuda = backend.cv2_cuda_available
-  const hasTorchCuda = backend.cuda_available
-  const hasGpuBackend = backend.gpu_backend !== null
-  const hasCpuBackend = backend.cv2_available
-  const hasAnyBackend = backend.any_backend_available
-  const gpuBackendName = backend.gpu_backend === 'opencv_cuda' ? 'OpenCV CUDA' :
-                         backend.gpu_backend === 'torch_cuda' ? 'PyTorch CUDA' : null
 
   return (
     <div className="optical-flow-settings">
-      <h2>Built-in Interpolation</h2>
+      <h2>Frame Interpolation</h2>
       <p className="settings-description">
-        Basic frame interpolation using NVIDIA Optical Flow.
-        Fast but lower quality than SVP. Use SVP below for best results.
+        Increase video frame rate using FFmpeg's motion-compensated interpolation.
+        Converts 24/30fps videos to smooth 60fps+ playback.
       </p>
 
       {/* Backend status */}
       <div className="backend-status">
-        <strong>Backends:</strong>
-        <span className={`backend-badge ${hasOpenCVCuda ? 'available' : 'unavailable'}`}>
-          OpenCV CUDA: {hasOpenCVCuda ? '✓' : '✗'}
-        </span>
-        <span className={`backend-badge ${hasTorchCuda ? 'available' : 'unavailable'}`}>
-          PyTorch CUDA: {hasTorchCuda ? '✓' : '✗'}
-        </span>
-        <span className={`backend-badge ${hasCpuBackend ? 'available' : 'unavailable'}`}>
-          CPU Fallback: {hasCpuBackend ? '✓' : '✗'}
+        <span className="backend-badge available">
+          FFmpeg minterpolate: Built-in
         </span>
       </div>
 
-      {gpuBackendName && (
-        <div className="optical-flow-status info">
-          <span className="status-icon">⚡</span>
-          <span>Using <strong>{gpuBackendName}</strong> for GPU-accelerated interpolation</span>
-        </div>
-      )}
-
-      {!hasGpuBackend && hasCpuBackend && (
-        <div className="optical-flow-status warning">
-          <span className="status-icon">!</span>
-          <span>No GPU backend available. CPU interpolation will be slow. Install OpenCV with CUDA support for GPU acceleration.</span>
-        </div>
-      )}
-
-      {!hasAnyBackend && (
-        <div className="optical-flow-status warning">
-          <span className="status-icon">!</span>
-          <span>No interpolation backend available. Install OpenCV (<code>pip install opencv-python</code>).</span>
-        </div>
-      )}
+      <div className="optical-flow-status info">
+        <span className="status-icon">i</span>
+        <span>
+          Uses FFmpeg's minterpolate filter with motion-compensated frame blending.
+          No additional software required.
+        </span>
+      </div>
 
       {/* Enable/Disable */}
       <section className="settings-section">
-        <h3>Enable Interpolation Button</h3>
+        <h3>Enable Interpolation</h3>
         <div className="setting-row">
           <label className="toggle-label">
             <input
               type="checkbox"
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
-              disabled={!hasAnyBackend}
             />
-            <span>Show interpolation button in video player</span>
+            <span>Auto-start interpolation when playing videos</span>
           </label>
         </div>
         <p className="setting-note">
-          When viewing videos, a wave button will appear to play with frame interpolation.
-          The video streams in-app with smooth motion applied.
+          When enabled, videos will automatically play with frame interpolation applied.
+          The video is re-encoded in real-time and streamed via HLS.
         </p>
       </section>
 
@@ -146,7 +112,7 @@ export default function OpticalFlowSettings() {
         <div className="setting-row fps-row">
           <input
             type="range"
-            min="15"
+            min="30"
             max="120"
             step="5"
             value={targetFps}
@@ -155,32 +121,31 @@ export default function OpticalFlowSettings() {
           />
           <span className="fps-value">{targetFps} fps</span>
         </div>
+        <div className="fps-presets">
+          <button
+            className={targetFps === 48 ? 'active' : ''}
+            onClick={() => setTargetFps(48)}
+          >
+            48fps
+          </button>
+          <button
+            className={targetFps === 60 ? 'active' : ''}
+            onClick={() => setTargetFps(60)}
+          >
+            60fps
+          </button>
+          <button
+            className={targetFps === 120 ? 'active' : ''}
+            onClick={() => setTargetFps(120)}
+          >
+            120fps
+          </button>
+        </div>
         <p className="setting-note">
-          Higher frame rates are smoother but require more processing power.
-          60 fps is recommended for most videos.
+          Match your monitor's refresh rate for best results. Higher values need more CPU/GPU.
+          60fps is recommended for most systems.
         </p>
       </section>
-
-      {/* GPU toggle */}
-      {hasGpuBackend && (
-        <section className="settings-section">
-          <h3>GPU Acceleration</h3>
-          <div className="setting-row">
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={useGpu}
-                onChange={(e) => setUseGpu(e.target.checked)}
-              />
-              <span>Use GPU for interpolation (faster, better quality)</span>
-            </label>
-          </div>
-          <p className="setting-note">
-            GPU interpolation uses a neural network for higher quality results.
-            Disable to use CPU-based optical flow (slower but works without CUDA).
-          </p>
-        </section>
-      )}
 
       {/* Quality preset */}
       <section className="settings-section">
@@ -192,7 +157,7 @@ export default function OpticalFlowSettings() {
             className="quality-select"
           >
             <option value="fast">Fast (real-time, lower quality)</option>
-            <option value="balanced">Balanced (good quality, slower)</option>
+            <option value="balanced">Balanced (good quality, may buffer)</option>
             <option value="quality">Quality (best quality, slowest)</option>
           </select>
         </div>
@@ -206,15 +171,15 @@ export default function OpticalFlowSettings() {
       <section className="settings-section info-section">
         <h3>How It Works</h3>
         <p className="setup-note">
-          <strong>Native interpolation:</strong> Unlike SVP which requires external software,
-          this feature uses built-in optical flow to generate intermediate frames.
-          When you click the interpolation button on a video, LocalBooru analyzes motion
-          between frames and creates smooth transitions at your target frame rate.
+          Frame interpolation analyzes motion between video frames and generates
+          new intermediate frames for smoother playback. This is especially useful
+          for movies (24fps) and console recordings (30fps) on high refresh rate monitors.
         </p>
         <ul className="feature-list">
-          <li><strong>GPU mode:</strong> Uses a lightweight neural network for high-quality interpolation</li>
-          <li><strong>CPU mode:</strong> Uses OpenCV Farneback optical flow algorithm</li>
-          <li><strong>Streaming:</strong> Video is processed in real-time and streamed via HLS</li>
+          <li><strong>Motion estimation:</strong> Analyzes how objects move between frames</li>
+          <li><strong>Frame synthesis:</strong> Generates new frames along motion vectors</li>
+          <li><strong>HLS streaming:</strong> Processed video streams in real-time via HLS</li>
+          <li><strong>Hardware encoding:</strong> Uses NVENC when available for fast encoding</li>
         </ul>
       </section>
 

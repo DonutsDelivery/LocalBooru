@@ -96,12 +96,14 @@ pub fn scan_directory(
     let walker: Box<dyn Iterator<Item = walkdir::DirEntry>> = if recursive {
         Box::new(
             walkdir::WalkDir::new(path)
+                .follow_links(true)
                 .into_iter()
                 .filter_map(|e| e.ok()),
         )
     } else {
         Box::new(
             walkdir::WalkDir::new(path)
+                .follow_links(true)
                 .max_depth(1)
                 .into_iter()
                 .filter_map(|e| e.ok()),

@@ -5,7 +5,7 @@ import { getVideoPlaybackConfig } from '../../../api'
  * Hook for auto-advancing to next video when current one ends.
  * Shows a countdown overlay with cancel/advance-now actions.
  */
-export function useAutoAdvance(mediaRef, { onNav, currentIndex, totalImages, isVideoFile }) {
+export function useAutoAdvance(mediaRef, { onNav, currentIndex, totalImages, isVideoFile, streamTransitioningRef }) {
   const [countdown, setCountdown] = useState(null) // null = not counting, number = seconds left
   const [config, setConfig] = useState(null)
   const countdownTimerRef = useRef(null)
@@ -50,6 +50,9 @@ export function useAutoAdvance(mediaRef, { onNav, currentIndex, totalImages, isV
   // Start countdown when video ends
   const handleVideoEnded = useCallback(() => {
     if (!isEnabled || isLastItem) return
+    // Ignore spurious 'ended' events during stream transitions (e.g. HLS source
+    // being destroyed and re-created when seeking in a transcode stream)
+    if (streamTransitioningRef?.current) return
 
     const delay = config?.auto_advance_delay || 5
     setCountdown(delay)

@@ -8,11 +8,12 @@ use std::path::PathBuf;
 
 use axum::{
     Router,
-    http::Method,
+    http::{Method, header},
     response::Json,
     routing::get,
 };
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
 use self::middleware::AccessControlLayer;
@@ -63,7 +64,14 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
     let thumbnails_dir = state.thumbnails_dir();
     let thumbnails_service = ServeDir::new(&thumbnails_dir);
 
+    // Prevent browsers from caching API responses (stale data causes ghost images)
+    let no_cache = SetResponseHeaderLayer::overriding(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+
     let mut app = api
+        .layer(no_cache)
         .nest_service("/thumbnails", thumbnails_service)
         .layer(AccessControlLayer)
         .layer(cors)

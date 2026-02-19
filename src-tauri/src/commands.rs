@@ -2,7 +2,7 @@
 //!
 //! The axum backend is embedded in the Tauri process — no separate process management needed.
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
@@ -125,6 +125,10 @@ pub fn get_app_version(app: AppHandle) -> String {
 /// Quit the application
 #[tauri::command]
 pub async fn quit_app(app: AppHandle) -> Result<(), String> {
+    // Kill all FFmpeg transcode processes before exiting — process::exit() skips destructors
+    if let Some(state) = app.try_state::<AppState>() {
+        state.transcode_manager().stop_all();
+    }
     app.exit(0);
     Ok(())
 }
