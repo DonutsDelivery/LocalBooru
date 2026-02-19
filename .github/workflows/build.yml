@@ -12,20 +12,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Sync version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: npm version "${GITHUB_REF#refs/tags/v}" --no-git-tag-version --allow-same-version
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
 
       - name: Install dependencies
         run: npm ci
@@ -35,102 +26,6 @@ jobs:
 
       - name: Build frontend
         run: npm run build:frontend
-
-      - name: Verify frontend build
-        run: |
-          echo "Frontend build contents:"
-          ls -la frontend/dist/
-          echo ""
-          echo "Checking for /api in JS bundle:"
-          if grep -rl "/api" frontend/dist/assets/*.js > /dev/null 2>&1; then
-            echo "SUCCESS: Found /api in JS bundle"
-          else
-            echo "ERROR: /api NOT found in any JS bundle!"
-            exit 1
-          fi
-
-      - name: Cache Python bundle
-        id: cache-python-linux
-        uses: actions/cache@v4
-        with:
-          path: python-venv-linux
-          key: python-linux-${{ hashFiles('requirements.txt') }}
-
-      - name: Prepare Python bundle
-        if: steps.cache-python-linux.outputs.cache-hit != 'true'
-        run: |
-          echo "Creating Python virtual environment bundle..."
-          BUNDLE_DIR="python-venv-linux"
-
-          # Create venv with --copies to avoid symlinks to system Python
-          # This is critical for making the venv relocatable/portable
-          python3 -m venv --copies "$BUNDLE_DIR"
-
-          # Upgrade pip
-          "$BUNDLE_DIR/bin/pip" install --upgrade pip
-
-          # Install dependencies
-          echo "Installing Python dependencies (this may take a while)..."
-          "$BUNDLE_DIR/bin/pip" install -r requirements.txt --no-warn-script-location
-
-          # Clean up __pycache__ and .pyc files
-          echo "Cleaning up..."
-          find "$BUNDLE_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-          find "$BUNDLE_DIR" -type f -name "*.pyc" -delete 2>/dev/null || true
-          find "$BUNDLE_DIR" -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
-          find "$BUNDLE_DIR" -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
-
-          # Remove unnecessary bin scripts (keep python* and pip*)
-          cd "$BUNDLE_DIR/bin"
-          for f in *; do
-            case "$f" in
-              python*|pip*|activate*) ;;
-              *) rm -f "$f" 2>/dev/null || true ;;
-            esac
-          done
-          cd -
-
-          # Make venv relocatable
-          # 1. Patch activate script to use dynamic VIRTUAL_ENV
-          sed -i 's|^VIRTUAL_ENV=.*|VIRTUAL_ENV="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." \&\& pwd)"|' "$BUNDLE_DIR/bin/activate"
-
-          # 2. Fix shebangs in pip-installed scripts (uvicorn, etc.) to use /usr/bin/env
-          # This is critical - without this, scripts have hardcoded paths that break after relocation
-          for script in "$BUNDLE_DIR/bin"/*; do
-            if [ -f "$script" ] && head -1 "$script" | grep -q "^#!.*python"; then
-              sed -i '1s|^#!.*python.*|#!/usr/bin/env python3|' "$script"
-            fi
-          done
-
-          # Report size
-          SIZE=$(du -sh "$BUNDLE_DIR" | cut -f1)
-          echo "Python bundle ready! Size: $SIZE"
-
-      - name: Create empty model directories
-        run: |
-          # Create empty tagger directory (models downloaded on first use)
-          rm -rf tagger 2>/dev/null || true
-          mkdir -p tagger
-
-          # Create a readme explaining the on-demand download
-          cat > tagger/README.txt << 'EOF'
-          # ML Models
-
-          Models are downloaded automatically on first use.
-          This keeps the installer small and fast.
-
-          Supported models:
-          - tagger/vit-v3 (default, ~180MB)
-          - tagger/eva02-large-v3 (~400MB)
-          - tagger/swinv2-v3 (~180MB)
-          - yolov8n (~6MB)
-
-          Models are stored in:
-          - Windows: %APPDATA%\.localbooru\models\
-          - Linux/Mac: ~/.localbooru/models/
-          EOF
-
-          echo "ML models will be downloaded on-demand"
 
       - name: Build Linux packages
         run: npx electron-builder --linux --publish never
@@ -152,10 +47,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Sync version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: npm version "${GITHUB_REF#refs/tags/v}" --no-git-tag-version --allow-same-version
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -170,19 +61,6 @@ jobs:
 
       - name: Build frontend
         run: npm run build:frontend
-
-      - name: Verify frontend build
-        run: |
-          echo "Frontend build contents:"
-          ls -la frontend/dist/
-          echo ""
-          echo "Checking for /api in JS bundle:"
-          if grep -rl "/api" frontend/dist/assets/*.js > /dev/null 2>&1; then
-            echo "SUCCESS: Found /api in JS bundle"
-          else
-            echo "ERROR: /api NOT found in any JS bundle!"
-            exit 1
-          fi
 
       - name: Build macOS packages
         run: npx electron-builder --mac --publish never
@@ -201,11 +79,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Sync version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: npm version "${GITHUB_REF#refs/tags/v}" --no-git-tag-version --allow-same-version
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -237,30 +110,18 @@ jobs:
           Get-Content "frontend/dist/index.html" | Select-Object -First 50
           Write-Host ""
           Write-Host "Checking for /api in JS bundle:"
-          $jsFiles = Get-ChildItem "frontend/dist/assets/*.js"
-          $found = $false
-          foreach ($jsFile in $jsFiles) {
+          $jsFile = Get-ChildItem "frontend/dist/assets/*.js" | Select-Object -First 1
+          if ($jsFile) {
             $content = Get-Content $jsFile.FullName -Raw
-            if ($content -match "/api") {
-              Write-Host "SUCCESS: Found /api in $($jsFile.Name)"
-              $found = $true
-              break
+            if ($content -match "return.*/api") {
+              Write-Host "SUCCESS: Found /api return in JS bundle"
+            } else {
+              Write-Host "ERROR: /api return NOT found in JS bundle!"
+              exit 1
             }
           }
-          if (-not $found) {
-            Write-Host "ERROR: /api NOT found in any JS bundle!"
-            exit 1
-          }
-
-      - name: Cache Python bundle
-        id: cache-python-win
-        uses: actions/cache@v4
-        with:
-          path: python-embed
-          key: python-win-embed-3.11.9-${{ hashFiles('requirements.txt') }}
 
       - name: Prepare Python bundle
-        if: steps.cache-python-win.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $PYTHON_VERSION = "3.11.9"
@@ -309,23 +170,14 @@ jobs:
 
           Write-Host "Installing dependencies..."
           # Install most dependencies (skip insightface which requires C++ build tools)
-          & "$BUNDLE_DIR\python.exe" -m pip install fastapi uvicorn[standard] sqlalchemy aiosqlite pillow imagehash onnxruntime opencv-python-headless numpy pydantic pydantic-settings python-multipart httpx PyJWT cryptography watchdog miniupnpc xxhash pychromecast async-upnp-client aiohttp --no-warn-script-location
+          & "$BUNDLE_DIR\python.exe" -m pip install fastapi uvicorn[standard] sqlalchemy aiosqlite pillow imagehash onnxruntime opencv-python-headless numpy pydantic pydantic-settings python-multipart httpx watchdog xxhash --no-warn-script-location
 
-          # Try to install optional packages (may fail on some systems, that's OK)
+          # Try to install insightface (may fail on some systems, that's OK)
           Write-Host "Attempting to install insightface..."
           try {
             & "$BUNDLE_DIR\python.exe" -m pip install insightface --no-warn-script-location 2>&1 | Out-Null
           } catch {
             Write-Host "Note: insightface installation skipped (face detection will be unavailable)"
-          }
-          # Reset error state
-          $LASTEXITCODE = 0
-
-          Write-Host "Attempting to install RIFE and gdown..."
-          try {
-            & "$BUNDLE_DIR\python.exe" -m pip install gdown rife-ncnn-vulkan-python-tntwise --no-warn-script-location 2>&1 | Out-Null
-          } catch {
-            Write-Host "Note: RIFE/gdown installation skipped (frame interpolation will be unavailable)"
           }
           # Reset error state
           $LASTEXITCODE = 0
@@ -379,208 +231,8 @@ jobs:
 
           Write-Host "ML models will be downloaded on-demand (saves ~186MB in installer)"
 
-      - name: Cache FFmpeg
-        id: cache-ffmpeg
-        uses: actions/cache@v4
-        with:
-          path: ffmpeg
-          key: ffmpeg-win64-n7.1
-
-      - name: Download FFmpeg
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-7.1.zip"
-          Write-Host "Downloading FFmpeg..."
-          Invoke-WebRequest -Uri $ffmpegUrl -OutFile "ffmpeg.zip"
-
-          Write-Host "Extracting FFmpeg..."
-          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg-temp" -Force
-
-          New-Item -ItemType Directory -Force -Path "ffmpeg"
-          # The zip contains a top-level directory with bin/ inside
-          $innerDir = Get-ChildItem "ffmpeg-temp" -Directory | Select-Object -First 1
-          Copy-Item "$($innerDir.FullName)\bin\ffmpeg.exe" "ffmpeg\"
-          Copy-Item "$($innerDir.FullName)\bin\ffprobe.exe" "ffmpeg\"
-
-          Remove-Item "ffmpeg.zip" -Force
-          Remove-Item "ffmpeg-temp" -Recurse -Force
-
-          Write-Host "FFmpeg ready:"
-          Get-ChildItem "ffmpeg"
-
-      - name: Cache VapourSynth
-        id: cache-vs
-        uses: actions/cache@v4
-        with:
-          path: vapoursynth
-          key: vapoursynth-R73-py3.12.8-ffms2-5.0-svpflow-4.3.0.168
-
-      - name: Set up VapourSynth portable
-        if: steps.cache-vs.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $VS_DIR = "vapoursynth"
-          $PYTHON_VERSION = "3.12.8"
-
-          Write-Host "Downloading Python $PYTHON_VERSION embeddable..."
-          $pythonUrl = "https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-embed-amd64.zip"
-          Invoke-WebRequest -Uri $pythonUrl -OutFile "python-embed-vs.zip"
-
-          Write-Host "Extracting Python to $VS_DIR..."
-          New-Item -ItemType Directory -Force -Path $VS_DIR
-          Expand-Archive -Path "python-embed-vs.zip" -DestinationPath $VS_DIR -Force
-          Remove-Item "python-embed-vs.zip"
-
-          # Enable import site and add Lib\site-packages to path
-          $pthFile = "$VS_DIR\python312._pth"
-          $content = Get-Content $pthFile -Raw
-          $content = $content -replace '#import site', 'import site'
-          $content += "`nLib\site-packages`n"
-          Set-Content -Path $pthFile -Value $content
-
-          Write-Host "Downloading VapourSynth R73 portable..."
-          $vsUrl = "https://github.com/vapoursynth/vapoursynth/releases/download/R73/VapourSynth64-Portable-R73.zip"
-          Invoke-WebRequest -Uri $vsUrl -OutFile "vs-portable.zip"
-
-          Write-Host "Extracting VapourSynth on top of Python..."
-          Expand-Archive -Path "vs-portable.zip" -DestinationPath $VS_DIR -Force
-          Remove-Item "vs-portable.zip"
-
-          # Install pip
-          Write-Host "Installing pip..."
-          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$VS_DIR\get-pip.py"
-          & "$VS_DIR\python.exe" "$VS_DIR\get-pip.py"
-          Remove-Item "$VS_DIR\get-pip.py"
-
-          # Install numpy (needed by SVP processing script)
-          Write-Host "Installing numpy..."
-          & "$VS_DIR\python.exe" -m pip install numpy --no-warn-script-location
-
-          # Create vs-plugins directory
-          New-Item -ItemType Directory -Force -Path "$VS_DIR\vs-plugins"
-
-          # Clean up
-          Get-ChildItem -Path "$VS_DIR" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-          $size = (Get-ChildItem -Path $VS_DIR -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
-          Write-Host "VapourSynth portable ready! Size: $([math]::Round($size, 2)) MB"
-
-      - name: Download VS source filter plugins
-        if: steps.cache-vs.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $PLUGINS_DIR = "vapoursynth\vs-plugins"
-
-          # FFMS2
-          Write-Host "Downloading FFMS2..."
-          $ffms2Url = "https://github.com/FFMS/ffms2/releases/download/5.0/ffms2-5.0-msvc.7z"
-          Invoke-WebRequest -Uri $ffms2Url -OutFile "ffms2.7z"
-          7z x "ffms2.7z" -o"ffms2-temp" -y
-          # Prefer x64 DLL
-          $ffms2Dll = Get-ChildItem "ffms2-temp" -Recurse -Filter "ffms2.dll" | Where-Object { $_.DirectoryName -match "x64" } | Select-Object -First 1
-          if (-not $ffms2Dll) {
-            $ffms2Dll = Get-ChildItem "ffms2-temp" -Recurse -Filter "ffms2.dll" | Select-Object -First 1
-          }
-          if ($ffms2Dll) { Copy-Item $ffms2Dll.FullName "$PLUGINS_DIR\" -Force }
-          Remove-Item "ffms2.7z" -Force
-          Remove-Item "ffms2-temp" -Recurse -Force
-
-          # L-SMASH-Works (fetch latest release from GitHub API)
-          Write-Host "Downloading L-SMASH-Works..."
-          $lsmasRelease = Invoke-RestMethod "https://api.github.com/repos/HomeOfAviSynthPlusEvolution/L-SMASH-Works/releases/latest"
-          $lsmasAsset = $lsmasRelease.assets | Where-Object { $_.name -match "x64" -and $_.name -match "\.(7z|zip)$" } | Select-Object -First 1
-          if (-not $lsmasAsset) {
-            $lsmasAsset = $lsmasRelease.assets | Where-Object { $_.name -match "\.(7z|zip)$" } | Select-Object -First 1
-          }
-          if ($lsmasAsset) {
-            Invoke-WebRequest -Uri $lsmasAsset.browser_download_url -OutFile "lsmash.7z"
-            7z x "lsmash.7z" -o"lsmash-temp" -y
-            $lsmasDll = Get-ChildItem "lsmash-temp" -Recurse -Filter "libvslsmashsource.dll" | Select-Object -First 1
-            if (-not $lsmasDll) {
-              $lsmasDll = Get-ChildItem "lsmash-temp" -Recurse -Filter "LSMASHSource.dll" | Select-Object -First 1
-            }
-            if ($lsmasDll) { Copy-Item $lsmasDll.FullName "$PLUGINS_DIR\libvslsmashsource.dll" -Force }
-            Remove-Item "lsmash.7z" -Force
-            Remove-Item "lsmash-temp" -Recurse -Force
-          } else {
-            Write-Host "WARNING: Could not find L-SMASH-Works release asset"
-          }
-
-          Write-Host "VS plugins directory:"
-          Get-ChildItem "$PLUGINS_DIR"
-
-      - name: Download SVPflow plugins
-        if: steps.cache-vs.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $PLUGINS_DIR = "vapoursynth\vs-plugins"
-
-          Write-Host "Downloading SVPflow..."
-          $svpUrl = "https://www.svp-team.com/files/gpl/svpflow-4.3.0.168.zip"
-          Invoke-WebRequest -Uri $svpUrl -OutFile "svpflow.zip"
-
-          Write-Host "Extracting SVPflow..."
-          Expand-Archive -Path "svpflow.zip" -DestinationPath "svpflow-temp" -Force
-
-          # Find 64-bit VapourSynth DLLs
-          $flow1 = Get-ChildItem "svpflow-temp" -Recurse -Filter "svpflow1_vs.dll" | Where-Object { $_.DirectoryName -match "64|x64" } | Select-Object -First 1
-          $flow2 = Get-ChildItem "svpflow-temp" -Recurse -Filter "svpflow2_vs.dll" | Where-Object { $_.DirectoryName -match "64|x64" } | Select-Object -First 1
-
-          # Fallback: take any matching DLLs
-          if (-not $flow1) { $flow1 = Get-ChildItem "svpflow-temp" -Recurse -Filter "svpflow1_vs.dll" | Select-Object -First 1 }
-          if (-not $flow2) { $flow2 = Get-ChildItem "svpflow-temp" -Recurse -Filter "svpflow2_vs.dll" | Select-Object -First 1 }
-
-          if ($flow1) { Copy-Item $flow1.FullName "$PLUGINS_DIR\" -Force; Write-Host "Copied svpflow1_vs.dll" }
-          if ($flow2) { Copy-Item $flow2.FullName "$PLUGINS_DIR\" -Force; Write-Host "Copied svpflow2_vs.dll" }
-
-          Remove-Item "svpflow.zip" -Force
-          Remove-Item "svpflow-temp" -Recurse -Force
-
-          Write-Host "Final VS plugins directory:"
-          Get-ChildItem "$PLUGINS_DIR"
-
       - name: Build Windows packages
         run: npx electron-builder --win --publish never
-
-      - name: Install NSIS
-        uses: negrutiu/nsis-install@v2
-
-      - name: Build portable launcher
-        shell: pwsh
-        run: |
-          # Read version from package.json
-          $pkg = Get-Content "package.json" -Raw | ConvertFrom-Json
-          $version = $pkg.version
-
-          # 1. Compile the tiny stub launcher
-          Write-Host "Compiling portable stub..."
-          makensis scripts\portable-stub.nsi
-          if ($LASTEXITCODE -ne 0) { throw "Failed to compile portable-stub.nsi" }
-
-          # 2. Extract the zip that electron-builder produced
-          Write-Host "Extracting Windows zip for portable packaging..."
-          $zipFile = Get-ChildItem "dist\*-Windows.zip" | Select-Object -First 1
-          if (-not $zipFile) { throw "Could not find dist/*-Windows.zip" }
-          Expand-Archive -Path $zipFile.FullName -DestinationPath "dist\portable-unpacked" -Force
-
-          # 3. Place the stub inside the unpacked files (it gets extracted alongside the app)
-          Write-Host "Placing portable stub inside app files..."
-          Copy-Item "dist\portable-stub.exe" "dist\portable-unpacked\.portable-stub.exe"
-
-          # 4. Compile the big self-extracting launcher
-          #    NSIS resolves File paths relative to the script dir, so use absolute paths
-          $repoRoot = (Get-Location).Path
-          Write-Host "Compiling portable launcher (VERSION=$version)..."
-          makensis /DVERSION=$version "/DAPP_FILES=$repoRoot\dist\portable-unpacked" "/DICON_FILE=$repoRoot\assets\icon.ico" scripts\portable-launcher.nsi
-          if ($LASTEXITCODE -ne 0) { throw "Failed to compile portable-launcher.nsi" }
-
-          # 5. Clean up intermediate files
-          Remove-Item "dist\portable-stub.exe" -Force
-          Remove-Item "dist\portable-unpacked" -Recurse -Force
-
-          $size = (Get-Item "dist\LocalBooru-Portable.exe").Length / 1MB
-          Write-Host "Portable launcher ready! Size: $([math]::Round($size, 2)) MB"
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4

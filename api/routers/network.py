@@ -1,22 +1,19 @@
 """
 Network configuration router - manage local network and public access settings.
 
-Most endpoints in this router are localhost-only (enforced by middleware).
-Exception: /verify-handshake is accessible from the local network for mobile app trust verification.
+All endpoints in this router are localhost-only (enforced by middleware).
 """
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional, Literal
 
-from .settings import get_network_settings, save_network_settings, get_default_local_port
+from .settings import get_network_settings, save_network_settings
 from ..services.network import (
     get_local_ip,
     get_all_local_ips,
     test_port_local,
     upnp_manager
 )
-from ..services.auth import get_server_fingerprint, create_handshake_nonce, verify_handshake_nonce
-from ..services.certificate import get_certificate_fingerprint
 
 router = APIRouter()
 
@@ -29,7 +26,6 @@ class NetworkConfigUpdate(BaseModel):
     public_port: Optional[int] = None
     auth_required_level: Optional[Literal["none", "public", "local_network", "always"]] = None
     upnp_enabled: Optional[bool] = None
-    allow_settings_local_network: Optional[bool] = None  # Allow settings access from LAN
 
 
 class PortTestRequest(BaseModel):
@@ -43,11 +39,6 @@ class UPnPPortRequest(BaseModel):
     internal_port: Optional[int] = None  # Defaults to external_port
     protocol: Optional[Literal["TCP", "UDP"]] = "TCP"
     description: Optional[str] = "LocalBooru"
-
-
-class HandshakeVerifyRequest(BaseModel):
-    """Request body for verifying handshake nonce"""
-    nonce: str
 
 
 @router.get("")
@@ -66,7 +57,7 @@ async def get_network_config():
     public_url = None
 
     if local_ip and settings.get("local_network_enabled"):
-        local_port = settings.get("local_port", get_default_local_port())
+        local_port = settings.get("local_port", 8790)
         local_url = f"http://{local_ip}:{local_port}"
 
     # Check UPnP status if enabled
@@ -92,26 +83,20 @@ async def get_network_config():
 
 
 @router.get("/qr-data")
-async def get_qr_data(request: Request):
+async def get_qr_data():
     """
     Get data for QR code to connect mobile app.
 
     Returns server info including local and public URLs for the mobile app to try.
-    Version 2 includes cert_fingerprint for HTTPS certificate pinning.
     """
     settings = get_network_settings()
     local_ip = get_local_ip()
 
-    # Detect actual protocol from the incoming request — certificate may exist on disk
-    # but uvicorn might not be configured with SSL (e.g. dev mode)
-    has_https = request.url.scheme == "https"
-    protocol = "https" if has_https else "http"
-
     # Build local URL (always include if we have an IP)
     local_url = None
     if local_ip:
-        local_port = settings.get("local_port", get_default_local_port())
-        local_url = f"{protocol}://{local_ip}:{local_port}"
+        local_port = settings.get("local_port", 8790)
+        local_url = f"http://{local_ip}:{local_port}"
 
     # Build public URL if UPnP is enabled and has external IP
     public_url = None
@@ -119,31 +104,19 @@ async def get_qr_data(request: Request):
         external_ip = upnp_manager.get_external_ip()
         if external_ip and settings.get("public_network_enabled"):
             public_port = settings.get("public_port", 8791)
-            public_url = f"{protocol}://{external_ip}:{public_port}"
+            public_url = f"http://{external_ip}:{public_port}"
 
     # Check if auth is required
     auth_level = settings.get("auth_required_level", "none")
     auth_required = auth_level in ["local_network", "always"]
 
-    # Generate handshake nonce for verification
-    nonce, nonce_expires = create_handshake_nonce()
-
-    # Get TLS certificate fingerprint for certificate pinning (only when actually serving HTTPS)
-    cert_fingerprint = None
-    if has_https:
-        cert_fingerprint = get_certificate_fingerprint()
-
     return {
         "type": "localbooru",
-        "version": 2,  # Bumped from 1 to indicate HTTPS support
+        "version": 1,
         "name": "LocalBooru",
         "local": local_url,
         "public": public_url,
-        "auth": auth_required,
-        "fingerprint": get_server_fingerprint(),
-        "cert_fingerprint": cert_fingerprint,  # NEW: TLS certificate fingerprint for pinning
-        "nonce": nonce,
-        "nonce_expires": int(nonce_expires)
+        "auth": auth_required
     }
 
 
@@ -169,8 +142,6 @@ async def update_network_config(config: NetworkConfigUpdate):
         current["auth_required_level"] = config.auth_required_level
     if config.upnp_enabled is not None:
         current["upnp_enabled"] = config.upnp_enabled
-    if config.allow_settings_local_network is not None:
-        current["allow_settings_local_network"] = config.allow_settings_local_network
 
     save_network_settings(current)
 
@@ -255,34 +226,3 @@ async def get_external_ip():
     """
     ip = upnp_manager.get_external_ip()
     return {"external_ip": ip}
-
-
-@router.post("/verify-handshake")
-async def verify_handshake(request: HandshakeVerifyRequest):
-    """
-    Verify a handshake nonce from QR code scanning.
-
-    This endpoint is accessible from the local network (not localhost-only)
-    to allow mobile apps to verify they're connecting to the correct server.
-
-    The nonce is single-use and expires after 5 minutes.
-
-    Returns:
-        - On success: { "valid": true, "fingerprint": "...", "server_name": "LocalBooru" }
-        - On failure: { "valid": false, "error": "..." } with 401 status
-    """
-    if verify_handshake_nonce(request.nonce):
-        return {
-            "valid": True,
-            "fingerprint": get_server_fingerprint(),
-            "server_name": "LocalBooru"
-        }
-    else:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=401,
-            content={
-                "valid": False,
-                "error": "Invalid, expired, or already-used nonce"
-            }
-        )

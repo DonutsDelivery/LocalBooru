@@ -1,55 +1,37 @@
 /**
  * Custom Title Bar Component
  * Replaces the native OS title bar for a consistent look
- * Only renders in Electron/Tauri environment or mobile app
+ * Only renders in Electron environment
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { isMobileApp } from '../serverManager';
-import { getDesktopAPI, isDesktopApp, isTauri } from '../tauriAPI';
-import UpdateBanner from './UpdateBanner';
+import { useState, useEffect } from 'react';
 import './TitleBar.css';
 
 const TITLE_BAR_HEIGHT = 32;
 
-export default function TitleBar({ onSwitchServer }) {
+export default function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false);
   const isElectron = window.electronAPI?.isElectron;
-  const isTauriApp = isTauri();
-  const isDesktop = isElectron || isTauriApp;
-  const isMobile = isMobileApp();
-  const apiRef = useRef(null);
 
-  // Get desktop API on mount
+  // Set CSS variable for title bar height offset
   useEffect(() => {
-    apiRef.current = getDesktopAPI();
-  }, []);
-
-  // Set CSS variable for title bar height offset + desktop class for transparent window
-  useEffect(() => {
-    if (isDesktop || isMobile) {
+    if (isElectron) {
       document.documentElement.style.setProperty('--title-bar-height', `${TITLE_BAR_HEIGHT}px`);
     } else {
       document.documentElement.style.setProperty('--title-bar-height', '0px');
     }
-    if (isDesktop) {
-      document.documentElement.classList.add('desktop-app');
-    }
-  }, [isDesktop, isMobile]);
+  }, [isElectron]);
 
   // Check initial maximized state
   useEffect(() => {
-    if (!isDesktop) return;
+    if (!isElectron) return;
     const checkMaximized = async () => {
-      const api = apiRef.current;
-      if (api?.isMaximized) {
-        const maximized = await api.isMaximized();
-        setIsMaximized(maximized);
-      }
+      const maximized = await window.electronAPI.isMaximized();
+      setIsMaximized(maximized);
     };
     checkMaximized();
-  }, [isDesktop]);
+  }, [isElectron]);
 
-  // Check for updates when window gains focus (Electron only for now)
+  // Check for updates when window gains focus
   useEffect(() => {
     if (!isElectron) return;
 
@@ -61,92 +43,31 @@ export default function TitleBar({ onSwitchServer }) {
     return () => window.removeEventListener('focus', handleFocus);
   }, [isElectron]);
 
-  // Programmatic drag for Tauri (data-tauri-drag-region only works on direct element, not children)
-  const handleDragMouseDown = useCallback((e) => {
-    // Only handle left mouse button
-    if (e.button !== 0) return;
-    const api = apiRef.current;
-    if (api?.startDragging) {
-      api.startDragging();
-    }
-  }, []);
-
-  // On mobile app, show minimal title bar with switch server button
-  if (isMobile) {
-    return (
-      <>
-        <div className="title-bar mobile">
-          <div className="title-bar-drag">
-            <div className="title-bar-icon">
-              <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
-                <rect x="10" y="10" width="44" height="44" rx="6" fill="var(--bg-tertiary)" stroke="currentColor" strokeWidth="3"/>
-                <circle cx="22" cy="22" r="6" fill="currentColor"/>
-                <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="currentColor" opacity="0.85"/>
-              </svg>
-            </div>
-            <span className="title-bar-title">LocalBooru</span>
-          </div>
-
-          <div className="title-bar-controls">
-            <button
-              className="title-bar-btn switch-server"
-              onClick={onSwitchServer}
-              title="Switch Server"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
-                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
-                <line x1="6" y1="6" x2="6.01" y2="6"/>
-                <line x1="6" y1="18" x2="6.01" y2="18"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-        <UpdateBanner />
-      </>
-    );
-  }
-
-  // Only render full title bar in Electron or Tauri
-  if (!isDesktop) {
+  // Only render in Electron
+  if (!isElectron) {
     return null;
   }
 
-  const handleMinimize = async () => {
-    const api = apiRef.current;
-    if (api?.minimizeWindow) {
-      await api.minimizeWindow();
-    }
+  const handleMinimize = () => {
+    window.electronAPI.minimizeWindow();
   };
 
   const handleMaximize = async () => {
-    const api = apiRef.current;
-    if (api?.maximizeWindow) {
-      const maximized = await api.maximizeWindow();
-      setIsMaximized(maximized);
-    }
+    const maximized = await window.electronAPI.maximizeWindow();
+    setIsMaximized(maximized);
   };
 
-  const handleClose = async () => {
-    const api = apiRef.current;
-    if (api?.closeWindow) {
-      await api.closeWindow();
-    }
+  const handleClose = () => {
+    window.electronAPI.closeWindow();
   };
 
-  const handleQuit = async () => {
-    const api = apiRef.current;
-    if (api?.quitApp) {
-      await api.quitApp();
-    }
+  const handleQuit = () => {
+    window.electronAPI.quitApp();
   };
 
   return (
     <div className="title-bar">
-      <div
-        className="title-bar-drag"
-        onMouseDown={isTauriApp ? handleDragMouseDown : undefined}
-      >
+      <div className="title-bar-drag">
         <div className="title-bar-icon">
           <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
             <rect x="10" y="10" width="44" height="44" rx="6" fill="var(--bg-tertiary)" stroke="currentColor" strokeWidth="3"/>
@@ -154,7 +75,7 @@ export default function TitleBar({ onSwitchServer }) {
             <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="currentColor" opacity="0.85"/>
           </svg>
         </div>
-        <span className="title-bar-title">LocalBooru {isTauriApp ? '(Tauri)' : isElectron ? '(Electron)' : ''}</span>
+        <span className="title-bar-title">LocalBooru</span>
       </div>
 
       <div className="title-bar-controls">

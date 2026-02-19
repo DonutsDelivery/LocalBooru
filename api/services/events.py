@@ -47,20 +47,6 @@ library_events = EventBroadcaster()
 # Migration event broadcaster instance
 migration_events = EventBroadcaster()
 
-# Subtitle event broadcaster instance
-subtitle_events = EventBroadcaster()
-
-# Per-session share sync event broadcasters
-# Key: share session token, Value: EventBroadcaster
-share_sync_events: dict[str, EventBroadcaster] = {}
-
-
-def get_share_broadcaster(token: str) -> EventBroadcaster:
-    """Get or create a broadcaster for a share session."""
-    if token not in share_sync_events:
-        share_sync_events[token] = EventBroadcaster()
-    return share_sync_events[token]
-
 
 # Event types
 class EventType:
@@ -75,22 +61,3 @@ class MigrationEventType:
     PROGRESS = "migration_progress"
     COMPLETED = "migration_completed"
     ERROR = "migration_error"
-
-
-class SubtitleEventType:
-    STARTED = "subtitle_started"
-    CUE = "subtitle_cue"
-    PROGRESS = "subtitle_progress"
-    COMPLETED = "subtitle_completed"
-    ERROR = "subtitle_error"
-
-
-# Cast event broadcaster instance
-cast_events = EventBroadcaster()
-
-
-class CastEventType:
-    STATUS = "cast_status"
-    CONNECTED = "cast_connected"
-    DISCONNECTED = "cast_disconnected"
-    ERROR = "cast_error"

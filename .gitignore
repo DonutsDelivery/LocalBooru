@@ -7,11 +7,6 @@ dist/
 frontend/dist/
 python-embed/
 
-# Rust/Tauri
-target/
-src-tauri/target/
-Cargo.lock
-
 # Python
 __pycache__/
 *.py[cod]
@@ -41,26 +36,6 @@ Thumbs.db
 npm-debug.log*
 
 # ML Models (downloaded during CI build)
-/tagger/
-/tagger
+tagger/
 yolov8n.pt
-!api/services/tagger/
-.venv/
-.claude/get-shit-done/
-.claude/commands/gsd/
-
-# APK updates (served to mobile clients)
-/updates/*.apk
-
-# TLS certificates
-*.crt
-*.key
-*.pem
-
-# Dev/test files
-bench.py
-bench2.py
-test_*.py
-
-# Issue tracker
-.beads/
+tagger

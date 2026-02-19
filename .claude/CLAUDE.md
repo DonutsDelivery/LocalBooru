@@ -1,13 +1,4 @@
 
-## FORBIDDEN: VapourSynth Source Filters (bestsource, ffms2, lsmas)
-
-**NEVER use bestsource, ffms2, or lsmas for video streaming.** These filters require indexing the ENTIRE video file before playback can begin, which defeats the purpose of instant streaming.
-
-For real-time video processing:
-- Use FFmpeg for decoding (supports hardware acceleration, instant start)
-- Use FFmpeg filters for processing when possible (minterpolate, etc.)
-- If VapourSynth/SVP is needed, pipe FFmpeg output through a FIFO or use rawsource - NEVER use source filters that require indexing
-
 
 <!-- TTS_VOICE_OUTPUT_START -->
 ## Voice Output (TTS)

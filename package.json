@@ -1,6 +1,6 @@
 {
   "name": "localbooru",
-  "version": "0.3.31",
+  "version": "0.2.1",
   "description": "Local image library with automatic tagging",
   "main": "electron/main.js",
   "scripts": {
@@ -14,18 +14,9 @@
     "build:linux": "npm run build:frontend && electron-builder --linux",
     "build:win": "npm run build:frontend && electron-builder --win",
     "prepare:python:win": "node scripts/prepare-python-bundle.js",
-    "prepare:python:linux": "node scripts/prepare-python-bundle-linux.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
-    "postinstall": "electron-builder install-app-deps",
-    "tauri": "cargo tauri",
-    "tauri:dev": "cargo tauri dev",
-    "tauri:build": "cargo tauri build",
-    "tauri:build:debug": "cargo tauri build --debug",
-    "tauri:build:linux": "./scripts/build-tauri-linux.sh",
-    "tauri:build:linux:appimage": "./scripts/build-tauri-linux.sh --appimage",
-    "tauri:build:linux:deb": "./scripts/build-tauri-linux.sh --deb",
-    "tauri:build:linux:rpm": "./scripts/build-tauri-linux.sh --rpm"
+    "postinstall": "electron-builder install-app-deps"
   },
   "author": "DonutsDelivery <donutsdelivery@users.noreply.github.com>",
   "repository": {
@@ -36,8 +27,7 @@
     "booru",
     "image-gallery",
     "tagger",
-    "electron",
-    "tauri"
+    "electron"
   ],
   "license": "MIT",
   "devDependencies": {
@@ -80,39 +70,20 @@
       ],
       "icon": "assets/icon.png",
       "category": "Graphics",
-      "artifactName": "${productName}-Linux.${ext}",
-      "extraResources": [
-        {
-          "from": "python-venv-linux",
-          "to": "python-venv",
-          "filter": [
-            "**/*",
-            "!**/__pycache__/**",
-            "!**/*.pyc"
-          ]
-        },
-        {
-          "from": "api",
-          "to": "api",
-          "filter": [
-            "**/*",
-            "!**/__pycache__/**",
-            "!**/*.pyc"
-          ]
-        },
-        {
-          "from": "frontend/dist",
-          "to": "frontend/dist",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ]
+      "artifactName": "${productName}-Linux.${ext}"
     },
     "deb": {
+      "depends": [
+        "python3",
+        "python3-pip"
+      ],
       "category": "Graphics"
     },
     "rpm": {
+      "depends": [
+        "python3",
+        "python3-pip"
+      ]
     },
     "mac": {
       "target": [
@@ -129,6 +100,7 @@
     "win": {
       "target": [
         "nsis",
+        "portable",
         "zip",
         "appx"
       ],
@@ -159,22 +131,6 @@
           "filter": [
             "**/*"
           ]
-        },
-        {
-          "from": "ffmpeg",
-          "to": "ffmpeg",
-          "filter": [
-            "**/*"
-          ]
-        },
-        {
-          "from": "vapoursynth",
-          "to": "vapoursynth",
-          "filter": [
-            "**/*",
-            "!**/__pycache__/**",
-            "!**/*.pyc"
-          ]
         }
       ]
     },
@@ -188,6 +144,10 @@
       "differentialPackage": true
     },
     "compression": "normal",
+    "portable": {
+      "artifactName": "${productName}-Portable.${ext}",
+      "unpackDirName": "LocalBooru"
+    },
     "appx": {
       "artifactName": "${productName}-Store.${ext}",
       "displayName": "LocalBooru",

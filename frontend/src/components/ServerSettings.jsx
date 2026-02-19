@@ -148,13 +148,12 @@ export default function ServerSettings({ onServerChange }) {
         return
       }
 
-      // Add the server with certificate fingerprint (for HTTPS pinning)
+      // Add the server
       await addServer({
         name: qrData.name || 'LocalBooru Server',
         url: workingUrl,
         username: null,
         password: null,
-        certFingerprint: qrData.cert_fingerprint || null,  // Store cert fingerprint for pinning
         lastConnected: new Date().toISOString()
       })
 

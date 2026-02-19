@@ -14,7 +14,7 @@ const config: CapacitorConfig = {
     },
   },
   android: {
-    allowMixedContent: true, // Allow HTTP connections to legacy local servers
+    allowMixedContent: true, // Allow HTTP connections to local servers
   },
   ios: {
     // iOS-specific config

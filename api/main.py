@@ -4,7 +4,7 @@ LocalBooru API - Simplified single-user local image library
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from pathlib import Path
 import os
@@ -27,29 +27,15 @@ async def lifespan(app: FastAPI):
     # Add persistent packages directory to path (for age detection deps that survive updates)
     from .routers.settings import (
         ensure_packages_in_path, set_setting, AGE_DETECTION_INSTALLING,
-        get_packages_dir, patch_mivolo_for_timm_compat,
-        ensure_defaults_written
+        get_packages_dir, patch_mivolo_for_timm_compat
     )
     ensure_packages_in_path()
-
-    # Ensure settings.json contains all defaults (self-documenting for manual editing)
-    ensure_defaults_written()
 
     # Apply mivolo patches for timm compatibility (for existing installs)
     patch_mivolo_for_timm_compat(get_packages_dir())
 
     # Clear stuck "installing" flag from previous crash (thread won't survive restart)
     set_setting(AGE_DETECTION_INSTALLING, "false")
-
-    # Generate or load TLS certificate for HTTPS
-    from .services.certificate import get_or_create_certificate, get_certificate_fingerprint
-    try:
-        cert_path, key_path = get_or_create_certificate()
-        fingerprint = get_certificate_fingerprint()
-        if fingerprint:
-            print(f"[Startup] TLS Certificate fingerprint: {fingerprint}")
-    except Exception as e:
-        print(f"[Startup] Warning: Could not create TLS certificate: {e}")
 
     await init_db()
 
@@ -65,76 +51,13 @@ async def lifespan(app: FastAPI):
     from .services.directory_watcher import directory_watcher
     await directory_watcher.start()
 
-    # Kill any orphaned SVP processes from previous runs
-    print("[Startup] Cleaning up orphaned SVP processes...")
-    from .services.svp_stream import kill_orphaned_svp_processes
-    kill_orphaned_svp_processes()
-
-    # Start cast device discovery if casting is enabled
-    from .routers.settings.models import get_cast_settings
-    cast_config = get_cast_settings()
-    if cast_config.get("enabled"):
-        print("[Startup] Starting cast device discovery...")
-        from .services.cast_discovery import start_discovery
-        await start_discovery()
-
     yield
 
-    # Shutdown - cleanup all resources gracefully
-    print("\n" + "="*50)
+    # Shutdown
     print("Shutting down LocalBooru API...")
-    print("="*50)
-
-    # Stop directory watcher first (prevents new imports)
-    print("[Shutdown] Stopping directory watcher...")
     await directory_watcher.stop()
-
-    # Stop background task queue
-    print("[Shutdown] Stopping task queue...")
     await task_queue.stop()
-
-    # Stop SVP streams
-    print("[Shutdown] Stopping SVP streams...")
-    from .services.svp_stream import stop_all_svp_streams
-    stop_all_svp_streams()
-
-    # Stop optical flow streams and cleanup thread pool
-    print("[Shutdown] Stopping optical flow streams...")
-    from .services.optical_flow_stream import shutdown as shutdown_optical_flow
-    shutdown_optical_flow()
-
-    # Cleanup video preview thread pool
-    print("[Shutdown] Stopping video preview service...")
-    from .services.video_preview import shutdown as shutdown_video_preview
-    shutdown_video_preview()
-
-    # Cleanup importer thread pool
-    print("[Shutdown] Stopping importer service...")
-    from .services.importer import shutdown as shutdown_importer
-    shutdown_importer()
-
-    # Stop cast session
-    print("[Shutdown] Stopping cast services...")
-    from .services.cast_session import stop_cast
-    try:
-        await stop_cast()
-    except Exception:
-        pass
-    from .services.cast_discovery import stop_discovery
-    await stop_discovery()
-
-    # Stop share sessions
-    print("[Shutdown] Stopping share sessions...")
-    from .services.share_session import _cleanup_on_exit as cleanup_share_sessions
-    cleanup_share_sessions()
-
-    # Close database connections
-    print("[Shutdown] Closing database connections...")
     await close_db()
-
-    print("="*50)
-    print("LocalBooru shutdown complete.")
-    print("="*50 + "\n")
 
 
 app = FastAPI(
@@ -155,7 +78,6 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Range", "Content-Length", "Accept-Ranges"],
 )
 
 # Mount static files for thumbnails
@@ -164,7 +86,7 @@ thumbnails_dir.mkdir(exist_ok=True)
 app.mount("/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
 
 # Include routers - all under /api prefix to avoid conflicts with frontend SPA routes
-from .routers import images, tags, directories, library, network, users, app_update, watch_history, collections, share, cast
+from .routers import images, tags, directories, library, network, users
 from .routers import settings as settings_router
 
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
@@ -174,12 +96,6 @@ app.include_router(library.router, prefix="/api/library", tags=["Library"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(network.router, prefix="/api/network", tags=["Network"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
-app.include_router(app_update.router, prefix="/api/app/update", tags=["App Update"])
-app.include_router(watch_history.router, prefix="/api/watch-history", tags=["Watch History"])
-app.include_router(collections.router, prefix="/api/collections", tags=["Collections"])
-app.include_router(share.router, prefix="/api/share", tags=["Share Stream"])
-app.include_router(cast.router, prefix="/api/cast", tags=["Cast"])
-app.include_router(cast.cast_media_router, prefix="/api/cast-media", tags=["Cast Media"])
 
 
 @app.get("/api")
@@ -194,14 +110,6 @@ async def api_root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
-
-
-# Standalone watch page for share stream viewers (served directly, no SPA needed)
-_WATCH_HTML_PATH = Path(__file__).parent / "templates" / "watch.html"
-
-@app.get("/watch/{token}")
-async def watch_page(token: str):
-    return HTMLResponse(_WATCH_HTML_PATH.read_text())
 
 
 @app.get("/debug/paths")

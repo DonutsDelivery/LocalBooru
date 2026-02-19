@@ -7,20 +7,13 @@ Controls access based on client IP address:
 - public: Read-only (public internet IPs)
 
 Settings/admin endpoints are always localhost-only.
-
-Authentication enforcement based on auth_required_level setting:
-- none: No auth required for any access level
-- public: Auth required only for public internet access
-- local_network: Auth required for local_network AND public access
-- always: Auth required for ALL access including localhost
 """
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from typing import Callable, Optional
+from typing import Callable
 
 from ..services.network import classify_ip
-from ..services.auth import decode_token
 from ..routers.settings import get_network_settings
 
 
@@ -47,48 +40,33 @@ EXEMPT_PREFIXES = [
     "/redoc",
     "/assets",  # Static frontend assets
     "/icon.png",
-    "/api/share/",  # Share stream endpoints (must be accessible without auth from any network)
-    "/api/cast-media/",  # Cast media serving (Chromecast/DLNA devices fetch media directly)
-    "/watch/",  # Share viewer SPA route
 ]
-
-# Endpoints exempt from authentication (chicken-egg problem for login)
-AUTH_EXEMPT_ENDPOINTS = [
-    "/api/users/login",
-    "/api/users/verify",
-    "/api/network/verify-handshake",
-]
-
-# Endpoints under localhost-only prefixes that should still be accessible from network
-LOCALHOST_EXEMPTIONS = [
-    "/api/network/verify-handshake",
-    "/api/settings/svp",  # SVP video playback settings and streaming (read-only check + playback)
-]
-
-# Auth level hierarchy - which access levels require auth at each setting
-# Key: auth_required_level setting value
-# Value: set of access levels that require authentication
-AUTH_LEVEL_REQUIREMENTS = {
-    "none": set(),  # No auth required for anyone
-    "public": {"public"},  # Only public internet needs auth
-    "local_network": {"local_network", "public"},  # LAN and public need auth
-    "always": {"localhost", "local_network", "public"},  # Everyone needs auth
-}
 
 
 def get_client_ip(request: Request) -> str:
     """
-    Extract the client IP from the request.
+    Extract the real client IP from the request.
 
-    Security: We intentionally ignore X-Forwarded-For and X-Real-IP headers
-    because this app is designed for direct access, not behind a reverse proxy.
-    Trusting these headers would allow attackers to spoof their IP as localhost.
+    Checks X-Forwarded-For header first (for reverse proxy setups),
+    then falls back to the direct connection IP.
     """
-    # Use only the direct connection IP - never trust proxy headers
+    # Check X-Forwarded-For header (reverse proxy)
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        # X-Forwarded-For can contain multiple IPs: client, proxy1, proxy2, ...
+        # The first one is the original client
+        return forwarded.split(",")[0].strip()
+
+    # Check X-Real-IP header (nginx)
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+
+    # Fall back to direct connection
     if request.client:
         return request.client.host
 
-    return "unknown"  # Don't default to localhost - that would grant access
+    return "127.0.0.1"  # Default to localhost if we can't determine
 
 
 def cors_response(status_code: int, content: dict) -> JSONResponse:
@@ -102,33 +80,6 @@ def cors_response(status_code: int, content: dict) -> JSONResponse:
             "Access-Control-Allow-Headers": "*",
         }
     )
-
-
-def extract_bearer_token(request: Request) -> Optional[str]:
-    """
-    Extract the Bearer token from the Authorization header.
-
-    Returns the token string if present and properly formatted, None otherwise.
-    """
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        return None
-
-    # Expected format: "Bearer <token>"
-    parts = auth_header.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        return None
-
-    return parts[1]
-
-
-def is_auth_exempt(path: str) -> bool:
-    """Check if the endpoint is exempt from authentication requirements."""
-    # Check exact matches for auth-exempt endpoints
-    for exempt_path in AUTH_EXEMPT_ENDPOINTS:
-        if path == exempt_path or path.startswith(exempt_path + "/"):
-            return True
-    return False
 
 
 class AccessControlMiddleware(BaseHTTPMiddleware):
@@ -148,10 +99,9 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
 
-        # Log request paths at DEBUG level to avoid path exposure in production
+        # Log ALL incoming requests for debugging
         client = request.client.host if request.client else "unknown"
-        import logging
-        logging.getLogger(__name__).debug(f"[AccessControl] INCOMING: {method} {path} from {client}")
+        print(f"[AccessControl] INCOMING: {method} {path} from {client}")
 
         try:
             # Always allow OPTIONS requests (CORS preflight)
@@ -172,71 +122,20 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
             traceback.print_exc()
             raise
 
-        try:
-            return await self._handle_access_control(request, call_next, client_ip, access_level, path, method)
-        except Exception as e:
-            print(f"[AccessControl] EXCEPTION in access control for {method} {path} from {client_ip}: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
-
-    async def _handle_access_control(self, request, call_next, client_ip, access_level, path, method):
         # Store in request state for use by route handlers
         request.state.client_ip = client_ip
         request.state.access_level = access_level
-        request.state.user = None  # Will be set if authenticated
 
         # Debug logging for non-localhost access
         if access_level != "localhost":
             print(f"[AccessControl] {method} {path} from {client_ip} ({access_level})")
 
-        # Get network settings (needed for both auth and access level checks)
-        network_settings = get_network_settings()
-
-        # Check authentication requirements based on auth_required_level setting
-        auth_required_level = network_settings.get("auth_required_level", "none")
-        access_levels_requiring_auth = AUTH_LEVEL_REQUIREMENTS.get(auth_required_level, set())
-
-        # Determine if authentication is required for this request
-        auth_required = access_level in access_levels_requiring_auth
-
-        # Check for auth-exempt endpoints (login, verify, etc.)
-        if auth_required and is_auth_exempt(path):
-            auth_required = False
-            print(f"[AccessControl] Auth exempt endpoint: {path}")
-
-        # Process authentication if required or if token is provided
-        token = extract_bearer_token(request)
-        if token:
-            user_payload = decode_token(token)
-            if user_payload:
-                request.state.user = user_payload
-                print(f"[AccessControl] Authenticated user: {user_payload.get('username')}")
-            elif auth_required:
-                # Token provided but invalid/expired
-                return cors_response(
-                    401,
-                    {
-                        "error": "Invalid or expired token",
-                        "detail": "The provided authentication token is invalid or has expired. Please log in again."
-                    }
-                )
-
-        # If auth is required but no valid token, reject the request
-        if auth_required and request.state.user is None:
-            print(f"[AccessControl] Auth required but no valid token for {method} {path} from {access_level}")
-            return cors_response(
-                401,
-                {
-                    "error": "Authentication required",
-                    "detail": f"This endpoint requires authentication for {access_level} access. Please provide a valid Bearer token in the Authorization header."
-                }
-            )
-
-        # Localhost always has full access (after auth check)
+        # Localhost always has full access
         if access_level == "localhost":
             return await call_next(request)
 
+        # Get network settings
+        network_settings = get_network_settings()
         print(f"[AccessControl] Network settings: local_network_enabled={network_settings.get('local_network_enabled')}")
 
         # Check if this access level is enabled
@@ -259,27 +158,16 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
                     }
                 )
 
-        # Block localhost-only endpoints for non-localhost (with exemptions)
+        # Block localhost-only endpoints for non-localhost
         for prefix in LOCALHOST_ONLY_PREFIXES:
             if path.startswith(prefix):
-                # Check if this specific path is exempted from localhost restriction
-                is_exempted = any(path == exempt or path.startswith(exempt + "/")
-                                  for exempt in LOCALHOST_EXEMPTIONS)
-
-                # Allow settings/admin access from local network if enabled
-                if not is_exempted and access_level == "local_network":
-                    if network_settings.get("allow_settings_local_network", False):
-                        is_exempted = True
-                        print(f"[AccessControl] Allowing settings access from local network (allow_settings_local_network=True)")
-
-                if not is_exempted:
-                    return cors_response(
-                        403,
-                        {
-                            "error": "This endpoint is only accessible from localhost",
-                            "detail": f"Access to {prefix} requires direct access to the machine running LocalBooru"
-                        }
-                    )
+                return cors_response(
+                    403,
+                    {
+                        "error": "This endpoint is only accessible from localhost",
+                        "detail": f"Access to {prefix} requires direct access to the machine running LocalBooru"
+                    }
+                )
 
         # Block write operations for public internet (local network gets full access)
         if method in WRITE_METHODS and access_level == "public":

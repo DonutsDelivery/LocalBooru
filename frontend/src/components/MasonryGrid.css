@@ -1,12 +1,10 @@
 .masonry-container {
-  padding: 0;
+  padding: 10px 0;
   width: 100%;
-  background: var(--bg-primary);
 }
 
 .masonry-grid {
   display: flex;
-  justify-content: center;
   margin-left: -8px;
   width: calc(100% + 8px);
 }
@@ -16,48 +14,44 @@
   background-clip: padding-box;
   flex: 1;
   min-width: 0; /* Allow columns to shrink */
-  max-width: var(--max-column-width, 300px); /* Dynamic based on tile size */
+  max-width: 300px; /* Prevent columns from getting too wide */
 }
 
 .masonry-column > div {
   margin-bottom: 8px;
 }
 
-.masonry-column > div:last-child {
-  margin-bottom: 0;
-}
-
-/* Skeleton placeholder for loading state */
-.masonry-skeleton {
-  aspect-ratio: 1;
-  background: linear-gradient(
-    90deg,
-    var(--bg-secondary, #2a2a2a) 25%,
-    var(--bg-tertiary, #3a3a3a) 50%,
-    var(--bg-secondary, #2a2a2a) 75%
-  );
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.5s infinite;
-  border-radius: 4px;
-  margin-bottom: 8px;
-}
-
-@keyframes skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
 .load-more-trigger {
-  height: 1px;
-  margin-top: -1px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
+.loading-more {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.loading-more::before {
+  content: '';
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
 /* Responsive - smaller gaps on mobile */
 @media (max-width: 768px) {
-  .masonry-container {
-    padding: 0 2px;
-  }
   .masonry-grid {
     margin-left: -4px;
     width: calc(100% + 4px);
@@ -66,12 +60,6 @@
     padding-left: 4px;
   }
   .masonry-column > div {
-    margin-bottom: 4px;
-  }
-  .masonry-column > div:last-child {
-    margin-bottom: 0;
-  }
-  .masonry-skeleton {
     margin-bottom: 4px;
   }
 }
