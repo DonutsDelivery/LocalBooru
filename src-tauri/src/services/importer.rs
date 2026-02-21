@@ -4,6 +4,7 @@ use std::time::SystemTime;
 use rusqlite::params;
 use serde_json::json;
 
+use crate::db::library::LibraryContext;
 use crate::server::error::AppError;
 use crate::server::state::AppState;
 use crate::services::events::event_type;
@@ -398,8 +399,10 @@ where
 /// DB operations are retried up to 3 times on SQLITE_BUSY/SQLITE_LOCKED.
 pub fn import_image(
     state: &AppState,
+    lib: &LibraryContext,
     file_path: &str,
     directory_id: i64,
+    fast: bool,
 ) -> Result<ImportResult, AppError> {
     let path = Path::new(file_path);
 
@@ -423,7 +426,7 @@ pub fn import_image(
         });
     }
 
-    let dir_pool = state.directory_db().get_pool(directory_id)?;
+    let dir_pool = lib.directory_db.get_pool(directory_id)?;
     let dir_conn = dir_pool.get()?;
 
     // Check if path already imported
@@ -502,17 +505,23 @@ pub fn import_image(
     let is_video = is_video_file(file_path);
 
     // Get dimensions and duration
-    let (width, height) = get_image_dimensions(file_path)
-        .map(|(w, h)| (Some(w as i32), Some(h as i32)))
-        .unwrap_or((None, None));
-    let duration: Option<f64> = if is_video {
+    // Fast mode: skip ffprobe for videos (expensive subprocess), keep header-only read for images
+    let (width, height) = if fast && is_video {
+        (None, None)
+    } else {
+        get_image_dimensions(file_path)
+            .map(|(w, h)| (Some(w as i32), Some(h as i32)))
+            .unwrap_or((None, None))
+    };
+    let duration: Option<f64> = if is_video && !fast {
         video_preview::get_video_duration(file_path)
     } else {
         None
     };
 
     // Calculate perceptual hash for images (not videos)
-    let perceptual_hash: Option<String> = if !is_video {
+    // Fast mode: skip perceptual hash (expensive image decode + DCT)
+    let perceptual_hash: Option<String> = if !is_video && !fast {
         calculate_perceptual_hash(file_path)
     } else {
         None
@@ -580,17 +589,19 @@ pub fn import_image(
         )
     })?;
 
-    // Generate thumbnail
-    let thumbnails_dir = state.thumbnails_dir();
-    std::fs::create_dir_all(&thumbnails_dir).ok();
-    let thumb_name = format!("{}.webp", &quick_hash[..16.min(quick_hash.len())]);
-    let thumb_path = thumbnails_dir.join(&thumb_name);
+    // Generate thumbnail (skip in fast mode — deferred to complete_directory_imports)
+    if !fast {
+        let thumbnails_dir = lib.thumbnails_dir();
+        std::fs::create_dir_all(&thumbnails_dir).ok();
+        let thumb_name = format!("{}.webp", &quick_hash[..16.min(quick_hash.len())]);
+        let thumb_path = thumbnails_dir.join(&thumb_name);
 
-    if !thumb_path.exists() {
-        if is_video {
-            generate_video_thumbnail(file_path, &thumb_path.to_string_lossy(), 400);
-        } else {
-            generate_thumbnail(file_path, &thumb_path.to_string_lossy(), 400);
+        if !thumb_path.exists() {
+            if is_video {
+                generate_video_thumbnail(file_path, &thumb_path.to_string_lossy(), 400);
+            } else {
+                generate_thumbnail(file_path, &thumb_path.to_string_lossy(), 400);
+            }
         }
     }
 

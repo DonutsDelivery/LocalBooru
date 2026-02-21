@@ -4,6 +4,7 @@ pub mod cast;
 pub mod collections;
 pub mod directories;
 pub mod images;
+pub mod libraries;
 pub mod library;
 pub mod migration;
 pub mod models;

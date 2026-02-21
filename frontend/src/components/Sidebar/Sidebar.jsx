@@ -21,6 +21,7 @@ function Sidebar({
   initialRating,
   initialFavoritesOnly,
   initialDirectoryId,
+  initialLibraryId,
   initialMinAge,
   initialMaxAge,
   initialSort,
@@ -46,6 +47,7 @@ function Sidebar({
   const [hovering, setHovering] = useState(false)
   const [directories, setDirectories] = useState([])
   const [selectedDirectory, setSelectedDirectory] = useState(initialDirectoryId || null)
+  const [selectedLibrary, setSelectedLibrary] = useState(initialLibraryId || null)
   const [appVersion, setAppVersion] = useState(null)
   const [updateStatus, setUpdateStatus] = useState(null)
   const [selectedRatings, setSelectedRatings] = useState(() => {
@@ -127,6 +129,7 @@ function Sidebar({
     }
     setFavoritesOnly(initialFavoritesOnly || false)
     setSelectedDirectory(initialDirectoryId || null)
+    setSelectedLibrary(initialLibraryId || null)
     setMinAge(initialMinAge || null)
     setMaxAge(initialMaxAge || null)
     setTimeframe(initialTimeframe || null)
@@ -135,7 +138,7 @@ function Sidebar({
     setOrientation(initialOrientation || null)
     setDuration(initialDuration || null)
     if (initialSort) setSortBy(initialSort)
-  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe, initialFilename, initialResolution, initialOrientation, initialDuration])
+  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialLibraryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe, initialFilename, initialResolution, initialOrientation, initialDuration])
 
   // Fetch dimensions for selected image when it changes
   useEffect(() => {
@@ -171,16 +174,16 @@ function Sidebar({
       // Force SFW-only ratings and trigger search
       setSelectedRatings(SFW_RATINGS)
       if (onSearch) {
-        onSearch(currentTags || '', SFW_RATINGS.join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
+        onSearch(currentTags || '', SFW_RATINGS.join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
       }
     } else {
       // Restore all ratings on unlock
       setSelectedRatings([...ALL_RATINGS])
       if (onSearch) {
-        onSearch(currentTags || '', ALL_RATINGS.join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
+        onSearch(currentTags || '', ALL_RATINGS.join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
       }
     }
-  }, [refreshDirectories, onSearch, currentTags, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration])
+  }, [refreshDirectories, onSearch, currentTags, sortBy, favoritesOnly, selectedDirectory, selectedLibrary, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration])
 
   // Memoize activeTags to prevent unnecessary re-renders and useEffect triggers
   const activeTags = useMemo(() =>
@@ -198,7 +201,7 @@ function Sidebar({
   const handleSearchSubmit = (e) => {
     e.preventDefault()
     const ratingParam = getEffectiveRatings().join(',')
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
   }
 
   const handleClear = () => {
@@ -208,6 +211,7 @@ function Sidebar({
     setSortBy('newest')
     setFavoritesOnly(false)
     setSelectedDirectory(null)
+    setSelectedLibrary(null)
     setMinAge(null)
     setMaxAge(null)
     setTimeframe(null)
@@ -217,7 +221,7 @@ function Sidebar({
     if (initialGroupByFolders && onToggleGroupByFolders) {
       onToggleGroupByFolders()
     }
-    onSearch('', defaultRatings.join(','), 'newest', false, null, null, null, null, '', null, null, null)
+    onSearch('', defaultRatings.join(','), 'newest', false, null, null, null, null, '', null, null, null, null)
   }
 
   // Save current filters as a named search
@@ -229,6 +233,7 @@ function Sidebar({
       sort: sortBy,
       favorites_only: favoritesOnly,
       directory_id: selectedDirectory,
+      library_id: selectedLibrary,
       min_age: minAge,
       max_age: maxAge,
       timeframe,
@@ -257,6 +262,7 @@ function Sidebar({
     setSortBy(f.sort || 'newest')
     setFavoritesOnly(f.favorites_only || false)
     setSelectedDirectory(f.directory_id || null)
+    setSelectedLibrary(f.library_id || null)
     setMinAge(f.min_age || null)
     setMaxAge(f.max_age || null)
     setTimeframe(f.timeframe || null)
@@ -276,7 +282,8 @@ function Sidebar({
       f.filename || '',
       f.resolution || null,
       f.orientation || null,
-      f.duration || null
+      f.duration || null,
+      f.library_id || null
     )
   }
 
@@ -294,38 +301,45 @@ function Sidebar({
   const handleSortChange = (newSortBy) => {
     setSortBy(newSortBy)
     const ratingParam = getEffectiveRatings().join(',')
-    onSearch(currentTags || '', ratingParam, newSortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
+    onSearch(currentTags || '', ratingParam, newSortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
   }
 
-  const handleDirectoryChange = (dirId) => {
-    const newDirId = dirId === '' ? null : parseInt(dirId)
+  const handleDirectoryChange = (compositeId) => {
+    let newDirId = null
+    let newLibId = null
+    if (compositeId !== '') {
+      const parts = compositeId.split(':')
+      newLibId = parts[0] || null
+      newDirId = parts[1] ? parseInt(parts[1]) : null
+    }
     setSelectedDirectory(newDirId)
+    setSelectedLibrary(newLibId)
     const ratingParam = getEffectiveRatings().join(',')
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, newDirId, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, newDirId, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, newLibId)
   }
 
   const handleTimeframeChange = (newTimeframe) => {
     setTimeframe(newTimeframe)
     const ratingParam = getEffectiveRatings().join(',')
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, newTimeframe, filenameSearch, resolution, orientation, duration)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, newTimeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
   }
 
   const handleResolutionChange = (newResolution) => {
     setResolution(newResolution)
     const ratingParam = getEffectiveRatings().join(',')
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, newResolution, orientation, duration)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, newResolution, orientation, duration, selectedLibrary)
   }
 
   const handleOrientationChange = (newOrientation) => {
     setOrientation(newOrientation)
     const ratingParam = getEffectiveRatings().join(',')
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, newOrientation, duration)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, newOrientation, duration, selectedLibrary)
   }
 
   const handleDurationChange = (newDuration) => {
     setDuration(newDuration)
     const ratingParam = getEffectiveRatings().join(',')
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, newDuration)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, newDuration, selectedLibrary)
   }
 
   const toggleRating = (rating) => {
@@ -344,18 +358,18 @@ function Sidebar({
     const newFavOnly = !favoritesOnly
     setFavoritesOnly(newFavOnly)
     const ratingParam = getEffectiveRatings().join(',')
-    onSearch(currentTags || '', ratingParam, sortBy, newFavOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
+    onSearch(currentTags || '', ratingParam, sortBy, newFavOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
   }
 
   const handleFilenameSearchClear = () => {
     setFilenameSearch('')
     const ratingParam = getEffectiveRatings().join(',')
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, '', resolution, orientation, duration)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, '', resolution, orientation, duration, selectedLibrary)
   }
 
   const handleAgeChange = () => {
     const ratingParam = getEffectiveRatings().join(',')
-    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration)
+    onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
   }
 
   return (
@@ -519,6 +533,7 @@ function Sidebar({
                 <FilterControls
                   directories={directories}
                   selectedDirectory={selectedDirectory}
+                  selectedLibrary={selectedLibrary}
                   onDirectoryChange={handleDirectoryChange}
                   filenameSearch={filenameSearch}
                   setFilenameSearch={setFilenameSearch}

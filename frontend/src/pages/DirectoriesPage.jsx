@@ -6,9 +6,20 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import ComfyUIConfigModal from '../components/ComfyUIConfigModal'
-import { getLibraryStats, updateDirectory, tagUntagged, clearDirectoryTagQueue } from '../api'
+import { getLibraryStats, updateDirectory, tagUntagged, clearDirectoryTagQueue, fetchLibraries, addLibrary, mountLibrary, unmountLibrary, removeLibrary } from '../api'
 import { getDesktopAPI, isDesktopApp } from '../tauriAPI'
 import { useAddonStatus } from '../hooks/useAddonStatus'
+
+// Helper to create composite key for directory (avoids ID collisions across libraries)
+const makeDirKey = (dir) => `${dir.library_id || 'primary'}:${dir.id}`
+const parseDirKey = (key) => {
+  const idx = key.lastIndexOf(':')
+  const libId = key.substring(0, idx)
+  return {
+    dirId: parseInt(key.substring(idx + 1)),
+    libraryId: libId === 'primary' ? undefined : libId
+  }
+}
 
 function DirectoriesPage() {
   const navigate = useNavigate()
@@ -25,6 +36,11 @@ function DirectoriesPage() {
   const [taggingActive, setTaggingActive] = useState({})
   const { installed: taggerInstalled } = useAddonStatus('auto-tagger')
   const { installed: ageDetectorInstalled } = useAddonStatus('age-detector')
+  const [libraries, setLibraries] = useState([])
+  const [showAddLibrary, setShowAddLibrary] = useState(false)
+  const [newLibraryPath, setNewLibraryPath] = useState('')
+  const [newLibraryName, setNewLibraryName] = useState('')
+  const [newLibraryCreateNew, setNewLibraryCreateNew] = useState(false)
 
   const refreshDirectories = async () => {
     const { fetchDirectories } = await import('../api')
@@ -35,10 +51,19 @@ function DirectoriesPage() {
     const activeState = {}
     for (const dir of dirs) {
       if (dir.pending_tag_tasks > 0) {
-        activeState[dir.id] = true
+        activeState[makeDirKey(dir)] = true
       }
     }
     setTaggingActive(activeState)
+  }
+
+  const refreshLibraries = async () => {
+    try {
+      const data = await fetchLibraries()
+      setLibraries(data.libraries || [])
+    } catch (e) {
+      console.error('Failed to fetch libraries:', e)
+    }
   }
 
   useEffect(() => {
@@ -46,6 +71,7 @@ function DirectoriesPage() {
       .catch(console.error)
       .finally(() => setLoading(false))
     getLibraryStats().then(setStats).catch(console.error)
+    refreshLibraries()
   }, [])
 
   const handleAddDirectory = async () => {
@@ -77,27 +103,29 @@ function DirectoriesPage() {
     }
   }
 
-  const handleRescan = async (dirId) => {
-    setScanning(prev => ({ ...prev, [dirId]: true }))
+  const handleRescan = async (dir) => {
+    const key = makeDirKey(dir)
+    setScanning(prev => ({ ...prev, [key]: true }))
     try {
       const { scanDirectory } = await import('../api')
-      await scanDirectory(dirId)
+      await scanDirectory(dir.id, dir.library_id)
       await refreshDirectories()
     } catch (error) {
       console.error('Scan failed:', error)
       alert('Scan failed: ' + error.message)
     } finally {
-      setScanning(prev => ({ ...prev, [dirId]: false }))
+      setScanning(prev => ({ ...prev, [key]: false }))
     }
   }
 
-  const handleRemove = async (dirId, dirName) => {
+  const handleRemove = async (dir) => {
+    const dirName = dir.name || dir.path
     if (!confirm(`Remove "${dirName}" from watch list?\n\nImages will be removed from library.\nActual files on disk will NOT be deleted.`)) {
       return
     }
     try {
       const { removeDirectory } = await import('../api')
-      await removeDirectory(dirId, false)
+      await removeDirectory(dir.id, false, dir.library_id)
       await refreshDirectories()
     } catch (error) {
       console.error('Remove failed:', error)
@@ -105,17 +133,19 @@ function DirectoriesPage() {
     }
   }
 
-  const handlePrune = async (dirId, dirName, favoritedCount) => {
-    const nonFavorited = directories.find(d => d.id === dirId)?.image_count - favoritedCount
+  const handlePrune = async (dir) => {
+    const key = makeDirKey(dir)
+    const dirName = dir.name || dir.path
+    const nonFavorited = dir.image_count - dir.favorited_count
     const savedDumpsterPath = localStorage.getItem('localbooru_dumpster_path') || null
     const dumpsterInfo = savedDumpsterPath ? `\nDumpster: ${savedDumpsterPath}` : ''
-    if (!confirm(`Prune "${dirName}"?\n\nThis will move ${nonFavorited} non-favorited images to the dumpster folder.\nFavorited images (${favoritedCount}) will be kept.${dumpsterInfo}`)) {
+    if (!confirm(`Prune "${dirName}"?\n\nThis will move ${nonFavorited} non-favorited images to the dumpster folder.\nFavorited images (${dir.favorited_count}) will be kept.${dumpsterInfo}`)) {
       return
     }
-    setPruning(prev => ({ ...prev, [dirId]: true }))
+    setPruning(prev => ({ ...prev, [key]: true }))
     try {
       const { pruneDirectory } = await import('../api')
-      const result = await pruneDirectory(dirId, savedDumpsterPath)
+      const result = await pruneDirectory(dir.id, savedDumpsterPath, dir.library_id)
       alert(`Pruned ${result.pruned} images to:\n${result.dumpster_path}`)
       await refreshDirectories()
       getLibraryStats().then(setStats).catch(console.error)
@@ -123,29 +153,30 @@ function DirectoriesPage() {
       console.error('Prune failed:', error)
       alert('Prune failed: ' + error.message)
     } finally {
-      setPruning(prev => ({ ...prev, [dirId]: false }))
+      setPruning(prev => ({ ...prev, [key]: false }))
     }
   }
 
-  const handleRelocate = async (dirId, dirName, currentPath) => {
+  const handleRelocate = async (dir) => {
+    const key = makeDirKey(dir)
     const api = getDesktopAPI()
     if (api?.addDirectory) {
       const newPath = await api.addDirectory()
-      if (newPath && newPath !== currentPath) {
-        if (!confirm(`Update directory location?\n\nFrom: ${currentPath}\nTo: ${newPath}\n\nThis will update all file references.`)) {
+      if (newPath && newPath !== dir.path) {
+        if (!confirm(`Update directory location?\n\nFrom: ${dir.path}\nTo: ${newPath}\n\nThis will update all file references.`)) {
           return
         }
-        setRelocating(prev => ({ ...prev, [dirId]: true }))
+        setRelocating(prev => ({ ...prev, [key]: true }))
         try {
           const { updateDirectoryPath } = await import('../api')
-          const result = await updateDirectoryPath(dirId, newPath)
+          const result = await updateDirectoryPath(dir.id, newPath, dir.library_id)
           alert(`Directory relocated.\n${result.files_updated} file references updated.`)
           await refreshDirectories()
         } catch (error) {
           console.error('Relocate failed:', error)
           alert('Relocate failed: ' + (error.response?.data?.detail || error.message))
         } finally {
-          setRelocating(prev => ({ ...prev, [dirId]: false }))
+          setRelocating(prev => ({ ...prev, [key]: false }))
         }
       }
     } else {
@@ -167,7 +198,7 @@ function DirectoriesPage() {
   }
 
   const selectAllDirs = () => {
-    setSelectedDirs(new Set(directories.map(d => d.id)))
+    setSelectedDirs(new Set(directories.map(d => makeDirKey(d))))
   }
 
   const clearSelection = () => {
@@ -179,20 +210,23 @@ function DirectoriesPage() {
     if (selectedDirs.size === 0) return
     setBatchLoading(true)
     const { scanDirectory } = await import('../api')
-    const dirIds = Array.from(selectedDirs)
+    const dirKeys = Array.from(selectedDirs)
 
     // Mark all as scanning
     setScanning(prev => {
       const next = { ...prev }
-      dirIds.forEach(id => next[id] = true)
+      dirKeys.forEach(key => next[key] = true)
       return next
     })
 
     try {
       // Run rescans in parallel
-      await Promise.all(dirIds.map(id => scanDirectory(id).catch(e => {
-        console.error(`Scan failed for ${id}:`, e)
-      })))
+      await Promise.all(dirKeys.map(key => {
+        const { dirId, libraryId } = parseDirKey(key)
+        return scanDirectory(dirId, libraryId).catch(e => {
+          console.error(`Scan failed for ${key}:`, e)
+        })
+      }))
       await refreshDirectories()
     } finally {
       setScanning({})
@@ -203,7 +237,7 @@ function DirectoriesPage() {
 
   const handleBatchPrune = async () => {
     if (selectedDirs.size === 0) return
-    const selectedList = directories.filter(d => selectedDirs.has(d.id))
+    const selectedList = directories.filter(d => selectedDirs.has(makeDirKey(d)))
     const totalNonFavorited = selectedList.reduce((sum, d) => sum + (d.image_count - d.favorited_count), 0)
     const totalFavorited = selectedList.reduce((sum, d) => sum + d.favorited_count, 0)
     const savedDumpsterPath = localStorage.getItem('localbooru_dumpster_path') || null
@@ -215,23 +249,24 @@ function DirectoriesPage() {
 
     setBatchLoading(true)
     const { pruneDirectory } = await import('../api')
-    const dirIds = Array.from(selectedDirs)
+    const dirKeys = Array.from(selectedDirs)
 
     // Mark all as pruning
     setPruning(prev => {
       const next = { ...prev }
-      dirIds.forEach(id => next[id] = true)
+      dirKeys.forEach(key => next[key] = true)
       return next
     })
 
     try {
       let totalPruned = 0
-      for (const id of dirIds) {
+      for (const key of dirKeys) {
         try {
-          const result = await pruneDirectory(id, savedDumpsterPath)
+          const { dirId, libraryId } = parseDirKey(key)
+          const result = await pruneDirectory(dirId, savedDumpsterPath, libraryId)
           totalPruned += result.pruned
         } catch (e) {
-          console.error(`Prune failed for ${id}:`, e)
+          console.error(`Prune failed for ${key}:`, e)
         }
       }
       alert(`Pruned ${totalPruned} images total`)
@@ -246,7 +281,7 @@ function DirectoriesPage() {
 
   const handleBatchRemove = async () => {
     if (selectedDirs.size === 0) return
-    const selectedList = directories.filter(d => selectedDirs.has(d.id))
+    const selectedList = directories.filter(d => selectedDirs.has(makeDirKey(d)))
     const totalImages = selectedList.reduce((sum, d) => sum + (d.image_count || 0), 0)
 
     // Only show first 5 names to avoid huge dialogs
@@ -266,11 +301,25 @@ function DirectoriesPage() {
 
     try {
       const { bulkDeleteDirectories } = await import('../api')
-      const dirIds = Array.from(selectedDirs)
-      console.log(`[Bulk Remove] Deleting ${dirIds.length} directories with ${totalImages} images...`)
+      // Group by library for separate bulk calls
+      const byLibrary = {}
+      for (const key of selectedDirs) {
+        const { dirId, libraryId } = parseDirKey(key)
+        const libKey = libraryId || ''
+        if (!byLibrary[libKey]) byLibrary[libKey] = []
+        byLibrary[libKey].push(dirId)
+      }
 
-      const result = await bulkDeleteDirectories(dirIds, false)
-      console.log(`[Bulk Remove] Deleted ${result.deleted} directories, ${result.image_count} images`)
+      let totalDeleted = 0
+      let totalImageCount = 0
+      for (const [libKey, dirIds] of Object.entries(byLibrary)) {
+        const libraryId = libKey || undefined
+        console.log(`[Bulk Remove] Deleting ${dirIds.length} directories from library ${libKey || 'primary'}...`)
+        const result = await bulkDeleteDirectories(dirIds, false, libraryId)
+        totalDeleted += result.deleted
+        totalImageCount += result.image_count || 0
+      }
+      console.log(`[Bulk Remove] Deleted ${totalDeleted} directories, ${totalImageCount} images`)
 
       await refreshDirectories()
     } catch (e) {
@@ -282,18 +331,19 @@ function DirectoriesPage() {
     }
   }
 
-  const handleRepair = async (dirId) => {
-    setRepairing(prev => ({ ...prev, [dirId]: true }))
+  const handleRepair = async (dir) => {
+    const key = makeDirKey(dir)
+    setRepairing(prev => ({ ...prev, [key]: true }))
     try {
       const { repairDirectoryPaths } = await import('../api')
-      const result = await repairDirectoryPaths(dirId)
+      const result = await repairDirectoryPaths(dir.id, dir.library_id)
       alert(`Repair complete:\n${result.valid} files OK\n${result.repaired} paths fixed\n${result.removed} missing removed`)
       await refreshDirectories()
     } catch (error) {
       console.error('Repair failed:', error)
       alert('Repair failed: ' + (error.response?.data?.detail || error.message))
     } finally {
-      setRepairing(prev => ({ ...prev, [dirId]: false }))
+      setRepairing(prev => ({ ...prev, [key]: false }))
     }
   }
 
@@ -302,15 +352,82 @@ function DirectoriesPage() {
     setBatchLoading(true)
     try {
       const { bulkRepairDirectories } = await import('../api')
-      const result = await bulkRepairDirectories(Array.from(selectedDirs))
-      const orphan = result.totals.orphan_thumbnails || 0
-      alert(`Batch repair complete:\n${result.totals.valid} files OK\n${result.totals.repaired} paths fixed\n${result.totals.removed} missing removed${orphan > 0 ? `\n${orphan} orphan thumbnails cleaned` : ''}`)
+      // Group by library for separate bulk calls
+      const byLibrary = {}
+      for (const key of selectedDirs) {
+        const { dirId, libraryId } = parseDirKey(key)
+        const libKey = libraryId || ''
+        if (!byLibrary[libKey]) byLibrary[libKey] = []
+        byLibrary[libKey].push(dirId)
+      }
+
+      let totalsValid = 0, totalsRepaired = 0, totalsRemoved = 0, totalsOrphan = 0
+      for (const [libKey, dirIds] of Object.entries(byLibrary)) {
+        const libraryId = libKey || undefined
+        const result = await bulkRepairDirectories(dirIds, libraryId)
+        totalsValid += result.totals.valid || 0
+        totalsRepaired += result.totals.repaired || 0
+        totalsRemoved += result.totals.removed || 0
+        totalsOrphan += result.totals.orphan_thumbnails || 0
+      }
+      alert(`Batch repair complete:\n${totalsValid} files OK\n${totalsRepaired} paths fixed\n${totalsRemoved} missing removed${totalsOrphan > 0 ? `\n${totalsOrphan} orphan thumbnails cleaned` : ''}`)
       await refreshDirectories()
     } catch (e) {
       console.error('Batch repair failed:', e)
       alert(`Batch repair failed: ${e.response?.data?.detail || e.message || 'Unknown error'}`)
     } finally {
       setBatchLoading(false)
+    }
+  }
+
+  const handleAddLibrary = async () => {
+    if (!newLibraryPath.trim()) return
+    try {
+      await addLibrary(
+        newLibraryPath.trim(),
+        newLibraryName.trim() || newLibraryPath.trim().split('/').pop(),
+        true,
+        newLibraryCreateNew
+      )
+      setNewLibraryPath('')
+      setNewLibraryName('')
+      setNewLibraryCreateNew(false)
+      setShowAddLibrary(false)
+      await refreshLibraries()
+      await refreshDirectories()
+    } catch (e) {
+      alert(e.response?.data?.message || e.message)
+    }
+  }
+
+  const handleMountLibrary = async (uuid) => {
+    try {
+      await mountLibrary(uuid)
+      await refreshLibraries()
+      await refreshDirectories()
+    } catch (e) {
+      alert(e.response?.data?.message || e.message)
+    }
+  }
+
+  const handleUnmountLibrary = async (uuid) => {
+    try {
+      await unmountLibrary(uuid)
+      await refreshLibraries()
+      await refreshDirectories()
+    } catch (e) {
+      alert(e.response?.data?.message || e.message)
+    }
+  }
+
+  const handleRemoveLibrary = async (uuid) => {
+    if (!confirm('Remove this library? (Files will not be deleted)')) return
+    try {
+      await removeLibrary(uuid)
+      await refreshLibraries()
+      await refreshDirectories()
+    } catch (e) {
+      alert(e.response?.data?.message || e.message)
     }
   }
 
@@ -339,6 +456,89 @@ function DirectoriesPage() {
               </button>
             </div>
 
+            {/* Libraries */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Libraries</h2>
+                <button
+                  onClick={() => setShowAddLibrary(!showAddLibrary)}
+                  className="btn btn-sm"
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  {showAddLibrary ? 'Cancel' : '+ Add Library'}
+                </button>
+              </div>
+
+              {showAddLibrary && (
+                <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px', marginBottom: '12px' }}>
+                  <input
+                    type="text"
+                    placeholder="Path to folder containing library.db"
+                    value={newLibraryPath}
+                    onChange={e => setNewLibraryPath(e.target.value)}
+                    style={{ width: '100%', marginBottom: '8px', padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Library name (optional)"
+                    value={newLibraryName}
+                    onChange={e => setNewLibraryName(e.target.value)}
+                    style={{ width: '100%', marginBottom: '8px', padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                  />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    <input
+                      type="checkbox"
+                      checked={newLibraryCreateNew}
+                      onChange={e => setNewLibraryCreateNew(e.target.checked)}
+                    />
+                    Create new empty library at this path
+                  </label>
+                  <button onClick={handleAddLibrary} className="btn btn-primary btn-sm">
+                    {newLibraryCreateNew ? 'Create Library' : 'Mount Library'}
+                  </button>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {libraries.map(lib => (
+                  <div
+                    key={lib.uuid}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      background: 'var(--bg-secondary)',
+                      borderRadius: '8px',
+                      opacity: lib.mounted ? 1 : 0.6,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 500 }}>
+                        {lib.name}
+                        {lib.is_primary && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: '8px' }}>(primary)</span>}
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        {lib.path}
+                        {lib.stats && ` \u2022 ${lib.stats.total_images} images \u2022 ${lib.stats.directories} dirs`}
+                      </div>
+                      {!lib.accessible && <div style={{ fontSize: '0.8rem', color: 'var(--color-error, #e74c3c)' }}>Path not accessible</div>}
+                    </div>
+                    {!lib.is_primary && (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {lib.mounted ? (
+                          <button onClick={() => handleUnmountLibrary(lib.uuid)} className="btn btn-sm" style={{ fontSize: '0.8rem' }}>Unmount</button>
+                        ) : (
+                          <button onClick={() => handleMountLibrary(lib.uuid)} className="btn btn-primary btn-sm" style={{ fontSize: '0.8rem' }} disabled={!lib.accessible}>Mount</button>
+                        )}
+                        <button onClick={() => handleRemoveLibrary(lib.uuid)} className="btn btn-sm" style={{ fontSize: '0.8rem', color: 'var(--color-error, #e74c3c)' }}>Remove</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {loading ? (
               <p>Loading...</p>
             ) : directories.length === 0 ? (
@@ -353,15 +553,17 @@ function DirectoriesPage() {
                 </div>
               </div>
               <ul className="directory-list">
-                {directories.map(dir => (
-                  <li key={dir.id} className={`directory-item ${dir.enabled ? '' : 'disabled'} ${selectedDirs.has(dir.id) ? 'selected' : ''}`}>
+                {directories.map(dir => {
+                  const dirKey = `${dir.library_id || 'primary'}:${dir.id}`
+                  return (
+                  <li key={dirKey} className={`directory-item ${dir.enabled ? '' : 'disabled'} ${selectedDirs.has(dirKey) ? 'selected' : ''}`}>
                     {/* Header row: checkbox, name/path/count, status */}
                     <div className="directory-header">
                       <label className="directory-checkbox">
                         <input
                           type="checkbox"
-                          checked={selectedDirs.has(dir.id)}
-                          onChange={() => toggleSelectDir(dir.id)}
+                          checked={selectedDirs.has(dirKey)}
+                          onChange={() => toggleSelectDir(dirKey)}
                         />
                       </label>
                       <div className="directory-info">
@@ -392,29 +594,29 @@ function DirectoriesPage() {
                     <div className="directory-toggles">
                       {taggerInstalled && (
                       <button
-                        className={`toggle-btn tag-btn ${taggingActive[dir.id] ? 'active' : ''}`}
+                        className={`toggle-btn tag-btn ${taggingActive[dirKey] ? 'active' : ''}`}
                         onClick={async () => {
-                          const isActive = taggingActive[dir.id]
+                          const isActive = taggingActive[dirKey]
                           if (isActive) {
-                            setTaggingActive(prev => ({ ...prev, [dir.id]: false }))
+                            setTaggingActive(prev => ({ ...prev, [dirKey]: false }))
                             try {
                               await clearDirectoryTagQueue(dir.id)
                             } catch (err) {
                               console.error('Failed to clear queue:', err)
                             }
                           } else {
-                            setTaggingActive(prev => ({ ...prev, [dir.id]: true }))
+                            setTaggingActive(prev => ({ ...prev, [dirKey]: true }))
                             try {
                               await tagUntagged(dir.id)
                             } catch (err) {
                               console.error('Failed to start tagging:', err)
-                              setTaggingActive(prev => ({ ...prev, [dir.id]: false }))
+                              setTaggingActive(prev => ({ ...prev, [dirKey]: false }))
                             }
                           }
                         }}
-                        title={taggingActive[dir.id] ? "Stop tagging and clear queue" : "Start tagging untagged images"}
+                        title={taggingActive[dirKey] ? "Stop tagging and clear queue" : "Start tagging untagged images"}
                       >
-                        {taggingActive[dir.id] ? '⏹' : '▶'} Tag
+                        {taggingActive[dirKey] ? '⏹' : '▶'} Tag
                       </button>
                       )}
                       {ageDetectorInstalled && (
@@ -423,9 +625,9 @@ function DirectoriesPage() {
                         onClick={() => {
                           const newValue = !dir.auto_age_detect
                           setDirectories(dirs => dirs.map(d =>
-                            d.id === dir.id ? {...d, auto_age_detect: newValue} : d
+                            makeDirKey(d) === dirKey ? {...d, auto_age_detect: newValue} : d
                           ))
-                          updateDirectory(dir.id, { auto_age_detect: newValue })
+                          updateDirectory(dir.id, { auto_age_detect: newValue }, dir.library_id)
                             .catch(err => {
                               console.error('Failed to update:', err)
                               refreshDirectories()
@@ -441,9 +643,9 @@ function DirectoriesPage() {
                         onClick={() => {
                           const newValue = !dir.public_access
                           setDirectories(dirs => dirs.map(d =>
-                            d.id === dir.id ? {...d, public_access: newValue} : d
+                            makeDirKey(d) === dirKey ? {...d, public_access: newValue} : d
                           ))
-                          updateDirectory(dir.id, { public_access: newValue })
+                          updateDirectory(dir.id, { public_access: newValue }, dir.library_id)
                             .catch(err => {
                               console.error('Failed to update:', err)
                               refreshDirectories()
@@ -458,9 +660,9 @@ function DirectoriesPage() {
                         onClick={() => {
                           const newValue = !dir.show_images
                           setDirectories(dirs => dirs.map(d =>
-                            d.id === dir.id ? {...d, show_images: newValue} : d
+                            makeDirKey(d) === dirKey ? {...d, show_images: newValue} : d
                           ))
-                          updateDirectory(dir.id, { show_images: newValue })
+                          updateDirectory(dir.id, { show_images: newValue }, dir.library_id)
                             .catch(err => {
                               console.error('Failed to update:', err)
                               refreshDirectories()
@@ -475,9 +677,9 @@ function DirectoriesPage() {
                         onClick={() => {
                           const newValue = !dir.show_videos
                           setDirectories(dirs => dirs.map(d =>
-                            d.id === dir.id ? {...d, show_videos: newValue} : d
+                            makeDirKey(d) === dirKey ? {...d, show_videos: newValue} : d
                           ))
-                          updateDirectory(dir.id, { show_videos: newValue })
+                          updateDirectory(dir.id, { show_videos: newValue }, dir.library_id)
                             .catch(err => {
                               console.error('Failed to update:', err)
                               refreshDirectories()
@@ -492,9 +694,9 @@ function DirectoriesPage() {
                         onClick={() => {
                           const newValue = !dir.family_safe
                           setDirectories(dirs => dirs.map(d =>
-                            d.id === dir.id ? {...d, family_safe: newValue} : d
+                            makeDirKey(d) === dirKey ? {...d, family_safe: newValue} : d
                           ))
-                          updateDirectory(dir.id, { family_safe: newValue })
+                          updateDirectory(dir.id, { family_safe: newValue }, dir.library_id)
                             .catch(err => {
                               console.error('Failed to update:', err)
                               refreshDirectories()
@@ -509,9 +711,9 @@ function DirectoriesPage() {
                         onClick={() => {
                           const newValue = !dir.lan_visible
                           setDirectories(dirs => dirs.map(d =>
-                            d.id === dir.id ? {...d, lan_visible: newValue} : d
+                            makeDirKey(d) === dirKey ? {...d, lan_visible: newValue} : d
                           ))
-                          updateDirectory(dir.id, { lan_visible: newValue })
+                          updateDirectory(dir.id, { lan_visible: newValue }, dir.library_id)
                             .catch(err => {
                               console.error('Failed to update:', err)
                               refreshDirectories()
@@ -528,26 +730,26 @@ function DirectoriesPage() {
                       <div className="action-group">
                         <button
                           className="action-btn"
-                          onClick={() => handleRescan(dir.id)}
-                          disabled={scanning[dir.id]}
+                          onClick={() => handleRescan(dir)}
+                          disabled={scanning[dirKey]}
                         >
-                          {scanning[dir.id] ? 'Scanning...' : 'Rescan'}
+                          {scanning[dirKey] ? 'Scanning...' : 'Rescan'}
                         </button>
                         <button
                           className="action-btn"
-                          onClick={() => handleRepair(dir.id)}
-                          disabled={repairing[dir.id]}
+                          onClick={() => handleRepair(dir)}
+                          disabled={repairing[dirKey]}
                           title="Fix moved files and remove missing entries"
                         >
-                          {repairing[dir.id] ? 'Repairing...' : 'Repair'}
+                          {repairing[dirKey] ? 'Repairing...' : 'Repair'}
                         </button>
                         <button
                           className="action-btn"
-                          onClick={() => handlePrune(dir.id, dir.name || dir.path, dir.favorited_count)}
-                          disabled={pruning[dir.id] || dir.image_count === 0}
+                          onClick={() => handlePrune(dir)}
+                          disabled={pruning[dirKey] || dir.image_count === 0}
                           title="Move non-favorited images to dumpster"
                         >
-                          {pruning[dir.id] ? 'Pruning...' : 'Prune'}
+                          {pruning[dirKey] ? 'Pruning...' : 'Prune'}
                         </button>
                       </div>
                       <div className="action-group">
@@ -560,22 +762,22 @@ function DirectoriesPage() {
                         </button>
                         <button
                           className="action-btn secondary"
-                          onClick={() => handleRelocate(dir.id, dir.name || dir.path, dir.path)}
-                          disabled={relocating[dir.id]}
+                          onClick={() => handleRelocate(dir)}
+                          disabled={relocating[dirKey]}
                           title="Change directory location (if folder was moved)"
                         >
-                          {relocating[dir.id] ? 'Relocating...' : 'Edit Path'}
+                          {relocating[dirKey] ? 'Relocating...' : 'Edit Path'}
                         </button>
                       </div>
                       <button
                         className="action-btn danger"
-                        onClick={() => handleRemove(dir.id, dir.name || dir.path)}
+                        onClick={() => handleRemove(dir)}
                       >
                         Remove
                       </button>
                     </div>
                   </li>
-                ))}
+                )})}
               </ul>
               </>
             )}
@@ -635,6 +837,7 @@ function DirectoriesPage() {
         <ComfyUIConfigModal
           directoryId={comfyuiConfigDir.id}
           directoryName={comfyuiConfigDir.name || comfyuiConfigDir.path}
+          libraryId={comfyuiConfigDir.library_id}
           onClose={() => setComfyuiConfigDir(null)}
           onSave={refreshDirectories}
         />

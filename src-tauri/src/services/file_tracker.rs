@@ -2,6 +2,7 @@ use std::path::Path;
 
 use rusqlite::params;
 
+use crate::db::library::LibraryContext;
 use crate::server::error::AppError;
 use crate::server::state::AppState;
 use crate::services::importer::{self, ImportStatus};
@@ -72,10 +73,12 @@ pub struct ScanStats {
 /// Uses streaming file discovery to start processing while scanning.
 pub fn scan_directory(
     state: &AppState,
+    lib: &LibraryContext,
     directory_id: i64,
     directory_path: &str,
     recursive: bool,
     clean_deleted: bool,
+    fast: bool,
 ) -> Result<ScanStats, AppError> {
     let mut stats = ScanStats::default();
 
@@ -89,7 +92,7 @@ pub fn scan_directory(
 
     // Clean deleted files first if requested
     if clean_deleted {
-        stats.removed = clean_deleted_files(state, directory_id)? as i64;
+        stats.removed = clean_deleted_files(lib, directory_id)? as i64;
     }
 
     // Walk the directory for media files
@@ -121,7 +124,7 @@ pub fn scan_directory(
         stats.found += 1;
 
         let file_path = entry.path().to_string_lossy().to_string();
-        match importer::import_image(state, &file_path, directory_id) {
+        match importer::import_image(state, lib, &file_path, directory_id, fast) {
             Ok(result) => match result.status {
                 ImportStatus::Imported => stats.imported += 1,
                 ImportStatus::Duplicate => stats.duplicates += 1,
@@ -135,7 +138,7 @@ pub fn scan_directory(
     }
 
     // Update last_scanned_at in main DB
-    let main_conn = state.main_db().get()?;
+    let main_conn = lib.main_pool.get()?;
     let now = chrono::Utc::now().to_rfc3339();
     main_conn.execute(
         "UPDATE watch_directories SET last_scanned_at = ?1 WHERE id = ?2",
@@ -148,8 +151,8 @@ pub fn scan_directory(
 /// Clean up deleted files from a directory database.
 ///
 /// Returns the number of removed file references.
-pub fn clean_deleted_files(state: &AppState, directory_id: i64) -> Result<i64, AppError> {
-    let dir_pool = state.directory_db().get_pool(directory_id)?;
+pub fn clean_deleted_files(lib: &LibraryContext, directory_id: i64) -> Result<i64, AppError> {
+    let dir_pool = lib.directory_db.get_pool(directory_id)?;
     let conn = dir_pool.get()?;
     let mut removed: i64 = 0;
 
@@ -187,7 +190,7 @@ pub fn clean_deleted_files(state: &AppState, directory_id: i64) -> Result<i64, A
                 |row| row.get::<_, String>(0),
             ) {
                 let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
-                let thumb_path = state.thumbnails_dir().join(&thumb_name);
+                let thumb_path = lib.thumbnails_dir().join(&thumb_name);
                 let _ = std::fs::remove_file(&thumb_path);
             }
             conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
@@ -209,12 +212,12 @@ pub struct VerifyStats {
 }
 
 pub fn verify_directory_files(
-    state: &AppState,
+    lib: &LibraryContext,
     directory_id: i64,
 ) -> Result<VerifyStats, AppError> {
     let mut stats = VerifyStats::default();
 
-    let dir_pool = state.directory_db().get_pool(directory_id)?;
+    let dir_pool = lib.directory_db.get_pool(directory_id)?;
     let conn = dir_pool.get()?;
 
     let mut stmt =
@@ -264,7 +267,7 @@ pub fn verify_directory_files(
                         |row| row.get::<_, String>(0),
                     ) {
                         let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
-                        let thumb_path = state.thumbnails_dir().join(&thumb_name);
+                        let thumb_path = lib.thumbnails_dir().join(&thumb_name);
                         let _ = std::fs::remove_file(&thumb_path);
                     }
                     conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
@@ -282,11 +285,11 @@ pub fn verify_directory_files(
 ///
 /// Deletes the ImageFile entry. If no other references exist, deletes the Image too.
 pub fn mark_file_missing(
-    state: &AppState,
+    lib: &LibraryContext,
     file_path: &str,
     directory_id: i64,
 ) -> Result<(), AppError> {
-    let dir_pool = state.directory_db().get_pool(directory_id)?;
+    let dir_pool = lib.directory_db.get_pool(directory_id)?;
     let conn = dir_pool.get()?;
 
     // Find the file record
@@ -322,7 +325,7 @@ pub fn mark_file_missing(
             |row| row.get::<_, String>(0),
         ) {
             let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
-            let thumb_path = state.thumbnails_dir().join(&thumb_name);
+            let thumb_path = lib.thumbnails_dir().join(&thumb_name);
             let _ = std::fs::remove_file(&thumb_path);
         }
         conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;

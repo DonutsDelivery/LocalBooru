@@ -58,14 +58,15 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         .nest("/api/app-update", crate::routes::app_update::router())
         .nest("/api/addons", crate::routes::addons::router())
         .nest("/api/cast", crate::routes::cast::router())
-        .nest("/api/share", crate::routes::share::router());
+        .nest("/api/share", crate::routes::share::router())
+        .nest("/api/libraries", crate::routes::libraries::router());
 
     // Serve thumbnails as static files
     let thumbnails_dir = state.thumbnails_dir();
     let thumbnails_service = ServeDir::new(&thumbnails_dir);
 
     // Prevent browsers from caching API responses (stale data causes ghost images)
-    let no_cache = SetResponseHeaderLayer::overriding(
+    let no_cache = SetResponseHeaderLayer::if_not_present(
         header::CACHE_CONTROL,
         header::HeaderValue::from_static("no-store"),
     );

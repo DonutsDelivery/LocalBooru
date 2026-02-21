@@ -20,9 +20,9 @@
     "postinstall": "electron-builder install-app-deps",
     "tauri": "cargo tauri",
     "tauri:dev": "cargo tauri dev",
-    "tauri:build": "cargo tauri build",
-    "tauri:build:debug": "cargo tauri build --debug",
-    "tauri:build:linux": "./scripts/build-tauri-linux.sh",
+    "tauri:build": "cargo clean && cargo tauri build",
+    "tauri:build:debug": "cargo clean && cargo tauri build --debug",
+    "tauri:build:linux": "cargo clean && ./scripts/build-tauri-linux.sh",
     "tauri:build:linux:appimage": "./scripts/build-tauri-linux.sh --appimage",
     "tauri:build:linux:deb": "./scripts/build-tauri-linux.sh --deb",
     "tauri:build:linux:rpm": "./scripts/build-tauri-linux.sh --rpm"

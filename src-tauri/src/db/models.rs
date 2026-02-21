@@ -334,6 +334,18 @@ pub struct User {
     pub last_login: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MountedLibrary {
+    pub id: i64,
+    pub uuid: String,
+    pub name: String,
+    pub path: String,
+    pub auto_mount: bool,
+    pub mount_order: i32,
+    pub last_mounted_at: Option<String>,
+    pub created_at: String,
+}
+
 /// Image file record from a per-directory database.
 /// Unlike [`ImageFile`], directory DBs do not have a `watch_directory_id` column
 /// since the directory is implicit from the database file itself.

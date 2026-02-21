@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::response::Json;
@@ -10,6 +11,7 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use crate::db::library::LibraryContext;
 use crate::db::schema::init_directory_db;
 use crate::server::error::AppError;
 use crate::server::middleware::AccessTier;
@@ -47,6 +49,13 @@ pub struct DirectoryCreate {
     pub auto_tag: bool,
     #[serde(default)]
     pub auto_age_detect: bool,
+    pub library_id: Option<String>,
+}
+
+/// Query params for library-aware endpoints.
+#[derive(Debug, Deserialize)]
+pub struct LibraryQuery {
+    pub library_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -72,6 +81,7 @@ pub struct ParentDirectoryCreate {
     pub auto_tag: bool,
     #[serde(default)]
     pub auto_age_detect: bool,
+    pub library_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +89,7 @@ pub struct BulkDeleteRequest {
     pub directory_ids: Vec<i64>,
     #[serde(default)]
     pub keep_images: bool,
+    pub library_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -90,11 +101,13 @@ pub struct ScanOptions {
 #[derive(Deserialize)]
 pub struct BulkRepairRequest {
     pub directory_ids: Vec<i64>,
+    pub library_id: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct BulkVerifyRequest {
     pub directory_ids: Vec<i64>,
+    pub library_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -118,124 +131,140 @@ fn default_true() -> bool {
 /// GET /api/directories — List all watch directories with stats.
 ///
 /// Public IP clients only see directories with `public_access = true`.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn list_directories(
     State(state): State<AppState>,
+    Query(q): Query<LibraryQuery>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Result<Json<Value>, AppError> {
     let client_ip = addr.ip();
 
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
-        let main_conn = state_clone.main_db().get()?;
+        // Determine which libraries to query
+        let libraries: Vec<Arc<LibraryContext>> = if let Some(ref lib_id) = q.library_id {
+            vec![state_clone.resolve_library(Some(lib_id))?]
+        } else {
+            // No library_id: return directories from ALL mounted libraries
+            state_clone.library_manager().all_mounted()
+        };
 
-        // Get all directories
-        let mut stmt = main_conn.prepare(
-            "SELECT id, path, name, enabled, recursive, auto_tag, auto_age_detect,
-                    last_scanned_at, created_at, public_access, show_images, show_videos,
-                    parent_path, metadata_format, family_safe, lan_visible
-             FROM watch_directories ORDER BY created_at",
-        )?;
+        let mut all_dirs: Vec<Value> = Vec::new();
 
-        let dirs: Vec<Value> = stmt
-            .query_map([], |row| {
-                let dir_id: i64 = row.get(0)?;
-                let path: String = row.get(1)?;
-                let name: Option<String> = row.get(2)?;
-                let enabled: bool = row.get(3)?;
-                let recursive: bool = row.get(4)?;
-                let auto_tag: bool = row.get(5)?;
-                let auto_age_detect: bool = row.get(6)?;
-                let last_scanned_at: Option<String> = row.get(7)?;
-                let created_at: Option<String> = row.get(8)?;
-                let public_access: bool = row.get::<_, Option<bool>>(9)?.unwrap_or(false);
-                let show_images: bool = row.get::<_, Option<bool>>(10)?.unwrap_or(true);
-                let show_videos: bool = row.get::<_, Option<bool>>(11)?.unwrap_or(true);
-                let _parent_path: Option<String> = row.get(12)?;
-                let metadata_format: Option<String> = row.get(13)?;
-                let family_safe: bool = row.get::<_, Option<bool>>(14)?.unwrap_or(true);
-                let lan_visible: bool = row.get::<_, Option<bool>>(15)?.unwrap_or(true);
+        for lib in &libraries {
+            let main_conn = lib.main_pool.get()?;
 
-                // Get image count from per-directory DB
-                let mut image_count: i64 = 0;
-                let mut tagged_count: i64 = 0;
-                let mut favorited_count: i64 = 0;
+            let mut stmt = main_conn.prepare(
+                "SELECT id, path, name, enabled, recursive, auto_tag, auto_age_detect,
+                        last_scanned_at, created_at, public_access, show_images, show_videos,
+                        parent_path, metadata_format, family_safe, lan_visible
+                 FROM watch_directories ORDER BY created_at",
+            )?;
 
-                if let Ok(dir_pool) = state_clone.directory_db().get_pool(dir_id) {
-                    if let Ok(dir_conn) = dir_pool.get() {
-                        image_count = dir_conn
-                            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
-                            .unwrap_or(0);
-                        tagged_count = dir_conn
-                            .query_row(
-                                "SELECT COUNT(DISTINCT image_id) FROM image_tags",
-                                [],
-                                |r| r.get(0),
-                            )
-                            .unwrap_or(0);
-                        favorited_count = dir_conn
-                            .query_row(
-                                "SELECT COUNT(*) FROM images WHERE is_favorite = 1",
-                                [],
-                                |r| r.get(0),
-                            )
-                            .unwrap_or(0);
+            let dirs: Vec<Value> = stmt
+                .query_map([], |row| {
+                    let dir_id: i64 = row.get(0)?;
+                    let path: String = row.get(1)?;
+                    let name: Option<String> = row.get(2)?;
+                    let enabled: bool = row.get(3)?;
+                    let recursive: bool = row.get(4)?;
+                    let auto_tag: bool = row.get(5)?;
+                    let auto_age_detect: bool = row.get(6)?;
+                    let last_scanned_at: Option<String> = row.get(7)?;
+                    let created_at: Option<String> = row.get(8)?;
+                    let public_access: bool = row.get::<_, Option<bool>>(9)?.unwrap_or(false);
+                    let show_images: bool = row.get::<_, Option<bool>>(10)?.unwrap_or(true);
+                    let show_videos: bool = row.get::<_, Option<bool>>(11)?.unwrap_or(true);
+                    let _parent_path: Option<String> = row.get(12)?;
+                    let metadata_format: Option<String> = row.get(13)?;
+                    let family_safe: bool = row.get::<_, Option<bool>>(14)?.unwrap_or(true);
+                    let lan_visible: bool = row.get::<_, Option<bool>>(15)?.unwrap_or(true);
+
+                    // Get image count from per-directory DB
+                    let mut image_count: i64 = 0;
+                    let mut tagged_count: i64 = 0;
+                    let mut favorited_count: i64 = 0;
+
+                    if let Ok(dir_pool) = lib.directory_db.get_pool(dir_id) {
+                        if let Ok(dir_conn) = dir_pool.get() {
+                            image_count = dir_conn
+                                .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+                                .unwrap_or(0);
+                            tagged_count = dir_conn
+                                .query_row(
+                                    "SELECT COUNT(DISTINCT image_id) FROM image_tags",
+                                    [],
+                                    |r| r.get(0),
+                                )
+                                .unwrap_or(0);
+                            favorited_count = dir_conn
+                                .query_row(
+                                    "SELECT COUNT(*) FROM images WHERE is_favorite = 1",
+                                    [],
+                                    |r| r.get(0),
+                                )
+                                .unwrap_or(0);
+                        }
                     }
-                }
 
-                let display_name = name.unwrap_or_else(|| {
-                    Path::new(&path)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or(&path)
-                        .to_string()
-                });
+                    let display_name = name.unwrap_or_else(|| {
+                        Path::new(&path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(&path)
+                            .to_string()
+                    });
 
-                let path_exists = Path::new(&path).exists();
+                    let path_exists = Path::new(&path).exists();
 
-                let tagged_pct = if image_count > 0 {
-                    (tagged_count as f64 / image_count as f64 * 100.0 * 10.0).round() / 10.0
-                } else {
-                    0.0
-                };
-                let fav_pct = if image_count > 0 {
-                    (favorited_count as f64 / image_count as f64 * 100.0 * 10.0).round() / 10.0
-                } else {
-                    0.0
-                };
+                    let tagged_pct = if image_count > 0 {
+                        (tagged_count as f64 / image_count as f64 * 100.0 * 10.0).round() / 10.0
+                    } else {
+                        0.0
+                    };
+                    let fav_pct = if image_count > 0 {
+                        (favorited_count as f64 / image_count as f64 * 100.0 * 10.0).round() / 10.0
+                    } else {
+                        0.0
+                    };
 
-                Ok(json!({
-                    "id": dir_id,
-                    "path": path,
-                    "name": display_name,
-                    "enabled": enabled,
-                    "recursive": recursive,
-                    "auto_tag": auto_tag,
-                    "auto_age_detect": auto_age_detect,
-                    "image_count": image_count,
-                    "tagged_count": tagged_count,
-                    "tagged_pct": tagged_pct,
-                    "favorited_count": favorited_count,
-                    "favorited_pct": fav_pct,
-                    "path_exists": path_exists,
-                    "last_scanned_at": last_scanned_at,
-                    "created_at": created_at,
-                    "public_access": public_access,
-                    "show_images": show_images,
-                    "show_videos": show_videos,
-                    "metadata_format": metadata_format.unwrap_or_else(|| "auto".into()),
-                    "family_safe": family_safe,
-                    "lan_visible": lan_visible,
-                    "uses_per_directory_db": true
-                }))
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
+                    Ok(json!({
+                        "id": dir_id,
+                        "path": path,
+                        "name": display_name,
+                        "enabled": enabled,
+                        "recursive": recursive,
+                        "auto_tag": auto_tag,
+                        "auto_age_detect": auto_age_detect,
+                        "image_count": image_count,
+                        "tagged_count": tagged_count,
+                        "tagged_pct": tagged_pct,
+                        "favorited_count": favorited_count,
+                        "favorited_pct": fav_pct,
+                        "path_exists": path_exists,
+                        "last_scanned_at": last_scanned_at,
+                        "created_at": created_at,
+                        "public_access": public_access,
+                        "show_images": show_images,
+                        "show_videos": show_videos,
+                        "metadata_format": metadata_format.unwrap_or_else(|| "auto".into()),
+                        "family_safe": family_safe,
+                        "lan_visible": lan_visible,
+                        "library_id": lib.uuid.clone(),
+                        "uses_per_directory_db": true
+                    }))
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            all_dirs.extend(dirs);
+        }
 
         // Filter directories based on access tier and family mode
         let tier = AccessTier::from_ip(&client_ip);
         let family_locked = state_clone.is_family_mode_locked();
 
-        let filtered: Vec<Value> = dirs.into_iter().filter(|d| {
+        let filtered: Vec<Value> = all_dirs.into_iter().filter(|d| {
             // Family mode: hide non-family-safe when locked
             if family_locked && !d["family_safe"].as_bool().unwrap_or(true) {
                 return false;
@@ -253,6 +282,7 @@ async fn list_directories(
 }
 
 /// POST /api/directories — Add a new watch directory.
+/// Accepts optional `library_id` in the request body to target a specific library.
 async fn add_directory(
     State(state): State<AppState>,
     Json(data): Json<DirectoryCreate>,
@@ -267,6 +297,7 @@ async fn add_directory(
         )));
     }
 
+    let lib = state.resolve_library(data.library_id.as_deref())?;
     let path_str = resolved_path.to_string_lossy().to_string();
     let name = data
         .name
@@ -286,7 +317,7 @@ async fn add_directory(
     let path_clone = path_str.clone();
 
     let dir_id = tokio::task::spawn_blocking(move || -> Result<i64, AppError> {
-        let conn = state_clone.main_db().get()?;
+        let conn = lib.main_pool.get()?;
 
         // Check for duplicates
         let exists: bool = conn
@@ -311,17 +342,19 @@ async fn add_directory(
         let dir_id = conn.last_insert_rowid();
 
         // Create per-directory database
-        let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+        let dir_pool = lib.directory_db.get_pool(dir_id)?;
         let dir_conn = dir_pool.get()?;
         init_directory_db(&dir_conn)?;
 
-        // Queue initial scan
+        // Queue initial scan (fast mode: register DB records quickly, defer thumbnails)
         task_queue::enqueue_task(
             &state_clone,
             task_queue::TASK_SCAN_DIRECTORY,
             &json!({
                 "directory_id": dir_id,
-                "directory_path": &path_clone
+                "directory_path": &path_clone,
+                "library_id": lib.uuid,
+                "fast_import": true
             }),
             2,
             None,
@@ -345,6 +378,7 @@ async fn add_directory(
 }
 
 /// POST /api/directories/add-parent — Add all subdirectories of a parent folder.
+/// Accepts optional `library_id` in the request body to target a specific library.
 async fn add_parent_directory(
     State(state): State<AppState>,
     Json(data): Json<ParentDirectoryCreate>,
@@ -372,6 +406,7 @@ async fn add_parent_directory(
         ));
     }
 
+    let lib = state.resolve_library(data.library_id.as_deref())?;
     let recursive = data.recursive;
     let auto_tag = data.auto_tag;
     let auto_age_detect = data.auto_age_detect;
@@ -379,7 +414,7 @@ async fn add_parent_directory(
     let state_clone = state.clone();
 
     let (added, skipped) = tokio::task::spawn_blocking(move || -> Result<(Vec<Value>, Vec<String>), AppError> {
-        let conn = state_clone.main_db().get()?;
+        let conn = lib.main_pool.get()?;
         let mut added = Vec::new();
         let mut skipped = Vec::new();
 
@@ -424,17 +459,19 @@ async fn add_parent_directory(
             let dir_id = conn.last_insert_rowid();
 
             // Create per-directory DB
-            let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+            let dir_pool = lib.directory_db.get_pool(dir_id)?;
             let dir_conn = dir_pool.get()?;
             init_directory_db(&dir_conn)?;
 
-            // Queue scan
+            // Queue scan (fast mode: register DB records quickly, defer thumbnails)
             task_queue::enqueue_task(
                 &state_clone,
                 task_queue::TASK_SCAN_DIRECTORY,
                 &json!({
                     "directory_id": dir_id,
-                    "directory_path": &path_str
+                    "directory_path": &path_str,
+                    "library_id": lib.uuid,
+                    "fast_import": true
                 }),
                 2,
                 None,
@@ -471,13 +508,15 @@ async fn add_parent_directory(
 }
 
 /// GET /api/directories/:directory_id — Get directory details.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn get_directory(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let state_clone = state.clone();
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
+        let conn = lib.main_pool.get()?;
 
         let dir = conn.query_row(
             "SELECT id, path, name, enabled, recursive, auto_tag, auto_age_detect,
@@ -519,17 +558,19 @@ async fn get_directory(
 }
 
 /// PATCH /api/directories/:directory_id — Update directory settings.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn update_directory(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
     Json(data): Json<DirectoryUpdate>,
 ) -> Result<Json<Value>, AppError> {
     // Track whether watcher-affecting fields are being changed
     let watcher_refresh_needed = data.enabled.is_some() || data.recursive.is_some();
 
-    let state_clone = state.clone();
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     let result = tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
+        let conn = lib.main_pool.get()?;
 
         // Build dynamic UPDATE query
         let mut sets = Vec::new();
@@ -612,29 +653,36 @@ async fn update_directory(
 }
 
 /// DELETE /api/directories/:directory_id — Remove a watch directory.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn remove_directory(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
     Query(params): Query<DeleteParams>,
 ) -> Result<Json<Value>, AppError> {
+    let lib = state.resolve_library(params.library_id.as_deref())?;
+
     // Remove from filesystem watcher before deletion
     if let Some(watcher) = state.directory_watcher() {
         watcher.remove_directory(directory_id);
     }
 
-    delete_directories(state, vec![directory_id], params.keep_images.unwrap_or(false)).await
+    delete_directories_with_lib(state, lib, vec![directory_id], params.keep_images.unwrap_or(false)).await
 }
 
 #[derive(Deserialize)]
 struct DeleteParams {
     keep_images: Option<bool>,
+    library_id: Option<String>,
 }
 
 /// POST /api/directories/bulk-delete — Remove multiple directories.
+/// Accepts optional `library_id` in the request body to target a specific library.
 async fn bulk_delete(
     State(state): State<AppState>,
     Json(data): Json<BulkDeleteRequest>,
 ) -> Result<Json<Value>, AppError> {
+    let lib = state.resolve_library(data.library_id.as_deref())?;
+
     // Remove all from filesystem watcher before deletion
     if let Some(watcher) = state.directory_watcher() {
         for &dir_id in &data.directory_ids {
@@ -642,11 +690,12 @@ async fn bulk_delete(
         }
     }
 
-    delete_directories(state, data.directory_ids, data.keep_images).await
+    delete_directories_with_lib(state, lib, data.directory_ids, data.keep_images).await
 }
 
-async fn delete_directories(
-    state: AppState,
+async fn delete_directories_with_lib(
+    _state: AppState,
+    lib: Arc<LibraryContext>,
     directory_ids: Vec<i64>,
     keep_images: bool,
 ) -> Result<Json<Value>, AppError> {
@@ -654,16 +703,15 @@ async fn delete_directories(
         return Ok(Json(json!({"deleted": 0, "images_removed": false, "image_count": 0})));
     }
 
-    let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
+        let conn = lib.main_pool.get()?;
         let mut total_images: i64 = 0;
         let mut all_hashes: Vec<String> = Vec::new();
         let mut images_removed = false;
 
         for &dir_id in &directory_ids {
             // Get image count and hashes from directory DB
-            if let Ok(dir_pool) = state_clone.directory_db().get_pool(dir_id) {
+            if let Ok(dir_pool) = lib.directory_db.get_pool(dir_id) {
                 if let Ok(dir_conn) = dir_pool.get() {
                     let count: i64 = dir_conn
                         .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
@@ -711,7 +759,7 @@ async fn delete_directories(
             }
 
             // Delete directory DB file
-            let _ = state_clone.directory_db().delete_directory_db(dir_id);
+            let _ = lib.directory_db.delete_directory_db(dir_id);
 
             // Delete directory record from main DB
             conn.execute(
@@ -722,7 +770,7 @@ async fn delete_directories(
 
         // Clean up thumbnails
         if !all_hashes.is_empty() {
-            let thumbnails_dir = state_clone.thumbnails_dir();
+            let thumbnails_dir = lib.thumbnails_dir();
             for hash in &all_hashes {
                 let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
                 let _ = std::fs::remove_file(thumbnails_dir.join(&thumb_name));
@@ -741,16 +789,19 @@ async fn delete_directories(
 /// POST /api/directories/:directory_id/scan — Trigger a directory scan.
 ///
 /// Validates that the directory path exists on disk before queuing the scan task.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn scan_directory(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
     body: Option<Json<ScanOptions>>,
 ) -> Result<Json<Value>, AppError> {
     let clean_deleted = body.map(|b| b.clean_deleted).unwrap_or(false);
 
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     let state_clone = state.clone();
     let task_id = tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
+        let conn = lib.main_pool.get()?;
 
         // Get directory path
         let dir_path: String = conn
@@ -775,7 +826,9 @@ async fn scan_directory(
             &json!({
                 "directory_id": directory_id,
                 "directory_path": dir_path,
-                "clean_deleted": clean_deleted
+                "clean_deleted": clean_deleted,
+                "library_id": lib.uuid,
+                "fast_import": true
             }),
             2,
             None,
@@ -796,22 +849,25 @@ async fn scan_directory(
 /// For each image file record in the directory DB: check if the file exists on disk.
 /// If the parent directory is gone, mark as "drive_offline". If the file is missing,
 /// delete the record. Returns counts of verified/missing/offline.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn verify_directory(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
 ) -> Result<Json<Value>, AppError> {
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     let state_clone = state.clone();
     let result = tokio::task::spawn_blocking(move || {
-        verify_directory_inner(&state_clone, directory_id)
+        verify_directory_inner(&state_clone, &lib, directory_id)
     })
     .await??;
 
     Ok(Json(result))
 }
 
-fn verify_directory_inner(state: &AppState, directory_id: i64) -> Result<Value, AppError> {
+fn verify_directory_inner(_state: &AppState, lib: &Arc<LibraryContext>, directory_id: i64) -> Result<Value, AppError> {
     // Ensure the directory exists in main DB
-    let main_conn = state.main_db().get()?;
+    let main_conn = lib.main_pool.get()?;
     let _dir_path: String = main_conn
         .query_row(
             "SELECT path FROM watch_directories WHERE id = ?1",
@@ -820,7 +876,10 @@ fn verify_directory_inner(state: &AppState, directory_id: i64) -> Result<Value, 
         )
         .map_err(|_| AppError::NotFound("Directory not found".into()))?;
 
-    let stats = file_tracker::verify_directory_files(state, directory_id)?;
+    // Note: file_tracker::verify_directory_files uses state.directory_db() (primary library).
+    // For non-primary libraries we still call it via state — the directory_id-based pool
+    // lookup will work as long as the directory DB file is in the correct location.
+    let stats = file_tracker::verify_directory_files(lib, directory_id)?;
 
     Ok(json!({
         "directory_id": directory_id,
@@ -831,6 +890,7 @@ fn verify_directory_inner(state: &AppState, directory_id: i64) -> Result<Value, 
 }
 
 /// POST /api/directories/bulk-verify — Verify files in multiple directories.
+/// Accepts optional `library_id` in the request body to target a specific library.
 async fn bulk_verify(
     State(state): State<AppState>,
     Json(data): Json<BulkVerifyRequest>,
@@ -842,6 +902,7 @@ async fn bulk_verify(
         })));
     }
 
+    let lib = state.resolve_library(data.library_id.as_deref())?;
     let state_clone = state.clone();
     let result = tokio::task::spawn_blocking(move || {
         let mut results: Vec<Value> = Vec::new();
@@ -850,7 +911,7 @@ async fn bulk_verify(
         let mut totals_offline: i64 = 0;
 
         for dir_id in &data.directory_ids {
-            match verify_directory_inner(&state_clone, *dir_id) {
+            match verify_directory_inner(&state_clone, &lib, *dir_id) {
                 Ok(r) => {
                     totals_verified += r["verified"].as_i64().unwrap_or(0);
                     totals_deleted += r["deleted"].as_i64().unwrap_or(0);
@@ -891,13 +952,15 @@ async fn bulk_verify(
 ///
 /// Moves non-favorited image files to a "dumpster" subfolder within the directory,
 /// preserving relative paths. Deletes DB records after moving.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn prune_directory(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let state_clone = state.clone();
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     let result = tokio::task::spawn_blocking(move || {
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
 
         let dir_path: String = main_conn
             .query_row(
@@ -913,7 +976,7 @@ async fn prune_directory(
 
         let dumpster_dir = Path::new(&dir_path).join("dumpster");
 
-        let dir_pool = state_clone.directory_db().get_pool(directory_id)?;
+        let dir_pool = lib.directory_db.get_pool(directory_id)?;
         let conn = dir_pool.get()?;
 
         // Get non-favorited images with their file paths
@@ -1017,7 +1080,7 @@ async fn prune_directory(
         }
 
         // Clean thumbnails for deleted images
-        let thumbnails_dir = state_clone.thumbnails_dir();
+        let thumbnails_dir = lib.thumbnails_dir();
         for hash in &hashes_to_clean {
             let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
             let _ = std::fs::remove_file(thumbnails_dir.join(&thumb_name));
@@ -1041,9 +1104,11 @@ async fn prune_directory(
 ///
 /// Updates the path in both the main DB watch_directories table and updates
 /// all image file_path prefixes in the directory DB.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn update_directory_path(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
     Json(data): Json<UpdatePathRequest>,
 ) -> Result<Json<Value>, AppError> {
     let new_resolved = std::fs::canonicalize(&data.new_path)
@@ -1058,10 +1123,11 @@ async fn update_directory_path(
 
     let new_path_str = new_resolved.to_string_lossy().to_string();
 
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     let state_clone = state.clone();
     let new_path_clone = new_path_str.clone();
     let result = tokio::task::spawn_blocking(move || {
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
 
         // Get old path
         let (old_path, recursive): (String, bool) = main_conn
@@ -1104,7 +1170,7 @@ async fn update_directory_path(
         )?;
 
         // Update file path prefixes in directory DB
-        let dir_pool = state_clone.directory_db().get_pool(directory_id)?;
+        let dir_pool = lib.directory_db.get_pool(directory_id)?;
         let conn = dir_pool.get()?;
 
         // Replace old_path prefix with new_path in all image_files.original_path
@@ -1152,14 +1218,16 @@ async fn update_directory_path(
 
 /// POST /api/directories/:directory_id/clean-deleted — Remove records for files that
 /// no longer exist on disk, without doing a full rescan.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn clean_deleted(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let state_clone = state.clone();
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     let result = tokio::task::spawn_blocking(move || {
         // Verify directory exists in main DB
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
         let _dir_path: String = main_conn
             .query_row(
                 "SELECT path FROM watch_directories WHERE id = ?1",
@@ -1168,7 +1236,7 @@ async fn clean_deleted(
             )
             .map_err(|_| AppError::NotFound("Directory not found".into()))?;
 
-        let removed = file_tracker::clean_deleted_files(&state_clone, directory_id)?;
+        let removed = file_tracker::clean_deleted_files(&lib, directory_id)?;
 
         Ok::<_, AppError>(json!({
             "directory_id": directory_id,
@@ -1188,10 +1256,10 @@ async fn clean_deleted(
 /// 1. Walks the filesystem to build a filename->path map
 /// 2. For each DB record: if path exists mark valid, else try filename match, else delete
 fn repair_directory_inner(
-    state: &AppState,
+    lib: &Arc<LibraryContext>,
     directory_id: i64,
 ) -> Result<Value, AppError> {
-    let main_conn = state.main_db().get()?;
+    let main_conn = lib.main_pool.get()?;
 
     let (dir_path, recursive): (String, bool) = main_conn
         .query_row(
@@ -1243,7 +1311,7 @@ fn repair_directory_inner(
         .collect();
 
     // Step 2: Check each DB record
-    let dir_pool = state.directory_db().get_pool(directory_id)?;
+    let dir_pool = lib.directory_db.get_pool(directory_id)?;
     let conn = dir_pool.get()?;
 
     let mut stmt = conn.prepare("SELECT id, image_id, original_path FROM image_files")?;
@@ -1298,7 +1366,7 @@ fn repair_directory_inner(
                     |row| row.get::<_, String>(0),
                 ) {
                     let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
-                    let _ = std::fs::remove_file(state.thumbnails_dir().join(&thumb_name));
+                    let _ = std::fs::remove_file(lib.thumbnails_dir().join(&thumb_name));
                 }
                 conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
             }
@@ -1317,13 +1385,15 @@ fn repair_directory_inner(
 }
 
 /// POST /api/directories/:directory_id/repair — Repair file paths in a single directory.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn repair_directory(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let state_clone = state.clone();
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     let result = tokio::task::spawn_blocking(move || {
-        repair_directory_inner(&state_clone, directory_id)
+        repair_directory_inner(&lib, directory_id)
     })
     .await??;
 
@@ -1331,6 +1401,7 @@ async fn repair_directory(
 }
 
 /// POST /api/directories/bulk-repair — Repair all selected directories + clean orphan thumbnails.
+/// Accepts optional `library_id` in the request body to target a specific library.
 async fn bulk_repair(
     State(state): State<AppState>,
     Json(data): Json<BulkRepairRequest>,
@@ -1342,6 +1413,7 @@ async fn bulk_repair(
         })));
     }
 
+    let lib = state.resolve_library(data.library_id.as_deref())?;
     let state_clone = state.clone();
     let result = tokio::task::spawn_blocking(move || {
         let mut results: Vec<Value> = Vec::new();
@@ -1350,7 +1422,7 @@ async fn bulk_repair(
         let mut totals_removed: i64 = 0;
 
         for dir_id in &data.directory_ids {
-            match repair_directory_inner(&state_clone, *dir_id) {
+            match repair_directory_inner(&lib, *dir_id) {
                 Ok(r) => {
                     totals_valid += r["valid"].as_i64().unwrap_or(0);
                     totals_repaired += r["repaired"].as_i64().unwrap_or(0);
@@ -1449,13 +1521,15 @@ fn clean_orphan_thumbnails(state: &AppState) -> i64 {
 /// Reads up to 5 sample PNG images from the directory, extracts PNG text chunks
 /// looking for the "prompt" chunk (ComfyUI metadata JSON), parses it, and returns
 /// a list of all node IDs with their class types and whether they contain text.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn get_comfyui_nodes(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let state_clone = state.clone();
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     let result = tokio::task::spawn_blocking(move || {
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
 
         // Get directory path and current config
         let (dir_path, recursive, prompt_ids_str, negative_ids_str): (String, bool, Option<String>, Option<String>) = main_conn
@@ -1617,9 +1691,11 @@ async fn get_comfyui_nodes(
 ///
 /// Accepts `comfyui_prompt_node_ids`, `comfyui_negative_node_ids`, and `metadata_format`.
 /// Validates metadata_format is one of "auto", "a1111", "comfyui", "none".
+/// Accepts optional `library_id` query param to target a specific library.
 async fn update_comfyui_config(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
     Json(data): Json<ComfyUIConfigUpdate>,
 ) -> Result<Json<Value>, AppError> {
     // Validate metadata_format
@@ -1633,9 +1709,9 @@ async fn update_comfyui_config(
         }
     }
 
-    let state_clone = state.clone();
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     let result = tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
+        let conn = lib.main_pool.get()?;
 
         // Build dynamic UPDATE query
         let mut sets = Vec::new();
@@ -1691,13 +1767,16 @@ async fn update_comfyui_config(
 ///
 /// For each image in the directory DB, enqueues a TASK_EXTRACT_METADATA task
 /// with the image_id, directory_id, and image path.
+/// Accepts optional `library_id` query param to target a specific library.
 async fn reextract_metadata(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
+    Query(q): Query<LibraryQuery>,
 ) -> Result<Json<Value>, AppError> {
+    let lib = state.resolve_library(q.library_id.as_deref())?;
     let state_clone = state.clone();
     let result = tokio::task::spawn_blocking(move || {
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
 
         // Verify directory exists
         let _dir_path: String = main_conn
@@ -1709,7 +1788,7 @@ async fn reextract_metadata(
             .map_err(|_| AppError::NotFound("Directory not found".into()))?;
 
         // Get all images with their file paths from the directory DB
-        let dir_pool = state_clone.directory_db().get_pool(directory_id)?;
+        let dir_pool = lib.directory_db.get_pool(directory_id)?;
         let dir_conn = dir_pool.get()?;
 
         let mut stmt = dir_conn.prepare(
@@ -1732,7 +1811,8 @@ async fn reextract_metadata(
                 &json!({
                     "image_id": image_id,
                     "directory_id": directory_id,
-                    "image_path": image_path
+                    "image_path": image_path,
+                    "library_id": lib.uuid
                 }),
                 1,  // lower priority than scans
                 Some(*image_id),  // dedupe by image_id

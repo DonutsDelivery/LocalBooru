@@ -196,6 +196,18 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+
+        -- Mounted libraries (multi-library support)
+        CREATE TABLE IF NOT EXISTS mounted_libraries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            path TEXT NOT NULL,
+            auto_mount INTEGER NOT NULL DEFAULT 1,
+            mount_order INTEGER NOT NULL DEFAULT 0,
+            last_mounted_at TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         ",
     )?;
 

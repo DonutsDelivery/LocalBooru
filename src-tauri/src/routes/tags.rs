@@ -7,6 +7,7 @@ use rusqlite::params;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::db::directory_db::DirectoryDbManager;
 use crate::server::error::AppError;
 use crate::server::middleware::AccessTier;
 use crate::server::state::AppState;
@@ -22,6 +23,7 @@ pub struct ListTagsQuery {
     pub per_page: i64,
     #[serde(default = "default_sort")]
     pub sort: String,
+    pub library_id: Option<String>,
 }
 
 fn default_page() -> i64 { 1 }
@@ -32,7 +34,7 @@ fn default_sort() -> String { "count".into() }
 /// ratings and visible directories.
 /// Returns a map of tag_id -> filtered_post_count.
 fn aggregate_filtered_tag_counts(
-    state: &AppState,
+    directory_db: &DirectoryDbManager,
     visible_dir_ids: &Option<HashSet<i64>>,
     allowed_ratings: &[&str],
 ) -> Result<HashMap<i64, i64>, AppError> {
@@ -44,7 +46,7 @@ fn aggregate_filtered_tag_counts(
         ids.iter().copied().collect()
     } else {
         // All directories with databases
-        state.directory_db().get_all_directory_ids()
+        directory_db.get_all_directory_ids()
     };
 
     // Build rating IN clause (ratings are validated upstream, safe to inline)
@@ -57,7 +59,7 @@ fn aggregate_filtered_tag_counts(
     let mut tag_counts: HashMap<i64, i64> = HashMap::new();
 
     for dir_id in &dir_ids {
-        let dir_pool = match state.directory_db().get_pool(*dir_id) {
+        let dir_pool = match directory_db.get_pool(*dir_id) {
             Ok(p) => p,
             Err(_) => continue, // DB doesn't exist yet, skip
         };
@@ -101,9 +103,11 @@ pub async fn list_tags(
     Query(q): Query<ListTagsQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state_clone = state.clone();
+    let library_id = q.library_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
+        let lib = state_clone.resolve_library(library_id.as_deref())?;
+        let conn = lib.main_pool.get()?;
 
         // Check visibility (access tier + family mode)
         let client_ip = addr.ip();
@@ -114,11 +118,11 @@ pub async fn list_tags(
         // When family mode is locked, compute tag counts from only SFW images
         let filtered_tag_counts: Option<HashMap<i64, i64>> = if family_locked {
             let sfw_ratings: Vec<&str> = vec!["pg", "pg13"];
-            Some(aggregate_filtered_tag_counts(&state_clone, &visible_dir_ids, &sfw_ratings)?)
+            Some(aggregate_filtered_tag_counts(&lib.directory_db, &visible_dir_ids, &sfw_ratings)?)
         } else if visible_dir_ids.is_some() {
             // Non-localhost access: filter to visible directories but all ratings
             let all_ratings: Vec<&str> = vec!["pg", "pg13", "r", "x", "xxx"];
-            Some(aggregate_filtered_tag_counts(&state_clone, &visible_dir_ids, &all_ratings)?)
+            Some(aggregate_filtered_tag_counts(&lib.directory_db, &visible_dir_ids, &all_ratings)?)
         } else {
             None // Localhost + unlocked: no filtering, use stored post_count
         };
@@ -240,6 +244,7 @@ pub struct AutocompleteQuery {
     pub q: String,
     #[serde(default = "default_autocomplete_limit")]
     pub limit: i64,
+    pub library_id: Option<String>,
 }
 
 fn default_autocomplete_limit() -> i64 { 10 }
@@ -255,9 +260,11 @@ pub async fn autocomplete_tags(
     }
 
     let state_clone = state.clone();
+    let library_id = q.library_id.clone();
 
     let tags = tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
+        let lib = state_clone.resolve_library(library_id.as_deref())?;
+        let conn = lib.main_pool.get()?;
 
         // Check visibility (access tier + family mode)
         let client_ip = addr.ip();
@@ -268,11 +275,11 @@ pub async fn autocomplete_tags(
         // When filtering is needed, get visible tag IDs
         let visible_tag_ids: Option<HashSet<i64>> = if family_locked {
             let sfw_ratings: Vec<&str> = vec!["pg", "pg13"];
-            let counts = aggregate_filtered_tag_counts(&state_clone, &visible_dir_ids, &sfw_ratings)?;
+            let counts = aggregate_filtered_tag_counts(&lib.directory_db, &visible_dir_ids, &sfw_ratings)?;
             Some(counts.keys().copied().collect())
         } else if visible_dir_ids.is_some() {
             let all_ratings: Vec<&str> = vec!["pg", "pg13", "r", "x", "xxx"];
-            let counts = aggregate_filtered_tag_counts(&state_clone, &visible_dir_ids, &all_ratings)?;
+            let counts = aggregate_filtered_tag_counts(&lib.directory_db, &visible_dir_ids, &all_ratings)?;
             Some(counts.keys().copied().collect())
         } else {
             None
@@ -327,14 +334,22 @@ pub async fn autocomplete_tags(
     Ok(Json(json!(tags)))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct LibraryQuery {
+    pub library_id: Option<String>,
+}
+
 /// GET /api/tags/stats/overview — Tag statistics.
 pub async fn tag_stats(
     State(state): State<AppState>,
+    Query(q): Query<LibraryQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state_clone = state.clone();
+    let library_id = q.library_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
+        let lib = state_clone.resolve_library(library_id.as_deref())?;
+        let conn = lib.main_pool.get()?;
 
         // Total count
         let total: i64 =
@@ -375,11 +390,14 @@ pub async fn tag_stats(
 pub async fn get_tag(
     State(state): State<AppState>,
     AxumPath(tag_name): AxumPath<String>,
+    Query(q): Query<LibraryQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state_clone = state.clone();
+    let library_id = q.library_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
+        let lib = state_clone.resolve_library(library_id.as_deref())?;
+        let conn = lib.main_pool.get()?;
         let normalized = tag_name.to_lowercase().replace(' ', "_");
 
         conn.query_row(
@@ -410,6 +428,7 @@ pub async fn get_tag(
 #[derive(Debug, Deserialize)]
 pub struct UpdateCategoryQuery {
     pub category: String,
+    pub library_id: Option<String>,
 }
 
 /// PATCH /api/tags/:tag_name/category — Update tag category.
@@ -428,9 +447,11 @@ pub async fn update_tag_category(
 
     let state_clone = state.clone();
     let category = params.category.clone();
+    let library_id = params.library_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
+        let lib = state_clone.resolve_library(library_id.as_deref())?;
+        let conn = lib.main_pool.get()?;
         let normalized = tag_name.to_lowercase().replace(' ', "_");
 
         let updated = conn.execute(

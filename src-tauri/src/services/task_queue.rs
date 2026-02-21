@@ -7,6 +7,7 @@ use serde_json::Value;
 use tokio::sync::{Notify, Semaphore};
 
 use crate::addons::manager::AddonStatus;
+use crate::db::library::LibraryContext;
 use crate::server::error::AppError;
 use crate::server::state::AppState;
 use crate::services::events::event_type;
@@ -20,6 +21,7 @@ pub const TASK_VERIFY_FILES: &str = "verify_files";
 pub const TASK_UPLOAD: &str = "upload";
 pub const TASK_AGE_DETECT: &str = "age_detect";
 pub const TASK_EXTRACT_METADATA: &str = "extract_metadata";
+pub const TASK_COMPLETE_IMPORTS: &str = "complete_directory_imports";
 
 pub const STATUS_PENDING: &str = "pending";
 pub const STATUS_PROCESSING: &str = "processing";
@@ -362,6 +364,10 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
 
 /// Execute a task based on its type.
 async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Result<(), AppError> {
+    // Resolve the target library from payload (defaults to primary)
+    let library_id = payload["library_id"].as_str();
+    let lib = state.resolve_library(library_id)?;
+
     match task_type {
         TASK_SCAN_DIRECTORY => {
             let directory_id = payload["directory_id"]
@@ -372,18 +378,24 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
                 .ok_or_else(|| AppError::Internal("Missing directory_path".into()))?
                 .to_string();
             let clean_deleted = payload["clean_deleted"].as_bool().unwrap_or(false);
+            let fast_import = payload["fast_import"].as_bool().unwrap_or(true);
 
             let state_clone = state.clone();
+            let lib = lib.clone();
+            let dir_path_clone = directory_path.clone();
             tokio::task::spawn_blocking(move || {
                 let stats = file_tracker::scan_directory(
                     &state_clone,
+                    &lib,
                     directory_id,
-                    &directory_path,
+                    &dir_path_clone,
                     true, // recursive
                     clean_deleted,
+                    fast_import,
                 )?;
                 log::info!(
-                    "[TaskQueue] Scan complete: {} found, {} imported, {} duplicates, {} errors",
+                    "[TaskQueue] Scan complete{}: {} found, {} imported, {} duplicates, {} errors",
+                    if fast_import { " (fast)" } else { "" },
                     stats.found,
                     stats.imported,
                     stats.duplicates,
@@ -392,14 +404,29 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
                 Ok::<_, AppError>(())
             })
             .await??;
+
+            // After a fast scan, queue deferred work at low priority
+            if fast_import {
+                enqueue_task(
+                    state,
+                    TASK_COMPLETE_IMPORTS,
+                    &serde_json::json!({
+                        "directory_id": directory_id,
+                        "directory_path": directory_path,
+                        "library_id": library_id,
+                    }),
+                    0, // lower priority than scans (priority 2)
+                    None,
+                )?;
+            }
         }
 
         TASK_VERIFY_FILES => {
             let directory_id = payload["directory_id"].as_i64();
-            let state_clone = state.clone();
+            let lib = lib.clone();
             tokio::task::spawn_blocking(move || {
                 if let Some(dir_id) = directory_id {
-                    let stats = file_tracker::verify_directory_files(&state_clone, dir_id)?;
+                    let stats = file_tracker::verify_directory_files(&lib, dir_id)?;
                     log::info!(
                         "[TaskQueue] Verify complete: {} verified, {} deleted, {} offline",
                         stats.verified,
@@ -413,7 +440,7 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
         }
 
         TASK_TAG => {
-            execute_tag_task(state, payload).await?;
+            execute_tag_task(state, &lib, payload).await?;
         }
 
         TASK_UPLOAD => {
@@ -431,7 +458,7 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
         }
 
         TASK_AGE_DETECT => {
-            execute_age_detect_task(state, payload).await?;
+            execute_age_detect_task(state, &lib, payload).await?;
         }
 
         TASK_EXTRACT_METADATA => {
@@ -447,9 +474,9 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
 
             if image_path.is_empty() {
                 if let (Some(img_id), Some(dir_id)) = (image_id, directory_id) {
-                    let state_clone = state.clone();
+                    let lib = lib.clone();
                     let resolved = tokio::task::spawn_blocking(move || -> Option<String> {
-                        let pool = state_clone.directory_db().get_pool(dir_id).ok()?;
+                        let pool = lib.directory_db.get_pool(dir_id).ok()?;
                         let conn = pool.get().ok()?;
                         conn.query_row(
                             "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_exists = 1 LIMIT 1",
@@ -468,10 +495,10 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
             if complete_import {
                 if let (Some(img_id), Some(dir_id)) = (image_id, directory_id) {
                     let path = image_path.clone();
-                    let state_clone = state.clone();
+                    let lib = lib.clone();
 
                     tokio::task::spawn_blocking(move || {
-                        complete_fast_import(&state_clone, img_id, dir_id, &path)
+                        complete_fast_import(&lib, img_id, dir_id, &path)
                     })
                     .await??;
                 }
@@ -480,21 +507,164 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
             // Extract AI generation metadata (A1111 / ComfyUI)
             if let Some(img_id) = image_id {
                 if !image_path.is_empty() && std::path::Path::new(&image_path).exists() {
-                    let state_clone = state.clone();
+                    let lib = lib.clone();
                     let dir_id = directory_id;
 
                     tokio::task::spawn_blocking(move || {
-                        run_metadata_extraction(&state_clone, img_id, dir_id, &image_path)
+                        run_metadata_extraction(&lib, img_id, dir_id, &image_path)
                     })
                     .await??;
                 }
             }
         }
 
+        TASK_COMPLETE_IMPORTS => {
+            let directory_id = payload["directory_id"]
+                .as_i64()
+                .ok_or_else(|| AppError::Internal("Missing directory_id".into()))?;
+
+            let state_clone = state.clone();
+            let lib = lib.clone();
+            tokio::task::spawn_blocking(move || {
+                complete_directory_imports(&state_clone, &lib, directory_id)
+            })
+            .await??;
+        }
+
         _ => {
             log::warn!("[TaskQueue] Unknown task type: {}", task_type);
         }
     }
+
+    Ok(())
+}
+
+// ─── TASK_COMPLETE_IMPORTS handler ───────────────────────────────────────────
+
+/// Complete deferred import work for a directory after a fast scan.
+///
+/// Processes all images in the directory that are missing thumbnails,
+/// perceptual hashes (images only), or video dimensions/duration.
+/// This runs at low priority so it doesn't block new scans.
+fn complete_directory_imports(
+    state: &AppState,
+    lib: &LibraryContext,
+    directory_id: i64,
+) -> Result<(), AppError> {
+    use crate::services::importer;
+    use crate::services::video_preview;
+
+    let dir_pool = lib.directory_db.get_pool(directory_id)?;
+    let conn = dir_pool.get()?;
+    let thumbnails_dir = lib.thumbnails_dir();
+    std::fs::create_dir_all(&thumbnails_dir).ok();
+
+    // Get all images with their file paths
+    let mut stmt = conn.prepare(
+        "SELECT i.id, i.file_hash, i.perceptual_hash, i.width, i.duration,
+                f.original_path
+         FROM images i
+         JOIN image_files f ON f.image_id = i.id
+         WHERE f.file_exists = 1
+         GROUP BY i.id"
+    )?;
+
+    let images: Vec<(i64, String, Option<String>, Option<i32>, Option<f64>, String)> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut thumbnails_generated = 0u32;
+    let mut hashes_computed = 0u32;
+    let mut probes_completed = 0u32;
+
+    for (image_id, file_hash, perceptual_hash, width, duration, original_path) in &images {
+        if !std::path::Path::new(original_path).exists() {
+            continue;
+        }
+
+        let is_video = importer::is_video_file(original_path);
+        let hash_prefix = &file_hash[..16.min(file_hash.len())];
+
+        // 1. Generate thumbnail if missing
+        let thumb_path = thumbnails_dir.join(format!("{}.webp", hash_prefix));
+        if !thumb_path.exists() {
+            if is_video {
+                importer::generate_video_thumbnail(
+                    original_path,
+                    &thumb_path.to_string_lossy(),
+                    400,
+                );
+            } else {
+                importer::generate_thumbnail(
+                    original_path,
+                    &thumb_path.to_string_lossy(),
+                    400,
+                );
+            }
+            thumbnails_generated += 1;
+
+            // Broadcast thumbnail ready event
+            if let Some(events) = state.events() {
+                events.library.broadcast(
+                    event_type::IMAGE_UPDATED,
+                    serde_json::json!({
+                        "image_id": image_id,
+                        "directory_id": directory_id,
+                        "thumbnail_ready": true
+                    }),
+                );
+            }
+        }
+
+        // 2. Calculate perceptual hash for images missing it
+        if !is_video && perceptual_hash.is_none() {
+            if let Some(phash) = importer::calculate_perceptual_hash(original_path) {
+                conn.execute(
+                    "UPDATE images SET perceptual_hash = ?1 WHERE id = ?2",
+                    params![&phash, image_id],
+                )?;
+                hashes_computed += 1;
+            }
+        }
+
+        // 3. Probe videos missing dimensions/duration
+        if is_video && (width.is_none() || duration.is_none()) {
+            if width.is_none() {
+                if let Some((w, h)) = importer::get_image_dimensions(original_path) {
+                    conn.execute(
+                        "UPDATE images SET width = ?1, height = ?2 WHERE id = ?3",
+                        params![w as i32, h as i32, image_id],
+                    )?;
+                }
+            }
+
+            if duration.is_none() {
+                if let Some(dur) = video_preview::get_video_duration(original_path) {
+                    conn.execute(
+                        "UPDATE images SET duration = ?1 WHERE id = ?2",
+                        params![dur, image_id],
+                    )?;
+                }
+            }
+
+            probes_completed += 1;
+        }
+    }
+
+    log::info!(
+        "[TaskQueue] Complete imports for directory #{}: {} thumbnails, {} perceptual hashes, {} video probes",
+        directory_id, thumbnails_generated, hashes_computed, probes_completed
+    );
 
     Ok(())
 }
@@ -508,7 +678,7 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
 /// The auto-tagger addon (port 18001) receives a POST to /predict with the
 /// image file path and returns predicted tags with confidence scores.
 /// If the addon is not running, the task is skipped (not failed).
-async fn execute_tag_task(state: &AppState, payload: &Value) -> Result<(), AppError> {
+async fn execute_tag_task(state: &AppState, lib: &Arc<LibraryContext>, payload: &Value) -> Result<(), AppError> {
     let image_id = payload["image_id"]
         .as_i64()
         .ok_or_else(|| AppError::Internal("Missing image_id in tag task".into()))?;
@@ -521,9 +691,9 @@ async fn execute_tag_task(state: &AppState, payload: &Value) -> Result<(), AppEr
     // Resolve image path from directory DB if not in the payload
     if image_path.is_empty() {
         if let Some(dir_id) = directory_id {
-            let state_clone = state.clone();
+            let lib = lib.clone();
             let resolved = tokio::task::spawn_blocking(move || -> Option<String> {
-                let pool = state_clone.directory_db().get_pool(dir_id).ok()?;
+                let pool = lib.directory_db.get_pool(dir_id).ok()?;
                 let conn = pool.get().ok()?;
                 conn.query_row(
                     "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_exists = 1 LIMIT 1",
@@ -642,12 +812,12 @@ async fn execute_tag_task(state: &AppState, payload: &Value) -> Result<(), AppEr
     }
 
     // Insert tags into the database
-    let state_clone = state.clone();
+    let lib = lib.clone();
     let tags_owned: Vec<Value> = tags.clone();
     let dir_id = directory_id;
 
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
         let mut inserted = 0u32;
 
         for tag_val in &tags_owned {
@@ -682,7 +852,7 @@ async fn execute_tag_task(state: &AppState, payload: &Value) -> Result<(), AppEr
 
             // Insert into directory-level image_tags if we have a directory
             if let Some(did) = dir_id {
-                if let Ok(dir_pool) = state_clone.directory_db().get_pool(did) {
+                if let Ok(dir_pool) = lib.directory_db.get_pool(did) {
                     if let Ok(dir_conn) = dir_pool.get() {
                         dir_conn.execute(
                             "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
@@ -730,7 +900,7 @@ async fn execute_tag_task(state: &AppState, payload: &Value) -> Result<(), AppEr
 /// Expected payload: { "image_id": N, "directory_id": N }
 /// The sidecar returns: { "num_faces": N, "faces": [...], "min_age": N, "max_age": N, "detected_ages": "..." }
 /// Results are written to the directory DB's images table.
-async fn execute_age_detect_task(state: &AppState, payload: &Value) -> Result<(), AppError> {
+async fn execute_age_detect_task(state: &AppState, lib: &Arc<LibraryContext>, payload: &Value) -> Result<(), AppError> {
     let image_id = payload["image_id"]
         .as_i64()
         .ok_or_else(|| AppError::Internal("Missing image_id in age_detect task".into()))?;
@@ -744,9 +914,9 @@ async fn execute_age_detect_task(state: &AppState, payload: &Value) -> Result<()
 
     if image_path.is_empty() {
         if let Some(dir_id) = directory_id {
-            let state_clone = state.clone();
+            let lib = lib.clone();
             let resolved = tokio::task::spawn_blocking(move || -> Option<String> {
-                let pool = state_clone.directory_db().get_pool(dir_id).ok()?;
+                let pool = lib.directory_db.get_pool(dir_id).ok()?;
                 let conn = pool.get().ok()?;
                 conn.query_row(
                     "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_exists = 1 LIMIT 1",
@@ -833,9 +1003,9 @@ async fn execute_age_detect_task(state: &AppState, payload: &Value) -> Result<()
 
     // Write results to directory DB
     if let Some(dir_id) = directory_id {
-        let state_clone = state.clone();
+        let lib = lib.clone();
         tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-            let pool = state_clone.directory_db().get_pool(dir_id)?;
+            let pool = lib.directory_db.get_pool(dir_id)?;
             let conn = pool.get()?;
             conn.execute(
                 "UPDATE images SET num_faces = ?1, min_detected_age = ?2, max_detected_age = ?3,
@@ -872,83 +1042,85 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
     let state_clone = state.clone();
 
     let queued = tokio::task::spawn_blocking(move || -> Result<u32, AppError> {
-        let main_conn = state_clone.main_db().get()?;
-
-        // Get all enabled directories with auto_tag enabled
-        let mut stmt = main_conn.prepare(
-            "SELECT id, path, auto_tag FROM watch_directories WHERE enabled = 1"
-        )?;
-
-        let dirs: Vec<(i64, String, bool)> = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, bool>(2)?,
-                ))
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
-
         let mut total_queued = 0u32;
 
-        for (dir_id, dir_path, auto_tag) in &dirs {
-            if !auto_tag {
-                continue;
-            }
+        // Scan all mounted libraries
+        for lib in state_clone.library_manager().all_mounted() {
+            let main_conn = lib.main_pool.get()?;
 
-            // Get the directory database
-            let dir_pool = match state_clone.directory_db().get_pool(*dir_id) {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-            let dir_conn = match dir_pool.get() {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-
-            // Find images with no tags in this directory (exclude video files)
-            let mut img_stmt = dir_conn.prepare(
-                "SELECT i.id, if2.original_path
-                 FROM images i
-                 LEFT JOIN image_tags it ON i.id = it.image_id
-                 LEFT JOIN image_files if2 ON i.id = if2.image_id
-                 WHERE it.image_id IS NULL
-                 AND if2.file_exists = 1
-                 AND LOWER(if2.original_path) NOT LIKE '%.mp4'
-                 AND LOWER(if2.original_path) NOT LIKE '%.webm'
-                 AND LOWER(if2.original_path) NOT LIKE '%.mkv'
-                 AND LOWER(if2.original_path) NOT LIKE '%.avi'
-                 AND LOWER(if2.original_path) NOT LIKE '%.mov'
-                 LIMIT 50"
+            // Get all enabled directories with auto_tag enabled
+            let mut stmt = main_conn.prepare(
+                "SELECT id, path, auto_tag FROM watch_directories WHERE enabled = 1"
             )?;
 
-            let untagged: Vec<(i64, String)> = img_stmt
+            let dirs: Vec<(i64, String, bool)> = stmt
                 .query_map([], |row| {
                     Ok((
                         row.get::<_, i64>(0)?,
                         row.get::<_, String>(1)?,
+                        row.get::<_, bool>(2)?,
                     ))
                 })?
                 .filter_map(|r| r.ok())
                 .collect();
 
-            for (image_id, image_path) in &untagged {
-                let payload = serde_json::json!({
-                    "image_id": image_id,
-                    "directory_id": dir_id,
-                    "image_path": image_path,
-                    "directory_path": dir_path,
-                });
+            for (dir_id, dir_path, auto_tag) in &dirs {
+                if !auto_tag {
+                    continue;
+                }
 
-                match enqueue_task(&state_clone, TASK_TAG, &payload, 0, Some(*image_id)) {
-                    Ok(Some(_)) => total_queued += 1,
-                    Ok(None) => {} // Already queued (dedup)
-                    Err(e) => {
-                        log::warn!(
-                            "[TagGuardian] Failed to enqueue tag task for image #{}: {}",
-                            image_id, e
-                        );
+                let dir_pool = match lib.directory_db.get_pool(*dir_id) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let dir_conn = match dir_pool.get() {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                let mut img_stmt = dir_conn.prepare(
+                    "SELECT i.id, if2.original_path
+                     FROM images i
+                     LEFT JOIN image_tags it ON i.id = it.image_id
+                     LEFT JOIN image_files if2 ON i.id = if2.image_id
+                     WHERE it.image_id IS NULL
+                     AND if2.file_exists = 1
+                     AND LOWER(if2.original_path) NOT LIKE '%.mp4'
+                     AND LOWER(if2.original_path) NOT LIKE '%.webm'
+                     AND LOWER(if2.original_path) NOT LIKE '%.mkv'
+                     AND LOWER(if2.original_path) NOT LIKE '%.avi'
+                     AND LOWER(if2.original_path) NOT LIKE '%.mov'
+                     LIMIT 50"
+                )?;
+
+                let untagged: Vec<(i64, String)> = img_stmt
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                        ))
+                    })?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                for (image_id, image_path) in &untagged {
+                    let payload = serde_json::json!({
+                        "image_id": image_id,
+                        "directory_id": dir_id,
+                        "image_path": image_path,
+                        "directory_path": dir_path,
+                        "library_id": lib.uuid,
+                    });
+
+                    match enqueue_task(&state_clone, TASK_TAG, &payload, 0, Some(*image_id)) {
+                        Ok(Some(_)) => total_queued += 1,
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::warn!(
+                                "[TagGuardian] Failed to enqueue tag task for image #{}: {}",
+                                image_id, e
+                            );
+                        }
                     }
                 }
             }
@@ -960,7 +1132,6 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
 
     if queued > 0 {
         log::info!("[TagGuardian] Queued {} tag tasks for untagged images", queued);
-        // Wake workers to process the new tasks
         if let Some(tq) = state.task_queue() {
             tq.wake();
         }
@@ -973,7 +1144,7 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
 
 /// Complete a fast import by calculating full hash, dimensions, and thumbnail.
 fn complete_fast_import(
-    state: &AppState,
+    lib: &LibraryContext,
     image_id: i64,
     directory_id: i64,
     image_path: &str,
@@ -984,7 +1155,7 @@ fn complete_fast_import(
         return Ok(());
     }
 
-    let dir_pool = state.directory_db().get_pool(directory_id)?;
+    let dir_pool = lib.directory_db.get_pool(directory_id)?;
     let conn = dir_pool.get()?;
 
     // Calculate full hash
@@ -1008,7 +1179,7 @@ fn complete_fast_import(
     }
 
     // Generate thumbnail if missing
-    let thumbnails_dir = state.thumbnails_dir();
+    let thumbnails_dir = lib.thumbnails_dir();
     std::fs::create_dir_all(&thumbnails_dir).ok();
     let thumb_name = format!("{}.webp", &full_hash[..16.min(full_hash.len())]);
     let thumb_path = thumbnails_dir.join(&thumb_name);
@@ -1030,7 +1201,7 @@ fn complete_fast_import(
 /// Looks up the directory's metadata_format and ComfyUI node ID configuration,
 /// then calls the metadata service to extract and save to DB.
 fn run_metadata_extraction(
-    state: &AppState,
+    lib: &LibraryContext,
     image_id: i64,
     directory_id: Option<i64>,
     image_path: &str,
@@ -1039,16 +1210,16 @@ fn run_metadata_extraction(
 
     // Get directory-level configuration for metadata extraction
     let (format_hint, comfyui_prompt_ids, comfyui_negative_ids) =
-        get_directory_metadata_config(state, directory_id)?;
+        get_directory_metadata_config(lib, directory_id)?;
 
     // Get the appropriate database connection
     let conn;
     let pool;
     if let Some(dir_id) = directory_id {
-        pool = state.directory_db().get_pool(dir_id)?;
+        pool = lib.directory_db.get_pool(dir_id)?;
         conn = pool.get()?;
     } else {
-        conn = state.main_db().get()?;
+        conn = lib.main_pool.get()?;
     }
 
     let prompt_refs: Vec<String> = comfyui_prompt_ids;
@@ -1117,7 +1288,7 @@ fn run_metadata_extraction(
 
 /// Read the directory's metadata configuration (format hint, ComfyUI node IDs).
 fn get_directory_metadata_config(
-    state: &AppState,
+    lib: &LibraryContext,
     directory_id: Option<i64>,
 ) -> Result<(String, Vec<String>, Vec<String>), AppError> {
     let dir_id = match directory_id {
@@ -1125,7 +1296,7 @@ fn get_directory_metadata_config(
         None => return Ok(("auto".into(), vec![], vec![])),
     };
 
-    let main_conn = state.main_db().get()?;
+    let main_conn = lib.main_pool.get()?;
 
     let result = main_conn.query_row(
         "SELECT metadata_format, comfyui_prompt_node_ids, comfyui_negative_node_ids

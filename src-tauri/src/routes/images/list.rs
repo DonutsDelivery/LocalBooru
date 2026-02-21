@@ -25,6 +25,7 @@ pub struct ListImagesQuery {
     #[serde(default)]
     pub favorites_only: bool,
     pub directory_id: Option<i64>,
+    pub library_id: Option<String>,
     pub min_age: Option<i32>,
     pub max_age: Option<i32>,
     pub has_faces: Option<bool>,
@@ -108,30 +109,42 @@ pub async fn list_images(
     // Determine visibility based on access tier + family mode
     let client_ip = addr.ip();
     let directory_id = q.directory_id;
+    let library_id = q.library_id.clone();
     let state_clone = state.clone();
 
     let result = tokio::task::spawn_blocking(move || {
         let tier = AccessTier::from_ip(&client_ip);
         let family_locked = state_clone.is_family_mode_locked();
 
-        // Build set of visible directory IDs based on access tier + family mode
-        let visible_dir_ids: Option<HashSet<i64>> = {
-            let main_conn = state_clone.main_db().get()?;
-            get_visible_directory_ids(&main_conn, tier, family_locked)?
-        };
+        // Resolve target libraries for querying
+        let target_libs: Vec<std::sync::Arc<crate::db::library::LibraryContext>> =
+            if let Some(ref lib_id) = library_id {
+                vec![state_clone.resolve_library(Some(lib_id))?]
+            } else {
+                state_clone.library_manager().all_mounted()
+            };
 
         // If specific directory requested
         if let Some(dir_id) = directory_id {
-            // Public access check: deny if directory is not public
+            let lib = if let Some(ref lib_id) = library_id {
+                state_clone.resolve_library(Some(lib_id))?
+            } else {
+                state_clone.library_manager().primary().clone()
+            };
+
+            let visible_dir_ids: Option<HashSet<i64>> = {
+                let main_conn = lib.main_pool.get()?;
+                get_visible_directory_ids(&main_conn, tier, family_locked)?
+            };
+
             if let Some(ref visible_ids) = visible_dir_ids {
                 if !visible_ids.contains(&dir_id) {
                     return Ok((vec![], 0i64));
                 }
             }
 
-            if state_clone.directory_db().db_exists(dir_id) {
-                // Get directory's media type settings
-                let main_conn = state_clone.main_db().get()?;
+            if lib.directory_db.db_exists(dir_id) {
+                let main_conn = lib.main_pool.get()?;
                 let (show_images, show_videos) = main_conn
                     .query_row(
                         "SELECT show_images, show_videos FROM watch_directories WHERE id = ?1",
@@ -152,41 +165,50 @@ pub async fn list_images(
                 query_params.show_images = show_images;
                 query_params.show_videos = show_videos;
 
-                let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+                let dir_pool = lib.directory_db.get_pool(dir_id)?;
                 return query_directory_images(
                     &dir_pool,
                     dir_id,
-                    state_clone.main_db(),
+                    &lib.main_pool,
                     dir_name.as_deref(),
                     &query_params,
+                    library_id.as_deref(),
                 );
             }
         }
 
-        // No specific directory — query all directory DBs and merge results
-        let all_dir_ids = state_clone.directory_db().get_all_directory_ids();
+        // No specific directory — query all directory DBs across target libraries
+        let mut all_images: Vec<serde_json::Value> = Vec::new();
+        let mut total_count: i64 = 0;
+        let mut has_dir_dbs = false;
 
-        if !all_dir_ids.is_empty() && directory_id.is_none() {
-            let mut all_images: Vec<serde_json::Value> = Vec::new();
-            let mut total_count: i64 = 0;
+        for lib in &target_libs {
+            let lib_visible_dir_ids: Option<HashSet<i64>> = {
+                let main_conn = lib.main_pool.get()?;
+                get_visible_directory_ids(&main_conn, tier, family_locked)?
+            };
+
+            let all_dir_ids = lib.directory_db.get_all_directory_ids();
+            if !all_dir_ids.is_empty() {
+                has_dir_dbs = true;
+            }
 
             for dir_id in &all_dir_ids {
-                // Skip non-public directories for public access
-                if let Some(ref visible_ids) = visible_dir_ids {
+                if let Some(ref visible_ids) = lib_visible_dir_ids {
                     if !visible_ids.contains(dir_id) {
                         continue;
                     }
                 }
 
-                if !state_clone.directory_db().db_exists(*dir_id) {
+                if !lib.directory_db.db_exists(*dir_id) {
                     continue;
                 }
-                let dir_pool = match state_clone.directory_db().get_pool(*dir_id) {
+                let dir_pool = match lib.directory_db.get_pool(*dir_id) {
                     Ok(p) => p,
                     Err(_) => continue,
                 };
 
-                let main_conn = state_clone.main_db().get()?;
+                let main_conn = lib.main_pool.get()?;
                 let (show_images, show_videos) = main_conn
                     .query_row(
                         "SELECT show_images, show_videos FROM watch_directories WHERE id = ?1",
@@ -203,8 +225,6 @@ pub async fn list_images(
                     )
                     .ok();
 
-                // Each directory needs to return enough items to cover the
-                // requested page after cross-directory merge-sorting.
                 let mut query_params = params.clone();
                 query_params.show_images = show_images;
                 query_params.show_videos = show_videos;
@@ -214,12 +234,21 @@ pub async fn list_images(
                 match query_directory_images(
                     &dir_pool,
                     *dir_id,
-                    state_clone.main_db(),
+                    &lib.main_pool,
                     dir_name.as_deref(),
                     &query_params,
+                    Some(&lib.uuid),
                 ) {
-                    Ok((images, dir_total)) => {
+                    Ok((mut images, dir_total)) => {
                         total_count += dir_total;
+                        // Add library_id for cross-library tracking
+                        if target_libs.len() > 1 {
+                            for img in &mut images {
+                                if let Some(obj) = img.as_object_mut() {
+                                    obj.insert("library_id".to_string(), json!(lib.uuid));
+                                }
+                            }
+                        }
                         all_images.extend(images);
                     }
                     Err(e) => {
@@ -228,11 +257,11 @@ pub async fn list_images(
                     }
                 }
             }
+        }
 
-            // Sort merged results across all directories
+        if has_dir_dbs && directory_id.is_none() {
             sort_merged_images(&mut all_images, &params.sort);
 
-            // Apply pagination to the merged set
             let start = offset as usize;
             let end = (start + per_page as usize).min(all_images.len());
             let page_images = if start < all_images.len() {
@@ -246,6 +275,9 @@ pub async fn list_images(
 
         // Fallback: query main/legacy DB
         let main_conn = state_clone.main_db().get()?;
+        let visible_dir_ids: Option<HashSet<i64>> = {
+            get_visible_directory_ids(&main_conn, tier, family_locked)?
+        };
         query_main_db_images(&main_conn, &params, visible_dir_ids.as_ref())
     })
     .await??;
@@ -294,6 +326,7 @@ pub async fn list_folders(
     let directory_id = q.directory_id;
     let favorites_only = q.favorites_only;
     let client_ip = addr.ip();
+    let library_id = q.library_id.clone();
 
     let state_clone = state.clone();
 
@@ -301,43 +334,14 @@ pub async fn list_folders(
         // Apply family mode + access tier filtering (same as list_images)
         let tier = AccessTier::from_ip(&client_ip);
         let family_locked = state_clone.is_family_mode_locked();
-        let visible_dir_ids: Option<HashSet<i64>> = {
-            let main_conn = state_clone.main_db().get()?;
-            get_visible_directory_ids(&main_conn, tier, family_locked)?
-        };
 
-        let all_dir_ids = state_clone.directory_db().get_all_directory_ids();
-        let dir_ids_to_query = if let Some(did) = directory_id {
-            // If specific directory requested, check visibility
-            if let Some(ref visible_ids) = visible_dir_ids {
-                if !visible_ids.contains(&did) {
-                    return Ok::<_, AppError>(vec![]);
-                }
-            }
-            vec![did]
-        } else {
-            // Filter to only visible directories
-            if let Some(ref visible_ids) = visible_dir_ids {
-                all_dir_ids.into_iter().filter(|id| visible_ids.contains(id)).collect()
+        // Resolve target libraries
+        let target_libs: Vec<std::sync::Arc<crate::db::library::LibraryContext>> =
+            if let Some(ref lib_id) = library_id {
+                vec![state_clone.resolve_library(Some(lib_id))?]
             } else {
-                all_dir_ids
-            }
-        };
-
-        let main_conn = state_clone.main_db().get()?;
-
-        // Resolve tag IDs from main DB
-        let mut tag_ids: Vec<i64> = Vec::new();
-        for tag_name in &tag_names {
-            match main_conn.query_row(
-                "SELECT id FROM tags WHERE name = ?1",
-                rusqlite::params![tag_name],
-                |row| row.get::<_, i64>(0),
-            ) {
-                Ok(id) => tag_ids.push(id),
-                Err(_) => return Ok::<_, AppError>(vec![]), // Tag doesn't exist
-            }
-        }
+                state_clone.library_manager().all_mounted()
+            };
 
         let mut folders_map: std::collections::HashMap<
             String,
@@ -345,18 +349,59 @@ pub async fn list_folders(
         > = std::collections::HashMap::new();
         // key -> (count, thumbnail_url, width, height, directory_id)
 
-        for dir_id in &dir_ids_to_query {
-            if !state_clone.directory_db().db_exists(*dir_id) {
-                continue;
+        for lib in &target_libs {
+            let visible_dir_ids: Option<HashSet<i64>> = {
+                let main_conn = lib.main_pool.get()?;
+                get_visible_directory_ids(&main_conn, tier, family_locked)?
+            };
+
+            let all_dir_ids = lib.directory_db.get_all_directory_ids();
+            let dir_ids_to_query = if let Some(did) = directory_id {
+                // If specific directory requested, check visibility
+                if let Some(ref visible_ids) = visible_dir_ids {
+                    if !visible_ids.contains(&did) {
+                        continue;
+                    }
+                }
+                vec![did]
+            } else {
+                // Filter to only visible directories
+                if let Some(ref visible_ids) = visible_dir_ids {
+                    all_dir_ids.into_iter().filter(|id| visible_ids.contains(id)).collect()
+                } else {
+                    all_dir_ids
+                }
+            };
+
+            let main_conn = lib.main_pool.get()?;
+
+            // Resolve tag IDs from this library's main DB
+            let mut tag_ids: Vec<i64> = Vec::new();
+            let mut skip_lib = false;
+            for tag_name in &tag_names {
+                match main_conn.query_row(
+                    "SELECT id FROM tags WHERE name = ?1",
+                    rusqlite::params![tag_name],
+                    |row| row.get::<_, i64>(0),
+                ) {
+                    Ok(id) => tag_ids.push(id),
+                    Err(_) => { skip_lib = true; break; } // Tag doesn't exist in this library
+                }
             }
-            let dir_pool = match state_clone.directory_db().get_pool(*dir_id) {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-            let dir_conn = match dir_pool.get() {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+            if skip_lib { continue; }
+
+            for dir_id in &dir_ids_to_query {
+                if !lib.directory_db.db_exists(*dir_id) {
+                    continue;
+                }
+                let dir_pool = match lib.directory_db.get_pool(*dir_id) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let dir_conn = match dir_pool.get() {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
 
             // Build WHERE clause
             let mut where_parts: Vec<String> = Vec::new();
@@ -453,6 +498,7 @@ pub async fn list_folders(
                 }
             }
         }
+        } // end for lib in &target_libs
 
         // Build folder list (skip single-item folders)
         let mut folders: Vec<serde_json::Value> = folders_map
@@ -491,7 +537,7 @@ pub async fn list_folders(
             a_name.cmp(&b_name)
         });
 
-        Ok(folders)
+        Ok::<_, AppError>(folders)
     })
     .await??;
 
@@ -505,6 +551,7 @@ pub async fn list_folders(
 #[derive(Debug, Deserialize)]
 pub struct ListFoldersQuery {
     pub directory_id: Option<i64>,
+    pub library_id: Option<String>,
     pub rating: Option<String>,
     #[serde(default)]
     pub favorites_only: bool,

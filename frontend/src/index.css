@@ -93,7 +93,7 @@ html.desktop-app body {
 
 html.desktop-app #root {
   border-radius: var(--window-radius);
-  clip-path: inset(0 round var(--window-radius));
+  overflow: hidden;
 }
 
 a {

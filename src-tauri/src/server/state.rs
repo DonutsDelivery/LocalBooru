@@ -5,9 +5,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
 
 use crate::addons::manager::AddonManager;
-use crate::db::pool::{create_main_pool, DbPool};
+use crate::db::pool::DbPool;
 use crate::db::directory_db::DirectoryDbManager;
-use crate::db::schema::init_main_db;
+use crate::db::library::{LibraryContext, LibraryManager};
 use crate::routes::cast::CastState;
 use crate::routes::migration::{SharedMigrationState, create_migration_state};
 use crate::routes::models::{ModelRegistry, create_model_registry};
@@ -27,12 +27,8 @@ pub struct AppState {
 }
 
 struct AppStateInner {
-    /// Main library database pool
-    main_pool: DbPool,
-    /// Per-directory database manager
-    directory_db: DirectoryDbManager,
-    /// Data directory path (e.g. ~/.localbooru)
-    data_dir: PathBuf,
+    /// Library manager (primary + auxiliary libraries)
+    library_manager: LibraryManager,
     /// Server port
     port: u16,
     /// Per-install JWT signing secret (loaded from or generated into settings.json)
@@ -133,20 +129,58 @@ fn load_family_mode_initial_lock(data_dir: &Path) -> bool {
 impl AppState {
     /// Create new AppState, initializing database pools and schema.
     pub fn new(data_dir: &Path, port: u16) -> Result<Self, Box<dyn std::error::Error>> {
-        // Ensure directories exist
+        // Ensure data directory exists
         std::fs::create_dir_all(data_dir)?;
-        std::fs::create_dir_all(data_dir.join("thumbnails"))?;
-        std::fs::create_dir_all(data_dir.join("directories"))?;
 
-        // Create main database pool and initialize schema
-        let main_pool = create_main_pool(data_dir)?;
+        // Create primary library context (opens/creates DB, loads UUID)
+        let primary = LibraryContext::open(data_dir, "Local Library")?;
+        let library_manager = LibraryManager::new(primary);
+
+        // Auto-mount libraries registered with auto_mount = 1
         {
-            let conn = main_pool.get()?;
-            init_main_db(&conn)?;
-        }
+            let conn = library_manager.primary().main_pool.get()?;
+            let mut stmt = conn.prepare(
+                "SELECT uuid, name, path FROM mounted_libraries WHERE auto_mount = 1 ORDER BY mount_order"
+            )?;
+            let libraries: Vec<(String, String, String)> = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?.filter_map(|r| r.ok()).collect();
+            drop(stmt);
+            drop(conn);
 
-        // Create directory database manager
-        let directory_db = DirectoryDbManager::new(data_dir);
+            for (uuid, name, path) in libraries {
+                let lib_path = PathBuf::from(&path);
+                match LibraryContext::open(&lib_path, &name) {
+                    Ok(ctx) => {
+                        if ctx.uuid != uuid {
+                            log::warn!(
+                                "[Libraries] UUID mismatch for '{}': expected {}, got {}",
+                                name, uuid, ctx.uuid
+                            );
+                        }
+                        library_manager.mount(ctx);
+                        // Update last_mounted_at timestamp
+                        if let Ok(conn) = library_manager.primary().main_pool.get() {
+                            let _ = conn.execute(
+                                "UPDATE mounted_libraries SET last_mounted_at = datetime('now') WHERE uuid = ?1",
+                                rusqlite::params![uuid],
+                            );
+                        }
+                        log::info!("[Libraries] Auto-mounted library '{}' from {}", name, path);
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "[Libraries] Failed to auto-mount library '{}' at {}: {}",
+                            name, path, e
+                        );
+                    }
+                }
+            }
+        }
 
         // Load or generate per-install JWT secret
         let jwt_secret = load_or_generate_jwt_secret(data_dir)?;
@@ -192,9 +226,7 @@ impl AppState {
 
         Ok(Self {
             inner: Arc::new(AppStateInner {
-                main_pool,
-                directory_db,
-                data_dir: data_dir.to_path_buf(),
+                library_manager,
                 port,
                 jwt_secret,
                 events,
@@ -215,25 +247,54 @@ impl AppState {
         })
     }
 
-    /// Get the main library database pool.
+    // ── Primary library backward-compatible accessors ────────────────────────
+
+    /// Get the main library database pool (primary library).
     pub fn main_db(&self) -> &DbPool {
-        &self.inner.main_pool
+        &self.inner.library_manager.primary().main_pool
     }
 
-    /// Get the directory database manager.
+    /// Get the directory database manager (primary library).
     pub fn directory_db(&self) -> &DirectoryDbManager {
-        &self.inner.directory_db
+        &self.inner.library_manager.primary().directory_db
     }
 
-    /// Get the data directory path.
+    /// Get the data directory path (primary library).
     pub fn data_dir(&self) -> &Path {
-        &self.inner.data_dir
+        &self.inner.library_manager.primary().data_dir
     }
 
-    /// Get the thumbnails directory path.
+    /// Get the thumbnails directory path (primary library).
     pub fn thumbnails_dir(&self) -> PathBuf {
-        self.inner.data_dir.join("thumbnails")
+        self.inner.library_manager.primary().thumbnails_dir()
     }
+
+    // ── Multi-library accessors ─────────────────────────────────────────────
+
+    /// Get the library manager.
+    pub fn library_manager(&self) -> &LibraryManager {
+        &self.inner.library_manager
+    }
+
+    /// Resolve a library by UUID. Returns the primary library when `library_id`
+    /// is `None` or `"primary"`. Returns 404 error if the library is not found
+    /// or not mounted.
+    pub fn resolve_library(
+        &self,
+        library_id: Option<&str>,
+    ) -> Result<Arc<LibraryContext>, crate::server::error::AppError> {
+        match library_id {
+            None | Some("primary") => Ok(self.inner.library_manager.primary().clone()),
+            Some(uuid) => self.inner.library_manager.get(uuid).ok_or_else(|| {
+                crate::server::error::AppError::NotFound(format!(
+                    "Library '{}' not found or not mounted",
+                    uuid
+                ))
+            }),
+        }
+    }
+
+    // ── Other accessors (unchanged) ─────────────────────────────────────────
 
     /// Get the server port.
     pub fn port(&self) -> u16 {
@@ -333,7 +394,7 @@ impl AppState {
     /// Check if local network access is enabled in settings.json.
     /// Used to determine whether to bind to 0.0.0.0 or 127.0.0.1.
     pub fn is_lan_enabled(&self) -> bool {
-        let settings_path = self.inner.data_dir.join("settings.json");
+        let settings_path = self.inner.library_manager.primary().data_dir.join("settings.json");
         let contents = match std::fs::read_to_string(&settings_path) {
             Ok(c) => c,
             Err(_) => return false,

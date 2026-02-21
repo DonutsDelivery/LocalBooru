@@ -19,6 +19,7 @@ pub fn query_directory_images(
     main_pool: &DbPool,
     dir_name: Option<&str>,
     params: &ImageQueryParams,
+    library_id: Option<&str>,
 ) -> Result<(Vec<serde_json::Value>, i64), AppError> {
     let conn = dir_pool.get()?;
     let main_conn = main_pool.get()?;
@@ -306,8 +307,16 @@ pub fn query_directory_images(
                 "height": img.height,
                 "rating": img.rating,
                 "is_favorite": img.is_favorite,
-                "thumbnail_url": format!("/api/images/{}/thumbnail?directory_id={}", img.id, directory_id),
-                "url": format!("/api/images/{}/file?directory_id={}", img.id, directory_id),
+                "thumbnail_url": if let Some(lib_id) = library_id {
+                    format!("/api/images/{}/thumbnail?directory_id={}&library_id={}", img.id, directory_id, lib_id)
+                } else {
+                    format!("/api/images/{}/thumbnail?directory_id={}", img.id, directory_id)
+                },
+                "url": if let Some(lib_id) = library_id {
+                    format!("/api/images/{}/file?directory_id={}&library_id={}", img.id, directory_id, lib_id)
+                } else {
+                    format!("/api/images/{}/file?directory_id={}", img.id, directory_id)
+                },
                 "file_status": file_status,
                 "tags": tags_list,
                 "num_faces": img.num_faces,

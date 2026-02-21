@@ -22,6 +22,7 @@ use super::helpers::{find_image_directory, get_image_tags_from_directory};
 #[derive(Debug, Deserialize)]
 pub struct DirectoryQuery {
     pub directory_id: Option<i64>,
+    pub library_id: Option<String>,
 }
 
 /// GET /api/images/media/file-info — Get file size info.
@@ -90,12 +91,15 @@ pub async fn get_image(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state_clone = state.clone();
     let directory_id = q.directory_id;
+    let library_id = q.library_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
+        let lib = state_clone.resolve_library(library_id.as_deref())?;
+
         // Try directory DB first
         if let Some(dir_id) = directory_id {
-            if state_clone.directory_db().db_exists(dir_id) {
-                let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+            if lib.directory_db.db_exists(dir_id) {
+                let dir_pool = lib.directory_db.get_pool(dir_id)?;
                 let dir_conn = dir_pool.get()?;
 
                 let image = dir_conn.query_row(
@@ -144,7 +148,7 @@ pub async fn get_image(
                     // Get tags
                     let tags = get_image_tags_from_directory(
                         &dir_pool,
-                        state_clone.main_db(),
+                        &lib.main_pool,
                         image_id,
                     )?;
                     data["tags"] = json!(tags);
@@ -181,8 +185,8 @@ pub async fn get_image(
         }
 
         // Try to find in any directory DB
-        if let Some(found_dir) = find_image_directory(state_clone.directory_db(), image_id, None) {
-            let dir_pool = state_clone.directory_db().get_pool(found_dir)?;
+        if let Some(found_dir) = find_image_directory(&lib.directory_db, image_id, None) {
+            let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
 
             if let Ok(mut data) = dir_conn.query_row(
@@ -226,7 +230,7 @@ pub async fn get_image(
                 );
                 let tags = get_image_tags_from_directory(
                     &dir_pool,
-                    state_clone.main_db(),
+                    &lib.main_pool,
                     image_id,
                 )?;
                 data["tags"] = json!(tags);
@@ -264,7 +268,7 @@ pub async fn get_image(
         }
 
         // Legacy main DB
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
         let data = main_conn.query_row(
             "SELECT id, filename, original_filename, file_hash, width, height,
                     file_size, duration, rating, is_favorite, prompt, negative_prompt,
@@ -334,13 +338,16 @@ pub async fn get_image_file(
 ) -> Result<Response, AppError> {
     let state_clone = state.clone();
     let directory_id = q.directory_id;
+    let library_id = q.library_id.clone();
 
     // Find the file path
     let file_path: PathBuf = tokio::task::spawn_blocking(move || {
+        let lib = state_clone.resolve_library(library_id.as_deref())?;
+
         // Try directory DB
         if let Some(dir_id) = directory_id {
-            if state_clone.directory_db().db_exists(dir_id) {
-                let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+            if lib.directory_db.db_exists(dir_id) {
+                let dir_pool = lib.directory_db.get_pool(dir_id)?;
                 let dir_conn = dir_pool.get()?;
 
                 if let Ok(path) = dir_conn.query_row(
@@ -355,9 +362,9 @@ pub async fn get_image_file(
 
         // Search all directory DBs
         if let Some(found_dir) =
-            find_image_directory(state_clone.directory_db(), image_id, None)
+            find_image_directory(&lib.directory_db, image_id, None)
         {
-            let dir_pool = state_clone.directory_db().get_pool(found_dir)?;
+            let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
             if let Ok(path) = dir_conn.query_row(
                 "SELECT original_path FROM image_files WHERE image_id = ?1 LIMIT 1",
@@ -369,7 +376,7 @@ pub async fn get_image_file(
         }
 
         // Legacy main DB
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
         match main_conn.query_row(
             "SELECT original_path FROM image_files WHERE image_id = ?1 LIMIT 1",
             params![image_id],
@@ -409,13 +416,17 @@ pub async fn get_image_thumbnail(
 ) -> Result<Response, AppError> {
     let state_clone = state.clone();
     let directory_id = q.directory_id;
+    let library_id = q.library_id.clone();
 
     // Find the file hash to locate thumbnail
+    let library_id_clone = library_id.clone();
     let file_hash: String = tokio::task::spawn_blocking(move || {
+        let lib = state_clone.resolve_library(library_id_clone.as_deref())?;
+
         // Try directory DB
         if let Some(dir_id) = directory_id {
-            if state_clone.directory_db().db_exists(dir_id) {
-                let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+            if lib.directory_db.db_exists(dir_id) {
+                let dir_pool = lib.directory_db.get_pool(dir_id)?;
                 let dir_conn = dir_pool.get()?;
                 if let Ok(hash) = dir_conn.query_row(
                     "SELECT file_hash FROM images WHERE id = ?1",
@@ -429,9 +440,9 @@ pub async fn get_image_thumbnail(
 
         // Search directory DBs
         if let Some(found_dir) =
-            find_image_directory(state_clone.directory_db(), image_id, None)
+            find_image_directory(&lib.directory_db, image_id, None)
         {
-            let dir_pool = state_clone.directory_db().get_pool(found_dir)?;
+            let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
             if let Ok(hash) = dir_conn.query_row(
                 "SELECT file_hash FROM images WHERE id = ?1",
@@ -443,7 +454,7 @@ pub async fn get_image_thumbnail(
         }
 
         // Legacy main DB
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
         match main_conn.query_row(
             "SELECT file_hash FROM images WHERE id = ?1",
             params![image_id],
@@ -455,25 +466,31 @@ pub async fn get_image_thumbnail(
     })
     .await??;
 
+    // Resolve library for thumbnail path
+    let lib_for_thumb = state.resolve_library(library_id.as_deref())?;
+
     // Serve thumbnail file
     let thumbnail_name = format!("{}.webp", &file_hash[..16.min(file_hash.len())]);
-    let thumbnail_path = state.thumbnails_dir().join(&thumbnail_name);
+    let thumbnail_path = lib_for_thumb.thumbnails_dir().join(&thumbnail_name);
 
     if thumbnail_path.exists() {
-        serve_file_with_type(&thumbnail_path, "image/webp").await
+        serve_cached_file(&thumbnail_path, "image/webp").await
     } else {
         // Try to regenerate thumbnail from original file
         let state_regen = state.clone();
         let dir_id = directory_id;
         let img_id = image_id;
-        let thumb_dir = state.thumbnails_dir().clone();
+        let thumb_dir = lib_for_thumb.thumbnails_dir();
         let hash = file_hash.clone();
+        let library_id_regen = library_id.clone();
 
         let regenerated = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
+            let lib = state_regen.resolve_library(library_id_regen.as_deref())?;
+
             // Find the original file path
             let original_path: Option<String> = if let Some(did) = dir_id {
-                if state_regen.directory_db().db_exists(did) {
-                    let dir_pool = state_regen.directory_db().get_pool(did)?;
+                if lib.directory_db.db_exists(did) {
+                    let dir_pool = lib.directory_db.get_pool(did)?;
                     let dir_conn = dir_pool.get()?;
                     dir_conn.query_row(
                         "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_status = 'available' LIMIT 1",
@@ -496,7 +513,7 @@ pub async fn get_image_thumbnail(
         }).await??;
 
         if regenerated {
-            serve_file_with_type(&thumbnail_path, "image/webp").await
+            serve_cached_file(&thumbnail_path, "image/webp").await
         } else {
             Err(AppError::NotFound("Thumbnail not found".into()))
         }
@@ -511,12 +528,15 @@ pub async fn toggle_favorite(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state_clone = state.clone();
     let directory_id = q.directory_id;
+    let library_id = q.library_id.clone();
 
     let is_favorite = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
+        let lib = state_clone.resolve_library(library_id.as_deref())?;
+
         // Try directory DB
         if let Some(dir_id) = directory_id {
-            if state_clone.directory_db().db_exists(dir_id) {
-                let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+            if lib.directory_db.db_exists(dir_id) {
+                let dir_pool = lib.directory_db.get_pool(dir_id)?;
                 let dir_conn = dir_pool.get()?;
                 if let Ok(current) = dir_conn.query_row(
                     "SELECT is_favorite FROM images WHERE id = ?1",
@@ -535,9 +555,9 @@ pub async fn toggle_favorite(
 
         // Search directory DBs
         if let Some(found_dir) =
-            find_image_directory(state_clone.directory_db(), image_id, None)
+            find_image_directory(&lib.directory_db, image_id, None)
         {
-            let dir_pool = state_clone.directory_db().get_pool(found_dir)?;
+            let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
             if let Ok(current) = dir_conn.query_row(
                 "SELECT is_favorite FROM images WHERE id = ?1",
@@ -554,7 +574,7 @@ pub async fn toggle_favorite(
         }
 
         // Legacy main DB
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
         let current: bool = main_conn
             .query_row(
                 "SELECT is_favorite FROM images WHERE id = ?1",
@@ -592,12 +612,15 @@ pub async fn update_rating(
     let rating = q.rating.clone();
     let state_clone = state.clone();
     let directory_id = q.directory_id;
+    let library_id = q.library_id.clone();
 
     tokio::task::spawn_blocking(move || {
+        let lib = state_clone.resolve_library(library_id.as_deref())?;
+
         // Try directory DB
         if let Some(dir_id) = directory_id {
-            if state_clone.directory_db().db_exists(dir_id) {
-                let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+            if lib.directory_db.db_exists(dir_id) {
+                let dir_pool = lib.directory_db.get_pool(dir_id)?;
                 let dir_conn = dir_pool.get()?;
                 let updated = dir_conn.execute(
                     "UPDATE images SET rating = ?1 WHERE id = ?2",
@@ -611,9 +634,9 @@ pub async fn update_rating(
 
         // Search directory DBs
         if let Some(found_dir) =
-            find_image_directory(state_clone.directory_db(), image_id, None)
+            find_image_directory(&lib.directory_db, image_id, None)
         {
-            let dir_pool = state_clone.directory_db().get_pool(found_dir)?;
+            let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
             dir_conn.execute(
                 "UPDATE images SET rating = ?1 WHERE id = ?2",
@@ -623,7 +646,7 @@ pub async fn update_rating(
         }
 
         // Legacy main DB
-        let main_conn = state_clone.main_db().get()?;
+        let main_conn = lib.main_pool.get()?;
         let updated = main_conn.execute(
             "UPDATE images SET rating = ?1 WHERE id = ?2",
             params![rating, image_id],
@@ -642,6 +665,7 @@ pub async fn update_rating(
 pub struct RatingQuery {
     pub rating: String,
     pub directory_id: Option<i64>,
+    pub library_id: Option<String>,
 }
 
 /// DELETE /api/images/:image_id — Delete an image.
@@ -653,14 +677,16 @@ pub async fn delete_image(
     let state_clone = state.clone();
     let directory_id = q.directory_id;
     let delete_file = q.delete_file;
+    let library_id = q.library_id.clone();
 
     tokio::task::spawn_blocking(move || {
+        let lib = state_clone.resolve_library(library_id.as_deref())?;
         let mut file_hash: Option<String> = None;
 
         // Try directory DB
         if let Some(dir_id) = directory_id {
-            if state_clone.directory_db().db_exists(dir_id) {
-                let dir_pool = state_clone.directory_db().get_pool(dir_id)?;
+            if lib.directory_db.db_exists(dir_id) {
+                let dir_pool = lib.directory_db.get_pool(dir_id)?;
                 let dir_conn = dir_pool.get()?;
 
                 // Get file hash and paths
@@ -695,9 +721,9 @@ pub async fn delete_image(
         // If not found in directory, try main DB
         if file_hash.is_none() {
             if let Some(found_dir) =
-                find_image_directory(state_clone.directory_db(), image_id, None)
+                find_image_directory(&lib.directory_db, image_id, None)
             {
-                let dir_pool = state_clone.directory_db().get_pool(found_dir)?;
+                let dir_pool = lib.directory_db.get_pool(found_dir)?;
                 let dir_conn = dir_pool.get()?;
 
                 if let Ok(hash) = dir_conn.query_row(
@@ -729,7 +755,7 @@ pub async fn delete_image(
 
         if file_hash.is_none() {
             // Try main/legacy DB
-            let main_conn = state_clone.main_db().get()?;
+            let main_conn = lib.main_pool.get()?;
             match main_conn.query_row(
                 "SELECT file_hash FROM images WHERE id = ?1",
                 params![image_id],
@@ -762,13 +788,13 @@ pub async fn delete_image(
         // Delete thumbnail
         if let Some(ref hash) = file_hash {
             let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
-            let thumb_path = state_clone.thumbnails_dir().join(&thumb_name);
+            let thumb_path = lib.thumbnails_dir().join(&thumb_name);
             if thumb_path.exists() {
                 let _ = std::fs::remove_file(&thumb_path);
             }
 
             // Delete video preview frames
-            video_preview::delete_preview_frames(state_clone.data_dir(), hash);
+            video_preview::delete_preview_frames(&lib.data_dir, hash);
         }
 
         Ok(())
@@ -783,6 +809,7 @@ pub struct DeleteQuery {
     #[serde(default)]
     pub delete_file: bool,
     pub directory_id: Option<i64>,
+    pub library_id: Option<String>,
 }
 
 /// POST /api/images/upload — Upload an image via multipart form data.
@@ -867,10 +894,11 @@ pub async fn upload_image(
 
     // Import the file
     let state_clone = state.clone();
+    let lib = state.library_manager().primary().clone();
     let tmp_path_str = tmp_path.to_string_lossy().to_string();
 
     let result = tokio::task::spawn_blocking(move || {
-        importer::import_image(&state_clone, &tmp_path_str, dir_id)
+        importer::import_image(&state_clone, &lib, &tmp_path_str, dir_id, false)
     })
     .await??;
 
@@ -1108,12 +1136,13 @@ pub async fn get_preview_frame(
         return Err(AppError::NotFound("Preview frame not found".into()));
     }
 
-    serve_file_with_type(&frame_path, "image/webp").await
+    serve_cached_file(&frame_path, "image/webp").await
 }
 
 // ─── File serving helpers ───────────────────────────────────────────────────
 
-async fn serve_file_with_type(path: &Path, content_type: &str) -> Result<Response, AppError> {
+/// Serve a content-addressed file with immutable caching (thumbnails, preview frames).
+async fn serve_cached_file(path: &Path, content_type: &str) -> Result<Response, AppError> {
     if !path.exists() {
         return Err(AppError::NotFound("File not found".into()));
     }
@@ -1128,6 +1157,7 @@ async fn serve_file_with_type(path: &Path, content_type: &str) -> Result<Respons
         .header(header::CONTENT_TYPE, content_type)
         .header(header::CONTENT_LENGTH, metadata.len())
         .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
         .body(body)
         .unwrap())
 }

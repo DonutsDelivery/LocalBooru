@@ -33,6 +33,8 @@ impl DirectoryDbManager {
     }
 
     /// Get or create a connection pool for a directory database.
+    /// Ensures the schema is initialized on first access (handles empty DBs
+    /// from mounted libraries that may have files but no tables).
     pub fn get_pool(&self, directory_id: i64) -> Result<DbPool, Box<dyn std::error::Error>> {
         let mut pools = self.pools.lock().unwrap();
         if let Some(pool) = pools.get(&directory_id) {
@@ -40,6 +42,10 @@ impl DirectoryDbManager {
         }
         let path = self.db_path(directory_id);
         let pool = create_directory_pool(&path)?;
+        // Ensure schema exists (idempotent — uses CREATE TABLE IF NOT EXISTS)
+        let conn = pool.get()?;
+        init_directory_db(&conn)?;
+        drop(conn);
         pools.insert(directory_id, pool.clone());
         Ok(pool)
     }

@@ -167,6 +167,7 @@ export async function fetchImages({
   rating,
   favorites_only,
   directory_id,
+  library_id,
   min_age,
   max_age,
   has_faces,
@@ -188,6 +189,7 @@ export async function fetchImages({
   if (rating) params.append('rating', rating)
   if (favorites_only) params.append('favorites_only', 'true')
   if (directory_id) params.append('directory_id', directory_id)
+  if (library_id) params.append('library_id', library_id)
   if (min_age !== undefined && min_age !== null) params.append('min_age', min_age)
   if (max_age !== undefined && max_age !== null) params.append('max_age', max_age)
   if (has_faces !== undefined && has_faces !== null) params.append('has_faces', has_faces)
@@ -207,9 +209,10 @@ export async function fetchImages({
   return response.data
 }
 
-export async function fetchFolders({ directory_id, rating, favorites_only, tags } = {}) {
+export async function fetchFolders({ directory_id, library_id, rating, favorites_only, tags } = {}) {
   const params = new URLSearchParams()
   if (directory_id) params.append('directory_id', directory_id)
+  if (library_id) params.append('library_id', library_id)
   if (rating) params.append('rating', rating)
   if (favorites_only) params.append('favorites_only', 'true')
   if (tags) params.append('tags', tags)
@@ -339,20 +342,23 @@ export async function fetchPreviewFrames(imageId, directoryId = null) {
 }
 
 // Tags API
-export async function fetchTags({ q, category, page = 1, per_page = 50, sort = 'count' } = {}) {
+export async function fetchTags({ q, category, page = 1, per_page = 50, sort = 'count', library_id } = {}) {
   const params = new URLSearchParams()
   if (q) params.append('q', q)
   if (category) params.append('category', category)
   params.append('page', page)
   params.append('per_page', per_page)
   params.append('sort', sort)
+  if (library_id) params.append('library_id', library_id)
 
   const response = await api.get(`/tags?${params}`)
   return response.data
 }
 
-export async function searchTags(query, limit = 10) {
-  const response = await api.get(`/tags/autocomplete?q=${encodeURIComponent(query)}&limit=${limit}`)
+export async function searchTags(query, limit = 10, libraryId = null) {
+  let url = `/tags/autocomplete?q=${encodeURIComponent(query)}&limit=${limit}`
+  if (libraryId) url += `&library_id=${libraryId}`
+  const response = await api.get(url)
   return response.data
 }
 
@@ -366,14 +372,18 @@ let directoriesCache = null
 let directoriesCacheTime = 0
 const DIRECTORIES_CACHE_TTL = 5000 // 5 seconds
 
-export async function fetchDirectories(forceRefresh = false) {
+export async function fetchDirectories(forceRefresh = false, libraryId = null) {
   const now = Date.now()
-  if (!forceRefresh && directoriesCache && (now - directoriesCacheTime) < DIRECTORIES_CACHE_TTL) {
+  if (!forceRefresh && !libraryId && directoriesCache && (now - directoriesCacheTime) < DIRECTORIES_CACHE_TTL) {
     return directoriesCache
   }
-  const response = await api.get('/directories')
-  directoriesCache = response.data
-  directoriesCacheTime = now
+  let url = '/directories'
+  if (libraryId) url += `?library_id=${libraryId}`
+  const response = await api.get(url)
+  if (!libraryId) {
+    directoriesCache = response.data
+    directoriesCacheTime = now
+  }
   return response.data
 }
 
@@ -403,43 +413,51 @@ export async function addParentDirectory(path, options = {}) {
   return response.data
 }
 
-export async function updateDirectory(id, updates) {
-  const response = await api.patch(`/directories/${id}`, updates)
+export async function updateDirectory(id, updates, libraryId) {
+  const params = libraryId ? { library_id: libraryId } : {}
+  const response = await api.patch(`/directories/${id}`, updates, { params })
   invalidateDirectoriesCache()
   return response.data
 }
 
-export async function updateDirectoryPath(id, newPath) {
-  const response = await api.patch(`/directories/${id}/path`, { new_path: newPath })
+export async function updateDirectoryPath(id, newPath, libraryId) {
+  const params = libraryId ? { library_id: libraryId } : {}
+  const response = await api.patch(`/directories/${id}/path`, { new_path: newPath }, { params })
   invalidateDirectoriesCache()
   return response.data
 }
 
-export async function removeDirectory(id, keepImages = false) {
-  const response = await api.delete(`/directories/${id}?keep_images=${keepImages}`)
+export async function removeDirectory(id, keepImages = false, libraryId) {
+  const params = { keep_images: keepImages }
+  if (libraryId) params.library_id = libraryId
+  const response = await api.delete(`/directories/${id}`, { params })
   invalidateDirectoriesCache()
   return response.data
 }
 
-export async function bulkDeleteDirectories(directoryIds, keepImages = false) {
+export async function bulkDeleteDirectories(directoryIds, keepImages = false, libraryId) {
   // Long timeout for bulk operations with many images
+  const body = { directory_ids: directoryIds, keep_images: keepImages }
+  if (libraryId) body.library_id = libraryId
   const response = await api.post('/directories/bulk-delete',
-    { directory_ids: directoryIds, keep_images: keepImages },
+    body,
     { timeout: 600000 }  // 10 minute timeout for large deletions
   )
   invalidateDirectoriesCache()
   return response.data
 }
 
-export async function scanDirectory(id) {
-  const response = await api.post(`/directories/${id}/scan`)
+export async function scanDirectory(id, libraryId) {
+  const q = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : ''
+  const response = await api.post(`/directories/${id}/scan${q}`)
   return response.data
 }
 
-export async function pruneDirectory(id, dumpsterPath = null) {
+export async function pruneDirectory(id, dumpsterPath = null, libraryId) {
+  const params = libraryId ? { library_id: libraryId } : {}
   const response = await api.post(`/directories/${id}/prune`, {
     dumpster_path: dumpsterPath
-  })
+  }, { params })
   return response.data
 }
 
@@ -500,23 +518,70 @@ export async function cleanMissingFiles() {
   return response.data
 }
 
-export async function verifyDirectoryFiles(directoryId) {
-  const response = await api.post(`/directories/${directoryId}/verify`)
+// Libraries API
+export async function fetchLibraries() {
+  const response = await api.get('/libraries')
   return response.data
 }
 
-export async function repairDirectoryPaths(directoryId) {
-  const response = await api.post(`/directories/${directoryId}/repair`)
+export async function addLibrary(path, name, autoMount = true, createNew = false) {
+  const response = await api.post('/libraries', {
+    path,
+    name,
+    auto_mount: autoMount,
+    create_new: createNew
+  })
   return response.data
 }
 
-export async function bulkVerifyDirectories(directoryIds) {
-  const response = await api.post('/directories/bulk-verify', { directory_ids: directoryIds })
+export async function getLibrary(uuid) {
+  const response = await api.get(`/libraries/${uuid}`)
   return response.data
 }
 
-export async function bulkRepairDirectories(directoryIds) {
-  const response = await api.post('/directories/bulk-repair', { directory_ids: directoryIds })
+export async function mountLibrary(uuid) {
+  const response = await api.post(`/libraries/${uuid}/mount`)
+  return response.data
+}
+
+export async function unmountLibrary(uuid) {
+  const response = await api.post(`/libraries/${uuid}/unmount`)
+  return response.data
+}
+
+export async function updateLibrary(uuid, updates) {
+  const response = await api.patch(`/libraries/${uuid}`, updates)
+  return response.data
+}
+
+export async function removeLibrary(uuid) {
+  const response = await api.delete(`/libraries/${uuid}`)
+  return response.data
+}
+
+export async function verifyDirectoryFiles(directoryId, libraryId) {
+  const q = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : ''
+  const response = await api.post(`/directories/${directoryId}/verify${q}`)
+  return response.data
+}
+
+export async function repairDirectoryPaths(directoryId, libraryId) {
+  const q = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : ''
+  const response = await api.post(`/directories/${directoryId}/repair${q}`)
+  return response.data
+}
+
+export async function bulkVerifyDirectories(directoryIds, libraryId) {
+  const body = { directory_ids: directoryIds }
+  if (libraryId) body.library_id = libraryId
+  const response = await api.post('/directories/bulk-verify', body)
+  return response.data
+}
+
+export async function bulkRepairDirectories(directoryIds, libraryId) {
+  const body = { directory_ids: directoryIds }
+  if (libraryId) body.library_id = libraryId
+  const response = await api.post('/directories/bulk-repair', body)
   return response.data
 }
 

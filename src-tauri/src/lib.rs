@@ -97,6 +97,14 @@ fn show_window(window: &tauri::WebviewWindow) {
         }
     }
 
+    // Restore GPU textures that were released on hide-to-tray
+    let _ = window.eval(
+        "if (window.__localbooru_hidden) {\
+           document.querySelectorAll('img[data-lazy-src]').forEach(el => { el.src = el.dataset.lazySrc; delete el.dataset.lazySrc; });\
+           window.__localbooru_hidden = false;\
+         }"
+    );
+
     let _ = window.set_focus();
 }
 
@@ -222,9 +230,9 @@ pub fn run() {
                     let wv = &webview.inner();
                     if let Some(settings) = wv.settings() {
                         settings.set_hardware_acceleration_policy(
-                            webkit2gtk::HardwareAccelerationPolicy::Always,
+                            webkit2gtk::HardwareAccelerationPolicy::OnDemand,
                         );
-                        log::info!("[WebView] Hardware acceleration policy set to Always");
+                        log::info!("[WebView] Hardware acceleration policy set to OnDemand");
                     }
                 }).ok();
             }
@@ -232,6 +240,24 @@ pub fn run() {
             log::info!("LocalBooru v2 started (embedded Rust backend)");
 
             // ── Tray icon ──
+            // On Linux, kded6 (KDE Daemon) may claim the StatusNotifierWatcher
+            // D-Bus name without loading the actual watcher module, which prevents
+            // tray icons from appearing. Ensure the module is loaded.
+            #[cfg(target_os = "linux")]
+            {
+                let _ = std::process::Command::new("dbus-send")
+                    .args([
+                        "--session",
+                        "--dest=org.kde.kded6",
+                        "--type=method_call",
+                        "--print-reply",
+                        "/kded",
+                        "org.kde.kded6.loadModule",
+                        "string:statusnotifierwatcher",
+                    ])
+                    .output();
+            }
+
             let quit_flag = Arc::new(AtomicBool::new(false));
             app.manage(quit_flag.clone());
 
@@ -300,10 +326,12 @@ pub fn run() {
                     log::info!("Quit requested, closing window...");
                 } else {
                     log::info!("Window close requested, hiding to tray...");
-                    // Pause all media before hiding so audio doesn't keep playing
+                    // Pause all media and release GPU textures before hiding
                     if let Some(wv) = window.app_handle().get_webview_window("main") {
                         let _ = wv.eval(
-                            "document.querySelectorAll('video, audio').forEach(el => el.pause())"
+                            "document.querySelectorAll('video, audio').forEach(el => el.pause());\
+                             document.querySelectorAll('img').forEach(el => { el.dataset.lazySrc = el.src; el.src = ''; });\
+                             window.__localbooru_hidden = true;"
                         );
                     }
                     api.prevent_close();

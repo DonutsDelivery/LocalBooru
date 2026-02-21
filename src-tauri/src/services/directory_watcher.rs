@@ -8,6 +8,7 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rusqlite::params;
 use tokio::sync::mpsc;
 
+use crate::db::library::LibraryContext;
 use crate::server::state::AppState;
 use crate::services::file_tracker;
 use crate::services::importer;
@@ -25,6 +26,8 @@ struct WatchHandle {
     _watcher: RecommendedWatcher,
     _path: PathBuf,
     recursive: bool,
+    #[allow(dead_code)]
+    library: Arc<LibraryContext>,
 }
 
 impl DirectoryWatcher {
@@ -58,8 +61,8 @@ impl DirectoryWatcher {
                 directories.len()
             );
 
-            for (dir_id, dir_path, recursive) in &directories {
-                if let Err(e) = add_watch(&state, &watches, *dir_id, dir_path, *recursive) {
+            for (dir_id, dir_path, recursive, lib) in &directories {
+                if let Err(e) = add_watch(&state, &watches, *dir_id, dir_path, *recursive, lib.clone()) {
                     log::error!(
                         "[Watcher] Failed to watch directory {} ({}): {}",
                         dir_id,
@@ -70,8 +73,8 @@ impl DirectoryWatcher {
             }
 
             // Run startup scan for recently modified files
-            for (dir_id, dir_path, recursive) in &directories {
-                startup_scan(&state, *dir_id, dir_path, *recursive);
+            for (dir_id, dir_path, recursive, lib) in &directories {
+                startup_scan(&state, lib, *dir_id, dir_path, *recursive);
             }
 
             // Wait for shutdown
@@ -90,9 +93,15 @@ impl DirectoryWatcher {
         }
     }
 
-    /// Add a watch for a single directory.
+    /// Add a watch for a single directory (defaults to primary library).
     pub fn add_directory(&self, directory_id: i64, path: &str, recursive: bool) {
-        if let Err(e) = add_watch(&self.state, &self.watches, directory_id, path, recursive) {
+        let lib = self.state.library_manager().primary().clone();
+        self.add_directory_for_library(directory_id, path, recursive, lib);
+    }
+
+    /// Add a watch for a directory in a specific library.
+    pub fn add_directory_for_library(&self, directory_id: i64, path: &str, recursive: bool, library: Arc<LibraryContext>) {
+        if let Err(e) = add_watch(&self.state, &self.watches, directory_id, path, recursive, library) {
             log::error!(
                 "[Watcher] Failed to add watch for directory {}: {}",
                 directory_id,
@@ -124,9 +133,9 @@ impl DirectoryWatcher {
             }
         };
 
-        let new_ids: HashMap<i64, (String, bool)> = directories
+        let new_ids: HashMap<i64, (String, bool, Arc<LibraryContext>)> = directories
             .into_iter()
-            .map(|(id, path, recursive)| (id, (path, recursive)))
+            .map(|(id, path, recursive, lib)| (id, (path, recursive, lib)))
             .collect();
 
         let mut watches = match self.watches.lock() {
@@ -151,7 +160,7 @@ impl DirectoryWatcher {
         let changed_ids: Vec<i64> = watches
             .iter()
             .filter_map(|(id, handle)| {
-                new_ids.get(id).and_then(|(_, new_recursive)| {
+                new_ids.get(id).and_then(|(_, new_recursive, _)| {
                     if handle.recursive != *new_recursive {
                         Some(*id)
                     } else {
@@ -172,16 +181,16 @@ impl DirectoryWatcher {
 
         // Collect directories that need a watch added (new or changed)
         // (We need to drop the lock before calling add_watch since it also locks)
-        let to_add: Vec<(i64, String, bool)> = new_ids
+        let to_add: Vec<(i64, String, bool, Arc<LibraryContext>)> = new_ids
             .into_iter()
             .filter(|(id, _)| !watches.contains_key(id))
-            .map(|(id, (path, recursive))| (id, path, recursive))
+            .map(|(id, (path, recursive, lib))| (id, path, recursive, lib))
             .collect();
 
         drop(watches);
 
-        for (dir_id, dir_path, recursive) in &to_add {
-            if let Err(e) = add_watch(&self.state, &self.watches, *dir_id, dir_path, *recursive) {
+        for (dir_id, dir_path, recursive, lib) in &to_add {
+            if let Err(e) = add_watch(&self.state, &self.watches, *dir_id, dir_path, *recursive, lib.clone()) {
                 log::error!(
                     "[Watcher] refresh: failed to add watch for directory {} ({}): {}",
                     dir_id,
@@ -202,25 +211,32 @@ impl DirectoryWatcher {
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
-fn load_enabled_directories(state: &AppState) -> Result<Vec<(i64, String, bool)>, String> {
-    let conn = state
-        .main_db()
-        .get()
-        .map_err(|e| format!("DB error: {}", e))?;
+fn load_enabled_directories(state: &AppState) -> Result<Vec<(i64, String, bool, Arc<LibraryContext>)>, String> {
+    let mut all_dirs = Vec::new();
 
-    let mut stmt = conn
-        .prepare("SELECT id, path, recursive FROM watch_directories WHERE enabled = 1")
-        .map_err(|e| format!("Query error: {}", e))?;
+    for lib in state.library_manager().all_mounted() {
+        let conn = lib.main_pool
+            .get()
+            .map_err(|e| format!("DB error for library '{}': {}", lib.name, e))?;
 
-    let dirs: Vec<(i64, String, bool)> = stmt
-        .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })
-        .map_err(|e| format!("Query error: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        let mut stmt = conn
+            .prepare("SELECT id, path, recursive FROM watch_directories WHERE enabled = 1")
+            .map_err(|e| format!("Query error: {}", e))?;
 
-    Ok(dirs)
+        let dirs: Vec<(i64, String, bool)> = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(|e| format!("Query error: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for (id, path, recursive) in dirs {
+            all_dirs.push((id, path, recursive, lib.clone()));
+        }
+    }
+
+    Ok(all_dirs)
 }
 
 fn add_watch(
@@ -229,6 +245,7 @@ fn add_watch(
     directory_id: i64,
     path: &str,
     recursive: bool,
+    library: Arc<LibraryContext>,
 ) -> Result<(), String> {
     let dir_path = PathBuf::from(path);
     if !dir_path.exists() {
@@ -236,13 +253,14 @@ fn add_watch(
     }
 
     let state_clone = state.clone();
+    let lib_clone = library.clone();
     let dir_id = directory_id;
     // Capture the tokio runtime handle so we can spawn from the notify thread
     let rt_handle = tokio::runtime::Handle::current();
 
     let mut watcher = notify::recommended_watcher(move |event: Result<Event, notify::Error>| {
         match event {
-            Ok(ev) => handle_fs_event(&state_clone, dir_id, ev, &rt_handle),
+            Ok(ev) => handle_fs_event(&state_clone, &lib_clone, dir_id, ev, &rt_handle),
             Err(e) => log::error!("[Watcher] Error in directory {}: {}", dir_id, e),
         }
     })
@@ -286,6 +304,7 @@ fn add_watch(
                 _watcher: watcher,
                 _path: dir_path,
                 recursive,
+                library,
             },
         );
     }
@@ -300,7 +319,7 @@ fn add_watch(
     Ok(())
 }
 
-fn handle_fs_event(state: &AppState, directory_id: i64, event: Event, rt: &tokio::runtime::Handle) {
+fn handle_fs_event(state: &AppState, lib: &Arc<LibraryContext>, directory_id: i64, event: Event, rt: &tokio::runtime::Handle) {
     match event.kind {
         // New file created
         EventKind::Create(_) => {
@@ -308,10 +327,11 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event, rt: &tokio
                 if path.is_file() && importer::is_media_file(path) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
+                    let lib_clone = lib.clone();
 
                     // Debounced import — wait for file to stabilize
                     rt.spawn(async move {
-                        debounced_import(state_clone, directory_id, file_path).await;
+                        debounced_import(state_clone, lib_clone, directory_id, file_path).await;
                     });
                 }
             }
@@ -321,11 +341,11 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event, rt: &tokio
         EventKind::Remove(_) => {
             for path in &event.paths {
                 let file_path = path.to_string_lossy().to_string();
-                let state_clone = state.clone();
+                let lib_clone = lib.clone();
 
                 rt.spawn(async move {
                     if let Err(e) = tokio::task::spawn_blocking(move || {
-                        file_tracker::mark_file_missing(&state_clone, &file_path, directory_id)
+                        file_tracker::mark_file_missing(&lib_clone, &file_path, directory_id)
                     })
                     .await
                     {
@@ -341,9 +361,10 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event, rt: &tokio
                 if path.is_file() && importer::is_media_file(path) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
+                    let lib_clone = lib.clone();
 
                     rt.spawn(async move {
-                        debounced_import(state_clone, directory_id, file_path).await;
+                        debounced_import(state_clone, lib_clone, directory_id, file_path).await;
                     });
                 }
             }
@@ -353,11 +374,11 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event, rt: &tokio
         EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
             for path in &event.paths {
                 let file_path = path.to_string_lossy().to_string();
-                let state_clone = state.clone();
+                let lib_clone = lib.clone();
 
                 rt.spawn(async move {
                     if let Err(e) = tokio::task::spawn_blocking(move || {
-                        file_tracker::mark_file_missing(&state_clone, &file_path, directory_id)
+                        file_tracker::mark_file_missing(&lib_clone, &file_path, directory_id)
                     })
                     .await
                     {
@@ -373,14 +394,15 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event, rt: &tokio
                 if path.is_file() && importer::is_media_file(path) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
+                    let lib_clone = lib.clone();
 
                     rt.spawn(async move {
                         // Check if already tracked before importing
                         let already_tracked = tokio::task::spawn_blocking({
-                            let state = state_clone.clone();
+                            let lib = lib_clone.clone();
                             let fp = file_path.clone();
                             move || -> bool {
-                                if let Ok(pool) = state.directory_db().get_pool(directory_id) {
+                                if let Ok(pool) = lib.directory_db.get_pool(directory_id) {
                                     if let Ok(conn) = pool.get() {
                                         return conn
                                             .query_row(
@@ -399,7 +421,7 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event, rt: &tokio
                         .unwrap_or(false);
 
                         if !already_tracked {
-                            debounced_import(state_clone, directory_id, file_path).await;
+                            debounced_import(state_clone, lib_clone, directory_id, file_path).await;
                         }
                     });
                 }
@@ -411,7 +433,7 @@ fn handle_fs_event(state: &AppState, directory_id: i64, event: Event, rt: &tokio
 }
 
 /// Wait for a file to stabilize (not being written to), then import it with retry.
-async fn debounced_import(state: AppState, directory_id: i64, file_path: String) {
+async fn debounced_import(state: AppState, lib: Arc<LibraryContext>, directory_id: i64, file_path: String) {
     // Wait 1 second for file to settle
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -438,10 +460,11 @@ async fn debounced_import(state: AppState, directory_id: i64, file_path: String)
 
     for attempt in 0..3u32 {
         let state_clone = state.clone();
+        let lib_clone = lib.clone();
         let fp = file_path.clone();
 
         match tokio::task::spawn_blocking(move || {
-            importer::import_image(&state_clone, &fp, directory_id)
+            importer::import_image(&state_clone, &lib_clone, &fp, directory_id, false)
         })
         .await
         {
@@ -498,8 +521,8 @@ async fn debounced_import(state: AppState, directory_id: i64, file_path: String)
 /// if recursive=true. Skips directories that already have a pending
 /// `scan_directory` task to avoid duplicate work. Updates `last_scanned_at`
 /// after completion.
-fn startup_scan(state: &AppState, directory_id: i64, dir_path: &str, recursive: bool) {
-    let conn = match state.main_db().get() {
+fn startup_scan(state: &AppState, lib: &Arc<LibraryContext>, directory_id: i64, dir_path: &str, recursive: bool) {
+    let conn = match lib.main_pool.get() {
         Ok(c) => c,
         Err(_) => return,
     };
@@ -586,7 +609,7 @@ fn startup_scan(state: &AppState, directory_id: i64, dir_path: &str, recursive: 
 
     if new_files.is_empty() {
         // No new files, but still update last_scanned_at
-        update_last_scanned_at(state, directory_id);
+        update_last_scanned_at(lib, directory_id);
         return;
     }
 
@@ -597,25 +620,27 @@ fn startup_scan(state: &AppState, directory_id: i64, dir_path: &str, recursive: 
     );
 
     let state_clone = state.clone();
+    let lib_clone = lib.clone();
     tokio::spawn(async move {
         for file_path in new_files {
             let sc = state_clone.clone();
+            let lc = lib_clone.clone();
             let fp = file_path.clone();
             let _ = tokio::task::spawn_blocking(move || {
-                importer::import_image(&sc, &fp, directory_id)
+                importer::import_image(&sc, &lc, &fp, directory_id, false)
             })
             .await;
         }
 
         // ── Update last_scanned_at after scan completes ──────────────────
-        update_last_scanned_at(&state_clone, directory_id);
+        update_last_scanned_at(&lib_clone, directory_id);
     });
 }
 
 /// Update the `last_scanned_at` timestamp for a directory to now.
-fn update_last_scanned_at(state: &AppState, directory_id: i64) {
+fn update_last_scanned_at(lib: &LibraryContext, directory_id: i64) {
     let now = chrono::Utc::now().to_rfc3339();
-    if let Ok(conn) = state.main_db().get() {
+    if let Ok(conn) = lib.main_pool.get() {
         match conn.execute(
             "UPDATE watch_directories SET last_scanned_at = ?1 WHERE id = ?2",
             params![&now, directory_id],

@@ -14,7 +14,6 @@
   transition: transform 0.2s ease, opacity 0.2s ease;
   z-index: 900;
   box-shadow: var(--shadow-lg);
-  will-change: transform, opacity;
 }
 
 /* Nav item with count */

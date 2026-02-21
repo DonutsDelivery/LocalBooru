@@ -21,6 +21,8 @@
 
 .masonry-column > div {
   margin-bottom: 8px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
 }
 
 .masonry-column > div:last-child {
@@ -67,6 +69,7 @@
   }
   .masonry-column > div {
     margin-bottom: 4px;
+    contain-intrinsic-size: auto 200px;
   }
   .masonry-column > div:last-child {
     margin-bottom: 0;

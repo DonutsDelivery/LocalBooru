@@ -650,6 +650,7 @@ function Gallery() {
   const favoritesOnly = searchParams.get('favorites') === 'true'
   const currentSort = searchParams.get('sort') || 'newest'
   const currentDirectoryId = searchParams.get('directory') ? parseInt(searchParams.get('directory')) : null
+  const currentLibraryId = searchParams.get('library') || null
   const currentMinAge = searchParams.get('min_age') ? parseInt(searchParams.get('min_age')) : null
   const currentMaxAge = searchParams.get('max_age') ? parseInt(searchParams.get('max_age')) : null
   const currentTimeframe = searchParams.get('timeframe') || null
@@ -692,6 +693,7 @@ function Gallery() {
         if (filters.favorites) params.favorites = 'true'
         if (filters.sort && filters.sort !== 'newest') params.sort = filters.sort
         if (filters.directory) params.directory = filters.directory
+        if (filters.library) params.library = filters.library
         if (filters.min_age !== null && filters.min_age !== undefined) params.min_age = filters.min_age
         if (filters.max_age !== null && filters.max_age !== undefined) params.max_age = filters.max_age
         if (filters.resolution) params.resolution = `${filters.resolution.width}x${filters.resolution.height}`
@@ -727,6 +729,7 @@ function Gallery() {
       favorites: favoritesOnly,
       sort: currentSort,
       directory: currentDirectoryId,
+      library: currentLibraryId,
       min_age: currentMinAge,
       max_age: currentMaxAge,
       resolution: currentResolution,
@@ -735,7 +738,7 @@ function Gallery() {
       groupByFolders: groupByFolders
     }
     localStorage.setItem('localbooru_filters', JSON.stringify(filters))
-  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge, currentResolution, currentOrientation, currentDuration, groupByFolders])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentResolution, currentOrientation, currentDuration, groupByFolders])
 
   // Touch handling for mobile sidebar
   const touchStartX = useRef(null)
@@ -765,6 +768,7 @@ function Gallery() {
     try {
       const result = await fetchFolders({
         directory_id: currentDirectoryId,
+        library_id: currentLibraryId,
         rating: currentRating,
         favorites_only: favoritesOnly,
         tags: currentTags,
@@ -783,7 +787,7 @@ function Gallery() {
       console.error('Failed to load folders:', error)
     }
     setLoading(false)
-  }, [currentDirectoryId, currentRating, favoritesOnly, currentTags])
+  }, [currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags])
 
   // Load images
   const loadImages = useCallback(async (pageNum = 1, append = false) => {
@@ -802,6 +806,7 @@ function Gallery() {
         rating: currentRating,
         favorites_only: favoritesOnly,
         directory_id: currentDirectoryId,
+        library_id: currentLibraryId,
         min_age: currentMinAge,
         max_age: currentMaxAge,
         timeframe: currentTimeframe,
@@ -834,7 +839,7 @@ function Gallery() {
       console.error('Failed to load images:', error)
     }
     setLoading(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders])
 
   // Update a single image in the images array
   const handleImageUpdate = useCallback((imageId, updates) => {
@@ -878,7 +883,7 @@ function Gallery() {
   useEffect(() => {
     if (!filtersInitialized) return
     loadImages(1, false)
-  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, groupByFolders, currentFolder, loadImages])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, groupByFolders, currentFolder, loadImages])
 
   useEffect(() => {
     loadTags()
@@ -957,6 +962,7 @@ function Gallery() {
         rating: currentRating,
         favorites_only: favoritesOnly,
         directory_id: currentDirectoryId,
+        library_id: currentLibraryId,
         min_age: currentMinAge,
         max_age: currentMaxAge,
         timeframe: currentTimeframe,
@@ -982,7 +988,7 @@ function Gallery() {
       console.error('Failed to jump to image:', error)
     }
     setIsJumping(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, total, tileSize])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, total, tileSize])
 
   // Handle jump by offset (for +/- 100 buttons)
   const handleJumpByOffset = useCallback((offset) => {
@@ -1018,6 +1024,7 @@ function Gallery() {
     if (favoritesOnly) params.favorites = 'true'
     if (currentSort !== 'newest') params.sort = currentSort
     if (currentDirectoryId) params.directory = currentDirectoryId
+    if (currentLibraryId) params.library = currentLibraryId
     if (currentMinAge !== null) params.min_age = currentMinAge
     if (currentMaxAge !== null) params.max_age = currentMaxAge
     if (groupByFolders) params.group = 'folders'
@@ -1025,13 +1032,14 @@ function Gallery() {
     setSearchParams(params)
   }
 
-  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe, filename, resolution, orientation, duration) => {
+  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe, filename, resolution, orientation, duration, libraryId) => {
     const params = {}
     if (tags) params.tags = tags
     if (rating && rating !== 'pg,pg13,r,x,xxx') params.rating = rating
     if (favOnly) params.favorites = 'true'
     if (sort && sort !== 'newest') params.sort = sort
     if (directoryId) params.directory = directoryId
+    if (libraryId) params.library = libraryId
     if (minAge !== null && minAge !== undefined) params.min_age = minAge
     if (maxAge !== null && maxAge !== undefined) params.max_age = maxAge
     if (timeframe) params.timeframe = timeframe
@@ -1137,6 +1145,7 @@ function Gallery() {
           rating: currentRating,
           favorites_only: favoritesOnly,
           directory_id: currentDirectoryId,
+          library_id: currentLibraryId,
           min_age: currentMinAge,
           max_age: currentMaxAge,
           timeframe: currentTimeframe,
@@ -1332,6 +1341,7 @@ function Gallery() {
           initialRating={currentRating}
           initialFavoritesOnly={favoritesOnly}
           initialDirectoryId={currentDirectoryId}
+          initialLibraryId={currentLibraryId}
           initialMinAge={currentMinAge}
           initialMaxAge={currentMaxAge}
           initialSort={currentSort}

@@ -498,11 +498,12 @@ async fn detect_ages(State(state): State<AppState>) -> Result<Json<Value>, AppEr
 async fn clean_missing(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
+        let lib = state_clone.library_manager().primary().clone();
         let dir_ids = state_clone.directory_db().get_all_directory_ids();
         let mut total_removed: i64 = 0;
 
         for dir_id in dir_ids {
-            match file_tracker::clean_deleted_files(&state_clone, dir_id) {
+            match file_tracker::clean_deleted_files(&lib, dir_id) {
                 Ok(removed) => total_removed += removed,
                 Err(e) => log::error!("[Maintenance] Clean failed for dir {}: {}", dir_id, e),
             }
@@ -642,9 +643,10 @@ async fn import_file(
         .ok_or_else(|| AppError::BadRequest("watch_directory_id required".into()))?;
 
     let state_clone = state.clone();
+    let lib = state.library_manager().primary().clone();
     let file_path = data.file_path.clone();
     tokio::task::spawn_blocking(move || {
-        let result = importer::import_image(&state_clone, &file_path, directory_id)?;
+        let result = importer::import_image(&state_clone, &lib, &file_path, directory_id, false)?;
         Ok::<_, AppError>(Json(json!({
             "status": match result.status {
                 importer::ImportStatus::Imported => "imported",
@@ -673,6 +675,7 @@ async fn file_missing(
     let state_clone = state.clone();
     let file_path = data.file_path.clone();
     tokio::task::spawn_blocking(move || {
+        let lib = state_clone.library_manager().primary().clone();
         let dir_ids = state_clone.directory_db().get_all_directory_ids();
         for dir_id in dir_ids {
             if let Ok(pool) = state_clone.directory_db().get_pool(dir_id) {
@@ -686,7 +689,7 @@ async fn file_missing(
                         .unwrap_or(false);
 
                     if exists {
-                        file_tracker::mark_file_missing(&state_clone, &file_path, dir_id)?;
+                        file_tracker::mark_file_missing(&lib, &file_path, dir_id)?;
                         return Ok(Json(json!({ "marked_missing": true })));
                     }
                 }
