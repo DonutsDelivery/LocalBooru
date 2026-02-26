@@ -14,6 +14,8 @@ pub mod event_type {
     pub const IMAGE_ADDED: &str = "image_added";
     pub const IMAGE_UPDATED: &str = "image_updated";
     pub const IMAGE_DELETED: &str = "image_deleted";
+    pub const TASK_STARTED: &str = "task_started";
+    pub const TASK_PROGRESS: &str = "task_progress";
     pub const TASK_COMPLETED: &str = "task_completed";
 }
 

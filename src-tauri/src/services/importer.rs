@@ -126,31 +126,49 @@ pub fn calculate_quick_hash(file_path: &str) -> Result<String, std::io::Error> {
     Ok(format!("{:016x}", hasher.digest()))
 }
 
-// ─── Perceptual hashing ─────────────────────────────────────────────────────
+// ─── Perceptual hashing (imohash-style) ─────────────────────────────────────
 
-/// Calculate a DCT-based perceptual hash (pHash) for visual duplicate detection.
+/// Calculate an imohash-style hash for fast duplicate detection.
 ///
-/// Uses the image_hasher crate with DCT preprocessing and mean hash algorithm,
-/// producing a 64-bit hash stored as a 16-character hex string.
-/// Compatible with Python imagehash.phash() for comparison purposes.
+/// Samples 16KB from the start, middle, and end of the file, combined with
+/// the file size. No image decoding needed — just reads raw bytes.
+/// Produces a 16-character hex string (xxh64).
 pub fn calculate_perceptual_hash(file_path: &str) -> Option<String> {
-    let img = match image::open(file_path) {
-        Ok(img) => img,
-        Err(e) => {
-            log::warn!("Failed to open image for perceptual hash: {}", e);
-            return None;
-        }
-    };
+    use std::io::{Read, Seek, SeekFrom};
 
-    let hasher = image_hasher::HasherConfig::new()
-        .hash_size(8, 8) // 8x8 = 64 bits
-        .hash_alg(image_hasher::HashAlg::Mean)
-        .preproc_dct() // DCT preprocessing makes this equivalent to pHash
-        .to_hasher();
+    let mut file = std::fs::File::open(file_path).ok()?;
+    let metadata = file.metadata().ok()?;
+    let file_size = metadata.len();
+    let sample_size: u64 = 16384; // 16KB per sample
 
-    let hash = hasher.hash_image(&img);
-    let hex_string: String = hash.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
-    Some(hex_string)
+    let mut hasher = xxhash_rust::xxh64::Xxh64::new(0);
+
+    // Include file size
+    hasher.update(&file_size.to_le_bytes());
+
+    if file_size <= sample_size * 3 {
+        // Small file: hash entire contents
+        let mut buf = vec![0u8; file_size as usize];
+        file.read_exact(&mut buf).ok()?;
+        hasher.update(&buf);
+    } else {
+        // Sample start
+        let mut buf = vec![0u8; sample_size as usize];
+        file.read_exact(&mut buf).ok()?;
+        hasher.update(&buf);
+
+        // Sample middle
+        file.seek(SeekFrom::Start(file_size / 2 - sample_size / 2)).ok()?;
+        file.read_exact(&mut buf).ok()?;
+        hasher.update(&buf);
+
+        // Sample end
+        file.seek(SeekFrom::End(-(sample_size as i64))).ok()?;
+        file.read_exact(&mut buf).ok()?;
+        hasher.update(&buf);
+    }
+
+    Some(format!("{:016x}", hasher.digest()))
 }
 
 // ─── File timestamps ────────────────────────────────────────────────────────

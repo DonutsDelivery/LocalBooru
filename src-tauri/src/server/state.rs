@@ -61,6 +61,11 @@ struct AppStateInner {
     directory_watcher: std::sync::OnceLock<Arc<DirectoryWatcher>>,
     /// Family mode lock state (true = locked, hides non-family-safe content)
     family_mode_locked: AtomicBool,
+    /// Whether the HTTP server is listening and accepting connections
+    server_ready: AtomicBool,
+    /// Remote server proxy target: (base_url, optional_jwt_token)
+    /// When set, /remote/* requests are forwarded to this server.
+    remote_proxy: RwLock<Option<(String, Option<String>)>>,
 }
 
 /// Load the JWT secret from `settings.json` in `data_dir`, or generate a new
@@ -243,6 +248,8 @@ impl AppState {
                 http_client,
                 directory_watcher: std::sync::OnceLock::new(),
                 family_mode_locked: AtomicBool::new(family_mode_locked),
+                server_ready: AtomicBool::new(false),
+                remote_proxy: RwLock::new(None),
             }),
         })
     }
@@ -389,6 +396,27 @@ impl AppState {
     /// Set the family mode lock state.
     pub fn set_family_mode_locked(&self, locked: bool) {
         self.inner.family_mode_locked.store(locked, Ordering::Relaxed);
+    }
+
+    /// Check if the HTTP server is ready (listening on port).
+    pub fn is_server_ready(&self) -> bool {
+        self.inner.server_ready.load(Ordering::Relaxed)
+    }
+
+    /// Mark the HTTP server as ready.
+    pub fn set_server_ready(&self, ready: bool) {
+        self.inner.server_ready.store(ready, Ordering::Relaxed);
+    }
+
+    /// Set the remote proxy target for mobile remote-server mode.
+    pub async fn set_remote_proxy(&self, url: Option<String>, token: Option<String>) {
+        let mut proxy = self.inner.remote_proxy.write().await;
+        *proxy = url.map(|u| (u, token));
+    }
+
+    /// Get the remote proxy target, if set.
+    pub async fn get_remote_proxy(&self) -> Option<(String, Option<String>)> {
+        self.inner.remote_proxy.read().await.clone()
     }
 
     /// Check if local network access is enabled in settings.json.

@@ -4,8 +4,7 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { BrowserRouter, Routes, Route, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
-import { App as CapacitorApp } from '@capacitor/app'
-import { isMobileApp } from './serverManager'
+import { isMobileApp, LOCAL_SERVER } from './serverManager'
 import MasonryGrid from './components/MasonryGrid'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
@@ -19,6 +18,7 @@ import OpticalFlowSettings from './components/OpticalFlowSettings'
 import WhisperSubtitleSettings from './components/WhisperSubtitleSettings'
 import CastSettings from './components/CastSettings'
 import AddonManager from './components/AddonManager'
+import TaskManager from './components/TaskManager'
 import QRConnect from './components/QRConnect'
 import ContinueWatching from './components/ContinueWatching'
 import { fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, healthCheck } from './api'
@@ -368,6 +368,10 @@ function SettingsPage() {
 
             <div className={`settings-tab-content ${activeTab === 'addons' ? 'active' : ''}`}>
               <AddonManager />
+            </div>
+
+            <div className={`settings-tab-content ${activeTab === 'tasks' ? 'active' : ''}`}>
+              <TaskManager />
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'general' ? 'active' : ''}`}>
@@ -1653,25 +1657,38 @@ function App() {
   const [showServerSetup, setShowServerSetup] = useState(false)
   const [servers, setServers] = useState([])
   const [serverStatuses, setServerStatuses] = useState({})
+  const [connectionError, setConnectionError] = useState(null)
+  const [startupLogs, setStartupLogs] = useState([])
+
+  const addLog = useCallback((msg) => {
+    console.log('[Startup]', msg)
+    setStartupLogs(prev => [...prev.slice(-19), `${new Date().toLocaleTimeString()}: ${msg}`])
+  }, [])
 
   // Poll backend health until ready (Tauri only — backend starts async)
   useEffect(() => {
     if (!isTauri || backendReady) return
     let cancelled = false
+    let attempts = 0
+    addLog('Waiting for backend...')
     const poll = async () => {
       while (!cancelled) {
+        attempts++
         try {
+          addLog(`Health check attempt #${attempts}...`)
           await healthCheck()
+          addLog('Backend ready!')
           if (!cancelled) setBackendReady(true)
           return
-        } catch {
+        } catch (err) {
+          addLog(`Attempt #${attempts} failed: ${err.message || err}`)
           await new Promise(r => setTimeout(r, 500))
         }
       }
     }
     poll()
     return () => { cancelled = true }
-  }, [isTauri, backendReady])
+  }, [isTauri, backendReady, addLog])
 
   // Re-validate backend health when window regains focus (Tauri only)
   // Catches backend crashes that happened while window was hidden in tray
@@ -1696,36 +1713,57 @@ function App() {
   // Initialize server configuration for mobile app
   useEffect(() => {
     async function initMobile() {
-      const { isMobileApp, getServers, getActiveServer, setActiveServerId, pingAllServers } = await import('./serverManager')
-      const { updateServerConfig } = await import('./api')
+      const { isMobileApp, getServers, getActiveServer, setActiveServerId, pingAllServers, LOCAL_SERVER } = await import('./serverManager')
+      const { updateServerConfig, healthCheck: apiHealthCheck } = await import('./api')
+
+      addLog(`isMobileApp=${isMobileApp()}, isTauri=${isTauri}`)
 
       if (isMobileApp()) {
         const serverList = await getServers()
+        addLog(`Found ${serverList.length} saved servers`)
 
         if (serverList.length === 0) {
-          // No servers - show add server UI
+          // First launch — show server picker with "This Device" option
+          addLog('No servers — showing server selector')
+          setServers([])
           setShowServerSetup(true)
         } else {
-          // Ping all servers in parallel
+          // Has remote servers — ping them and show picker (local server is always first option)
           const statuses = await pingAllServers(serverList)
           const onlineServers = serverList.filter(s => statuses[s.id] === 'online')
 
-          if (onlineServers.length === 1) {
-            // Exactly 1 online - auto-connect
-            await setActiveServerId(onlineServers[0].id)
+          // Only auto-connect to servers that have auth credentials (token or username/password)
+          const autoConnectable = onlineServers.filter(s => s.token || (s.username && s.password))
+
+          if (autoConnectable.length === 1) {
+            // Exactly 1 online with auth — try auto-connect
+            await setActiveServerId(autoConnectable[0].id)
             await updateServerConfig()
+
+            // Validate the connection actually works (token might be expired)
+            try {
+              await apiHealthCheck()
+              // Success — proceed to library
+            } catch {
+              // Auth failed or server unreachable — bounce back to server picker
+              setServers(serverList)
+              setServerStatuses({ ...statuses, [autoConnectable[0].id]: 'auth_failed' })
+              setShowServerSetup(true)
+              setConnectionError(`Failed to connect to ${autoConnectable[0].name}: authentication expired. Please re-pair.`)
+            }
           } else {
-            // 0 or 2+ online - show selection with status
+            // 0, 2+, or no auth — show selection with status
             setServers(serverList)
             setServerStatuses(statuses)
             setShowServerSetup(true)
           }
         }
       }
+      addLog('Mobile init complete')
       setMobileReady(true)
     }
-    initMobile()
-  }, [])
+    initMobile().catch(err => addLog(`initMobile error: ${err.message || err}`))
+  }, [addLog])
 
   // Show loading while backend starts (Tauri)
   if (!backendReady) {
@@ -1734,6 +1772,11 @@ function App() {
         <div className="loading-content">
           <h1>LocalBooru</h1>
           <p>Starting backend...</p>
+          {startupLogs.length > 0 && (
+            <pre style={{ fontSize: '10px', textAlign: 'left', maxHeight: '200px', overflow: 'auto', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '4px', marginTop: '12px', maxWidth: '90vw', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
+              {startupLogs.join('\n')}
+            </pre>
+          )}
         </div>
       </div>
     )
@@ -1746,6 +1789,11 @@ function App() {
         <div className="loading-content">
           <h1>LocalBooru</h1>
           <p>Loading...</p>
+          {startupLogs.length > 0 && (
+            <pre style={{ fontSize: '10px', textAlign: 'left', maxHeight: '200px', overflow: 'auto', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '4px', marginTop: '12px', maxWidth: '90vw', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
+              {startupLogs.join('\n')}
+            </pre>
+          )}
         </div>
       </div>
     )
@@ -1767,32 +1815,13 @@ function App() {
 
   // Show server setup/selection for mobile
   if (showServerSetup) {
-    // If we have servers with statuses, show the selection screen
-    if (servers.length > 0) {
-      return (
-        <ServerSelectScreen
-          servers={servers}
-          serverStatuses={serverStatuses}
-          onConnect={() => setShowServerSetup(false)}
-        />
-      )
-    }
-
-    // Otherwise show the add server screen
     return (
-      <div className="app server-setup-screen">
-        <div className="server-setup-content">
-          <h1>LocalBooru</h1>
-          <p>Connect to a LocalBooru server to get started.</p>
-          <ServerSettings onServerChange={() => {
-            import('./serverManager').then(({ getActiveServer }) => {
-              getActiveServer().then(server => {
-                if (server) setShowServerSetup(false)
-              })
-            })
-          }} />
-        </div>
-      </div>
+      <ServerSelectScreen
+        servers={servers}
+        serverStatuses={serverStatuses}
+        error={connectionError}
+        onConnect={() => { setShowServerSetup(false); setConnectionError(null) }}
+      />
     )
   }
 
@@ -1815,6 +1844,8 @@ function App() {
 }
 
 // Handle hardware back button on mobile
+// Tauri Android WebView handles back button → history.back() automatically.
+// This handler covers the edge case where we're on the root page with no history.
 function BackButtonHandler() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -1822,22 +1853,15 @@ function BackButtonHandler() {
   useEffect(() => {
     if (!isMobileApp()) return
 
-    const handleBackButton = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
-      // If there's history to go back to, use it
-      if (canGoBack) {
-        window.history.back()
-      } else if (location.pathname !== '/') {
-        // On a sub-page with no history, navigate to home
-        navigate('/')
-      } else {
-        // On home with no history - minimize app (Android default behavior)
-        CapacitorApp.minimizeApp()
+    const handlePopState = () => {
+      // If we're at the root with no more history, do nothing (Android will minimize)
+      if (location.pathname === '/' && window.history.length <= 1) {
+        return
       }
-    })
-
-    return () => {
-      handleBackButton.then(listener => listener.remove())
     }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
   }, [navigate, location.pathname])
 
   return null

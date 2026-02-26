@@ -2,8 +2,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use dashmap::DashMap;
 use rusqlite::params;
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 use tokio::sync::{Notify, Semaphore};
 
 use crate::addons::manager::AddonStatus;
@@ -12,6 +14,7 @@ use crate::server::error::AppError;
 use crate::server::state::AppState;
 use crate::services::events::event_type;
 use crate::services::file_tracker;
+use crate::services::importer;
 
 // ─── Task types (match Python TaskType enum) ─────────────────────────────────
 
@@ -27,6 +30,7 @@ pub const STATUS_PENDING: &str = "pending";
 pub const STATUS_PROCESSING: &str = "processing";
 pub const STATUS_COMPLETED: &str = "completed";
 pub const STATUS_FAILED: &str = "failed";
+pub const STATUS_CANCELLED: &str = "cancelled";
 
 /// Maximum number of retry attempts before a task is permanently failed.
 const MAX_RETRIES: i64 = 3;
@@ -44,6 +48,8 @@ pub struct BackgroundTaskQueue {
     paused: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
     notify: Arc<Notify>,
+    /// Active task cancellation tokens, keyed by task ID.
+    active_tokens: Arc<DashMap<i64, CancellationToken>>,
 }
 
 impl BackgroundTaskQueue {
@@ -52,6 +58,17 @@ impl BackgroundTaskQueue {
             paused: Arc::new(AtomicBool::new(false)),
             running: Arc::new(AtomicBool::new(false)),
             notify: Arc::new(Notify::new()),
+            active_tokens: Arc::new(DashMap::new()),
+        }
+    }
+
+    /// Signal a running task to cancel. Returns true if the task was active.
+    pub fn cancel_task(&self, task_id: i64) -> bool {
+        if let Some(token) = self.active_tokens.get(&task_id) {
+            token.cancel();
+            true
+        } else {
+            false
         }
     }
 
@@ -290,16 +307,48 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
         task_id, task_type, attempts + 1
     );
 
+    // Broadcast task started event
+    if let Some(events) = state.events() {
+        events.library.broadcast(
+            event_type::TASK_STARTED,
+            serde_json::json!({ "task_id": task_id, "task_type": task_type }),
+        );
+    }
+
     let payload: Value = serde_json::from_str(&payload_str).unwrap_or_default();
 
+    // Register cancellation token for this task
+    let cancel_token = CancellationToken::new();
+    if let Some(tq) = state.task_queue() {
+        tq.active_tokens.insert(task_id, cancel_token.clone());
+    }
+
     // Dispatch to handler
-    let result = execute_task(state, &task_type, &payload).await;
+    let result = execute_task(state, &task_type, &payload, &cancel_token).await;
+
+    // Remove cancellation token
+    if let Some(tq) = state.task_queue() {
+        tq.active_tokens.remove(&task_id);
+    }
+
+    let was_cancelled = cancel_token.is_cancelled();
 
     // Update task status
     let state_clone = state.clone();
     let task_type_clone = task_type.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
         let conn = state_clone.main_db().get()?;
+
+        if was_cancelled {
+            // Task was cancelled mid-execution — mark as cancelled
+            conn.execute(
+                "UPDATE task_queue SET status = ?1, completed_at = datetime('now') WHERE id = ?2",
+                params![STATUS_CANCELLED, task_id],
+            )?;
+            log::info!("[TaskQueue] Task #{} ({}) cancelled", task_id, task_type_clone);
+            return Ok(());
+        }
+
         match result {
             Ok(()) => {
                 conn.execute(
@@ -363,7 +412,7 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
 }
 
 /// Execute a task based on its type.
-async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Result<(), AppError> {
+async fn execute_task(state: &AppState, task_type: &str, payload: &Value, cancel: &CancellationToken) -> Result<(), AppError> {
     // Resolve the target library from payload (defaults to primary)
     let library_id = payload["library_id"].as_str();
     let lib = state.resolve_library(library_id)?;
@@ -377,6 +426,16 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
                 .as_str()
                 .ok_or_else(|| AppError::Internal("Missing directory_path".into()))?
                 .to_string();
+
+            // Skip if directory drive is offline
+            if !file_tracker::is_drive_available(&directory_path) {
+                log::info!(
+                    "[TaskQueue] Skipping scan for directory #{} — drive offline",
+                    directory_id
+                );
+                return Ok(());
+            }
+
             let clean_deleted = payload["clean_deleted"].as_bool().unwrap_or(false);
             let fast_import = payload["fast_import"].as_bool().unwrap_or(true);
 
@@ -523,10 +582,22 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value) -> Res
                 .as_i64()
                 .ok_or_else(|| AppError::Internal("Missing directory_id".into()))?;
 
+            // Skip if directory drive is offline
+            if let Some(dir_path) = payload["directory_path"].as_str() {
+                if !file_tracker::is_drive_available(dir_path) {
+                    log::info!(
+                        "[TaskQueue] Skipping complete_imports for directory #{} — drive offline",
+                        directory_id
+                    );
+                    return Ok(());
+                }
+            }
+
             let state_clone = state.clone();
             let lib = lib.clone();
+            let cancel = cancel.clone();
             tokio::task::spawn_blocking(move || {
-                complete_directory_imports(&state_clone, &lib, directory_id)
+                complete_directory_imports(&state_clone, &lib, directory_id, &cancel)
             })
             .await??;
         }
@@ -550,6 +621,7 @@ fn complete_directory_imports(
     state: &AppState,
     lib: &LibraryContext,
     directory_id: i64,
+    cancel: &CancellationToken,
 ) -> Result<(), AppError> {
     use crate::services::importer;
     use crate::services::video_preview;
@@ -559,13 +631,111 @@ fn complete_directory_imports(
     let thumbnails_dir = lib.thumbnails_dir();
     std::fs::create_dir_all(&thumbnails_dir).ok();
 
-    // Get all images with their file paths
+    // ── Pass 1: Generate missing thumbnails ──
+    // First, collect all images and filter to only those missing thumbnails.
+    let mut thumb_stmt = conn.prepare(
+        "SELECT i.id, i.file_hash, f.original_path
+         FROM images i
+         JOIN image_files f ON f.image_id = i.id
+         WHERE f.file_exists = 1
+         AND COALESCE(f.file_status, '') != 'drive_offline'
+         GROUP BY i.id"
+    )?;
+
+    let all_images: Vec<(i64, String, String)> = thumb_stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .ok()
+        .map(|r| r.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default();
+
+    // Filter to only images missing thumbnails (fast disk check in batch)
+    let missing_thumbs: Vec<_> = all_images
+        .into_iter()
+        .filter(|(_, file_hash, original_path)| {
+            let hash_prefix = &file_hash[..16.min(file_hash.len())];
+            let thumb_path = thumbnails_dir.join(format!("{}.webp", hash_prefix));
+            !thumb_path.exists() && std::path::Path::new(original_path).exists()
+        })
+        .collect();
+
+    let total_thumbs = missing_thumbs.len();
+    let mut thumbnails_generated = 0u32;
+
+    if total_thumbs > 0 {
+        log::info!("[TaskQueue] Directory #{}: {} images need thumbnails", directory_id, total_thumbs);
+
+        // Broadcast pass 1 start
+        if let Some(events) = state.events() {
+            events.library.broadcast(
+                event_type::TASK_PROGRESS,
+                serde_json::json!({
+                    "task_type": TASK_COMPLETE_IMPORTS,
+                    "directory_id": directory_id,
+                    "processed": 0,
+                    "total": total_thumbs,
+                    "phase": "thumbnails",
+                }),
+            );
+        }
+    }
+
+    for (image_id, file_hash, original_path) in &missing_thumbs {
+        if cancel.is_cancelled() {
+            log::info!("[TaskQueue] Complete imports cancelled during thumbnail pass");
+            return Ok(());
+        }
+
+        let hash_prefix = &file_hash[..16.min(file_hash.len())];
+        let thumb_path = thumbnails_dir.join(format!("{}.webp", hash_prefix));
+
+        if importer::is_video_file(original_path) {
+            importer::generate_video_thumbnail(
+                original_path,
+                &thumb_path.to_string_lossy(),
+                400,
+            );
+        } else {
+            importer::generate_thumbnail(
+                original_path,
+                &thumb_path.to_string_lossy(),
+                400,
+            );
+        }
+        thumbnails_generated += 1;
+
+        // Broadcast thumbnail ready + progress
+        if let Some(events) = state.events() {
+            events.library.broadcast(
+                event_type::IMAGE_UPDATED,
+                serde_json::json!({
+                    "image_id": image_id,
+                    "directory_id": directory_id,
+                    "thumbnail_ready": true
+                }),
+            );
+            events.library.broadcast(
+                event_type::TASK_PROGRESS,
+                serde_json::json!({
+                    "task_type": TASK_COMPLETE_IMPORTS,
+                    "directory_id": directory_id,
+                    "processed": thumbnails_generated,
+                    "total": total_thumbs,
+                    "phase": "thumbnails",
+                }),
+            );
+        }
+    }
+
+    // ── Pass 2: Slow work — perceptual hashes + video probes ──
+    // Only fetch images that actually need this work.
     let mut stmt = conn.prepare(
         "SELECT i.id, i.file_hash, i.perceptual_hash, i.width, i.duration,
                 f.original_path
          FROM images i
          JOIN image_files f ON f.image_id = i.id
          WHERE f.file_exists = 1
+         AND COALESCE(f.file_status, '') != 'drive_offline'
+         AND (i.perceptual_hash IS NULL OR i.width IS NULL)
          GROUP BY i.id"
     )?;
 
@@ -583,51 +753,40 @@ fn complete_directory_imports(
         .filter_map(|r| r.ok())
         .collect();
 
-    let mut thumbnails_generated = 0u32;
+    let total_images = images.len();
     let mut hashes_computed = 0u32;
     let mut probes_completed = 0u32;
+    let mut processed = 0u32;
 
-    for (image_id, file_hash, perceptual_hash, width, duration, original_path) in &images {
+    // Broadcast pass 2 start
+    if let Some(events) = state.events() {
+        events.library.broadcast(
+            event_type::TASK_PROGRESS,
+            serde_json::json!({
+                "task_type": TASK_COMPLETE_IMPORTS,
+                "directory_id": directory_id,
+                "processed": 0,
+                "total": total_images,
+                "phase": "hashing",
+            }),
+        );
+    }
+
+    for (image_id, _file_hash, perceptual_hash, width, duration, original_path) in &images {
+        if cancel.is_cancelled() {
+            log::info!("[TaskQueue] Complete imports cancelled during hashing pass");
+            return Ok(());
+        }
+
         if !std::path::Path::new(original_path).exists() {
+            processed += 1;
             continue;
         }
 
         let is_video = importer::is_video_file(original_path);
-        let hash_prefix = &file_hash[..16.min(file_hash.len())];
 
-        // 1. Generate thumbnail if missing
-        let thumb_path = thumbnails_dir.join(format!("{}.webp", hash_prefix));
-        if !thumb_path.exists() {
-            if is_video {
-                importer::generate_video_thumbnail(
-                    original_path,
-                    &thumb_path.to_string_lossy(),
-                    400,
-                );
-            } else {
-                importer::generate_thumbnail(
-                    original_path,
-                    &thumb_path.to_string_lossy(),
-                    400,
-                );
-            }
-            thumbnails_generated += 1;
-
-            // Broadcast thumbnail ready event
-            if let Some(events) = state.events() {
-                events.library.broadcast(
-                    event_type::IMAGE_UPDATED,
-                    serde_json::json!({
-                        "image_id": image_id,
-                        "directory_id": directory_id,
-                        "thumbnail_ready": true
-                    }),
-                );
-            }
-        }
-
-        // 2. Calculate perceptual hash for images missing it
-        if !is_video && perceptual_hash.is_none() {
+        // Calculate perceptual hash (imohash — samples 16KB from start/middle/end, no image decode)
+        if perceptual_hash.is_none() {
             if let Some(phash) = importer::calculate_perceptual_hash(original_path) {
                 conn.execute(
                     "UPDATE images SET perceptual_hash = ?1 WHERE id = ?2",
@@ -637,7 +796,7 @@ fn complete_directory_imports(
             }
         }
 
-        // 3. Probe videos missing dimensions/duration
+        // Probe videos missing dimensions/duration
         if is_video && (width.is_none() || duration.is_none()) {
             if width.is_none() {
                 if let Some((w, h)) = importer::get_image_dimensions(original_path) {
@@ -658,6 +817,24 @@ fn complete_directory_imports(
             }
 
             probes_completed += 1;
+        }
+
+        processed += 1;
+
+        // Broadcast progress every 10 images
+        if processed % 10 == 0 || processed as usize == total_images {
+            if let Some(events) = state.events() {
+                events.library.broadcast(
+                    event_type::TASK_PROGRESS,
+                    serde_json::json!({
+                        "task_type": TASK_COMPLETE_IMPORTS,
+                        "directory_id": directory_id,
+                        "processed": processed,
+                        "total": total_images,
+                        "phase": "hashing",
+                    }),
+                );
+            }
         }
     }
 
@@ -717,12 +894,7 @@ async fn execute_tag_task(state: &AppState, lib: &Arc<LibraryContext>, payload: 
     }
 
     // Skip video files — the auto-tagger only handles images
-    let ext = std::path::Path::new(&image_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    if matches!(ext.as_str(), "mp4" | "webm" | "mkv" | "avi" | "mov") {
+    if importer::is_video_file(&image_path) {
         return Ok(());
     }
 
@@ -1069,6 +1241,11 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
                     continue;
                 }
 
+                // Skip directories on offline/unmounted drives
+                if !file_tracker::is_drive_available(dir_path) {
+                    continue;
+                }
+
                 let dir_pool = match lib.directory_db.get_pool(*dir_id) {
                     Ok(p) => p,
                     Err(_) => continue,
@@ -1085,11 +1262,7 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
                      LEFT JOIN image_files if2 ON i.id = if2.image_id
                      WHERE it.image_id IS NULL
                      AND if2.file_exists = 1
-                     AND LOWER(if2.original_path) NOT LIKE '%.mp4'
-                     AND LOWER(if2.original_path) NOT LIKE '%.webm'
-                     AND LOWER(if2.original_path) NOT LIKE '%.mkv'
-                     AND LOWER(if2.original_path) NOT LIKE '%.avi'
-                     AND LOWER(if2.original_path) NOT LIKE '%.mov'
+                     AND COALESCE(if2.file_status, '') != 'drive_offline'
                      LIMIT 50"
                 )?;
 
@@ -1101,6 +1274,7 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
                         ))
                     })?
                     .filter_map(|r| r.ok())
+                    .filter(|(_, path)| !importer::is_video_file(path))
                     .collect();
 
                 for (image_id, image_path) in &untagged {
@@ -1364,15 +1538,46 @@ pub fn enqueue_task(
 ) -> Result<Option<i64>, AppError> {
     let conn = state.main_db().get()?;
 
-    // Deduplication check — use boundary-aware patterns to avoid false positives
+    // Directory-level deduplication for directory-scoped tasks:
+    // Prevent duplicate scan/import/verify tasks for the same directory.
+    if matches!(task_type, TASK_SCAN_DIRECTORY | TASK_COMPLETE_IMPORTS | TASK_VERIFY_FILES) {
+        if let Some(dir_id) = payload["directory_id"].as_i64() {
+            let pat_comma = format!("%\"directory_id\":{},%", dir_id);
+            let pat_comma_sp = format!("%\"directory_id\": {},%", dir_id);
+            let pat_brace = format!("%\"directory_id\":{}}}%", dir_id);
+            let pat_brace_sp = format!("%\"directory_id\": {}}}%", dir_id);
+
+            let exists: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM task_queue
+                     WHERE task_type = ?1 AND status IN (?2, ?3)
+                     AND (payload LIKE ?4 OR payload LIKE ?5 OR payload LIKE ?6 OR payload LIKE ?7)",
+                    params![
+                        task_type,
+                        STATUS_PENDING,
+                        STATUS_PROCESSING,
+                        &pat_comma,
+                        &pat_comma_sp,
+                        &pat_brace,
+                        &pat_brace_sp,
+                    ],
+                    |row| row.get::<_, i64>(0).map(|c| c > 0),
+                )
+                .unwrap_or(false);
+
+            if exists {
+                log::debug!(
+                    "[TaskQueue] Skipping duplicate {} for directory #{}",
+                    task_type, dir_id
+                );
+                return Ok(None);
+            }
+        }
+    }
+
+    // Image-level deduplication check — use boundary-aware patterns to avoid false positives
     // (e.g. image_id 1 must not match image_id 10 or 100).
-    // JSON payloads can have `"image_id":N,` (followed by comma) or `"image_id":N}`
-    // (last key in object), with optional spaces around the colon.
     if let Some(image_id) = dedupe_key {
-        // Build patterns that match the image_id with a boundary character after it:
-        // - comma (more keys follow): "image_id":N,...
-        // - closing brace (last key):  "image_id":N}
-        // Also handle optional space after the colon.
         let pat_comma = format!("%\"image_id\":{},%", image_id);
         let pat_comma_sp = format!("%\"image_id\": {},%", image_id);
         let pat_brace = format!("%\"image_id\":{}}}%", image_id);

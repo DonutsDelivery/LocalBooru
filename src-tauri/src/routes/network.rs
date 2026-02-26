@@ -11,6 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::server::error::AppError;
+use crate::server::middleware::auth::create_jwt;
 use crate::server::state::AppState;
 use crate::server::utils::get_local_ip;
 
@@ -607,8 +608,18 @@ async fn verify_handshake(
 ) -> Result<Json<Value>, AppError> {
     state.handshake_manager().verify_nonce(&body.nonce)?;
 
+    // Issue a JWT for the paired device
+    let token = create_jwt(
+        0,                  // user_id: 0 for device pairing (not a user account)
+        "qr_paired_device",
+        "local_network",
+        true,               // can_write
+        state.jwt_secret(),
+    )?;
+
     Ok(Json(json!({
         "success": true,
-        "verified": true
+        "verified": true,
+        "token": token
     })))
 }

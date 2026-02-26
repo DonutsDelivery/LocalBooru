@@ -1,16 +1,28 @@
 /**
  * Server Manager - handles multi-server support for mobile app
- * Uses Capacitor Preferences on mobile, localStorage on web
+ * Uses localStorage on all platforms (works in Tauri WebView)
  */
-
-import { Preferences } from '@capacitor/preferences'
 
 const SERVERS_KEY = 'localbooru_servers'
 const ACTIVE_SERVER_KEY = 'localbooru_active_server'
 
-// Check if running in Capacitor native app (not web)
+// Local embedded server constant (always available on Tauri mobile)
+export const LOCAL_SERVER = {
+  id: '__local__',
+  name: 'This Device',
+  url: null, // uses relative /api URLs, same as desktop
+  isLocal: true,
+}
+
+// Check if running as a Tauri mobile app
 export function isMobileApp() {
-  return window.Capacitor?.isNativePlatform?.() === true
+  return window.__TAURI_INTERNALS__ !== undefined &&
+         /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
+
+// Check if running in any Tauri context (desktop or mobile)
+export function isTauriApp() {
+  return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
 }
 
 // Default server structure
@@ -21,26 +33,19 @@ function createServer(data) {
     url: data.url,
     username: data.username || null,
     password: data.password || null,
+    token: data.token || null,  // JWT token from QR pairing
     certFingerprint: data.certFingerprint || null,  // TLS certificate fingerprint for pinning
     lastConnected: data.lastConnected || null,
   }
 }
 
-// Storage helpers that work on both web and mobile
+// Storage helpers — always use localStorage (works in Tauri WebView, persistent across sessions)
 async function getStorageItem(key) {
-  if (isMobileApp()) {
-    const { value } = await Preferences.get({ key })
-    return value
-  }
   return localStorage.getItem(key)
 }
 
 async function setStorageItem(key, value) {
-  if (isMobileApp()) {
-    await Preferences.set({ key, value })
-  } else {
-    localStorage.setItem(key, value)
-  }
+  localStorage.setItem(key, value)
 }
 
 // Get all saved servers
@@ -111,11 +116,7 @@ export async function setActiveServerId(id) {
   if (id) {
     await setStorageItem(ACTIVE_SERVER_KEY, id)
   } else {
-    if (isMobileApp()) {
-      await Preferences.remove({ key: ACTIVE_SERVER_KEY })
-    } else {
-      localStorage.removeItem(ACTIVE_SERVER_KEY)
-    }
+    localStorage.removeItem(ACTIVE_SERVER_KEY)
   }
 }
 
@@ -123,6 +124,9 @@ export async function setActiveServerId(id) {
 export async function getActiveServer() {
   const id = await getActiveServerId()
   if (!id) return null
+
+  // Return the local server sentinel if selected
+  if (id === LOCAL_SERVER.id) return LOCAL_SERVER
 
   const servers = await getServers()
   return servers.find(s => s.id === id) || null
@@ -161,16 +165,17 @@ export async function testServerConnection(url, username = null, password = null
 
 // Get the API base URL
 export async function getApiBaseUrl() {
-  // If not a mobile app, use relative URL (served from backend)
   if (!isMobileApp()) {
+    // Desktop: always use embedded server
     const isDevServer = window.location.port === '5173' || window.location.port === '5174'
     return isDevServer ? 'http://127.0.0.1:8790/api' : '/api'
   }
 
-  // Mobile app - use configured server
+  // Mobile: check if using local or remote server
   const server = await getActiveServer()
-  if (!server) {
-    return null
+  if (!server || server.id === LOCAL_SERVER.id) {
+    // Local embedded server — use relative URL like desktop
+    return '/api'
   }
 
   return `${server.url}/api`
@@ -194,11 +199,16 @@ export async function getAuthHeaders() {
   }
 
   const server = await getActiveServer()
-  if (!server || !server.username || !server.password) {
-    return {}
+  if (!server || server.isLocal) return {}
+
+  // Prefer JWT token (from QR pairing) over Basic auth
+  if (server.token) {
+    return { 'Authorization': 'Bearer ' + server.token }
   }
 
-  return {
-    'Authorization': 'Basic ' + btoa(`${server.username}:${server.password}`)
+  if (server.username && server.password) {
+    return { 'Authorization': 'Basic ' + btoa(`${server.username}:${server.password}`) }
   }
+
+  return {}
 }

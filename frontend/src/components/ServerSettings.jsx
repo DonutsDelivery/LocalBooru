@@ -12,14 +12,6 @@ import {
 import { updateServerConfig } from '../api'
 import './ServerSettings.css'
 
-// Dynamic import for barcode scanner (only on mobile)
-let BarcodeScanner = null
-if (isMobileApp()) {
-  import('@capacitor-mlkit/barcode-scanning').then(module => {
-    BarcodeScanner = module.BarcodeScanner
-  })
-}
-
 export default function ServerSettings({ onServerChange }) {
   const [servers, setServers] = useState([])
   const [activeServerId, setActiveServerIdState] = useState(null)
@@ -79,99 +71,102 @@ export default function ServerSettings({ onServerChange }) {
   }
 
   async function handleScanQR() {
-    if (!BarcodeScanner) {
-      setScanError('QR scanner not available')
-      return
-    }
-
     try {
       setScanError(null)
       setScanning(true)
 
-      // Check camera permission
-      const { camera } = await BarcodeScanner.checkPermissions()
-      if (camera !== 'granted') {
-        const { camera: newPerm } = await BarcodeScanner.requestPermissions()
-        if (newPerm !== 'granted') {
-          setScanError('Camera permission required to scan QR codes')
-          setScanning(false)
-          return
-        }
-      }
+      // Dynamic import html5-qrcode
+      const { Html5Qrcode } = await import('html5-qrcode')
 
-      // Start scanning
-      document.body.classList.add('barcode-scanner-active')
-      const result = await BarcodeScanner.scan()
-      document.body.classList.remove('barcode-scanner-active')
+      // Create scanner container
+      const scannerId = 'qr-scanner-settings-' + Date.now()
+      const container = document.createElement('div')
+      container.id = scannerId
+      container.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:#000;'
+      document.body.appendChild(container)
 
-      if (!result.barcodes.length) {
-        setScanError('No QR code found')
+      // Add close button
+      const closeBtn = document.createElement('button')
+      closeBtn.textContent = 'Cancel'
+      closeBtn.style.cssText = 'position:fixed;bottom:40px;left:50%;transform:translateX(-50%);z-index:10001;padding:12px 32px;font-size:16px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;'
+      document.body.appendChild(closeBtn)
+
+      const scanner = new Html5Qrcode(scannerId)
+
+      const cleanup = () => {
+        scanner.stop().catch(() => {})
+        container.remove()
+        closeBtn.remove()
         setScanning(false)
-        return
       }
 
-      // Parse QR data
-      const rawValue = result.barcodes[0].rawValue
-      let qrData
-      try {
-        qrData = JSON.parse(rawValue)
-      } catch {
-        setScanError('Invalid QR code format')
-        setScanning(false)
-        return
-      }
+      closeBtn.onclick = cleanup
 
-      // Validate QR data
-      if (qrData.type !== 'localbooru') {
-        setScanError('Not a LocalBooru QR code')
-        setScanning(false)
-        return
-      }
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        async (decodedText) => {
+          cleanup()
 
-      // Try connecting - local first, then public
-      let workingUrl = null
-      let urls = []
-      if (qrData.local) urls.push(qrData.local)
-      if (qrData.public) urls.push(qrData.public)
+          // Parse QR data
+          let qrData
+          try {
+            qrData = JSON.parse(decodedText)
+          } catch {
+            setScanError('Invalid QR code format')
+            return
+          }
 
-      for (const url of urls) {
-        const result = await testServerConnection(url)
-        if (result.success) {
-          workingUrl = url
-          break
-        }
-      }
+          // Validate QR data
+          if (qrData.type !== 'localbooru') {
+            setScanError('Not a LocalBooru QR code')
+            return
+          }
 
-      if (!workingUrl) {
-        setScanError('Could not connect to server. Make sure you are on the same network.')
-        setScanning(false)
-        return
-      }
+          // Try connecting - local first, then public
+          let workingUrl = null
+          let urls = []
+          if (qrData.local) urls.push(qrData.local)
+          if (qrData.public) urls.push(qrData.public)
 
-      // Add the server with certificate fingerprint (for HTTPS pinning)
-      await addServer({
-        name: qrData.name || 'LocalBooru Server',
-        url: workingUrl,
-        username: null,
-        password: null,
-        certFingerprint: qrData.cert_fingerprint || null,  // Store cert fingerprint for pinning
-        lastConnected: new Date().toISOString()
-      })
+          for (const url of urls) {
+            const result = await testServerConnection(url)
+            if (result.success) {
+              workingUrl = url
+              break
+            }
+          }
 
-      await loadServers()
-      await updateServerConfig()
-      onServerChange?.()
+          if (!workingUrl) {
+            setScanError('Could not connect to server. Make sure you are on the same network.')
+            return
+          }
 
+          // Add the server with certificate fingerprint (for HTTPS pinning)
+          await addServer({
+            name: qrData.name || 'LocalBooru Server',
+            url: workingUrl,
+            username: null,
+            password: null,
+            certFingerprint: qrData.cert_fingerprint || null,
+            lastConnected: new Date().toISOString()
+          })
+
+          await loadServers()
+          await updateServerConfig()
+          onServerChange?.()
+        },
+        () => {} // ignore scan errors (expected while scanning)
+      )
     } catch (err) {
       console.error('Scan error:', err)
-      setScanError(err.message || 'Failed to scan QR code')
-      document.body.classList.remove('barcode-scanner-active')
+      setScanError(err.message || 'Failed to start QR scanner. Check camera permissions.')
     } finally {
       setScanning(false)
     }
   }
 
-  // Don't show on web (non-Capacitor)
+  // Don't show on web (non-mobile)
   if (!isMobileApp()) {
     return (
       <div className="server-settings">

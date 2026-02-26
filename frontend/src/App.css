@@ -654,6 +654,7 @@
 .app {
   height: calc(100vh - var(--title-bar-height, 0px));
   margin-top: var(--title-bar-height, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   display: flex;
   flex-direction: column;
 }
@@ -1519,6 +1520,8 @@
   align-items: center;
   justify-content: center;
   background: var(--bg-primary);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .loading-content,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   getServers,
   addServer,
@@ -6,20 +6,13 @@ import {
   setActiveServerId,
   testServerConnection,
   pingAllServers,
-  isMobileApp
+  isMobileApp,
+  LOCAL_SERVER
 } from '../serverManager'
-import { updateServerConfig } from '../api'
+import { updateServerConfig, verifyHandshake } from '../api'
 import './ServerSelectScreen.css'
 
-// Dynamic import for barcode scanner (only on mobile)
-let BarcodeScanner = null
-if (isMobileApp()) {
-  import('@capacitor-mlkit/barcode-scanning').then(module => {
-    BarcodeScanner = module.BarcodeScanner
-  })
-}
-
-export default function ServerSelectScreen({ servers: initialServers, serverStatuses: initialStatuses, onConnect, onAddServer }) {
+export default function ServerSelectScreen({ servers: initialServers, serverStatuses: initialStatuses, error: initialError, onConnect, onAddServer }) {
   const [servers, setServers] = useState(initialServers || [])
   const [statuses, setStatuses] = useState(initialStatuses || {})
   const [connecting, setConnecting] = useState(null)
@@ -27,6 +20,12 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [inlineError, setInlineError] = useState(initialError || null)
+
+  // Update inline error when prop changes
+  useEffect(() => {
+    if (initialError) setInlineError(initialError)
+  }, [initialError])
 
   // Load servers if not provided
   useEffect(() => {
@@ -57,8 +56,18 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
     setRefreshing(false)
   }
 
+  async function handleConnectLocal() {
+    setConnecting(LOCAL_SERVER.id)
+    setInlineError(null)
+    await setActiveServerId(LOCAL_SERVER.id)
+    await updateServerConfig()
+    onConnect?.()
+    setConnecting(null)
+  }
+
   async function handleConnect(server) {
     setConnecting(server.id)
+    setInlineError(null)
     // Test connection first
     const result = await testServerConnection(server.url, server.username, server.password)
     if (result.success) {
@@ -68,7 +77,13 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
     } else {
       // Update status to show it's offline
       setStatuses(prev => ({ ...prev, [server.id]: 'offline' }))
-      alert(`Could not connect to ${server.name}: ${result.error}`)
+      const isAuthError = result.error?.includes('401') || result.error?.includes('Authentication')
+      if (isAuthError) {
+        setStatuses(prev => ({ ...prev, [server.id]: 'auth_failed' }))
+        setInlineError(`Authentication failed for ${server.name}. Please re-scan QR code to re-pair.`)
+      } else {
+        setInlineError(`Could not connect to ${server.name}: ${result.error}`)
+      }
     }
     setConnecting(null)
   }
@@ -81,94 +96,202 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   }
 
   async function handleScanQR() {
-    if (!BarcodeScanner) {
-      setScanError('QR scanner not available')
-      return
-    }
+    let stream = null
+    let scanInterval = null
 
     try {
       setScanError(null)
       setScanning(true)
 
-      // Check camera permission
-      const { camera } = await BarcodeScanner.checkPermissions()
-      if (camera !== 'granted') {
-        const { camera: newPerm } = await BarcodeScanner.requestPermissions()
-        if (newPerm !== 'granted') {
-          setScanError('Camera permission required to scan QR codes')
-          setScanning(false)
-          return
-        }
-      }
-
-      // Start scanning
-      document.body.classList.add('barcode-scanner-active')
-      const result = await BarcodeScanner.scan()
-      document.body.classList.remove('barcode-scanner-active')
-
-      if (!result.barcodes.length) {
-        setScanError('No QR code found')
-        setScanning(false)
-        return
-      }
-
-      // Parse QR data
-      const rawValue = result.barcodes[0].rawValue
-      let qrData
-      try {
-        qrData = JSON.parse(rawValue)
-      } catch {
-        setScanError('Invalid QR code format')
-        setScanning(false)
-        return
-      }
-
-      // Validate QR data
-      if (qrData.type !== 'localbooru') {
-        setScanError('Not a LocalBooru QR code')
-        setScanning(false)
-        return
-      }
-
-      // Try connecting - local first, then public
-      let workingUrl = null
-      let urls = []
-      if (qrData.local) urls.push(qrData.local)
-      if (qrData.public) urls.push(qrData.public)
-
-      for (const url of urls) {
-        const testResult = await testServerConnection(url)
-        if (testResult.success) {
-          workingUrl = url
-          break
-        }
-      }
-
-      if (!workingUrl) {
-        setScanError('Could not connect to server. Make sure you are on the same network.')
-        setScanning(false)
-        return
-      }
-
-      // Add the server
-      const newServer = await addServer({
-        name: qrData.name || 'LocalBooru Server',
-        url: workingUrl,
-        username: null,
-        password: null,
-        lastConnected: new Date().toISOString()
+      // Get camera stream directly
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
       })
 
-      // Auto-connect to the new server
-      await setActiveServerId(newServer.id)
-      await updateServerConfig()
-      onConnect?.()
+      // Create fullscreen overlay with our own video element
+      const overlay = document.createElement('div')
+      overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:#000;display:flex;flex-direction:column;'
+
+      // Video element — we control this directly
+      const video = document.createElement('video')
+      video.setAttribute('autoplay', '')
+      video.setAttribute('playsinline', '')
+      video.setAttribute('muted', '')
+      video.style.cssText = 'flex:1;width:100%;object-fit:cover;background:#000;'
+      video.srcObject = stream
+      overlay.appendChild(video)
+
+      // Scan target indicator
+      const indicator = document.createElement('div')
+      indicator.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:250px;height:250px;border:3px solid rgba(99,102,241,0.8);border-radius:16px;pointer-events:none;'
+      overlay.appendChild(indicator)
+
+      // Bottom bar with cancel
+      const bottomBar = document.createElement('div')
+      bottomBar.style.cssText = 'padding:16px;display:flex;justify-content:center;background:rgba(0,0,0,0.7);'
+      const closeBtn = document.createElement('button')
+      closeBtn.textContent = 'Cancel'
+      closeBtn.style.cssText = 'padding:12px 32px;font-size:16px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;'
+      bottomBar.appendChild(closeBtn)
+      overlay.appendChild(bottomBar)
+
+      document.body.appendChild(overlay)
+
+      await video.play()
+
+      // Canvas for frame capture
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+
+      // Use BarcodeDetector if available (Android Chrome 83+), else fall back to html5-qrcode
+      let decoder
+      if ('BarcodeDetector' in window) {
+        decoder = new BarcodeDetector({ formats: ['qr_code'] })
+      } else {
+        const { Html5Qrcode } = await import('html5-qrcode')
+        // We'll use canvas-based decoding below
+        decoder = null
+      }
+
+      let cleaned = false
+      const cleanup = () => {
+        if (cleaned) return
+        cleaned = true
+        clearInterval(scanInterval)
+        stream.getTracks().forEach(t => t.stop())
+        overlay.remove()
+        setScanning(false)
+      }
+
+      closeBtn.onclick = cleanup
+
+      const processResult = async (decodedText) => {
+        cleanup()
+
+        // Parse QR data
+        let qrData
+        try {
+          qrData = JSON.parse(decodedText)
+        } catch {
+          setScanError('Invalid QR code format')
+          return
+        }
+
+        // Validate QR data
+        if (qrData.type !== 'localbooru') {
+          setScanError('Not a LocalBooru QR code')
+          return
+        }
+
+        // Try connecting - local first, then public
+        // On Tauri mobile, use IPC to bypass WebView mixed-content restrictions
+        const useTauriIPC = window.__TAURI_INTERNALS__ !== undefined
+        let invoke
+        if (useTauriIPC) {
+          invoke = (await import('@tauri-apps/api/core')).invoke
+        }
+
+        let workingUrl = null
+        let urls = []
+        if (qrData.local) urls.push(qrData.local)
+        if (qrData.public) urls.push(qrData.public)
+
+        const errors = []
+        for (const url of urls) {
+          try {
+            let testResult
+            if (useTauriIPC) {
+              testResult = await invoke('test_remote_server', { url })
+            } else {
+              testResult = await testServerConnection(url)
+            }
+            if (testResult.success) {
+              workingUrl = url
+              break
+            }
+            errors.push(`${url}: ${testResult.error}`)
+          } catch (err) {
+            errors.push(`${url}: ${err.message}`)
+          }
+        }
+
+        if (!workingUrl) {
+          setScanError(`Could not connect. Tried: ${errors.join('; ')}`)
+          return
+        }
+
+        // Verify handshake and get JWT token
+        let token = null
+        if (qrData.nonce) {
+          try {
+            let handshakeResult
+            if (useTauriIPC) {
+              handshakeResult = await invoke('verify_remote_handshake', { url: workingUrl, nonce: qrData.nonce })
+            } else {
+              handshakeResult = await verifyHandshake(workingUrl, qrData.nonce)
+            }
+            if (handshakeResult.success && handshakeResult.token) {
+              token = handshakeResult.token
+            }
+          } catch (err) {
+            console.error('[QR] Handshake verification failed:', err.message)
+          }
+        }
+
+        // Add the server
+        const newServer = await addServer({
+          name: qrData.name || 'LocalBooru Server',
+          url: workingUrl,
+          token,
+          username: null,
+          password: null,
+          lastConnected: new Date().toISOString()
+        })
+
+        // Auto-connect to the new server
+        await setActiveServerId(newServer.id)
+        await updateServerConfig()
+        onConnect?.()
+      }
+
+      // Scan frames periodically
+      scanInterval = setInterval(async () => {
+        if (cleaned || video.readyState < 2) return
+
+        try {
+          if (decoder && decoder.detect) {
+            // BarcodeDetector API — can scan video directly
+            const barcodes = await decoder.detect(video)
+            if (barcodes.length > 0) {
+              processResult(barcodes[0].rawValue)
+            }
+          } else {
+            // Fallback: capture frame to canvas, then decode with html5-qrcode
+            canvas.width = video.videoWidth
+            canvas.height = video.videoHeight
+            ctx.drawImage(video, 0, 0)
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            // Use jsQR-style decode via html5-qrcode internal
+            const { Html5Qrcode } = await import('html5-qrcode')
+            const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
+            const file = new File([blob], 'frame.png', { type: 'image/png' })
+            try {
+              const result = await Html5Qrcode.scanFile(file, false)
+              processResult(result)
+            } catch {
+              // No QR found in this frame — continue scanning
+            }
+          }
+        } catch {
+          // Scan error for this frame, ignore
+        }
+      }, 200) // 5 fps scanning
 
     } catch (err) {
+      if (stream) stream.getTracks().forEach(t => t.stop())
+      if (scanInterval) clearInterval(scanInterval)
       console.error('Scan error:', err)
-      setScanError(err.message || 'Failed to scan QR code')
-      document.body.classList.remove('barcode-scanner-active')
-    } finally {
+      setScanError(err.message || 'Failed to start QR scanner. Check camera permissions.')
       setScanning(false)
     }
   }
@@ -190,6 +313,13 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
         <p>Select a server to connect</p>
       </div>
 
+      {inlineError && (
+        <div className="scan-error">
+          {inlineError}
+          <button className="dismiss-btn" onClick={() => setInlineError(null)}>Dismiss</button>
+        </div>
+      )}
+
       {scanError && (
         <div className="scan-error">
           {scanError}
@@ -197,62 +327,105 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
         </div>
       )}
 
-      {servers.length === 0 ? (
-        <div className="no-servers">
-          <p>No servers configured.</p>
-          <p>Add a server or scan a QR code to get started.</p>
+      <div className="server-select-list">
+        {/* "This Device" — local embedded server, always first, always online */}
+        <div
+          className={`server-select-card local-server ${connecting === LOCAL_SERVER.id ? 'connecting' : ''}`}
+          onClick={handleConnectLocal}
+        >
+          <div className="server-status-indicator">
+            <span className="status-dot connected" title="Online"></span>
+          </div>
+
+          <div className="server-select-info">
+            <div className="server-select-name">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: 'text-bottom' }}>
+                <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+                <line x1="12" y1="18" x2="12.01" y2="18"/>
+              </svg>
+              This Device
+              <span className="local-badge">Local</span>
+            </div>
+            <div className="server-select-url">Embedded server</div>
+          </div>
+
+          <div className="server-select-actions">
+            {connecting === LOCAL_SERVER.id ? (
+              <span className="connecting-text">Connecting...</span>
+            ) : (
+              <button
+                className="connect-btn"
+                onClick={(e) => { e.stopPropagation(); handleConnectLocal() }}
+              >
+                Connect
+              </button>
+            )}
+          </div>
         </div>
-      ) : (
-        <div className="server-select-list">
-          {servers.map(server => (
-            <div
-              key={server.id}
-              className={`server-select-card ${connecting === server.id ? 'connecting' : ''}`}
-              onClick={() => handleConnect(server)}
-            >
-              <div className="server-status-indicator">
-                {refreshing ? (
-                  <span className="status-dot testing" title="Checking..."></span>
-                ) : statuses[server.id] === 'online' ? (
-                  <span className="status-dot connected" title="Online"></span>
-                ) : (
-                  <span className="status-dot error" title="Offline"></span>
-                )}
-              </div>
 
-              <div className="server-select-info">
-                <div className="server-select-name">{server.name}</div>
-                <div className="server-select-url">{server.url}</div>
-              </div>
+        {/* Remote servers */}
+        {servers.map(server => (
+          <div
+            key={server.id}
+            className={`server-select-card ${connecting === server.id ? 'connecting' : ''} ${statuses[server.id] === 'auth_failed' ? 'auth-failed' : ''}`}
+            onClick={() => handleConnect(server)}
+          >
+            <div className="server-status-indicator">
+              {refreshing ? (
+                <span className="status-dot testing" title="Checking..."></span>
+              ) : statuses[server.id] === 'online' ? (
+                <span className="status-dot connected" title="Online"></span>
+              ) : statuses[server.id] === 'auth_failed' ? (
+                <span className="status-dot error" title="Auth Failed"></span>
+              ) : (
+                <span className="status-dot error" title="Offline"></span>
+              )}
+            </div>
 
-              <div className="server-select-actions">
-                {connecting === server.id ? (
-                  <span className="connecting-text">Connecting...</span>
-                ) : (
-                  <>
+            <div className="server-select-info">
+              <div className="server-select-name">{server.name}</div>
+              <div className="server-select-url">{server.url}</div>
+              {statuses[server.id] === 'auth_failed' && (
+                <div className="server-select-auth-error">Authentication expired — re-scan QR to re-pair</div>
+              )}
+            </div>
+
+            <div className="server-select-actions">
+              {connecting === server.id ? (
+                <span className="connecting-text">Connecting...</span>
+              ) : (
+                <>
+                  {statuses[server.id] === 'auth_failed' ? (
+                    <button
+                      className="connect-btn re-pair-btn"
+                      onClick={(e) => { e.stopPropagation(); handleScanQR() }}
+                    >
+                      Re-pair
+                    </button>
+                  ) : (
                     <button
                       className="connect-btn"
                       onClick={(e) => { e.stopPropagation(); handleConnect(server) }}
                     >
                       Connect
                     </button>
-                    <button
-                      className="delete-server-btn"
-                      onClick={(e) => handleDelete(server, e)}
-                      title="Remove server"
-                    >
-                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                      </svg>
-                    </button>
-                  </>
-                )}
-              </div>
+                  )}
+                  <button
+                    className="delete-server-btn"
+                    onClick={(e) => handleDelete(server, e)}
+                    title="Remove server"
+                  >
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                  </button>
+                </>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        ))}
+      </div>
 
       <div className="server-select-footer">
         <button

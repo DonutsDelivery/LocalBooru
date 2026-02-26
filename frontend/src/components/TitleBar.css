@@ -107,9 +107,11 @@
   outline-offset: -2px;
 }
 
-/* Mobile title bar */
+/* Mobile title bar — account for status bar / notch */
 .title-bar.mobile {
   -webkit-app-region: no-drag;
+  padding-top: env(safe-area-inset-top, 0px);
+  height: calc(32px + env(safe-area-inset-top, 0px));
 }
 
 .title-bar.mobile .title-bar-drag {

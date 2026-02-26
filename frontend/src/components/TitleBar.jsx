@@ -26,13 +26,14 @@ export default function TitleBar({ onSwitchServer }) {
 
   // Set CSS variable for title bar height offset + desktop class for transparent window
   useEffect(() => {
-    if (isDesktop || isMobile) {
+    if (isMobile) {
+      // On mobile, include safe-area-inset-top (status bar / notch) in the height
+      document.documentElement.style.setProperty('--title-bar-height', `calc(${TITLE_BAR_HEIGHT}px + env(safe-area-inset-top, 0px))`);
+    } else if (isDesktop) {
       document.documentElement.style.setProperty('--title-bar-height', `${TITLE_BAR_HEIGHT}px`);
+      document.documentElement.classList.add('desktop-app');
     } else {
       document.documentElement.style.setProperty('--title-bar-height', '0px');
-    }
-    if (isDesktop) {
-      document.documentElement.classList.add('desktop-app');
     }
   }, [isDesktop, isMobile]);
 

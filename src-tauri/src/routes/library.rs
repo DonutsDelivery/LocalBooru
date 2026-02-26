@@ -22,6 +22,9 @@ pub fn router() -> Router<AppState> {
         .route("/events", get(library_events_stream))
         // Task queue management
         .route("/queue", get(queue_status))
+        .route("/queue/tasks", get(list_tasks))
+        .route("/queue/tasks/{task_id}/cancel", post(cancel_task))
+        .route("/queue/completed", delete(clear_completed_tasks))
         .route("/queue/paused", get(queue_paused))
         .route("/queue/pause", post(pause_queue))
         .route("/queue/resume", post(resume_queue))
@@ -33,6 +36,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/clear-duplicate-tasks", post(clear_duplicates))
         .route("/clear-pending-tasks", delete(clear_all_pending))
+        .route("/queue/reset", post(reset_queue))
         // Batch task enqueue
         .route("/tag-untagged", post(tag_untagged))
         .route("/detect-ages", post(detect_ages))
@@ -259,6 +263,200 @@ async fn queue_status(State(state): State<AppState>) -> Result<Json<Value>, AppE
     .await?
 }
 
+// ─── Task listing, cancel, clear ─────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct ListTasksParams {
+    status: Option<String>,
+    task_type: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// GET /api/library/queue/tasks — Paginated task list with filters.
+async fn list_tasks(
+    State(state): State<AppState>,
+    Query(params): Query<ListTasksParams>,
+) -> Result<Json<Value>, AppError> {
+    let state_clone = state.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = state_clone.main_db().get()?;
+        let limit = params.limit.unwrap_or(50).min(200);
+        let offset = params.offset.unwrap_or(0);
+
+        // Build WHERE clause dynamically
+        let mut conditions: Vec<String> = Vec::new();
+        let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(ref status) = params.status {
+            conditions.push(format!("status = ?{}", bind_values.len() + 1));
+            bind_values.push(Box::new(status.clone()));
+        }
+        if let Some(ref task_type) = params.task_type {
+            conditions.push(format!("task_type = ?{}", bind_values.len() + 1));
+            bind_values.push(Box::new(task_type.clone()));
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        // Get total count
+        let count_sql = format!("SELECT COUNT(*) FROM task_queue {}", where_clause);
+        let total: i64 = {
+            let mut stmt = conn.prepare(&count_sql)?;
+            let refs: Vec<&dyn rusqlite::types::ToSql> = bind_values.iter().map(|b| b.as_ref()).collect();
+            stmt.query_row(refs.as_slice(), |row| row.get(0))?
+        };
+
+        // Get tasks
+        let query_sql = format!(
+            "SELECT id, task_type, payload, status, priority, attempts, error_message,
+                    created_at, started_at, completed_at
+             FROM task_queue {}
+             ORDER BY
+                CASE status
+                    WHEN 'processing' THEN 0
+                    WHEN 'pending' THEN 1
+                    WHEN 'failed' THEN 2
+                    WHEN 'cancelled' THEN 3
+                    WHEN 'completed' THEN 4
+                    ELSE 5
+                END,
+                priority DESC, created_at DESC
+             LIMIT ?{} OFFSET ?{}",
+            where_clause,
+            bind_values.len() + 1,
+            bind_values.len() + 2
+        );
+
+        let mut all_binds: Vec<Box<dyn rusqlite::types::ToSql>> = bind_values;
+        all_binds.push(Box::new(limit));
+        all_binds.push(Box::new(offset));
+
+        let mut stmt = conn.prepare(&query_sql)?;
+        let refs: Vec<&dyn rusqlite::types::ToSql> = all_binds.iter().map(|b| b.as_ref()).collect();
+
+        let tasks: Vec<Value> = stmt
+            .query_map(refs.as_slice(), |row| {
+                let payload_str: String = row.get(2)?;
+                let payload: Value = serde_json::from_str(&payload_str).unwrap_or(json!({}));
+
+                Ok(json!({
+                    "id": row.get::<_, i64>(0)?,
+                    "task_type": row.get::<_, String>(1)?,
+                    "payload": payload,
+                    "status": row.get::<_, String>(3)?,
+                    "priority": row.get::<_, i64>(4)?,
+                    "attempts": row.get::<_, i64>(5)?,
+                    "error_message": row.get::<_, Option<String>>(6)?,
+                    "created_at": row.get::<_, Option<String>>(7)?,
+                    "started_at": row.get::<_, Option<String>>(8)?,
+                    "completed_at": row.get::<_, Option<String>>(9)?,
+                }))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok::<_, AppError>(Json(json!({
+            "tasks": tasks,
+            "total": total
+        })))
+    })
+    .await?
+}
+
+/// POST /api/library/queue/tasks/:task_id/cancel — Cancel a specific task.
+async fn cancel_task(
+    State(state): State<AppState>,
+    AxumPath(task_id): AxumPath<i64>,
+) -> Result<Json<Value>, AppError> {
+    let state_clone = state.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = state_clone.main_db().get()?;
+
+        // Check task exists and get its current status
+        let current_status: String = conn
+            .query_row(
+                "SELECT status FROM task_queue WHERE id = ?1",
+                params![task_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AppError::NotFound(format!("Task {} not found", task_id))
+                }
+                other => AppError::from(other),
+            })?;
+
+        match current_status.as_str() {
+            "completed" | "cancelled" => {
+                return Err(AppError::BadRequest(format!(
+                    "Task {} is already {}",
+                    task_id, current_status
+                )));
+            }
+            "pending" => {
+                conn.execute(
+                    "UPDATE task_queue SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?1",
+                    params![task_id],
+                )?;
+            }
+            "processing" => {
+                conn.execute(
+                    "UPDATE task_queue SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?1",
+                    params![task_id],
+                )?;
+                // Signal the running task to stop immediately
+                if let Some(tq) = state_clone.task_queue() {
+                    tq.cancel_task(task_id);
+                }
+            }
+            _ => {
+                conn.execute(
+                    "UPDATE task_queue SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?1",
+                    params![task_id],
+                )?;
+            }
+        }
+
+        Ok::<_, AppError>(Json(json!({
+            "cancelled": true,
+            "task_id": task_id,
+            "previous_status": current_status
+        })))
+    })
+    .await?
+}
+
+#[derive(Deserialize)]
+struct ClearCompletedParams {
+    older_than_hours: Option<i64>,
+}
+
+/// DELETE /api/library/queue/completed — Clear completed/failed/cancelled tasks.
+async fn clear_completed_tasks(
+    State(state): State<AppState>,
+    Query(params): Query<ClearCompletedParams>,
+) -> Result<Json<Value>, AppError> {
+    let state_clone = state.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = state_clone.main_db().get()?;
+        let hours = params.older_than_hours.unwrap_or(24);
+
+        let deleted = conn.execute(
+            "DELETE FROM task_queue WHERE status IN ('completed', 'failed', 'cancelled')
+             AND completed_at < datetime('now', ?1)",
+            params![format!("-{} hours", hours)],
+        )?;
+
+        Ok::<_, AppError>(Json(json!({ "cleared": deleted })))
+    })
+    .await?
+}
+
 /// GET /api/library/queue/paused — Check if queue is paused.
 async fn queue_paused(State(state): State<AppState>) -> Json<Value> {
     let paused = state
@@ -386,6 +584,18 @@ async fn clear_all_pending(
         };
 
         Ok::<_, AppError>(Json(json!({ "cancelled": cancelled })))
+    })
+    .await?
+}
+
+/// POST /api/library/queue/reset — Delete ALL tasks (pending, processing, completed, failed, cancelled).
+/// Completely resets the queue so the tag guardian and scans can repopulate with fresh work.
+async fn reset_queue(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    let state_clone = state.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = state_clone.main_db().get()?;
+        let deleted = conn.execute("DELETE FROM task_queue", [])?;
+        Ok::<_, AppError>(Json(json!({ "deleted": deleted })))
     })
     .await?
 }

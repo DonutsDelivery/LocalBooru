@@ -17,8 +17,8 @@ import { useCastSession } from './hooks/useCastSession'
 import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
 
-// DEBUG: Temporary FPS monitor overlay — press B to toggle bare mode (video only)
-function FPSMonitor({ videoRef, onToggleBare }) {
+// Video diagnostics overlay — press I to toggle, B for bare mode (video only)
+function FPSMonitor({ videoRef, visible, onToggleBare }) {
   const statsRef = useRef(null)
   const [bare, setBare] = useState(false)
   useEffect(() => {
@@ -28,6 +28,7 @@ function FPSMonitor({ videoRef, onToggleBare }) {
   }, [onToggleBare])
 
   useEffect(() => {
+    if (!visible) return
     const video = videoRef.current
     if (!video) return
     let lastPresented = 0, lastDropped = 0, rvfcCount = 0, rafCount = 0, lastTime = performance.now()
@@ -70,7 +71,9 @@ function FPSMonitor({ videoRef, onToggleBare }) {
     }, 1000)
 
     return () => { clearInterval(iv); cancelAnimationFrame(rafId) }
-  }, [videoRef.current, bare])
+  }, [videoRef.current, bare, visible])
+
+  if (!visible) return null
 
   return <pre ref={statsRef} style={{
     position:'absolute',top:10,left:10,background:'rgba(0,0,0,0.8)',
@@ -112,7 +115,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [collectionFeedback, setCollectionFeedback] = useState(null)
   const [newCollectionName, setNewCollectionName] = useState('')
 
-  // DEBUG: bare mode — hides all UI, just video + FPS counter
+  // Video diagnostics overlay (toggle with I key) and bare mode (B key)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [debugBare, setDebugBare] = useState(false)
 
   // Share popover state
@@ -737,6 +741,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             e.preventDefault()
             subtitles.toggleSubtitles()
             return
+          case 'i':
+          case 'I':
+            e.preventDefault()
+            setShowDiagnostics(p => !p)
+            return
         }
       }
 
@@ -1317,8 +1326,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onCanPlay={handleVideoCanPlay}
               onContextMenu={handleVideoContextMenu}
             />
-            {/* DEBUG: FPS monitor — press B to toggle bare mode */}
-            <FPSMonitor videoRef={mediaRef} onToggleBare={setDebugBare} />
+            {/* Video diagnostics — press I to toggle, B for bare mode */}
+            <FPSMonitor videoRef={mediaRef} visible={showDiagnostics} onToggleBare={setDebugBare} />
             {/* Drag-to-seek overlay */}
             {gestures.dragSeek && (
               <div className="video-seek-overlay">

@@ -2,12 +2,13 @@
  * LocalBooru API client - supports both local and multi-server mode
  */
 import axios from 'axios'
-import { isMobileApp, getActiveServer } from './serverManager'
+import { isMobileApp, getActiveServer, LOCAL_SERVER } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 
 // Current server config (cached for synchronous access)
 let currentServerUrl = null
 let currentServerAuth = null
+let currentServerToken = null  // Raw JWT token for query param auth (img/video src)
 let currentCertFingerprint = null  // TLS certificate fingerprint for pinning
 let certValidated = false  // Whether certificate has been validated this session
 
@@ -16,29 +17,28 @@ function isTauriApp() {
   return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
 }
 
+// Get the local server base URL (for Tauri apps)
+function getLocalServerBase() {
+  const isDevServer = ['5173', '5174', '5175', '5210'].includes(window.location.port)
+  if (isTauriApp()) {
+    return isDevServer ? '' : 'http://127.0.0.1:8790'
+  }
+  return ''
+}
+
 // Get API URL - same origin when served from backend, fallback for dev
 function getApiUrl() {
-  // Mobile app mode - use configured server
+  // Mobile app with remote server on Tauri — route through local proxy
+  if (isMobileApp() && currentServerUrl && isTauriApp()) {
+    return `${getLocalServerBase()}/remote/api`
+  }
+
+  // Mobile app with remote server (non-Tauri, e.g. browser) — direct URL
   if (isMobileApp() && currentServerUrl) {
     return `${currentServerUrl}/api`
   }
 
-  // Check if we're running on a Vite dev server
-  const isDevServer = ['5173', '5174', '5175', '5210'].includes(window.location.port)
-
-  // Tauri app - use Vite proxy in dev, direct URL in production
-  if (isTauriApp()) {
-    return isDevServer ? '/api' : 'http://127.0.0.1:8790/api'
-  }
-
-  if (isDevServer) {
-    // Dev mode - Vite proxy forwards /api to backend (same-origin)
-    return '/api'
-  }
-
-  // Production - frontend served from backend, use relative URL
-  // This works for both localhost AND network access
-  return '/api'
+  return `${getLocalServerBase()}/api`
 }
 
 // Update the server configuration (call when server changes)
@@ -47,16 +47,50 @@ export async function updateServerConfig() {
 
   const server = await getActiveServer()
   if (server) {
+    // Local embedded server — use relative URLs like desktop
+    if (server.isLocal || server.id === LOCAL_SERVER.id) {
+      currentServerUrl = null
+      currentServerAuth = null
+      currentServerToken = null
+      currentCertFingerprint = null
+      certValidated = false
+      // Clear remote proxy on Tauri
+      if (isTauriApp()) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          await invoke('set_remote_proxy', { url: null, token: null })
+        } catch (e) { console.warn('[API] Failed to clear remote proxy:', e) }
+      }
+      api.defaults.baseURL = getApiUrl()
+      return
+    }
+
     currentServerUrl = server.url
     currentCertFingerprint = server.certFingerprint || null
     certValidated = false  // Reset validation on server change
-    if (server.username && server.password) {
+    // Prefer JWT token (from QR pairing) over Basic auth
+    if (server.token) {
+      currentServerAuth = 'Bearer ' + server.token
+      currentServerToken = server.token
+    } else if (server.username && server.password) {
       currentServerAuth = 'Basic ' + btoa(`${server.username}:${server.password}`)
+      currentServerToken = null
     } else {
       currentServerAuth = null
+      currentServerToken = null
     }
+
+    // On Tauri mobile, configure the local server to proxy to remote server
+    // This avoids mixed-content blocks (https://tauri.localhost -> http://...)
+    if (isTauriApp()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        await invoke('set_remote_proxy', { url: server.url, token: server.token || null })
+      } catch (e) { console.warn('[API] Failed to set remote proxy:', e) }
+    }
+
     // Update axios base URL
-    api.defaults.baseURL = `${server.url}/api`
+    api.defaults.baseURL = getApiUrl()
 
     // Validate certificate on first connection to HTTPS server
     if (isHttps(server.url) && currentCertFingerprint) {
@@ -65,23 +99,36 @@ export async function updateServerConfig() {
   } else {
     currentServerUrl = null
     currentServerAuth = null
+    currentServerToken = null
     currentCertFingerprint = null
     certValidated = false
+    // Clear remote proxy on Tauri
+    if (isTauriApp()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        await invoke('set_remote_proxy', { url: null, token: null })
+      } catch (e) { console.warn('[API] Failed to clear remote proxy:', e) }
+    }
     api.defaults.baseURL = null
   }
 }
 
 // Check if connected to a server (for mobile app)
+// Returns true on desktop, or on mobile when using local server or a configured remote server
 export function isServerConfigured() {
   if (!isMobileApp()) return true
-  return currentServerUrl !== null
+  // On mobile, we're configured if using local server (currentServerUrl null but baseURL set)
+  // or if connected to a remote server (currentServerUrl not null)
+  return currentServerUrl !== null || api.defaults.baseURL !== null
 }
 
 // Initialize API with base URL
+// On Android, mixed content is enabled in MainActivity.kt so XHR works fine
 const api = axios.create({
   baseURL: getApiUrl(),
-  timeout: 60000  // 60s timeout for busy servers
+  timeout: 60000,  // 60s timeout for busy servers
 })
+
 
 // Add request interceptor for auth on mobile and certificate validation
 api.interceptors.request.use(async (config) => {
@@ -518,6 +565,31 @@ export async function cleanMissingFiles() {
   return response.data
 }
 
+export async function getQueueTasks(status = null, taskType = null, limit = 50, offset = 0) {
+  const params = new URLSearchParams()
+  if (status) params.append('status', status)
+  if (taskType) params.append('task_type', taskType)
+  params.append('limit', limit)
+  params.append('offset', offset)
+  const response = await api.get(`/library/queue/tasks?${params}`)
+  return response.data
+}
+
+export async function cancelTask(taskId) {
+  const response = await api.post(`/library/queue/tasks/${taskId}/cancel`)
+  return response.data
+}
+
+export async function clearCompletedTasks(olderThanHours = 24) {
+  const response = await api.delete(`/library/queue/completed?older_than_hours=${olderThanHours}`)
+  return response.data
+}
+
+export async function resetQueue() {
+  const response = await api.post('/library/queue/reset')
+  return response.data
+}
+
 // Libraries API
 export async function fetchLibraries() {
   const response = await api.get('/libraries')
@@ -645,6 +717,11 @@ export async function getQRData() {
   return response.data
 }
 
+export async function verifyHandshake(serverUrl, nonce) {
+  const response = await axios.post(`${serverUrl}/api/network/verify-handshake`, { nonce })
+  return response.data
+}
+
 export async function updateNetworkConfig(config) {
   const response = await api.post('/network', config)
   return response.data
@@ -705,21 +782,31 @@ export function getMediaUrl(path) {
   if (!path) return ''
   if (path.startsWith('http')) return path
 
-  // On mobile, prepend server URL for relative paths
+  // On mobile with remote server — route through local proxy (auth handled by proxy)
   if (isMobileApp() && currentServerUrl) {
     const cleanPath = path.startsWith('/') ? path : `/${path}`
-    return `${currentServerUrl}${cleanPath}`
+    if (isTauriApp()) {
+      // Proxy handles auth via set_remote_proxy token
+      return `${getLocalServerBase()}/remote${cleanPath}`
+    }
+    // Non-Tauri mobile (browser) — direct URL with token
+    const url = `${currentServerUrl}${cleanPath}`
+    if (currentServerToken) {
+      const sep = url.includes('?') ? '&' : '?'
+      return `${url}${sep}token=${currentServerToken}`
+    }
+    return url
   }
 
-  // Dev mode - serve media directly from backend (proper range request support)
-  // Only VTT files in <track> elements need the Vite proxy (same-origin requirement)
+  // Dev mode or Tauri mobile (local server) - serve media directly from backend
+  // On Tauri mobile, frontend is at https://tauri.localhost so relative paths don't work
   const isDevServer = ['5173', '5174', '5175', '5210'].includes(window.location.port)
-  if (isDevServer) {
+  if (isDevServer || isMobileApp()) {
     const cleanPath = path.startsWith('/') ? path : `/${path}`
     return `http://127.0.0.1:8790${cleanPath}`
   }
 
-  // On web, relative URLs work fine
+  // On web or Tauri desktop (production), relative URLs work fine
   return path
 }
 
@@ -1233,8 +1320,25 @@ export async function stopAddon(id) {
 
 // Health check (used for Tauri startup readiness polling)
 export async function healthCheck() {
-  const baseUrl = isTauriApp() ? 'http://127.0.0.1:8790' : ''
-  const response = await axios.get(`${baseUrl}/health`, { timeout: 2000 })
+  // Remote server — use /api/directories (requires auth) to validate JWT is still valid.
+  // /health and /api are exempt from auth so they can't detect expired tokens.
+  if (isMobileApp() && currentServerUrl && isTauriApp()) {
+    const response = await api.get(`${getLocalServerBase()}/remote/api/directories`, { baseURL: '', timeout: 3000 })
+    return response.data
+  }
+  if (isMobileApp() && currentServerUrl) {
+    const response = await api.get(`${currentServerUrl}/api/directories`, { baseURL: '', timeout: 3000 })
+    return response.data
+  }
+  // Local Tauri server — use IPC (most reliable, no network dependency)
+  if (isTauriApp()) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const healthy = await invoke('backend_health_check')
+    if (!healthy) throw new Error('Backend not ready')
+    return { status: 'healthy' }
+  }
+  // Non-Tauri (browser dev mode)
+  const response = await api.get('/health', { baseURL: '', timeout: 2000 })
   return response.data
 }
 

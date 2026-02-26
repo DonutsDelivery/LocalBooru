@@ -10,6 +10,8 @@ use tower::{Layer, Service};
 use std::future::Future;
 use std::pin::Pin;
 
+use super::auth::decode_jwt;
+
 /// Endpoints that are always localhost-only (sensitive settings).
 const LOCALHOST_ONLY_PREFIXES: &[&str] = &[
     "/api/settings",
@@ -17,15 +19,21 @@ const LOCALHOST_ONLY_PREFIXES: &[&str] = &[
     "/api/users",
 ];
 
-/// Endpoints exempt from access control.
+/// Endpoints exempt from access control (prefix match).
 const EXEMPT_PREFIXES: &[&str] = &[
     "/health",
     "/docs",
     "/assets",
+    "/thumbnails",
     "/icon.png",
     "/api/share/",
     "/api/cast-media/",
     "/watch/",
+];
+
+/// Endpoints exempt from access control (exact match).
+const EXEMPT_EXACT: &[&str] = &[
+    "/api",
 ];
 
 /// Endpoints under localhost-only prefixes that should still be accessible from network.
@@ -45,9 +53,6 @@ const LOCALHOST_EXEMPTIONS: &[&str] = &[
     "/api/users/login",
     "/api/users/verify",
 ];
-
-/// Write HTTP methods that require elevated access.
-const WRITE_METHODS: &[&str] = &["POST", "PUT", "PATCH", "DELETE"];
 
 /// Classify an IP address into an access level.
 pub fn classify_ip(ip: &std::net::IpAddr) -> &'static str {
@@ -104,13 +109,18 @@ impl AccessTier {
 // ─── Layer ──────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
-pub struct AccessControlLayer;
+pub struct AccessControlLayer {
+    pub jwt_secret: String,
+}
 
 impl<S> Layer<S> for AccessControlLayer {
     type Service = AccessControlService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        AccessControlService { inner }
+        AccessControlService {
+            inner,
+            jwt_secret: self.jwt_secret.clone(),
+        }
     }
 }
 
@@ -119,6 +129,7 @@ impl<S> Layer<S> for AccessControlLayer {
 #[derive(Clone)]
 pub struct AccessControlService<S> {
     inner: S,
+    jwt_secret: String,
 }
 
 impl<S> Service<Request<Body>> for AccessControlService<S>
@@ -139,6 +150,8 @@ where
         // Swap so the clone is the "not ready" one
         std::mem::swap(&mut self.inner, &mut inner);
 
+        let jwt_secret = self.jwt_secret.clone();
+
         Box::pin(async move {
             let path = req.uri().path().to_string();
             let method = req.method().as_str().to_string();
@@ -148,11 +161,16 @@ where
                 return inner.call(req).await;
             }
 
-            // Skip access control for exempt endpoints
+            // Skip access control for exempt endpoints (prefix match)
             for prefix in EXEMPT_PREFIXES {
                 if path.starts_with(prefix) {
                     return inner.call(req).await;
                 }
+            }
+
+            // Skip access control for exempt endpoints (exact match)
+            if EXEMPT_EXACT.contains(&path.as_str()) {
+                return inner.call(req).await;
             }
 
             // Extract client IP from ConnectInfo extension
@@ -169,37 +187,66 @@ where
                 return inner.call(req).await;
             }
 
-            // Block localhost-only endpoints for non-localhost access
-            for prefix in LOCALHOST_ONLY_PREFIXES {
-                if path.starts_with(prefix) {
-                    let is_exempted = LOCALHOST_EXEMPTIONS
-                        .iter()
-                        .any(|exempt| path == *exempt || path.starts_with(&format!("{}/", exempt)));
+            // Check for JWT authentication (Bearer header or ?token= query param)
+            let has_valid_jwt = req
+                .headers()
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|auth| {
+                    auth.strip_prefix("Bearer ")
+                        .or_else(|| auth.strip_prefix("bearer "))
+                })
+                .map(|token| decode_jwt(token, &jwt_secret).is_ok())
+                .unwrap_or(false);
 
-                    if !is_exempted {
-                        let response = (
-                            StatusCode::FORBIDDEN,
-                            axum::Json(serde_json::json!({
-                                "error": "This endpoint is only accessible from localhost",
-                                "detail": format!(
-                                    "Access to {} requires direct access to the machine running LocalBooru",
-                                    prefix
-                                )
-                            })),
-                        )
-                            .into_response();
-                        return Ok(response);
-                    }
+            // Also check for token in query parameter (for <img>/<video> src URLs)
+            let has_valid_jwt = has_valid_jwt || req
+                .uri()
+                .query()
+                .and_then(|q| {
+                    q.split('&')
+                        .find_map(|pair| pair.strip_prefix("token="))
+                })
+                .map(|token| decode_jwt(token, &jwt_secret).is_ok())
+                .unwrap_or(false);
+
+            // Authenticated requests (valid JWT) bypass localhost-only and write restrictions
+            if has_valid_jwt {
+                return inner.call(req).await;
+            }
+
+            // No valid JWT and not localhost → block with 401
+            // (except for exempt endpoints already handled above, and localhost-exempted paths)
+            let is_exempt_path = LOCALHOST_EXEMPTIONS
+                .iter()
+                .any(|exempt| path == *exempt || path.starts_with(&format!("{}/", exempt)));
+
+            // Block localhost-only endpoints for unauthenticated non-localhost access
+            for prefix in LOCALHOST_ONLY_PREFIXES {
+                if path.starts_with(prefix) && !is_exempt_path {
+                    let response = (
+                        StatusCode::FORBIDDEN,
+                        axum::Json(serde_json::json!({
+                            "error": "This endpoint is only accessible from localhost",
+                            "detail": format!(
+                                "Access to {} requires direct access to the machine running LocalBooru",
+                                prefix
+                            )
+                        })),
+                    )
+                        .into_response();
+                    return Ok(response);
                 }
             }
 
-            // Block write operations for public internet
-            if WRITE_METHODS.contains(&method.as_str()) && access_level == "public" {
+            // Block unauthenticated non-localhost requests (require JWT)
+            // Skip for localhost-exempted paths (explicitly network-accessible, e.g. verify-handshake)
+            if access_level != "localhost" && !is_exempt_path {
                 let response = (
-                    StatusCode::FORBIDDEN,
+                    StatusCode::UNAUTHORIZED,
                     axum::Json(serde_json::json!({
-                        "error": "Write operations require local access",
-                        "detail": "Public internet access is read-only."
+                        "error": "Authentication required",
+                        "detail": "Non-localhost requests require a valid JWT token. Pair via QR code to obtain one."
                     })),
                 )
                     .into_response();
