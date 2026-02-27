@@ -11,7 +11,7 @@ env:
 
 jobs:
   build-ios:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,22 +61,35 @@ jobs:
           # Local network access (connecting to desktop server)
           /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'LocalBooru connects to servers on your local network'" "$PLIST"
 
-      - name: Build iOS (Debug, unsigned)
+      - name: Disable code signing
         run: |
-          cargo tauri ios build --debug -- \
-            -allowProvisioningUpdates \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+          # Patch the generated Xcode project to disable code signing
+          PBXPROJ=$(find src-tauri/gen/apple -name "project.pbxproj" | head -1)
+          if [ -n "$PBXPROJ" ]; then
+            echo "Patching $PBXPROJ to disable code signing..."
+            sed -i '' 's/CODE_SIGN_IDENTITY = ".*"/CODE_SIGN_IDENTITY = ""/g' "$PBXPROJ"
+            sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = ".*"/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""/g' "$PBXPROJ"
+            # Add CODE_SIGNING_ALLOWED = NO to build settings
+            sed -i '' 's/CODE_SIGNING_REQUIRED = YES/CODE_SIGNING_REQUIRED = NO/g' "$PBXPROJ"
+            # Insert CODE_SIGNING_ALLOWED = NO after any CODE_SIGN_IDENTITY line
+            sed -i '' '/CODE_SIGN_IDENTITY/a\
+				CODE_SIGNING_ALLOWED = NO;' "$PBXPROJ"
+          fi
+
+      - name: Build iOS (Debug)
+        run: cargo tauri ios build --debug
 
       - name: Find build output
-        id: find-build
+        if: always()
         run: |
           echo "Build output:"
           find src-tauri/gen/apple/build -type f \( -name "*.app" -o -name "*.ipa" \) 2>/dev/null | head -10
           find src-tauri/gen/apple/build -type d -name "*.app" 2>/dev/null | head -10
+          echo "All build artifacts:"
+          find src-tauri/gen/apple/build -type f 2>/dev/null | head -30 || echo "No build directory found"
 
       - name: Upload iOS build
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-debug-build
