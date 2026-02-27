@@ -56,7 +56,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'LocalBooru connects to servers on your local network'" "$PLIST"
 
       - name: Build iOS (Simulator)
-        run: cargo tauri ios build --debug --target aarch64-apple-ios-sim
+        run: cargo tauri ios build --debug --target aarch64-sim
 
       - name: Find build output
         if: always()
