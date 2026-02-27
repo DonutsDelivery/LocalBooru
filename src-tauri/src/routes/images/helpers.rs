@@ -336,7 +336,8 @@ pub fn query_directory_images(
                 "duration": img.duration,
                 "file_hash": img.file_hash,
                 "import_source": img.import_source,
-                "file_modified_at": img.file_modified_at
+                "file_modified_at": img.file_modified_at,
+                "library_id": library_id
             })
         })
         .collect();

@@ -117,6 +117,10 @@ pub fn scan_directory(
         if !entry.file_type().is_file() {
             continue;
         }
+        // Skip files inside the dumpster subfolder (pruned images)
+        if entry.path().components().any(|c| c.as_os_str() == "dumpster") {
+            continue;
+        }
         if !importer::is_media_file(entry.path()) {
             continue;
         }

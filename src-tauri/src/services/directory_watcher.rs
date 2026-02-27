@@ -13,6 +13,11 @@ use crate::server::state::AppState;
 use crate::services::file_tracker;
 use crate::services::importer;
 
+/// Check if a path is inside a "dumpster" subfolder (pruned images).
+fn is_in_dumpster(path: &std::path::Path) -> bool {
+    path.components().any(|c| c.as_os_str() == "dumpster")
+}
+
 /// Manages filesystem watchers for all watch directories.
 pub struct DirectoryWatcher {
     state: AppState,
@@ -324,7 +329,7 @@ fn handle_fs_event(state: &AppState, lib: &Arc<LibraryContext>, directory_id: i6
         // New file created
         EventKind::Create(_) => {
             for path in &event.paths {
-                if path.is_file() && importer::is_media_file(path) {
+                if path.is_file() && importer::is_media_file(path) && !is_in_dumpster(path) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
                     let lib_clone = lib.clone();
@@ -358,7 +363,7 @@ fn handle_fs_event(state: &AppState, lib: &Arc<LibraryContext>, directory_id: i6
         // File moved/renamed TO this directory — treat as new file
         EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
             for path in &event.paths {
-                if path.is_file() && importer::is_media_file(path) {
+                if path.is_file() && importer::is_media_file(path) && !is_in_dumpster(path) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
                     let lib_clone = lib.clone();
@@ -391,7 +396,7 @@ fn handle_fs_event(state: &AppState, lib: &Arc<LibraryContext>, directory_id: i6
         // Other modifications — import untracked media files
         EventKind::Modify(_) => {
             for path in &event.paths {
-                if path.is_file() && importer::is_media_file(path) {
+                if path.is_file() && importer::is_media_file(path) && !is_in_dumpster(path) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
                     let lib_clone = lib.clone();
@@ -590,6 +595,9 @@ fn startup_scan(state: &AppState, lib: &Arc<LibraryContext>, directory_id: i64, 
 
     for entry in walker.into_iter().filter_map(|e| e.ok()) {
         if !entry.file_type().is_file() {
+            continue;
+        }
+        if is_in_dumpster(entry.path()) {
             continue;
         }
         if !importer::is_media_file(entry.path()) {

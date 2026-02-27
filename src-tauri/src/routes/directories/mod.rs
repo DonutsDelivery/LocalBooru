@@ -958,7 +958,15 @@ async fn prune_directory(
     AxumPath(directory_id): AxumPath<i64>,
     Query(q): Query<LibraryQuery>,
 ) -> Result<Json<Value>, AppError> {
+    log::info!(
+        "[Prune] Request: directory_id={}, library_id={:?}",
+        directory_id, q.library_id
+    );
     let lib = state.resolve_library(q.library_id.as_deref())?;
+    log::info!(
+        "[Prune] Resolved library: uuid={}, name={}, data_dir={}",
+        lib.uuid, lib.name, lib.data_dir.display()
+    );
     let result = tokio::task::spawn_blocking(move || {
         let main_conn = lib.main_pool.get()?;
 
@@ -970,6 +978,8 @@ async fn prune_directory(
             )
             .map_err(|_| AppError::NotFound("Directory not found".into()))?;
 
+        log::info!("[Prune] Directory path: {}", dir_path);
+
         if !Path::new(&dir_path).exists() {
             return Err(AppError::BadRequest("Directory path does not exist".into()));
         }
@@ -978,6 +988,22 @@ async fn prune_directory(
 
         let dir_pool = lib.directory_db.get_pool(directory_id)?;
         let conn = dir_pool.get()?;
+
+        // Log image counts for debugging
+        let total_images: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+            .unwrap_or(0);
+        let favorited_images: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE is_favorite = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        log::info!(
+            "[Prune] DB stats: total_images={}, favorited={}, to_prune={}",
+            total_images, favorited_images, total_images - favorited_images
+        );
 
         // Get non-favorited images with their file paths
         let mut stmt = conn.prepare(
@@ -1293,6 +1319,10 @@ fn repair_directory_inner(
         if !entry.file_type().is_file() {
             continue;
         }
+        // Skip files inside the dumpster subfolder (pruned images)
+        if entry.path().components().any(|c| c.as_os_str() == "dumpster") {
+            continue;
+        }
         if !importer::is_media_file(entry.path()) {
             continue;
         }
@@ -1325,6 +1355,32 @@ fn repair_directory_inner(
     let mut removed: i64 = 0;
 
     for (file_id, image_id, original_path) in files {
+        // Remove records pointing into the dumpster (pruned images)
+        if Path::new(&original_path).components().any(|c| c.as_os_str() == "dumpster") {
+            conn.execute("DELETE FROM image_files WHERE id = ?1", params![file_id])?;
+            let other_count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM image_files WHERE image_id = ?1",
+                    params![image_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            if other_count == 0 {
+                // Clean up thumbnail
+                if let Ok(hash) = conn.query_row(
+                    "SELECT file_hash FROM images WHERE id = ?1",
+                    params![image_id],
+                    |row| row.get::<_, String>(0),
+                ) {
+                    let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
+                    let _ = std::fs::remove_file(lib.thumbnails_dir().join(&thumb_name));
+                }
+                conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
+            }
+            removed += 1;
+            continue;
+        }
+
         if Path::new(&original_path).exists() {
             conn.execute(
                 "UPDATE image_files SET file_exists = 1, file_status = 'available' WHERE id = ?1",
@@ -1341,11 +1397,36 @@ fn repair_directory_inner(
             .unwrap_or("");
 
         if let Some(&new_path) = name_to_path.get(filename) {
-            conn.execute(
-                "UPDATE image_files SET original_path = ?1, file_exists = 1, file_status = 'available' WHERE id = ?2",
-                params![new_path, file_id],
-            )?;
-            repaired += 1;
+            // Check if another record already has this path (avoid UNIQUE conflict)
+            let existing: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM image_files WHERE original_path = ?1 AND id != ?2",
+                    params![new_path, file_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+
+            if existing > 0 {
+                // Path already taken by another record — remove this duplicate
+                conn.execute("DELETE FROM image_files WHERE id = ?1", params![file_id])?;
+                let other_count: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM image_files WHERE image_id = ?1",
+                        params![image_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(0);
+                if other_count == 0 {
+                    conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
+                }
+                removed += 1;
+            } else {
+                conn.execute(
+                    "UPDATE image_files SET original_path = ?1, file_exists = 1, file_status = 'available' WHERE id = ?2",
+                    params![new_path, file_id],
+                )?;
+                repaired += 1;
+            }
         } else {
             // Truly missing — check if last reference
             let other_count: i64 = conn

@@ -329,7 +329,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
     try {
       const { toggleFavorite } = await import('../../api')
-      const result = await toggleFavorite(image.id)
+      const result = await toggleFavorite(image.id, image.directory_id, image.library_id)
       setIsFavorited(result.is_favorite)
       // Update parent state so the change persists when navigating
       if (onImageUpdate) {
@@ -350,7 +350,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
     try {
       const { deleteImage } = await import('../../api')
-      await deleteImage(image.id, true, image.directory_id) // true = delete from filesystem, pass directory_id if available
+      await deleteImage(image.id, true, image.directory_id, image.library_id) // delete from filesystem, pass directory context
       setShowDeleteConfirm(false)
 
       // Notify parent to remove the image and navigate

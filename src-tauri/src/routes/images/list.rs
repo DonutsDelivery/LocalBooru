@@ -241,12 +241,11 @@ pub async fn list_images(
                 ) {
                     Ok((mut images, dir_total)) => {
                         total_count += dir_total;
-                        // Add library_id for cross-library tracking
-                        if target_libs.len() > 1 {
-                            for img in &mut images {
-                                if let Some(obj) = img.as_object_mut() {
-                                    obj.insert("library_id".to_string(), json!(lib.uuid));
-                                }
+                        // Always add library_id so downstream operations (favorite, delete, etc.)
+                        // target the correct library
+                        for img in &mut images {
+                            if let Some(obj) = img.as_object_mut() {
+                                obj.insert("library_id".to_string(), json!(lib.uuid));
                             }
                         }
                         all_images.extend(images);

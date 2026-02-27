@@ -126,7 +126,7 @@ export function isServerConfigured() {
 // On Android, mixed content is enabled in MainActivity.kt so XHR works fine
 const api = axios.create({
   baseURL: getApiUrl(),
-  timeout: 60000,  // 60s timeout for busy servers
+  timeout: 120000,  // 120s timeout for busy servers / large operations
 })
 
 
@@ -272,23 +272,32 @@ export async function fetchImage(id) {
   return response.data
 }
 
-export async function toggleFavorite(imageId) {
-  const response = await api.post(`/images/${imageId}/favorite`)
+export async function toggleFavorite(imageId, directoryId, libraryId) {
+  const params = {}
+  if (directoryId) params.directory_id = directoryId
+  if (libraryId) params.library_id = libraryId
+  const response = await api.post(`/images/${imageId}/favorite`, null, { params })
   return response.data
 }
 
-export async function updateRating(imageId, rating) {
-  const response = await api.patch(`/images/${imageId}/rating?rating=${rating}`)
+export async function updateRating(imageId, rating, directoryId, libraryId) {
+  const params = new URLSearchParams({ rating })
+  if (directoryId) params.append('directory_id', directoryId)
+  if (libraryId) params.append('library_id', libraryId)
+  const response = await api.patch(`/images/${imageId}/rating?${params}`)
   return response.data
 }
 
 // Alias for Lightbox compatibility
 export const changeRating = updateRating
 
-export async function deleteImage(imageId, deleteFile = false, directoryId = null) {
+export async function deleteImage(imageId, deleteFile = false, directoryId = null, libraryId = null) {
   let url = `/images/${imageId}?delete_file=${deleteFile}`
   if (directoryId) {
     url += `&directory_id=${directoryId}`
+  }
+  if (libraryId) {
+    url += `&library_id=${encodeURIComponent(libraryId)}`
   }
   const response = await api.delete(url)
   return response.data
