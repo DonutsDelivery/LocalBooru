@@ -54,22 +54,76 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'LocalBooru uses the camera to scan QR codes for server pairing'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'LocalBooru connects to servers on your local network'" "$PLIST"
 
-      - name: Build iOS (Simulator)
-        run: cargo tauri ios build --debug --target aarch64-sim
-
-      - name: Find build output
-        if: always()
+      - name: Disable code signing
         run: |
-          echo "Build output:"
-          find src-tauri/gen/apple/build -type d -name "*.app" 2>/dev/null | head -10
-          find src-tauri/gen/apple/build -type f -name "*.ipa" 2>/dev/null | head -10
-          echo "All build files:"
-          find src-tauri/gen/apple/build -maxdepth 4 -type f 2>/dev/null | head -30 || echo "No build directory found"
+          PBXPROJ=$(find src-tauri/gen/apple -name "project.pbxproj" | head -1)
+          if [ -z "$PBXPROJ" ]; then
+            echo "::error::project.pbxproj not found"
+            exit 1
+          fi
+          echo "Patching $PBXPROJ to disable code signing..."
+          python3 -c "
+          import re, sys
 
-      - name: Upload iOS build
-        if: always()
+          path = sys.argv[1]
+          with open(path, 'r') as f:
+              content = f.read()
+
+          # Clear code sign identity
+          content = re.sub(r'CODE_SIGN_IDENTITY = \"[^\"]*\"', 'CODE_SIGN_IDENTITY = \"\"', content)
+
+          # Disable code signing requirements
+          content = content.replace('CODE_SIGNING_REQUIRED = YES', 'CODE_SIGNING_REQUIRED = NO')
+
+          # Add CODE_SIGNING_ALLOWED = NO after each CODE_SIGN_IDENTITY line
+          lines = content.split('\n')
+          new_lines = []
+          for line in lines:
+              new_lines.append(line)
+              if 'CODE_SIGN_IDENTITY = \"\"' in line and 'CODE_SIGNING_ALLOWED' not in line:
+                  indent = line[:len(line) - len(line.lstrip())]
+                  new_lines.append(indent + 'CODE_SIGNING_ALLOWED = NO;')
+
+          with open(path, 'w') as f:
+              f.write('\n'.join(new_lines))
+
+          print('Code signing disabled successfully')
+          " "$PBXPROJ"
+
+      - name: Build iOS (Device)
+        run: cargo tauri ios build --debug --target aarch64
+
+      - name: Package IPA
+        run: |
+          # Find the .app bundle
+          APP_PATH=$(find src-tauri/gen/apple/build -type d -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::.app bundle not found"
+            find src-tauri/gen/apple/build -type f 2>/dev/null | head -30
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
+
+          # Package as IPA (IPA is just a zip with Payload/ structure)
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r LocalBooru.ipa Payload/
+          rm -rf Payload/
+
+          echo "IPA created:"
+          ls -lh LocalBooru.ipa
+
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ios-simulator-build
-          path: src-tauri/gen/apple/build/
-          if-no-files-found: warn
+          name: LocalBooru-iOS
+          path: LocalBooru.ipa
+          if-no-files-found: error
+
+      - name: Upload IPA to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: LocalBooru.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
