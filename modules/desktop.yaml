@@ -47,6 +47,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:40.529Z
+    status:
+      implementation: implemented
   - _ulid: 01KK693TJFKWMVYMZJYHQV6AZ3
     slugs:
       - desktop-updater
