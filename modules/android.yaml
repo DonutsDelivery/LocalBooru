@@ -89,3 +89,17 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:41.938Z
+  - _ulid: 01KK693VXRSHB18XVWTR19AVW3
+    slugs:
+      - android-updater
+    title: Mobile Auto-Updater
+    type: feature
+    tags: []
+    description: APK self-update mechanism. Currently stubbed — needs Tauri-native updater.
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:42.104Z
