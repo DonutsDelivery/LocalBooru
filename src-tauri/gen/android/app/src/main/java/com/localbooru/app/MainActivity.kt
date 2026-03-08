@@ -2,11 +2,17 @@ package com.localbooru.app
 
 import android.os.Bundle
 import android.util.Log
+import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : TauriActivity() {
+  private var isImmersive = false
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
@@ -31,10 +37,42 @@ class MainActivity : TauriActivity() {
       null
     )
     Log.i("LocalBooru", "Status bar height: ${statusBarHeightDp}dp (${statusBarHeightPx}px)")
+
+    // Expose native immersive mode toggle to JavaScript
+    webView.addJavascriptInterface(ImmersiveBridge(), "AndroidImmersive")
   }
 
   private fun getStatusBarHeight(): Int {
     val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
     return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else 0
+  }
+
+  inner class ImmersiveBridge {
+    @JavascriptInterface
+    fun enter() {
+      runOnUiThread {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior =
+          WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        isImmersive = true
+        Log.i("LocalBooru", "Entered immersive mode")
+      }
+    }
+
+    @JavascriptInterface
+    fun exit() {
+      runOnUiThread {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.show(WindowInsetsCompat.Type.systemBars())
+        isImmersive = false
+        Log.i("LocalBooru", "Exited immersive mode")
+      }
+    }
+
+    @JavascriptInterface
+    fun isActive(): Boolean {
+      return isImmersive
+    }
   }
 }

@@ -54,7 +54,14 @@ export function useUIVisibility(containerRef) {
   const handleToggleFullscreen = useCallback(async () => {
     if (usingCssFullscreen.current) {
       // CSS-based fallback: just toggle the state directly
-      setIsFullscreen(prev => !prev)
+      setIsFullscreen(prev => {
+        const next = !prev
+        // Android immersive mode: hide/show status bar + nav bar
+        if (window.AndroidImmersive) {
+          next ? window.AndroidImmersive.enter() : window.AndroidImmersive.exit()
+        }
+        return next
+      })
       return
     }
 
@@ -79,6 +86,15 @@ export function useUIVisibility(containerRef) {
       // If the native API threw, switch to CSS fallback for this session
       usingCssFullscreen.current = true
       setIsFullscreen(prev => !prev)
+    }
+  }, [])
+
+  // Exit immersive mode when component unmounts (lightbox closes)
+  useEffect(() => {
+    return () => {
+      if (window.AndroidImmersive && window.AndroidImmersive.isActive()) {
+        window.AndroidImmersive.exit()
+      }
     }
   }, [])
 
