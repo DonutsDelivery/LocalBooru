@@ -354,3 +354,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:15.439Z
+  - _ulid: 01KK69321XM27EAYZNMVYJW7Y6
+    slugs:
+      - directory-watcher
+    title: Directory Watcher
+    type: feature
+    tags: []
+    description: Real-time filesystem monitoring (notify crate), auto-import on file add, auto-delete on
+      removal, dumpster recovery
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:15.614Z
