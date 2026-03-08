@@ -64,6 +64,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:11.263Z
+    status:
+      implementation: implemented
   - _ulid: 01KK692Y15WJJ3R2ZE82ZWJPCY
     slugs:
       - library-management
