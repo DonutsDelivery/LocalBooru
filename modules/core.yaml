@@ -179,3 +179,17 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:12.936Z
+  - _ulid: 01KK692ZNVWXE5B6ASTBN7WRJ8
+    slugs:
+      - watch-history
+    title: Watch History
+    type: feature
+    tags: []
+    description: Playback position tracking, continue watching, 90% completion auto-mark, history management
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:13.180Z
