@@ -339,3 +339,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:15.248Z
+  - _ulid: 01KK6931WF3WQDWZKF37G4Q7VN
+    slugs:
+      - ratings
+    title: Rating & Favorites
+    type: feature
+    tags: []
+    description: Content ratings (pg/pg13/r/x/xxx), favorite toggle, quick keyboard shortcuts,
+      rating-based access control
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:15.439Z
