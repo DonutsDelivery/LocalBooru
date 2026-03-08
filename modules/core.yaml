@@ -75,3 +75,17 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:11.494Z
+  - _ulid: 01KK692Y6RV3WETK2VWNXSA17X
+    slugs:
+      - collections
+    title: Collections
+    type: feature
+    tags: []
+    description: Named collections with cover images, add/remove/reorder items, create from lightbox
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:11.672Z
