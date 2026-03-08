@@ -30,6 +30,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:40.279Z
+    status:
+      implementation: implemented
   - _ulid: 01KK693TCHRCB7G97FXBBAS5HH
     slugs:
       - desktop-native

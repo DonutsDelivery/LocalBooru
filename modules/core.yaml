@@ -5,7 +5,7 @@ title: Core Application
 type: module
 status:
   maturity: draft
-  implementation: not_started
+  implementation: implemented
 description: Shared backend (Rust axum) and frontend (React) functionality
 tags: []
 depends_on: []
