@@ -309,3 +309,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:14.853Z
+  - _ulid: 01KK6931G2PKJPW9NCWYRDY49N
+    slugs:
+      - file-support
+    title: File Support
+    type: feature
+    tags: []
+    description: "Images: PNG, JPG, GIF, WebP, BMP, TIFF. Videos: WebM, MP4, MOV, AVI, MKV. Thumbnail
+      generation, HTTP Range serving"
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:15.042Z
