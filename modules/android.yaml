@@ -76,6 +76,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:41.745Z
+    status:
+      implementation: implemented
   - _ulid: 01KK693VRHM3YB0XPWDS8KNXSX
     slugs:
       - android-gestures
