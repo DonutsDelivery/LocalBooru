@@ -30,3 +30,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:41.184Z
+  - _ulid: 01KK693V77DH7PFBWPA7N7QKG7
+    slugs:
+      - android-layout
+    title: Mobile Layout
+    type: feature
+    tags: []
+    description: Title bar with safe area insets, edge-to-edge, mobile-specific title bar with server
+      switch, responsive grid, touch-optimized
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:41.383Z
