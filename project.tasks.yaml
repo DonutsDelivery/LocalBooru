@@ -31,26 +31,3 @@ tasks:
     created_at: 2026-03-08T02:52:54.801Z
     notes: []
     todos: []
-  - _ulid: 01KK678NSPC51ZJNPH0284SJBX
-    slugs: []
-    title: "Android: Fullscreen not working in lightbox"
-    type: bug
-    description: On Android APK, fullscreen mode in the lightbox does not actually go fullscreen. The
-      Fullscreen API (requestFullscreen) may not work reliably in Android WebView / Tauri mobile.
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
-    status: completed
-    blocked_by: []
-    closed_reason: null
-    depends_on: []
-    context: []
-    priority: 1
-    tags: []
-    vcs_refs: []
-    created_at: 2026-03-08T07:58:22.518Z
-    started_at: 2026-03-08T08:00:58.429Z
-    submitted_at: 2026-03-08T08:00:58.682Z
-    completed_at: 2026-03-08T08:00:58.954Z
-    notes: []
-    todos: []
