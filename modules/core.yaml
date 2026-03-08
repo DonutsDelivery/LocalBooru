@@ -182,6 +182,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:12.686Z
+    status:
+      implementation: implemented
   - _ulid: 01KK692ZE86V65FSD1SKGZYXXR
     slugs:
       - events
