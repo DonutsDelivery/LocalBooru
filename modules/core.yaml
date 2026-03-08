@@ -222,3 +222,17 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:13.579Z
+  - _ulid: 01KK693084YHJCSVVTMQ77J51H
+    slugs:
+      - settings
+    title: Settings Management
+    type: feature
+    tags: []
+    description: Global settings CRUD, video playback settings, ComfyUI node config, saved searches
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:13.764Z
