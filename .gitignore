@@ -1,0 +1,3 @@
+# Ephemeral artifacts - reports, exports, generated files
+# Not tracked in shadow branch
+artifacts/
