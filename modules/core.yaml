@@ -14,3 +14,19 @@ relates_to: []
 tests: []
 traits: []
 notes: []
+features:
+  - _ulid: 01KK68ZN1RTWJQXTX9D9F92WJ6
+    slugs:
+      - media-browsing
+    title: Media Browsing
+    type: feature
+    tags: []
+    description: Gallery grid with masonry layout, lazy loading. 30+ filter params. Sorting, saved
+      searches, directory/library selector.
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:28:23.993Z
