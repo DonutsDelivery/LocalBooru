@@ -74,3 +74,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:41.745Z
+  - _ulid: 01KK693VRHM3YB0XPWDS8KNXSX
+    slugs:
+      - android-gestures
+    title: Touch Gestures
+    type: feature
+    tags: []
+    description: Pinch zoom, swipe navigation, swipe up/down UI toggle, double-tap fullscreen,
+      long-press diagnostics, video gesture controls
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:41.938Z
