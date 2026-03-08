@@ -103,3 +103,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:42.104Z
+  - _ulid: 01KK693W4VHHNWH16KD0Q5F5BA
+    slugs:
+      - android-api-routing
+    title: Mobile API Routing
+    type: feature
+    tags: []
+    description: Local proxy for remote server requests, CORS handling, JWT token auth, remote proxy
+      handler in Rust backend
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:42.331Z
