@@ -6,8 +6,9 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import ComfyUIConfigModal from '../components/ComfyUIConfigModal'
-import { getLibraryStats, updateDirectory, tagUntagged, clearDirectoryTagQueue, fetchLibraries, addLibrary, mountLibrary, unmountLibrary, removeLibrary } from '../api'
+import { getLibraryStats, updateDirectory, tagUntagged, clearDirectoryTagQueue, fetchLibraries, addLibrary, mountLibrary, unmountLibrary, removeLibrary, listParentDirectories, removeParentDirectory } from '../api'
 import { getDesktopAPI, isDesktopApp } from '../tauriAPI'
+import { toast } from '../components/Toast'
 import { useAddonStatus } from '../hooks/useAddonStatus'
 
 // Helper to create composite key for directory (avoids ID collisions across libraries)
@@ -37,6 +38,7 @@ function DirectoriesPage() {
   const { installed: taggerInstalled } = useAddonStatus('auto-tagger')
   const { installed: ageDetectorInstalled } = useAddonStatus('age-detector')
   const [libraries, setLibraries] = useState([])
+  const [parentDirs, setParentDirs] = useState([])
   const [showAddLibrary, setShowAddLibrary] = useState(false)
   const [newLibraryPath, setNewLibraryPath] = useState('')
   const [newLibraryName, setNewLibraryName] = useState('')
@@ -66,12 +68,22 @@ function DirectoriesPage() {
     }
   }
 
+  const refreshParentDirs = async () => {
+    try {
+      const data = await listParentDirectories()
+      setParentDirs(data.parents || [])
+    } catch (e) {
+      console.error('Failed to fetch parent directories:', e)
+    }
+  }
+
   useEffect(() => {
     refreshDirectories()
       .catch(console.error)
       .finally(() => setLoading(false))
     getLibraryStats().then(setStats).catch(console.error)
     refreshLibraries()
+    refreshParentDirs()
   }, [])
 
   const handleAddDirectory = async () => {
@@ -84,7 +96,7 @@ function DirectoriesPage() {
         await refreshDirectories()
       }
     } else {
-      alert('Directory picker only available in desktop app')
+      toast.warning('Directory picker only available in desktop app')
     }
   }
 
@@ -95,11 +107,26 @@ function DirectoriesPage() {
       if (path) {
         const { addParentDirectory } = await import('../api')
         const result = await addParentDirectory(path)
-        alert(result.message)
+        toast.success(result.message)
         await refreshDirectories()
+        await refreshParentDirs()
       }
     } else {
-      alert('Directory picker only available in desktop app')
+      toast.warning('Directory picker only available in desktop app')
+    }
+  }
+
+  const handleRemoveParent = async (parent, removeChildren) => {
+    try {
+      const result = await removeParentDirectory(parent.path, {
+        removeChildren,
+        libraryId: parent.library_id
+      })
+      toast.success(result.message)
+      await refreshParentDirs()
+      await refreshDirectories()
+    } catch (error) {
+      toast.error(`Failed to remove parent: ${error.message}`)
     }
   }
 
@@ -112,7 +139,7 @@ function DirectoriesPage() {
       await refreshDirectories()
     } catch (error) {
       console.error('Scan failed:', error)
-      alert('Scan failed: ' + error.message)
+      toast.error('Scan failed: ' + error.message)
     } finally {
       setScanning(prev => ({ ...prev, [key]: false }))
     }
@@ -129,7 +156,7 @@ function DirectoriesPage() {
       await refreshDirectories()
     } catch (error) {
       console.error('Remove failed:', error)
-      alert('Remove failed: ' + error.message)
+      toast.error('Remove failed: ' + error.message)
     }
   }
 
@@ -146,12 +173,12 @@ function DirectoriesPage() {
     try {
       const { pruneDirectory } = await import('../api')
       const result = await pruneDirectory(dir.id, savedDumpsterPath, dir.library_id)
-      alert(`Pruned ${result.pruned} images to:\n${result.dumpster_path}`)
+      toast.success(`Pruned ${result.pruned} images to:\n${result.dumpster_path}`)
       await refreshDirectories()
       getLibraryStats().then(setStats).catch(console.error)
     } catch (error) {
       console.error('Prune failed:', error)
-      alert('Prune failed: ' + error.message)
+      toast.error('Prune failed: ' + error.message)
     } finally {
       setPruning(prev => ({ ...prev, [key]: false }))
     }
@@ -170,17 +197,17 @@ function DirectoriesPage() {
         try {
           const { updateDirectoryPath } = await import('../api')
           const result = await updateDirectoryPath(dir.id, newPath, dir.library_id)
-          alert(`Directory relocated.\n${result.files_updated} file references updated.`)
+          toast.success(`Directory relocated.\n${result.files_updated} file references updated.`)
           await refreshDirectories()
         } catch (error) {
           console.error('Relocate failed:', error)
-          alert('Relocate failed: ' + (error.response?.data?.detail || error.message))
+          toast.error('Relocate failed: ' + (error.response?.data?.detail || error.message))
         } finally {
           setRelocating(prev => ({ ...prev, [key]: false }))
         }
       }
     } else {
-      alert('Directory picker only available in desktop app')
+      toast.warning('Directory picker only available in desktop app')
     }
   }
 
@@ -269,7 +296,7 @@ function DirectoriesPage() {
           console.error(`Prune failed for ${key}:`, e)
         }
       }
-      alert(`Pruned ${totalPruned} images total`)
+      toast.success(`Pruned ${totalPruned} images total`)
       await refreshDirectories()
       getLibraryStats().then(setStats).catch(console.error)
     } finally {
@@ -324,7 +351,7 @@ function DirectoriesPage() {
       await refreshDirectories()
     } catch (e) {
       console.error('Bulk remove failed:', e)
-      alert(`Remove failed: ${e.response?.data?.detail || e.message || 'Unknown error'}`)
+      toast.error(`Remove failed: ${e.response?.data?.detail || e.message || 'Unknown error'}`)
     } finally {
       setBatchLoading(false)
       clearSelection()
@@ -337,11 +364,11 @@ function DirectoriesPage() {
     try {
       const { repairDirectoryPaths } = await import('../api')
       const result = await repairDirectoryPaths(dir.id, dir.library_id)
-      alert(`Repair complete:\n${result.valid} files OK\n${result.repaired} paths fixed\n${result.removed} missing removed`)
+      toast.success(`Repair complete:\n${result.valid} files OK\n${result.repaired} paths fixed\n${result.removed} missing removed`)
       await refreshDirectories()
     } catch (error) {
       console.error('Repair failed:', error)
-      alert('Repair failed: ' + (error.response?.data?.detail || error.message))
+      toast.error('Repair failed: ' + (error.response?.data?.detail || error.message))
     } finally {
       setRepairing(prev => ({ ...prev, [key]: false }))
     }
@@ -370,11 +397,11 @@ function DirectoriesPage() {
         totalsRemoved += result.totals.removed || 0
         totalsOrphan += result.totals.orphan_thumbnails || 0
       }
-      alert(`Batch repair complete:\n${totalsValid} files OK\n${totalsRepaired} paths fixed\n${totalsRemoved} missing removed${totalsOrphan > 0 ? `\n${totalsOrphan} orphan thumbnails cleaned` : ''}`)
+      toast.success(`Batch repair complete:\n${totalsValid} files OK\n${totalsRepaired} paths fixed\n${totalsRemoved} missing removed${totalsOrphan > 0 ? `\n${totalsOrphan} orphan thumbnails cleaned` : ''}`)
       await refreshDirectories()
     } catch (e) {
       console.error('Batch repair failed:', e)
-      alert(`Batch repair failed: ${e.response?.data?.detail || e.message || 'Unknown error'}`)
+      toast.error(`Batch repair failed: ${e.response?.data?.detail || e.message || 'Unknown error'}`)
     } finally {
       setBatchLoading(false)
     }
@@ -396,7 +423,7 @@ function DirectoriesPage() {
       await refreshLibraries()
       await refreshDirectories()
     } catch (e) {
-      alert(e.response?.data?.message || e.message)
+      toast.error(e.response?.data?.message || e.message)
     }
   }
 
@@ -406,7 +433,7 @@ function DirectoriesPage() {
       await refreshLibraries()
       await refreshDirectories()
     } catch (e) {
-      alert(e.response?.data?.message || e.message)
+      toast.error(e.response?.data?.message || e.message)
     }
   }
 
@@ -416,7 +443,7 @@ function DirectoriesPage() {
       await refreshLibraries()
       await refreshDirectories()
     } catch (e) {
-      alert(e.response?.data?.message || e.message)
+      toast.error(e.response?.data?.message || e.message)
     }
   }
 
@@ -427,7 +454,7 @@ function DirectoriesPage() {
       await refreshLibraries()
       await refreshDirectories()
     } catch (e) {
-      alert(e.response?.data?.message || e.message)
+      toast.error(e.response?.data?.message || e.message)
     }
   }
 
@@ -538,6 +565,64 @@ function DirectoriesPage() {
                 ))}
               </div>
             </div>
+
+            {/* Parent Directories */}
+            {parentDirs.length > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <h2 style={{ margin: '0 0 12px', fontSize: '1.1rem' }}>Parent Directories</h2>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                  These folders are watched for new subdirectories, which are automatically added.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {parentDirs.map(parent => (
+                    <div
+                      key={`${parent.library_id}:${parent.path}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '10px 14px',
+                        background: 'var(--bg-secondary)',
+                        borderRadius: '8px',
+                        border: '1px solid var(--glass-border)',
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                        <line x1="12" y1="11" x2="12" y2="17"/>
+                        <line x1="9" y1="14" x2="15" y2="14"/>
+                      </svg>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {parent.path.split('/').pop() || parent.path}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {parent.path} · {parent.child_count} {parent.child_count === 1 ? 'subdirectory' : 'subdirectories'}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        <button
+                          onClick={() => handleRemoveParent(parent, false)}
+                          className="btn btn-sm"
+                          style={{ fontSize: '0.75rem' }}
+                          title="Stop watching for new subdirectories (keep existing)"
+                        >
+                          Stop Watching
+                        </button>
+                        <button
+                          onClick={() => handleRemoveParent(parent, true)}
+                          className="btn btn-sm"
+                          style={{ fontSize: '0.75rem', color: 'var(--color-error, #e74c3c)' }}
+                          title="Remove parent and all child directories"
+                        >
+                          Remove All
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {loading ? (
               <p>Loading...</p>

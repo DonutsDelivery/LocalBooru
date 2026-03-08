@@ -2,6 +2,8 @@ import { useCallback, useState, useRef, useEffect } from 'react'
 import Hls from 'hls.js'
 import {
   getMediaUrl,
+  getAssetUrl,
+  isUsingLocalServer,
   getOpticalFlowConfig,
   playVideoInterpolated,
   stopInterpolatedStream,
@@ -11,6 +13,7 @@ import {
   playVideoTranscode,
   stopTranscodeStream
 } from '../../../api'
+import { isMobileApp } from '../../../serverManager'
 import { isVideo } from '../utils/helpers'
 
 /**
@@ -937,7 +940,13 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
         if (mediaRef.current && image) {
           const video = mediaRef.current
-          video.src = getMediaUrl(image.url)
+          // On Tauri mobile with local server, use asset protocol to avoid WRY buffering
+          let directUrl = getMediaUrl(image.url)
+          if (isMobileApp() && isUsingLocalServer() && image.file_path) {
+            const assetUrl = getAssetUrl(image.file_path)
+            if (assetUrl) directUrl = assetUrl
+          }
+          video.src = directUrl
           // Wait for metadata to load before seeking and playing — calling play()
           // immediately after setting src fails silently because the source hasn't loaded yet.
           video.addEventListener('loadedmetadata', () => {

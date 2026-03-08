@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { toast } from './Toast'
 import './ComfyUIConfigModal.css'
 
 function ComfyUIConfigModal({ directoryId, directoryName, onClose, onSave }) {
@@ -81,7 +82,7 @@ function ComfyUIConfigModal({ directoryId, directoryName, onClose, onSave }) {
           })
           if (reextractResponse.ok) {
             const result = await reextractResponse.json()
-            alert(`Queued metadata extraction for ${result.queued} images.`)
+            toast.success(`Queued metadata extraction for ${result.queued} images.`)
           }
         }
       }

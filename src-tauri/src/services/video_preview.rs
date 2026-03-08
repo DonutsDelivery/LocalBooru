@@ -30,32 +30,8 @@ pub fn check_ffprobe_available() -> bool {
     })
 }
 
-/// Get video duration in seconds using ffprobe.
-pub fn get_video_duration(file_path: &str) -> Option<f64> {
-    if !check_ffprobe_available() {
-        return None;
-    }
-
-    let output = Command::new("ffprobe")
-        .args([
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            file_path,
-        ])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout.trim().parse::<f64>().ok()
-}
-
-/// Get video dimensions (width, height) using ffprobe.
-pub fn get_video_dimensions(file_path: &str) -> Option<(i32, i32)> {
+/// Get video metadata (width, height, duration) in a single ffprobe call.
+pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
     if !check_ffprobe_available() {
         return None;
     }
@@ -64,8 +40,8 @@ pub fn get_video_dimensions(file_path: &str) -> Option<(i32, i32)> {
         .args([
             "-v", "error",
             "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "csv=p=0",
+            "-show_entries", "format=duration:stream=width,height",
+            "-of", "json",
             file_path,
         ])
         .output()
@@ -76,14 +52,29 @@ pub fn get_video_dimensions(file_path: &str) -> Option<(i32, i32)> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parts: Vec<&str> = stdout.trim().split(',').collect();
-    if parts.len() == 2 {
-        let w = parts[0].parse::<i32>().ok()?;
-        let h = parts[1].parse::<i32>().ok()?;
-        Some((w, h))
-    } else {
-        None
-    }
+    let json: serde_json::Value = serde_json::from_str(&stdout).ok()?;
+
+    let stream = json.get("streams")?.as_array()?.first()?;
+    let width = stream.get("width")?.as_i64()? as i32;
+    let height = stream.get("height")?.as_i64()? as i32;
+
+    let duration_str = json
+        .get("format")?
+        .get("duration")?
+        .as_str()?;
+    let duration = duration_str.parse::<f64>().ok()?;
+
+    Some((width, height, duration))
+}
+
+/// Get video duration in seconds using ffprobe.
+pub fn get_video_duration(file_path: &str) -> Option<f64> {
+    get_video_metadata(file_path).map(|(_, _, d)| d)
+}
+
+/// Get video dimensions (width, height) using ffprobe.
+pub fn get_video_dimensions(file_path: &str) -> Option<(i32, i32)> {
+    get_video_metadata(file_path).map(|(w, h, _)| (w, h))
 }
 
 /// Get low-priority prefix for subprocess commands (ionice + nice on Linux).

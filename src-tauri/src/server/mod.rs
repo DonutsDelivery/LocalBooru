@@ -237,8 +237,10 @@ async fn remote_proxy_handler(
                     }
                 }
             }
-            let body = resp.bytes().await.unwrap_or_default();
-            (status, headers, Body::from(body)).into_response()
+            // Stream the response body instead of buffering — buffering the entire
+            // body causes video elements to load endlessly for large files.
+            let body = Body::from_stream(resp.bytes_stream());
+            (status, headers, body).into_response()
         }
         Err(e) => {
             log::error!("[Proxy] Request to {} failed: {}", target_url, e);

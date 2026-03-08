@@ -1,5 +1,16 @@
 import { useCallback, useState, useRef, useEffect } from 'react'
 
+// Detect if the native Fullscreen API is available and functional.
+// Android WebView often has requestFullscreen defined but it silently fails
+// or is blocked by the Tauri WebView wrapper.
+function hasNativeFullscreen() {
+  const el = document.documentElement
+  if (!el.requestFullscreen && !el.webkitRequestFullscreen) return false
+  // Android WebView in Tauri: the API exists but doesn't work
+  if (/Android/i.test(navigator.userAgent) && window.__TAURI_INTERNALS__) return false
+  return true
+}
+
 /**
  * Hook for managing UI visibility (auto-hide) and fullscreen state
  */
@@ -7,6 +18,7 @@ export function useUIVisibility(containerRef) {
   const [showUI, setShowUI] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const hideUITimeout = useRef(null)
+  const usingCssFullscreen = useRef(!hasNativeFullscreen())
 
   // Auto-hide UI after inactivity
   const resetHideTimer = useCallback(() => {
@@ -35,28 +47,55 @@ export function useUIVisibility(containerRef) {
   }, [resetHideTimer])
 
   // Fullscreen toggle handler
-  // Use document.documentElement so the entire page goes fullscreen,
-  // allowing sibling elements like the sidebar to remain visible
+  // On platforms where the native Fullscreen API works (desktop browsers),
+  // use it so the entire page goes fullscreen including sibling elements.
+  // On Android WebView / Tauri Mobile, fall back to CSS-based fullscreen
+  // which covers the title bar and uses the full viewport via position/z-index.
   const handleToggleFullscreen = useCallback(async () => {
+    if (usingCssFullscreen.current) {
+      // CSS-based fallback: just toggle the state directly
+      setIsFullscreen(prev => !prev)
+      return
+    }
+
     try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen()
+      const el = document.documentElement
+      const fsElement = document.fullscreenElement ?? document.webkitFullscreenElement
+      if (!fsElement) {
+        if (el.requestFullscreen) {
+          await el.requestFullscreen()
+        } else if (el.webkitRequestFullscreen) {
+          el.webkitRequestFullscreen()
+        }
       } else {
-        await document.exitFullscreen()
+        if (document.exitFullscreen) {
+          await document.exitFullscreen()
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen()
+        }
       }
     } catch (err) {
       console.error('Fullscreen error:', err)
+      // If the native API threw, switch to CSS fallback for this session
+      usingCssFullscreen.current = true
+      setIsFullscreen(prev => !prev)
     }
   }, [])
 
-  // Listen for fullscreen changes
+  // Listen for fullscreen changes (only relevant for native fullscreen)
   useEffect(() => {
+    if (usingCssFullscreen.current) return
+
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
+      setIsFullscreen(!!(document.fullscreenElement ?? document.webkitFullscreenElement))
     }
 
     document.addEventListener('fullscreenchange', handleFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+    }
   }, [])
 
   return {

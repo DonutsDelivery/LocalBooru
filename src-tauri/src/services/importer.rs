@@ -483,8 +483,8 @@ pub fn import_image(
         // Same hash, different path — add new file reference (with retry)
         with_db_retry("insert duplicate file ref", || {
             dir_conn.execute(
-                "INSERT INTO image_files (image_id, original_path, file_exists, file_status) VALUES (?1, ?2, 1, 'available')",
-                params![existing_id, file_path],
+                "INSERT INTO image_files (image_id, original_path, file_extension, file_exists, file_status) VALUES (?1, ?2, ?3, 1, 'available')",
+                params![existing_id, file_path, path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).unwrap_or_default()],
             )
         })?;
         return Ok(ImportResult {
@@ -524,17 +524,20 @@ pub fn import_image(
 
     // Get dimensions and duration
     // Fast mode: skip ffprobe for videos (expensive subprocess), keep header-only read for images
-    let (width, height) = if fast && is_video {
-        (None, None)
+    // For videos in non-fast mode, use a single ffprobe call for both dimensions and duration
+    let (width, height, duration): (Option<i32>, Option<i32>, Option<f64>) = if is_video {
+        if fast {
+            (None, None, None)
+        } else if let Some((w, h, d)) = video_preview::get_video_metadata(file_path) {
+            (Some(w), Some(h), Some(d))
+        } else {
+            (None, None, None)
+        }
     } else {
-        get_image_dimensions(file_path)
+        let dims = get_image_dimensions(file_path)
             .map(|(w, h)| (Some(w as i32), Some(h as i32)))
-            .unwrap_or((None, None))
-    };
-    let duration: Option<f64> = if is_video && !fast {
-        video_preview::get_video_duration(file_path)
-    } else {
-        None
+            .unwrap_or((None, None));
+        (dims.0, dims.1, None)
     };
 
     // Calculate perceptual hash for images (not videos)
@@ -584,8 +587,8 @@ pub fn import_image(
                 .map_err(|e2| AppError::Internal(format!("Hash lookup after conflict: {}", e2)))?;
             with_db_retry("insert duplicate file ref (race)", || {
                 dir_conn.execute(
-                    "INSERT OR IGNORE INTO image_files (image_id, original_path, file_exists, file_status) VALUES (?1, ?2, 1, 'available')",
-                    params![existing_id, file_path],
+                    "INSERT OR IGNORE INTO image_files (image_id, original_path, file_extension, file_exists, file_status) VALUES (?1, ?2, ?3, 1, 'available')",
+                    params![existing_id, file_path, &ext],
                 )
             })?;
             return Ok(ImportResult {
@@ -602,8 +605,8 @@ pub fn import_image(
     // Insert file reference (with retry logic)
     with_db_retry("insert file reference", || {
         dir_conn.execute(
-            "INSERT INTO image_files (image_id, original_path, file_exists, file_status) VALUES (?1, ?2, 1, 'available')",
-            params![image_id, file_path],
+            "INSERT INTO image_files (image_id, original_path, file_extension, file_exists, file_status) VALUES (?1, ?2, ?3, 1, 'available')",
+            params![image_id, file_path, &ext],
         )
     })?;
 

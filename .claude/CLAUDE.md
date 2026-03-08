@@ -7,6 +7,23 @@ For real-time video processing:
 - Use FFmpeg for decoding (supports hardware acceleration, instant start)
 - Use FFmpeg filters for processing when possible (minterpolate, etc.)
 - If VapourSynth/SVP is needed, pipe FFmpeg output through a FIFO or use rawsource - NEVER use source filters that require indexing
+<!-- TASK_MANAGEMENT_START -->
+## Task Management
+
+This project uses **kspec** for task tracking. The GUI task panel manages tasks automatically.
+
+### CLI Commands (kspec)
+- `kspec task list` — List tasks (add `--status pending` to filter)
+- `kspec task show <ref>` — Show task details
+- `kspec task create --title "..." --type task|bug|feature --priority 3` — Create a task
+- `kspec task start <ref>` — Start a task
+- `kspec inbox add "..."` — Add idea for later triage
+
+### Workflow
+1. Check the task panel in the GUI sidebar for available work
+2. Click a task to start it, or use the CLI commands above
+3. Mark tasks complete from the GUI or CLI when done
+<!-- TASK_MANAGEMENT_END -->
 
 
 <!-- TTS_VOICE_OUTPUT_START -->

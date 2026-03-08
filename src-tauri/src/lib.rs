@@ -372,6 +372,9 @@ pub fn run() {
                              window.__localbooru_hidden = true;"
                         );
                     }
+                    // Save window state before hiding (plugin only saves on destroy)
+                    use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+                    let _ = window.app_handle().save_window_state(StateFlags::all());
                     api.prevent_close();
                     let _ = window.hide();
                 }

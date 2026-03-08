@@ -9,6 +9,7 @@ import MasonryGrid from './components/MasonryGrid'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
 import TitleBar from './components/TitleBar'
+import ToastContainer, { toast } from './components/Toast'
 import ComfyUIConfigModal from './components/ComfyUIConfigModal'
 import NetworkSettings from './components/NetworkSettings'
 import ServerSettings from './components/ServerSettings'
@@ -161,7 +162,7 @@ function FamilyModeSettings() {
       setConfig(result)
     } catch (e) {
       console.error('Failed to save family mode config:', e)
-      alert('Failed to save: ' + (e.response?.data?.detail || e.message))
+      toast.error('Failed to save: ' + (e.response?.data?.detail || e.message))
     }
     setSaving(false)
   }
@@ -215,7 +216,7 @@ function FamilyModeSettings() {
               <button
                 onClick={() => {
                   if (pin.length < 4) {
-                    alert('PIN must be at least 4 characters')
+                    toast.warning('PIN must be at least 4 characters')
                     return
                   }
                   handleSave({ pin })
@@ -424,12 +425,12 @@ function SettingsPage() {
                         const result = await installAgeDetection()
                         console.log('Install result:', result)
                         if (!result.success) {
-                          alert(result.error || 'Failed to start installation')
+                          toast.error(result.error || 'Failed to start installation')
                         }
                         refreshAgeDetectionStatus()
                       } catch (e) {
                         console.error('Install error:', e)
-                        alert('Failed to start installation: ' + e.message)
+                        toast.error('Failed to start installation: ' + e.message)
                       }
                     }}
                     className="install-btn"
@@ -458,7 +459,7 @@ function SettingsPage() {
                           if (result.success) {
                             setAgeDetection(prev => ({ ...prev, enabled: newValue }))
                           } else {
-                            alert(result.error || 'Failed to toggle')
+                            toast.error(result.error || 'Failed to toggle')
                           }
                         }}
                       />
@@ -470,9 +471,9 @@ function SettingsPage() {
                           try {
                             const { detectAgesRetrospective } = await import('./api')
                             const result = await detectAgesRetrospective()
-                            alert(result.message || `Queued ${result.queued} images for age detection`)
+                            toast.success(result.message || `Queued ${result.queued} images for age detection`)
                           } catch (e) {
-                            alert('Failed: ' + e.message)
+                            toast.error('Failed: ' + e.message)
                           }
                         }}
                         style={{ marginLeft: '1rem' }}
@@ -1244,11 +1245,11 @@ function Gallery() {
     try {
       const result = await batchRetag(Array.from(selectedImages))
       console.log('Batch retag result:', result)
-      alert(`Queued ${result.queued} images for retagging`)
+      toast.success(`Queued ${result.queued} images for retagging`)
       setSelectedImages(new Set())
     } catch (error) {
       console.error('Batch retag failed:', error)
-      alert(`Batch retag failed: ${error.message || 'Unknown error'}`)
+      toast.error(`Batch retag failed: ${error.message || 'Unknown error'}`)
     }
     setBatchActionLoading(false)
   }
@@ -1259,11 +1260,11 @@ function Gallery() {
     try {
       const result = await batchAgeDetect(Array.from(selectedImages))
       console.log('Batch age detect result:', result)
-      alert(`Queued ${result.queued} images for age detection`)
+      toast.success(`Queued ${result.queued} images for age detection`)
       setSelectedImages(new Set())
     } catch (error) {
       console.error('Batch age detect failed:', error)
-      alert(`Batch age detection failed: ${error.message || 'Unknown error'}`)
+      toast.error(`Batch age detection failed: ${error.message || 'Unknown error'}`)
     }
     setBatchActionLoading(false)
   }
@@ -1285,7 +1286,7 @@ function Gallery() {
     try {
       const result = await batchMoveImages(Array.from(selectedImages), selectedMoveDir)
       console.log('Batch move result:', result)
-      alert(`Moved ${result.moved} images`)
+      toast.success(`Moved ${result.moved} images`)
       // Refresh the gallery
       await loadImages(1, false)
       setSelectedImages(new Set())
@@ -1828,6 +1829,7 @@ function App() {
   return (
     <>
       <TitleBar onSwitchServer={handleDisconnect} />
+      <ToastContainer />
       <BrowserRouter>
         <BackButtonHandler />
         <Routes>

@@ -195,8 +195,8 @@ api.interceptors.response.use(
         message += `\n\nError: ${error.message}`
       }
 
-      // Show popup with error details
-      alert(message)
+      // Show toast with error details
+      import('./components/Toast').then(m => m.toast.error(message))
     } else {
       // Log transient errors to console instead
       console.warn(`[API] Transient error (${duringStartup ? 'startup' : 'network'}): ${method} ${url}`, error.message)
@@ -464,6 +464,20 @@ export async function addParentDirectory(path, options = {}) {
     path,
     recursive: options.recursive ?? true,
     auto_tag: options.auto_tag ?? true
+  })
+  invalidateDirectoriesCache()
+  return response.data
+}
+
+export async function listParentDirectories(libraryId) {
+  const params = libraryId ? { library_id: libraryId } : {}
+  const response = await api.get('/directories/parents', { params })
+  return response.data
+}
+
+export async function removeParentDirectory(path, { removeChildren = false, libraryId } = {}) {
+  const response = await api.delete('/directories/parents', {
+    data: { path, remove_children: removeChildren, library_id: libraryId }
   })
   invalidateDirectoriesCache()
   return response.data
@@ -784,6 +798,22 @@ export async function updateUser(id, updates) {
 export async function deleteUser(id) {
   const response = await api.delete(`/users/${id}`)
   return response.data
+}
+
+// Check if using the local embedded server (not a remote server)
+export function isUsingLocalServer() {
+  return !currentServerUrl
+}
+
+// Get an asset protocol URL for a local file (Tauri mobile only).
+// Bypasses WRY's HTTP request interception which buffers large responses,
+// serving the file directly from disk through Tauri's asset protocol.
+export function getAssetUrl(filePath) {
+  if (!filePath) return null
+  if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__?.convertFileSrc) {
+    return window.__TAURI_INTERNALS__.convertFileSrc(filePath, 'asset')
+  }
+  return null
 }
 
 // Utility functions

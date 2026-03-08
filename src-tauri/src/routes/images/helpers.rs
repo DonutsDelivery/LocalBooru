@@ -33,28 +33,28 @@ pub fn query_directory_images(
         "i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing')".into(),
     );
 
-    // Media type filtering
+    // Media type filtering (uses indexed file_extension column)
     if !params.show_images && !params.show_videos {
         return Ok((vec![], 0));
     } else if !params.show_images {
         // Only videos
-        let conditions: Vec<String> = VIDEO_EXTENSIONS
+        let exts: Vec<String> = VIDEO_EXTENSIONS
             .iter()
-            .map(|ext| format!("original_path LIKE '%{}'", ext))
+            .map(|ext| format!("'{}'", ext.trim_start_matches('.')))
             .collect();
         where_clauses.push(format!(
-            "i.id IN (SELECT image_id FROM image_files WHERE {})",
-            conditions.join(" OR ")
+            "i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}))",
+            exts.join(",")
         ));
     } else if !params.show_videos {
         // Only images
-        let conditions: Vec<String> = IMAGE_EXTENSIONS
+        let exts: Vec<String> = IMAGE_EXTENSIONS
             .iter()
-            .map(|ext| format!("original_path LIKE '%{}'", ext))
+            .map(|ext| format!("'{}'", ext.trim_start_matches('.')))
             .collect();
         where_clauses.push(format!(
-            "i.id IN (SELECT image_id FROM image_files WHERE {})",
-            conditions.join(" OR ")
+            "i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}))",
+            exts.join(",")
         ));
     }
 
@@ -117,15 +117,20 @@ pub fn query_directory_images(
 
     // Tag filters (need to resolve tag names → IDs via main DB)
     if !params.tags.is_empty() {
-        for tag_name in &params.tags {
-            let tag_id: Option<i64> = main_conn
-                .query_row("SELECT id FROM tags WHERE name = ?1", params![tag_name], |row| {
-                    row.get(0)
-                })
-                .ok();
+        let placeholders: Vec<String> = (1..=params.tags.len()).map(|i| format!("?{}", i)).collect();
+        let query = format!("SELECT id, name FROM tags WHERE name IN ({})", placeholders.join(", "));
+        let mut stmt = main_conn.prepare(&query)?;
+        let tag_params: Vec<&dyn rusqlite::types::ToSql> = params.tags.iter().map(|t| t as &dyn rusqlite::types::ToSql).collect();
+        let resolved: std::collections::HashMap<String, i64> = stmt
+            .query_map(tag_params.as_slice(), |row| {
+                Ok((row.get::<_, String>(1)?, row.get::<_, i64>(0)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
-            match tag_id {
-                Some(id) => {
+        for tag_name in &params.tags {
+            match resolved.get(tag_name) {
+                Some(&id) => {
                     sql_params.push(Box::new(id));
                     where_clauses.push(format!(
                         "i.id IN (SELECT image_id FROM image_tags WHERE tag_id = ?{})",
@@ -141,19 +146,26 @@ pub fn query_directory_images(
     }
 
     // Exclude tags
-    for tag_name in &params.exclude_tags {
-        let tag_id: Option<i64> = main_conn
-            .query_row("SELECT id FROM tags WHERE name = ?1", params![tag_name], |row| {
-                row.get(0)
-            })
-            .ok();
+    if !params.exclude_tags.is_empty() {
+        let placeholders: Vec<String> = (1..=params.exclude_tags.len()).map(|i| format!("?{}", i)).collect();
+        let query = format!("SELECT id, name FROM tags WHERE name IN ({})", placeholders.join(", "));
+        let mut stmt = main_conn.prepare(&query)?;
+        let tag_params: Vec<&dyn rusqlite::types::ToSql> = params.exclude_tags.iter().map(|t| t as &dyn rusqlite::types::ToSql).collect();
+        let resolved: std::collections::HashMap<String, i64> = stmt
+            .query_map(tag_params.as_slice(), |row| {
+                Ok((row.get::<_, String>(1)?, row.get::<_, i64>(0)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
-        if let Some(id) = tag_id {
-            sql_params.push(Box::new(id));
-            where_clauses.push(format!(
-                "i.id NOT IN (SELECT image_id FROM image_tags WHERE tag_id = ?{})",
-                sql_params.len()
-            ));
+        for tag_name in &params.exclude_tags {
+            if let Some(&id) = resolved.get(tag_name) {
+                sql_params.push(Box::new(id));
+                where_clauses.push(format!(
+                    "i.id NOT IN (SELECT image_id FROM image_tags WHERE tag_id = ?{})",
+                    sql_params.len()
+                ));
+            }
         }
     }
 

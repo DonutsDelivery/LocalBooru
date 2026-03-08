@@ -12,6 +12,7 @@ import {
   subscribeToMigrationEvents
 } from '../api'
 import { getDesktopAPI, isDesktopApp } from '../tauriAPI'
+import { toast } from './Toast'
 import './MigrationSettings.css'
 
 function formatBytes(bytes) {
@@ -234,7 +235,7 @@ export default function MigrationSettings() {
       setError(null)
       const response = await deleteSourceData(mode)
       if (response.success) {
-        alert(response.message)
+        toast.success(response.message)
         loadInfo()
       } else {
         setError(response.error)
@@ -253,7 +254,7 @@ export default function MigrationSettings() {
       setError(null)
       const response = await cleanupMigration(mode)
       if (response.success) {
-        alert(response.message)
+        toast.success(response.message)
         setResult(null)
         setValidation(null)
         loadInfo()

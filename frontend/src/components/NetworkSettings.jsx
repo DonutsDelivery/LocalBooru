@@ -8,6 +8,7 @@ import {
   closeUPnPPort
 } from '../api'
 import { getDesktopAPI, isDesktopApp } from '../tauriAPI'
+import { toast } from './Toast'
 import './NetworkSettings.css'
 
 export default function NetworkSettings() {
@@ -104,10 +105,10 @@ export default function NetworkSettings() {
         // Refresh UPnP status
         await handleDiscoverUPnP()
       } else {
-        alert(`Failed to open port: ${result.error}`)
+        toast.error(`Failed to open port: ${result.error}`)
       }
     } catch (err) {
-      alert(`Failed to open port: ${err.message}`)
+      toast.error(`Failed to open port: ${err.message}`)
     } finally {
       setUpnpLoading(false)
     }
@@ -119,7 +120,7 @@ export default function NetworkSettings() {
       await closeUPnPPort(port)
       await handleDiscoverUPnP()
     } catch (err) {
-      alert(`Failed to close port: ${err.message}`)
+      toast.error(`Failed to close port: ${err.message}`)
     } finally {
       setUpnpLoading(false)
     }
@@ -132,7 +133,7 @@ export default function NetworkSettings() {
       await api.restartBackend()
       setRestartRequired(false)
     } else {
-      alert('Please restart the application manually for changes to take effect.')
+      toast.warning('Please restart the application manually for changes to take effect.')
     }
   }
 

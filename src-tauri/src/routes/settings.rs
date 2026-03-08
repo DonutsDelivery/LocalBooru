@@ -1215,12 +1215,18 @@ async fn get_dimensions(
 
         if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
             // Use ffprobe for video files
-            match get_video_dimensions(path) {
-                Ok((w, h)) => json!({
-                    "success": true,
-                    "width": w,
-                    "height": h
-                }),
+            match get_video_info(path) {
+                Ok(info) => {
+                    let mut result = json!({
+                        "success": true,
+                        "width": info.width,
+                        "height": info.height
+                    });
+                    if let Some(fps) = info.fps {
+                        result["fps"] = json!(fps);
+                    }
+                    result
+                },
                 Err(e) => json!({
                     "success": false,
                     "error": e
@@ -1246,8 +1252,15 @@ async fn get_dimensions(
     Ok(Json(result))
 }
 
-/// Run ffprobe to extract width and height from a video file.
-fn get_video_dimensions(path: &Path) -> Result<(u64, u64), String> {
+/// Video dimension and FPS info from ffprobe.
+struct VideoInfo {
+    width: u64,
+    height: u64,
+    fps: Option<f64>,
+}
+
+/// Run ffprobe to extract width, height, and FPS from a video file.
+fn get_video_info(path: &Path) -> Result<VideoInfo, String> {
     let output = std::process::Command::new("ffprobe")
         .args([
             "-v",
@@ -1255,7 +1268,7 @@ fn get_video_dimensions(path: &Path) -> Result<(u64, u64), String> {
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=width,height",
+            "stream=width,height,r_frame_rate,avg_frame_rate",
             "-of",
             "json",
         ])
@@ -1286,7 +1299,22 @@ fn get_video_dimensions(path: &Path) -> Result<(u64, u64), String> {
         .and_then(|v| v.as_u64())
         .ok_or_else(|| "Missing height in ffprobe output".to_string())?;
 
-    Ok((width, height))
+    // Parse FPS from r_frame_rate (e.g., "24000/1001") or avg_frame_rate
+    let fps = stream
+        .get("r_frame_rate")
+        .and_then(|v| v.as_str())
+        .or_else(|| stream.get("avg_frame_rate").and_then(|v| v.as_str()))
+        .and_then(|s| {
+            if let Some((num, den)) = s.split_once('/') {
+                let n: f64 = num.parse().ok()?;
+                let d: f64 = den.parse().ok()?;
+                if d > 0.0 { Some(n / d) } else { None }
+            } else {
+                s.parse().ok()
+            }
+        });
+
+    Ok(VideoInfo { width, height, fps })
 }
 
 // ─── Transcode streaming ─────────────────────────────────────────────────────

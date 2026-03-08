@@ -1012,6 +1012,22 @@
   color: var(--text-primary);
 }
 
+.info-value.copyable {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  transition: background-color 0.15s;
+}
+
+.info-value.copyable:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.info-value.file-path.copyable {
+  cursor: pointer;
+}
+
 .info-value.uploader-link {
   background: none;
   border: none;

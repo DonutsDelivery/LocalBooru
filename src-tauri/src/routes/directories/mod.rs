@@ -22,6 +22,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_directories).post(add_directory))
         .route("/add-parent", post(add_parent_directory))
+        .route("/parents", get(list_parent_directories).delete(remove_parent_directory))
         .route("/bulk-delete", post(bulk_delete))
         .route("/bulk-repair", post(bulk_repair))
         .route("/bulk-verify", post(bulk_verify))
@@ -35,6 +36,38 @@ pub fn router() -> Router<AppState> {
         .route("/{directory_id}/comfyui-nodes", get(get_comfyui_nodes))
         .route("/{directory_id}/comfyui-config", patch(update_comfyui_config))
         .route("/{directory_id}/reextract-metadata", post(reextract_metadata))
+        .route("/dedup", post(dedup_directories))
+}
+
+/// Split a string into text/number segments for natural sort ordering.
+/// "filter10" → [Text("filter"), Num(10)], "2" → [Num(2)]
+fn natural_sort_key(s: &str) -> Vec<NaturalSegment> {
+    let s = s.to_lowercase();
+    let mut segments = Vec::new();
+    let mut chars = s.chars().peekable();
+    while chars.peek().is_some() {
+        if chars.peek().map_or(false, |c| c.is_ascii_digit()) {
+            let mut num_str = String::new();
+            while chars.peek().map_or(false, |c| c.is_ascii_digit()) {
+                num_str.push(chars.next().unwrap());
+            }
+            segments.push(NaturalSegment::Num(num_str.parse::<u64>().unwrap_or(0)));
+        } else {
+            let mut text = String::new();
+            while chars.peek().map_or(false, |c| !c.is_ascii_digit()) {
+                text.push(chars.next().unwrap());
+            }
+            segments.push(NaturalSegment::Text(text));
+        }
+    }
+    segments
+}
+
+#[derive(Eq, PartialEq, Ord, PartialOrd)]
+enum NaturalSegment {
+    // Text sorts before Num due to enum variant order
+    Text(String),
+    Num(u64),
 }
 
 // ─── Request models ──────────────────────────────────────────────────────────
@@ -158,7 +191,7 @@ async fn list_directories(
                 "SELECT id, path, name, enabled, recursive, auto_tag, auto_age_detect,
                         last_scanned_at, created_at, public_access, show_images, show_videos,
                         parent_path, metadata_format, family_safe, lan_visible
-                 FROM watch_directories ORDER BY created_at",
+                 FROM watch_directories",
             )?;
 
             let dirs: Vec<Value> = stmt
@@ -264,7 +297,7 @@ async fn list_directories(
         let tier = AccessTier::from_ip(&client_ip);
         let family_locked = state_clone.is_family_mode_locked();
 
-        let filtered: Vec<Value> = all_dirs.into_iter().filter(|d| {
+        let mut filtered: Vec<Value> = all_dirs.into_iter().filter(|d| {
             // Family mode: hide non-family-safe when locked
             if family_locked && !d["family_safe"].as_bool().unwrap_or(true) {
                 return false;
@@ -275,6 +308,13 @@ async fn list_directories(
                 AccessTier::Public => d["public_access"].as_bool().unwrap_or(false),
             }
         }).collect();
+
+        // Natural sort by name (e.g. "1", "2", "10" instead of "1", "10", "2")
+        filtered.sort_by(|a, b| {
+            let na = a["name"].as_str().unwrap_or("");
+            let nb = b["name"].as_str().unwrap_or("");
+            natural_sort_key(na).cmp(&natural_sort_key(nb))
+        });
 
         Ok::<_, AppError>(Json(json!({ "directories": filtered })))
     })
@@ -312,25 +352,29 @@ async fn add_directory(
     let auto_tag = data.auto_tag;
     let auto_age_detect = data.auto_age_detect;
 
+    // Check for duplicates across ALL libraries
+    let path_clone = path_str.clone();
+    for existing_lib in state.library_manager().all_mounted() {
+        if let Ok(conn) = existing_lib.main_pool.get() {
+            let exists: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM watch_directories WHERE path = ?1",
+                    params![&path_clone],
+                    |row| row.get::<_, i64>(0).map(|c| c > 0),
+                )
+                .unwrap_or(false);
+            if exists {
+                return Err(AppError::BadRequest("Directory already added".into()));
+            }
+        }
+    }
+
     let state_clone = state.clone();
     let name_clone = name.clone();
     let path_clone = path_str.clone();
 
     let dir_id = tokio::task::spawn_blocking(move || -> Result<i64, AppError> {
         let conn = lib.main_pool.get()?;
-
-        // Check for duplicates
-        let exists: bool = conn
-            .query_row(
-                "SELECT COUNT(*) FROM watch_directories WHERE path = ?1",
-                params![&path_clone],
-                |row| row.get::<_, i64>(0).map(|c| c > 0),
-            )
-            .unwrap_or(false);
-
-        if exists {
-            return Err(AppError::BadRequest("Directory already added".into()));
-        }
 
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -412,6 +456,21 @@ async fn add_parent_directory(
     let auto_age_detect = data.auto_age_detect;
 
     let state_clone = state.clone();
+    let parent_path_str = parent_path.to_string_lossy().to_string();
+
+    // Collect all existing directory paths across ALL libraries to prevent cross-library duplicates
+    let mut all_existing_paths: HashSet<String> = HashSet::new();
+    for existing_lib in state.library_manager().all_mounted() {
+        if let Ok(conn) = existing_lib.main_pool.get() {
+            if let Ok(mut stmt) = conn.prepare("SELECT path FROM watch_directories") {
+                if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                    for path in rows.flatten() {
+                        all_existing_paths.insert(path);
+                    }
+                }
+            }
+        }
+    }
 
     let (added, skipped) = tokio::task::spawn_blocking(move || -> Result<(Vec<Value>, Vec<String>), AppError> {
         let conn = lib.main_pool.get()?;
@@ -419,18 +478,12 @@ async fn add_parent_directory(
         let mut skipped = Vec::new();
 
         for subdir in subdirs {
-            let path_str = subdir.to_string_lossy().to_string();
+            // Canonicalize to match how add_directory stores paths
+            let canonical = std::fs::canonicalize(&subdir).unwrap_or(subdir.clone());
+            let path_str = canonical.to_string_lossy().to_string();
 
-            // Check for duplicates
-            let exists: bool = conn
-                .query_row(
-                    "SELECT COUNT(*) FROM watch_directories WHERE path = ?1",
-                    params![&path_str],
-                    |row| row.get::<_, i64>(0).map(|c| c > 0),
-                )
-                .unwrap_or(false);
-
-            if exists {
+            // Check for duplicates across all libraries
+            if all_existing_paths.contains(&path_str) {
                 skipped.push(path_str);
                 continue;
             }
@@ -490,11 +543,21 @@ async fn add_parent_directory(
 
     // Register all newly added directories with filesystem watcher
     if let Some(watcher) = state.directory_watcher() {
+        let lib = state.resolve_library(data.library_id.as_deref())?;
         for dir in &added {
             if let (Some(id), Some(path)) = (dir["id"].as_i64(), dir["path"].as_str()) {
                 watcher.add_directory(id, path, recursive);
             }
         }
+
+        // Watch the parent directory itself for new subdirectories
+        watcher.watch_parent(
+            &parent_path_str,
+            recursive,
+            data.auto_tag,
+            data.auto_age_detect,
+            lib,
+        );
     }
 
     let added_count = added.len();
@@ -504,6 +567,141 @@ async fn add_parent_directory(
         "added": added,
         "skipped": skipped,
         "message": format!("Added {} directories, skipped {} existing", added_count, skipped_count)
+    })))
+}
+
+/// GET /api/directories/parents — List all parent directories being watched.
+async fn list_parent_directories(
+    State(state): State<AppState>,
+    Query(q): Query<LibraryQuery>,
+) -> Result<Json<Value>, AppError> {
+    let libraries: Vec<Arc<LibraryContext>> = if let Some(ref lib_id) = q.library_id {
+        vec![state.resolve_library(Some(lib_id))?]
+    } else {
+        state.library_manager().all_mounted()
+    };
+
+    let parents = tokio::task::spawn_blocking(move || -> Result<Vec<Value>, AppError> {
+        let mut result = Vec::new();
+
+        for lib in &libraries {
+            let conn = lib.main_pool.get()?;
+
+            let mut stmt = conn.prepare(
+                "SELECT parent_path, COUNT(*) as child_count,
+                        MAX(recursive) as recursive, MAX(auto_tag) as auto_tag,
+                        MAX(auto_age_detect) as auto_age_detect
+                 FROM watch_directories
+                 WHERE parent_path IS NOT NULL AND parent_path != ''
+                 GROUP BY parent_path
+                 ORDER BY parent_path"
+            )?;
+
+            let rows = stmt.query_map([], |row| {
+                Ok(json!({
+                    "path": row.get::<_, String>(0)?,
+                    "child_count": row.get::<_, i64>(1)?,
+                    "recursive": row.get::<_, bool>(2)?,
+                    "auto_tag": row.get::<_, bool>(3)?,
+                    "auto_age_detect": row.get::<_, bool>(4)?,
+                    "library_id": lib.uuid,
+                    "library_name": lib.name,
+                }))
+            })?;
+
+            for row in rows.flatten() {
+                result.push(row);
+            }
+        }
+
+        Ok(result)
+    }).await??;
+
+    Ok(Json(json!({ "parents": parents })))
+}
+
+#[derive(Deserialize)]
+struct ParentDirectoryDelete {
+    path: String,
+    library_id: Option<String>,
+    /// If true, also remove all child directories that belong to this parent.
+    remove_children: Option<bool>,
+}
+
+/// DELETE /api/directories/parents — Stop watching a parent directory.
+///
+/// Clears the `parent_path` from child directories and removes the parent from
+/// the polling watcher. Optionally removes all child directories too.
+async fn remove_parent_directory(
+    State(state): State<AppState>,
+    Json(data): Json<ParentDirectoryDelete>,
+) -> Result<Json<Value>, AppError> {
+    let lib = state.resolve_library(data.library_id.as_deref())?;
+    let parent_path = data.path.clone();
+    let remove_children = data.remove_children.unwrap_or(false);
+
+    let (removed_count, cleared_count) = tokio::task::spawn_blocking({
+        let state = state.clone();
+        let lib = lib.clone();
+        let parent_path = parent_path.clone();
+        move || -> Result<(i64, i64), AppError> {
+            let conn = lib.main_pool.get()?;
+
+            if remove_children {
+                // Get child directory IDs to clean up their DB pools and watchers
+                let mut stmt = conn.prepare(
+                    "SELECT id FROM watch_directories WHERE parent_path = ?1"
+                )?;
+                let child_ids: Vec<i64> = stmt
+                    .query_map(params![&parent_path], |row| row.get(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                // Remove watches and DB pools for each child
+                if let Some(watcher) = state.directory_watcher() {
+                    for dir_id in &child_ids {
+                        watcher.remove_directory(*dir_id);
+                    }
+                }
+                for dir_id in &child_ids {
+                    if let Err(e) = lib.directory_db.delete_directory_db(*dir_id) {
+                        log::warn!("[ParentDir] Failed to delete DB for dir {}: {}", dir_id, e);
+                    }
+                }
+
+                let removed = conn.execute(
+                    "DELETE FROM watch_directories WHERE parent_path = ?1",
+                    params![&parent_path],
+                )? as i64;
+
+                Ok((removed, 0))
+            } else {
+                // Just clear parent_path — keep the child directories
+                let cleared = conn.execute(
+                    "UPDATE watch_directories SET parent_path = NULL WHERE parent_path = ?1",
+                    params![&parent_path],
+                )? as i64;
+
+                Ok((0, cleared))
+            }
+        }
+    }).await??;
+
+    // Remove from the polling watcher
+    if let Some(watcher) = state.directory_watcher() {
+        watcher.remove_parent(&parent_path);
+    }
+
+    let message = if remove_children {
+        format!("Removed parent directory and {} child directories", removed_count)
+    } else {
+        format!("Stopped watching parent directory ({} directories kept)", cleared_count)
+    };
+
+    Ok(Json(json!({
+        "removed": removed_count,
+        "cleared": cleared_count,
+        "message": message
     })))
 }
 
@@ -1919,4 +2117,129 @@ async fn reextract_metadata(
     .await??;
 
     Ok(result)
+}
+
+/// POST /api/directories/dedup — Remove duplicate directory entries.
+///
+/// Finds paths that exist in multiple libraries and removes the duplicates
+/// from the newer (smaller) library, keeping the older (larger) one.
+/// Also handles intra-library duplicates.
+async fn dedup_directories(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    let mut total_removed = 0;
+
+    let libraries = state.library_manager().all_mounted();
+
+    // ── Phase 1: Cross-library dedup ────────────────────────────────────
+    // Collect all (path -> library_uuid, image_count) across libraries
+    let mut path_to_libs: HashMap<String, Vec<(String, i64, usize)>> = HashMap::new();
+
+    for (lib_idx, lib) in libraries.iter().enumerate() {
+        let lib_clone = lib.clone();
+        let entries: Vec<(String, i64)> = tokio::task::spawn_blocking(move || -> Result<Vec<(String, i64)>, AppError> {
+            let conn = lib_clone.main_pool.get()?;
+            let mut stmt = conn.prepare("SELECT path, id FROM watch_directories")?;
+            let rows = stmt
+                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+                .map_err(|e| AppError::Internal(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(rows)
+        })
+        .await??;
+
+        for (path, dir_id) in entries {
+            path_to_libs
+                .entry(path)
+                .or_default()
+                .push((lib.uuid.clone(), dir_id, lib_idx));
+        }
+    }
+
+    // For paths in multiple libraries, keep the first library (by index = mount order)
+    // and remove from others
+    for (path, libs) in &path_to_libs {
+        if libs.len() <= 1 {
+            continue;
+        }
+
+        // Keep the entry from the library with the lowest index (first mounted = oldest)
+        let keep_lib_idx = libs.iter().map(|(_, _, idx)| *idx).min().unwrap();
+
+        for (lib_uuid, dir_id, lib_idx) in libs {
+            if *lib_idx == keep_lib_idx {
+                continue;
+            }
+
+            // Find the library context for removal
+            if let Some(lib) = libraries.iter().find(|l| &l.uuid == lib_uuid) {
+                let lib_clone = lib.clone();
+                let did = *dir_id;
+                tokio::task::spawn_blocking(move || {
+                    let _ = lib_clone.directory_db.delete_directory_db(did);
+                    if let Ok(conn) = lib_clone.main_pool.get() {
+                        let _ = conn.execute(
+                            "DELETE FROM watch_directories WHERE id = ?1",
+                            params![did],
+                        );
+                    }
+                })
+                .await
+                .ok();
+                total_removed += 1;
+                log::info!("[Dedup] Removed cross-library duplicate: {} (id {} from lib {})", path, dir_id, lib_uuid);
+            }
+        }
+    }
+
+    // ── Phase 2: Intra-library dedup ────────────────────────────────────
+    for lib in &libraries {
+        let lib_clone = lib.clone();
+        let removed = tokio::task::spawn_blocking(move || -> Result<usize, AppError> {
+            let conn = lib_clone.main_pool.get()?;
+            let mut stmt = conn.prepare(
+                "SELECT id, path FROM watch_directories
+                 WHERE path IN (
+                     SELECT path FROM watch_directories GROUP BY path HAVING COUNT(*) > 1
+                 )
+                 ORDER BY path, id"
+            )?;
+            let rows: Vec<(i64, String)> = stmt
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .map_err(|e| AppError::Internal(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            let mut duplicate_ids: Vec<i64> = Vec::new();
+            let mut seen_paths: HashSet<String> = HashSet::new();
+            for (id, path) in &rows {
+                if seen_paths.contains(path) {
+                    duplicate_ids.push(*id);
+                } else {
+                    seen_paths.insert(path.clone());
+                }
+            }
+
+            for dir_id in &duplicate_ids {
+                let _ = lib_clone.directory_db.delete_directory_db(*dir_id);
+                conn.execute("DELETE FROM watch_directories WHERE id = ?1", params![dir_id])?;
+            }
+
+            Ok(duplicate_ids.len())
+        })
+        .await??;
+        total_removed += removed;
+    }
+
+    if total_removed > 0 {
+        if let Some(watcher) = state.directory_watcher() {
+            watcher.refresh();
+        }
+    }
+
+    Ok(Json(json!({
+        "removed": total_removed,
+        "message": format!("Removed {} duplicate directories", total_removed)
+    })))
 }

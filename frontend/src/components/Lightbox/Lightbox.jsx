@@ -1,6 +1,8 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { getMediaUrl, getSVPConfig, updateSVPConfig, stopSVPStream, stopInterpolatedStream, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo } from '../../api'
+import { getMediaUrl, getAssetUrl, isUsingLocalServer, getSVPConfig, updateSVPConfig, stopSVPStream, stopInterpolatedStream, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo } from '../../api'
+import { isMobileApp } from '../../serverManager'
 import { getDesktopAPI } from '../../tauriAPI'
+import { toast } from '../Toast'
 import SVPSideMenu from '../SVPSideMenu'
 import QualitySelector from '../QualitySelector'
 import '../Lightbox.css'
@@ -359,7 +361,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       }
     } catch (err) {
       console.error('Failed to delete image:', err)
-      alert('Failed to delete image: ' + err.message)
+      toast.error('Failed to delete image: ' + err.message)
     }
 
     setProcessing(false)
@@ -527,7 +529,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       setPreviewUrl(`${result.preview_url}?t=${Date.now()}`)
     } catch (err) {
       console.error('Failed to generate preview:', err)
-      alert('Failed to generate preview: ' + err.message)
+      toast.error('Failed to generate preview: ' + err.message)
     }
     setGeneratingPreview(false)
   }, [image, adjustments, generatingPreview])
@@ -584,7 +586,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       setShowAdjustments(false)
     } catch (err) {
       console.error('Failed to apply adjustments:', err)
-      alert('Failed to apply adjustments: ' + err.message)
+      toast.error('Failed to apply adjustments: ' + err.message)
     }
     setApplyingAdjustments(false)
   }, [image, adjustments, applyingAdjustments, onImageUpdate])
@@ -874,6 +876,19 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     currentQuality, streaming.svpConfig?.enabled, streaming.svpError,
     streaming.opticalFlowConfig?.enabled, streaming.opticalFlowError
   ])
+
+  // On Tauri mobile with local server, use asset protocol to serve videos directly from disk.
+  // WRY's shouldInterceptRequest buffers entire HTTP responses before returning them to the WebView,
+  // which causes video elements with http:// src to load endlessly for large files.
+  // The asset protocol serves from the filesystem directly, bypassing this bottleneck.
+  const directVideoSrc = useMemo(() => {
+    if (!shouldPlayDirect || !image?.url) return undefined
+    if (isMobileApp() && isUsingLocalServer() && image?.file_path) {
+      const assetUrl = getAssetUrl(image.file_path)
+      if (assetUrl) return assetUrl
+    }
+    return getMediaUrl(image.url)
+  }, [shouldPlayDirect, image?.url, image?.file_path])
 
   if (!image) return null
 
@@ -1311,7 +1326,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <video
               key={image.id}
               ref={mediaRef}
-              src={shouldPlayDirect ? getMediaUrl(image.url) : undefined}
+              src={directVideoSrc}
               preload="auto"
               autoPlay
               playsInline

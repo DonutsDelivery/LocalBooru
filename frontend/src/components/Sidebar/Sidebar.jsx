@@ -67,6 +67,7 @@ function Sidebar({
   const [orientation, setOrientation] = useState(initialOrientation || null)
   const [duration, setDuration] = useState(initialDuration || null)
   const [fetchedDimensions, setFetchedDimensions] = useState(null)
+  const [copiedField, setCopiedField] = useState(null)
   const [filtersExpanded, setFiltersExpanded] = useState(() => {
     const saved = localStorage.getItem('filtersExpanded')
     return saved !== null ? JSON.parse(saved) : false
@@ -152,7 +153,8 @@ function Sidebar({
         if (result.success) {
           setFetchedDimensions({
             width: result.width,
-            height: result.height
+            height: result.height,
+            fps: result.fps || null
           })
         } else {
           setFetchedDimensions(null)
@@ -163,6 +165,13 @@ function Sidebar({
         setFetchedDimensions(null)
       })
   }, [selectedImage?.id, selectedImage?.file_path])
+
+  const copyInfoValue = useCallback((label, value) => {
+    navigator.clipboard.writeText(String(value)).then(() => {
+      setCopiedField(label)
+      setTimeout(() => setCopiedField(null), 1500)
+    }).catch(() => {})
+  }, [])
 
   const isVisible = !collapsed || hovering || mobileOpen
 
@@ -602,25 +611,38 @@ function Sidebar({
             <h3>Image Info</h3>
             <div className="info-grid">
               <span className="info-label">ID</span>
-              <span className="info-value">#{selectedImage.id}</span>
+              <span className="info-value copyable" onClick={() => copyInfoValue('ID', selectedImage.id)} title="Click to copy">
+                {copiedField === 'ID' ? '✓ Copied' : `#${selectedImage.id}`}
+              </span>
 
               {fetchedDimensions ? (
                 <>
                   <span className="info-label">Resolution</span>
-                  <span className="info-value">{fetchedDimensions.width}x{fetchedDimensions.height}</span>
+                  <span className="info-value copyable" onClick={() => copyInfoValue('Resolution', `${fetchedDimensions.width}x${fetchedDimensions.height}`)} title="Click to copy">
+                    {copiedField === 'Resolution' ? '✓ Copied' : `${fetchedDimensions.width}x${fetchedDimensions.height}`}
+                  </span>
                 </>
               ) : null}
 
+              {fetchedDimensions?.fps && (
+                <>
+                  <span className="info-label">FPS</span>
+                  <span className="info-value copyable" onClick={() => copyInfoValue('FPS', Number.isInteger(fetchedDimensions.fps) ? fetchedDimensions.fps : fetchedDimensions.fps.toFixed(2))} title="Click to copy">
+                    {copiedField === 'FPS' ? '✓ Copied' : (Number.isInteger(fetchedDimensions.fps) ? fetchedDimensions.fps : fetchedDimensions.fps.toFixed(2))}
+                  </span>
+                </>
+              )}
+
               <span className="info-label">Rating</span>
-              <span className={`info-value rating-${selectedImage.rating}`}>
-                {selectedImage.rating}
+              <span className={`info-value copyable rating-${selectedImage.rating}`} onClick={() => copyInfoValue('Rating', selectedImage.rating)} title="Click to copy">
+                {copiedField === 'Rating' ? '✓ Copied' : selectedImage.rating}
               </span>
 
               {selectedImage.created_at && (
                 <>
                   <span className="info-label">Added</span>
-                  <span className="info-value">
-                    {new Date(selectedImage.created_at).toLocaleDateString()}
+                  <span className="info-value copyable" onClick={() => copyInfoValue('Added', new Date(selectedImage.created_at).toLocaleDateString())} title="Click to copy">
+                    {copiedField === 'Added' ? '✓ Copied' : new Date(selectedImage.created_at).toLocaleDateString()}
                   </span>
                 </>
               )}
@@ -628,10 +650,10 @@ function Sidebar({
               {selectedImage.file_size && (
                 <>
                   <span className="info-label">File Size</span>
-                  <span className="info-value">
-                    {selectedImage.file_size >= 1024 * 1024
+                  <span className="info-value copyable" onClick={() => copyInfoValue('File Size', selectedImage.file_size >= 1024 * 1024 ? `${(selectedImage.file_size / (1024 * 1024)).toFixed(1)} MB` : `${(selectedImage.file_size / 1024).toFixed(0)} KB`)} title="Click to copy">
+                    {copiedField === 'File Size' ? '✓ Copied' : (selectedImage.file_size >= 1024 * 1024
                       ? `${(selectedImage.file_size / (1024 * 1024)).toFixed(1)} MB`
-                      : `${(selectedImage.file_size / 1024).toFixed(0)} KB`}
+                      : `${(selectedImage.file_size / 1024).toFixed(0)} KB`)}
                   </span>
                 </>
               )}
@@ -639,8 +661,8 @@ function Sidebar({
               {selectedImage.file_path && (
                 <>
                   <span className="info-label">Format</span>
-                  <span className="info-value">
-                    {selectedImage.file_path.split('.').pop()?.toUpperCase()}
+                  <span className="info-value copyable" onClick={() => copyInfoValue('Format', selectedImage.file_path.split('.').pop()?.toUpperCase())} title="Click to copy">
+                    {copiedField === 'Format' ? '✓ Copied' : selectedImage.file_path.split('.').pop()?.toUpperCase()}
                   </span>
                 </>
               )}
@@ -648,15 +670,17 @@ function Sidebar({
               {selectedImage.directory_name && (
                 <>
                   <span className="info-label">Directory</span>
-                  <span className="info-value">{selectedImage.directory_name}</span>
+                  <span className="info-value copyable" onClick={() => copyInfoValue('Directory', selectedImage.directory_name)} title="Click to copy">
+                    {copiedField === 'Directory' ? '✓ Copied' : selectedImage.directory_name}
+                  </span>
                 </>
               )}
 
               {selectedImage.file_path && (
                 <>
                   <span className="info-label">Path</span>
-                  <span className="info-value file-path" title={selectedImage.file_path}>
-                    {selectedImage.file_path}
+                  <span className="info-value copyable file-path" onClick={() => copyInfoValue('Path', selectedImage.file_path)} title="Click to copy">
+                    {copiedField === 'Path' ? '✓ Copied' : selectedImage.file_path}
                   </span>
                 </>
               )}
@@ -673,15 +697,17 @@ function Sidebar({
               {selectedImage.num_faces !== null && selectedImage.num_faces !== undefined && (
                 <>
                   <span className="info-label">Faces</span>
-                  <span className="info-value">{selectedImage.num_faces}</span>
+                  <span className="info-value copyable" onClick={() => copyInfoValue('Faces', selectedImage.num_faces)} title="Click to copy">
+                    {copiedField === 'Faces' ? '✓ Copied' : selectedImage.num_faces}
+                  </span>
 
                   {selectedImage.min_age && (
                     <>
                       <span className="info-label">Age</span>
-                      <span className="info-value">
-                        {selectedImage.min_age === selectedImage.max_age
+                      <span className="info-value copyable" onClick={() => copyInfoValue('Age', selectedImage.min_age === selectedImage.max_age ? selectedImage.min_age : `${selectedImage.min_age}-${selectedImage.max_age}`)} title="Click to copy">
+                        {copiedField === 'Age' ? '✓ Copied' : (selectedImage.min_age === selectedImage.max_age
                           ? `${selectedImage.min_age}`
-                          : `${selectedImage.min_age}-${selectedImage.max_age}`}
+                          : `${selectedImage.min_age}-${selectedImage.max_age}`)}
                       </span>
                     </>
                   )}

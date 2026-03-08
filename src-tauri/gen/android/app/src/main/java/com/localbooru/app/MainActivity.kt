@@ -20,5 +20,21 @@ class MainActivity : TauriActivity() {
     // HTTP requests (XHR, fetch, img src, video src) would be blocked.
     webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
     Log.i("LocalBooru", "onWebViewCreate: mixedContentMode set to ALWAYS_ALLOW")
+
+    // Inject status bar height as CSS variable since env(safe-area-inset-top) is
+    // unreliable in Android WebView with edge-to-edge
+    val statusBarHeightPx = getStatusBarHeight()
+    val density = resources.displayMetrics.density
+    val statusBarHeightDp = (statusBarHeightPx / density).toInt()
+    webView.evaluateJavascript(
+      "document.documentElement.style.setProperty('--android-status-bar-height', '${statusBarHeightDp}px')",
+      null
+    )
+    Log.i("LocalBooru", "Status bar height: ${statusBarHeightDp}dp (${statusBarHeightPx}px)")
+  }
+
+  private fun getStatusBarHeight(): Int {
+    val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+    return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else 0
   }
 }

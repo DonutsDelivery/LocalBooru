@@ -4,6 +4,7 @@
  */
 import { useState, useCallback } from 'react'
 import { batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from '../api'
+import { toast } from '../components/Toast'
 
 export function useImageSelection({ images, loadImages }) {
   // Selection mode state
@@ -69,7 +70,7 @@ export function useImageSelection({ images, loadImages }) {
     try {
       const result = await batchRetag(Array.from(selectedImages))
       console.log('Batch retag result:', result)
-      alert(`Queued ${result.queued} images for retagging`)
+      toast.success(`Queued ${result.queued} images for retagging`)
       setSelectedImages(new Set())
     } catch (error) {
       console.error('Batch retag failed:', error)
@@ -83,7 +84,7 @@ export function useImageSelection({ images, loadImages }) {
     try {
       const result = await batchAgeDetect(Array.from(selectedImages))
       console.log('Batch age detect result:', result)
-      alert(`Queued ${result.queued} images for age detection`)
+      toast.success(`Queued ${result.queued} images for age detection`)
       setSelectedImages(new Set())
     } catch (error) {
       console.error('Batch age detect failed:', error)
@@ -108,7 +109,7 @@ export function useImageSelection({ images, loadImages }) {
     try {
       const result = await batchMoveImages(Array.from(selectedImages), selectedMoveDir)
       console.log('Batch move result:', result)
-      alert(`Moved ${result.moved} images`)
+      toast.success(`Moved ${result.moved} images`)
       // Refresh the gallery
       await loadImages(1, false)
       setSelectedImages(new Set())

@@ -566,13 +566,19 @@ video.lightbox-media {
   }
 }
 
-/* Fullscreen mode - true edge-to-edge display */
+/* Fullscreen mode - true edge-to-edge display.
+   On desktop this is applied alongside the native Fullscreen API.
+   On Android WebView (where the API is unavailable) this alone handles
+   fullscreen by covering the title bar and using the full viewport. */
 .lightbox.fullscreen {
   top: 0;
+  /* Override safe-area / title-bar offsets for true edge-to-edge */
+  z-index: 2147483647;
 }
 
 .lightbox.fullscreen .lightbox-content {
   height: 100vh;
+  height: 100dvh;
   padding: 0;
 }
 
@@ -583,6 +589,7 @@ video.lightbox-media {
 
 .lightbox.fullscreen .lightbox-video-container {
   height: 100vh;
+  height: 100dvh;
 }
 
 /* Fullscreen button */

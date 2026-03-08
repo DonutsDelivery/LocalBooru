@@ -35,8 +35,13 @@ pub const STATUS_CANCELLED: &str = "cancelled";
 /// Maximum number of retry attempts before a task is permanently failed.
 const MAX_RETRIES: i64 = 3;
 
-/// Default number of concurrent task workers.
-const DEFAULT_WORKERS: usize = 2;
+/// Default number of concurrent task workers (num_cpus / 2, minimum 2).
+fn default_workers() -> usize {
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    (cpus / 2).max(2)
+}
 
 /// Settings key for configuring worker concurrency.
 const SETTINGS_WORKERS_KEY: &str = "task_queue_workers";
@@ -217,7 +222,7 @@ impl Default for BackgroundTaskQueue {
 fn read_worker_count(state: &AppState) -> usize {
     let conn = match state.main_db().get() {
         Ok(c) => c,
-        Err(_) => return DEFAULT_WORKERS,
+        Err(_) => return default_workers(),
     };
 
     let result = conn.query_row(
@@ -227,8 +232,8 @@ fn read_worker_count(state: &AppState) -> usize {
     );
 
     match result {
-        Ok(val) => val.parse::<usize>().unwrap_or(DEFAULT_WORKERS).max(1),
-        Err(_) => DEFAULT_WORKERS,
+        Ok(val) => val.parse::<usize>().unwrap_or_else(|_| default_workers()).max(1),
+        Err(_) => default_workers(),
     }
 }
 
@@ -659,7 +664,7 @@ fn complete_directory_imports(
         .collect();
 
     let total_thumbs = missing_thumbs.len();
-    let mut thumbnails_generated = 0u32;
+    let thumbnails_generated: u32;
 
     if total_thumbs > 0 {
         log::info!("[TaskQueue] Directory #{}: {} images need thumbnails", directory_id, total_thumbs);
@@ -679,50 +684,81 @@ fn complete_directory_imports(
         }
     }
 
-    for (image_id, file_hash, original_path) in &missing_thumbs {
+    // Parallel thumbnail generation using thread::scope
+    {
+        use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
+        let next_idx = AtomicUsize::new(0);
+        let generated = AtomicUsize::new(0);
+        let parallelism = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .min(8);
+
+        std::thread::scope(|s| {
+            for _ in 0..parallelism {
+                s.spawn(|| {
+                    loop {
+                        if cancel.is_cancelled() {
+                            return;
+                        }
+                        let idx = next_idx.fetch_add(1, AtomicOrdering::SeqCst);
+                        if idx >= missing_thumbs.len() {
+                            return;
+                        }
+
+                        let (image_id, file_hash, original_path) = &missing_thumbs[idx];
+                        let hash_prefix = &file_hash[..16.min(file_hash.len())];
+                        let thumb_path = thumbnails_dir.join(format!("{}.webp", hash_prefix));
+
+                        if importer::is_video_file(original_path) {
+                            importer::generate_video_thumbnail(
+                                original_path,
+                                &thumb_path.to_string_lossy(),
+                                400,
+                            );
+                        } else {
+                            importer::generate_thumbnail(
+                                original_path,
+                                &thumb_path.to_string_lossy(),
+                                400,
+                            );
+                        }
+
+                        let count = generated.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+
+                        // Broadcast thumbnail ready + progress
+                        if let Some(events) = state.events() {
+                            events.library.broadcast(
+                                event_type::IMAGE_UPDATED,
+                                serde_json::json!({
+                                    "image_id": image_id,
+                                    "directory_id": directory_id,
+                                    "thumbnail_ready": true
+                                }),
+                            );
+                            if count % 5 == 0 || count == total_thumbs {
+                                events.library.broadcast(
+                                    event_type::TASK_PROGRESS,
+                                    serde_json::json!({
+                                        "task_type": TASK_COMPLETE_IMPORTS,
+                                        "directory_id": directory_id,
+                                        "processed": count,
+                                        "total": total_thumbs,
+                                        "phase": "thumbnails",
+                                    }),
+                                );
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        thumbnails_generated = generated.load(AtomicOrdering::SeqCst) as u32;
         if cancel.is_cancelled() {
             log::info!("[TaskQueue] Complete imports cancelled during thumbnail pass");
             return Ok(());
-        }
-
-        let hash_prefix = &file_hash[..16.min(file_hash.len())];
-        let thumb_path = thumbnails_dir.join(format!("{}.webp", hash_prefix));
-
-        if importer::is_video_file(original_path) {
-            importer::generate_video_thumbnail(
-                original_path,
-                &thumb_path.to_string_lossy(),
-                400,
-            );
-        } else {
-            importer::generate_thumbnail(
-                original_path,
-                &thumb_path.to_string_lossy(),
-                400,
-            );
-        }
-        thumbnails_generated += 1;
-
-        // Broadcast thumbnail ready + progress
-        if let Some(events) = state.events() {
-            events.library.broadcast(
-                event_type::IMAGE_UPDATED,
-                serde_json::json!({
-                    "image_id": image_id,
-                    "directory_id": directory_id,
-                    "thumbnail_ready": true
-                }),
-            );
-            events.library.broadcast(
-                event_type::TASK_PROGRESS,
-                serde_json::json!({
-                    "task_type": TASK_COMPLETE_IMPORTS,
-                    "directory_id": directory_id,
-                    "processed": thumbnails_generated,
-                    "total": total_thumbs,
-                    "phase": "thumbnails",
-                }),
-            );
         }
     }
 
@@ -772,7 +808,7 @@ fn complete_directory_imports(
         );
     }
 
-    for (image_id, _file_hash, perceptual_hash, width, duration, original_path) in &images {
+    for (image_id, file_hash, perceptual_hash, width, duration, original_path) in &images {
         if cancel.is_cancelled() {
             log::info!("[TaskQueue] Complete imports cancelled during hashing pass");
             return Ok(());
@@ -787,7 +823,28 @@ fn complete_directory_imports(
 
         // Calculate perceptual hash (imohash — samples 16KB from start/middle/end, no image decode)
         if perceptual_hash.is_none() {
-            if let Some(phash) = importer::calculate_perceptual_hash(original_path) {
+            // Check if another directory DB already has a perceptual hash for the same file_hash
+            let mut existing_phash: Option<String> = None;
+            for dir_id in lib.directory_db.get_all_directory_ids() {
+                if dir_id == directory_id {
+                    continue;
+                }
+                if let Ok(pool) = lib.directory_db.get_pool(dir_id) {
+                    if let Ok(other_conn) = pool.get() {
+                        if let Ok(phash) = other_conn.query_row(
+                            "SELECT perceptual_hash FROM images WHERE file_hash = ?1 AND perceptual_hash IS NOT NULL LIMIT 1",
+                            params![file_hash],
+                            |row| row.get::<_, String>(0),
+                        ) {
+                            existing_phash = Some(phash);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let phash = existing_phash.or_else(|| importer::calculate_perceptual_hash(original_path));
+            if let Some(phash) = phash {
                 conn.execute(
                     "UPDATE images SET perceptual_hash = ?1 WHERE id = ?2",
                     params![&phash, image_id],
@@ -796,19 +853,16 @@ fn complete_directory_imports(
             }
         }
 
-        // Probe videos missing dimensions/duration
+        // Probe videos missing dimensions/duration (single ffprobe call)
         if is_video && (width.is_none() || duration.is_none()) {
-            if width.is_none() {
-                if let Some((w, h)) = importer::get_image_dimensions(original_path) {
+            if let Some((w, h, dur)) = video_preview::get_video_metadata(original_path) {
+                if width.is_none() {
                     conn.execute(
                         "UPDATE images SET width = ?1, height = ?2 WHERE id = ?3",
-                        params![w as i32, h as i32, image_id],
+                        params![w, h, image_id],
                     )?;
                 }
-            }
-
-            if duration.is_none() {
-                if let Some(dur) = video_preview::get_video_duration(original_path) {
+                if duration.is_none() {
                     conn.execute(
                         "UPDATE images SET duration = ?1 WHERE id = ?2",
                         params![dur, image_id],

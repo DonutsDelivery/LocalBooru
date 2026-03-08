@@ -110,8 +110,8 @@
 /* Mobile title bar — account for status bar / notch */
 .title-bar.mobile {
   -webkit-app-region: no-drag;
-  padding-top: env(safe-area-inset-top, 0px);
-  height: calc(32px + env(safe-area-inset-top, 0px));
+  padding-top: var(--android-status-bar-height, 24px);
+  height: calc(32px + var(--android-status-bar-height, 24px));
 }
 
 .title-bar.mobile .title-bar-drag {
@@ -136,7 +136,7 @@
 /* Update banner (mobile) */
 .update-banner {
   position: fixed;
-  top: 32px; /* Below the title bar */
+  top: var(--title-bar-height, 32px);
   left: 0;
   right: 0;
   display: flex;

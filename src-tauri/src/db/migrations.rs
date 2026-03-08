@@ -112,6 +112,29 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
         description: "Fix NULL attempts in task_queue",
         sql: "UPDATE task_queue SET attempts = 0 WHERE attempts IS NULL;",
     },
+    // v5: Add file_extension column + index to image_files for fast media type filtering
+    Migration {
+        description: "Add file_extension column and index to image_files (main DB)",
+        sql: "ALTER TABLE image_files ADD COLUMN file_extension TEXT;\
+              CREATE INDEX IF NOT EXISTS idx_image_files_file_extension ON image_files(file_extension);\
+              UPDATE image_files SET file_extension = \
+                CASE \
+                  WHEN LOWER(original_path) LIKE '%.png' THEN 'png' \
+                  WHEN LOWER(original_path) LIKE '%.jpg' THEN 'jpg' \
+                  WHEN LOWER(original_path) LIKE '%.jpeg' THEN 'jpeg' \
+                  WHEN LOWER(original_path) LIKE '%.gif' THEN 'gif' \
+                  WHEN LOWER(original_path) LIKE '%.webp' THEN 'webp' \
+                  WHEN LOWER(original_path) LIKE '%.bmp' THEN 'bmp' \
+                  WHEN LOWER(original_path) LIKE '%.tiff' THEN 'tiff' \
+                  WHEN LOWER(original_path) LIKE '%.tif' THEN 'tif' \
+                  WHEN LOWER(original_path) LIKE '%.webm' THEN 'webm' \
+                  WHEN LOWER(original_path) LIKE '%.mp4' THEN 'mp4' \
+                  WHEN LOWER(original_path) LIKE '%.mov' THEN 'mov' \
+                  WHEN LOWER(original_path) LIKE '%.avi' THEN 'avi' \
+                  WHEN LOWER(original_path) LIKE '%.mkv' THEN 'mkv' \
+                END \
+              WHERE file_extension IS NULL;",
+    },
 ];
 
 /// Run all pending migrations on the main library database.
@@ -128,6 +151,29 @@ pub static DIRECTORY_MIGRATIONS: &[Migration] = &[
     Migration {
         description: "Add index on image_files.file_status for directory DB",
         sql: "CREATE INDEX IF NOT EXISTS idx_image_files_file_status ON image_files(file_status);",
+    },
+    // v2: Add file_extension column + index for fast media type filtering
+    Migration {
+        description: "Add file_extension column and index to image_files",
+        sql: "ALTER TABLE image_files ADD COLUMN file_extension TEXT;\
+              CREATE INDEX IF NOT EXISTS idx_image_files_file_extension ON image_files(file_extension);\
+              UPDATE image_files SET file_extension = \
+                CASE \
+                  WHEN LOWER(original_path) LIKE '%.png' THEN 'png' \
+                  WHEN LOWER(original_path) LIKE '%.jpg' THEN 'jpg' \
+                  WHEN LOWER(original_path) LIKE '%.jpeg' THEN 'jpeg' \
+                  WHEN LOWER(original_path) LIKE '%.gif' THEN 'gif' \
+                  WHEN LOWER(original_path) LIKE '%.webp' THEN 'webp' \
+                  WHEN LOWER(original_path) LIKE '%.bmp' THEN 'bmp' \
+                  WHEN LOWER(original_path) LIKE '%.tiff' THEN 'tiff' \
+                  WHEN LOWER(original_path) LIKE '%.tif' THEN 'tif' \
+                  WHEN LOWER(original_path) LIKE '%.webm' THEN 'webm' \
+                  WHEN LOWER(original_path) LIKE '%.mp4' THEN 'mp4' \
+                  WHEN LOWER(original_path) LIKE '%.mov' THEN 'mov' \
+                  WHEN LOWER(original_path) LIKE '%.avi' THEN 'avi' \
+                  WHEN LOWER(original_path) LIKE '%.mkv' THEN 'mkv' \
+                END \
+              WHERE file_extension IS NULL;",
     },
 ];
 

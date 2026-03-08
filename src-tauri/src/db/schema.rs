@@ -99,6 +99,7 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
             original_path TEXT NOT NULL UNIQUE,
+            file_extension TEXT,
             file_exists INTEGER NOT NULL DEFAULT 1,
             file_status TEXT NOT NULL DEFAULT 'available'
                 CHECK(file_status IN ('available','missing','drive_offline','unknown')),
@@ -271,6 +272,7 @@ pub fn init_directory_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
             original_path TEXT NOT NULL UNIQUE,
+            file_extension TEXT,
             file_exists INTEGER NOT NULL DEFAULT 1,
             file_status TEXT NOT NULL DEFAULT 'available'
                 CHECK(file_status IN ('available','missing','drive_offline','unknown')),

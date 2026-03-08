@@ -27,8 +27,35 @@ export default function TitleBar({ onSwitchServer }) {
   // Set CSS variable for title bar height offset + desktop class for transparent window
   useEffect(() => {
     if (isMobile) {
-      // On mobile, include safe-area-inset-top (status bar / notch) in the height
-      document.documentElement.style.setProperty('--title-bar-height', `calc(${TITLE_BAR_HEIGHT}px + env(safe-area-inset-top, 0px))`);
+      // On Android, env(safe-area-inset-top) is unreliable in WebView.
+      // The Kotlin layer injects --android-status-bar-height via evaluateJavascript,
+      // but it may not be available yet when React mounts. Poll briefly for it,
+      // and fall back to 24px (standard Android status bar) if not found.
+      const applyMobileHeight = () => {
+        const androidHeight = getComputedStyle(document.documentElement)
+          .getPropertyValue('--android-status-bar-height').trim();
+        const inset = androidHeight || '24px';
+        document.documentElement.style.setProperty(
+          '--title-bar-height',
+          `calc(${TITLE_BAR_HEIGHT}px + ${inset})`
+        );
+        return !!androidHeight;
+      };
+
+      // Apply immediately with whatever we have
+      const found = applyMobileHeight();
+
+      // If the Kotlin-injected variable wasn't ready, retry a few times
+      if (!found) {
+        let attempts = 0;
+        const interval = setInterval(() => {
+          attempts++;
+          if (applyMobileHeight() || attempts >= 10) {
+            clearInterval(interval);
+          }
+        }, 50);
+        return () => clearInterval(interval);
+      }
     } else if (isDesktop) {
       document.documentElement.style.setProperty('--title-bar-height', `${TITLE_BAR_HEIGHT}px`);
       document.documentElement.classList.add('desktop-app');
