@@ -149,3 +149,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:12.486Z
+  - _ulid: 01KK692Z6D76TZVZ4AV6V29H01
+    slugs:
+      - task-queue
+    title: Task Queue
+    type: feature
+    tags: []
+    description: Background worker pool, priority-based execution, retry logic (3x), cancellation
+      tokens, pause/resume, status monitoring
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:12.686Z
