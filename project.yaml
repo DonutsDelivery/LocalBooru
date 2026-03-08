@@ -1,19 +1,10 @@
-# LocalBooru - Kynetic Spec
-# Local image/video library with auto-tagging
-
 kynetic: "1.0"
-
 project:
-  name: "LocalBooru"
-  version: "0.3.11"
+  name: LocalBooru
+  version: 0.3.11
   status: stable
-  description: |
-    Local-first image and video library manager with AI auto-tagging.
-    Tauri v2 desktop app (Windows/macOS/Linux) and Android mobile app.
-    Rust axum backend embedded in Tauri, React frontend, SQLite per-library databases.
-
-# Module includes
 includes:
   - modules/main.yaml
   - modules/android.yaml
   - modules/desktop.yaml
+  - modules/core.yaml

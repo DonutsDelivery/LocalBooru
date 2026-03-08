@@ -1,0 +1,16 @@
+_ulid: 01KK68Z9K3HPJ1RPEMT0MTM9W9
+slugs:
+  - core
+title: Core Application
+type: module
+status:
+  maturity: draft
+  implementation: not_started
+description: Shared backend (Rust axum) and frontend (React) functionality
+tags: []
+depends_on: []
+implements: []
+relates_to: []
+tests: []
+traits: []
+notes: []
