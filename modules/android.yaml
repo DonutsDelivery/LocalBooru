@@ -93,6 +93,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:41.938Z
+    status:
+      implementation: implemented
   - _ulid: 01KK693VXRSHB18XVWTR19AVW3
     slugs:
       - android-updater
