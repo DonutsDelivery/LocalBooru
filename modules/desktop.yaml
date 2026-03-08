@@ -1,0 +1,16 @@
+_ulid: 01KK691PPKAA90RD6WR0QQKPAW
+slugs:
+  - desktop
+title: Desktop App
+type: module
+status:
+  maturity: draft
+  implementation: not_started
+description: Tauri v2 desktop app with system tray, window management, native integration
+tags: []
+depends_on: []
+implements: []
+relates_to: []
+tests: []
+traits: []
+notes: []
