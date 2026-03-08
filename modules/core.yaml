@@ -164,3 +164,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:12.686Z
+  - _ulid: 01KK692ZE86V65FSD1SKGZYXXR
+    slugs:
+      - events
+    title: Event System (SSE)
+    type: feature
+    tags: []
+    description: "Server-Sent Events broadcaster for real-time updates: image CRUD, task progress,
+      migration events"
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:12.936Z
