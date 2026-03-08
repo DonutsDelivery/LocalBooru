@@ -60,3 +60,17 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:41.557Z
+  - _ulid: 01KK693VJHG3DQ3GHA50D4T34F
+    slugs:
+      - android-server-select
+    title: Server Selection & Pairing
+    type: feature
+    tags: []
+    description: ServerSelectScreen with QR scanning, manual URL entry, /remote/* proxy for mixed content bypass
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:41.745Z
