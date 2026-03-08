@@ -40,7 +40,7 @@ tasks:
     spec_ref: null
     meta_ref: null
     plan_ref: null
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     context: []
@@ -48,9 +48,10 @@ tasks:
     tags: []
     vcs_refs: []
     created_at: 2026-03-08T07:58:21.046Z
+    started_at: 2026-03-08T08:00:57.453Z
     notes: []
     todos: []
-    started_at: 2026-03-08T08:00:57.453Z
+    submitted_at: 2026-03-08T08:00:57.786Z
   - _ulid: 01KK678NSPC51ZJNPH0284SJBX
     slugs: []
     title: "Android: Fullscreen not working in lightbox"
