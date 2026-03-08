@@ -313,6 +313,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:14.453Z
+    status:
+      implementation: implemented
   - _ulid: 01KK693131E43N6N4TQ929VC7Q
     slugs:
       - whisper-subtitles
