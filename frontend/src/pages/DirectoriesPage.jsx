@@ -43,6 +43,7 @@ function DirectoriesPage() {
   const [newLibraryPath, setNewLibraryPath] = useState('')
   const [newLibraryName, setNewLibraryName] = useState('')
   const [newLibraryCreateNew, setNewLibraryCreateNew] = useState(false)
+  const [activeLibrary, setActiveLibrary] = useState(null) // null = all libraries
 
   const refreshDirectories = async () => {
     const { fetchDirectories } = await import('../api')
@@ -86,13 +87,27 @@ function DirectoriesPage() {
     refreshParentDirs()
   }, [])
 
+  // Resolve active library UUID (primary lib uses its real UUID, not 'primary')
+  const activeLibraryUuid = activeLibrary === 'primary'
+    ? libraries.find(l => l.is_primary)?.uuid
+    : activeLibrary
+
+  // Filtered lists based on active library tab
+  const filteredDirectories = activeLibraryUuid
+    ? directories.filter(d => d.library_id === activeLibraryUuid)
+    : directories
+  const filteredParentDirs = activeLibraryUuid
+    ? parentDirs.filter(p => p.library_id === activeLibraryUuid)
+    : parentDirs
+
   const handleAddDirectory = async () => {
     const api = getDesktopAPI()
     if (api?.addDirectory) {
       const path = await api.addDirectory()
       if (path) {
         const { addDirectory } = await import('../api')
-        await addDirectory(path)
+        const libraryId = activeLibraryUuid && !libraries.find(l => l.uuid === activeLibraryUuid)?.is_primary ? activeLibraryUuid : undefined
+        await addDirectory(path, { library_id: libraryId })
         await refreshDirectories()
       }
     } else {
@@ -106,7 +121,8 @@ function DirectoriesPage() {
       const path = await api.addDirectory()
       if (path) {
         const { addParentDirectory } = await import('../api')
-        const result = await addParentDirectory(path)
+        const libraryId = activeLibraryUuid && !libraries.find(l => l.uuid === activeLibraryUuid)?.is_primary ? activeLibraryUuid : undefined
+        const result = await addParentDirectory(path, { library_id: libraryId })
         toast.success(result.message)
         await refreshDirectories()
         await refreshParentDirs()
@@ -225,7 +241,7 @@ function DirectoriesPage() {
   }
 
   const selectAllDirs = () => {
-    setSelectedDirs(new Set(directories.map(d => makeDirKey(d))))
+    setSelectedDirs(new Set(filteredDirectories.map(d => makeDirKey(d))))
   }
 
   const clearSelection = () => {
@@ -483,98 +499,141 @@ function DirectoriesPage() {
               </button>
             </div>
 
-            {/* Libraries */}
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Libraries</h2>
+            {/* Library Tabs */}
+            <div className="library-tabs" style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0', overflowX: 'auto' }}>
+              <button
+                className={`library-tab ${!activeLibrary ? 'active' : ''}`}
+                onClick={() => setActiveLibrary(null)}
+                style={{
+                  padding: '8px 16px',
+                  background: !activeLibrary ? 'var(--accent)' : 'transparent',
+                  color: !activeLibrary ? '#fff' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: '6px 6px 0 0',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: !activeLibrary ? 600 : 400,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                All Libraries
+              </button>
+              {libraries.filter(l => l.mounted).map(lib => {
+                const isActive = activeLibrary === (lib.is_primary ? 'primary' : lib.uuid)
+                return (
                 <button
-                  onClick={() => setShowAddLibrary(!showAddLibrary)}
-                  className="btn btn-sm"
-                  style={{ fontSize: '0.85rem' }}
+                  key={lib.uuid}
+                  className={`library-tab ${isActive ? 'active' : ''}`}
+                  onClick={() => setActiveLibrary(lib.is_primary ? 'primary' : lib.uuid)}
+                  style={{
+                    padding: '8px 16px',
+                    background: isActive ? 'var(--accent)' : 'transparent',
+                    color: isActive ? '#fff' : 'var(--text-secondary)',
+                    border: 'none',
+                    borderRadius: '6px 6px 0 0',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontWeight: isActive ? 600 : 400,
+                    whiteSpace: 'nowrap',
+                  }}
                 >
-                  {showAddLibrary ? 'Cancel' : '+ Add Library'}
+                  {lib.name}
                 </button>
-              </div>
-
-              {showAddLibrary && (
-                <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px', marginBottom: '12px' }}>
-                  <input
-                    type="text"
-                    placeholder="Path to folder containing library.db"
-                    value={newLibraryPath}
-                    onChange={e => setNewLibraryPath(e.target.value)}
-                    style={{ width: '100%', marginBottom: '8px', padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Library name (optional)"
-                    value={newLibraryName}
-                    onChange={e => setNewLibraryName(e.target.value)}
-                    style={{ width: '100%', marginBottom: '8px', padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
-                  />
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    <input
-                      type="checkbox"
-                      checked={newLibraryCreateNew}
-                      onChange={e => setNewLibraryCreateNew(e.target.checked)}
-                    />
-                    Create new empty library at this path
-                  </label>
-                  <button onClick={handleAddLibrary} className="btn btn-primary btn-sm">
-                    {newLibraryCreateNew ? 'Create Library' : 'Mount Library'}
-                  </button>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {libraries.map(lib => (
-                  <div
-                    key={lib.uuid}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 14px',
-                      background: 'var(--bg-secondary)',
-                      borderRadius: '8px',
-                      opacity: lib.mounted ? 1 : 0.6,
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 500 }}>
-                        {lib.name}
-                        {lib.is_primary && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: '8px' }}>(primary)</span>}
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        {lib.path}
-                        {lib.stats && ` \u2022 ${lib.stats.total_images} images \u2022 ${lib.stats.directories} dirs`}
-                      </div>
-                      {!lib.accessible && <div style={{ fontSize: '0.8rem', color: 'var(--color-error, #e74c3c)' }}>Path not accessible</div>}
-                    </div>
-                    {!lib.is_primary && (
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        {lib.mounted ? (
-                          <button onClick={() => handleUnmountLibrary(lib.uuid)} className="btn btn-sm" style={{ fontSize: '0.8rem' }}>Unmount</button>
-                        ) : (
-                          <button onClick={() => handleMountLibrary(lib.uuid)} className="btn btn-primary btn-sm" style={{ fontSize: '0.8rem' }} disabled={!lib.accessible}>Mount</button>
-                        )}
-                        <button onClick={() => handleRemoveLibrary(lib.uuid)} className="btn btn-sm" style={{ fontSize: '0.8rem', color: 'var(--color-error, #e74c3c)' }}>Remove</button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              )})}
+              <button
+                onClick={() => setShowAddLibrary(!showAddLibrary)}
+                style={{
+                  padding: '8px 12px',
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  marginLeft: 'auto',
+                }}
+              >
+                {showAddLibrary ? 'Cancel' : '+'}
+              </button>
             </div>
 
-            {/* Parent Directories */}
-            {parentDirs.length > 0 && (
+            {/* Add Library Form */}
+            {showAddLibrary && (
+              <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px', marginBottom: '16px' }}>
+                <input
+                  type="text"
+                  placeholder="Path to folder containing library.db"
+                  value={newLibraryPath}
+                  onChange={e => setNewLibraryPath(e.target.value)}
+                  style={{ width: '100%', marginBottom: '8px', padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Library name (optional)"
+                  value={newLibraryName}
+                  onChange={e => setNewLibraryName(e.target.value)}
+                  style={{ width: '100%', marginBottom: '8px', padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  <input
+                    type="checkbox"
+                    checked={newLibraryCreateNew}
+                    onChange={e => setNewLibraryCreateNew(e.target.checked)}
+                  />
+                  Create new empty library at this path
+                </label>
+                <button onClick={handleAddLibrary} className="btn btn-primary btn-sm">
+                  {newLibraryCreateNew ? 'Create Library' : 'Mount Library'}
+                </button>
+              </div>
+            )}
+
+            {/* Library management controls for the selected tab */}
+            {activeLibrary && (() => {
+              const lib = libraries.find(l => activeLibrary === 'primary' ? l.is_primary : l.uuid === activeLibrary)
+              return lib && !lib.is_primary ? (
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{lib.path}</span>
+                  {lib.mounted ? (
+                    <button onClick={() => handleUnmountLibrary(lib.uuid)} className="btn btn-sm" style={{ fontSize: '0.8rem' }}>Unmount</button>
+                  ) : (
+                    <button onClick={() => handleMountLibrary(lib.uuid)} className="btn btn-primary btn-sm" style={{ fontSize: '0.8rem' }} disabled={!lib.accessible}>Mount</button>
+                  )}
+                  <button onClick={() => handleRemoveLibrary(lib.uuid)} className="btn btn-sm" style={{ fontSize: '0.8rem', color: 'var(--color-error, #e74c3c)' }}>Remove</button>
+                  {!lib.accessible && <span style={{ fontSize: '0.8rem', color: 'var(--color-error, #e74c3c)' }}>Path not accessible</span>}
+                </div>
+              ) : null
+            })()}
+
+            {/* Unmounted libraries (shown only on "All" tab) */}
+            {!activeLibrary && libraries.some(l => !l.mounted && !l.is_primary) && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: '0.95rem', color: 'var(--text-secondary)' }}>Unmounted Libraries</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {libraries.filter(l => !l.mounted && !l.is_primary).map(lib => (
+                    <div key={lib.uuid} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: '6px', opacity: 0.7 }}>
+                      <div>
+                        <span style={{ fontWeight: 500 }}>{lib.name}</span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: '8px' }}>{lib.path}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button onClick={() => handleMountLibrary(lib.uuid)} className="btn btn-primary btn-sm" style={{ fontSize: '0.8rem' }} disabled={!lib.accessible}>Mount</button>
+                        <button onClick={() => handleRemoveLibrary(lib.uuid)} className="btn btn-sm" style={{ fontSize: '0.8rem', color: 'var(--color-error, #e74c3c)' }}>Remove</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Parent Directories (filtered by active library) */}
+            {filteredParentDirs.length > 0 && (
               <div style={{ marginBottom: '24px' }}>
                 <h2 style={{ margin: '0 0 12px', fontSize: '1.1rem' }}>Parent Directories</h2>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
                   These folders are watched for new subdirectories, which are automatically added.
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {parentDirs.map(parent => (
+                  {filteredParentDirs.map(parent => (
                     <div
                       key={`${parent.library_id}:${parent.path}`}
                       style={{
@@ -598,6 +657,7 @@ function DirectoriesPage() {
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {parent.path} · {parent.child_count} {parent.child_count === 1 ? 'subdirectory' : 'subdirectories'}
+                          {!activeLibrary && parent.library_name && <span> · {parent.library_name}</span>}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
@@ -626,19 +686,19 @@ function DirectoriesPage() {
 
             {loading ? (
               <p>Loading...</p>
-            ) : directories.length === 0 ? (
-              <p className="empty-state">No directories added yet. Add a folder to get started!</p>
+            ) : filteredDirectories.length === 0 ? (
+              <p className="empty-state">{activeLibrary ? 'No directories in this library yet.' : 'No directories added yet. Add a folder to get started!'}</p>
             ) : (
               <>
               <div className="directory-list-header">
-                <span className="directory-count">{directories.length} directories</span>
+                <span className="directory-count">{filteredDirectories.length} directories</span>
                 <div className="selection-buttons">
                   <button className="select-btn" onClick={selectAllDirs}>Select All</button>
                   <button className="select-btn" onClick={clearSelection} disabled={selectedDirs.size === 0}>Unselect All</button>
                 </div>
               </div>
               <ul className="directory-list">
-                {directories.map(dir => {
+                {filteredDirectories.map(dir => {
                   const dirKey = `${dir.library_id || 'primary'}:${dir.id}`
                   return (
                   <li key={dirKey} className={`directory-item ${dir.enabled ? '' : 'disabled'} ${selectedDirs.has(dirKey) ? 'selected' : ''}`}>

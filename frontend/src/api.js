@@ -453,7 +453,8 @@ export async function addDirectory(path, options = {}) {
     path,
     name: options.name,
     recursive: options.recursive ?? true,
-    auto_tag: options.auto_tag ?? true
+    auto_tag: options.auto_tag ?? true,
+    library_id: options.library_id
   })
   invalidateDirectoriesCache()
   return response.data
@@ -463,7 +464,8 @@ export async function addParentDirectory(path, options = {}) {
   const response = await api.post('/directories/add-parent', {
     path,
     recursive: options.recursive ?? true,
-    auto_tag: options.auto_tag ?? true
+    auto_tag: options.auto_tag ?? true,
+    library_id: options.library_id
   })
   invalidateDirectoriesCache()
   return response.data
