@@ -1,17 +1,33 @@
 tasks:
-  - title: Batch addon inference (N images per call)
+  - _ulid: 01KK5NSBKVN4ZEP42HWBBM667W
+    slugs: []
+    title: Batch addon inference (N images per call)
+    type: task
+    description: ""
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
+    priority: 3
+    tags:
+      - migrated-from:localbooru-dyw
+    vcs_refs: []
+    created_at: 2026-03-08T02:52:54.779Z
+    notes: []
+    todos: []
+  - title: we need ai generation metadata support
     description: ""
     priority: 3
     type: task
     tags:
-      - migrated-from:localbooru-dyw
+      - migrated-from:localbooru-q6x
     status: pending
-    _ulid: 01KK5NSBKVN4ZEP42HWBBM667W
+    _ulid: 01KK5NSBMHJW4MFXKN6H8FF5NT
     slugs: []
     blocked_by: []
     depends_on: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-08T02:52:54.779Z
+    created_at: 2026-03-08T02:52:54.801Z
     notes: []
     todos: []
