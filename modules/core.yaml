@@ -369,3 +369,17 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:15.614Z
+  - _ulid: 01KK69327D1W7RRTZ5QXA7S8CF
+    slugs:
+      - svp-web
+    title: SVP Web Video
+    type: feature
+    tags: []
+    description: Download web videos via yt-dlp for local processing, progress tracking, DRM check
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:15.789Z
