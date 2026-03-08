@@ -104,3 +104,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:11.857Z
+  - _ulid: 01KK692YKT0WYBPWSX6PH9TFJS
+    slugs:
+      - network-access
+    title: Network Access Control
+    type: feature
+    tags: []
+    description: IP-based access tiers (localhost/LAN/public), JWT auth, user management with Argon2
+      passwords, QR code pairing with nonce verification
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:12.091Z
