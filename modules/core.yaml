@@ -324,3 +324,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:15.042Z
+  - _ulid: 01KK6931PG8DWTCTA9NYNY74BS
+    slugs:
+      - image-adjustments
+    title: Image Adjustments
+    type: feature
+    tags: []
+    description: Preview and apply brightness, contrast, saturation, gamma adjustments. Non-destructive
+      preview, permanent apply
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:15.248Z
