@@ -250,3 +250,17 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:14.020Z
+  - _ulid: 01KK6930P8TRNQRDH8RYPYJMFC
+    slugs:
+      - cast
+    title: Chromecast & DLNA
+    type: feature
+    tags: []
+    description: Cast to Chromecast/DLNA devices, auto-discovery, playback control (via cast addon)
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:14.216Z
