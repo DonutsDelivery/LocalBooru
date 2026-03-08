@@ -296,6 +296,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:14.216Z
+    status:
+      implementation: implemented
   - _ulid: 01KK6930XNRRZ4JM6ZECVKWRTG
     slugs:
       - frame-interpolation
