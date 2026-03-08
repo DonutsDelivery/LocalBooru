@@ -63,7 +63,7 @@ tasks:
     spec_ref: null
     meta_ref: null
     plan_ref: null
-    status: pending_review
+    status: completed
     blocked_by: []
     depends_on: []
     context: []
@@ -72,6 +72,8 @@ tasks:
     vcs_refs: []
     created_at: 2026-03-08T07:58:22.518Z
     started_at: 2026-03-08T08:00:58.429Z
+    submitted_at: 2026-03-08T08:00:58.682Z
     notes: []
     todos: []
-    submitted_at: 2026-03-08T08:00:58.682Z
+    completed_at: 2026-03-08T08:00:58.954Z
+    closed_reason: null
