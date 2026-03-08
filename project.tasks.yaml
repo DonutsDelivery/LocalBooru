@@ -15,19 +15,38 @@ tasks:
     created_at: 2026-03-08T02:52:54.779Z
     notes: []
     todos: []
-  - title: we need ai generation metadata support
-    description: ""
-    priority: 3
-    type: task
-    tags:
-      - migrated-from:localbooru-q6x
-    status: pending
-    _ulid: 01KK5NSBMHJW4MFXKN6H8FF5NT
+  - _ulid: 01KK5NSBMHJW4MFXKN6H8FF5NT
     slugs: []
+    title: we need ai generation metadata support
+    type: task
+    description: ""
+    status: pending
     blocked_by: []
     depends_on: []
     context: []
+    priority: 3
+    tags:
+      - migrated-from:localbooru-q6x
     vcs_refs: []
     created_at: 2026-03-08T02:52:54.801Z
+    notes: []
+    todos: []
+  - title: "Android: Title bar overlaps with gallery content"
+    description: On Android APK, the title bar overlaps the gallery grid. The main content area does not
+      properly offset for the mobile title bar height (which includes safe area insets).
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    priority: 1
+    slugs: []
+    tags: []
+    depends_on: []
+    _ulid: 01KK678MBP7J38BBVMEZETVP2W
+    status: pending
+    blocked_by: []
+    context: []
+    vcs_refs: []
+    created_at: 2026-03-08T07:58:21.046Z
     notes: []
     todos: []
