@@ -59,3 +59,17 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:40.719Z
+  - _ulid: 01KK693TSMQD165RHC9659NTX9
+    slugs:
+      - desktop-autostart
+    title: Autostart
+    type: feature
+    tags: []
+    description: Register app to launch on system boot (macOS), autostart plugin
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:40.948Z
