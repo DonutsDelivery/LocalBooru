@@ -134,3 +134,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:12.294Z
+  - _ulid: 01KK692Z060X5XY08AV7BW0N5D
+    slugs:
+      - import-pipeline
+    title: Import Pipeline
+    type: feature
+    tags: []
+    description: Media file detection, xxhash dedup, image dimensions, ffprobe video metadata, AI
+      metadata extraction (A1111/ComfyUI PNG chunks), auto-tag on import
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:12.486Z
