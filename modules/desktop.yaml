@@ -45,3 +45,17 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:40.529Z
+  - _ulid: 01KK693TJFKWMVYMZJYHQV6AZ3
+    slugs:
+      - desktop-updater
+    title: Auto-Updater
+    type: feature
+    tags: []
+    description: Check for updates on focus, update banner notification, download and install
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:40.719Z
