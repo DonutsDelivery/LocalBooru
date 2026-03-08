@@ -294,3 +294,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:14.625Z
+  - _ulid: 01KK6931A42V1TJG43E3CM8X2T
+    slugs:
+      - data-migration
+    title: Data Migration
+    type: feature
+    tags: []
+    description: System-to-portable migration, import from other instances, duplicate detection,
+      progress tracking via SSE
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:14.853Z
