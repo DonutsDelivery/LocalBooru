@@ -264,3 +264,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:14.216Z
+  - _ulid: 01KK6930XNRRZ4JM6ZECVKWRTG
+    slugs:
+      - frame-interpolation
+    title: Frame Interpolation
+    type: feature
+    tags: []
+    description: SVP integration for 60/120/144fps, FFmpeg minterpolate fallback, NVIDIA Optical Flow,
+      quality presets
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:14.453Z
