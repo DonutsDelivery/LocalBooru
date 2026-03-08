@@ -89,3 +89,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:11.672Z
+  - _ulid: 01KK692YCH6TES8WS5VRB234YF
+    slugs:
+      - video-streaming
+    title: Video Streaming
+    type: feature
+    tags: []
+    description: HLS transcoding with NVENC/CUDA hw accel, quality presets, timeline preview thumbnails,
+      playback position tracking (continue watching)
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:11.857Z
