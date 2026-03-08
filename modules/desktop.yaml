@@ -1,0 +1,45 @@
+# LocalBooru - Desktop Module
+# Desktop-specific features (Tauri)
+
+items:
+  - _ulid: 01KK66PAPS7R2QAC7GH1HMANWB
+    slugs: [desktop]
+    type: module
+    title: "Desktop App"
+    description: "Tauri v2 desktop app with system tray, window management, native integration"
+    status:
+      status: implemented
+      maturity: stable
+    items:
+      - _ulid: 01KK66PAPVHVDP913DH5E5VHVP
+        slugs: [desktop-window]
+        type: feature
+        title: "Window Management"
+        description: |
+          Custom title bar with minimize/maximize/close/quit. Draggable title bar.
+          System tray icon with menu. Autostart on login option.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PAPX08R67M89E101CDE6
+        slugs: [desktop-native]
+        type: feature
+        title: "Native Integration"
+        description: |
+          File dialog for directory picker. Show file in explorer.
+          Copy file path. Drag-drop file import. Native video codec acceleration.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PAPZ8DRC7MH3M6DD08P5
+        slugs: [desktop-updater]
+        type: feature
+        title: "Desktop Auto-Updater"
+        description: |
+          Check for updates on focus. Update banner notification.
+          Download and install updates.
+        status:
+          status: implemented
+          maturity: stable

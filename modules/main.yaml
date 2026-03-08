@@ -1,4 +1,200 @@
-# Project - Main Module
-# Add your spec items here
+# LocalBooru - Core Module
+# Shared backend and frontend features
 
-items: []
+items:
+  - _ulid: 01KK66PANA5N03MTS2RHTV048Q
+    slugs: [core]
+    type: module
+    title: "Core Application"
+    description: "Shared backend (Rust axum) and frontend (React) functionality"
+    status:
+      status: implemented
+      maturity: stable
+    items:
+      - _ulid: 01KK66PANCPEQHM0S7MKQG59BW
+        slugs: [media-browsing]
+        type: feature
+        title: "Media Browsing"
+        description: |
+          Gallery grid with masonry layout, infinite scroll, lazy loading.
+          30+ filter params (tags, rating, age, resolution, duration, orientation, timeframe).
+          Sorting (newest, oldest, favorites, rating, dimensions, duration).
+          Saved searches, directory/library selector, filename search.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PANE2N2ENKGN4QFY1B16
+        slugs: [lightbox]
+        type: feature
+        title: "Media Viewer (Lightbox)"
+        description: |
+          Full-screen image/video viewer. Image zoom/pan (mouse wheel, pinch, middle-click drag).
+          Video: HLS.js streaming, quality selector, playback speed (0.25x-2x), timeline preview,
+          resume from last position, auto-advance, keyboard shortcuts, FPS diagnostics overlay.
+          Collections picker, favorite toggle, tag editor, delete confirmation.
+          Brightness/contrast/gamma adjustments for images (Gwenview-style).
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PANGSZMP90SV8KXQXQ27
+        slugs: [tagging]
+        type: feature
+        title: "Tagging System"
+        description: |
+          Tag CRUD with categories (general, character, copyright, artist, meta).
+          Aliases, autocomplete, bulk tag operations. Cross-directory aggregation.
+          AI auto-tagging via ML addons (deepbooru, wd-tagger).
+          Batch retag, batch age detection, batch metadata extraction.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PANJ97Q6ZXN42HJKNZFH
+        slugs: [library-management]
+        type: feature
+        title: "Library Management"
+        description: |
+          Multi-library support with per-directory SQLite databases.
+          Directory watching (notify + polling), recursive scanning, parent directories.
+          Import queue with configurable workers, xxhash dedup, thumbnail generation.
+          Task queue (tag, scan, verify, upload, age_detect, extract_metadata).
+          Natural sort ordering, cross-library duplicate prevention, dedup endpoint.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PANMQ2Y4T767KNBAAYPT
+        slugs: [collections]
+        type: feature
+        title: "Collections"
+        description: |
+          User-created collections with cover images.
+          Add/remove/reorder items. Collection grid page and detail page.
+          Create collections from lightbox or collections page.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PANPC73KM42TW5P64JBT
+        slugs: [video-streaming]
+        type: feature
+        title: "Video Streaming & Interpolation"
+        description: |
+          HLS transcoding pipeline with quality presets (low/medium/high/very_high).
+          GPU acceleration (NVIDIA/AMD/Intel). Codec fallback transcoding.
+          SVP (Smooth Video Project) frame interpolation addon.
+          Optical flow (FFmpeg minterpolate) native interpolation.
+          Whisper speech-to-text subtitles addon. Timeline preview frames.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PANRT2XV06R5WZQ7XQ39
+        slugs: [network-access]
+        type: feature
+        title: "Network & Access Control"
+        description: |
+          Access tiers: localhost (unrestricted), local_network (filtered), public (restricted).
+          JWT authentication, Argon2 password hashing, user management.
+          QR code pairing for mobile, mDNS discovery, nonce handshake.
+          LAN sharing, public access toggle. Rate limiting per IP.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PANTEC2RCS18V2WMJT44
+        slugs: [addons]
+        type: feature
+        title: "Addon System"
+        description: |
+          Python sidecar addons with venv isolation and lifecycle management.
+          Addons: auto-tagger (18000), comfyui-node (18001), svp-bridge (18002),
+          optical-flow (18003), age-detector (18004), whisper-bridge (18005),
+          cast-bridge (18006). HTTP proxy forwarding, health checks.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PANW0W2K6H7S4TPN56Q3
+        slugs: [watch-history]
+        type: feature
+        title: "Watch History & Continue Watching"
+        description: |
+          Playback position tracking per video. Auto-mark completed at >= 90%.
+          Continue watching carousel with resume button. Clear history option.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PANYTJ6H7NGH0322HZB7
+        slugs: [cast]
+        type: feature
+        title: "Chromecast Integration"
+        description: |
+          Device discovery, play/pause/seek/volume control on cast devices.
+          Real-time playback sync. Cast bridge addon (port 18006).
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PAP06A3R339TZKSS4B39
+        slugs: [share-streaming]
+        type: feature
+        title: "Share Streaming"
+        description: |
+          Share sessions with token-based access. Real-time playback sync
+          across clients via SSE (position, play/pause, speed). Watch page.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PAP2RH5XC1QF41TN157V
+        slugs: [family-mode]
+        type: feature
+        title: "Family Mode"
+        description: |
+          PIN-based lock with age/rating filtering (pg, pg13 only).
+          Directory whitelist. Enforced across network access tiers.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PAP47XQR95CY2WXDDZV2
+        slugs: [settings]
+        type: feature
+        title: "Settings & Configuration"
+        description: |
+          General settings, network config, server settings.
+          Video playback config (auto-advance, quality, speed).
+          Migration settings (per-directory <-> main DB).
+          ComfyUI node ID configuration per directory.
+          Addon management UI. Task queue monitoring.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PAP69KAW858V32HDZC2B
+        slugs: [batch-ops]
+        type: feature
+        title: "Batch Operations"
+        description: |
+          Multi-select in gallery with batch delete, retag, age detect,
+          move to directory, metadata extraction. Bulk directory operations
+          (scan, repair, verify, prune, reextract). Queue management.
+        status:
+          status: implemented
+          maturity: stable
+
+      - _ulid: 01KK66PAP8RVA3VD47FC3HEWZ7
+        slugs: [file-support]
+        type: feature
+        title: "File Format Support"
+        description: |
+          Images: PNG, JPG, JPEG, GIF, WebP, BMP, TIFF.
+          Videos: WebM, MP4, MOV, AVI, MKV.
+          Metadata: PNG chunks, EXIF, ComfyUI workflows, AI generation params.
+        status:
+          status: implemented
+          maturity: stable
