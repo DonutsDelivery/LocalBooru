@@ -60,3 +60,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:11.263Z
+  - _ulid: 01KK692Y15WJJ3R2ZE82ZWJPCY
+    slugs:
+      - library-management
+    title: Library Management
+    type: feature
+    tags: []
+    description: Multi-library support, mount/unmount, per-directory SQLite, watch directories with
+      auto-import, parent directory watching, directory repair/verify/prune
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:11.494Z
