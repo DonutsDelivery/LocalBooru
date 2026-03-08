@@ -1,79 +1,16 @@
-# LocalBooru - Android Module
-# Mobile-specific features
-
-items:
-  - _ulid: 01KK66PAPBWFGCQ9KJZK26F634
-    slugs: [android]
-    type: module
-    title: "Android App"
-    description: "Tauri Mobile Android build with WebView, edge-to-edge, remote server proxy"
-    status:
-      status: in_progress
-      maturity: stable
-    items:
-      - _ulid: 01KK66PAPDT1C2SC2RRY127A5N
-        slugs: [android-webview]
-        type: feature
-        title: "Android WebView Configuration"
-        description: |
-          Mixed content mode (https://tauri.localhost -> http://127.0.0.1:8790).
-          Chrome DevTools remote debugging. Status bar height CSS injection.
-        status:
-          status: implemented
-          maturity: stable
-
-      - _ulid: 01KK66PAPFE8D0RT43Z0G84AKX
-        slugs: [android-layout]
-        type: feature
-        title: "Mobile Layout"
-        description: |
-          Title bar with safe area insets, edge-to-edge via enableEdgeToEdge().
-          Mobile-specific title bar with server switch button.
-          Responsive gallery grid, touch-optimized controls.
-        status:
-          status: in_progress
-          maturity: stable
-
-      - _ulid: 01KK66PAPHBFZSZ9FK00ZWMJWF
-        slugs: [android-fullscreen]
-        type: feature
-        title: "Fullscreen Mode"
-        description: |
-          Lightbox fullscreen via Fullscreen API in Android WebView.
-          Double-tap to toggle fullscreen for videos. F key shortcut.
-        status:
-          status: in_progress
-          maturity: stable
-
-      - _ulid: 01KK66PAPK9XQZ4HXQFRZKDQGV
-        slugs: [android-server-select]
-        type: feature
-        title: "Server Selection & Pairing"
-        description: |
-          ServerSelectScreen with QR scanning (BarcodeDetector API with fallback).
-          Manual server URL entry. /remote/* proxy to bypass mixed content blocks.
-        status:
-          status: implemented
-          maturity: stable
-
-      - _ulid: 01KK66PAPN2CR8NJH3W4B3G9WX
-        slugs: [android-gestures]
-        type: feature
-        title: "Touch Gestures"
-        description: |
-          Pinch zoom, swipe navigation, swipe up/down for UI toggle.
-          Double-tap fullscreen, long-press diagnostics. Video gesture controls.
-        status:
-          status: implemented
-          maturity: stable
-
-      - _ulid: 01KK66PAPQ9ZJWHWVT4P9VC5RX
-        slugs: [android-updater]
-        type: feature
-        title: "Auto-Updater"
-        description: |
-          APK self-update mechanism. Currently stubbed out — needs Tauri-native
-          updater (tauri-plugin-updater or custom Kotlin plugin).
-        status:
-          status: not_started
-          maturity: draft
+_ulid: 01KK691PH3PQMT0Z8BC4N1BA9K
+slugs:
+  - android
+title: Android App
+type: module
+status:
+  maturity: draft
+  implementation: not_started
+description: Tauri Mobile Android build with WebView, edge-to-edge, remote server proxy
+tags: []
+depends_on: []
+implements: []
+relates_to: []
+tests: []
+traits: []
+notes: []
