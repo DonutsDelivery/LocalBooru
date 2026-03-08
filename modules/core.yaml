@@ -45,3 +45,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:11.050Z
+  - _ulid: 01KK692XSZDQQ8QMADEPVFH0EE
+    slugs:
+      - tagging
+    title: Tag System
+    type: feature
+    tags: []
+    description: Tag CRUD, categories (character/series/artist/meta), aliases, autocomplete, bulk
+      operations, cross-directory aggregation
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:11.263Z
