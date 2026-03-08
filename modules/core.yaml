@@ -215,6 +215,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:13.180Z
+    status:
+      implementation: implemented
   - _ulid: 01KK692ZVY2K19GPJQRTYXQCG4
     slugs:
       - family-mode
