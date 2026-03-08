@@ -398,6 +398,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:15.439Z
+    status:
+      implementation: implemented
   - _ulid: 01KK69321XM27EAYZNMVYJW7Y6
     slugs:
       - directory-watcher
