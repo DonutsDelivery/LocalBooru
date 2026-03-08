@@ -1,4 +1,17 @@
-# Project - Tasks
-# Track implementation work here
-
-tasks: []
+tasks:
+  - title: Batch addon inference (N images per call)
+    description: ""
+    priority: 3
+    type: task
+    tags:
+      - migrated-from:localbooru-dyw
+    status: pending
+    _ulid: 01KK5NSBKVN4ZEP42HWBBM667W
+    slugs: []
+    blocked_by: []
+    depends_on: []
+    context: []
+    vcs_refs: []
+    created_at: 2026-03-08T02:52:54.779Z
+    notes: []
+    todos: []
