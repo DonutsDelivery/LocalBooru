@@ -14,3 +14,19 @@ relates_to: []
 tests: []
 traits: []
 notes: []
+features:
+  - _ulid: 01KK693T4QSDJS8NDBEHCK0KBS
+    slugs:
+      - desktop-window
+    title: Window Management
+    type: feature
+    tags: []
+    description: Custom title bar with min/max/close/quit, draggable region, system tray with menu,
+      close-to-tray, window state persistence, single-instance
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:40.279Z
