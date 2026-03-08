@@ -30,3 +30,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:28:23.993Z
+  - _ulid: 01KK692XK9SMJRHRRD784A002E
+    slugs:
+      - lightbox
+    title: Media Viewer (Lightbox)
+    type: feature
+    tags: []
+    description: Image zoom/pan, video player with HLS streaming, quality selector, keyboard shortcuts,
+      FPS diagnostics, image adjustments (brightness/contrast/gamma)
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:11.050Z
