@@ -383,3 +383,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:15.789Z
+  - _ulid: 01KK6932CQMP7G6Z813W3V8A66
+    slugs:
+      - database
+    title: Database Architecture
+    type: feature
+    tags: []
+    description: Multi-DB architecture (main + per-directory), r2d2 connection pooling, WAL mode,
+      incremental migrations, schema init
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:15.959Z
