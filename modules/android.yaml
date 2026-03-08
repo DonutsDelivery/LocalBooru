@@ -45,3 +45,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:41.383Z
+  - _ulid: 01KK693VCNSHV7TGK9XB189EKV
+    slugs:
+      - android-fullscreen
+    title: Fullscreen Mode
+    type: feature
+    tags: []
+    description: CSS-based fullscreen fallback (native API broken in Android WebView), double-tap
+      toggle, F key shortcut
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:41.557Z
