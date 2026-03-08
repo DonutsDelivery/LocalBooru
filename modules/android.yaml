@@ -5,7 +5,7 @@ title: Android App
 type: module
 status:
   maturity: draft
-  implementation: not_started
+  implementation: in_progress
 description: Tauri Mobile Android build with WebView, edge-to-edge, remote server proxy
 tags: []
 depends_on: []
