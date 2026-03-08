@@ -165,6 +165,8 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:12.486Z
+    status:
+      implementation: implemented
   - _ulid: 01KK692Z6D76TZVZ4AV6V29H01
     slugs:
       - task-queue
