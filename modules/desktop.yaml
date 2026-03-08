@@ -5,7 +5,7 @@ title: Desktop App
 type: module
 status:
   maturity: draft
-  implementation: not_started
+  implementation: implemented
 description: Tauri v2 desktop app with system tray, window management, native integration
 tags: []
 depends_on: []
