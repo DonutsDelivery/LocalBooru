@@ -30,3 +30,18 @@ features:
     traits: []
     notes: []
     created: 2026-03-08T08:30:40.279Z
+  - _ulid: 01KK693TCHRCB7G97FXBBAS5HH
+    slugs:
+      - desktop-native
+    title: Native Integration
+    type: feature
+    tags: []
+    description: File dialog for directory picker, show file in explorer, copy to clipboard, context
+      menu, hardware acceleration (VA-API/NVDEC/Vulkan on Linux)
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-08T08:30:40.529Z
