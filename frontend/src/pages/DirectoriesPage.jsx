@@ -518,13 +518,14 @@ function DirectoriesPage() {
               >
                 All Libraries
               </button>
-              {libraries.filter(l => l.mounted).map(lib => {
-                const isActive = activeLibrary === (lib.is_primary ? 'primary' : lib.uuid)
+              {libraries.map(lib => {
+                const tabId = lib.is_primary ? 'primary' : lib.uuid
+                const isActive = activeLibrary === tabId
                 return (
                 <button
                   key={lib.uuid}
                   className={`library-tab ${isActive ? 'active' : ''}`}
-                  onClick={() => setActiveLibrary(lib.is_primary ? 'primary' : lib.uuid)}
+                  onClick={() => setActiveLibrary(tabId)}
                   style={{
                     padding: '8px 16px',
                     background: isActive ? 'var(--accent)' : 'transparent',
@@ -535,9 +536,10 @@ function DirectoriesPage() {
                     fontSize: '0.9rem',
                     fontWeight: isActive ? 600 : 400,
                     whiteSpace: 'nowrap',
+                    opacity: lib.mounted ? 1 : 0.5,
                   }}
                 >
-                  {lib.name}
+                  {lib.name}{!lib.mounted && ' (offline)'}
                 </button>
               )})}
               <button
@@ -604,26 +606,18 @@ function DirectoriesPage() {
               ) : null
             })()}
 
-            {/* Unmounted libraries (shown only on "All" tab) */}
-            {!activeLibrary && libraries.some(l => !l.mounted && !l.is_primary) && (
-              <div style={{ marginBottom: '16px' }}>
-                <h3 style={{ margin: '0 0 8px', fontSize: '0.95rem', color: 'var(--text-secondary)' }}>Unmounted Libraries</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {libraries.filter(l => !l.mounted && !l.is_primary).map(lib => (
-                    <div key={lib.uuid} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: '6px', opacity: 0.7 }}>
-                      <div>
-                        <span style={{ fontWeight: 500 }}>{lib.name}</span>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: '8px' }}>{lib.path}</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button onClick={() => handleMountLibrary(lib.uuid)} className="btn btn-primary btn-sm" style={{ fontSize: '0.8rem' }} disabled={!lib.accessible}>Mount</button>
-                        <button onClick={() => handleRemoveLibrary(lib.uuid)} className="btn btn-sm" style={{ fontSize: '0.8rem', color: 'var(--color-error, #e74c3c)' }}>Remove</button>
-                      </div>
-                    </div>
-                  ))}
+            {/* Unmounted library notice when viewing an offline library tab */}
+            {activeLibrary && (() => {
+              const lib = libraries.find(l => activeLibrary === 'primary' ? l.is_primary : l.uuid === activeLibrary)
+              return lib && !lib.mounted ? (
+                <div style={{ padding: '16px', background: 'var(--bg-secondary)', borderRadius: '8px', marginBottom: '16px', textAlign: 'center' }}>
+                  <p style={{ margin: '0 0 8px', color: 'var(--text-secondary)' }}>This library is not mounted. Mount it to manage directories.</p>
+                  <button onClick={() => handleMountLibrary(lib.uuid)} className="btn btn-primary btn-sm" disabled={!lib.accessible}>
+                    {lib.accessible ? 'Mount Library' : 'Path Not Accessible'}
+                  </button>
                 </div>
-              </div>
-            )}
+              ) : null
+            })()}
 
             {/* Parent Directories (filtered by active library) */}
             {filteredParentDirs.length > 0 && (
