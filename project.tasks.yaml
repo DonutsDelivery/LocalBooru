@@ -510,7 +510,24 @@ tasks:
     created_at: 2026-03-11T11:37:39.911Z
     notes: []
     todos: []
-  - title: "Fix: DirectoriesPage scan indicator clears on queue not completion"
+  - _ulid: 01KKEB0C1VM327DG9CJC49WQHE
+    slugs: []
+    title: "Fix: DirectoriesPage scan indicator clears on queue not completion"
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
+    priority: 3
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T11:37:40.155Z
+    notes: []
+    todos: []
+  - title: "Fix: Sidebar tag list not refreshed after auto-tagging or SSE events"
     type: bug
     spec_ref: null
     meta_ref: null
@@ -519,11 +536,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKEB0C1VM327DG9CJC49WQHE
+    _ulid: 01KKEB0VQSB8K6DN2AHX0C0QQV
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T11:37:40.155Z
+    created_at: 2026-03-11T11:37:56.217Z
     notes: []
     todos: []
