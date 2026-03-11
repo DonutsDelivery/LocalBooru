@@ -49,9 +49,9 @@ tasks:
     created_at: 2026-03-11T05:54:23.944Z
     notes: []
     todos: []
-  - title: Album art thumbnails in masonry grid — show album cover for audio files, clicking opens
-      lightbox and auto-starts playback
-    type: feature
+  - title: Audio streaming for mobile — HTTP Range serving for audio files, remote proxy forwarding,
+      Android WebView playback
+    type: task
     spec_ref: null
     meta_ref: null
     plan_ref: null
@@ -59,11 +59,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQC2C2YDB77R2JJGEASC35
+    _ulid: 01KKDQC2M6S4FA7QEN1MPKWY5T
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:31.938Z
+    created_at: 2026-03-11T05:54:32.198Z
     notes: []
     todos: []
