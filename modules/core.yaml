@@ -450,6 +450,98 @@ features:
     created: 2026-03-08T08:30:15.959Z
     status:
       implementation: implemented
+  - _ulid: 01KM8P1A00MUSIC0FEATURE0000
+    slugs:
+      - music-support
+    title: Music Support
+    type: feature
+    tags: []
+    description: >
+      Audio file support (MP3, FLAC, OGG, WAV, AAC, M4A, OPUS, WMA). Album art extraction
+      for masonry grid thumbnails. Lightbox displays album art with playlist view of songs
+      in same directory/collection. Click album art in grid to open lightbox and auto-play.
+      Music player controls (play/pause/skip/seek/volume/shuffle/repeat). Audio streaming
+      for mobile app (same proxy pattern as video). Chromecast support for audio casting.
+    depends_on: []
+    implements: []
+    relates_to:
+      - media-browsing
+      - lightbox
+      - video-streaming
+      - cast
+      - import-pipeline
+      - file-support
+    tests: []
+    traits: []
+    notes:
+      - Album art sourced from embedded ID3/Vorbis tags or folder cover.jpg/png
+      - Songs grouped by directory as implicit albums
+      - Reuse existing HLS/streaming infrastructure where possible
+      - Chromecast audio uses existing cast addon
+    created: 2026-03-11T16:00:00.000Z
+    status:
+      implementation: not_started
+    requirements:
+      - _ulid: 01KM8P1B00MUSICR0FILETYPE00
+        slugs:
+          - music-file-detection
+        title: Audio File Detection & Import
+        type: requirement
+        description: >
+          Detect audio files (MP3, FLAC, OGG, WAV, AAC, M4A, OPUS, WMA) during directory
+          scan. Extract embedded album art for thumbnails. Extract ID3/Vorbis metadata
+          (title, artist, album, track number, duration). Store as media_type='audio' in DB.
+        acceptance_criteria:
+          - Audio files detected and imported during directory scan
+          - Album art extracted from embedded tags and saved as thumbnail
+          - Falls back to cover.jpg/cover.png in same directory if no embedded art
+          - Metadata (title, artist, album, track#, duration) stored in DB
+          - Audio files appear in masonry grid with album art thumbnails
+      - _ulid: 01KM8P1C00MUSICR0PLAYER0000
+        slugs:
+          - music-player
+        title: Music Player Controls
+        type: requirement
+        description: >
+          Lightbox music player with play/pause, skip prev/next, seek bar, volume control,
+          shuffle, repeat (off/one/all). Shows album art, track title, artist, album name.
+          Playlist panel showing all tracks in the directory/collection. Clicking album
+          art in masonry grid opens lightbox and auto-starts playback.
+        acceptance_criteria:
+          - Lightbox shows album art with player controls when audio file opened
+          - Play/pause, skip, seek, volume, shuffle, repeat controls functional
+          - Track metadata (title, artist, album) displayed
+          - Playlist panel shows all audio files in same directory
+          - Clicking album cover in grid opens lightbox and starts playing
+          - Keyboard shortcuts (space=pause, arrow keys=seek, n/p=next/prev)
+      - _ulid: 01KM8P1D00MUSICR0STREAM0000
+        slugs:
+          - music-streaming
+        title: Audio Streaming for Mobile
+        type: requirement
+        description: >
+          Stream audio files to mobile app using same proxy pattern as video streaming.
+          Direct file serving with HTTP Range support for seek. No transcoding needed
+          for common formats. Remote proxy forwards audio bytes same as video.
+        acceptance_criteria:
+          - Audio files stream to mobile app over remote connection
+          - HTTP Range requests supported for seeking
+          - Proxy handles audio streaming same as video
+          - Playback works on Android WebView
+      - _ulid: 01KM8P1E00MUSICR0CAST000000
+        slugs:
+          - music-chromecast
+        title: Audio Chromecast Support
+        type: requirement
+        description: >
+          Cast audio to Chromecast/DLNA devices using existing cast addon infrastructure.
+          Send audio stream URL to cast device. Show now-playing info on cast device.
+          Control playback (pause/skip/volume) from the app while casting.
+        acceptance_criteria:
+          - Audio files can be cast to Chromecast devices
+          - Now-playing info (title, artist, album art) shown on cast device
+          - Playback controls work while casting
+          - Uses existing cast addon infrastructure
   - _ulid: 01KK6932K3NXT8ZSDPFHTQJNE0
     slugs:
       - ssl-security
