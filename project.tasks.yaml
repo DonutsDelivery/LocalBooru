@@ -561,7 +561,24 @@ tasks:
     created_at: 2026-03-11T11:37:56.519Z
     notes: []
     todos: []
-  - title: "Fix: Collection item counts stale after Lightbox additions"
+  - _ulid: 01KKEB0WHFTF1BDQV9M2T3D2DD
+    slugs: []
+    title: "Fix: Collection item counts stale after Lightbox additions"
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
+    priority: 3
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T11:37:57.038Z
+    notes: []
+    todos: []
+  - title: "Fix: No SSE event or UI refresh when batch retag tasks complete"
     type: bug
     spec_ref: null
     meta_ref: null
@@ -570,11 +587,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKEB0WHFTF1BDQV9M2T3D2DD
+    _ulid: 01KKEB0WS2JXRGQ1QWB9G92RFQ
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T11:37:57.038Z
+    created_at: 2026-03-11T11:37:57.282Z
     notes: []
     todos: []
