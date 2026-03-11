@@ -119,20 +119,37 @@ tasks:
     created_at: 2026-03-11T11:36:43.689Z
     notes: []
     todos: []
-  - title: "Fix: SSE reconnection with missed-event recovery on frontend"
+  - _ulid: 01KKEAYN6X3019NQBT9JM7NV3M
+    slugs: []
+    title: "Fix: SSE reconnection with missed-event recovery on frontend"
     type: bug
     spec_ref: null
     meta_ref: null
     plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
     priority: 3
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T11:36:43.996Z
+    notes: []
+    todos: []
+  - title: "Fix: SSE library events endpoint lacks auth token support for mobile clients"
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    priority: 2
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKEAYN6X3019NQBT9JM7NV3M
+    _ulid: 01KKEAYNDV2RMERSR62EXJNK25
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T11:36:43.996Z
+    created_at: 2026-03-11T11:36:44.219Z
     notes: []
     todos: []
