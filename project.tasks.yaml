@@ -85,7 +85,7 @@ tasks:
     created_at: 2026-03-11T05:54:32.689Z
     notes: []
     todos: []
-  - title: "Lightbox: music player with playlist panel"
+  - title: "Masonry grid: album art thumbnails with auto-play on click"
     type: feature
     spec_ref: null
     meta_ref: null
@@ -94,11 +94,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQCT5NK89CHQWNJVVC06HD
+    _ulid: 01KKDQCY1NGT9SWJ7K9E85ZPG9
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:56.309Z
+    created_at: 2026-03-11T05:55:00.276Z
     notes: []
     todos: []
