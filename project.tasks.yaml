@@ -31,10 +31,9 @@ tasks:
     created_at: 2026-03-08T02:52:54.801Z
     notes: []
     todos: []
-  - title: Audio file detection in importer — recognize MP3/FLAC/OGG/WAV/AAC/M4A/OPUS/WMA, extract album
-      art for thumbnails, extract ID3/Vorbis metadata (title/artist/album/track#/duration), store as
-      media_type=audio
-    type: feature
+  - title: "DB schema: add media_type column to images table, add audio_metadata table (title, artist,
+      album, track_number, genre, year)"
+    type: task
     spec_ref: null
     meta_ref: null
     plan_ref: null
@@ -42,11 +41,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQBP5XGBNGMNZJ7A0QSNQZ
+    _ulid: 01KKDQBTJ8MGHM2X0C6DWP3YXX
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:19.452Z
+    created_at: 2026-03-11T05:54:23.944Z
     notes: []
     todos: []
