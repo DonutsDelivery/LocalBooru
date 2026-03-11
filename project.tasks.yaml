@@ -85,8 +85,8 @@ tasks:
     created_at: 2026-03-11T05:54:32.689Z
     notes: []
     todos: []
-  - title: Audio file detection in importer — detect MP3/FLAC/OGG/WAV/AAC/M4A/OPUS/WMA, extract embedded
-      album art for thumbnails, extract ID3/Vorbis metadata, store media_type=audio
+  - title: Music player UI in lightbox — album art display, play/pause/skip/seek/volume/shuffle/repeat,
+      track info, playlist panel with songs from same directory/collection
     type: feature
     spec_ref: null
     meta_ref: null
@@ -95,11 +95,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQCD8NE22BNHE21BR07N94
+    _ulid: 01KKDQCDFT6XVZTX8CD505XVSS
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:43.093Z
+    created_at: 2026-03-11T05:54:43.322Z
     notes: []
     todos: []
