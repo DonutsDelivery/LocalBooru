@@ -31,9 +31,27 @@ tasks:
     created_at: 2026-03-08T02:52:54.801Z
     notes: []
     todos: []
-  - title: "DB schema: add media_type column to images table, add audio_metadata table (title, artist,
+  - _ulid: 01KKDQBTJ8MGHM2X0C6DWP3YXX
+    slugs: []
+    title: "DB schema: add media_type column to images table, add audio_metadata table (title, artist,
       album, track_number, genre, year)"
     type: task
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
+    priority: 2
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T05:54:23.944Z
+    notes: []
+    todos: []
+  - title: Music player UI in lightbox — album art display, play/pause/skip/seek/volume/shuffle/repeat
+      controls, track info (title/artist/album), playlist panel showing songs in directory
+    type: feature
     spec_ref: null
     meta_ref: null
     plan_ref: null
@@ -41,11 +59,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQBTJ8MGHM2X0C6DWP3YXX
+    _ulid: 01KKDQC24JPA4MWWVRMAVWWY20
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:23.944Z
+    created_at: 2026-03-11T05:54:31.698Z
     notes: []
     todos: []
