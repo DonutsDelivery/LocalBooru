@@ -425,20 +425,37 @@ tasks:
     created_at: 2026-03-11T11:37:28.454Z
     notes: []
     todos: []
-  - title: "Fix: Offline servers in server list have no hint to re-scan QR for changed IP"
+  - _ulid: 01KKEB00W64SZYN1TCJ4PF6K3W
+    slugs: []
+    title: "Fix: Offline servers in server list have no hint to re-scan QR for changed IP"
     type: bug
     spec_ref: null
     meta_ref: null
     plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
     priority: 4
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T11:37:28.709Z
+    notes: []
+    todos: []
+  - title: "Fix: Frontend ignores directory_added SSE events from parent watcher"
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    priority: 3
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKEB00W64SZYN1TCJ4PF6K3W
+    _ulid: 01KKEB0B1PAVXJC6T5JK980WNZ
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T11:37:28.709Z
+    created_at: 2026-03-11T11:37:39.125Z
     notes: []
     todos: []
