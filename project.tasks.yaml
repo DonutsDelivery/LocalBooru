@@ -85,8 +85,8 @@ tasks:
     created_at: 2026-03-11T05:54:32.689Z
     notes: []
     todos: []
-  - title: Music player UI in lightbox — album art display, play/pause/skip/seek/volume/shuffle/repeat,
-      track info, playlist panel with songs from same directory/collection
+  - title: Album art in masonry grid — show album covers for audio files, click to open lightbox and
+      auto-start playback
     type: feature
     spec_ref: null
     meta_ref: null
@@ -95,11 +95,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQCDFT6XVZTX8CD505XVSS
+    _ulid: 01KKDQCDRQ54TWERPENETGHTTJ
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:43.322Z
+    created_at: 2026-03-11T05:54:43.607Z
     notes: []
     todos: []
