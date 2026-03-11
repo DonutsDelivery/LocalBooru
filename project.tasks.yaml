@@ -204,20 +204,37 @@ tasks:
     created_at: 2026-03-11T11:36:45.014Z
     notes: []
     todos: []
-  - title: "Fix: Total count not decremented after single-image delete from lightbox"
+  - _ulid: 01KKEAZKYT9SGPD89N9P06ZM37
+    slugs: []
+    title: "Fix: Total count not decremented after single-image delete from lightbox"
     type: bug
     spec_ref: null
     meta_ref: null
     plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
     priority: 3
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T11:37:15.482Z
+    notes: []
+    todos: []
+  - title: "Fix: Image metadata (hash, dimensions, file_size) not updated in DB after adjustments"
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    priority: 2
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKEAZKYT9SGPD89N9P06ZM37
+    _ulid: 01KKEAZM5K2PEG39DRR3MZ2N4A
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T11:37:15.482Z
+    created_at: 2026-03-11T11:37:15.698Z
     notes: []
     todos: []
