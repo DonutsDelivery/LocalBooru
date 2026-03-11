@@ -85,8 +85,8 @@ tasks:
     created_at: 2026-03-11T05:54:32.689Z
     notes: []
     todos: []
-  - title: "Chromecast: audio casting via existing cast addon"
-    type: feature
+  - title: "Fix: Image delete/batch delete not broadcasting SSE events"
+    type: bug
     spec_ref: null
     meta_ref: null
     plan_ref: null
@@ -94,11 +94,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQD33934QS1Z9SZGQPH74B
+    _ulid: 01KKEAYMPQ6DNZGJY6ZMDN6WT3
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:55:05.449Z
+    created_at: 2026-03-11T11:36:43.479Z
     notes: []
     todos: []
