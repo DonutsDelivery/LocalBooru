@@ -85,7 +85,7 @@ tasks:
     created_at: 2026-03-11T05:54:32.689Z
     notes: []
     todos: []
-  - title: "Importer: audio file detection and album art extraction"
+  - title: "Lightbox: music player with playlist panel"
     type: feature
     spec_ref: null
     meta_ref: null
@@ -94,11 +94,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQCP25H1YWGA0S5XFZG7ZW
+    _ulid: 01KKDQCT5NK89CHQWNJVVC06HD
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:52.101Z
+    created_at: 2026-03-11T05:54:56.309Z
     notes: []
     todos: []
