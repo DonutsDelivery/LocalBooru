@@ -67,21 +67,21 @@ tasks:
     created_at: 2026-03-11T05:54:32.198Z
     notes: []
     todos: []
-  - title: Audio Chromecast support — cast audio to Chromecast/DLNA using existing cast addon,
-      now-playing info, remote playback controls
-    type: feature
+  - title: Music keyboard shortcuts — space=pause, arrow keys=seek, n/p=next/prev track, m=mute,
+      up/down=volume
+    type: task
     spec_ref: null
     meta_ref: null
     plan_ref: null
-    priority: 2
+    priority: 3
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQC2VH40JH1DH54H80839M
+    _ulid: 01KKDQC33H1B9MDE67ZY4NHMH8
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:32.433Z
+    created_at: 2026-03-11T05:54:32.689Z
     notes: []
     todos: []
