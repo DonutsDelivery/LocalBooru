@@ -238,7 +238,24 @@ tasks:
     created_at: 2026-03-11T11:37:15.698Z
     notes: []
     todos: []
-  - title: "Fix: Thumbnail cache busting lost on page reload after image adjustments"
+  - _ulid: 01KKEAZMEANJ6F5NGWERCMBKKP
+    slugs: []
+    title: "Fix: Thumbnail cache busting lost on page reload after image adjustments"
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
+    priority: 3
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T11:37:15.978Z
+    notes: []
+    todos: []
+  - title: "Fix: CollectionDetailPage lightbox missing onDelete handler"
     type: bug
     spec_ref: null
     meta_ref: null
@@ -247,11 +264,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKEAZMEANJ6F5NGWERCMBKKP
+    _ulid: 01KKEAZMN0JZJC9GKYMH21YGJ3
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T11:37:15.978Z
+    created_at: 2026-03-11T11:37:16.192Z
     notes: []
     todos: []
