@@ -67,21 +67,39 @@ tasks:
     created_at: 2026-03-11T05:54:32.198Z
     notes: []
     todos: []
-  - title: Music keyboard shortcuts — space=pause, arrow keys=seek, n/p=next/prev track, m=mute,
+  - _ulid: 01KKDQC33H1B9MDE67ZY4NHMH8
+    slugs: []
+    title: Music keyboard shortcuts — space=pause, arrow keys=seek, n/p=next/prev track, m=mute,
       up/down=volume
     type: task
     spec_ref: null
     meta_ref: null
     plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
     priority: 3
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T05:54:32.689Z
+    notes: []
+    todos: []
+  - title: Audio file detection in importer — detect MP3/FLAC/OGG/WAV/AAC/M4A/OPUS/WMA, extract embedded
+      album art for thumbnails, extract ID3/Vorbis metadata, store media_type=audio
+    type: feature
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    priority: 2
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQC33H1B9MDE67ZY4NHMH8
+    _ulid: 01KKDQCD8NE22BNHE21BR07N94
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:32.689Z
+    created_at: 2026-03-11T05:54:43.093Z
     notes: []
     todos: []
