@@ -442,7 +442,24 @@ tasks:
     created_at: 2026-03-11T11:37:28.709Z
     notes: []
     todos: []
-  - title: "Fix: Frontend ignores directory_added SSE events from parent watcher"
+  - _ulid: 01KKEB0B1PAVXJC6T5JK980WNZ
+    slugs: []
+    title: "Fix: Frontend ignores directory_added SSE events from parent watcher"
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
+    priority: 3
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T11:37:39.125Z
+    notes: []
+    todos: []
+  - title: "Fix: Library switch does not reset tag cache or stats"
     type: bug
     spec_ref: null
     meta_ref: null
@@ -451,11 +468,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKEB0B1PAVXJC6T5JK980WNZ
+    _ulid: 01KKEB0B9DKDPTJD3RTRW3NYR9
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T11:37:39.125Z
+    created_at: 2026-03-11T11:37:39.373Z
     notes: []
     todos: []
