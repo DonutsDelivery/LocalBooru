@@ -391,20 +391,37 @@ tasks:
     created_at: 2026-03-11T11:37:27.860Z
     notes: []
     todos: []
-  - title: "Fix: Manual Add Server allows duplicate URLs in server list"
+  - _ulid: 01KKEB00AS143TPB6Z9FEK4RQW
+    slugs: []
+    title: "Fix: Manual Add Server allows duplicate URLs in server list"
     type: bug
     spec_ref: null
     meta_ref: null
     plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
     priority: 4
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T11:37:28.152Z
+    notes: []
+    todos: []
+  - title: "Fix: ServerSettings QR scan does not perform handshake to get JWT token"
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    priority: 2
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKEB00AS143TPB6Z9FEK4RQW
+    _ulid: 01KKEB00M6M6Y2N8CHA05C68RD
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T11:37:28.152Z
+    created_at: 2026-03-11T11:37:28.454Z
     notes: []
     todos: []
