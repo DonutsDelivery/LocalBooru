@@ -340,20 +340,37 @@ tasks:
     created_at: 2026-03-11T11:37:27.032Z
     notes: []
     todos: []
-  - title: "Fix: No 401 handler to redirect mobile users to server picker on token expiry"
+  - _ulid: 01KKEAZZGTP2H8BA7037JPYJ01
+    slugs: []
+    title: "Fix: No 401 handler to redirect mobile users to server picker on token expiry"
     type: bug
     spec_ref: null
     meta_ref: null
     plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
     priority: 3
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T11:37:27.322Z
+    notes: []
+    todos: []
+  - title: "Fix: Mobile app has no server connectivity monitoring or offline detection"
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    priority: 2
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKEAZZGTP2H8BA7037JPYJ01
+    _ulid: 01KKEAZZSAQ4208MMRX3JYZAH1
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T11:37:27.322Z
+    created_at: 2026-03-11T11:37:27.594Z
     notes: []
     todos: []
