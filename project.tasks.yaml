@@ -49,9 +49,27 @@ tasks:
     created_at: 2026-03-11T05:54:23.944Z
     notes: []
     todos: []
-  - title: Audio streaming for mobile — HTTP Range serving for audio files, remote proxy forwarding,
+  - _ulid: 01KKDQC2M6S4FA7QEN1MPKWY5T
+    slugs: []
+    title: Audio streaming for mobile — HTTP Range serving for audio files, remote proxy forwarding,
       Android WebView playback
     type: task
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
+    priority: 2
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T05:54:32.198Z
+    notes: []
+    todos: []
+  - title: Audio Chromecast support — cast audio to Chromecast/DLNA using existing cast addon,
+      now-playing info, remote playback controls
+    type: feature
     spec_ref: null
     meta_ref: null
     plan_ref: null
@@ -59,11 +77,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQC2M6S4FA7QEN1MPKWY5T
+    _ulid: 01KKDQC2VH40JH1DH54H80839M
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:32.198Z
+    created_at: 2026-03-11T05:54:32.433Z
     notes: []
     todos: []
