@@ -85,8 +85,8 @@ tasks:
     created_at: 2026-03-11T05:54:32.689Z
     notes: []
     todos: []
-  - title: Album art in masonry grid — show album covers for audio files, click to open lightbox and
-      auto-start playback
+  - title: Audio Chromecast/DLNA — cast audio using existing cast addon, now-playing info on cast
+      device, remote playback controls
     type: feature
     spec_ref: null
     meta_ref: null
@@ -95,11 +95,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQCDRQ54TWERPENETGHTTJ
+    _ulid: 01KKDQCE1D66EB5E0S394XCGR4
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:54:43.607Z
+    created_at: 2026-03-11T05:54:43.885Z
     notes: []
     todos: []
