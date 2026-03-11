@@ -85,7 +85,7 @@ tasks:
     created_at: 2026-03-11T05:54:32.689Z
     notes: []
     todos: []
-  - title: "Masonry grid: album art thumbnails with auto-play on click"
+  - title: "Chromecast: audio casting via existing cast addon"
     type: feature
     spec_ref: null
     meta_ref: null
@@ -94,11 +94,11 @@ tasks:
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKDQCY1NGT9SWJ7K9E85ZPG9
+    _ulid: 01KKDQD33934QS1Z9SZGQPH74B
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T05:55:00.276Z
+    created_at: 2026-03-11T05:55:05.449Z
     notes: []
     todos: []
