@@ -187,20 +187,37 @@ tasks:
     created_at: 2026-03-11T11:36:44.750Z
     notes: []
     todos: []
-  - title: "Fix: Tag CRUD operations do not broadcast SSE events"
+  - _ulid: 01KKEAYP6P3SFSGGE8X7FN6FZ2
+    slugs: []
+    title: "Fix: Tag CRUD operations do not broadcast SSE events"
     type: bug
     spec_ref: null
     meta_ref: null
     plan_ref: null
+    status: pending
+    blocked_by: []
+    depends_on: []
+    context: []
     priority: 4
+    tags: []
+    vcs_refs: []
+    created_at: 2026-03-11T11:36:45.014Z
+    notes: []
+    todos: []
+  - title: "Fix: Total count not decremented after single-image delete from lightbox"
+    type: bug
+    spec_ref: null
+    meta_ref: null
+    plan_ref: null
+    priority: 3
     slugs: []
     tags: []
     depends_on: []
-    _ulid: 01KKEAYP6P3SFSGGE8X7FN6FZ2
+    _ulid: 01KKEAZKYT9SGPD89N9P06ZM37
     status: pending
     blocked_by: []
     context: []
     vcs_refs: []
-    created_at: 2026-03-11T11:36:45.014Z
+    created_at: 2026-03-11T11:37:15.482Z
     notes: []
     todos: []
