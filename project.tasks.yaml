@@ -600,9 +600,6 @@ tasks:
     created_at: 2026-03-11T11:37:57.282Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - Backend emits SSE on retag completion
-      - Frontend refreshes images and tags
   - _ulid: 01KKEB0X1HJNHXP2X874DXDE63
     slugs: []
     title: "Fix: Autocomplete post_count stale on localhost due to missing live aggregation"
@@ -620,3 +617,5 @@ tasks:
     created_at: 2026-03-11T11:37:57.552Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Autocomplete uses accurate counts
