@@ -481,9 +481,6 @@ tasks:
     created_at: 2026-03-11T11:37:39.373Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - Library switch clears tags and stats
-      - loadTags() called on library change
   - _ulid: 01KKEB0BHDMBP64KHMVAXYWVH1
     slugs: []
     title: "Fix: Port/network settings appear changeable but backend_restart is a no-op"
@@ -501,6 +498,8 @@ tasks:
     created_at: 2026-03-11T11:37:39.629Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Either backend_restart works or UI shows restart required
   - _ulid: 01KKEB0BT7EFH4VVRWNYBW0RPS
     slugs: []
     title: "Fix: No drive health monitoring — UI shows stale mount status"
