@@ -515,9 +515,6 @@ tasks:
     created_at: 2026-03-11T11:37:39.911Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - DirectoriesPage checks path_exists periodically
-      - Disconnected drives show offline
   - _ulid: 01KKEB0C1VM327DG9CJC49WQHE
     slugs: []
     title: "Fix: DirectoriesPage scan indicator clears on queue not completion"
@@ -535,6 +532,9 @@ tasks:
     created_at: 2026-03-11T11:37:40.155Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Scan indicator active until task completion SSE
+      - Does not clear on queue ack
   - _ulid: 01KKEB0VQSB8K6DN2AHX0C0QQV
     slugs: []
     title: "Fix: Sidebar tag list not refreshed after auto-tagging or SSE events"
