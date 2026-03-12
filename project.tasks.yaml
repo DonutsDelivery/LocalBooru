@@ -21,8 +21,9 @@ tasks:
     title: we need ai generation metadata support
     type: task
     description: ""
-    status: pending
-    blocked_by: []
+    status: blocked
+    blocked_by:
+      - Needs spec
     depends_on: []
     context: []
     priority: 3
