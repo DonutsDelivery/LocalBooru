@@ -328,8 +328,6 @@ tasks:
     created_at: 2026-03-11T11:37:26.803Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - Failed saves retried on reconnection or shown as warning
   - _ulid: 01KKEAZZ7R2EMKNM4RYMRFDS3H
     slugs: []
     title: "Fix: ContinueWatching panel shows stale data until page reload"
@@ -347,6 +345,8 @@ tasks:
     created_at: 2026-03-11T11:37:27.032Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - ContinueWatching refreshes on visibility change not just mount
   - _ulid: 01KKEAZZGTP2H8BA7037JPYJ01
     slugs: []
     title: "Fix: No 401 handler to redirect mobile users to server picker on token expiry"
