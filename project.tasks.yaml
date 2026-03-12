@@ -175,9 +175,6 @@ tasks:
     created_at: 2026-03-11T11:36:44.483Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - Frontend handles image_deleted SSE by removing image and decrementing total
-      - Frontend handles image_updated SSE by updating metadata in-place
   - _ulid: 01KKEAYNYEX3BEYNHT29HR42DK
     slugs: []
     title: "Fix: Directory scan does not broadcast scan-level progress events"
@@ -195,6 +192,9 @@ tasks:
     created_at: 2026-03-11T11:36:44.750Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Backend broadcasts scan progress events
+      - DirectoriesPage shows scan progress
   - _ulid: 01KKEAYP6P3SFSGGE8X7FN6FZ2
     slugs: []
     title: "Fix: Tag CRUD operations do not broadcast SSE events"
