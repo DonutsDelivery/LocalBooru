@@ -464,8 +464,6 @@ tasks:
     created_at: 2026-03-11T11:37:39.125Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - DirectoriesPage subscribes to SSE and refreshes on directory_added
   - _ulid: 01KKEB0B9DKDPTJD3RTRW3NYR9
     slugs: []
     title: "Fix: Library switch does not reset tag cache or stats"
@@ -483,6 +481,9 @@ tasks:
     created_at: 2026-03-11T11:37:39.373Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Library switch clears tags and stats
+      - loadTags() called on library change
   - _ulid: 01KKEB0BHDMBP64KHMVAXYWVH1
     slugs: []
     title: "Fix: Port/network settings appear changeable but backend_restart is a no-op"
