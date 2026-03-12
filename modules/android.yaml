@@ -82,6 +82,29 @@ features:
     created: 2026-03-08T08:30:41.745Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB30A7QR0PAIRING0CONS0
+        slugs:
+          - qr-pairing-consistency
+        title: QR Pairing Consistency
+        type: requirement
+        description: >
+          ServerSettings QR scan handler must call verifyHandshake() to obtain JWT token,
+          matching ServerSelectScreen behavior. Re-paired server must have a valid token.
+        acceptance_criteria:
+          - ServerSettings QR scan calls verifyHandshake() same as ServerSelectScreen
+          - Re-paired server entry has valid JWT token for authenticated requests
+          - Both QR scan paths produce identical server entries
+      - _ulid: 01KKEB30B3SERVER0LIST0HYG00
+        slugs:
+          - server-list-hygiene
+        title: Server List Hygiene
+        type: requirement
+        description: >
+          Manual Add Server deduplicates by URL. Offline servers hint about possible IP change.
+        acceptance_criteria:
+          - Manual Add Server checks for existing URL match and updates instead of creating duplicate
+          - Offline server entries show hint suggesting IP may have changed with option to re-scan QR
   - _ulid: 01KK693VRHM3YB0XPWDS8KNXSX
     slugs:
       - android-gestures
@@ -132,3 +155,60 @@ features:
     created: 2026-03-08T08:30:42.331Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB30D9TOKEN0EXPIRY0HD00
+        slugs:
+          - token-expiry-handling
+        title: 401 Token Expiry Handling
+        type: requirement
+        description: >
+          API response interceptor detects 401 status mid-session and redirects mobile
+          users to server select screen with re-pair prompt. Stale token cleared.
+        acceptance_criteria:
+          - API interceptor detects 401 responses and redirects to server picker
+          - Stale token is cleared from the server entry
+          - User sees re-pair prompt, not a generic error
+  - _ulid: 01KKEB30E5MOBILE0RESILIENCE
+    slugs:
+      - mobile-resilience
+    title: Mobile Client Resilience
+    type: feature
+    tags: []
+    description: Connectivity monitoring, offline detection, and automatic reconnection for mobile clients
+    depends_on: []
+    implements: []
+    relates_to:
+      - android-api-routing
+      - android-server-select
+    tests: []
+    traits: []
+    notes: []
+    created: 2026-03-12T00:00:00.000Z
+    status:
+      implementation: not_started
+    requirements:
+      - _ulid: 01KKEB30F1CONNECTIVITY0MON0
+        slugs:
+          - connectivity-monitoring
+        title: Server Connectivity Monitoring
+        type: requirement
+        description: >
+          Mobile app periodically pings server health endpoint. Connection loss shows
+          visible offline banner. Banner clears automatically when connection is restored.
+        acceptance_criteria:
+          - Mobile app periodically pings server health endpoint
+          - Connection loss shows a visible offline banner
+          - Banner clears automatically when connection is restored
+          - Health checks do not drain battery excessively
+      - _ulid: 01KKEB30G8RECONNECTION0LOG0
+        slugs:
+          - reconnection-logic
+        title: Automatic Reconnection
+        type: requirement
+        description: >
+          On reconnection detection, app re-subscribes to SSE events and performs a full
+          data refresh to recover state missed during offline period.
+        acceptance_criteria:
+          - On reconnection, app re-subscribes to SSE events
+          - App performs full data refresh to recover missed state
+          - No user action required to resume normal operation

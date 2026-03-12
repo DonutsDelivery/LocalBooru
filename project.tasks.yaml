@@ -107,6 +107,8 @@ tasks:
     created_at: 2026-03-11T11:36:43.479Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Backend broadcasts IMAGE_DELETED event after single and batch delete
   - _ulid: 01KKEAYMX9HAS2TH5DM94DG04Y
     slugs: []
     title: "Fix: Image update mutations (favorite, rating) not broadcasting SSE events"

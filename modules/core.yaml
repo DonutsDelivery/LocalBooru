@@ -32,6 +32,27 @@ features:
     created: 2026-03-08T08:28:23.993Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB10D4GRID0REALTIME0UP0
+        slugs:
+          - grid-realtime-updates
+        title: Real-time Grid Updates
+        type: requirement
+        description: Grid reacts to SSE events for image mutations
+        acceptance_criteria:
+          - Grid handles image_deleted SSE by removing image and decrementing total count
+          - Grid handles image_updated SSE by updating affected image metadata in-place
+          - Grid handles image_added SSE by inserting new image
+          - No full grid re-render; only affected items update
+      - _ulid: 01KKEB10E5PAGINATION0CONSI0
+        slugs:
+          - pagination-consistency
+        title: Pagination Consistency After Mutations
+        type: requirement
+        description: Pagination stays correct after deletions
+        acceptance_criteria:
+          - After image deletion, subsequent loadMore does not skip images
+          - Total count stays accurate after single and batch deletes
   - _ulid: 01KK692XK9SMJRHRRD784A002E
     slugs:
       - lightbox
@@ -49,6 +70,25 @@ features:
     created: 2026-03-08T08:30:11.050Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB20A1LB0DELETE0SYNC000
+        slugs:
+          - lightbox-delete-sync
+        title: Lightbox Delete State Sync
+        type: requirement
+        description: Deleting in lightbox properly updates all parent views
+        acceptance_criteria:
+          - Deleting image in lightbox decrements total count
+          - CollectionDetailPage passes onDelete to Lightbox
+          - Delete in collection lightbox removes image from list and navigates to next
+      - _ulid: 01KKEB20B2LB0FAV0SORT0SYNC
+        slugs:
+          - lightbox-fav-sort-sync
+        title: Lightbox Favorite Sort Sync
+        type: requirement
+        description: Favorite toggle in lightbox triggers grid re-sort when sorted by favorites
+        acceptance_criteria:
+          - When grid sorted by favorites, toggling favorite in lightbox triggers grid re-sort
   - _ulid: 01KK692XSZDQQ8QMADEPVFH0EE
     slugs:
       - tagging
@@ -66,6 +106,27 @@ features:
     created: 2026-03-08T08:30:11.263Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB10F6TAG0COUNT0ACCUR00
+        slugs:
+          - tag-count-accuracy
+        title: Tag Count Accuracy
+        type: requirement
+        description: post_count stays accurate across all mutation paths
+        acceptance_criteria:
+          - post_count decremented when images are deleted (single and batch)
+          - post_count stays accurate across all mutation paths
+          - Autocomplete uses accurate counts
+      - _ulid: 01KKEB10G7TAG0SIDEBAR0FRESH
+        slugs:
+          - tag-sidebar-freshness
+        title: Tag Sidebar Freshness
+        type: requirement
+        description: Tag sidebar refreshes on relevant events
+        acceptance_criteria:
+          - Tag sidebar refreshes after auto-tagging completes
+          - Tag sidebar refreshes on tag SSE events
+          - Tag cache resets on library switch
   - _ulid: 01KK692Y15WJJ3R2ZE82ZWJPCY
     slugs:
       - library-management
@@ -83,6 +144,27 @@ features:
     created: 2026-03-08T08:30:11.494Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB40A1LIB0SWITCH0RESET
+        slugs:
+          - library-switch-reset
+        title: Library Switch State Reset
+        type: requirement
+        description: Switching library clears all cached state from previous library
+        acceptance_criteria:
+          - Switching library clears tag cache and stats
+          - loadTags() and getLibraryStats() called when currentLibraryId changes
+          - No stale data from previous library visible
+      - _ulid: 01KKEB40B2DRIVE0HEALTH0MON0
+        slugs:
+          - drive-health-monitoring
+        title: Drive Health Monitoring
+        type: requirement
+        description: UI reflects drive availability in reasonable time
+        acceptance_criteria:
+          - DirectoriesPage periodically checks path_exists or subscribes to drive events
+          - Disconnected drives update to show offline status within reasonable time
+          - No confusing errors when operating on offline drives
   - _ulid: 01KK692Y6RV3WETK2VWNXSA17X
     slugs:
       - collections
@@ -99,6 +181,16 @@ features:
     created: 2026-03-08T08:30:11.672Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB20C3COLL0COUNT0FRESH0
+        slugs:
+          - collection-count-freshness
+        title: Collection Count Freshness
+        type: requirement
+        description: Collection item counts stay current
+        acceptance_criteria:
+          - CollectionsPage refreshes item counts on navigation back or visibility change
+          - Adding/removing items from lightbox updates counts without full page reload
   - _ulid: 01KK692YCH6TES8WS5VRB234YF
     slugs:
       - video-streaming
@@ -201,6 +293,38 @@ features:
     created: 2026-03-08T08:30:12.936Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB10A1SSE0EVENT0COVER00
+        slugs:
+          - sse-event-coverage
+        title: SSE Event Coverage
+        type: requirement
+        description: All mutations broadcast appropriate SSE events
+        acceptance_criteria:
+          - All image mutations (create, update, delete, favorite, rating) broadcast SSE events with image_id
+          - All tag mutations (create, update, delete) broadcast SSE events
+          - Directory scan broadcasts progress events with files_scanned/total_files
+          - Batch operations (delete, retag) broadcast per-item and completion events
+      - _ulid: 01KKEB10B2SSE0AUTH0REMOTE00
+        slugs:
+          - sse-auth-remote
+        title: SSE Authentication for Remote Clients
+        type: requirement
+        description: SSE endpoint supports JWT auth for mobile clients
+        acceptance_criteria:
+          - SSE endpoint accepts JWT token as query parameter (?token=...)
+          - Mobile clients pass JWT when subscribing
+          - Invalid/expired tokens are rejected
+      - _ulid: 01KKEB10C3SSE0RECONNECT0000
+        slugs:
+          - sse-reconnection
+        title: SSE Reconnection & Recovery
+        type: requirement
+        description: Frontend auto-reconnects and recovers missed events
+        acceptance_criteria:
+          - Frontend detects SSE disconnection and shows indicator
+          - Auto-reconnects with exponential backoff
+          - Full data refresh on reconnect to recover missed events
   - _ulid: 01KK692ZNVWXE5B6ASTBN7WRJ8
     slugs:
       - watch-history
@@ -217,6 +341,16 @@ features:
     created: 2026-03-08T08:30:13.180Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB20E5WATCH0RESILIENCE0
+        slugs:
+          - watch-history-resilience
+        title: Watch History Resilience
+        type: requirement
+        description: Watch history saves handle offline and stale data
+        acceptance_criteria:
+          - Failed position saves retried on reconnection or shown as warning
+          - ContinueWatching panel refreshes on visibility change, not just mount
   - _ulid: 01KK692ZVY2K19GPJQRTYXQCG4
     slugs:
       - family-mode
@@ -250,6 +384,17 @@ features:
     created: 2026-03-08T08:30:13.579Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB40E5BATCH0RETAG0FEED0
+        slugs:
+          - batch-retag-feedback
+        title: Batch Retag Completion Feedback
+        type: requirement
+        description: Retag completion triggers SSE event and UI refresh
+        acceptance_criteria:
+          - Backend emits SSE event when retag task completes
+          - Frontend refreshes image metadata and tag sidebar on retag completion
+          - User sees completion indication
   - _ulid: 01KK693084YHJCSVVTMQ77J51H
     slugs:
       - settings
@@ -266,6 +411,16 @@ features:
     created: 2026-03-08T08:30:13.764Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB20F6SETTINGS0RESTART0
+        slugs:
+          - settings-restart-clarity
+        title: Settings Restart Clarity
+        type: requirement
+        description: Settings that require restart are clearly communicated
+        acceptance_criteria:
+          - Port/network settings that require restart are clearly labeled in UI
+          - Either backend_restart works, or UI shows restart required message
   - _ulid: 01KK6930G4P393YJPFQ27KPGWR
     slugs:
       - share-streaming
@@ -383,6 +538,17 @@ features:
     created: 2026-03-08T08:30:15.248Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB20D4ADJ0META0SYNC000
+        slugs:
+          - adjustment-metadata-sync
+        title: Adjustment Metadata Sync
+        type: requirement
+        description: Image metadata updated in DB after adjustments applied
+        acceptance_criteria:
+          - apply_adjust updates file_hash, width, height, file_size in DB
+          - Thumbnail regenerated immediately from adjusted image
+          - Thumbnail URL cache-busted or Cache-Control prevents stale versions
   - _ulid: 01KK6931WF3WQDWZKF37G4Q7VN
     slugs:
       - ratings
@@ -417,6 +583,26 @@ features:
     created: 2026-03-08T08:30:15.614Z
     status:
       implementation: implemented
+    requirements:
+      - _ulid: 01KKEB40C3DIR0DISCOVERY0UI
+        slugs:
+          - directory-discovery-ui
+        title: Directory Discovery UI Sync
+        type: requirement
+        description: Auto-discovered directories appear in UI via SSE
+        acceptance_criteria:
+          - Frontend subscribes to directory_added SSE events
+          - DirectoriesPage refreshes directory list when new directories auto-discovered
+      - _ulid: 01KKEB40D4SCAN0PROGRESS0VIS
+        slugs:
+          - scan-progress-visibility
+        title: Scan Progress Visibility
+        type: requirement
+        description: Scan indicator reflects actual scan completion, not just queue acknowledgement
+        acceptance_criteria:
+          - Scan indicator stays active until task completion SSE event
+          - Scan indicator does not clear prematurely on queue acknowledgement
+          - DirectoriesPage subscribes to task events for scan progress
   - _ulid: 01KK69327D1W7RRTZ5QXA7S8CF
     slugs:
       - svp-web
