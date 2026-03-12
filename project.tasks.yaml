@@ -107,9 +107,6 @@ tasks:
     created_at: 2026-03-11T11:36:43.479Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - Backend broadcasts IMAGE_DELETED event after single and batch delete
-      - Event payload includes image_id and directory_id
   - _ulid: 01KKEAYMX9HAS2TH5DM94DG04Y
     slugs: []
     title: "Fix: Image update mutations (favorite, rating) not broadcasting SSE events"
@@ -127,6 +124,9 @@ tasks:
     created_at: 2026-03-11T11:36:43.689Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Backend broadcasts IMAGE_UPDATED event after favorite toggle and rating change
+      - Event payload includes image_id and changed fields
   - _ulid: 01KKEAYN6X3019NQBT9JM7NV3M
     slugs: []
     title: "Fix: SSE reconnection with missed-event recovery on frontend"
