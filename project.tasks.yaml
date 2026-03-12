@@ -109,6 +109,7 @@ tasks:
     todos: []
     acceptance_criteria:
       - Backend broadcasts IMAGE_DELETED event after single and batch delete
+      - Event payload includes image_id and directory_id
   - _ulid: 01KKEAYMX9HAS2TH5DM94DG04Y
     slugs: []
     title: "Fix: Image update mutations (favorite, rating) not broadcasting SSE events"
