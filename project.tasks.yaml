@@ -141,10 +141,6 @@ tasks:
     created_at: 2026-03-11T11:36:43.996Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - Frontend detects SSE disconnection and shows indicator
-      - Auto-reconnects with exponential backoff
-      - Full data refresh on reconnect
   - _ulid: 01KKEAYNDV2RMERSR62EXJNK25
     slugs: []
     title: "Fix: SSE library events endpoint lacks auth token support for mobile clients"
@@ -162,6 +158,10 @@ tasks:
     created_at: 2026-03-11T11:36:44.219Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - SSE endpoint accepts JWT token as query parameter
+      - Mobile clients pass JWT when subscribing
+      - Invalid tokens rejected
   - _ulid: 01KKEAYNP4GR99W1CW6ZJ6DFJ8
     slugs: []
     title: "Fix: Frontend ignores image_deleted and image_updated SSE events"
