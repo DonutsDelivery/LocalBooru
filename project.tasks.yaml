@@ -226,9 +226,6 @@ tasks:
     created_at: 2026-03-11T11:37:15.482Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - handleImageDelete calls setTotal(prev => prev - 1)
-      - Infinite scroll stops loading after deletion
   - _ulid: 01KKEAZM5K2PEG39DRR3MZ2N4A
     slugs: []
     title: "Fix: Image metadata (hash, dimensions, file_size) not updated in DB after adjustments"
@@ -246,6 +243,9 @@ tasks:
     created_at: 2026-03-11T11:37:15.698Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - apply_adjust recalculates file_hash, width, height, file_size
+      - Updated metadata written to images table
   - _ulid: 01KKEAZMEANJ6F5NGWERCMBKKP
     slugs: []
     title: "Fix: Thumbnail cache busting lost on page reload after image adjustments"
