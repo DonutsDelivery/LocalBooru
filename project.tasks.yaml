@@ -192,9 +192,6 @@ tasks:
     created_at: 2026-03-11T11:36:44.750Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - Backend broadcasts scan progress events
-      - DirectoriesPage shows scan progress
   - _ulid: 01KKEAYP6P3SFSGGE8X7FN6FZ2
     slugs: []
     title: "Fix: Tag CRUD operations do not broadcast SSE events"
@@ -212,6 +209,9 @@ tasks:
     created_at: 2026-03-11T11:36:45.014Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Backend broadcasts tag_created/updated/deleted events
+      - Frontend refreshes tag sidebar on these events
   - _ulid: 01KKEAZKYT9SGPD89N9P06ZM37
     slugs: []
     title: "Fix: Total count not decremented after single-image delete from lightbox"
