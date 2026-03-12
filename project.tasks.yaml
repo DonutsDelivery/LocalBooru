@@ -430,9 +430,6 @@ tasks:
     created_at: 2026-03-11T11:37:28.454Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - ServerSettings QR calls verifyHandshake()
-      - Re-paired server has valid JWT
   - _ulid: 01KKEB00W64SZYN1TCJ4PF6K3W
     slugs: []
     title: "Fix: Offline servers in server list have no hint to re-scan QR for changed IP"
@@ -450,6 +447,8 @@ tasks:
     created_at: 2026-03-11T11:37:28.709Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Offline servers hint about possible IP change with re-scan option
   - _ulid: 01KKEB0B1PAVXJC6T5JK980WNZ
     slugs: []
     title: "Fix: Frontend ignores directory_added SSE events from parent watcher"
