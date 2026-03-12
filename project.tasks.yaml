@@ -532,9 +532,6 @@ tasks:
     created_at: 2026-03-11T11:37:40.155Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - Scan indicator active until task completion SSE
-      - Does not clear on queue ack
   - _ulid: 01KKEB0VQSB8K6DN2AHX0C0QQV
     slugs: []
     title: "Fix: Sidebar tag list not refreshed after auto-tagging or SSE events"
@@ -552,6 +549,9 @@ tasks:
     created_at: 2026-03-11T11:37:56.217Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - loadTags() called in SSE handler
+      - Tag sidebar updated after auto-tagging
   - _ulid: 01KKEB0W17Q2BVP3S487Z1GS8A
     slugs: []
     title: "Fix: Tag post_count not decremented when images are deleted"
