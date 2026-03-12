@@ -294,9 +294,6 @@ tasks:
     created_at: 2026-03-11T11:37:16.418Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - After deletion loadMore does not skip images
-      - Total count stays accurate
   - _ulid: 01KKEAZYR5YEKX95HVJKFT04Y0
     slugs: []
     title: "Fix: Favorite toggle in lightbox does not re-sort grid view"
@@ -314,6 +311,8 @@ tasks:
     created_at: 2026-03-11T11:37:26.532Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Grid re-sorts on lightbox close when sorted by favorites
   - _ulid: 01KKEAZZ0KZFEPAD9V40Z2MPPX
     slugs: []
     title: "Fix: Watch history save failures are silent on mobile/offline"
