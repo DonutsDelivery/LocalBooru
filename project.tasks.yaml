@@ -277,9 +277,6 @@ tasks:
     created_at: 2026-03-11T11:37:16.192Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - CollectionDetailPage passes onDelete to Lightbox
-      - Delete removes image from collection list
   - _ulid: 01KKEAZMW256MARATCAY9VCH4V
     slugs: []
     title: "Fix: Pagination can skip images after deletion due to stale offset"
@@ -297,6 +294,9 @@ tasks:
     created_at: 2026-03-11T11:37:16.418Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - After deletion loadMore does not skip images
+      - Total count stays accurate
   - _ulid: 01KKEAZYR5YEKX95HVJKFT04Y0
     slugs: []
     title: "Fix: Favorite toggle in lightbox does not re-sort grid view"
