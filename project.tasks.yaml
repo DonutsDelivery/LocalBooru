@@ -362,9 +362,6 @@ tasks:
     created_at: 2026-03-11T11:37:27.322Z
     notes: []
     todos: []
-    acceptance_criteria:
-      - API interceptor detects 401 and redirects to server picker
-      - Stale token cleared
   - _ulid: 01KKEAZZSAQ4208MMRX3JYZAH1
     slugs: []
     title: "Fix: Mobile app has no server connectivity monitoring or offline detection"
@@ -382,6 +379,10 @@ tasks:
     created_at: 2026-03-11T11:37:27.594Z
     notes: []
     todos: []
+    acceptance_criteria:
+      - Periodic health check
+      - Visible offline banner on connection loss
+      - Banner clears on reconnection
   - _ulid: 01KKEB001N0QG5T5HCYZHS3H9V
     slugs: []
     title: "Fix: Mobile app has no reconnection logic when server comes back online"
