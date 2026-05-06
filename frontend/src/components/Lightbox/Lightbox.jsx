@@ -803,9 +803,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       return
     }
 
-    // Don't navigate if zoomed in
-    if (zoomPan.zoom.scale > 1) return
-
     // Don't navigate on videos (navigation uses buttons only)
     if (isVideo(image?.original_filename)) return
 
@@ -815,6 +812,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     const rect = e.currentTarget.getBoundingClientRect()
     const clickX = e.clientX - rect.left
     const width = rect.width
+
+    // When zoomed in, only allow tap-to-navigate on touch devices. Desktop users
+    // pan with the mouse, and a click while zoomed should not jump to next/prev.
+    // On phones, a real pan sets touchMoved.current (already handled above), so
+    // reaching this point with zoom > 1 means it was a tap, not a pan.
+    if (zoomPan.zoom.scale > 1 && width > 768) return
 
     // Left 40% = previous, right 40% = next, middle 20% = do nothing
     // On desktop, exclude the sidebar hover zone (~100px). On mobile, the zone is smaller (40px)

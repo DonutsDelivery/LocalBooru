@@ -1892,12 +1892,18 @@
 /* Lightbox mode - sidebar slides out and appears on hover */
 .sidebar.lightbox-mode {
   transform: translateX(-100%);
+  opacity: 0;
   z-index: 2100; /* Above lightbox (z-index: 2000) */
-  transition: transform 0.15s ease;
+  transition: transform 0.15s ease, opacity 0.15s ease;
 }
 
+/* On mobile (≤1024px), the .sidebar baseline rule sets opacity: 0, and the
+ * lightbox-mode rules above also set opacity: 0. Without explicitly restoring
+ * opacity on hover, the sidebar slides into view but stays invisible — that's
+ * the "darkens the page but no sidebar" symptom in portrait orientation. */
 .sidebar.lightbox-mode.lightbox-hover {
   transform: translateX(0);
+  opacity: 1;
 }
 
 /* AI Generation Prompts */
