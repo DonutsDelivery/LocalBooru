@@ -1,217 +1,261 @@
-kynetic_meta: "1.0"
 agents:
   - _ulid: 01KK67V5J4GDR3RQDV6SVDZ1MK
-    id: task-worker
-    name: Task Worker
     description: Autonomous task worker. Picks up automation-eligible ready and needs_work tasks.
+    auto_approve: true
     capabilities:
       - code
       - test
       - refactor
+    concurrency:
+      max_concurrent: 3
+    conventions: []
+    dispatch:
+      - filter:
+          automation: eligible
+        on: task.in_progress
+      - filter:
+          automation: eligible
+        on: task.ready
+      - filter:
+          automation: eligible
+        on: task.needs_work
+    id: task-worker
+    name: Task Worker
+    skills:
+      - task-work
     tools:
       - kspec
       - git
       - npm
-    conventions: []
-    dispatch:
-      - on: task.in_progress
-        filter:
-          automation: eligible
-      - on: task.ready
-        filter:
-          automation: eligible
-      - on: task.needs_work
-        filter:
-          automation: eligible
-    skills:
-      - task-work
-    concurrency:
-      max_concurrent: 3
-    auto_approve: true
   - _ulid: 01KK67V5J78CCR2JNH6QW8W6KA
-    id: pr-reviewer
-    name: PR Reviewer
     description: Automated PR reviewer. Reviews pending_review tasks and merges when quality gates pass.
+    auto_approve: false
     capabilities:
       - review
+    concurrency:
+      max_concurrent: 3
+    conventions: []
+    dispatch:
+      - on: task.pending_review
+    id: pr-reviewer
+    name: PR Reviewer
+    skills:
+      - pr-review
     tools:
       - kspec
       - git
       - gh
-    conventions: []
-    dispatch:
-      - on: task.pending_review
-    skills:
-      - pr-review
-    concurrency:
-      max_concurrent: 3
-    auto_approve: false
-workflows: []
 conventions: []
+includes: []
+kynetic_meta: "1.0"
 observations: []
 skills:
   - _ulid: 01KK67V5BQTVZPTGP77M58ZZ3Z
-    _type: skill
-    id: help
-    name: Kspec Help
     description: Get help with kspec commands and workflows
     origin: core
-    version: 0.10.0
-    platforms:
-      - claude-code
-      - codex
     depends_on: []
     tags:
       - core
-    allowed_tools: []
-  - _ulid: 01KK67V5BYFR4PKX82MEH97AK3
     _type: skill
-    id: observe
-    name: Observations
+    allowed_tools: []
+    id: help
+    name: Kspec Help
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KK67V5BYFR4PKX82MEH97AK3
     description: Capture and act on systemic patterns — friction, successes, questions, and ideas. The
       feedback loop that drives process improvement.
     origin: core
-    version: 0.10.0
-    platforms:
-      - claude-code
-      - codex
     depends_on: []
     tags:
       - core
-    allowed_tools: []
-  - _ulid: 01KK67V5C3MVB50VVCCM6F1NDF
     _type: skill
-    id: reflect
-    name: Session Reflection
+    allowed_tools: []
+    id: observe
+    name: Observations
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KK67V5C3MVB50VVCCM6F1NDF
     description: Structured reflection at the end of work sessions. Identifies learnings, friction
       points, and improvements for system evolution.
     origin: core
-    version: 0.10.0
-    platforms:
-      - claude-code
-      - codex
     depends_on: []
     tags:
       - core
-    allowed_tools: []
-  - _ulid: 01KK67V5C8RHHQG35MT8DS4EWD
     _type: skill
-    id: triage
-    name: Triage
+    allowed_tools: []
+    id: reflect
+    name: Session Reflection
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KK67V5C8RHHQG35MT8DS4EWD
     description: Triage inbox items systematically. Records decisions with audit trail, then executes
       actions. Supports inbox, observations, and automation eligibility triage.
     origin: core
-    version: 0.10.0
-    platforms:
-      - claude-code
-      - codex
     depends_on: []
     tags:
       - core
-    allowed_tools: []
-  - _ulid: 01KK67V5CDP82RDKBGKG00AD9V
     _type: skill
-    id: triage-inbox
-    name: Inbox Triage
+    allowed_tools: []
+    id: triage
+    name: Triage
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KK67V5CDP82RDKBGKG00AD9V
     description: Process inbox items using the record-act pattern. Categorize, promote to spec/task,
       merge duplicates, defer, or delete stale items with full audit trail.
     origin: core
-    version: 0.10.0
-    platforms:
-      - claude-code
-      - codex
     depends_on: []
     tags:
       - core
-    allowed_tools: []
-  - _ulid: 01KK67V5CKRT5CASENK8AVXQNC
     _type: skill
-    id: triage-automation
-    name: Automation Triage
+    allowed_tools: []
+    id: triage-inbox
+    name: Inbox Triage
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KK67V5CKRT5CASENK8AVXQNC
     description: Assess and prepare tasks for automation eligibility. Verify spec coverage, acceptance
       criteria, and task readiness for automated agents.
     origin: core
-    version: 0.10.0
-    platforms:
-      - claude-code
-      - codex
     depends_on: []
     tags:
       - core
-    allowed_tools: []
-  - _ulid: 01KK67V5CPDBV6D0AXPBJDRFG8
     _type: skill
-    id: writing-specs
-    name: Writing Specs
+    allowed_tools: []
+    id: triage-automation
+    name: Automation Triage
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KK67V5CPDBV6D0AXPBJDRFG8
     description: Create and maintain specification items — modules, features, requirements, acceptance
       criteria, and traits. The source of truth for what to build.
     origin: core
-    version: 0.10.0
-    platforms:
-      - claude-code
-      - codex
     depends_on: []
     tags:
       - core
-    allowed_tools: []
-  - _ulid: 01KK67V5CT84Z9SRM0YZVW6YFJ
     _type: skill
-    id: plan
-    name: Plan to Spec
+    allowed_tools: []
+    id: writing-specs
+    name: Writing Specs
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KK67V5CT84Z9SRM0YZVW6YFJ
     description: Translate approved plans into specs and tasks. Import structured documents or create
       incrementally. Plans persist as durable artifacts with audit trail.
     origin: core
-    version: 0.10.0
-    platforms:
-      - claude-code
-      - codex
     depends_on: []
     tags:
       - core
-    allowed_tools: []
-  - _ulid: 01KK67V5CZTMSNTBSA93GZE5WR
     _type: skill
+    allowed_tools: []
+    id: plan
+    name: Plan to Spec
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KK67V5CZTMSNTBSA93GZE5WR
+    description: Structured task lifecycle — start, work, note, submit, complete. AC annotations, fix
+      cycle handling via review records, scope management, and quality checks.
+    origin: core
+    depends_on: []
+    tags:
+      - core
+    _type: skill
+    allowed_tools: []
     id: task-work
     name: Task Work
-    description: Structured task lifecycle — start, work, note, submit, complete. Fix cycle handling,
-      scope management, loop mode for automation, and quality gates.
-    origin: core
-    version: 0.10.0
     platforms:
       - claude-code
       - codex
-    depends_on: []
-    tags:
-      - core
-    allowed_tools: []
+      - droid
+    version: 0.13.0
   - _ulid: 01KK67V5D25J7TPE9GGRST7KZ1
-    _type: skill
-    id: create-workflow
-    name: Create Workflow
     description: Formalize repeatable patterns into trackable kspec workflows. Design steps, choose
       triggers, create loop variants, and integrate with skills.
     origin: core
-    version: 0.10.0
-    platforms:
-      - claude-code
-      - codex
     depends_on: []
     tags:
       - core
-    allowed_tools: []
-  - _ulid: 01KK67V5D627SJNXP63GG40AEK
     _type: skill
+    allowed_tools: []
+    id: create-workflow
+    name: Create Workflow
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KK67V5D627SJNXP63GG40AEK
+    description: How to review work and use kspec review records. Covers both reviewer and worker
+      perspectives — creating reviews, structuring findings, AC coverage verification, review
+      principles, and the full review record interface.
+    origin: core
+    depends_on: []
+    tags:
+      - core
+    _type: skill
+    allowed_tools: []
     id: review
     name: Review
-    description: Kspec-specific review gates — spec alignment, own AC coverage, trait AC coverage, and
-      validation integration. Building block for project-specific review workflows.
-    origin: core
-    version: 0.10.0
     platforms:
       - claude-code
       - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KQY8QYQW89RF86J0YSR09M5M
+    description: Merge approved work into an integration branch. Local-first git merge with gates based
+      on kspec review disposition — approved status, passing checks, and resolved blocker threads.
+    origin: core
     depends_on: []
     tags:
       - core
+    _type: skill
     allowed_tools: []
-includes: []
+    id: merge
+    name: Merge
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+  - _ulid: 01KQY8QYR4ZBJ9CER1E6Q6S2NA
+    description: Review a plan document for quality, completeness, and readiness. Checks spec quality,
+      task standalone-ness, dependency ordering, and alignment with existing specs.
+    origin: core
+    depends_on: []
+    tags:
+      - core
+    _type: skill
+    allowed_tools: []
+    id: review-plan
+    name: Plan Review
+    platforms:
+      - claude-code
+      - codex
+      - droid
+    version: 0.13.0
+workflows: []
