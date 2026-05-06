@@ -1,0 +1,16 @@
+_ulid: 01KK5NSBMHJW4MFXKN6H8FF5NT
+slugs: []
+title: we need ai generation metadata support
+type: task
+description: ""
+status: blocked
+blocked_by:
+  - Needs spec
+depends_on: []
+context: []
+priority: 3
+tags:
+  - migrated-from:localbooru-q6x
+vcs_refs: []
+created_at: 2026-03-08T02:52:54.801Z
+todos: []

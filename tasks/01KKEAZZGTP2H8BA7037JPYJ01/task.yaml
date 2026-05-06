@@ -1,0 +1,16 @@
+_ulid: 01KKEAZZGTP2H8BA7037JPYJ01
+slugs: []
+title: "Fix: No 401 handler to redirect mobile users to server picker on token expiry"
+type: bug
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-03-11T11:37:27.322Z
+todos: []

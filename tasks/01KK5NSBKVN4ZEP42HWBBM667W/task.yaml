@@ -1,0 +1,16 @@
+_ulid: 01KK5NSBKVN4ZEP42HWBBM667W
+slugs: []
+title: Batch addon inference (N images per call)
+type: task
+description: ""
+status: blocked
+blocked_by:
+  - Needs spec
+depends_on: []
+context: []
+priority: 3
+tags:
+  - migrated-from:localbooru-dyw
+vcs_refs: []
+created_at: 2026-03-08T02:52:54.779Z
+todos: []

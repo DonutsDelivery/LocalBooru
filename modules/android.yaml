@@ -105,6 +105,24 @@ features:
         acceptance_criteria:
           - Manual Add Server checks for existing URL match and updates instead of creating duplicate
           - Offline server entries show hint suggesting IP may have changed with option to re-scan QR
+      - _ulid: 01KMEB30C7SERVER0FALLBACK0
+        slugs:
+          - server-fallback-url
+        title: Server Fallback URL
+        type: requirement
+        description: >
+          Each saved server entry may include an optional secondary (fallback) URL — typically a
+          Tailscale or VPN address used when the primary LAN address is unreachable. When a request
+          to the primary URL fails with a network-level error (timeout, refused, DNS failure), the
+          app transparently retries the same request against the fallback URL. HTTP error responses
+          (4xx/5xx) are NOT retried — the server is reachable, just refusing the request.
+        acceptance_criteria:
+          - Server entries store an optional fallbackUrl field alongside the primary url
+          - Add/edit server UI exposes a fallback URL field with the same normalization as the primary
+          - testServerConnection probes primary first, then fallback if primary fails with a network error
+          - In-flight API requests transparently retry against the fallback on network failure of the primary
+          - HTTP error responses (4xx/5xx) from the primary are returned to the caller without trying the fallback
+          - Servers with no fallback configured behave exactly as before (no extra request, no behavior change)
   - _ulid: 01KK693VRHM3YB0XPWDS8KNXSX
     slugs:
       - android-gestures

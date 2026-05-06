@@ -1,10 +1,12 @@
-kynetic: "1.0"
-project:
-  name: LocalBooru
-  version: 0.3.11
-  status: stable
 includes:
   - modules/main.yaml
   - modules/android.yaml
   - modules/desktop.yaml
   - modules/core.yaml
+kynetic: "1.1"
+project:
+  status: stable
+  name: LocalBooru
+  version: 0.3.11
+task_storage:
+  format: split

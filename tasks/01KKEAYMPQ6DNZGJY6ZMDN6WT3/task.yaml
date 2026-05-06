@@ -1,0 +1,16 @@
+_ulid: 01KKEAYMPQ6DNZGJY6ZMDN6WT3
+slugs: []
+title: "Fix: Image delete/batch delete not broadcasting SSE events"
+type: bug
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+created_at: 2026-03-11T11:36:43.479Z
+todos: []

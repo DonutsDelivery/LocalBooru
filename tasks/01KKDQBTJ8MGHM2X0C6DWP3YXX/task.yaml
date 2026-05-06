@@ -1,0 +1,18 @@
+_ulid: 01KKDQBTJ8MGHM2X0C6DWP3YXX
+slugs: []
+title: "DB schema: add media_type column to images table, add audio_metadata table (title, artist,
+  album, track_number, genre, year)"
+type: task
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: blocked
+blocked_by:
+  - Needs spec
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+created_at: 2026-03-11T05:54:23.944Z
+todos: []

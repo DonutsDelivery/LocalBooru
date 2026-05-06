@@ -3,619 +3,441 @@ tasks:
     slugs: []
     title: Batch addon inference (N images per call)
     type: task
-    description: ""
     status: blocked
     blocked_by:
       - Needs spec
     depends_on: []
-    context: []
     priority: 3
     tags:
       - migrated-from:localbooru-dyw
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-08T02:52:54.779Z
-    notes: []
-    todos: []
   - _ulid: 01KK5NSBMHJW4MFXKN6H8FF5NT
     slugs: []
     title: we need ai generation metadata support
     type: task
-    description: ""
     status: blocked
     blocked_by:
       - Needs spec
     depends_on: []
-    context: []
     priority: 3
     tags:
       - migrated-from:localbooru-q6x
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-08T02:52:54.801Z
-    notes: []
-    todos: []
   - _ulid: 01KKDQBTJ8MGHM2X0C6DWP3YXX
     slugs: []
     title: "DB schema: add media_type column to images table, add audio_metadata table (title, artist,
       album, track_number, genre, year)"
     type: task
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: blocked
     blocked_by:
       - Needs spec
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T05:54:23.944Z
-    notes: []
-    todos: []
   - _ulid: 01KKDQC2M6S4FA7QEN1MPKWY5T
     slugs: []
     title: Audio streaming for mobile — HTTP Range serving for audio files, remote proxy forwarding,
       Android WebView playback
     type: task
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: blocked
     blocked_by:
       - Needs spec
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T05:54:32.198Z
-    notes: []
-    todos: []
   - _ulid: 01KKDQC33H1B9MDE67ZY4NHMH8
     slugs: []
     title: Music keyboard shortcuts — space=pause, arrow keys=seek, n/p=next/prev track, m=mute,
       up/down=volume
     type: task
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: blocked
     blocked_by:
       - Needs spec
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T05:54:32.689Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAYMPQ6DNZGJY6ZMDN6WT3
     slugs: []
     title: "Fix: Image delete/batch delete not broadcasting SSE events"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:36:43.479Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAYMX9HAS2TH5DM94DG04Y
     slugs: []
     title: "Fix: Image update mutations (favorite, rating) not broadcasting SSE events"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:36:43.689Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAYN6X3019NQBT9JM7NV3M
     slugs: []
     title: "Fix: SSE reconnection with missed-event recovery on frontend"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:36:43.996Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAYNDV2RMERSR62EXJNK25
     slugs: []
     title: "Fix: SSE library events endpoint lacks auth token support for mobile clients"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:36:44.219Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAYNP4GR99W1CW6ZJ6DFJ8
     slugs: []
     title: "Fix: Frontend ignores image_deleted and image_updated SSE events"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:36:44.483Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAYNYEX3BEYNHT29HR42DK
     slugs: []
     title: "Fix: Directory scan does not broadcast scan-level progress events"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 4
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:36:44.750Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAYP6P3SFSGGE8X7FN6FZ2
     slugs: []
     title: "Fix: Tag CRUD operations do not broadcast SSE events"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 4
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:36:45.014Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAZKYT9SGPD89N9P06ZM37
     slugs: []
     title: "Fix: Total count not decremented after single-image delete from lightbox"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:15.482Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAZM5K2PEG39DRR3MZ2N4A
     slugs: []
     title: "Fix: Image metadata (hash, dimensions, file_size) not updated in DB after adjustments"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:15.698Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAZMEANJ6F5NGWERCMBKKP
     slugs: []
     title: "Fix: Thumbnail cache busting lost on page reload after image adjustments"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:15.978Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAZMN0JZJC9GKYMH21YGJ3
     slugs: []
     title: "Fix: CollectionDetailPage lightbox missing onDelete handler"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:16.192Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAZMW256MARATCAY9VCH4V
     slugs: []
     title: "Fix: Pagination can skip images after deletion due to stale offset"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 4
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:16.418Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAZYR5YEKX95HVJKFT04Y0
     slugs: []
     title: "Fix: Favorite toggle in lightbox does not re-sort grid view"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:26.532Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAZZ0KZFEPAD9V40Z2MPPX
     slugs: []
     title: "Fix: Watch history save failures are silent on mobile/offline"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 4
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:26.803Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAZZ7R2EMKNM4RYMRFDS3H
     slugs: []
     title: "Fix: ContinueWatching panel shows stale data until page reload"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 4
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:27.032Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAZZGTP2H8BA7037JPYJ01
     slugs: []
     title: "Fix: No 401 handler to redirect mobile users to server picker on token expiry"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:27.322Z
-    notes: []
-    todos: []
   - _ulid: 01KKEAZZSAQ4208MMRX3JYZAH1
     slugs: []
     title: "Fix: Mobile app has no server connectivity monitoring or offline detection"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:27.594Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB001N0QG5T5HCYZHS3H9V
     slugs: []
     title: "Fix: Mobile app has no reconnection logic when server comes back online"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:27.860Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB00AS143TPB6Z9FEK4RQW
     slugs: []
     title: "Fix: Manual Add Server allows duplicate URLs in server list"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 4
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:28.152Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB00M6M6Y2N8CHA05C68RD
     slugs: []
     title: "Fix: ServerSettings QR scan does not perform handshake to get JWT token"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:28.454Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB00W64SZYN1TCJ4PF6K3W
     slugs: []
     title: "Fix: Offline servers in server list have no hint to re-scan QR for changed IP"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 4
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:28.709Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB0B1PAVXJC6T5JK980WNZ
     slugs: []
     title: "Fix: Frontend ignores directory_added SSE events from parent watcher"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:39.125Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB0B9DKDPTJD3RTRW3NYR9
     slugs: []
     title: "Fix: Library switch does not reset tag cache or stats"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:39.373Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB0BHDMBP64KHMVAXYWVH1
     slugs: []
     title: "Fix: Port/network settings appear changeable but backend_restart is a no-op"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:39.629Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB0BT7EFH4VVRWNYBW0RPS
     slugs: []
     title: "Fix: No drive health monitoring — UI shows stale mount status"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:39.911Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB0C1VM327DG9CJC49WQHE
     slugs: []
     title: "Fix: DirectoriesPage scan indicator clears on queue not completion"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:40.155Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB0VQSB8K6DN2AHX0C0QQV
     slugs: []
     title: "Fix: Sidebar tag list not refreshed after auto-tagging or SSE events"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:56.217Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB0W17Q2BVP3S487Z1GS8A
     slugs: []
     title: "Fix: Tag post_count not decremented when images are deleted"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 2
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:56.519Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB0WHFTF1BDQV9M2T3D2DD
     slugs: []
     title: "Fix: Collection item counts stale after Lightbox additions"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:57.038Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB0WS2JXRGQ1QWB9G92RFQ
     slugs: []
     title: "Fix: No SSE event or UI refresh when batch retag tasks complete"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 3
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:57.282Z
-    notes: []
-    todos: []
   - _ulid: 01KKEB0X1HJNHXP2X874DXDE63
     slugs: []
     title: "Fix: Autocomplete post_count stale on localhost due to missing live aggregation"
     type: bug
-    spec_ref: null
-    meta_ref: null
-    plan_ref: null
     status: pending
     blocked_by: []
     depends_on: []
-    context: []
     priority: 4
     tags: []
-    vcs_refs: []
+    notes_count: 0
+    todos_count: 0
     created_at: 2026-03-11T11:37:57.552Z
-    notes: []
-    todos: []
-    acceptance_criteria:
-      - Autocomplete uses accurate counts

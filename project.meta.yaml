@@ -26,7 +26,7 @@ agents:
     skills:
       - task-work
     concurrency:
-      max_concurrent: 1
+      max_concurrent: 3
     auto_approve: true
   - _ulid: 01KK67V5J78CCR2JNH6QW8W6KA
     id: pr-reviewer
@@ -44,7 +44,7 @@ agents:
     skills:
       - pr-review
     concurrency:
-      max_concurrent: 1
+      max_concurrent: 3
     auto_approve: false
 workflows: []
 conventions: []
