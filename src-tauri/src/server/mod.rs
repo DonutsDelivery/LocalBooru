@@ -174,77 +174,105 @@ async fn health() -> Json<serde_json::Value> {
 
 /// Reverse proxy handler: forwards requests to the configured remote server.
 /// Used on mobile to avoid mixed-content blocks in the WebView (https://tauri.localhost -> http://...).
+///
+/// Retries on a fallback URL if the primary URL fails with a network-level error
+/// (connect refused/timeout). HTTP error responses are NOT retried — a 5xx means
+/// the primary server is reachable, so flipping to the fallback would just hide
+/// real server problems behind a working secondary path.
 async fn remote_proxy_handler(
     State(state): State<AppState>,
     req: Request,
 ) -> Response {
     let proxy = state.get_remote_proxy().await;
-    let (base_url, token) = match proxy {
-        Some(p) => p,
+    let cfg = match proxy {
+        Some(c) => c,
         None => {
             return (StatusCode::BAD_GATEWAY, "No remote server configured").into_response();
         }
     };
 
-    // Build target URL: /remote/api/images -> http://remote:8790/api/images
-    let path = req.uri().path();
+    // Capture parts we need before consuming `req` for the body.
+    let path = req.uri().path().to_string();
     let query = req.uri().query().map(|q| format!("?{}", q)).unwrap_or_default();
-    let target_url = format!("{}{}{}", base_url, path, query);
-
-    // Forward the request
-    let client = state.http_client();
     let method = req.method().clone();
-    let mut builder = client.request(method, &target_url);
+    let headers_snapshot: Vec<(axum::http::HeaderName, axum::http::HeaderValue)> = req
+        .headers()
+        .iter()
+        .filter(|(name, _)| *name != &header::HOST && *name != &header::CONNECTION)
+        .map(|(n, v)| (n.clone(), v.clone()))
+        .collect();
 
-    // Forward relevant headers
-    for (name, value) in req.headers() {
-        // Skip host and connection headers
-        if name == header::HOST || name == header::CONNECTION {
-            continue;
-        }
-        if let Ok(v) = reqwest::header::HeaderValue::from_bytes(value.as_bytes()) {
-            if let Ok(n) = reqwest::header::HeaderName::from_bytes(name.as_ref()) {
-                builder = builder.header(n, v);
-            }
-        }
-    }
-
-    // Add auth token if configured
-    if let Some(ref tok) = token {
-        builder = builder.header("Authorization", format!("Bearer {}", tok));
-    }
-
-    // Forward request body
+    // Buffer the body so we can replay it onto the fallback request if needed.
     let body_bytes = match axum::body::to_bytes(req.into_body(), 100 * 1024 * 1024).await {
         Ok(b) => b,
         Err(e) => {
             return (StatusCode::BAD_REQUEST, format!("Failed to read request body: {}", e)).into_response();
         }
     };
-    if !body_bytes.is_empty() {
-        builder = builder.body(body_bytes);
-    }
 
-    // Send the proxied request
-    match builder.send().await {
-        Ok(resp) => {
-            let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-            let mut headers = HeaderMap::new();
-            for (name, value) in resp.headers() {
-                if let Ok(v) = HeaderValue::from_bytes(value.as_bytes()) {
-                    if let Ok(n) = axum::http::header::HeaderName::from_bytes(name.as_ref()) {
-                        headers.insert(n, v);
-                    }
+    let client = state.http_client();
+    let token = cfg.token.clone();
+    let build_request = |base_url: &str| {
+        let target_url = format!("{}{}{}", base_url, path, query);
+        let mut builder = client.request(method.clone(), &target_url);
+        for (n, v) in &headers_snapshot {
+            if let Ok(rv) = reqwest::header::HeaderValue::from_bytes(v.as_bytes()) {
+                if let Ok(rn) = reqwest::header::HeaderName::from_bytes(n.as_ref()) {
+                    builder = builder.header(rn, rv);
                 }
             }
-            // Stream the response body instead of buffering — buffering the entire
-            // body causes video elements to load endlessly for large files.
-            let body = Body::from_stream(resp.bytes_stream());
-            (status, headers, body).into_response()
         }
+        if let Some(ref tok) = token {
+            builder = builder.header("Authorization", format!("Bearer {}", tok));
+        }
+        if !body_bytes.is_empty() {
+            builder = builder.body(body_bytes.clone());
+        }
+        (target_url, builder)
+    };
+
+    // Try the primary URL.
+    let (primary_url, primary_builder) = build_request(&cfg.primary_url);
+    let primary_result = primary_builder.send().await;
+
+    let resp = match primary_result {
+        Ok(resp) => resp,
         Err(e) => {
-            log::error!("[Proxy] Request to {} failed: {}", target_url, e);
-            (StatusCode::BAD_GATEWAY, format!("Proxy error: {}", e)).into_response()
+            // Network-level failure on the primary — try the fallback if configured.
+            log::warn!("[Proxy] Primary {} failed: {}", primary_url, e);
+            if let Some(ref fallback_url) = cfg.fallback_url {
+                let (fb_url, fb_builder) = build_request(fallback_url);
+                match fb_builder.send().await {
+                    Ok(r) => {
+                        log::info!("[Proxy] Recovered via fallback {}", fb_url);
+                        r
+                    }
+                    Err(fb_err) => {
+                        log::error!("[Proxy] Fallback {} also failed: {}", fb_url, fb_err);
+                        return (
+                            StatusCode::BAD_GATEWAY,
+                            format!("Proxy error (primary + fallback): {} / {}", e, fb_err),
+                        )
+                            .into_response();
+                    }
+                }
+            } else {
+                return (StatusCode::BAD_GATEWAY, format!("Proxy error: {}", e)).into_response();
+            }
+        }
+    };
+
+    let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let mut headers = HeaderMap::new();
+    for (name, value) in resp.headers() {
+        if let Ok(v) = HeaderValue::from_bytes(value.as_bytes()) {
+            if let Ok(n) = axum::http::header::HeaderName::from_bytes(name.as_ref()) {
+                headers.insert(n, v);
+            }
         }
     }
+    // Stream the response body instead of buffering — buffering the entire
+    // body causes video elements to load endlessly for large files.
+    let body = Body::from_stream(resp.bytes_stream());
+    (status, headers, body).into_response()
 }

@@ -54,13 +54,27 @@ const LOCALHOST_EXEMPTIONS: &[&str] = &[
     "/api/users/verify",
 ];
 
+/// Test whether an IPv4 address falls in the RFC 6598 carrier-grade NAT range
+/// (100.64.0.0/10), which Tailscale uses for its internal "100.x.x.x" addresses.
+/// std's `is_private()` does not include this range.
+fn is_cgnat(v4: &std::net::Ipv4Addr) -> bool {
+    let octets = v4.octets();
+    octets[0] == 100 && (octets[1] & 0b1100_0000) == 64
+}
+
+/// Test whether an IPv6 address is in Tailscale's ULA range (fd7a:115c:a1e0::/48).
+fn is_tailscale_v6(v6: &std::net::Ipv6Addr) -> bool {
+    let segs = v6.segments();
+    segs[0] == 0xfd7a && segs[1] == 0x115c && segs[2] == 0xa1e0
+}
+
 /// Classify an IP address into an access level.
 pub fn classify_ip(ip: &std::net::IpAddr) -> &'static str {
     match ip {
         std::net::IpAddr::V4(v4) => {
             if v4.is_loopback() {
                 "localhost"
-            } else if v4.is_private() || v4.is_link_local() {
+            } else if v4.is_private() || v4.is_link_local() || is_cgnat(v4) {
                 "local_network"
             } else {
                 "public"
@@ -69,13 +83,15 @@ pub fn classify_ip(ip: &std::net::IpAddr) -> &'static str {
         std::net::IpAddr::V6(v6) => {
             if v6.is_loopback() {
                 "localhost"
+            } else if is_tailscale_v6(v6) {
+                "local_network"
             } else {
                 // Check for IPv4-mapped IPv6 (::ffff:127.0.0.1, etc.)
                 if let Some(v4) = v6.to_ipv4_mapped() {
                     if v4.is_loopback() {
                         return "localhost";
                     }
-                    if v4.is_private() || v4.is_link_local() {
+                    if v4.is_private() || v4.is_link_local() || is_cgnat(&v4) {
                         return "local_network";
                     }
                 }

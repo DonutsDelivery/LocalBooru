@@ -340,15 +340,17 @@ pub async fn verify_remote_handshake(url: String, nonce: String) -> Result<Hands
 
 /// Configure the remote server proxy on the embedded HTTP server.
 /// When set, requests to /remote/* are forwarded to the target URL.
+/// `fallback_url` is tried on network errors from the primary (e.g. Tailscale fallback).
 /// Call with url=null to disable.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn set_remote_proxy(
     state: State<'_, AppState>,
     url: Option<String>,
+    fallback_url: Option<String>,
     token: Option<String>,
 ) -> Result<(), String> {
-    log::info!("[Proxy] Setting remote proxy to: {:?}", url);
-    state.set_remote_proxy(url, token).await;
+    log::info!("[Proxy] Setting remote proxy to: {:?} (fallback: {:?})", url, fallback_url);
+    state.set_remote_proxy(url, fallback_url, token).await;
     Ok(())
 }
 

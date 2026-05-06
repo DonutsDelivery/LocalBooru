@@ -2,7 +2,7 @@
  * LocalBooru API client - supports both local and multi-server mode
  */
 import axios from 'axios'
-import { isMobileApp, getActiveServer, LOCAL_SERVER } from './serverManager'
+import { isMobileApp, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 
 // Current server config (cached for synchronous access)
@@ -42,7 +42,10 @@ function getApiUrl() {
 }
 
 // Update the server configuration (call when server changes)
-export async function updateServerConfig() {
+// Optional `workingUrl` should be set to whichever of the server's URLs (primary or fallback)
+// just responded to a probe — it becomes the proxy's primary so we don't pay a 1.5s connect-fail
+// per request while running on the fallback network (e.g. Tailscale when the LAN URL is unreachable).
+export async function updateServerConfig(workingUrl = null) {
   if (!isMobileApp()) return
 
   const server = await getActiveServer()
@@ -58,7 +61,7 @@ export async function updateServerConfig() {
       if (isTauriApp()) {
         try {
           const { invoke } = await import('@tauri-apps/api/core')
-          await invoke('set_remote_proxy', { url: null, token: null })
+          await invoke('set_remote_proxy', { url: null, fallbackUrl: null, token: null })
         } catch (e) { console.warn('[API] Failed to clear remote proxy:', e) }
       }
       api.defaults.baseURL = getApiUrl()
@@ -80,12 +83,40 @@ export async function updateServerConfig() {
       currentServerToken = null
     }
 
+    // Determine which URL to use as proxy primary. If the caller didn't tell us
+    // which one was just verified, fall back to the cached probe result, then probe.
+    let primaryUrl = server.url
+    let fallbackUrl = server.fallbackUrl || null
+    if (server.fallbackUrl) {
+      let resolved = workingUrl || server._lastReachableUrl || null
+      if (!resolved) {
+        try {
+          const probe = await probeServer(server)
+          if (probe.success && probe.url) resolved = probe.url
+        } catch (e) { /* probe failed; fall through to default */ }
+      }
+      if (resolved) {
+        primaryUrl = resolved
+        fallbackUrl = resolved === server.url ? (server.fallbackUrl || null) : server.url
+      }
+    }
+
+    // Normalize: reqwest's URL parser rejects scheme-less inputs with a "builder error".
+    // Older saved entries may have been written without `http://`; patch them on the way out.
+    const ensureScheme = u => (u && !/^https?:\/\//i.test(u)) ? `http://${u}` : u
+    primaryUrl = ensureScheme(primaryUrl)
+    fallbackUrl = ensureScheme(fallbackUrl)
+
     // On Tauri mobile, configure the local server to proxy to remote server
     // This avoids mixed-content blocks (https://tauri.localhost -> http://...)
     if (isTauriApp()) {
       try {
         const { invoke } = await import('@tauri-apps/api/core')
-        await invoke('set_remote_proxy', { url: server.url, token: server.token || null })
+        await invoke('set_remote_proxy', {
+          url: primaryUrl,
+          fallbackUrl,
+          token: server.token || null,
+        })
       } catch (e) { console.warn('[API] Failed to set remote proxy:', e) }
     }
 
@@ -106,7 +137,7 @@ export async function updateServerConfig() {
     if (isTauriApp()) {
       try {
         const { invoke } = await import('@tauri-apps/api/core')
-        await invoke('set_remote_proxy', { url: null, token: null })
+        await invoke('set_remote_proxy', { url: null, fallbackUrl: null, token: null })
       } catch (e) { console.warn('[API] Failed to clear remote proxy:', e) }
     }
     api.defaults.baseURL = null
@@ -1363,12 +1394,14 @@ export async function stopAddon(id) {
 export async function healthCheck() {
   // Remote server — use /api/directories (requires auth) to validate JWT is still valid.
   // /health and /api are exempt from auth so they can't detect expired tokens.
+  // Timeout is generous enough for the proxy's primary→fallback retry to complete
+  // (1.5s connect timeout per attempt, plus request overhead).
   if (isMobileApp() && currentServerUrl && isTauriApp()) {
-    const response = await api.get(`${getLocalServerBase()}/remote/api/directories`, { baseURL: '', timeout: 3000 })
+    const response = await api.get(`${getLocalServerBase()}/remote/api/directories`, { baseURL: '', timeout: 20000 })
     return response.data
   }
   if (isMobileApp() && currentServerUrl) {
-    const response = await api.get(`${currentServerUrl}/api/directories`, { baseURL: '', timeout: 3000 })
+    const response = await api.get(`${currentServerUrl}/api/directories`, { baseURL: '', timeout: 20000 })
     return response.data
   }
   // Local Tauri server — use IPC (most reliable, no network dependency)

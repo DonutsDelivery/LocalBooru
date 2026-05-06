@@ -2,9 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import {
   getServers,
   addServer,
+  addOrUpdateServer,
+  updateServer,
   removeServer,
   setActiveServerId,
   testServerConnection,
+  probeServer,
   pingAllServers,
   isMobileApp,
   LOCAL_SERVER
@@ -20,6 +23,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editingServer, setEditingServer] = useState(null)
   const [inlineError, setInlineError] = useState(initialError || null)
 
   // Update inline error when prop changes
@@ -68,11 +72,11 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   async function handleConnect(server) {
     setConnecting(server.id)
     setInlineError(null)
-    // Test connection first
-    const result = await testServerConnection(server.url, server.username, server.password)
+    // Probe primary, then fallback URL on network failure
+    const result = await probeServer(server)
     if (result.success) {
       await setActiveServerId(server.id)
-      await updateServerConfig()
+      await updateServerConfig(result.url)
       onConnect?.()
     } else {
       // Update status to show it's offline
@@ -86,6 +90,14 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
       }
     }
     setConnecting(null)
+  }
+
+  async function handleEditSave(serverData) {
+    if (editingServer) {
+      await updateServer(editingServer.id, serverData)
+    }
+    setEditingServer(null)
+    await loadServers()
   }
 
   async function handleDelete(server, e) {
@@ -238,8 +250,8 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
           }
         }
 
-        // Add the server
-        const newServer = await addServer({
+        // Add or update existing server (avoids duplicates on re-pair)
+        const newServer = await addOrUpdateServer({
           name: qrData.name || 'LocalBooru Server',
           url: workingUrl,
           token,
@@ -386,7 +398,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
               <div className="server-select-name">{server.name}</div>
               <div className="server-select-url">{server.url}</div>
               {statuses[server.id] === 'auth_failed' && (
-                <div className="server-select-auth-error">Authentication expired — re-scan QR to re-pair</div>
+                <div className="server-select-auth-error">Authentication failed — re-scan QR to re-pair</div>
               )}
             </div>
 
@@ -410,6 +422,16 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
                       Connect
                     </button>
                   )}
+                  <button
+                    className="edit-server-btn"
+                    onClick={(e) => { e.stopPropagation(); setEditingServer(server) }}
+                    title="Edit server"
+                  >
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                  </button>
                   <button
                     className="delete-server-btn"
                     onClick={(e) => handleDelete(server, e)}
@@ -470,17 +492,34 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
           onClose={() => setShowAddModal(false)}
         />
       )}
+      {editingServer && (
+        <AddServerModal
+          server={editingServer}
+          onSave={handleEditSave}
+          onClose={() => setEditingServer(null)}
+        />
+      )}
     </div>
   )
 }
 
-function AddServerModal({ onSave, onClose }) {
-  const [name, setName] = useState('')
-  const [url, setUrl] = useState('')
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
+function AddServerModal({ server, onSave, onClose }) {
+  const [name, setName] = useState(server?.name || '')
+  const [url, setUrl] = useState(server?.url || '')
+  const [fallbackUrl, setFallbackUrl] = useState(server?.fallbackUrl || '')
+  const [username, setUsername] = useState(server?.username || '')
+  const [password, setPassword] = useState(server?.password || '')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
+
+  function normalizeUrl(value) {
+    let v = value.trim()
+    if (!v) return ''
+    if (!v.startsWith('http://') && !v.startsWith('https://')) {
+      v = 'http://' + v
+    }
+    return v.replace(/\/$/, '')
+  }
 
   async function handleTest() {
     if (!url) return
@@ -488,29 +527,45 @@ function AddServerModal({ onSave, onClose }) {
     setTesting(true)
     setTestResult(null)
 
-    // Normalize URL
-    let normalizedUrl = url.trim()
-    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
-      normalizedUrl = 'http://' + normalizedUrl
-    }
-    // Remove trailing slash
-    normalizedUrl = normalizedUrl.replace(/\/$/, '')
-
+    const normalizedUrl = normalizeUrl(url)
+    const normalizedFallback = fallbackUrl ? normalizeUrl(fallbackUrl) : ''
     setUrl(normalizedUrl)
+    if (normalizedFallback) setFallbackUrl(normalizedFallback)
 
-    const result = await testServerConnection(normalizedUrl, username, password)
-    setTestResult(result)
+    const primary = await testServerConnection(normalizedUrl, username, password)
+    if (primary.success) {
+      setTestResult({ ...primary, usedFallback: false })
+      setTesting(false)
+      return
+    }
+    if (normalizedFallback && primary.networkFailure) {
+      const fb = await testServerConnection(normalizedFallback, username, password)
+      if (fb.success) {
+        setTestResult({ success: true, usedFallback: true })
+        setTesting(false)
+        return
+      }
+    }
+    setTestResult(primary)
     setTesting(false)
   }
 
   function handleSave() {
-    if (!url || !testResult?.success) return
+    if (!url) return
+    // For new servers, require a successful test. When editing, allow save without
+    // re-testing — the user may be adding a fallback URL while offline from the primary.
+    if (!server && !testResult?.success) return
+
+    // Normalize so URLs always have a scheme — without it, reqwest in the proxy
+    // produces "builder error" because the URL parser rejects scheme-less inputs.
+    const finalUrl = normalizeUrl(url)
+    const finalFallback = fallbackUrl ? normalizeUrl(fallbackUrl) : null
 
     // Extract hostname for default name
     let defaultName = name
     if (!defaultName) {
       try {
-        const urlObj = new URL(url)
+        const urlObj = new URL(finalUrl)
         defaultName = urlObj.hostname
       } catch {
         defaultName = 'LocalBooru Server'
@@ -519,7 +574,8 @@ function AddServerModal({ onSave, onClose }) {
 
     onSave({
       name: defaultName,
-      url: url.replace(/\/$/, ''),
+      url: finalUrl,
+      fallbackUrl: finalFallback,
       username: username || null,
       password: password || null,
       lastConnected: new Date().toISOString()
@@ -529,7 +585,7 @@ function AddServerModal({ onSave, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
-        <h3>Add Server</h3>
+        <h3>{server ? 'Edit Server' : 'Add Server'}</h3>
 
         <div className="form-group">
           <label>Server URL</label>
@@ -540,6 +596,17 @@ function AddServerModal({ onSave, onClose }) {
             onChange={e => setUrl(e.target.value)}
           />
           <small>IP address or hostname with port</small>
+        </div>
+
+        <div className="form-group">
+          <label>Fallback URL (optional)</label>
+          <input
+            type="text"
+            placeholder="100.x.x.x:8790 (Tailscale)"
+            value={fallbackUrl}
+            onChange={e => setFallbackUrl(e.target.value)}
+          />
+          <small>Used when the primary URL is unreachable (e.g. away from LAN)</small>
         </div>
 
         <div className="form-group">
@@ -574,7 +641,9 @@ function AddServerModal({ onSave, onClose }) {
 
         {testResult && (
           <div className={`test-result ${testResult.success ? 'success' : 'error'}`}>
-            {testResult.success ? 'Connection successful!' : `Error: ${testResult.error}`}
+            {testResult.success
+              ? (testResult.usedFallback ? 'Connection successful (via fallback URL)!' : 'Connection successful!')
+              : `Error: ${testResult.error}`}
           </div>
         )}
 
@@ -590,9 +659,9 @@ function AddServerModal({ onSave, onClose }) {
           <button
             className="save-btn"
             onClick={handleSave}
-            disabled={!testResult?.success}
+            disabled={!url || (!server && !testResult?.success)}
           >
-            Save & Connect
+            {server ? 'Save' : 'Save & Connect'}
           </button>
         </div>
       </div>

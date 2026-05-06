@@ -63,9 +63,19 @@ struct AppStateInner {
     family_mode_locked: AtomicBool,
     /// Whether the HTTP server is listening and accepting connections
     server_ready: AtomicBool,
-    /// Remote server proxy target: (base_url, optional_jwt_token)
-    /// When set, /remote/* requests are forwarded to this server.
-    remote_proxy: RwLock<Option<(String, Option<String>)>>,
+    /// Remote server proxy target. When set, /remote/* requests are forwarded to this server,
+    /// retrying on `fallback_url` if the primary fails with a network-level error.
+    remote_proxy: RwLock<Option<RemoteProxyConfig>>,
+}
+
+/// Remote proxy target with primary + optional fallback URL. The fallback is used
+/// only on connect/network errors from the primary, not HTTP error responses —
+/// a 5xx from the primary means the server is reachable, just unhappy.
+#[derive(Clone, Debug)]
+pub struct RemoteProxyConfig {
+    pub primary_url: String,
+    pub fallback_url: Option<String>,
+    pub token: Option<String>,
 }
 
 /// Load the JWT secret from `settings.json` in `data_dir`, or generate a new
@@ -223,8 +233,15 @@ impl AppState {
         // Create handshake nonce manager
         let handshake_manager = Arc::new(HandshakeManager::new());
 
-        // Create shared HTTP client (connection pool reused across requests)
-        let http_client = reqwest::Client::new();
+        // Create shared HTTP client (connection pool reused across requests).
+        // connect_timeout caps how long we wait on TCP SYN before giving up — without
+        // it the OS retries for ~75s on unreachable hosts, which would block the remote
+        // proxy's primary→fallback retry path on Tailscale-only devices. 5s is generous
+        // enough for cellular-over-VPN handshakes while still failing fast on dead hosts.
+        let http_client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
 
         // Determine initial family mode lock state from settings
         let family_mode_locked = load_family_mode_initial_lock(data_dir);
@@ -409,13 +426,24 @@ impl AppState {
     }
 
     /// Set the remote proxy target for mobile remote-server mode.
-    pub async fn set_remote_proxy(&self, url: Option<String>, token: Option<String>) {
+    /// `url` is the primary URL; `fallback_url` is used on network failures.
+    /// Passing `None` for `url` clears the proxy.
+    pub async fn set_remote_proxy(
+        &self,
+        url: Option<String>,
+        fallback_url: Option<String>,
+        token: Option<String>,
+    ) {
         let mut proxy = self.inner.remote_proxy.write().await;
-        *proxy = url.map(|u| (u, token));
+        *proxy = url.map(|primary_url| RemoteProxyConfig {
+            primary_url,
+            fallback_url,
+            token,
+        });
     }
 
     /// Get the remote proxy target, if set.
-    pub async fn get_remote_proxy(&self) -> Option<(String, Option<String>)> {
+    pub async fn get_remote_proxy(&self) -> Option<RemoteProxyConfig> {
         self.inner.remote_proxy.read().await.clone()
     }
 

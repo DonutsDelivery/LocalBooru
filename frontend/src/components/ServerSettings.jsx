@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   getServers,
   addServer,
+  addOrUpdateServer,
   updateServer,
   removeServer,
   getActiveServerId,
@@ -142,8 +143,8 @@ export default function ServerSettings({ onServerChange }) {
             return
           }
 
-          // Add the server with certificate fingerprint (for HTTPS pinning)
-          await addServer({
+          // Add or update existing server (avoids duplicates on re-pair)
+          await addOrUpdateServer({
             name: qrData.name || 'LocalBooru Server',
             url: workingUrl,
             username: null,
@@ -293,10 +294,20 @@ function ServerCard({ server, isActive, onSetActive, onEdit, onDelete }) {
 function AddServerModal({ server, onSave, onClose }) {
   const [name, setName] = useState(server?.name || '')
   const [url, setUrl] = useState(server?.url || '')
+  const [fallbackUrl, setFallbackUrl] = useState(server?.fallbackUrl || '')
   const [username, setUsername] = useState(server?.username || '')
   const [password, setPassword] = useState(server?.password || '')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
+
+  function normalizeUrl(value) {
+    let v = value.trim()
+    if (!v) return ''
+    if (!v.startsWith('http://') && !v.startsWith('https://')) {
+      v = 'http://' + v
+    }
+    return v.replace(/\/$/, '')
+  }
 
   async function handleTest() {
     if (!url) return
@@ -304,29 +315,42 @@ function AddServerModal({ server, onSave, onClose }) {
     setTesting(true)
     setTestResult(null)
 
-    // Normalize URL
-    let normalizedUrl = url.trim()
-    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
-      normalizedUrl = 'http://' + normalizedUrl
-    }
-    // Remove trailing slash
-    normalizedUrl = normalizedUrl.replace(/\/$/, '')
-
+    const normalizedUrl = normalizeUrl(url)
+    const normalizedFallback = fallbackUrl ? normalizeUrl(fallbackUrl) : ''
     setUrl(normalizedUrl)
+    if (normalizedFallback) setFallbackUrl(normalizedFallback)
 
-    const result = await testServerConnection(normalizedUrl, username, password)
-    setTestResult(result)
+    const primary = await testServerConnection(normalizedUrl, username, password)
+    if (primary.success) {
+      setTestResult({ ...primary, usedFallback: false })
+      setTesting(false)
+      return
+    }
+    if (normalizedFallback && primary.networkFailure) {
+      const fb = await testServerConnection(normalizedFallback, username, password)
+      if (fb.success) {
+        setTestResult({ success: true, usedFallback: true })
+        setTesting(false)
+        return
+      }
+    }
+    setTestResult(primary)
     setTesting(false)
   }
 
   function handleSave() {
     if (!url || !testResult?.success) return
 
+    // Normalize so URLs always have a scheme — without it, reqwest in the proxy
+    // produces "builder error" because the URL parser rejects scheme-less inputs.
+    const finalUrl = normalizeUrl(url)
+    const finalFallback = fallbackUrl ? normalizeUrl(fallbackUrl) : null
+
     // Extract hostname for default name
     let defaultName = name
     if (!defaultName) {
       try {
-        const urlObj = new URL(url)
+        const urlObj = new URL(finalUrl)
         defaultName = urlObj.hostname
       } catch {
         defaultName = 'LocalBooru Server'
@@ -335,7 +359,8 @@ function AddServerModal({ server, onSave, onClose }) {
 
     onSave({
       name: defaultName,
-      url: url.replace(/\/$/, ''),
+      url: finalUrl,
+      fallbackUrl: finalFallback,
       username: username || null,
       password: password || null,
       lastConnected: new Date().toISOString()
@@ -356,6 +381,17 @@ function AddServerModal({ server, onSave, onClose }) {
             onChange={e => setUrl(e.target.value)}
           />
           <small>IP address or hostname with port</small>
+        </div>
+
+        <div className="form-group">
+          <label>Fallback URL (optional)</label>
+          <input
+            type="text"
+            placeholder="100.x.x.x:8790 (Tailscale)"
+            value={fallbackUrl}
+            onChange={e => setFallbackUrl(e.target.value)}
+          />
+          <small>Used when the primary URL is unreachable (e.g. away from LAN)</small>
         </div>
 
         <div className="form-group">
@@ -390,7 +426,9 @@ function AddServerModal({ server, onSave, onClose }) {
 
         {testResult && (
           <div className={`test-result ${testResult.success ? 'success' : 'error'}`}>
-            {testResult.success ? 'Connection successful!' : `Error: ${testResult.error}`}
+            {testResult.success
+              ? (testResult.usedFallback ? 'Connection successful (via fallback URL)!' : 'Connection successful!')
+              : `Error: ${testResult.error}`}
           </div>
         )}
 
