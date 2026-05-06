@@ -591,6 +591,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setApplyingAdjustments(false)
   }, [image, adjustments, applyingAdjustments, onImageUpdate])
 
+  // Gamma exponent for SVG filter (computed outside getFilterStyle so JSX can use it)
+  const gammaExponent = adjustments.gamma !== 0
+    ? Math.pow(3.0, -adjustments.gamma / 100)
+    : 1
+
   // Generate CSS filter string for preview
   // Uses CSS brightness/contrast + SVG filter for gamma to match backend
   const getFilterStyle = () => {
@@ -607,10 +612,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     // slider -100 to +100 maps to 0.0 to 2.0
     const cssContrast = (adjustments.contrast + 100) / 100
 
-    // Gamma: exponential mapping (same as backend)
-    // slider -100 to +100 → exponent 3.0 to 0.33
-    const gammaExponent = Math.pow(3.0, -adjustments.gamma / 100)
-
     // Build filter string: brightness and contrast via CSS, gamma via SVG
     const filters = []
 
@@ -619,8 +620,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
 
     if (adjustments.gamma !== 0) {
-      const svgFilter = `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><filter id="g"><feComponentTransfer><feFuncR type="gamma" exponent="${gammaExponent}"/><feFuncG type="gamma" exponent="${gammaExponent}"/><feFuncB type="gamma" exponent="${gammaExponent}"/></feComponentTransfer></filter></svg>#g')`
-      filters.push(svgFilter)
+      filters.push(`url(#lb-gamma-${adjustments.gamma})`)
     }
 
     return {
@@ -810,7 +810,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     if (isVideo(image?.original_filename)) return
 
     // Don't navigate if clicking on interactive elements (but allow video area for navigation)
-    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-video-controls')) return
+    if (e.target.closest('.lightbox-toolbar, .lightbox-counter, .lightbox-confirm-overlay, .lightbox-video-controls, .lightbox-adjust-container')) return
 
     const rect = e.currentTarget.getBoundingClientRect()
     const clickX = e.clientX - rect.left
@@ -910,6 +910,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       onTouchEnd={(e) => { handleTouchEndWithSidebar(e); zoomPan.handleTouchEndZoom(); }}
       ref={containerRef}
     >
+      {/* Hidden SVG filter for gamma correction */}
+      <svg style={{ position: 'absolute', width: 0, height: 0, pointerEvents: 'none' }}>
+        <filter id={`lb-gamma-${adjustments.gamma}`}>
+          <feComponentTransfer>
+            <feFuncR type="gamma" amplitude="1" exponent={gammaExponent} offset="0" />
+            <feFuncG type="gamma" amplitude="1" exponent={gammaExponent} offset="0" />
+            <feFuncB type="gamma" amplitude="1" exponent={gammaExponent} offset="0" />
+          </feComponentTransfer>
+        </filter>
+      </svg>
       {/* Top toolbar */}
       {!debugBare && <div className="lightbox-toolbar">
         <button

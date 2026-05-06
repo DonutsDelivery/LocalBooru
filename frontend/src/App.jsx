@@ -1750,7 +1750,7 @@ function App() {
               setServers(serverList)
               setServerStatuses({ ...statuses, [autoConnectable[0].id]: 'auth_failed' })
               setShowServerSetup(true)
-              setConnectionError(`Failed to connect to ${autoConnectable[0].name}: authentication expired. Please re-pair.`)
+              setConnectionError(`Failed to connect to ${autoConnectable[0].name}. Server may be busy or token invalid — try again or re-pair.`)
             }
           } else {
             // 0, 2+, or no auth — show selection with status
