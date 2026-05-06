@@ -1,0 +1,12 @@
+_ulid: 01KQY8QZ6GZHK04WVY2N78FBT1
+slugs:
+  - main
+title: "LocalBooru - Main Module"
+type: module
+status:
+  maturity: draft
+  implementation: not_started
+description: |
+  Default module for LocalBooru. Add your spec items here.
+
+items: []
