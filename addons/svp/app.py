@@ -17,8 +17,10 @@ import os
 import platform
 import shutil
 import signal
+import select
 import subprocess
 import sys
+import re
 import tempfile
 import time
 import uuid
@@ -201,6 +203,11 @@ SVP_PRESETS = {
 # ─── VapourSynth script generation ───────────────────────────────────────────
 
 def generate_vspipe_stdin_script(
+    width: int,
+    height: int,
+    fps_num: int,
+    fps_den: int,
+    num_frames: int,
     target_fps: int,
     preset: str = "balanced",
     use_nvof: bool = True,
@@ -211,7 +218,7 @@ def generate_vspipe_stdin_script(
     custom_analyse: Optional[str] = None,
     custom_smooth: Optional[str] = None,
 ) -> str:
-    """Generate a VapourSynth script that reads Y4M from stdin and applies SVP."""
+    """Generate a VapourSynth script that reads raw yuv420p frames from stdin and applies SVP."""
     preset_config = SVP_PRESETS.get(preset, SVP_PRESETS["balanced"])
 
     super_params = custom_super or preset_config["super"]
@@ -235,20 +242,95 @@ def generate_vspipe_stdin_script(
             1,
         )
 
+    if not use_nvof:
+        super_params = super_params.replace("gpu:1", "gpu:0")
+        analyse_params = analyse_params.replace("gpu:1", "gpu:0")
+        analyse_params = analyse_params.replace(",nvof:1", "").replace("nvof:1,", "")
+        if not custom_smooth:
+            smooth_params = smooth_params.replace("gpuid:0,", "")
+
     flow1, flow2 = get_svp_plugin_full_paths()
 
-    return f'''import vapoursynth as vs
+    frame_size = width * height * 3 // 2
+    chroma_width = width // 2
+    chroma_height = height // 2
+
+    return f'''import ctypes
+import sys
+import vapoursynth as vs
 core = vs.core
+
+WIDTH = {width}
+HEIGHT = {height}
+FPS_NUM = {fps_num}
+FPS_DEN = {fps_den}
+NUM_FRAMES = {num_frames}
+FRAME_SIZE = {frame_size}
+CHROMA_WIDTH = {chroma_width}
+CHROMA_HEIGHT = {chroma_height}
+stdin = sys.stdin.buffer
+next_frame = 0
+last_frame = None
 
 # Load SVP plugins
 core.std.LoadPlugin("{flow1}")
 core.std.LoadPlugin("{flow2}")
 
-# Read Y4M from stdin
-clip = core.std.Splice([core.std.BlankClip()])  # dummy for stdin pipeline
+# vspipe has no built-in stdin video source. Create a clip with the source
+# geometry, then fill each requested frame from FFmpeg's rawvideo pipe.
+clip = core.std.BlankClip(
+    width=WIDTH,
+    height=HEIGHT,
+    format=vs.YUV420P8,
+    length=max(NUM_FRAMES, 1),
+    fpsnum=FPS_NUM,
+    fpsden=FPS_DEN,
+)
 
-# In stdin mode, vspipe reads the Y4M input directly
-clip = core.resize.Bicubic(clip, format=vs.YUV420P8, matrix_in_s="709", matrix_s="709")
+def read_exact(size):
+    data = bytearray()
+    while len(data) < size:
+        chunk = stdin.read(size - len(data))
+        if not chunk:
+            break
+        data.extend(chunk)
+    return bytes(data)
+
+def write_plane(frame, plane, src, width, height):
+    stride = frame.get_stride(plane)
+    ptr = frame.get_write_ptr(plane)
+    pos = 0
+    for y in range(height):
+        ctypes.memmove(ptr.value + y * stride, src[pos:pos + width], width)
+        pos += width
+
+def source_frame(n, f):
+    global next_frame, last_frame
+    if n < next_frame and last_frame is not None:
+        return last_frame
+    while next_frame < n:
+        skipped = read_exact(FRAME_SIZE)
+        if len(skipped) < FRAME_SIZE:
+            break
+        next_frame += 1
+
+    raw = read_exact(FRAME_SIZE)
+    if len(raw) < FRAME_SIZE:
+        if last_frame is not None:
+            return last_frame
+        raw = raw + bytes(FRAME_SIZE - len(raw))
+
+    out = f.copy()
+    y_size = WIDTH * HEIGHT
+    uv_size = CHROMA_WIDTH * CHROMA_HEIGHT
+    write_plane(out, 0, raw[:y_size], WIDTH, HEIGHT)
+    write_plane(out, 1, raw[y_size:y_size + uv_size], CHROMA_WIDTH, CHROMA_HEIGHT)
+    write_plane(out, 2, raw[y_size + uv_size:y_size + uv_size * 2], CHROMA_WIDTH, CHROMA_HEIGHT)
+    next_frame = n + 1
+    last_frame = out
+    return out
+
+clip = core.std.ModifyFrame(clip, clip, source_frame)
 
 # SVP parameters (preset: {preset})
 super_params = '{super_params}'
@@ -311,15 +393,51 @@ def get_video_info(video_path: str) -> dict:
         if nf == 0 and dur > 0 and fps > 0:
             nf = int(dur * fps)
 
+        # Check for audio stream
+        has_audio = False
+        audio_check = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=codec_type",
+             "-of", "csv=p=0", video_path],
+            capture_output=True, text=True, timeout=10,
+        )
+        if audio_check.returncode == 0:
+            has_audio = bool(audio_check.stdout.strip())
+
         return {
             "success": True,
             "width": w, "height": h,
             "src_fps": fps, "src_fps_num": fps_num, "src_fps_den": fps_den,
-            "duration": dur, "num_frames": nf,
+            "duration": dur, "num_frames": nf, "has_audio": has_audio,
         }
     except Exception as e:
         logger.error(f"ffprobe error: {e}")
         return {"success": False}
+
+
+def detect_audio_gain(video_path: str) -> Optional[float]:
+    """Detect gain needed to normalize the loudest peak to -2 dB.
+    Uses ffmpeg volumedetect on first 15 seconds. Returns dB gain or None."""
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-i", video_path, "-vn",
+             "-af", "volumedetect", "-t", "15",
+             "-f", "null", "-"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode != 0:
+            return None
+
+        m = re.search(r"max_volume:\s*([-\d.]+)\s*dB", r.stderr)
+        if not m:
+            return None
+
+        max_volume = float(m.group(1))
+        gain_db = -2.0 - max_volume
+        return max(-12.0, min(24.0, gain_db))
+    except Exception as e:
+        logger.warning(f"Audio gain detection failed: {e}")
+        return None
 
 
 # ─── Stream manager ──────────────────────────────────────────────────────────
@@ -368,8 +486,12 @@ class SVPStream:
         self._decode_proc = None
         self._vspipe_proc = None
         self._ffmpeg_proc = None
+        self._decode_stderr = b""
+        self._vspipe_stderr = b""
+        self._ffmpeg_stderr = b""
         self._temp_dir = None
         self._error = None
+        self._audio_gain_db = None
 
         self._width = 0
         self._height = 0
@@ -418,7 +540,11 @@ class SVPStream:
 
         self._temp_dir = Path(tempfile.mkdtemp(prefix="svp_stream_"))
 
+        stream_width, stream_height = self.target_resolution or (self._width, self._height)
+
         script = generate_vspipe_stdin_script(
+            stream_width, stream_height, info["src_fps_num"], info["src_fps_den"],
+            info["num_frames"],
             self.target_fps, self.preset,
             use_nvof=self.use_nvof, shader=self.shader,
             artifact_masking=self.artifact_masking,
@@ -430,13 +556,18 @@ class SVPStream:
         script_path = self._temp_dir / "svp_stdin.vpy"
         script_path.write_text(script)
 
+        # Detect audio gain for normalization to -2 dB peak
+        self._audio_gain_db = None
+        if info.get("has_audio", True):
+            self._audio_gain_db = detect_audio_gain(self.video_path)
+
         self._running = True
         self._task = asyncio.create_task(self._run_pipeline(script_path))
         return True
 
     async def _run_pipeline(self, script_path: Path):
         try:
-            # Stage 1: FFmpeg decode to Y4M
+            # Stage 1: FFmpeg decode to raw yuv420p frames
             decode_cmd = ["ffmpeg", "-hwaccel", "auto", "-threads", "0"]
             if self.start_position > 0:
                 decode_cmd.extend(["-ss", str(self.start_position)])
@@ -444,15 +575,15 @@ class SVPStream:
             if self.target_resolution:
                 w, h = self.target_resolution
                 decode_cmd.extend(["-vf", f"scale={w}:{h}:flags=lanczos"])
-            decode_cmd.extend(["-f", "yuv4mpegpipe", "-pix_fmt", "yuv420p", "-"])
+            decode_cmd.extend(["-an", "-sn", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"])
 
             # Stage 2: vspipe with SVP
-            vspipe_cmd = ["vspipe", "-c", "y4m", str(script_path), "-"]
+            vspipe_cmd = ["vspipe", "--requests", "1", "-c", "y4m", str(script_path), "-"]
 
             # Stage 3: FFmpeg encode to HLS
             encode_cmd = [
                 "ffmpeg", "-y",
-                "-probesize", "32", "-analyzeduration", "0",
+                "-probesize", "1000000", "-analyzeduration", "1000000",
                 "-fflags", "+nobuffer+flush_packets",
                 "-f", "yuv4mpegpipe", "-i", "-",
             ]
@@ -476,11 +607,19 @@ class SVPStream:
                     encode_cmd.extend(["-crf", "23"])
 
             encode_cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+
+            # Normalize peak to -2 dB (uniform gain, no dynamics processing)
+            if self._audio_gain_db is not None and abs(self._audio_gain_db) > 0.5:
+                encode_cmd.extend(["-af", f"volume={self._audio_gain_db}dB"])
+                logger.info(
+                    f"[SVP {self.stream_id}] Audio normalization: {self._audio_gain_db:=+.1f} dB (peak → -2 dB)"
+                )
+
             gop = self.target_fps * 2
             encode_cmd.extend([
                 "-g", str(gop), "-keyint_min", str(self.target_fps),
-                "-f", "hls", "-hls_time", "4", "-hls_list_size", "20",
-                "-hls_flags", "delete_segments+append_list+split_by_time",
+                "-f", "hls", "-hls_time", "4", "-hls_list_size", "0",
+                "-hls_flags", "append_list+split_by_time",
                 "-hls_segment_filename", str(self._temp_dir / "segment_%03d.ts"),
                 str(self.playlist_path),
             ])
@@ -498,20 +637,42 @@ class SVPStream:
                 encode_cmd, stdin=self._vspipe_proc.stdout,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
             self._vspipe_proc.stdout.close()
+            # stdin was passed as a file descriptor (not PIPE), so it's None
+            if self._vspipe_proc.stdin:
+                self._vspipe_proc.stdin.close()
 
             while self._running:
+                self._drain_stderr()
+                if self._vspipe_proc.poll() is not None and self._vspipe_proc.returncode != 0:
+                    self._drain_stderr(final=True)
+                    stderr = self._decode_tail(self._vspipe_stderr, 2000)
+                    decode_stderr = self._decode_tail(self._decode_stderr, 1000)
+                    self._error = self._format_vspipe_error(stderr)
+                    if decode_stderr:
+                        self._error += f"\nDecode stderr: {decode_stderr}"
+                    logger.error(f"[SVP {self.stream_id}] {self._error}")
+                    break
                 if self._ffmpeg_proc.poll() is not None:
+                    self._drain_stderr(final=True)
                     if self._ffmpeg_proc.returncode != 0:
-                        stderr = self._ffmpeg_proc.stderr.read().decode()[-500:]
+                        stderr = self._decode_tail(self._ffmpeg_stderr, 1000)
+                        try:
+                            self._vspipe_proc.wait(timeout=1)
+                        except subprocess.TimeoutExpired:
+                            pass
+                        if self._vspipe_proc.poll() is not None and self._vspipe_proc.returncode != 0:
+                            self._drain_stderr(final=True)
+                            vspipe_stderr = self._decode_tail(self._vspipe_stderr, 2000)
+                            decode_stderr = self._decode_tail(self._decode_stderr, 1000)
+                            self._error = self._format_vspipe_error(vspipe_stderr)
+                            if decode_stderr:
+                                self._error += f"\nDecode stderr: {decode_stderr}"
+                            logger.error(f"[SVP {self.stream_id}] {self._error}")
+                            break
                         self._error = f"FFmpeg encode error: {stderr}"
                         logger.error(f"[SVP {self.stream_id}] {self._error}")
                     else:
                         logger.info(f"[SVP {self.stream_id}] Pipeline finished")
-                    break
-                if self._vspipe_proc.poll() is not None and self._vspipe_proc.returncode != 0:
-                    stderr = self._vspipe_proc.stderr.read().decode()[-500:]
-                    self._error = f"vspipe error: {stderr}"
-                    logger.error(f"[SVP {self.stream_id}] {self._error}")
                     break
                 await asyncio.sleep(0.5)
 
@@ -524,8 +685,44 @@ class SVPStream:
             self._running = False
             self._cleanup()
 
+    def _drain_stderr(self, final: bool = False):
+        procs = (
+            ("decode", self._decode_proc, "_decode_stderr"),
+            ("vspipe", self._vspipe_proc, "_vspipe_stderr"),
+            ("ffmpeg", self._ffmpeg_proc, "_ffmpeg_stderr"),
+        )
+        for _name, proc, attr in procs:
+            pipe = proc.stderr if proc and proc.stderr else None
+            if not pipe:
+                continue
+            try:
+                while final or select.select([pipe], [], [], 0)[0]:
+                    chunk = pipe.read(4096 if final else 1024)
+                    if not chunk:
+                        break
+                    setattr(self, attr, (getattr(self, attr) + chunk)[-12000:])
+                    if not final and len(chunk) < 1024:
+                        break
+            except Exception:
+                pass
+
+    @staticmethod
+    def _decode_tail(data: bytes, limit: int) -> str:
+        return data.decode(errors="replace")[-limit:].strip()
+
+    def _format_vspipe_error(self, stderr: str) -> str:
+        if not stderr:
+            code = self._vspipe_proc.returncode if self._vspipe_proc else "unknown"
+            return f"vspipe exited with code {code} but produced no stderr"
+        if "unable to init GPU-based renderer" in stderr:
+            return (
+                "SVP NVIDIA Optical Flow/GPU renderer failed to initialize. "
+                f"vspipe error: {stderr}"
+            )
+        return f"vspipe error: {stderr}"
+
     def _cleanup(self):
-        for proc in (self._decode_proc, self._vspipe_proc, self._ffmpeg_proc):
+        for proc in (self._ffmpeg_proc, self._vspipe_proc, self._decode_proc):
             if proc:
                 try:
                     proc.terminate()
@@ -536,6 +733,21 @@ class SVPStream:
                     except Exception:
                         pass
         self._decode_proc = self._vspipe_proc = self._ffmpeg_proc = None
+
+    async def stop_async(self):
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await asyncio.wait_for(self._task, timeout=3)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._task = None
+        self._cleanup()
+        if self._temp_dir and self._temp_dir.exists():
+            shutil.rmtree(self._temp_dir, ignore_errors=True)
+            self._temp_dir = None
+        _active_streams.pop(self.stream_id, None)
 
     def stop(self):
         self._running = False
@@ -559,9 +771,15 @@ class SVPStream:
         return False
 
 
-def stop_all_streams():
-    for s in list(_active_streams.values()):
-        s.stop()
+async def stop_all_streams():
+    await asyncio.gather(
+        *(s.stop_async() for s in list(_active_streams.values())),
+        return_exceptions=True,
+    )
+
+
+def is_gpu_renderer_error(error: Optional[str]) -> bool:
+    return bool(error and "unable to init GPU-based renderer" in error)
 
 
 # ─── FastAPI app ──────────────────────────────────────────────────────────────
@@ -613,7 +831,7 @@ async def play(req: PlayRequest):
     if not check_svp_plugins():
         raise HTTPException(status_code=503, detail="SVP plugins not found")
 
-    stop_all_streams()
+    await stop_all_streams()
 
     res = None
     if req.target_resolution:
@@ -621,29 +839,77 @@ async def play(req: PlayRequest):
                    "1440p": (2560, 1440), "4k": (3840, 2160)}
         res = presets.get(req.target_resolution)
 
-    stream = SVPStream(
-        video_path=req.file_path,
-        target_fps=req.target_fps,
-        preset=req.preset,
-        use_nvof=req.use_nvof,
-        shader=req.shader,
-        artifact_masking=req.artifact_masking,
-        frame_interpolation=req.frame_interpolation,
-        custom_super=req.custom_super,
-        custom_analyse=req.custom_analyse,
-        custom_smooth=req.custom_smooth,
-        start_position=req.start_position,
-        target_bitrate=req.target_bitrate,
-        target_resolution=res,
-    )
+    def make_stream(use_nvof: bool) -> SVPStream:
+        return SVPStream(
+            video_path=req.file_path,
+            target_fps=req.target_fps,
+            preset=req.preset,
+            use_nvof=use_nvof,
+            shader=req.shader,
+            artifact_masking=req.artifact_masking,
+            frame_interpolation=req.frame_interpolation,
+            custom_super=req.custom_super,
+            custom_analyse=req.custom_analyse,
+            custom_smooth=req.custom_smooth,
+            start_position=req.start_position,
+            target_bitrate=req.target_bitrate,
+            target_resolution=res,
+        )
+
+    stream = make_stream(req.use_nvof)
 
     started = await stream.start()
     if not started:
-        raise HTTPException(status_code=500, detail=stream.error or "Failed to start SVP stream")
+        error = stream.error or "Failed to start SVP stream"
+        stream.stop()
+        if "already near target" in error:
+            return {
+                "success": True,
+                "skipped": True,
+                "reason": error,
+                "duration": stream._duration,
+                "source_resolution": {"width": stream._width, "height": stream._height},
+                "message": "SVP stream not needed",
+            }
+        raise HTTPException(status_code=500, detail=error)
 
     ready = await stream.wait_for_ready(timeout=45)
     if not ready and stream.error:
-        raise HTTPException(status_code=500, detail=stream.error)
+        error = stream.error
+        stream.stop()
+        if req.use_nvof:
+            logger.warning(
+                "[SVP] vspipe failed with NVOF enabled; retrying with CPU SVP"
+            )
+            await asyncio.sleep(0)  # yield to let GPU task finalizer complete
+            stream = make_stream(False)
+            started = await stream.start()
+            if not started:
+                fallback_error = stream.error or "Failed to start SVP CPU fallback stream"
+                stream.stop()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"{error}\nCPU fallback also failed: {fallback_error}",
+                )
+            ready = await stream.wait_for_ready(timeout=45)
+            if ready:
+                return {
+                    "success": True,
+                    "stream_id": stream.stream_id,
+                    "stream_url": f"/svp/stream/{stream.stream_id}/stream.m3u8",
+                    "duration": stream._duration,
+                    "source_resolution": {"width": stream._width, "height": stream._height},
+                    "message": "SVP stream started with CPU fallback (NVOF unavailable or failed)",
+                    "nvof_fallback": True,
+                    "fallback_reason": error.split("\n")[0],
+                }
+            fallback_error = stream.error or "SVP CPU fallback timed out"
+            stream.stop()
+            raise HTTPException(
+                status_code=500,
+                detail=f"{error}\nCPU fallback also failed: {fallback_error}",
+            )
+        raise HTTPException(status_code=500, detail=error)
 
     return {
         "success": True,
@@ -657,7 +923,7 @@ async def play(req: PlayRequest):
 
 @app.post("/svp/stop")
 async def stop():
-    stop_all_streams()
+    await stop_all_streams()
     return {"success": True, "message": "All SVP streams stopped"}
 
 
