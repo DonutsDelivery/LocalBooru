@@ -42,6 +42,7 @@ pub fn router() -> Router<AppState> {
         .route("/age-detection/install", post(install_age_detection))
         .route("/cast/install", post(install_cast))
         .route("/video-info", post(get_video_info_endpoint))
+        .route("/audio-gain", post(get_audio_gain_endpoint))
         // ─── Transcode streaming ────────────────────────────────────────
         .route("/transcode/play", post(start_transcode_stream))
         .route("/transcode/stop", post(stop_transcode_streams))
@@ -1317,6 +1318,18 @@ fn get_video_info(path: &Path) -> Result<VideoInfo, String> {
     Ok(VideoInfo { width, height, fps })
 }
 
+/// POST /audio-gain — Detect the gain (dB) needed to normalize a file's peak to -2 dBFS.
+async fn get_audio_gain_endpoint(
+    Json(body): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let file_path = match body.get("file_path").and_then(|v| v.as_str()) {
+        Some(p) => p.to_string(),
+        None => return Json(json!({ "gain_db": serde_json::Value::Null })),
+    };
+    let gain_db = crate::services::transcode::detect_audio_gain(&file_path).await;
+    Json(json!({ "gain_db": gain_db }))
+}
+
 // ─── Transcode streaming ─────────────────────────────────────────────────────
 
 fn default_true() -> bool { true }
@@ -1633,8 +1646,30 @@ async fn bridge_optical_flow_stream(
 /// POST /svp/play — Start SVP interpolated stream via sidecar.
 async fn bridge_svp_play(
     State(state): State<AppState>,
-    Json(body): Json<Value>,
+    Json(mut body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
+    let config = get_config_section(state.data_dir(), "svp");
+    if let (Some(body_obj), Some(config_obj)) = (body.as_object_mut(), config.as_object()) {
+        for key in [
+            "target_fps",
+            "preset",
+            "use_nvof",
+            "shader",
+            "artifact_masking",
+            "frame_interpolation",
+            "custom_super",
+            "custom_analyse",
+            "custom_smooth",
+            "target_bitrate",
+        ] {
+            if !body_obj.contains_key(key) {
+                if let Some(value) = config_obj.get(key) {
+                    body_obj.insert(key.to_string(), value.clone());
+                }
+            }
+        }
+    }
+
     bridge_post(&state, "svp", "/svp/play", &body, Some("svp")).await
 }
 
@@ -1642,6 +1677,13 @@ async fn bridge_svp_play(
 async fn bridge_svp_stop(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, AppError> {
+    if state.addon_manager().get_addon_status("svp") != AddonStatus::Running {
+        return Ok(Json(json!({
+            "success": true,
+            "message": "SVP addon is not running; nothing to stop"
+        })));
+    }
+
     bridge_post(&state, "svp", "/svp/stop", &json!({}), None).await
 }
 

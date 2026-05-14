@@ -3,6 +3,7 @@
 //! Spawns FFmpeg processes to transcode video files into HLS segments.
 //! Supports hardware-accelerated encoding (NVENC) with automatic fallback
 //! to software encoding (libx264).
+//! Audio is normalized to -2 dBTP peak via pre-scan volumedetect.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -10,6 +11,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use dashmap::DashMap;
+use regex::Regex;
 use serde::Deserialize;
 use tokio::process::{Child, Command};
 
@@ -185,6 +187,45 @@ async fn detect_video_info(path: &str) -> VideoInfo {
     info
 }
 
+/// Detect the audio gain needed to normalize the loudest peak to -2 dB.
+/// Uses ffmpeg volumedetect on the first 15 seconds for a quick estimate.
+/// Returns the gain in dB to apply (e.g., +6.3 means add 6.3 dB).
+pub async fn detect_audio_gain(path: &str) -> Option<f64> {
+    let output = Command::new("ffmpeg")
+        .args([
+            "-i", path,
+            "-vn",           // no video, audio only
+            "-af", "volumedetect",
+            "-t", "15",      // analyze first 15 seconds
+            "-f", "null", "-",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let re = Regex::new(r"max_volume:\s*([-\d.]+)\s*dB").ok()?;
+    let max_volume: f64 = re
+        .captures(&stderr)?
+        .get(1)?
+        .as_str()
+        .parse()
+        .ok()?;
+
+    // Gain needed to bring peak to -2 dB
+    let gain_db = -2.0 - max_volume;
+
+    // Clamp: don't cut more than -12 dB (avoids clipping).
+    // Upper limit of +48 dB covers whisper-quiet sources (-50 dB peak → -2 dB).
+    Some(gain_db.clamp(-12.0, 48.0))
+}
+
 /// A single active transcode stream with its FFmpeg process and HLS output directory.
 pub struct TranscodeStream {
     pub stream_id: String,
@@ -296,8 +337,13 @@ impl TranscodeManager {
 
         let stream_id = uuid::Uuid::new_v4().to_string();
 
-        // Detect video info
+        // Detect video info and audio gain
         let video_info = detect_video_info(file_path).await;
+        let audio_gain_db = if video_info.has_audio {
+            detect_audio_gain(file_path).await
+        } else {
+            None
+        };
 
         // Create temp directory for HLS segments
         let temp_dir = std::env::temp_dir().join(format!("transcode_{}", &stream_id[..8]));
@@ -314,6 +360,7 @@ impl TranscodeManager {
             force_cfr,
             &video_info,
             target_fps,
+            audio_gain_db,
         );
 
         log::info!("[Transcode {}] Starting FFmpeg: {}", stream_id, cmd.join(" "));
@@ -450,6 +497,7 @@ fn build_ffmpeg_command(
     force_cfr: bool,
     video_info: &VideoInfo,
     target_fps: Option<u32>,
+    audio_gain_db: Option<f64>,
 ) -> Vec<String> {
     let hw = detect_hw_caps();
 
@@ -589,6 +637,15 @@ fn build_ffmpeg_command(
             "-ac".into(), "2".into(),
             "-b:a".into(), "192k".into(),
         ]);
+
+        // Normalize peak to -2 dB (uniform gain, no dynamics processing)
+        if let Some(gain_db) = audio_gain_db {
+            // Only apply meaningful gain changes (more than 0.5 dB)
+            if gain_db.abs() > 0.5 {
+                cmd.extend(["-af".into(), format!("volume={}dB", gain_db)]);
+                log::info!("[Transcode] Audio normalization: {:+.1} dB (peak → -2 dB)", gain_db);
+            }
+        }
     } else {
         cmd.push("-an".into());
     }

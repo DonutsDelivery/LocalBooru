@@ -1148,7 +1148,7 @@ export async function playVideoSVP(filePath, startPosition = 0, qualityPreset = 
   const response = await api.post('/settings/svp/play', {
     file_path: filePath,
     start_position: startPosition,
-    quality_preset: qualityPreset
+    target_resolution: qualityPreset && qualityPreset !== 'original' ? qualityPreset : null
   }, {
     timeout: 60000  // 60 second timeout for initial buffering
   })
@@ -1180,6 +1180,13 @@ export async function stopTranscodeStream() {
 // Get video info including VFR detection
 export async function getVideoInfo(filePath) {
   const response = await api.post('/settings/video-info', {
+    file_path: filePath
+  })
+  return response.data
+}
+
+export async function getAudioGain(filePath) {
+  const response = await api.post('/settings/audio-gain', {
     file_path: filePath
   })
   return response.data

@@ -15,6 +15,7 @@ import {
 } from '../../../api'
 import { isMobileApp } from '../../../serverManager'
 import { isVideo } from '../utils/helpers'
+import { useAudioNormalization } from './useAudioNormalization'
 
 /**
  * Hook for managing HLS/SVP/OpticalFlow video streaming
@@ -22,6 +23,7 @@ import { isVideo } from '../utils/helpers'
  */
 export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus = {}) {
   const { svpInstalled = false } = addonStatus
+  const { applyNormalization, resetGain } = useAudioNormalization(mediaRef)
   // HLS streaming ref
   const hlsRef = useRef(null)
 
@@ -43,6 +45,9 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   const [svpStartOffset, setSvpStartOffset] = useState(0)  // Offset when stream started from seek position
   const svpHlsRef = useRef(null)
   const svpStartingRef = useRef(false)  // Synchronous lock to prevent double-starts
+  const svpRestartingRef = useRef(false)
+  const svpQueuedRestartRef = useRef(null)
+  const svpRestartTokenRef = useRef(0)
 
   // Transcode stream state (fallback when SVP/OpticalFlow not available)
   const [transcodeStreamUrl, setTranscodeStreamUrl] = useState(null)
@@ -154,13 +159,24 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   const restartSVPFromPosition = useCallback(async (targetTime) => {
     if (!svpInstalled || !image || !svpConfig?.enabled) return
 
+    if (svpRestartingRef.current) {
+      svpRestartTokenRef.current += 1
+      svpQueuedRestartRef.current = targetTime
+      setSvpPendingSeek(targetTime)
+      setSvpLoading(true)
+      console.log(`[SVP] Queued restart from ${targetTime.toFixed(1)}s while another restart is in progress`)
+      return
+    }
+
+    svpRestartingRef.current = true
+    const restartToken = ++svpRestartTokenRef.current
     console.log(`[SVP] Restarting stream from ${targetTime.toFixed(1)}s`)
 
     // Block time updates during stream transition to prevent 0:00 flash
     streamTransitioningRef.current = true
     // Show loading indicator
     setSvpLoading(true)
-    setSvpPendingSeek(null)
+    setSvpPendingSeek(targetTime)
 
     // Destroy current HLS instance
     if (svpHlsRef.current) {
@@ -176,6 +192,18 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       // Start new stream from target position
       const result = await playVideoSVP(image.file_path, targetTime)
 
+      if (restartToken !== svpRestartTokenRef.current) {
+        console.log(`[SVP] Ignoring stale restart result for ${targetTime.toFixed(1)}s`)
+        return
+      }
+
+      const queuedTarget = svpQueuedRestartRef.current
+      if (queuedTarget !== null && Math.abs(queuedTarget - targetTime) > 0.25) {
+        console.log(`[SVP] Ignoring stale restart result for ${targetTime.toFixed(1)}s; queued ${queuedTarget.toFixed(1)}s`)
+        return
+      }
+      svpQueuedRestartRef.current = null
+
       if (result.success && result.stream_url) {
         // Set offset BEFORE stream URL so handleTimeUpdate uses correct offset immediately
         setSvpStartOffset(targetTime)
@@ -187,6 +215,12 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         }
         // Set stream URL last - this triggers HLS setup
         setSvpStreamUrl(result.stream_url)
+      } else if (result.success && result.skipped) {
+        streamTransitioningRef.current = false
+        if (result.source_resolution) {
+          setSourceResolution(result.source_resolution)
+        }
+        setSvpLoading(false)
       } else {
         streamTransitioningRef.current = false
         setSvpError(result.error || 'Failed to restart SVP stream')
@@ -197,8 +231,22 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       streamTransitioningRef.current = false
       setSvpError(err.message || 'Failed to restart SVP stream')
       setSvpLoading(false)
+    } finally {
+      svpRestartingRef.current = false
+      const queuedTarget = svpQueuedRestartRef.current
+      if (queuedTarget !== null && Math.abs(queuedTarget - targetTime) > 0.25) {
+        svpQueuedRestartRef.current = null
+        restartSVPFromPosition(queuedTarget)
+      }
     }
   }, [image, svpConfig, svpInstalled])
+
+  const cancelPendingSVPRestart = useCallback(() => {
+    svpRestartTokenRef.current += 1
+    svpQueuedRestartRef.current = null
+    streamTransitioningRef.current = false
+    setSvpLoading(false)
+  }, [])
 
   // Restart transcode stream from a specific position (for seeking beyond buffered content)
   const restartTranscodeFromPosition = useCallback(async (targetTime) => {
@@ -332,6 +380,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
       if (result.success && result.stream_url) {
         hadSvpStreamRef.current = true
+        resetGain()  // SVP FFmpeg already normalizes audio
         // Set offset BEFORE stream URL so handleTimeUpdate uses correct offset
         setSvpStartOffset(playbackPosition)
         // Store the known total duration from API for proper timeline display
@@ -344,6 +393,11 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         }
         // Set stream URL last - this triggers HLS setup
         setSvpStreamUrl(result.stream_url)
+      } else if (result.success && result.skipped) {
+        if (result.source_resolution) {
+          setSourceResolution(result.source_resolution)
+        }
+        setSvpLoading(false)
       } else {
         setSvpError(result.error || 'Failed to start SVP playback')
         setSvpLoading(false)  // Clear loading state on API failure
@@ -478,6 +532,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         playVideoTranscode(image.file_path, 0, quality).then(result => {
           if (result.success) {
             hadTranscodeStreamRef.current = true
+            resetGain()  // Transcode FFmpeg already normalizes audio
             // Set offset BEFORE stream URL so handleTimeUpdate uses correct offset
             setTranscodeStartOffset(0)
             if (result.duration) setTranscodeTotalDuration(result.duration)
@@ -492,7 +547,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
           transcodeStartingRef.current = false
         })
       }
-      // Otherwise play direct (original quality, no interpolation)
+      // Otherwise play direct (original quality, no interpolation) — apply Web Audio gain
+      else if (image.file_path) {
+        applyNormalization(image.file_path)
+      }
     }
   }, [image?.id, cleanupSeq, svpConfig?.enabled, opticalFlowConfig?.enabled])
 
@@ -502,10 +560,32 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
     const video = mediaRef.current
     let cancelled = false
+    let playOnReady = null
+    let shouldAutoResume = !video.paused
+    let manuallyPaused = false
+
+    const playOpticalFlowVideo = () => {
+      if (cancelled || !shouldAutoResume || manuallyPaused) return
+      video.play().catch(() => {})
+    }
+
+    const trackManualPause = () => {
+      if (!streamTransitioningRef.current) {
+        manuallyPaused = true
+        shouldAutoResume = false
+      }
+    }
+
+    const trackManualPlay = () => {
+      manuallyPaused = false
+      shouldAutoResume = true
+    }
 
     if (Hls.isSupported()) {
       // Pause video during transition to prevent playing old buffered content
       video.pause()
+      video.addEventListener('pause', trackManualPause)
+      video.addEventListener('play', trackManualPlay)
 
       // Cleanup previous instance - destroy() is synchronous and handles cleanup
       if (hlsRef.current) {
@@ -532,10 +612,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (cancelled) return
         if (video.readyState >= 3) {
-          video.play().catch(() => {})
+          playOpticalFlowVideo()
         } else {
-          const playOnReady = () => {
-            video.play().catch(() => {})
+          playOnReady = () => {
+            playOpticalFlowVideo()
             video.removeEventListener('canplay', playOnReady)
           }
           video.addEventListener('canplay', playOnReady)
@@ -558,7 +638,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       // Safari/iOS native HLS support
       video.src = getMediaUrl(opticalFlowStreamUrl)
       video.addEventListener('loadedmetadata', () => {
-        video.play().catch(() => {})
+        playOpticalFlowVideo()
       })
     } else {
       setOpticalFlowError('HLS playback is not supported in this browser')
@@ -567,6 +647,11 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
     return () => {
       cancelled = true
+      if (playOnReady) {
+        video.removeEventListener('canplay', playOnReady)
+      }
+      video.removeEventListener('pause', trackManualPause)
+      video.removeEventListener('play', trackManualPlay)
       if (hlsRef.current) {
         hlsRef.current.destroy()
         hlsRef.current = null
@@ -579,10 +664,33 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     if (!transcodeStreamUrl || !mediaRef.current) return
 
     const video = mediaRef.current
+    let cancelled = false
+    let playOnReady = null
+    let shouldAutoResume = !video.paused
+    let manuallyPaused = false
+
+    const playTranscodeVideo = () => {
+      if (cancelled || !shouldAutoResume || manuallyPaused) return
+      video.play().catch(() => {})
+    }
+
+    const trackManualPause = () => {
+      if (!streamTransitioningRef.current) {
+        manuallyPaused = true
+        shouldAutoResume = false
+      }
+    }
+
+    const trackManualPlay = () => {
+      manuallyPaused = false
+      shouldAutoResume = true
+    }
 
     if (Hls.isSupported()) {
       // Pause video during transition to prevent playing old buffered content
       video.pause()
+      video.addEventListener('pause', trackManualPause)
+      video.addEventListener('play', trackManualPlay)
 
       // Cleanup previous instance - destroy() is synchronous and handles cleanup
       if (transcodeHlsRef.current) {
@@ -617,10 +725,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         // Wait for enough data to be buffered before playing — calling play()
         // at MANIFEST_PARSED often fails because no segments are buffered yet
         if (video.readyState >= 3) {
-          video.play().catch(() => {})
+          playTranscodeVideo()
         } else {
-          const playOnReady = () => {
-            video.play().catch(() => {})
+          playOnReady = () => {
+            playTranscodeVideo()
             video.removeEventListener('canplay', playOnReady)
           }
           video.addEventListener('canplay', playOnReady)
@@ -662,7 +770,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       video.src = getMediaUrl(transcodeStreamUrl)
       video.addEventListener('loadedmetadata', () => {
         streamTransitioningRef.current = false
-        video.play().catch(() => {})
+        playTranscodeVideo()
       })
     } else {
       console.error('HLS playback is not supported')
@@ -670,6 +778,12 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     }
 
     return () => {
+      cancelled = true
+      if (playOnReady) {
+        video.removeEventListener('canplay', playOnReady)
+      }
+      video.removeEventListener('pause', trackManualPause)
+      video.removeEventListener('play', trackManualPlay)
       if (transcodeHlsRef.current) {
         transcodeHlsRef.current.destroy()
         transcodeHlsRef.current = null
@@ -684,10 +798,50 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
     const video = mediaRef.current
     let cancelled = false
+    let startupTimer = null
+    let playOnCanPlay = null
+    let trackManualPause = null
+    let trackManualPlay = null
+    let stallTimer = null
+    let handleStall = null
+    let hasLoadedFragment = false
+    let hasBufferedFragment = false
+    let shouldAutoResume = !video.paused
+    let manuallyPaused = false
+
+    const playSVPVideo = () => {
+      if (cancelled || !shouldAutoResume || manuallyPaused) return
+      video.play().catch((err) => {
+        console.warn('[SVP HLS] play() failed:', err?.message || err)
+      })
+    }
+
+    const isTimeBuffered = (time) => {
+      const ranges = video.buffered
+      for (let i = 0; i < ranges.length; i++) {
+        if (time >= ranges.start(i) - 0.25 && time <= ranges.end(i) + 0.25) {
+          return true
+        }
+      }
+      return false
+    }
 
     if (Hls.isSupported()) {
       // Pause video during transition to prevent playing old buffered content
       video.pause()
+
+      trackManualPause = () => {
+        if (!streamTransitioningRef.current) {
+          manuallyPaused = true
+          shouldAutoResume = false
+        }
+      }
+      trackManualPlay = () => {
+        manuallyPaused = false
+        shouldAutoResume = true
+      }
+      video.addEventListener('pause', trackManualPause)
+      video.addEventListener('play', trackManualPlay)
 
       // Cleanup previous instance - destroy() is synchronous and handles cleanup
       if (svpHlsRef.current) {
@@ -700,11 +854,12 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
       const hls = new Hls({
         enableWorker: true,
+        autoStartLoad: true,
         lowLatencyMode: false,
         startPosition: 0,
-        backBufferLength: 30,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
+        backBufferLength: 600,
+        maxBufferLength: 120,
+        maxMaxBufferLength: 600,
         // Retry manifest loading while SVP produces initial segments
         manifestLoadingMaxRetry: 30,
         manifestLoadingRetryDelay: 500,
@@ -719,8 +874,14 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       // Use getMediaUrl to handle dev mode (different ports for frontend/backend)
       const fullStreamUrl = getMediaUrl(svpStreamUrl)
       console.log('[SVP HLS] Stream URL:', fullStreamUrl)
-      hls.loadSource(fullStreamUrl)
-      hls.attachMedia(video)  // Attach immediately (like optical flow code)
+      hls.attachMedia(video)
+
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+        if (cancelled) return
+        console.log('[SVP HLS] Media attached, loading source')
+        hls.loadSource(fullStreamUrl)
+        hls.startLoad(0)
+      })
 
       // Debug logging for HLS events
       hls.on(Hls.Events.MANIFEST_LOADING, () => {
@@ -733,24 +894,72 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (cancelled) return
-        console.log('[SVP HLS] Manifest parsed, starting playback')
-        // Stream is ready, allow time updates again
+        console.log('[SVP HLS] Manifest parsed, waiting for media buffer')
         streamTransitioningRef.current = false
-        setSvpLoading(false)
-        if (video.readyState >= 3) {
-          video.play().catch(() => {})
-        } else {
-          const playOnReady = () => {
-            video.play().catch(() => {})
-            video.removeEventListener('canplay', playOnReady)
-          }
-          video.addEventListener('canplay', playOnReady)
-        }
+        hls.startLoad(0)
       })
 
       hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+        hasLoadedFragment = true
         console.log('[SVP HLS] Fragment loaded:', data.frag.sn)
       })
+
+      hls.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
+        if (cancelled) return
+        hasBufferedFragment = true
+        console.log('[SVP HLS] Fragment buffered:', data.frag.sn)
+        if (startupTimer) {
+          clearTimeout(startupTimer)
+          startupTimer = null
+        }
+        setSvpPendingSeek(null)
+        setSvpLoading(false)
+        playSVPVideo()
+      })
+
+      playOnCanPlay = () => {
+        console.log('[SVP HLS] Video canplay')
+        if (startupTimer) {
+          clearTimeout(startupTimer)
+          startupTimer = null
+        }
+        if (stallTimer) {
+          clearTimeout(stallTimer)
+          stallTimer = null
+        }
+        setSvpPendingSeek(null)
+        setSvpLoading(false)
+        playSVPVideo()
+      }
+      video.addEventListener('canplay', playOnCanPlay)
+
+      handleStall = () => {
+        if (cancelled || streamTransitioningRef.current) return
+        if (stallTimer) clearTimeout(stallTimer)
+        const stalledHlsTime = video.currentTime || 0
+        const stalledAbsoluteTime = svpStartOffset + stalledHlsTime
+
+        stallTimer = setTimeout(() => {
+          if (cancelled || streamTransitioningRef.current) return
+          if (video.readyState >= 3 && isTimeBuffered(video.currentTime || 0)) return
+
+          console.warn('[SVP HLS] Stalled outside buffered range, restarting stream', {
+            hlsTime: video.currentTime,
+            absoluteTime: stalledAbsoluteTime,
+            readyState: video.readyState,
+            buffered: Array.from({ length: video.buffered.length }, (_, i) => [
+              video.buffered.start(i),
+              video.buffered.end(i),
+            ]),
+          })
+          setSvpPendingSeek(stalledAbsoluteTime)
+          setSvpLoading(true)
+          restartSVPFromPosition(stalledAbsoluteTime)
+        }, 2500)
+      }
+      video.addEventListener('waiting', handleStall)
+      video.addEventListener('stalled', handleStall)
+      video.addEventListener('suspend', handleStall)
 
       // Track available duration from HLS manifest for seek handling
       hls.on(Hls.Events.LEVEL_UPDATED, (event, data) => {
@@ -759,12 +968,29 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         if (levelDetails && levelDetails.totalduration) {
           const availableDuration = levelDetails.totalduration
           console.log('[SVP HLS] Level updated, available duration:', availableDuration.toFixed(1) + 's')
-          setSvpBufferedDuration(availableDuration)
+          if (Number.isFinite(availableDuration) && availableDuration > 0) {
+            setSvpBufferedDuration(availableDuration)
+          }
         }
       })
 
       let retryCount = 0
+      let mediaRecoverCount = 0
       const maxRetries = 10  // Cap retries to avoid infinite retry loops
+      const maxMediaRecoveries = 3
+      startupTimer = setTimeout(() => {
+        if (cancelled || video.readyState >= 3 || hasBufferedFragment) return
+        console.warn('[SVP HLS] Still waiting for playable media', {
+          readyState: video.readyState,
+          buffered: video.buffered.length,
+          hasLoadedFragment,
+          hasBufferedFragment,
+          hlsState: hls.constructor?.version ? `hls.js ${hls.constructor.version}` : 'hls.js'
+        })
+        if (!hasLoadedFragment) {
+          hls.startLoad(0)
+        }
+      }, 60000)
 
       hls.on(Hls.Events.ERROR, (event, data) => {
         if (cancelled) return
@@ -774,6 +1000,9 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
           const isManifestError = data.details === 'manifestLoadError' ||
                                    data.details === 'manifestParsingError'
           const isNetworkError = data.type === Hls.ErrorTypes.NETWORK_ERROR
+          const isMediaError = data.type === Hls.ErrorTypes.MEDIA_ERROR
+          const isBufferAppendError = data.details === 'bufferAppendError' ||
+                                      data.details === 'bufferAppendingError'
 
           if ((isManifestError || isNetworkError) && retryCount < maxRetries) {
             retryCount++
@@ -786,6 +1015,17 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
                 hls.startLoad()
               }
             }, delay)
+          } else if ((isMediaError || isBufferAppendError) && mediaRecoverCount < maxMediaRecoveries) {
+            mediaRecoverCount++
+            console.warn(`[SVP HLS] Recovering media error ${mediaRecoverCount}/${maxMediaRecoveries}:`, data.details)
+            setSvpLoading(false)
+            try {
+              hls.recoverMediaError()
+            } catch (err) {
+              console.warn('[SVP HLS] recoverMediaError failed, restarting load:', err?.message || err)
+              hls.startLoad(0)
+            }
+            playSVPVideo()
           } else {
             // Give up - either not a retryable error, or retries exhausted
             console.error('[SVP HLS] Giving up after fatal error:', data)
@@ -813,7 +1053,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       video.src = getMediaUrl(svpStreamUrl)
       video.addEventListener('loadedmetadata', () => {
         streamTransitioningRef.current = false
-        video.play().catch(() => {})
+        playSVPVideo()
         setSvpLoading(false)
       })
     } else {
@@ -828,6 +1068,26 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
     return () => {
       cancelled = true
+      if (playOnCanPlay) {
+        video.removeEventListener('canplay', playOnCanPlay)
+      }
+      if (trackManualPause) {
+        video.removeEventListener('pause', trackManualPause)
+      }
+      if (trackManualPlay) {
+        video.removeEventListener('play', trackManualPlay)
+      }
+      if (handleStall) {
+        video.removeEventListener('waiting', handleStall)
+        video.removeEventListener('stalled', handleStall)
+        video.removeEventListener('suspend', handleStall)
+      }
+      if (startupTimer) {
+        clearTimeout(startupTimer)
+      }
+      if (stallTimer) {
+        clearTimeout(stallTimer)
+      }
       if (svpHlsRef.current) {
         svpHlsRef.current.destroy()
         svpHlsRef.current = null
@@ -850,8 +1110,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         transcodeHlsRef.current.destroy()
         transcodeHlsRef.current = null
       }
-      // Only stop backend streams that were actually started
-      if (hadSvpStreamRef.current) stopSVPStream().catch(() => {})
+      // Stop SVP unconditionally: a /play request may still be in flight even
+      // before hadSvpStreamRef is set, and leaving vspipe alive can poison the
+      // next stream start.
+      stopSVPStream().catch(() => {})
       if (hadOpticalFlowStreamRef.current) stopInterpolatedStream().catch(() => {})
       if (hadTranscodeStreamRef.current) stopTranscodeStream().catch(() => {})
     }
@@ -934,12 +1196,20 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         if (transcodeHlsRef.current) { transcodeHlsRef.current.destroy(); transcodeHlsRef.current = null }
         setSvpStreamUrl(null)
         setSvpStartOffset(0)
+        setSvpTotalDuration(null)
+        setSvpBufferedDuration(0)
+        setSvpPendingSeek(null)
+        setSvpLoading(false)
         setOpticalFlowStreamUrl(null)
         setTranscodeStreamUrl(null)
         setTranscodeStartOffset(0)
+        setTranscodeTotalDuration(null)
+        setTranscodeBufferedDuration(0)
+        streamTransitioningRef.current = false
 
         if (mediaRef.current && image) {
           const video = mediaRef.current
+          const shouldResumeDirect = !video.paused
           // On Tauri mobile with local server, use asset protocol to avoid WRY buffering
           let directUrl = getMediaUrl(image.url)
           if (isMobileApp() && isUsingLocalServer() && image.file_path) {
@@ -951,8 +1221,11 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
           // immediately after setting src fails silently because the source hasn't loaded yet.
           video.addEventListener('loadedmetadata', () => {
             video.currentTime = absoluteTime
-            video.play().catch(() => {})
+            if (shouldResumeDirect) {
+              video.play().catch(() => {})
+            }
           }, { once: true })
+          if (image.file_path) applyNormalization(image.file_path)
         }
       } else {
         // Restart stream with new quality at the current absolute position
@@ -966,12 +1239,14 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
           await stopSVPStream()
           const result = await playVideoSVP(image.file_path, absoluteTime, qualityId)
           console.log('[Lightbox] SVP play result:', result)
-          if (result.success) {
+          if (result.success && result.stream_url) {
             // Set offset BEFORE stream URL so handleTimeUpdate uses correct offset
             setSvpStartOffset(absoluteTime)
             if (result.duration) setSvpTotalDuration(result.duration)
             if (result.source_resolution) setSourceResolution(result.source_resolution)
             setSvpStreamUrl(result.stream_url)
+          } else if (result.success && result.skipped) {
+            if (result.source_resolution) setSourceResolution(result.source_resolution)
           } else {
             console.error('[Lightbox] SVP play failed:', result.error)
           }
@@ -1008,13 +1283,15 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
             console.log('[Lightbox] Starting new SVP stream with quality')
             const result = await playVideoSVP(image.file_path, absoluteTime, qualityId)
             console.log('[Lightbox] SVP play result:', result)
-            if (result.success) {
+            if (result.success && result.stream_url) {
               hadSvpStreamRef.current = true
               // Set offset BEFORE stream URL so handleTimeUpdate uses correct offset
               setSvpStartOffset(absoluteTime)
               if (result.duration) setSvpTotalDuration(result.duration)
               if (result.source_resolution) setSourceResolution(result.source_resolution)
               setSvpStreamUrl(result.stream_url)
+            } else if (result.success && result.skipped) {
+              if (result.source_resolution) setSourceResolution(result.source_resolution)
             } else {
               console.error('[Lightbox] SVP play failed:', result.error)
               setStreamError('Failed to start SVP stream: ' + result.error)
@@ -1125,6 +1402,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     // Functions
     getCurrentAbsoluteTime,
     restartSVPFromPosition,
+    cancelPendingSVPRestart,
     restartTranscodeFromPosition,
     startInterpolatedStream,
     startSVPStream,
