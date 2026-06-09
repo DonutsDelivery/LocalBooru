@@ -8,7 +8,9 @@ import { validateServerCertificate, isHttps } from './sslPinning'
 // Current server config (cached for synchronous access)
 let currentServerUrl = null
 let currentServerAuth = null
-let currentServerToken = null  // Raw JWT token for query param auth (img/video src)
+let currentServerToken = null  // Raw JWT session token (Authorization header)
+let currentMediaToken = null   // Short-lived, read-only token for media src URLs (H1)
+let mediaTokenExpiry = 0       // epoch ms when currentMediaToken expires
 let currentCertFingerprint = null  // TLS certificate fingerprint for pinning
 let certValidated = false  // Whether certificate has been validated this session
 
@@ -48,6 +50,11 @@ function getApiUrl() {
 export async function updateServerConfig(workingUrl = null) {
   if (!isMobileApp()) return
 
+  // Reset the media token on any server change; it is re-minted below when a
+  // session token is available.
+  currentMediaToken = null
+  mediaTokenExpiry = 0
+
   const server = await getActiveServer()
   if (server) {
     // Local embedded server — use relative URLs like desktop
@@ -75,6 +82,9 @@ export async function updateServerConfig(workingUrl = null) {
     if (server.token) {
       currentServerAuth = 'Bearer ' + server.token
       currentServerToken = server.token
+      // Mint a short-lived media token in the background (non-Tauri browser path
+      // uses it in media URLs instead of the session JWT).
+      void fetchMediaToken()
     } else if (server.username && server.password) {
       currentServerAuth = 'Basic ' + btoa(`${server.username}:${server.password}`)
       currentServerToken = null
@@ -849,6 +859,28 @@ export function getAssetUrl(filePath) {
   return null
 }
 
+// Mint/refresh a short-lived, read-only media token from the remote server. Used
+// only on the non-Tauri mobile (browser) path, where media src URLs must carry a
+// token in the query string — we put this restricted token there instead of the
+// 30-day session JWT. Fire-and-forget; on failure we keep the previous value and
+// getMediaUrl falls back to the session token transiently.
+async function fetchMediaToken() {
+  if (!currentServerUrl || !currentServerToken) return
+  try {
+    const res = await fetch(`${currentServerUrl}/api/users/media-token`, {
+      headers: { Authorization: `Bearer ${currentServerToken}` },
+    })
+    if (!res.ok) return
+    const data = await res.json()
+    if (data && data.token) {
+      currentMediaToken = data.token
+      mediaTokenExpiry = Date.now() + ((data.expires_in || 86400) * 1000)
+    }
+  } catch (e) {
+    /* keep existing token; getMediaUrl handles the fallback */
+  }
+}
+
 // Utility functions
 export function getMediaUrl(path) {
   if (!path) return ''
@@ -861,11 +893,18 @@ export function getMediaUrl(path) {
       // Proxy handles auth via set_remote_proxy token
       return `${getLocalServerBase()}/remote${cleanPath}`
     }
-    // Non-Tauri mobile (browser) — direct URL with token
+    // Non-Tauri mobile (browser) — direct URL with token. Prefer the short-lived,
+    // read-only media token over the 30-day session JWT (H1); refresh it in the
+    // background as it nears expiry. Fall back to the session token only in the
+    // brief window before the first media token has been minted.
     const url = `${currentServerUrl}${cleanPath}`
-    if (currentServerToken) {
+    if (currentServerToken && (!currentMediaToken || Date.now() > mediaTokenExpiry - 60000)) {
+      void fetchMediaToken()
+    }
+    const tok = currentMediaToken || currentServerToken
+    if (tok) {
       const sep = url.includes('?') ? '&' : '?'
-      return `${url}${sep}token=${currentServerToken}`
+      return `${url}${sep}token=${tok}`
     }
     return url
   }

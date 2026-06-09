@@ -216,6 +216,27 @@ pub fn run() {
             // Store AppState for both Tauri commands and axum server
             app.manage(app_state.clone());
 
+            // ── Asset-protocol scope ──
+            // Config scope is `[]` (deny all); grant `asset://` read access to the
+            // currently configured watch directories so local media loads. Dirs
+            // added later are granted at their INSERT sites via allow_asset_dir().
+            {
+                let scope = app.asset_protocol_scope();
+                app_state.set_asset_scope(scope);
+                match app_state.main_db().get() {
+                    Ok(conn) => {
+                        if let Ok(mut stmt) = conn.prepare("SELECT path FROM watch_directories") {
+                            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                                for path in rows.flatten() {
+                                    app_state.allow_asset_dir(&path);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => log::warn!("[AssetScope] Could not load watch dirs at startup: {}", e),
+                }
+            }
+
             // ── Start embedded axum server ──
             #[cfg(desktop)]
             let frontend_dir = get_frontend_dir();

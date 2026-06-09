@@ -17,6 +17,22 @@ pub struct Claims {
     pub access_level: String,
     pub can_write: bool,
     pub exp: i64,
+    /// Token scope. `None` (absent) = full session token. `Some("media")` =
+    /// short-lived, read-only token valid only for GET requests on media routes
+    /// (used in `<img>/<video>` src URLs so the 30-day session JWT never appears
+    /// in a URL). `#[serde(default)]` keeps pre-existing tokens (no field) valid.
+    #[serde(default)]
+    pub scope: Option<String>,
+}
+
+/// Scope value identifying a read-only, media-routes-only token.
+pub const MEDIA_SCOPE: &str = "media";
+
+impl Claims {
+    /// True when this token is restricted to read-only media access.
+    pub fn is_media_scoped(&self) -> bool {
+        self.scope.as_deref() == Some(MEDIA_SCOPE)
+    }
 }
 
 /// Create a signed JWT token for the given user.
@@ -34,6 +50,39 @@ pub fn create_jwt(
         access_level: access_level.into(),
         can_write,
         exp,
+        scope: None,
+    };
+
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|e| crate::server::error::AppError::Internal(format!("JWT error: {}", e)))
+}
+
+/// Lifetime of a media-scoped token, in seconds (24h).
+pub const MEDIA_TOKEN_TTL_SECS: i64 = 86400;
+
+/// Create a short-lived, read-only media token for use in `<img>/<video>` src
+/// URLs (the `?token=` query param). Forces `can_write = false` and
+/// `scope = Some("media")`, so it is rejected by `AuthUser` and by the Bearer
+/// path of the access-control middleware — it is only honored for GET requests
+/// on media routes. Derived from a caller that already holds a valid session JWT.
+pub fn create_media_jwt(
+    user_id: i64,
+    username: &str,
+    access_level: &str,
+    secret: &str,
+) -> Result<String, crate::server::error::AppError> {
+    let exp = chrono::Utc::now().timestamp() + MEDIA_TOKEN_TTL_SECS;
+    let claims = Claims {
+        user_id,
+        username: username.into(),
+        access_level: access_level.into(),
+        can_write: false,
+        exp,
+        scope: Some(MEDIA_SCOPE.into()),
     };
 
     jsonwebtoken::encode(
@@ -141,6 +190,14 @@ impl FromRequestParts<AppState> for AuthUser {
             let claims = decode_jwt(token, &secret).map_err(|e| AuthRejection {
                 message: format!("{}", e),
             })?;
+
+            // Media-scoped tokens are read-only and only valid as a `?token=` query
+            // param on media routes — never as Bearer auth on a real handler.
+            if claims.is_media_scoped() {
+                return Err(AuthRejection {
+                    message: "Media token cannot be used for authenticated requests".into(),
+                });
+            }
 
             Ok(AuthUser::from_claims(claims))
         }

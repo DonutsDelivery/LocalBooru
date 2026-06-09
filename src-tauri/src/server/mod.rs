@@ -85,6 +85,13 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         header::HeaderValue::from_static("no-store"),
     );
 
+    // Media src URLs carry a token in the query string; keep it out of the Referer
+    // header so it can't leak to any external resource the page loads.
+    let no_referrer = SetResponseHeaderLayer::if_not_present(
+        header::REFERRER_POLICY,
+        header::HeaderValue::from_static("no-referrer"),
+    );
+
     // Remote proxy route — forwards requests to a remote server (mobile mode).
     // This bypasses access control since it's only called from the local WebView.
     let proxy_router = Router::new()
@@ -93,9 +100,11 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
 
     let mut app = api
         .layer(no_cache)
+        .layer(no_referrer)
         .nest_service("/thumbnails", thumbnails_service)
         .layer(AccessControlLayer {
             jwt_secret: state.jwt_secret().to_string(),
+            data_dir: state.data_dir().to_path_buf(),
         })
         .with_state(state)
         .nest("/remote", proxy_router)

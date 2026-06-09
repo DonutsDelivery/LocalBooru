@@ -59,6 +59,11 @@ struct AppStateInner {
     http_client: reqwest::Client,
     /// Directory watcher (set after AppState construction to break circular dep)
     directory_watcher: std::sync::OnceLock<Arc<DirectoryWatcher>>,
+    /// Tauri asset-protocol scope (set during app setup). Used to grant `asset://`
+    /// read access to watch directories dynamically. The scope is append-only and
+    /// `forbid` is permanent, so we only ever `allow_directory` here — a removed
+    /// watch dir stays asset-readable until the next launch (config scope is `[]`).
+    asset_scope: std::sync::OnceLock<tauri::scope::fs::Scope>,
     /// Family mode lock state (true = locked, hides non-family-safe content)
     family_mode_locked: AtomicBool,
     /// Whether the HTTP server is listening and accepting connections
@@ -264,6 +269,7 @@ impl AppState {
                 handshake_manager,
                 http_client,
                 directory_watcher: std::sync::OnceLock::new(),
+                asset_scope: std::sync::OnceLock::new(),
                 family_mode_locked: AtomicBool::new(family_mode_locked),
                 server_ready: AtomicBool::new(false),
                 remote_proxy: RwLock::new(None),
@@ -403,6 +409,23 @@ impl AppState {
     /// Get the directory watcher, if set.
     pub fn directory_watcher(&self) -> Option<&Arc<DirectoryWatcher>> {
         self.inner.directory_watcher.get()
+    }
+
+    /// Set the Tauri asset-protocol scope (called once during app setup).
+    pub fn set_asset_scope(&self, scope: tauri::scope::fs::Scope) {
+        let _ = self.inner.asset_scope.set(scope);
+    }
+
+    /// Grant `asset://` read access to a watch directory (recursive). No-op when
+    /// the scope hasn't been set yet (e.g. headless/test contexts). Idempotent.
+    pub fn allow_asset_dir(&self, path: &str) {
+        if let Some(scope) = self.inner.asset_scope.get() {
+            if let Err(e) = scope.allow_directory(path, true) {
+                log::warn!("[AssetScope] Failed to allow '{}': {}", path, e);
+            } else {
+                log::debug!("[AssetScope] Allowed asset access to '{}'", path);
+            }
+        }
     }
 
     /// Check if family mode is currently locked.

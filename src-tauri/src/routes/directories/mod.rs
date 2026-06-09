@@ -413,6 +413,9 @@ async fn add_directory(
         watcher.add_directory(dir_id, &path_str, recursive);
     }
 
+    // Grant asset:// read access to the new watch dir (recursive).
+    state.allow_asset_dir(&path_str);
+
     Ok(Json(json!({
         "id": dir_id,
         "path": path_str,
@@ -540,6 +543,13 @@ async fn add_parent_directory(
         Ok((added, skipped))
     })
     .await??;
+
+    // Grant asset:// read access to every newly added subdirectory.
+    for dir in &added {
+        if let Some(path) = dir["path"].as_str() {
+            state.allow_asset_dir(path);
+        }
+    }
 
     // Register all newly added directories with filesystem watcher
     if let Some(watcher) = state.directory_watcher() {

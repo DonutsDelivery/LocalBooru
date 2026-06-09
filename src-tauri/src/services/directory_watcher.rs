@@ -597,6 +597,9 @@ async fn poll_parent_directories(
                             dir_id
                         );
 
+                        // Grant asset:// read access to the auto-discovered subdir.
+                        state_clone.allow_asset_dir(&subdir_path);
+
                         // Register with the file watcher
                         if let Err(e) = add_watch(
                             &state_clone,

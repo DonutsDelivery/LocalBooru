@@ -20,6 +20,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/login", post(login))
         .route("/verify", post(verify_token))
+        .route("/media-token", get(media_token))
 }
 
 // ─── Password hashing ────────────────────────────────────────────────────────
@@ -104,22 +105,29 @@ struct VerifyTokenRequest {
 
 // ─── IP extraction ────────────────────────────────────────────────────────────
 
-/// Extract the client IP from the request, checking X-Forwarded-For first
-/// (for proxied connections), then falling back to ConnectInfo.
+/// Extract the client IP from the request for rate-limiting.
+///
+/// `X-Forwarded-For` is only honored when the direct connection is loopback
+/// (i.e. the app's own local reverse proxy sets it). A remote client could
+/// otherwise rotate this header to mint a fresh rate-limit key on every request
+/// and brute-force logins, so for direct remote connections we ignore it and use
+/// the real `ConnectInfo` peer address.
 fn extract_client_ip(headers: &HeaderMap, connect_info: &ConnectInfo<SocketAddr>) -> String {
-    // Check X-Forwarded-For header (first IP is the original client)
-    if let Some(forwarded_for) = headers.get("x-forwarded-for") {
-        if let Ok(value) = forwarded_for.to_str() {
-            if let Some(first_ip) = value.split(',').next() {
-                let trimmed = first_ip.trim();
-                if !trimmed.is_empty() {
-                    return trimmed.to_string();
+    let direct_ip = connect_info.0.ip();
+    if direct_ip.is_loopback() {
+        if let Some(forwarded_for) = headers.get("x-forwarded-for") {
+            if let Ok(value) = forwarded_for.to_str() {
+                if let Some(first_ip) = value.split(',').next() {
+                    let trimmed = first_ip.trim();
+                    if !trimmed.is_empty() {
+                        return trimmed.to_string();
+                    }
                 }
             }
         }
     }
     // Fall back to direct connection IP
-    connect_info.0.ip().to_string()
+    direct_ip.to_string()
 }
 
 // ─── Rate limit constants ─────────────────────────────────────────────────────
@@ -401,6 +409,30 @@ async fn verify_token(
     })))
 }
 
+/// Mint a short-lived, read-only media token for use in media `?token=` URLs.
+///
+/// Requires a valid full session JWT (via the `AuthUser` extractor — media tokens
+/// are rejected there, so they cannot mint more tokens). The returned token only
+/// works for GET requests on media routes, keeping the 30-day session JWT out of
+/// `<img>/<video>` src URLs. The frontend refreshes this transparently.
+async fn media_token(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<Value>, AppError> {
+    let token = create_media_jwt(
+        user.user_id,
+        &user.username,
+        &user.access_level,
+        state.jwt_secret(),
+    )?;
+    Ok(Json(json!({
+        "token": token,
+        "expires_in": MEDIA_TOKEN_TTL_SECS
+    })))
+}
+
 // ─── JWT helpers (delegated to shared auth module) ───────────────────────────
 
-use crate::server::middleware::auth::{create_jwt, decode_jwt};
+use crate::server::middleware::auth::{
+    create_jwt, create_media_jwt, decode_jwt, AuthUser, MEDIA_TOKEN_TTL_SECS,
+};

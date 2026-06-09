@@ -5,6 +5,7 @@ use axum::{
     response::IntoResponse,
 };
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
 use std::future::Future;
@@ -52,6 +53,7 @@ const LOCALHOST_EXEMPTIONS: &[&str] = &[
     "/api/settings/util",
     "/api/users/login",
     "/api/users/verify",
+    "/api/users/media-token",
 ];
 
 /// Test whether an IPv4 address falls in the RFC 6598 carrier-grade NAT range
@@ -101,6 +103,25 @@ pub fn classify_ip(ip: &std::net::IpAddr) -> &'static str {
     }
 }
 
+/// Read the `network.allow_settings_local_network` opt-in flag from `settings.json`.
+///
+/// When `true`, the owner has explicitly allowed local-network devices (with a valid
+/// JWT) to reach the otherwise localhost-only settings/network/user endpoints. Returns
+/// `false` (the secure default) if the file or key is missing or unreadable, so a
+/// missing/corrupt settings file fails closed.
+fn lan_settings_opt_in(data_dir: &Path) -> bool {
+    let path = data_dir.join("settings.json");
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| {
+            v.get("network")?
+                .get("allow_settings_local_network")?
+                .as_bool()
+        })
+        .unwrap_or(false)
+}
+
 // ─── Access tier ────────────────────────────────────────────────────────────
 
 /// Typed access tier derived from a client IP address.
@@ -127,6 +148,8 @@ impl AccessTier {
 #[derive(Clone)]
 pub struct AccessControlLayer {
     pub jwt_secret: String,
+    /// Data directory, used to read the `allow_settings_local_network` opt-in flag.
+    pub data_dir: PathBuf,
 }
 
 impl<S> Layer<S> for AccessControlLayer {
@@ -136,6 +159,7 @@ impl<S> Layer<S> for AccessControlLayer {
         AccessControlService {
             inner,
             jwt_secret: self.jwt_secret.clone(),
+            data_dir: self.data_dir.clone(),
         }
     }
 }
@@ -146,6 +170,7 @@ impl<S> Layer<S> for AccessControlLayer {
 pub struct AccessControlService<S> {
     inner: S,
     jwt_secret: String,
+    data_dir: PathBuf,
 }
 
 impl<S> Service<Request<Body>> for AccessControlService<S>
@@ -167,6 +192,7 @@ where
         std::mem::swap(&mut self.inner, &mut inner);
 
         let jwt_secret = self.jwt_secret.clone();
+        let data_dir = self.data_dir.clone();
 
         Box::pin(async move {
             let path = req.uri().path().to_string();
@@ -203,7 +229,26 @@ where
                 return inner.call(req).await;
             }
 
-            // Check for JWT authentication (Bearer header or ?token= query param)
+            // Decide whether a `?token=` query token grants access to THIS request.
+            // A full session token (scope=None) grants access everywhere (still
+            // subject to the localhost-only checks below). A media-scoped token is
+            // read-only and only honored for GET requests on `/api/images/...` —
+            // the one media path that requires a token (streams, cast-media, share,
+            // /thumbnails and /watch are already exempt). This lets the frontend put
+            // a short-lived media token in <img>/<video> URLs instead of the 30-day
+            // session JWT, without breaking any media that needs auth.
+            let query_token_grants = |token: &str| -> bool {
+                match decode_jwt(token, &jwt_secret) {
+                    Ok(claims) if claims.is_media_scoped() => {
+                        method == "GET" && path.starts_with("/api/images/")
+                    }
+                    Ok(_) => true,
+                    Err(_) => false,
+                }
+            };
+
+            // Bearer header: accept full session tokens only. A media token is
+            // rejected here so it can never authenticate a real API call.
             let has_valid_jwt = req
                 .headers()
                 .get("authorization")
@@ -212,10 +257,13 @@ where
                     auth.strip_prefix("Bearer ")
                         .or_else(|| auth.strip_prefix("bearer "))
                 })
-                .map(|token| decode_jwt(token, &jwt_secret).is_ok())
+                .map(|token| {
+                    matches!(decode_jwt(token, &jwt_secret), Ok(c) if !c.is_media_scoped())
+                })
                 .unwrap_or(false);
 
-            // Also check for token in query parameter (for <img>/<video> src URLs)
+            // Query parameter (for <img>/<video> src URLs): full token, or a media
+            // token limited to GET image routes.
             let has_valid_jwt = has_valid_jwt || req
                 .uri()
                 .query()
@@ -223,41 +271,59 @@ where
                     q.split('&')
                         .find_map(|pair| pair.strip_prefix("token="))
                 })
-                .map(|token| decode_jwt(token, &jwt_secret).is_ok())
+                .map(|token| query_token_grants(token))
                 .unwrap_or(false);
 
-            // Authenticated requests (valid JWT) bypass localhost-only and write restrictions
-            if has_valid_jwt {
-                return inner.call(req).await;
-            }
-
-            // No valid JWT and not localhost → block with 401
-            // (except for exempt endpoints already handled above, and localhost-exempted paths)
+            // Paths explicitly allowed from the network even though they sit under a
+            // localhost-only prefix: pairing handshake, login/verify, and user-preference
+            // settings the LAN/Android client legitimately needs.
             let is_exempt_path = LOCALHOST_EXEMPTIONS
                 .iter()
                 .any(|exempt| path == *exempt || path.starts_with(&format!("{}/", exempt)));
 
-            // Block localhost-only endpoints for unauthenticated non-localhost access
-            for prefix in LOCALHOST_ONLY_PREFIXES {
-                if path.starts_with(prefix) && !is_exempt_path {
+            // Localhost-only endpoints (settings / network / user management) stay
+            // restricted even WITH a valid JWT. Localhost already returned above, so
+            // reaching here means a non-localhost caller. A paired device's token must
+            // NOT be able to change network exposure, rewrite global settings, or manage
+            // users — UNLESS the owner has explicitly opted in from the host machine via
+            // `network.allow_settings_local_network`, and only from the local network
+            // (never from the public internet).
+            let is_localhost_only = LOCALHOST_ONLY_PREFIXES
+                .iter()
+                .any(|prefix| path.starts_with(prefix))
+                && !is_exempt_path;
+
+            if is_localhost_only {
+                let opt_in_allowed = has_valid_jwt
+                    && access_level == "local_network"
+                    && lan_settings_opt_in(&data_dir);
+
+                if !opt_in_allowed {
                     let response = (
                         StatusCode::FORBIDDEN,
                         axum::Json(serde_json::json!({
                             "error": "This endpoint is only accessible from localhost",
-                            "detail": format!(
-                                "Access to {} requires direct access to the machine running LocalBooru",
-                                prefix
-                            )
+                            "detail": "Settings, network, and user management are restricted to the host machine. Enable 'Allow settings changes over local network' on the host to manage them from a LAN device."
                         })),
                     )
                         .into_response();
                     return Ok(response);
                 }
+
+                // Opted in: a local-network device with a valid JWT may proceed.
+                return inner.call(req).await;
             }
 
-            // Block unauthenticated non-localhost requests (require JWT)
-            // Skip for localhost-exempted paths (explicitly network-accessible, e.g. verify-handshake)
-            if access_level != "localhost" && !is_exempt_path {
+            // Authenticated requests (valid JWT) may access everything that is not
+            // localhost-only (handled above): images, tags, media, casting, user prefs, etc.
+            if has_valid_jwt {
+                return inner.call(req).await;
+            }
+
+            // No valid JWT and not localhost → block with 401.
+            // Localhost-exempted paths (e.g. verify-handshake, login) pass through so a
+            // client can obtain a token in the first place.
+            if !is_exempt_path {
                 let response = (
                     StatusCode::UNAUTHORIZED,
                     axum::Json(serde_json::json!({
