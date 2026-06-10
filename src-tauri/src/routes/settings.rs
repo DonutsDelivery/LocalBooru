@@ -110,6 +110,62 @@ fn verify_pin(pin: &str, stored_hash: &str) -> Result<bool, AppError> {
         .is_ok())
 }
 
+// ─── Family-mode PIN brute-force backoff (M3) ────────────────────────────────
+// In-memory failed-attempt tracker keyed by client IP. The first
+// FAMILY_PIN_FREE_ATTEMPTS wrong PINs are answered immediately; each further
+// failure locks that IP out for an exponentially growing window (capped). A
+// correct PIN clears the IP's counter. State is process-local (resets on
+// restart) — fine here: an attacker can't trigger a restart remotely, and the
+// owner who knows the PIN succeeds on the first try and never accrues a lockout.
+// Keying by IP means a LAN attacker can't lock the host (localhost) out.
+const FAMILY_PIN_FREE_ATTEMPTS: u32 = 5;
+const FAMILY_PIN_BASE_LOCKOUT_SECS: u64 = 15;
+const FAMILY_PIN_MAX_LOCKOUT_SECS: u64 = 900; // 15 min cap
+
+struct PinAttempts {
+    failures: u32,
+    locked_until: Option<std::time::Instant>,
+}
+
+static FAMILY_PIN_GUARD: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<std::net::IpAddr, PinAttempts>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// If the IP is currently locked out, returns `Err(remaining_seconds)`.
+fn family_pin_check_lock(ip: std::net::IpAddr) -> Result<(), u64> {
+    let map = FAMILY_PIN_GUARD.lock().unwrap();
+    if let Some(entry) = map.get(&ip) {
+        if let Some(until) = entry.locked_until {
+            let now = std::time::Instant::now();
+            if now < until {
+                return Err((until - now).as_secs() + 1);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn family_pin_record_failure(ip: std::net::IpAddr) {
+    let mut map = FAMILY_PIN_GUARD.lock().unwrap();
+    let entry = map.entry(ip).or_insert(PinAttempts {
+        failures: 0,
+        locked_until: None,
+    });
+    entry.failures += 1;
+    if entry.failures > FAMILY_PIN_FREE_ATTEMPTS {
+        let over = entry.failures - FAMILY_PIN_FREE_ATTEMPTS; // 1, 2, 3, ...
+        let secs = FAMILY_PIN_BASE_LOCKOUT_SECS
+            .saturating_mul(1u64 << (over - 1).min(6))
+            .min(FAMILY_PIN_MAX_LOCKOUT_SECS);
+        entry.locked_until =
+            Some(std::time::Instant::now() + std::time::Duration::from_secs(secs));
+    }
+}
+
+fn family_pin_record_success(ip: std::net::IpAddr) {
+    FAMILY_PIN_GUARD.lock().unwrap().remove(&ip);
+}
+
 // ─── Family mode request models ──────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -212,8 +268,19 @@ async fn configure_family_mode(
 /// POST /family-mode/unlock — Unlock family mode by verifying PIN.
 async fn unlock_family_mode(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<FamilyModeUnlock>,
 ) -> Result<Json<Value>, AppError> {
+    let ip = addr.ip();
+
+    // Brute-force backoff: reject early if this IP is currently locked out.
+    if let Err(secs) = family_pin_check_lock(ip) {
+        return Err(AppError::TooManyRequests(format!(
+            "Too many incorrect PIN attempts. Try again in {} seconds.",
+            secs
+        )));
+    }
+
     let data_dir = state.data_dir().to_path_buf();
     let pin = body.pin;
 
@@ -232,9 +299,11 @@ async fn unlock_family_mode(
 
     let valid = verify_pin(&pin, &stored_hash)?;
     if !valid {
+        family_pin_record_failure(ip);
         return Err(AppError::Forbidden("Invalid PIN".into()));
     }
 
+    family_pin_record_success(ip);
     state.set_family_mode_locked(false);
     if let Some(events) = state.events() {
         events

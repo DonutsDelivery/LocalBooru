@@ -14,7 +14,7 @@ use axum::{
     response::{Json, IntoResponse, Response},
     routing::get,
 };
-use tower_http::cors::{CorsLayer, AllowOrigin, Any};
+use tower_http::cors::{CorsLayer, AllowOrigin};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -46,7 +46,15 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers(Any)
+        // Explicit allowlist instead of mirroring whatever the client asks for.
+        // Covers every header the frontend actually sends: Authorization (JWT),
+        // Content-Type (json / multipart uploads), Range (media seeking), Accept.
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::RANGE,
+            header::ACCEPT,
+        ])
         .expose_headers([
             "Content-Range".parse().unwrap(),
             "Content-Length".parse().unwrap(),

@@ -128,11 +128,11 @@ _Previous status:_ ☑ CSP DONE (smoke-test passed) · asset-scope DEFERRED
 
 ## MEDIUM / LOW (batch later)
 
-- **M1 — Addon Python deps unpinned**  ☐ `src-tauri/src/addons/manifest.rs:20` — pin versions / add hashes. Supply-chain. No functional impact.
-- **M2 — No sidecar resource limits / no `/api/share/create` rate limit**  ☐ — DoS hardening.
-- **M3 — Family-mode PIN brute force**  ☐ `routes/settings.rs` — add backoff/lockout on `unlockFamilyMode()`.
-- **M4 — CORS `.allow_headers(Any)`**  ☐ `server/mod.rs:49` — explicit header allowlist.
-- **L1 — VapourSynth path string-interpolation**  ☐ `svp_integration.py:190` — use `repr()`; current escaping holds but brittle.
+- **M1 — Addon Python deps unpinned**  ◩ PARTIAL (by design) — `src-tauri/src/addons/manifest.rs`: pinned the top-level, low-conflict, supply-chain-relevant libs to current PyPI versions — `pychromecast==14.0.10`, `faster-whisper==1.2.1`, `huggingface-hub==1.18.0`. **Deliberately left unpinned:** numpy, Pillow, and the heavy native/ML stack (torch, torchvision, transformers, ultralytics, insightface, onnxruntime, opencv, rife-ncnn, vapoursynth), plus aiohttp/async-upnp-client (resolved by pychromecast) — pinning these blind risks over-constraining the resolver and breaking installs across Python/CUDA/platform combos. No addon venvs were installed to read known-good versions from. Re-pin the rest to resolved versions after a first successful install if stricter supply-chain locking is wanted.
+- **M2 — No sidecar resource limits / no `/api/share/create` rate limit**  ◩ PARTIAL — `/api/share/create` now rate-limited per-IP (fixed window, 30/60s) in `routes/share.rs` (returns 429). **Sidecar resource limits deferred** (platform-specific `setrlimit`/cgroups; low value on a trusted single-user network).
+- **M3 — Family-mode PIN brute force**  ☑ DONE — `routes/settings.rs` `unlock_family_mode`: per-IP in-memory backoff (5 free attempts, then exponential lockout 15s→15min cap; cleared on success; keyed by IP so a LAN attacker can't lock out localhost). Returns 429 while locked.
+- **M4 — CORS `.allow_headers(Any)`**  ☑ DONE — `server/mod.rs`: replaced `Any` with an explicit allowlist (Authorization, Content-Type, Range, Accept) covering every header the frontend sends.
+- **L1 — VapourSynth path string-interpolation**  ☑ DONE — `svp_integration.py`: build pipeline now embeds the path with `repr()` instead of hand-rolled escaping. (Second builder at ~633 uses the forbidden source filters per `.claude/CLAUDE.md` and was left untouched.)
 
 ---
 

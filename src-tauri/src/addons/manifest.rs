@@ -22,7 +22,9 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             name: "Auto Tagger",
             description: "Automatically tag images using ONNX-based classification models",
             port: 18001,
-            python_deps: &["onnxruntime", "numpy", "Pillow", "huggingface-hub"],
+            // huggingface-hub pinned (M1, supply-chain). onnxruntime/numpy/Pillow
+            // left unpinned: native/heavy, version constrained by the resolver.
+            python_deps: &["onnxruntime", "numpy", "Pillow", "huggingface-hub==1.18.0"],
         },
         AddonManifest {
             id: "age-detector",
@@ -36,7 +38,8 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             name: "Whisper Subtitles",
             description: "Generate subtitles from video audio using Whisper speech recognition",
             port: 18003,
-            python_deps: &["faster-whisper", "numpy"],
+            // faster-whisper pinned (M1). numpy left to faster-whisper's resolver.
+            python_deps: &["faster-whisper==1.2.1", "numpy"],
         },
         AddonManifest {
             id: "frame-interpolation",
@@ -50,7 +53,9 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             name: "Chromecast/DLNA",
             description: "Cast media to Chromecast and DLNA-compatible devices on the local network",
             port: 18006,
-            python_deps: &["pychromecast", "async-upnp-client", "aiohttp"],
+            // pychromecast pinned (M1, top-level lib); it resolves compatible
+            // async-upnp-client/aiohttp, so those stay unpinned to avoid a cap conflict.
+            python_deps: &["pychromecast==14.0.10", "async-upnp-client", "aiohttp"],
         },
         AddonManifest {
             id: "svp",

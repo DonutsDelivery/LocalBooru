@@ -155,7 +155,10 @@ def generate_ffmpeg_svp_script(
     # Resolve platform-specific SVP plugin paths for injection
     _flow1_path, _flow2_path = get_svp_plugin_full_paths()
 
-    escaped_path = video_path.replace("\\", "\\\\").replace("'", "\\'")
+    # Embed the path as a proper Python string literal. repr() handles quotes,
+    # backslashes and any other special characters robustly, instead of the
+    # brittle hand-rolled escaping this used before.
+    video_path_literal = repr(video_path)
     src_fps = src_fps_num / src_fps_den
 
     # Calculate frames to skip and remaining frames
@@ -266,7 +269,7 @@ import threading
 from collections import deque
 
 # Video parameters (pre-computed)
-VIDEO_PATH = '{escaped_path}'
+VIDEO_PATH = {video_path_literal}
 WIDTH = {width}
 HEIGHT = {height}
 FPS_NUM = {src_fps_num}

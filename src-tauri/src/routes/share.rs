@@ -58,6 +58,28 @@ pub fn create_share_sessions() -> ShareSessions {
 
 const SESSION_CHANNEL_CAPACITY: usize = 64;
 
+// ---- Share-create rate limit (M2) ----
+// Fixed-window per-IP limiter on session creation so a single client can't spam
+// unbounded in-memory sessions. Generous enough to never bother real use.
+const SHARE_CREATE_MAX_PER_WINDOW: u32 = 30;
+const SHARE_CREATE_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+
+static SHARE_CREATE_LIMITER: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<std::net::IpAddr, (std::time::Instant, u32)>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Returns `true` if this IP is within its create budget for the current window.
+fn share_create_rate_ok(ip: std::net::IpAddr) -> bool {
+    let now = std::time::Instant::now();
+    let mut map = SHARE_CREATE_LIMITER.lock().unwrap();
+    let entry = map.entry(ip).or_insert((now, 0));
+    if now.duration_since(entry.0) > SHARE_CREATE_WINDOW {
+        *entry = (now, 0);
+    }
+    entry.1 += 1;
+    entry.1 <= SHARE_CREATE_MAX_PER_WINDOW
+}
+
 // ---- Router ----
 
 pub fn router() -> Router<AppState> {
@@ -96,6 +118,12 @@ async fn create_session(
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     Json(body): Json<CreateSessionBody>,
 ) -> Result<Json<Value>, AppError> {
+    if !share_create_rate_ok(addr.ip()) {
+        return Err(AppError::TooManyRequests(
+            "Too many share sessions created; slow down and try again shortly.".into(),
+        ));
+    }
+
     let token = uuid::Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
 
