@@ -1,8 +1,9 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { getMediaUrl, getAssetUrl, isUsingLocalServer, getSVPConfig, updateSVPConfig, stopSVPStream, stopInterpolatedStream, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo } from '../../api'
+import { getMediaUrl, getAssetUrl, isUsingLocalServer, getSVPConfig, updateSVPConfig, stopSVPStream, stopInterpolatedStream, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo, uploadImage } from '../../api'
 import { isMobileApp } from '../../serverManager'
 import { getDesktopAPI } from '../../tauriAPI'
 import { toast } from '../Toast'
+import ContextMenu from '../ContextMenu'
 import SVPSideMenu from '../SVPSideMenu'
 import QualitySelector from '../QualitySelector'
 import '../Lightbox.css'
@@ -133,6 +134,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     return localStorage.getItem('video_quality_preference') || 'original'
   })
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState(null)
+
   // Refs
   const mediaRef = useRef(null)
   const containerRef = useRef(null)
@@ -171,7 +175,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     streamTransitioningRef: streaming.streamTransitioningRef,
     getCurrentAbsoluteTime: streaming.getCurrentAbsoluteTime,
     restartSVPFromPosition: streaming.restartSVPFromPosition,
-    restartTranscodeFromPosition: streaming.restartTranscodeFromPosition
+    restartTranscodeFromPosition: streaming.restartTranscodeFromPosition,
+    setAudioOutputVolume: streaming.setAudioOutputVolume,
+    setAudioOutputMuted: streaming.setAudioOutputMuted
   }, image?.id, image?.directory_id)
 
   // Zoom and pan hook
@@ -194,6 +200,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     totalImages: images.length,
     isVideoFile: isVideo(image?.original_filename),
     streamTransitioningRef: streaming.streamTransitioningRef,
+    getCurrentAbsoluteTime: streaming.getCurrentAbsoluteTime,
+    durationRef: playback.durationRef,
+    isStreaming: Boolean(streaming.svpStreamUrl || streaming.transcodeStreamUrl || streaming.opticalFlowStreamUrl),
+    isBuffering: Boolean(streaming.svpLoading || streaming.opticalFlowLoading),
+    pendingSeek: streaming.svpPendingSeek,
+    bufferedEnd: streaming.svpStreamUrl
+      ? streaming.svpStartOffset + streaming.svpBufferedDuration
+      : streaming.transcodeStreamUrl
+        ? streaming.transcodeStartOffset + streaming.transcodeBufferedDuration
+        : 0,
   })
 
   // Share stream hook (host side)
@@ -405,11 +421,53 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setTimeout(() => setCopyFeedback(null), 1500)
   }, [image])
 
+  // Paste image from clipboard into the current image's directory
+  const handlePasteImage = useCallback(async () => {
+    try {
+      const items = await navigator.clipboard.read()
+      let imageBlob = null
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          imageBlob = await item.getType(imageType)
+          break
+        }
+      }
+      if (!imageBlob) {
+        toast.error('No image found in clipboard')
+        return
+      }
+      const ext = imageBlob.type.split('/')[1] || 'png'
+      const file = new File([imageBlob], `pasted-image.${ext}`, { type: imageBlob.type })
+      await uploadImage(file, image.directory_id)
+      toast.success('Image pasted!')
+      onImageUpdate?.()
+    } catch (err) {
+      toast.error('Failed to paste image: ' + err.message)
+    }
+  }, [image, onImageUpdate])
+
+  // Show context menu on right-click
+  const handleImageContextMenu = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }, [])
+
   // Handle click on video — delegated to gesture hook (tap zones)
   const handleVideoClick = useCallback((e) => {
     if (!isVideo(image?.original_filename)) return
+    if (casting.isCasting) {
+      e.stopPropagation()
+      if (casting.castStatus?.state === 'playing') {
+        casting.castPause()
+      } else {
+        casting.castResume()
+      }
+      return
+    }
     gestures.handleVideoClick(e)
-  }, [image?.original_filename, gestures])
+  }, [image?.original_filename, gestures, casting])
 
   // Collection picker handlers
   const handleOpenCollectionPicker = useCallback(async () => {
@@ -493,11 +551,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       if (newEnabled) {
         // Auto-start effect watches svpConfig.enabled and will start the stream
       } else {
-        // Stop SVP stream
-        if (streaming.svpStreamUrl) {
-          await stopSVPStream()
-          streaming.setSvpStreamUrl(null)
-        }
+        setCurrentQuality('original')
+        localStorage.setItem('video_quality_preference', 'original')
+        await streaming.handleQualityChange('original', playback.setCurrentTime)
         streaming.setSvpError(null)
         streaming.setSvpLoading(false)
         streaming.svpStartingRef.current = false
@@ -678,11 +734,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         switch (e.key) {
           case ' ':
             e.preventDefault()
-            playback.toggleVideoPlay()
+            if (casting.isCasting) {
+              casting.castStatus?.state === 'playing' ? casting.castPause() : casting.castResume()
+            } else {
+              playback.toggleVideoPlay()
+            }
             return
           case 'ArrowLeft':
             e.preventDefault()
-            if (e.ctrlKey || e.metaKey) {
+            if (casting.isCasting) {
+              casting.castSeekRelative(e.ctrlKey || e.metaKey ? -30 : e.shiftKey ? -1 : -5)
+            } else if (e.ctrlKey || e.metaKey) {
               playback.seekVideo(-30) // Ctrl+Left: -30s
             } else if (e.shiftKey) {
               playback.seekVideo(-1) // Shift+Left: -1s
@@ -692,7 +754,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             return
           case 'ArrowRight':
             e.preventDefault()
-            if (e.ctrlKey || e.metaKey) {
+            if (casting.isCasting) {
+              casting.castSeekRelative(e.ctrlKey || e.metaKey ? 30 : e.shiftKey ? 1 : 5)
+            } else if (e.ctrlKey || e.metaKey) {
               playback.seekVideo(30) // Ctrl+Right: +30s
             } else if (e.shiftKey) {
               playback.seekVideo(1) // Shift+Right: +1s
@@ -702,16 +766,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             return
           case 'ArrowUp':
             e.preventDefault()
-            playback.adjustVolume(0.05) // Volume +5%
+            casting.isCasting ? casting.castVolumeRelative(0.05) : playback.adjustVolume(0.05)
             return
           case 'ArrowDown':
             e.preventDefault()
-            playback.adjustVolume(-0.05) // Volume -5%
+            casting.isCasting ? casting.castVolumeRelative(-0.05) : playback.adjustVolume(-0.05)
             return
           case 'm':
           case 'M':
             e.preventDefault()
-            playback.toggleMute()
+            if (!casting.isCasting) playback.toggleMute()
             return
           case 'f':
           case 'F':
@@ -722,20 +786,24 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           case '=':
           case ']':
             e.preventDefault()
+            if (casting.isCasting) return
             playback.increaseSpeed() // Speed +0.25x
             return
           case '-':
           case '[':
             e.preventDefault()
+            if (casting.isCasting) return
             playback.decreaseSpeed() // Speed -0.25x
             return
           case 'Backspace':
             e.preventDefault()
+            if (casting.isCasting) return
             playback.resetSpeed() // Reset to 1.0x
             return
           case 'e':
           case 'E':
             e.preventDefault()
+            if (casting.isCasting) return
             playback.frameAdvance() // Frame advance (when paused)
             return
           case 'c':
@@ -844,23 +912,27 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Also reset hide timer to ensure auto-hide works on mobile/Capacitor
   // Also check if browser can decode the video codec (fallback to transcode if not)
   const handleVideoCanPlay = useCallback((e) => {
-    e.target.play().catch(() => {})
+    const streamActive = Boolean(streaming.svpStreamUrl || streaming.transcodeStreamUrl || streaming.opticalFlowStreamUrl)
+    if (!casting.isCasting && !streamActive && playback.isPlaying) {
+      e.target.play().catch(() => {})
+    }
     resetHideTimer()
     streaming.checkCodecFallback(e.target)
-  }, [resetHideTimer, streaming.checkCodecFallback])
+  }, [
+    casting.isCasting,
+    playback.isPlaying,
+    resetHideTimer,
+    streaming.svpStreamUrl,
+    streaming.transcodeStreamUrl,
+    streaming.opticalFlowStreamUrl,
+    streaming.checkCodecFallback,
+  ])
 
   // Handle video context menu
   const handleVideoContextMenu = useCallback((e) => {
     e.preventDefault()
-    const desktopAPI = getDesktopAPI()
-    if (desktopAPI?.showImageContextMenu) {
-      desktopAPI.showImageContextMenu({
-        imageUrl: getMediaUrl(image?.url),
-        filePath: image?.file_path,
-        isVideo: true
-      })
-    }
-  }, [image?.url, image?.file_path])
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }, [])
 
   // Determine if we should play the video directly (no streaming)
   const shouldPlayDirect = useMemo(() => {
@@ -901,7 +973,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   return (
     <div
-      className={`lightbox ${!showUI ? 'ui-hidden' : ''} ${zoomPan.zoom.scale > 1 ? 'zoomed' : ''} ${isFullscreen ? 'fullscreen' : ''} ${isVideoFile ? 'lightbox-video' : ''}`}
+      className={`lightbox ${!showUI ? 'ui-hidden' : ''} ${zoomPan.zoom.scale > 1 ? 'zoomed' : ''} ${isFullscreen ? 'fullscreen' : ''} ${isVideoFile ? 'lightbox-video' : ''} ${casting.isCasting ? 'casting-active' : ''}`}
       onClick={handleNavClick}
       onDoubleClick={handleDoubleClick}
       onMouseMove={(e) => { handleMouseMove(); zoomPan.handleMouseMoveDrag(e); }}
@@ -997,9 +1069,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               </svg>
             </button>
             {casting.showDevicePicker && !casting.isCasting && (
+              <>
+              <div className="cast-picker-backdrop" onClick={(e) => { e.stopPropagation(); casting.toggleDevicePicker() }} />
               <div className="cast-device-picker" onClick={(e) => e.stopPropagation()}>
                 <div className="cast-picker-header">
-                  <span>Cast to</span>
+                  <div className="cast-picker-title">
+                    <span>Cast to</span>
+                    <span className="cast-picker-subtitle">
+                      {casting.devicesLoading ? 'Scanning for devices…' : `${casting.devices.length} device${casting.devices.length === 1 ? '' : 's'} found`}
+                    </span>
+                  </div>
                   <button className="cast-picker-refresh" onClick={casting.refreshDevices} disabled={casting.devicesLoading}>
                     {casting.devicesLoading ? (
                       <div className="cast-picker-spinner" />
@@ -1039,10 +1118,25 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   </div>
                 ) : (
                   <div className="cast-picker-empty">
-                    {casting.devicesLoading ? 'Scanning...' : 'No devices found'}
+                    {casting.devicesLoading ? (
+                      <>
+                        <div className="cast-picker-spinner large" />
+                        <span>Looking for devices on your network…</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <path d="M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
+                          <line x1="2" y1="20" x2="2.01" y2="20"/>
+                        </svg>
+                        <span>No devices found</span>
+                        <span className="cast-picker-empty-hint">Make sure your TV is on and connected to the same network</span>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
+              </>
             )}
           </div>
         )}
@@ -1332,9 +1426,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         ) : isVideoFile ? (
           <div
             className="lightbox-video-container"
-            onTouchStart={gestures.handleTouchStart}
-            onTouchMove={gestures.handleTouchMove}
-            onTouchEnd={gestures.handleTouchEnd}
+            onTouchStart={casting.isCasting ? undefined : gestures.handleTouchStart}
+            onTouchMove={casting.isCasting ? undefined : gestures.handleTouchMove}
+            onTouchEnd={casting.isCasting ? undefined : gestures.handleTouchEnd}
           >
             <video
               key={image.id}
@@ -1392,10 +1486,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 </button>
                 <button
                   className="video-play-btn-center"
-                  onClick={playback.toggleVideoPlay}
-                  title={playback.isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+                  onClick={casting.isCasting ? (() => casting.castStatus?.state === 'playing' ? casting.castPause() : casting.castResume()) : playback.toggleVideoPlay}
+                  title={(casting.isCasting ? casting.castStatus?.state === 'playing' : playback.isPlaying) ? 'Pause (Space)' : 'Play (Space)'}
                 >
-                  {playback.isPlaying ? (
+                  {(casting.isCasting ? casting.castStatus?.state === 'playing' : playback.isPlaying) ? (
                     <svg viewBox="0 0 24 24" fill="currentColor">
                       <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
                     </svg>
@@ -1417,23 +1511,36 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               </div>
               {/* Timeline row */}
               <div className="video-controls-row">
-              <span className="video-time" ref={playback.timeDisplayRef}>{formatTime(playback.currentTime)}</span>
+              <span className="video-time" ref={casting.isCasting ? null : playback.timeDisplayRef}>
+                {formatTime(casting.isCasting ? (casting.castStatus?.current_time || 0) : playback.currentTime)}
+              </span>
               <div
-                ref={playback.timelineRef}
-                className={`video-timeline ${!playback.duration ? 'loading' : ''}`}
-                onMouseDown={playback.handleSeekStart}
+                ref={casting.isCasting ? null : playback.timelineRef}
+                className={`video-timeline ${!(casting.isCasting ? casting.castStatus?.duration : playback.duration) ? 'loading' : ''}`}
+                onClick={casting.isCasting ? ((e) => {
+                  const duration = casting.castStatus?.duration || 0
+                  if (!duration) return
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                  casting.castSeek(pct * duration)
+                }) : undefined}
+                onMouseDown={casting.isCasting ? undefined : playback.handleSeekStart}
                 onMouseMove={(e) => {
-                  playback.handleSeekMove(e)
-                  timelinePreview.handleTimelineHover(e)
+                  if (!casting.isCasting) {
+                    playback.handleSeekMove(e)
+                    timelinePreview.handleTimelineHover(e)
+                  }
                 }}
-                onMouseUp={playback.handleSeekEnd}
+                onMouseUp={casting.isCasting ? undefined : playback.handleSeekEnd}
                 onMouseLeave={(e) => {
-                  playback.handleSeekEnd(e)
-                  timelinePreview.handleTimelineHoverEnd()
+                  if (!casting.isCasting) {
+                    playback.handleSeekEnd(e)
+                    timelinePreview.handleTimelineHoverEnd()
+                  }
                 }}
-                onTouchStart={playback.handleSeekTouchStart}
-                onTouchMove={playback.handleSeekTouchMove}
-                onTouchEnd={playback.handleSeekTouchEnd}
+                onTouchStart={casting.isCasting ? undefined : playback.handleSeekTouchStart}
+                onTouchMove={casting.isCasting ? undefined : playback.handleSeekTouchMove}
+                onTouchEnd={casting.isCasting ? undefined : playback.handleSeekTouchEnd}
               >
                 {/* Timeline thumbnail preview */}
                 {timelinePreview.hoverTime !== null && timelinePreview.hasPreviewFrames && (
@@ -1470,17 +1577,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   <div
                     ref={playback.progressBarRef}
                     className="video-timeline-progress"
-                    style={{ width: `${playback.duration ? (playback.currentTime / playback.duration) * 100 : 0}%` }}
+                    style={{ width: `${casting.isCasting ? (casting.castStatus?.duration ? ((casting.castStatus?.current_time || 0) / casting.castStatus.duration) * 100 : 0) : (playback.duration ? (playback.currentTime / playback.duration) * 100 : 0)}%` }}
                   />
                   <div
                     ref={playback.playheadRef}
                     className="video-timeline-playhead"
-                    style={{ left: `${playback.duration ? (playback.currentTime / playback.duration) * 100 : 0}%` }}
+                    style={{ left: `${casting.isCasting ? (casting.castStatus?.duration ? ((casting.castStatus?.current_time || 0) / casting.castStatus.duration) * 100 : 0) : (playback.duration ? (playback.currentTime / playback.duration) * 100 : 0)}%` }}
                   />
                 </div>
               </div>
-              <span className="video-time">{formatTime(playback.duration, true)}</span>
-              {whisperInstalled && (
+              <span className="video-time">{formatTime(casting.isCasting ? (casting.castStatus?.duration || 0) : playback.duration, true)}</span>
+              {!casting.isCasting && whisperInstalled && (
               <div className="subtitle-btn-container">
                 <button
                   className={`video-control-btn subtitle-btn ${subtitles.subtitlesEnabled ? 'active' : ''} ${subtitles.installing ? 'installing' : ''}`}
@@ -1518,7 +1625,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 </button>
               </div>
               )}
-              {svpInstalled && (
+              {!casting.isCasting && svpInstalled && (
               <button
                 className={`video-control-btn svp-toggle-btn ${streaming.svpConfig?.enabled ? 'active' : ''} ${streaming.svpLoading ? 'loading' : ''}`}
                 onClick={(e) => {
@@ -1534,7 +1641,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 )}
               </button>
               )}
-              <button
+              {!casting.isCasting && <button
                 className={`video-control-btn quality-btn ${currentQuality !== 'original' ? 'active' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -1545,14 +1652,14 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54h2.79v2.71h2V13.83h2.79l-2.75-3.54zM7 9h2v2H7z"/>
                 </svg>
-              </button>
+              </button>}
               <div className="video-volume-container">
                 <button
                   className="video-control-btn video-mute-btn"
-                  onClick={playback.toggleMute}
-                  title={playback.isMuted ? 'Unmute (M)' : 'Mute (M)'}
+                  onClick={casting.isCasting ? undefined : playback.toggleMute}
+                  title={casting.isCasting ? 'Chromecast volume' : playback.isMuted ? 'Unmute (M)' : 'Mute (M)'}
                 >
-                  {playback.isMuted || playback.volume === 0 ? (
+                  {(!casting.isCasting && (playback.isMuted || playback.volume === 0)) ? (
                     <svg viewBox="0 0 24 24" fill="currentColor">
                       <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
                     </svg>
@@ -1572,9 +1679,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   min="0"
                   max="1"
                   step="0.05"
-                  value={playback.isMuted ? 0 : playback.volume}
-                  onChange={playback.handleVolumeChange}
-                  title={`Volume: ${Math.round((playback.isMuted ? 0 : playback.volume) * 100)}%`}
+                  value={casting.isCasting ? (casting.castStatus?.volume ?? 1) : (playback.isMuted ? 0 : playback.volume)}
+                  onChange={casting.isCasting ? ((e) => casting.castVolume(parseFloat(e.target.value))) : playback.handleVolumeChange}
+                  title={`Volume: ${Math.round((casting.isCasting ? (casting.castStatus?.volume ?? 1) : (playback.isMuted ? 0 : playback.volume)) * 100)}%`}
                 />
               </div>
               <button
@@ -1674,62 +1781,30 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             {/* Cast remote control overlay */}
             {casting.isCasting && (
               <div className="cast-overlay" onClick={(e) => e.stopPropagation()}>
-                <div className="cast-overlay-header">
+                <div className="cast-overlay-icon-wrap">
+                  <span className="cast-overlay-pulse" />
+                  <span className="cast-overlay-pulse delay" />
                   <svg viewBox="0 0 24 24" fill="currentColor" className="cast-overlay-icon">
                     <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm18-7H5v1.63c3.96 1.28 7.09 4.41 8.37 8.37H19V7zM1 10v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
                   </svg>
-                  <span>Casting to TV</span>
                 </div>
-                <div className="cast-overlay-controls">
-                  <button
-                    className="cast-control-btn"
-                    onClick={() => casting.castStatus?.state === 'playing' ? casting.castPause() : casting.castResume()}
-                  >
-                    {casting.castStatus?.state === 'playing' ? (
-                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>
-                    ) : (
-                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                    )}
-                  </button>
+                <div className="cast-overlay-status">
+                  {casting.castStatus?.state === 'paused' ? 'Paused on' : 'Playing on'}
                 </div>
-                {/* Cast timeline */}
-                {casting.castStatus?.duration > 0 && (
-                  <div className="cast-timeline-row">
-                    <span className="cast-time">{formatTime(casting.castStatus.current_time || 0)}</span>
-                    <div
-                      className="cast-timeline"
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const pct = (e.clientX - rect.left) / rect.width
-                        casting.castSeek(pct * casting.castStatus.duration)
-                      }}
-                    >
-                      <div className="cast-timeline-track">
-                        <div
-                          className="cast-timeline-progress"
-                          style={{ width: `${(casting.castStatus.current_time / casting.castStatus.duration) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                    <span className="cast-time">{formatTime(casting.castStatus.duration)}</span>
+                <div className="cast-overlay-device">
+                  {casting.activeDevice?.name || 'TV'}
+                </div>
+                {(casting.castStatus?.title || image?.original_filename) && (
+                  <div className="cast-overlay-title">
+                    {casting.castStatus?.title || image?.original_filename}
                   </div>
                 )}
-                {/* Cast volume */}
-                <div className="cast-volume-row">
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="cast-volume-icon">
-                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
-                  </svg>
-                  <input
-                    type="range"
-                    className="cast-volume-slider"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={casting.castStatus?.volume ?? 1}
-                    onChange={(e) => casting.castVolume(parseFloat(e.target.value))}
-                  />
-                </div>
                 <button className="cast-stop-btn" onClick={casting.stopCasting}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
+                    <line x1="2" y1="20" x2="2.01" y2="20"/>
+                    <line x1="17" y1="9" x2="9" y2="17"/>
+                  </svg>
                   Stop Casting
                 </button>
               </div>
@@ -1782,17 +1857,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             alt=""
             className="lightbox-media"
             style={{ ...(previewUrl ? {} : getFilterStyle()), ...zoomPan.getZoomTransform() }}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              const desktopAPI = getDesktopAPI()
-              if (desktopAPI?.showImageContextMenu) {
-                desktopAPI.showImageContextMenu({
-                  imageUrl: getMediaUrl(image.url),
-                  filePath: image.file_path,
-                  isVideo: false
-                })
-              }
-            }}
+            onContextMenu={handleImageContextMenu}
           />
         )}
       </div>
@@ -1973,6 +2038,24 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           </div>
           <div className="subtitle-menu-backdrop" onClick={() => setShowSubtitleMenu(false)} />
         </>
+      )}
+
+      {contextMenu && (
+        <ContextMenu
+          position={contextMenu}
+          onClose={() => setContextMenu(null)}
+          items={[
+            {
+              label: 'Copy Image',
+              onClick: handleCopyImage
+            },
+            {
+              label: 'Paste Image',
+              onClick: handlePasteImage,
+              disabled: !image?.directory_id
+            }
+          ]}
+        />
       )}
     </div>
   )

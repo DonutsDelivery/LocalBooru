@@ -35,6 +35,15 @@
   --window-radius: 12px;
   --title-bar-height: 0px;
 
+  /* System safe areas. On Android the native layer injects --android-inset-*
+     live on every insets change (rotation, immersive mode) because
+     env(safe-area-inset-*) is unreliable in the WebView. Elsewhere we fall
+     back to env(). */
+  --safe-top: var(--android-inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--android-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --safe-left: var(--android-inset-left, env(safe-area-inset-left, 0px));
+  --safe-right: var(--android-inset-right, env(safe-area-inset-right, 0px));
+
   /* Rating colors */
   --rating-safe: #00FFA3;
   --rating-questionable: #ff9800;

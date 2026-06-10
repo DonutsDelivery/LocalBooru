@@ -15,6 +15,27 @@ import {
   getCastConfig,
 } from '../../../api'
 
+function normalizeCastEvent(event) {
+  if (event?.type) return event
+
+  const live = event?.live || {}
+  const media = event?.current_media || {}
+  const rawState = live.status || event?.status || 'idle'
+  const state = rawState === 'casting' ? 'playing' : rawState
+  const data = {
+    state,
+    current_time: live.current_time ?? live.position ?? media.position ?? 0,
+    duration: live.duration ?? media.duration ?? 0,
+    volume: live.volume ?? 1,
+    title: live.title || null,
+  }
+
+  if (state === 'idle' || state === 'stopped') {
+    return { type: 'cast_disconnected', data }
+  }
+  return { type: 'cast_status', data }
+}
+
 export function useCastSession(mediaRef, image) {
   const [castConfig, setCastConfig] = useState(null)
   const [devices, setDevices] = useState([])
@@ -23,6 +44,7 @@ export function useCastSession(mediaRef, image) {
   const [castError, setCastError] = useState(null)
   const [showDevicePicker, setShowDevicePicker] = useState(false)
   const [devicesLoading, setDevicesLoading] = useState(false)
+  const [activeDevice, setActiveDevice] = useState(null) // device object while casting
 
   const sseCleanupRef = useRef(null)
   const localPositionRef = useRef(0) // Position when cast started (to resume local)
@@ -44,6 +66,11 @@ export function useCastSession(mediaRef, image) {
     }
   }, [])
 
+  useEffect(() => {
+    if (!isCasting || !mediaRef.current) return
+    mediaRef.current.pause()
+  }, [isCasting, mediaRef])
+
   // Stop casting when image changes
   useEffect(() => {
     if (isCasting) {
@@ -57,16 +84,17 @@ export function useCastSession(mediaRef, image) {
       sseCleanupRef.current()
     }
 
-    sseCleanupRef.current = subscribeToCastEvents((event) => {
+    sseCleanupRef.current = subscribeToCastEvents((rawEvent) => {
+      const event = normalizeCastEvent(rawEvent)
       if (event.type === 'cast_status') {
         setCastStatus(event.data)
       } else if (event.type === 'cast_disconnected') {
         setIsCasting(false)
+        setActiveDevice(null)
         setCastStatus(null)
-        // Resume local video at cast position
+        // Keep local playback paused; only restore position.
         if (mediaRef.current && event.data?.current_time) {
           mediaRef.current.currentTime = event.data.current_time
-          mediaRef.current.play().catch(() => {})
         }
         if (sseCleanupRef.current) {
           sseCleanupRef.current()
@@ -134,6 +162,14 @@ export function useCastSession(mediaRef, image) {
 
       if (result.success) {
         setIsCasting(true)
+        setActiveDevice(devices.find(d => d.id === deviceId) || null)
+        setCastStatus(prev => ({
+          state: 'playing',
+          current_time: 0,
+          duration: prev?.duration || result.duration || 0,
+          volume: prev?.volume ?? 1,
+          title: result.file || image.filename || image.original_filename,
+        }))
         subscribeToCast()
       } else {
         setCastError(result.error || 'Failed to start casting')
@@ -151,7 +187,7 @@ export function useCastSession(mediaRef, image) {
         mediaRef.current.play().catch(() => {})
       }
     }
-  }, [image, mediaRef, subscribeToCast])
+  }, [image, mediaRef, subscribeToCast, devices])
 
   // Stop casting
   const handleStopCasting = useCallback(async () => {
@@ -161,16 +197,16 @@ export function useCastSession(mediaRef, image) {
       console.error('[Cast] Failed to stop casting:', e)
     }
     setIsCasting(false)
+    setActiveDevice(null)
 
     if (sseCleanupRef.current) {
       sseCleanupRef.current()
       sseCleanupRef.current = null
     }
 
-    // Resume local video at cast position
+    // Restore local position but leave playback paused.
     if (mediaRef.current && castStatus?.current_time) {
       mediaRef.current.currentTime = castStatus.current_time
-      mediaRef.current.play().catch(() => {})
     }
     setCastStatus(null)
   }, [mediaRef, castStatus])
@@ -179,6 +215,7 @@ export function useCastSession(mediaRef, image) {
   const handleCastPause = useCallback(async () => {
     try {
       await castControl('pause')
+      setCastStatus(prev => prev ? { ...prev, state: 'paused' } : prev)
     } catch (e) {
       console.error('[Cast] Pause error:', e)
     }
@@ -187,6 +224,7 @@ export function useCastSession(mediaRef, image) {
   const handleCastResume = useCallback(async () => {
     try {
       await castControl('resume')
+      setCastStatus(prev => prev ? { ...prev, state: 'playing' } : prev)
     } catch (e) {
       console.error('[Cast] Resume error:', e)
     }
@@ -195,6 +233,7 @@ export function useCastSession(mediaRef, image) {
   const handleCastSeek = useCallback(async (position) => {
     try {
       await castControl('seek', position)
+      setCastStatus(prev => prev ? { ...prev, current_time: position } : prev)
     } catch (e) {
       console.error('[Cast] Seek error:', e)
     }
@@ -203,15 +242,32 @@ export function useCastSession(mediaRef, image) {
   const handleCastVolume = useCallback(async (level) => {
     try {
       await castControl('volume', level)
+      setCastStatus(prev => prev ? { ...prev, volume: level } : prev)
     } catch (e) {
       console.error('[Cast] Volume error:', e)
     }
   }, [])
 
+  const handleCastSeekRelative = useCallback((delta) => {
+    const duration = castStatus?.duration || 0
+    const current = castStatus?.current_time || 0
+    const next = duration > 0
+      ? Math.max(0, Math.min(duration, current + delta))
+      : Math.max(0, current + delta)
+    return handleCastSeek(next)
+  }, [castStatus?.current_time, castStatus?.duration, handleCastSeek])
+
+  const handleCastVolumeRelative = useCallback((delta) => {
+    const current = castStatus?.volume ?? 1
+    const next = Math.max(0, Math.min(1, current + delta))
+    return handleCastVolume(next)
+  }, [castStatus?.volume, handleCastVolume])
+
   return {
     castConfig,
     devices,
     isCasting,
+    activeDevice,
     castStatus,
     castError,
     showDevicePicker,
@@ -223,6 +279,8 @@ export function useCastSession(mediaRef, image) {
     castPause: handleCastPause,
     castResume: handleCastResume,
     castSeek: handleCastSeek,
+    castSeekRelative: handleCastSeekRelative,
     castVolume: handleCastVolume,
+    castVolumeRelative: handleCastVolumeRelative,
   }
 }

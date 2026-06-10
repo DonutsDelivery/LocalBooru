@@ -18,10 +18,10 @@
 .lightbox-toolbar {
   position: absolute;
   top: 20px;
-  right: 20px;
+  right: calc(20px + var(--safe-right, 0px));
   display: flex;
   gap: 8px;
-  z-index: 10;
+  z-index: 25; /* above video controls so the cast picker sheet isn't covered */
   transition: opacity 0.3s ease;
 }
 
@@ -136,7 +136,7 @@ video.lightbox-media {
 
 .lightbox-counter {
   position: absolute;
-  bottom: 20px;
+  bottom: calc(20px + var(--safe-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   padding: 8px 16px;
@@ -570,8 +570,22 @@ video.lightbox-media {
    On desktop this is applied alongside the native Fullscreen API.
    On Android WebView (where the API is unavailable) this alone handles
    fullscreen by covering the title bar and using the full viewport. */
+/* Fullscreen covers the status bar area, so push the toolbar below it
+   (insets go to 0 while immersive mode hides the bars) */
+.lightbox.fullscreen .lightbox-toolbar {
+  top: calc(20px + var(--safe-top, 0px));
+}
+
 .lightbox.fullscreen {
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  width: 100dvw;
+  height: 100vh;
+  height: 100dvh;
   /* Override safe-area / title-bar offsets for true edge-to-edge */
   z-index: 2147483647;
 }
@@ -579,6 +593,8 @@ video.lightbox-media {
 .lightbox.fullscreen .lightbox-content {
   height: 100vh;
   height: 100dvh;
+  width: 100vw;
+  width: 100dvw;
   padding: 0;
 }
 
@@ -835,7 +851,10 @@ video.lightbox-media.video-display-original {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 20px 16px 12px;
+  padding: 20px
+    calc(16px + var(--safe-right, 0px))
+    calc(12px + var(--safe-bottom, 0px))
+    calc(16px + var(--safe-left, 0px));
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
   opacity: 0;
   transition: opacity 0.3s ease;
@@ -1172,7 +1191,10 @@ video.lightbox-media.video-display-original {
 /* Mobile adjustments */
 @media (max-width: 768px) {
   .lightbox-video-controls {
-    padding: 16px 12px 10px;
+    padding: 16px
+      calc(12px + var(--safe-right, 0px))
+      calc(10px + var(--safe-bottom, 0px))
+      calc(12px + var(--safe-left, 0px));
     gap: 6px;
   }
 
@@ -1909,6 +1931,14 @@ video::cue {
   color: #4fc3f7;
 }
 
+/* Invisible click-away layer behind the picker (becomes a dim scrim on mobile) */
+.cast-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: transparent;
+}
+
 /* Device picker dropdown */
 .cast-device-picker {
   position: absolute;
@@ -1920,7 +1950,7 @@ video::cue {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  min-width: 260px;
+  min-width: 280px;
   z-index: 50;
   animation: dropdown-fade 0.15s ease-out;
   overflow: hidden;
@@ -1930,13 +1960,27 @@ video::cue {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cast-picker-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.85);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cast-picker-subtitle {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .cast-picker-refresh {
@@ -2035,42 +2079,159 @@ video::cue {
 }
 
 .cast-picker-empty {
-  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 20px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.55);
   font-size: 0.85rem;
 }
 
-/* Cast remote control overlay */
+.cast-picker-empty svg {
+  width: 32px;
+  height: 32px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.cast-picker-empty-hint {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.35);
+  line-height: 1.4;
+}
+
+.cast-picker-spinner.large {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+}
+
+/* Mobile: present the picker as a bottom sheet that respects system bars */
+@media (max-width: 768px) {
+  .cast-picker-backdrop {
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  .cast-device-picker {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    min-width: 0;
+    border-radius: 16px 16px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding-bottom: var(--safe-bottom, 0px);
+    animation: cast-sheet-up 0.2s ease-out;
+  }
+
+  .cast-picker-device {
+    padding: 14px 18px;
+  }
+}
+
+@keyframes cast-sheet-up {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Dim the local (paused) video while playback happens on the TV */
+.lightbox.casting-active video.lightbox-media {
+  opacity: 0.18;
+  filter: blur(2px) saturate(0.6);
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+/* "Now playing on TV" card, centered over the dimmed video */
 .cast-overlay {
   position: absolute;
-  bottom: 80px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
-  background: rgba(20, 20, 20, 0.92);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
-  padding: 16px 20px;
-  min-width: 320px;
-  max-width: 420px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: rgba(18, 18, 22, 0.85);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 28px 32px 24px;
+  min-width: 280px;
+  max-width: min(420px, calc(100vw - 48px));
   z-index: 30;
+  cursor: default;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
   animation: dropdown-fade 0.2s ease-out;
 }
 
-.cast-overlay-header {
+.cast-overlay-icon-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
   margin-bottom: 14px;
-  color: #4fc3f7;
-  font-size: 0.85rem;
-  font-weight: 600;
 }
 
 .cast-overlay-icon {
-  width: 20px;
-  height: 20px;
+  width: 36px;
+  height: 36px;
+  color: #4fc3f7;
+  z-index: 1;
+}
+
+.cast-overlay-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(79, 195, 247, 0.4);
+  animation: cast-pulse 2.4s ease-out infinite;
+}
+
+.cast-overlay-pulse.delay {
+  animation-delay: 1.2s;
+}
+
+@keyframes cast-pulse {
+  0% { transform: scale(0.55); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: scale(1.15); opacity: 0; }
+}
+
+.cast-overlay-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 4px;
+}
+
+.cast-overlay-device {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cast-overlay-title {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 18px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cast-overlay-controls {
@@ -2178,16 +2339,25 @@ video::cue {
 }
 
 .cast-stop-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   width: 100%;
-  padding: 8px;
+  padding: 10px;
   background: rgba(255, 107, 107, 0.15);
   border: 1px solid rgba(255, 107, 107, 0.3);
-  border-radius: 8px;
+  border-radius: 10px;
   color: #ff6b6b;
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
   transition: background 0.15s;
+}
+
+.cast-stop-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .cast-stop-btn:hover {
