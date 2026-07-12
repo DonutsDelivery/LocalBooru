@@ -3,81 +3,101 @@ slugs:
   - desktop
 title: Desktop App
 type: module
+description: Tauri v2 desktop app with system tray, window management, native integration
 status:
   maturity: draft
   implementation: implemented
-description: Tauri v2 desktop app with system tray, window management, native integration
-tags: []
 depends_on: []
 implements: []
 relates_to: []
 tests: []
 traits: []
-notes: []
+tags: []
 features:
   - _ulid: 01KK693T4QSDJS8NDBEHCK0KBS
     slugs:
       - desktop-window
     title: Window Management
     type: feature
-    tags: []
     description: Custom title bar with min/max/close/quit, draggable region, system tray with menu,
       close-to-tray, window state persistence, single-instance
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:40.279Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK693TCHRCB7G97FXBBAS5HH
     slugs:
       - desktop-native
     title: Native Integration
     type: feature
-    tags: []
     description: File dialog for directory picker, show file in explorer, copy to clipboard, context
       menu, hardware acceleration (VA-API/NVDEC/Vulkan on Linux)
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:40.529Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK693TJFKWMVYMZJYHQV6AZ3
     slugs:
       - desktop-updater
     title: Auto-Updater
     type: feature
-    tags: []
     description: Check for updates on focus, update banner notification, download and install
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:40.719Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK693TSMQD165RHC9659NTX9
     slugs:
       - desktop-autostart
     title: Autostart
     type: feature
-    tags: []
     description: Register app to launch on system boot (macOS), autostart plugin
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:40.948Z
-    status:
-      implementation: implemented
+    notes: []
+  - _ulid: 01KXAGJJWXHE735HQ312QKYGHV
+    slugs:
+      - addon-settings
+    title: Add-on Settings and Auto Tagger Configuration
+    type: feature
+    description: Provide a dedicated Add-on Settings surface for installed configurable sidecars,
+      preserve core Video and directory-scoped controls, and make Auto Tagger model/provider
+      selection observable and configurable through the Rust/Tauri application.
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    priority: high
+    tags:
+      - addons
+      - settings
+      - desktop
+    created: 2026-07-12T06:35:00.381Z
+    notes: []
+notes: []
