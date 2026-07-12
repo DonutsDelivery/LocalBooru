@@ -447,7 +447,7 @@ tasks:
     title: Implement add-on settings migration
     type: task
     spec_ref: "@addon-settings"
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 1
@@ -458,3 +458,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-07-12T06:35:14.510Z
+    started_at: 2026-07-12T06:35:29.402Z

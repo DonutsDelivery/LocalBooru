@@ -8,7 +8,7 @@ description: "Execute .hermes/plans/2026-07-12_080053-addon-settings-migration.m
 spec_ref: "@addon-settings"
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
@@ -18,5 +18,17 @@ tags:
   - settings
   - tauri
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-07-12T06:35:29.402Z
+        previous: null
+    command: task-start
+    timestamp: 2026-07-12T06:35:29.402Z
 created_at: 2026-07-12T06:35:14.510Z
+started_at: 2026-07-12T06:35:29.402Z
 todos: []
