@@ -93,6 +93,28 @@ features:
     relates_to: []
     tests: []
     traits: []
+    acceptance_criteria:
+      - given: configurable add-ons are installed
+        id: ac-1
+        then: the app lists only installed add-ons with supported settings panels and renders the selected
+          panel
+        when: the user opens Add-on Settings
+      - given: Whisper, Cast, SVP, and Age Detector are installed
+        id: ac-2
+        then: their add-on-specific controls are not duplicated under General or Video, while built-in
+          FFmpeg interpolation remains under Video and directory-specific actions remain under
+          Directories
+        when: settings navigation is rendered
+      - given: the Auto Tagger add-on is configured
+        id: ac-3
+        then: the app persists the model and thresholds, obtains both required model files, launches the
+          sidecar with that selection, and reports requested, available, and active ONNX providers
+          accurately
+        when: the user selects a supported model and device preference
+      - given: the Tauri v2 application is packaged
+        id: ac-4
+        then: it uses the supported Tauri path without Electron metadata, dependencies, or packaging scripts
+        when: the release build runs
     priority: high
     tags:
       - addons

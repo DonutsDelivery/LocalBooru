@@ -1,0 +1,22 @@
+_ulid: 01KXAGK0PE0YZ1383JA5NVD5XS
+slugs:
+  - addon-settings-migration
+title: Implement add-on settings migration
+type: task
+description: "Execute .hermes/plans/2026-07-12_080053-addon-settings-migration.md: dedicated Add-on
+  Settings UI, Auto Tagger model/provider lifecycle, and Tauri-only package cleanup."
+spec_ref: "@addon-settings"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags:
+  - addons
+  - settings
+  - tauri
+vcs_refs: []
+created_at: 2026-07-12T06:35:14.510Z
+todos: []
