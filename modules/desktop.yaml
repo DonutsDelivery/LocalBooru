@@ -88,6 +88,9 @@ features:
     description: Provide a dedicated Add-on Settings surface for installed configurable sidecars,
       preserve core Video and directory-scoped controls, and make Auto Tagger model/provider
       selection observable and configurable through the Rust/Tauri application.
+    status:
+      maturity: draft
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
