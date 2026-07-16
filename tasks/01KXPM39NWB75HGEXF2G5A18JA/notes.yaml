@@ -1,1 +1,14 @@
-notes: []
+notes:
+  - _ulid: 01KXPM75Q0X8KP8KGDDWKPNQX1
+    content: "Approach: define a versioned Pydantic protocol plus a framework-independent
+      ProcessingSession, bounded segment store, registry, and deterministic fake producer under
+      addons/svp. Reuse the addon's existing sidecar boundary; do not alter the legacy HLS pipeline
+      yet. Edge cases: stale and skipped generations, repeated stop/pause/resume, capacity
+      backpressure, segment cleanup, timestamp regression, excessive A/V drift, and rapid seeks.
+      Test plan: annotated unittest coverage for all three @svp-bounded-stream ACs plus protocol
+      validation and idempotent cleanup. Branch was created from current v2 HEAD; rebase was
+      intentionally skipped because the working tree contains unrelated active-task changes that
+      must not be stashed or rewritten."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-16T23:29:33.920Z
