@@ -3,35 +3,32 @@ slugs:
   - core
 title: Core Application
 type: module
+description: Shared backend (Rust axum) and frontend (React) functionality
 status:
   maturity: draft
   implementation: implemented
-description: Shared backend (Rust axum) and frontend (React) functionality
-tags: []
 depends_on: []
 implements: []
 relates_to: []
 tests: []
 traits: []
-notes: []
+tags: []
 features:
   - _ulid: 01KK68ZN1RTWJQXTX9D9F92WJ6
     slugs:
       - media-browsing
     title: Media Browsing
     type: feature
-    tags: []
     description: Gallery grid with masonry layout, lazy loading. 30+ filter params. Sorting, saved
       searches, directory/library selector.
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:28:23.993Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB10D4GRID0REALTIME0UP0
         slugs:
@@ -53,23 +50,23 @@ features:
         acceptance_criteria:
           - After image deletion, subsequent loadMore does not skip images
           - Total count stays accurate after single and batch deletes
+    created: 2026-03-08T08:28:23.993Z
+    notes: []
   - _ulid: 01KK692XK9SMJRHRRD784A002E
     slugs:
       - lightbox
     title: Media Viewer (Lightbox)
     type: feature
-    tags: []
     description: Image zoom/pan, video player with HLS streaming, quality selector, keyboard shortcuts,
       FPS diagnostics, image adjustments (brightness/contrast/gamma)
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:11.050Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB20A1LB0DELETE0SYNC000
         slugs:
@@ -89,23 +86,23 @@ features:
         description: Favorite toggle in lightbox triggers grid re-sort when sorted by favorites
         acceptance_criteria:
           - When grid sorted by favorites, toggling favorite in lightbox triggers grid re-sort
+    created: 2026-03-08T08:30:11.050Z
+    notes: []
   - _ulid: 01KK692XSZDQQ8QMADEPVFH0EE
     slugs:
       - tagging
     title: Tag System
     type: feature
-    tags: []
     description: Tag CRUD, categories (character/series/artist/meta), aliases, autocomplete, bulk
       operations, cross-directory aggregation
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:11.263Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB10F6TAG0COUNT0ACCUR00
         slugs:
@@ -127,23 +124,23 @@ features:
           - Tag sidebar refreshes after auto-tagging completes
           - Tag sidebar refreshes on tag SSE events
           - Tag cache resets on library switch
+    created: 2026-03-08T08:30:11.263Z
+    notes: []
   - _ulid: 01KK692Y15WJJ3R2ZE82ZWJPCY
     slugs:
       - library-management
     title: Library Management
     type: feature
-    tags: []
     description: Multi-library support, mount/unmount, per-directory SQLite, watch directories with
       auto-import, parent directory watching, directory repair/verify/prune
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:11.494Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB40A1LIB0SWITCH0RESET
         slugs:
@@ -165,22 +162,22 @@ features:
           - DirectoriesPage periodically checks path_exists or subscribes to drive events
           - Disconnected drives update to show offline status within reasonable time
           - No confusing errors when operating on offline drives
+    created: 2026-03-08T08:30:11.494Z
+    notes: []
   - _ulid: 01KK692Y6RV3WETK2VWNXSA17X
     slugs:
       - collections
     title: Collections
     type: feature
-    tags: []
     description: Named collections with cover images, add/remove/reorder items, create from lightbox
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:11.672Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB20C3COLL0COUNT0FRESH0
         slugs:
@@ -191,108 +188,108 @@ features:
         acceptance_criteria:
           - CollectionsPage refreshes item counts on navigation back or visibility change
           - Adding/removing items from lightbox updates counts without full page reload
+    created: 2026-03-08T08:30:11.672Z
+    notes: []
   - _ulid: 01KK692YCH6TES8WS5VRB234YF
     slugs:
       - video-streaming
     title: Video Streaming
     type: feature
-    tags: []
     description: HLS transcoding with NVENC/CUDA hw accel, quality presets, timeline preview thumbnails,
       playback position tracking (continue watching)
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:11.857Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK692YKT0WYBPWSX6PH9TFJS
     slugs:
       - network-access
     title: Network Access Control
     type: feature
-    tags: []
     description: IP-based access tiers (localhost/LAN/public), JWT auth, user management with Argon2
       passwords, QR code pairing with nonce verification
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:12.091Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK692YT6SRGNRDK60GFFGCF6
     slugs:
       - addons
     title: Addon System
     type: feature
-    tags: []
     description: "Python sidecar lifecycle (install/start/stop/uninstall), venv management, HTTP proxy,
       6 addons: auto-tagger, age-detector, whisper, frame-interp, cast, SVP"
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:12.294Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK692Z060X5XY08AV7BW0N5D
     slugs:
       - import-pipeline
     title: Import Pipeline
     type: feature
-    tags: []
     description: Media file detection, xxhash dedup, image dimensions, ffprobe video metadata, AI
       metadata extraction (A1111/ComfyUI PNG chunks), auto-tag on import
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:12.486Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK692Z6D76TZVZ4AV6V29H01
     slugs:
       - task-queue
     title: Task Queue
     type: feature
-    tags: []
     description: Background worker pool, priority-based execution, retry logic (3x), cancellation
       tokens, pause/resume, status monitoring
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:12.686Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK692ZE86V65FSD1SKGZYXXR
     slugs:
       - events
     title: Event System (SSE)
     type: feature
-    tags: []
     description: "Server-Sent Events broadcaster for real-time updates: image CRUD, task progress,
       migration events"
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:12.936Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB10A1SSE0EVENT0COVER00
         slugs:
@@ -301,7 +298,8 @@ features:
         type: requirement
         description: All mutations broadcast appropriate SSE events
         acceptance_criteria:
-          - All image mutations (create, update, delete, favorite, rating) broadcast SSE events with image_id
+          - All image mutations (create, update, delete, favorite, rating) broadcast SSE events with
+            image_id
           - All tag mutations (create, update, delete) broadcast SSE events
           - Directory scan broadcasts progress events with files_scanned/total_files
           - Batch operations (delete, retag) broadcast per-item and completion events
@@ -325,22 +323,22 @@ features:
           - Frontend detects SSE disconnection and shows indicator
           - Auto-reconnects with exponential backoff
           - Full data refresh on reconnect to recover missed events
+    created: 2026-03-08T08:30:12.936Z
+    notes: []
   - _ulid: 01KK692ZNVWXE5B6ASTBN7WRJ8
     slugs:
       - watch-history
     title: Watch History
     type: feature
-    tags: []
     description: Playback position tracking, continue watching, 90% completion auto-mark, history management
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:13.180Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB20E5WATCH0RESILIENCE0
         slugs:
@@ -351,39 +349,39 @@ features:
         acceptance_criteria:
           - Failed position saves retried on reconnection or shown as warning
           - ContinueWatching panel refreshes on visibility change, not just mount
+    created: 2026-03-08T08:30:13.180Z
+    notes: []
   - _ulid: 01KK692ZVY2K19GPJQRTYXQCG4
     slugs:
       - family-mode
     title: Family Mode
     type: feature
-    tags: []
     description: PIN-protected content lock (Argon2 hashed), restricts to SFW content, family-safe
       directory designation
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:13.375Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK69302BGMNYW9BM465ZMF33
     slugs:
       - batch-ops
     title: Batch Operations
     type: feature
-    tags: []
     description: Batch delete, retag, age detect, metadata extract, move images across directories
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:13.579Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB40E5BATCH0RETAG0FEED0
         slugs:
@@ -395,22 +393,22 @@ features:
           - Backend emits SSE event when retag task completes
           - Frontend refreshes image metadata and tag sidebar on retag completion
           - User sees completion indication
+    created: 2026-03-08T08:30:13.579Z
+    notes: []
   - _ulid: 01KK693084YHJCSVVTMQ77J51H
     slugs:
       - settings
     title: Settings Management
     type: feature
-    tags: []
     description: Global settings CRUD, video playback settings, ComfyUI node config, saved searches
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:13.764Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB20F6SETTINGS0RESTART0
         slugs:
@@ -421,123 +419,123 @@ features:
         acceptance_criteria:
           - Port/network settings that require restart are clearly labeled in UI
           - Either backend_restart works, or UI shows restart required message
+    created: 2026-03-08T08:30:13.764Z
+    notes: []
   - _ulid: 01KK6930G4P393YJPFQ27KPGWR
     slugs:
       - share-streaming
     title: Share & Watch Together
     type: feature
-    tags: []
     description: Share sessions with unique tokens, HLS playlist generation, host-guest playback sync via SSE
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:14.020Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK6930P8TRNQRDH8RYPYJMFC
     slugs:
       - cast
     title: Chromecast & DLNA
     type: feature
-    tags: []
     description: Cast to Chromecast/DLNA devices, auto-discovery, playback control (via cast addon)
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:14.216Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK6930XNRRZ4JM6ZECVKWRTG
     slugs:
       - frame-interpolation
     title: Frame Interpolation
     type: feature
-    tags: []
     description: SVP integration for 60/120/144fps, FFmpeg minterpolate fallback, NVIDIA Optical Flow,
       quality presets
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:14.453Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK693131E43N6N4TQ929VC7Q
     slugs:
       - whisper-subtitles
     title: Whisper Subtitles
     type: feature
-    tags: []
     description: Real-time subtitle generation, language selection, translation, model size config, VTT
       caching, appearance customization
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:14.625Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK6931A42V1TJG43E3CM8X2T
     slugs:
       - data-migration
     title: Data Migration
     type: feature
-    tags: []
     description: System-to-portable migration, import from other instances, duplicate detection,
       progress tracking via SSE
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:14.853Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK6931G2PKJPW9NCWYRDY49N
     slugs:
       - file-support
     title: File Support
     type: feature
-    tags: []
     description: "Images: PNG, JPG, GIF, WebP, BMP, TIFF. Videos: WebM, MP4, MOV, AVI, MKV. Thumbnail
       generation, HTTP Range serving"
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:15.042Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK6931PG8DWTCTA9NYNY74BS
     slugs:
       - image-adjustments
     title: Image Adjustments
     type: feature
-    tags: []
     description: Preview and apply brightness, contrast, saturation, gamma adjustments. Non-destructive
       preview, permanent apply
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:15.248Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB20D4ADJ0META0SYNC000
         slugs:
@@ -549,40 +547,40 @@ features:
           - apply_adjust updates file_hash, width, height, file_size in DB
           - Thumbnail regenerated immediately from adjusted image
           - Thumbnail URL cache-busted or Cache-Control prevents stale versions
+    created: 2026-03-08T08:30:15.248Z
+    notes: []
   - _ulid: 01KK6931WF3WQDWZKF37G4Q7VN
     slugs:
       - ratings
     title: Rating & Favorites
     type: feature
-    tags: []
     description: Content ratings (pg/pg13/r/x/xxx), favorite toggle, quick keyboard shortcuts,
       rating-based access control
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:15.439Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK69321XM27EAYZNMVYJW7Y6
     slugs:
       - directory-watcher
     title: Directory Watcher
     type: feature
-    tags: []
     description: Real-time filesystem monitoring (notify crate), auto-import on file add, auto-delete on
       removal, dumpster recovery
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:15.614Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB40C3DIR0DISCOVERY0UI
         slugs:
@@ -603,51 +601,54 @@ features:
           - Scan indicator stays active until task completion SSE event
           - Scan indicator does not clear prematurely on queue acknowledgement
           - DirectoriesPage subscribes to task events for scan progress
+    created: 2026-03-08T08:30:15.614Z
+    notes: []
   - _ulid: 01KK69327D1W7RRTZ5QXA7S8CF
     slugs:
       - svp-web
     title: SVP Web Video
     type: feature
-    tags: []
     description: Download web videos via yt-dlp for local processing, progress tracking, DRM check
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:15.789Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK6932CQMP7G6Z813W3V8A66
     slugs:
       - database
     title: Database Architecture
     type: feature
-    tags: []
     description: Multi-DB architecture (main + per-directory), r2d2 connection pooling, WAL mode,
       incremental migrations, schema init
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:15.959Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KM8P1A00MUSIC0FEATURE0000
     slugs:
       - music-support
     title: Music Support
     type: feature
-    tags: []
     description: >
-      Audio file support (MP3, FLAC, OGG, WAV, AAC, M4A, OPUS, WMA). Album art extraction
-      for masonry grid thumbnails. Lightbox displays album art with playlist view of songs
-      in same directory/collection. Click album art in grid to open lightbox and auto-play.
-      Music player controls (play/pause/skip/seek/volume/shuffle/repeat). Audio streaming
-      for mobile app (same proxy pattern as video). Chromecast support for audio casting.
+      Audio file support (MP3, FLAC, OGG, WAV, AAC, M4A, OPUS, WMA). Album art extraction for
+      masonry grid thumbnails. Lightbox displays album art with playlist view of songs in same
+      directory/collection. Click album art in grid to open lightbox and auto-play. Music player
+      controls (play/pause/skip/seek/volume/shuffle/repeat). Audio streaming for mobile app (same
+      proxy pattern as video). Chromecast support for audio casting.
+    status:
+      implementation: not_started
     depends_on: []
     implements: []
     relates_to:
@@ -659,14 +660,7 @@ features:
       - file-support
     tests: []
     traits: []
-    notes:
-      - Album art sourced from embedded ID3/Vorbis tags or folder cover.jpg/png
-      - Songs grouped by directory as implicit albums
-      - Reuse existing HLS/streaming infrastructure where possible
-      - Chromecast audio uses existing cast addon
-    created: 2026-03-11T16:00:00.000Z
-    status:
-      implementation: not_started
+    tags: []
     requirements:
       - _ulid: 01KM8P1B00MUSICR0FILETYPE00
         slugs:
@@ -674,9 +668,9 @@ features:
         title: Audio File Detection & Import
         type: requirement
         description: >
-          Detect audio files (MP3, FLAC, OGG, WAV, AAC, M4A, OPUS, WMA) during directory
-          scan. Extract embedded album art for thumbnails. Extract ID3/Vorbis metadata
-          (title, artist, album, track number, duration). Store as media_type='audio' in DB.
+          Detect audio files (MP3, FLAC, OGG, WAV, AAC, M4A, OPUS, WMA) during directory scan.
+          Extract embedded album art for thumbnails. Extract ID3/Vorbis metadata (title, artist,
+          album, track number, duration). Store as media_type='audio' in DB.
         acceptance_criteria:
           - Audio files detected and imported during directory scan
           - Album art extracted from embedded tags and saved as thumbnail
@@ -689,10 +683,10 @@ features:
         title: Music Player Controls
         type: requirement
         description: >
-          Lightbox music player with play/pause, skip prev/next, seek bar, volume control,
-          shuffle, repeat (off/one/all). Shows album art, track title, artist, album name.
-          Playlist panel showing all tracks in the directory/collection. Clicking album
-          art in masonry grid opens lightbox and auto-starts playback.
+          Lightbox music player with play/pause, skip prev/next, seek bar, volume control, shuffle,
+          repeat (off/one/all). Shows album art, track title, artist, album name. Playlist panel
+          showing all tracks in the directory/collection. Clicking album art in masonry grid opens
+          lightbox and auto-starts playback.
         acceptance_criteria:
           - Lightbox shows album art with player controls when audio file opened
           - Play/pause, skip, seek, volume, shuffle, repeat controls functional
@@ -706,9 +700,9 @@ features:
         title: Audio Streaming for Mobile
         type: requirement
         description: >
-          Stream audio files to mobile app using same proxy pattern as video streaming.
-          Direct file serving with HTTP Range support for seek. No transcoding needed
-          for common formats. Remote proxy forwards audio bytes same as video.
+          Stream audio files to mobile app using same proxy pattern as video streaming. Direct file
+          serving with HTTP Range support for seek. No transcoding needed for common formats. Remote
+          proxy forwards audio bytes same as video.
         acceptance_criteria:
           - Audio files stream to mobile app over remote connection
           - HTTP Range requests supported for seeking
@@ -720,28 +714,108 @@ features:
         title: Audio Chromecast Support
         type: requirement
         description: >
-          Cast audio to Chromecast/DLNA devices using existing cast addon infrastructure.
-          Send audio stream URL to cast device. Show now-playing info on cast device.
-          Control playback (pause/skip/volume) from the app while casting.
+          Cast audio to Chromecast/DLNA devices using existing cast addon infrastructure. Send audio
+          stream URL to cast device. Show now-playing info on cast device. Control playback
+          (pause/skip/volume) from the app while casting.
         acceptance_criteria:
           - Audio files can be cast to Chromecast devices
           - Now-playing info (title, artist, album art) shown on cast device
           - Playback controls work while casting
           - Uses existing cast addon infrastructure
+    created: 2026-03-11T16:00:00.000Z
+    notes:
+      - Album art sourced from embedded ID3/Vorbis tags or folder cover.jpg/png
+      - Songs grouped by directory as implicit albums
+      - Reuse existing HLS/streaming infrastructure where possible
+      - Chromecast audio uses existing cast addon
   - _ulid: 01KK6932K3NXT8ZSDPFHTQJNE0
     slugs:
       - ssl-security
     title: SSL/TLS Security
     type: feature
-    tags: []
     description: Certificate pinning, fingerprint validation, per-server certificate management, TLS
       handshake verification
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:16.164Z
-    status:
-      implementation: implemented
+    notes: []
+  - _ulid: 01KXNWP134SVKPP6R0QQ4VYDAJ
+    slugs:
+      - curation-game
+    title: Curation Game
+    type: feature
+    description: Installable built-in gallery mode for rapidly keeping or reversibly discarding media
+      from the current filtered and sorted view, with one-step undo and optional daily or weekly
+      goals.
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    acceptance_criteria:
+      - given: Curation Game is not installed
+        id: ac-1
+        then: the feature installs without Python, a virtual environment, a port, or a sidecar process and
+          its launcher and settings become available immediately
+        when: the user installs it from Addons
+      - given: the gallery has any combination of library, directory, folder, tags, rating, age, timeframe,
+          filename, resolution, orientation, duration, and sort filters
+        id: ac-2
+        then: the run snapshots those filters and sort, supports all visible directories or mounted
+          libraries when selected, and starts with the first non-favorite in masonry order
+        when: the user starts Curation Game
+      - given: a non-favorited candidate is current
+        id: ac-3
+        then: the item is idempotently favorited, removed from the candidate queue, counted once, and the
+          next candidate is shown
+        when: the user chooses Keep
+      - given: a candidate is current
+        id: ac-4
+        then: all active file references move to the configured Prune dumpster convention while database
+          identity, tags, and thumbnail metadata remain available for undo
+        when: the user chooses Discard
+      - given: the latest successful action was Keep or Discard
+        id: ac-5
+        then: that action and its goal count are reversed and the same item is shown again without
+          overwriting filesystem collisions
+        when: the user chooses Undo
+      - given: more than one query page matches the run
+        id: ac-6
+        then: the queue refills without offset skips, duplicates, or reintroducing favorited or discarded
+          items
+        when: the user curates beyond the first 50 items
+      - given: no matching non-favorites remain
+        id: ac-7
+        then: the UI says no more images are left to curate and offers to unfavorite all currently matching
+          favorites and restart when such favorites exist
+        when: the run completes
+      - given: the user configures an optional daily or weekly target
+        id: ac-8
+        then: the current client persists and displays progress with Keep and Discard incrementing and Undo
+          decrementing the original local-day bucket
+        when: Keep, Discard, or Undo succeeds
+      - given: Curation Game is active
+        id: ac-9
+        then: large Keep and Discard buttons, a smaller Undo button, and curation keyboard shortcuts are
+          available while normal favorite, permanent delete, navigation, and video seek controls
+          cannot bypass a decision
+        when: the user interacts with the lightbox
+      - given: Curation Game is inactive or uninstalled
+        id: ac-10
+        then: existing behavior remains available and curation data is not altered by uninstalling the
+          add-on
+        when: the user uses the gallery, lightbox, favorites, deletion, Prune, sorting, or pagination
+    priority: high
+    tags:
+      - gallery
+      - addons
+      - curation
+    created: 2026-07-16T16:38:14.885Z
+    notes: []
+notes: []
