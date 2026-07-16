@@ -130,9 +130,12 @@ features:
       - desktop-svp-video
     title: Cross-platform SVP video playback
     type: feature
+    description: Desktop playback uses a user-installed SVP setup on Linux, Windows, and Apple Silicon
+      macOS without replacing LocalBooru standard video player.
     depends_on: []
     implements: []
-    relates_to: []
+    relates_to:
+      - "@frame-interpolation"
     tests: []
     traits: []
     acceptance_criteria:
