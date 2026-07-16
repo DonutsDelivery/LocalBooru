@@ -1,0 +1,24 @@
+_ulid: 01KXPM3A6VM0FFA4RGPXYMBCWM
+slugs:
+  - svp-html-video-mse
+title: Attach bounded SVP sessions to the existing HTML video player
+type: task
+description: Add the generation-aware MSE controller and React hook, retain the one Lightbox video
+  element and controls, preserve absolute seek semantics, and fail open to direct playback.
+spec_ref: "@svp-single-player"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on:
+  - "@svp-session-protocol"
+context: []
+priority: 1
+tags:
+  - svp
+  - frontend
+  - desktop
+vcs_refs: []
+created_at: 2026-07-16T23:27:27.451Z
+todos: []
+automation: needs_review

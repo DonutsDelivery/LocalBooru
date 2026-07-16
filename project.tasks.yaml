@@ -573,3 +573,22 @@ tasks:
     todos_count: 0
     created_at: 2026-07-16T23:27:26.908Z
     automation: needs_review
+  - _ulid: 01KXPM3A6VM0FFA4RGPXYMBCWM
+    slugs:
+      - svp-html-video-mse
+    title: Attach bounded SVP sessions to the existing HTML video player
+    type: task
+    spec_ref: "@svp-single-player"
+    status: pending
+    blocked_by: []
+    depends_on:
+      - "@svp-session-protocol"
+    priority: 1
+    tags:
+      - svp
+      - frontend
+      - desktop
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-16T23:27:27.451Z
+    automation: needs_review
