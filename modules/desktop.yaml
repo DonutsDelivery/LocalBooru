@@ -146,6 +146,20 @@ features:
           reports the SVP failure
         when: the user opens or continues the video
     tags: []
+    requirements:
+      - _ulid: 01KXPM0WPRYRP0YSMT9XZN3A1Z
+        slugs:
+          - svp-single-player
+        title: Single video playback owner
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-16T23:26:08.088Z
+        notes: []
     created: 2026-07-16T23:26:05.987Z
     notes: []
 notes: []
