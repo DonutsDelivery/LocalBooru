@@ -15,7 +15,11 @@ export CARGO_HOME="$BUILD_ROOT/cargo-home"
 export CARGO_TARGET_DIR="$TARGET_DIR"
 export CARGO_BUILD_JOBS="$JOBS"
 export SCCACHE_DIR="${SCCACHE_DIR:-/ccache}"
-export RUSTC_WRAPPER=sccache
+# Ubuntu's packaged sccache cannot detect MSVC /showIncludes output through
+# msvc-wine, and cc-rs automatically applies RUSTC_WRAPPER to Windows resource
+# compilation. Preserve the cache volume for a future compatible sccache, but
+# do not let it break cl/rc builds today.
+unset RUSTC_WRAPPER
 export PATH="/opt/msvc/bin/x64:/opt/node/bin:/root/.cargo/bin:$PATH"
 export CC_x86_64_pc_windows_msvc=cl
 export CXX_x86_64_pc_windows_msvc=cl

@@ -16,7 +16,7 @@ LOCALBOORU_BUILD_JOBS=4 ./scripts/build-windows-local.sh
 The first image build downloads MSVC, the Windows SDK, Rust, Node.js, and the pinned Tauri CLI, so it is large and slow. Later builds reuse:
 
 - `/mnt/storage/Programs/localbooru-build-windows-docker` for Cargo/npm build state;
-- `/mnt/storage/Programs/localbooru-sccache-windows-docker` for `sccache` objects;
+- `/mnt/storage/Programs/localbooru-sccache-windows-docker` reserved for compiler-cache objects;
 - `dist-windows-local/` for final artifacts.
 
 Override these with `LOCALBOORU_WINDOWS_BUILD_ROOT`, `LOCALBOORU_WINDOWS_SCCACHE_ROOT`, and `LOCALBOORU_DIST_WINDOWS_DIR`.
@@ -28,3 +28,5 @@ Expected outputs:
 - `SHA256SUMS-Windows` with LF-terminated basename-only entries.
 
 The verifier checks archive integrity, PE headers, x64 architecture for both the standalone and installed NSIS payload, forbidden build paths, and final hashes. The NSIS launcher itself may be an i386 PE32 stub while installing the x64 PE32+ application. Local/CI artifacts are unsigned unless a separate Authenticode signing stage is configured.
+
+The Ubuntu 24.04 `sccache` package is currently not enabled as `RUSTC_WRAPPER`: `cc-rs` also applies that wrapper to MSVC resource preprocessing, where sccache 0.7.7 cannot detect `/showIncludes` output through Wine. Persistent Cargo target reuse remains active. Re-enable sccache only after verifying both Rust cache hits and Tauri's `resource.rc` compilation through the selected Wine/MSVC versions.
