@@ -250,6 +250,10 @@ features:
             id: ac-idempotent-changes
             then: playback is not restarted unnecessarily
             when: LocalBooru applies the request
+          - given: the active Manager changes graph contents at an existing location
+            id: ac-changed-graph
+            then: exactly one replacement graph becomes active using an immutable copy of the final contents
+            when: LocalBooru applies the change
         tags: []
         created: 2026-07-16T23:26:16.354Z
         notes: []
