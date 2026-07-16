@@ -1,10 +1,10 @@
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Mutex,
+};
 #[cfg(target_os = "linux")]
 use std::{
-    sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc,
-    },
+    sync::mpsc,
     time::Duration,
 };
 
