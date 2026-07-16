@@ -483,7 +483,7 @@ tasks:
     title: Correct Android edge-to-edge system bar handling
     type: bug
     spec_ref: "@android-system-bars"
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 2
@@ -494,6 +494,7 @@ tasks:
     notes_count: 1
     todos_count: 0
     created_at: 2026-07-16T21:05:44.984Z
+    started_at: 2026-07-16T21:06:20.436Z
     automation: manual_only
   - _ulid: 01KXPBZV2XY1PAYEQR7VYGG5VE
     slugs:

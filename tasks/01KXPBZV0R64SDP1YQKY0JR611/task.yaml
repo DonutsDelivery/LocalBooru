@@ -9,7 +9,7 @@ description: "Make system-bar styling, live inset propagation, dynamic viewport 
 spec_ref: "@android-system-bars"
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
@@ -19,6 +19,18 @@ tags:
   - mobile
   - frontend
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-07-16T21:06:20.436Z
+        previous: null
+    command: task-start
+    timestamp: 2026-07-16T21:06:20.436Z
 created_at: 2026-07-16T21:05:44.984Z
+started_at: 2026-07-16T21:06:20.436Z
 todos: []
 automation: manual_only
