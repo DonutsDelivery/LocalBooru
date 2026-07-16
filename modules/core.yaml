@@ -467,6 +467,12 @@ features:
     relates_to: []
     tests: []
     traits: []
+    acceptance_criteria:
+      - given: SVP is installed, available, and enabled for a supported video
+        id: ac-svp-cadence
+        then: the presented video cadence increases to the selected SVP target while the normal playback
+          controls remain available
+        when: the video plays in LocalBooru
     tags: []
     created: 2026-03-08T08:30:14.453Z
     notes: []
