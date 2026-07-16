@@ -245,6 +245,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: the active Manager repeats an identical add or remove request
+            id: ac-idempotent-changes
+            then: playback is not restarted unnecessarily
+            when: LocalBooru applies the request
         tags: []
         created: 2026-07-16T23:26:16.354Z
         notes: []
