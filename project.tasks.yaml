@@ -650,3 +650,21 @@ tasks:
     todos_count: 0
     created_at: 2026-07-16T23:27:29.016Z
     automation: needs_review
+  - _ulid: 01KXPM3CB1V79FR84N3S0AX920
+    slugs:
+      - svp-manager-graph-sessions
+    title: Run Manager-generated SVPflow graphs in bounded sessions
+    type: task
+    spec_ref: "@desktop-svp-video"
+    status: pending
+    blocked_by: []
+    depends_on:
+      - "@svp-manager-platform-transports"
+    priority: 1
+    tags:
+      - svp
+      - desktop
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-16T23:27:29.633Z
+    automation: needs_review
