@@ -162,6 +162,11 @@ features:
             id: ac-existing-player
             then: the same player and its existing controls remain the user-facing playback surface
             when: SVP is enabled, disabled, restarted, or reconfigured
+          - given: multiple SVP state changes or seeks occur before a transition finishes
+            id: ac-final-transition-owner
+            then: only the final requested playback state can resume and no superseded source produces audio or
+              video
+            when: the final transition becomes ready
         tags: []
         created: 2026-07-16T23:26:08.088Z
         notes: []
