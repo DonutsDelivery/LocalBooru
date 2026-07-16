@@ -212,6 +212,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: the packaged Linux app has a working user-installed SVP setup
+            id: ac-linux-route
+            then: the existing Linux media pipeline applies the Manager-selected interpolation graph
+            when: SVP playback starts
         tags: []
         created: 2026-07-16T23:26:13.143Z
         notes: []
