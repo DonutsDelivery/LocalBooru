@@ -5,7 +5,7 @@ title: Implement Curation Game add-on
 type: task
 spec_ref: "@curation-game"
 derivation: auto
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
@@ -15,5 +15,17 @@ tags:
   - addons
   - curation
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-07-16T16:38:26.549Z
+        previous: null
+    command: task-start
+    timestamp: 2026-07-16T16:38:26.550Z
 created_at: 2026-07-16T16:38:17.676Z
+started_at: 2026-07-16T16:38:26.549Z
 todos: []

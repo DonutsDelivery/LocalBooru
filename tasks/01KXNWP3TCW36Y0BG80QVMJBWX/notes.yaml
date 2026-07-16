@@ -56,3 +56,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-16T16:38:17.676Z
+  - _ulid: 01KXNWPCJQ0AK2EP8FKRVZJM3T
+    content: Executing .hermes/plans/2026-07-16_181512-curation-game-addon.md directly in the existing
+      v2 worktree; preserving unrelated dirty/untracked native-video and configuration work.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-16T16:38:26.647Z

@@ -753,6 +753,9 @@ features:
     description: Installable built-in gallery mode for rapidly keeping or reversibly discarding media
       from the current filtered and sorted view, with one-step undo and optional daily or weekly
       goals.
+    status:
+      maturity: draft
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
