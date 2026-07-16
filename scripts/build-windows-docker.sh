@@ -21,6 +21,10 @@ export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=/opt/msvc/bin/x64/link
 export CC_x86_64_pc_windows_msvc=cl
 export CXX_x86_64_pc_windows_msvc=cl
 export AR_x86_64_pc_windows_msvc=/opt/msvc/bin/x64/lib
+# msvc-wine's optional msvctricks FIFO capture can deadlock after the Wine
+# child exits before opening its pipes. Raw mode preserves linker output and
+# bypasses that helper without changing the MSVC toolchain.
+export WINE_MSVC_RAW_STDOUT=1
 
 cleanup_ownership() {
   if [[ "${HOST_UID:-0}" != 0 ]]; then
@@ -54,6 +58,8 @@ node --version
 npm --version
 makensis -VERSION
 command -v cl link lib rc llvm-rc >/dev/null
+wineserver -k 2>/dev/null || true
+wineserver -p
 cl 2>&1 | sed -n '1,4p' || true
 sccache --start-server >/dev/null 2>&1 || true
 
