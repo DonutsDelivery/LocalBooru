@@ -1,0 +1,26 @@
+_ulid: 01KXPBZV6WPNX3W1XYYBKY73YD
+slugs:
+  - overhaul-phone-lightbox
+title: Overhaul lightbox controls for phones
+type: task
+description: Bound the phone toolbar, expose metadata and subtitles, split video transport,
+  arbitrate touch gestures, and keep all lightbox overlays inside live safe regions.
+spec_ref: "@android-phone-lightbox"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on:
+  - "@correct-android-system-bars"
+  - "@restore-android-fullscreen"
+context: []
+priority: 2
+tags:
+  - android
+  - mobile
+  - lightbox
+  - frontend
+vcs_refs: []
+created_at: 2026-07-16T21:05:45.180Z
+todos: []
+automation: manual_only

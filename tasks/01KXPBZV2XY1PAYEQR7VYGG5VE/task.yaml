@@ -1,0 +1,24 @@
+_ulid: 01KXPBZV2XY1PAYEQR7VYGG5VE
+slugs:
+  - optimize-phone-frontend
+title: Optimize application layouts for phones
+type: task
+description: Make navigation, gallery controls, settings, directories, collections, overlays, and
+  touch targets responsive and safe on narrow phone screens while preserving desktop layouts.
+spec_ref: "@android-phone-frontend"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on:
+  - "@correct-android-system-bars"
+context: []
+priority: 2
+tags:
+  - android
+  - mobile
+  - frontend
+vcs_refs: []
+created_at: 2026-07-16T21:05:45.053Z
+todos: []
+automation: manual_only

@@ -1,0 +1,24 @@
+_ulid: 01KXPBZV0R64SDP1YQKY0JR611
+slugs:
+  - correct-android-system-bars
+title: Correct Android edge-to-edge system bar handling
+type: bug
+description: "Make system-bar styling, live inset propagation, dynamic viewport sizing, and
+  title-bar spacing authoritative for the active Tauri Android app. Historical context:
+  localbooru-1if and localbooru-p7c."
+spec_ref: "@android-system-bars"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags:
+  - android
+  - mobile
+  - frontend
+vcs_refs: []
+created_at: 2026-07-16T21:05:44.984Z
+todos: []
+automation: manual_only

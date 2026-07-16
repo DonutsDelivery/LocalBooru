@@ -477,3 +477,80 @@ tasks:
     todos_count: 0
     created_at: 2026-07-16T16:38:17.676Z
     started_at: 2026-07-16T16:38:26.549Z
+  - _ulid: 01KXPBZV0R64SDP1YQKY0JR611
+    slugs:
+      - correct-android-system-bars
+    title: Correct Android edge-to-edge system bar handling
+    type: bug
+    spec_ref: "@android-system-bars"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 2
+    tags:
+      - android
+      - mobile
+      - frontend
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-16T21:05:44.984Z
+    automation: manual_only
+  - _ulid: 01KXPBZV2XY1PAYEQR7VYGG5VE
+    slugs:
+      - optimize-phone-frontend
+    title: Optimize application layouts for phones
+    type: task
+    spec_ref: "@android-phone-frontend"
+    status: pending
+    blocked_by: []
+    depends_on:
+      - "@correct-android-system-bars"
+    priority: 2
+    tags:
+      - android
+      - mobile
+      - frontend
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-16T21:05:45.053Z
+    automation: manual_only
+  - _ulid: 01KXPBZV4W08DSZZM82QXB1PZW
+    slugs:
+      - restore-android-fullscreen
+    title: Restore Android immersive fullscreen reliably
+    type: bug
+    spec_ref: "@android-fullscreen"
+    status: pending
+    blocked_by: []
+    depends_on:
+      - "@correct-android-system-bars"
+    priority: 2
+    tags:
+      - android
+      - mobile
+      - lightbox
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-16T21:05:45.116Z
+    automation: manual_only
+  - _ulid: 01KXPBZV6WPNX3W1XYYBKY73YD
+    slugs:
+      - overhaul-phone-lightbox
+    title: Overhaul lightbox controls for phones
+    type: task
+    spec_ref: "@android-phone-lightbox"
+    status: pending
+    blocked_by: []
+    depends_on:
+      - "@correct-android-system-bars"
+      - "@restore-android-fullscreen"
+    priority: 2
+    tags:
+      - android
+      - mobile
+      - lightbox
+      - frontend
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-16T21:05:45.180Z
+    automation: manual_only
