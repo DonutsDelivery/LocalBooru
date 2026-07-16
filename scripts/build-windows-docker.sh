@@ -60,7 +60,8 @@ makensis -VERSION
 command -v cl link lib rc llvm-rc >/dev/null
 wineserver -k 2>/dev/null || true
 wineserver -p
-cl 2>&1 | sed -n '1,4p' || true
+cl >/tmp/localbooru-msvc-version.log 2>&1 || true
+sed -n '1,4p' /tmp/localbooru-msvc-version.log
 sccache --start-server >/dev/null 2>&1 || true
 
 npm --prefix frontend ci
