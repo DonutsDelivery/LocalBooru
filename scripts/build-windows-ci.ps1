@@ -3,9 +3,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$Target = 'x86_64-pc-windows-msvc'
 $TargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $Root 'src-tauri\target' }
 $env:CARGO_TARGET_DIR = $TargetDir
-$ReleaseDir = Join-Path $TargetDir 'release'
+$ReleaseDir = Join-Path $TargetDir "$Target\release"
 $BundleDir = Join-Path $ReleaseDir 'bundle\nsis'
 $DistDir = if ($env:LOCALBOORU_DIST_WINDOWS_DIR) { $env:LOCALBOORU_DIST_WINDOWS_DIR } else { Join-Path $Root 'dist-windows' }
 
@@ -28,7 +29,7 @@ npm --prefix (Join-Path $Root 'frontend') run build
 cargo check --locked --manifest-path (Join-Path $Root 'src-tauri\Cargo.toml')
 Push-Location $Root
 try {
-  cargo tauri build --ci --target x86_64-pc-windows-msvc --bundles nsis
+  cargo tauri build --ci --target $Target --bundles nsis
 } finally {
   Pop-Location
 }
