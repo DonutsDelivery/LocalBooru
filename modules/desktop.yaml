@@ -194,6 +194,11 @@ features:
             id: ac-transactional-seek
             then: only the final requested position resumes and media from older requests cannot alter playback
             when: the user seeks repeatedly to new absolute positions
+          - given: a video contains audio and is played through SVP
+            id: ac-av-timeline
+            then: audio and interpolated video retain the source duration, monotonic timing, and the accepted
+              synchronization tolerance
+            when: playback starts, continues, or resumes after a seek
         tags: []
         created: 2026-07-16T23:26:10.641Z
         notes: []
