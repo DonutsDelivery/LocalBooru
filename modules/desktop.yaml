@@ -184,6 +184,8 @@ features:
           - svp-bounded-stream
         title: Bounded and synchronized SVP streaming
         type: requirement
+        description: Windows and macOS interpolation remains seekable and synchronized without producing
+          unbounded buffered media.
         depends_on: []
         implements: []
         relates_to: []
