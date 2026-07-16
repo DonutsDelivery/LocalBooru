@@ -54,6 +54,9 @@ features:
         type: requirement
         description: Keep interactive application content reachable while the Android app renders
           edge-to-edge across system bar, display cutout, orientation, and visibility changes.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
