@@ -227,6 +227,11 @@ features:
             then: the standard video player receives bounded locally processed media and responds to the user's
               SVP Manager state
             when: SVP playback starts
+          - given: SVP playback is requested from a browser, mobile app, or remote client
+            id: ac-nondesktop-route
+            then: the existing remote streaming behavior remains available without selecting a desktop-only
+              integration
+            when: the request is supported
         tags: []
         created: 2026-07-16T23:26:13.143Z
         notes: []
