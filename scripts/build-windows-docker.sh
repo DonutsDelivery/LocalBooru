@@ -41,17 +41,8 @@ trap cleanup_ownership EXIT
 
 rm -rf "$WORKTREE"
 mkdir -p "$WORKTREE" "$TARGET_DIR" "$CARGO_HOME" "$DIST_DIR" "$SCCACHE_DIR"
-(
-  cd "$SOURCE_DIR"
-  tar \
-    --exclude=.git \
-    --exclude=target \
-    --exclude='*/node_modules' \
-    --exclude='*/dist' \
-    --exclude=dist-windows-local \
-    --exclude=dist-linux-local \
-    -cf - .
-) | tar -xf - -C "$WORKTREE"
+git -c safe.directory="$SOURCE_DIR" -C "$SOURCE_DIR" archive --format=tar HEAD \
+  | tar -xf - -C "$WORKTREE"
 
 cd "$WORKTREE"
 rm -rf "$DIST_DIR"/*
