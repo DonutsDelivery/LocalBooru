@@ -167,6 +167,10 @@ features:
             then: only the final requested playback state can resume and no superseded source produces audio or
               video
             when: the final transition becomes ready
+          - given: the source reaches its end during an SVP transition
+            id: ac-ended-transition
+            then: playback remains ended and does not restart as an additional audible source
+            when: the transition completes
         tags: []
         created: 2026-07-16T23:26:08.088Z
         notes: []
