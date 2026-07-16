@@ -3,85 +3,221 @@ slugs:
   - android
 title: Android App
 type: module
+description: Tauri Mobile Android build with WebView, edge-to-edge, remote server proxy
 status:
   maturity: draft
   implementation: in_progress
-description: Tauri Mobile Android build with WebView, edge-to-edge, remote server proxy
-tags: []
 depends_on: []
 implements: []
 relates_to: []
 tests: []
 traits: []
-notes: []
+tags: []
 features:
   - _ulid: 01KK693V0ZTVQ8S476A4NNS3BV
     slugs:
       - android-webview
     title: Android WebView Config
     type: feature
-    tags: []
     description: Mixed content mode, Chrome DevTools remote debugging, status bar height CSS injection
       from Kotlin
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:41.184Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK693V77DH7PFBWPA7N7QKG7
     slugs:
       - android-layout
     title: Mobile Layout
     type: feature
-    tags: []
     description: Title bar with safe area insets, edge-to-edge, mobile-specific title bar with server
       switch, responsive grid, touch-optimized
+    status:
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
+    requirements:
+      - _ulid: 01KXPBZ1M4QZKP0YMJP2WQF5DR
+        slugs:
+          - android-system-bars
+        title: Android System Bar Insets
+        type: requirement
+        description: Keep interactive application content reachable while the Android app renders
+          edge-to-edge across system bar, display cutout, orientation, and visibility changes.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        acceptance_criteria:
+          - given: The application is running edge-to-edge with system bars visible
+            id: ac-1
+            then: The background extends behind the bars while every interactive control remains fully visible
+              and reachable
+            when: A standard application screen is displayed
+          - given: The device has a display cutout or asymmetric system insets
+            id: ac-2
+            then: Headers, drawers, dialogs, and fixed controls move into the new safe region without a reload
+              or stale spacing
+            when: The device rotates between portrait and landscape
+          - given: The device uses gesture navigation or three-button navigation
+            id: ac-3
+            then: Controls remain reachable above the navigation region without duplicated blank spacing
+            when: Bottom-anchored controls or scrollable pages are shown
+          - given: The application uses its dark visual theme
+            id: ac-4
+            then: Status and navigation controls remain light and legible against the application surface
+            when: System bars are visible in device light mode or dark mode
+          - given: System bars or display cutout insets change while the application is open
+            id: ac-5
+            then: Affected application chrome updates immediately without restarting the screen
+            when: The visibility or geometry change completes
+        tags: []
+        created: 2026-07-16T21:05:18.980Z
+        notes: []
+      - _ulid: 01KXPBZ1WZDZ8W4W83N2CT19Z5
+        slugs:
+          - android-phone-frontend
+        title: Phone Frontend Layout
+        type: requirement
+        description: Provide reachable navigation and touch-friendly responsive layouts across the
+          application on narrow phone screens.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        acceptance_criteria:
+          - given: A phone user opens Gallery, Settings, Directories, Collections, or Collection Detail
+            id: ac-1
+            then: A visible menu control opens a drawer that can be closed by its close control or backdrop
+            when: They need application navigation
+          - given: The application viewport is 320 CSS pixels wide
+            id: ac-2
+            then: Content fits without document-level horizontal scrolling and long values remain readable or
+              intentionally truncated
+            when: Any primary route, form, card grid, or management screen is displayed
+          - given: A phone screen shows fixed gallery actions, batch actions, dialogs, toasts, or sheets
+            id: ac-3
+            then: Every action remains visible, dismissible, and reachable without obscuring the final
+              scrollable content
+            when: Safe regions or viewport height change
+          - given: A user operates the application with a coarse pointer and no hover capability
+            id: ac-4
+            then: The required control is visible without hover and provides a touch target at least 44 CSS
+              pixels in each required dimension
+            when: They navigate, dismiss UI, edit a collection, or invoke a destructive action
+          - given: The viewport is wider than the phone breakpoint
+            id: ac-5
+            then: The established desktop layout and interaction density remain unchanged
+            when: The same routes are displayed on desktop
+        tags: []
+        created: 2026-07-16T21:05:19.263Z
+        notes: []
+      - _ulid: 01KXPBZ25AK8A8QKB1FMYNNZX1
+        slugs:
+          - android-phone-lightbox
+        title: Phone Lightbox Controls
+        type: requirement
+        description: Keep media viewing, metadata, playback, subtitles, and curation discoverable and
+          touch-safe on phone screens.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        acceptance_criteria:
+          - given: A media item is open on a phone
+            id: ac-1
+            then: Info, primary actions, overflow actions, and Close remain reachable without clipping or
+              overlapping a safe region
+            when: The lightbox toolbar is visible
+          - given: Video controls have auto-hidden on a phone
+            id: ac-2
+            then: The controls appear without seeking, navigating, toggling playback, or opening metadata
+            when: The user taps the video once
+          - given: A user performs a horizontal video seek gesture
+            id: ac-3
+            then: Only the seek action occurs and the metadata drawer does not open or close
+            when: The gesture completes
+          - given: A video is open on a phone
+            id: ac-4
+            then: Time and timeline occupy one row while essential transport, mute, subtitles, and fullscreen
+              controls remain reachable on a second row
+            when: Playback controls are visible
+          - given: The viewport is narrower than 480 CSS pixels and no right-click input is available
+            id: ac-5
+            then: Both settings surfaces are directly discoverable, scrollable when needed, and explicitly
+              closable
+            when: The user configures subtitles or opens media metadata
+          - given: Lightbox menus, dialogs, status indicators, or curation controls are displayed on a phone
+            id: ac-6
+            then: The surfaces remain visible and usable without colliding with media transport controls
+            when: Viewport height or safe regions change
+        tags: []
+        created: 2026-07-16T21:05:19.530Z
+        notes: []
     created: 2026-03-08T08:30:41.383Z
-    status:
-      implementation: in_progress
+    notes: []
   - _ulid: 01KK693VCNSHV7TGK9XB189EKV
     slugs:
       - android-fullscreen
     title: Fullscreen Mode
     type: feature
-    tags: []
-    description: CSS-based fullscreen fallback (native API broken in Android WebView), double-tap
-      toggle, F key shortcut
+    description: Provide immersive media viewing that hides Android system bars when active and reliably
+      restores them and current layout insets on exit.
+    status:
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    acceptance_criteria:
+      - given: Media is open in the Android lightbox
+        id: ac-1
+        then: Both system bars hide and the media expands to the full current viewport
+        when: The user enters fullscreen
+      - given: Fullscreen is active
+        id: ac-2
+        then: Visible controls remain reachable and immersive viewing resumes while fullscreen remains
+          active
+        when: System bars transiently appear, the device rotates, or the application resumes
+      - given: Fullscreen or the lightbox is active
+        id: ac-3
+        then: Dark system bars reappear and application chrome uses the current visible insets
+        when: The user exits fullscreen, closes the lightbox, or navigates away
+      - given: The user repeatedly enters and exits fullscreen
+        id: ac-4
+        then: Layout spacing remains stable without accumulated padding or stale safe regions
+        when: Each transition completes
+    tags: []
     created: 2026-03-08T08:30:41.557Z
-    status:
-      implementation: in_progress
+    notes: []
   - _ulid: 01KK693VJHG3DQ3GHA50D4T34F
     slugs:
       - android-server-select
     title: Server Selection & Pairing
     type: feature
-    tags: []
     description: ServerSelectScreen with QR scanning, manual URL entry, /remote/* proxy for mixed content bypass
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:41.745Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB30A7QR0PAIRING0CONS0
         slugs:
@@ -89,8 +225,8 @@ features:
         title: QR Pairing Consistency
         type: requirement
         description: >
-          ServerSettings QR scan handler must call verifyHandshake() to obtain JWT token,
-          matching ServerSelectScreen behavior. Re-paired server must have a valid token.
+          ServerSettings QR scan handler must call verifyHandshake() to obtain JWT token, matching
+          ServerSelectScreen behavior. Re-paired server must have a valid token.
         acceptance_criteria:
           - ServerSettings QR scan calls verifyHandshake() same as ServerSelectScreen
           - Re-paired server entry has valid JWT token for authenticated requests
@@ -100,7 +236,7 @@ features:
           - server-list-hygiene
         title: Server List Hygiene
         type: requirement
-        description: >
+        description: |
           Manual Add Server deduplicates by URL. Offline servers hint about possible IP change.
         acceptance_criteria:
           - Manual Add Server checks for existing URL match and updates instead of creating duplicate
@@ -118,61 +254,66 @@ features:
           (4xx/5xx) are NOT retried — the server is reachable, just refusing the request.
         acceptance_criteria:
           - Server entries store an optional fallbackUrl field alongside the primary url
-          - Add/edit server UI exposes a fallback URL field with the same normalization as the primary
-          - testServerConnection probes primary first, then fallback if primary fails with a network error
-          - In-flight API requests transparently retry against the fallback on network failure of the primary
-          - HTTP error responses (4xx/5xx) from the primary are returned to the caller without trying the fallback
-          - Servers with no fallback configured behave exactly as before (no extra request, no behavior change)
+          - Add/edit server UI exposes a fallback URL field with the same normalization as the
+            primary
+          - testServerConnection probes primary first, then fallback if primary fails with a network
+            error
+          - In-flight API requests transparently retry against the fallback on network failure of
+            the primary
+          - HTTP error responses (4xx/5xx) from the primary are returned to the caller without
+            trying the fallback
+          - Servers with no fallback configured behave exactly as before (no extra request, no
+            behavior change)
+    created: 2026-03-08T08:30:41.745Z
+    notes: []
   - _ulid: 01KK693VRHM3YB0XPWDS8KNXSX
     slugs:
       - android-gestures
     title: Touch Gestures
     type: feature
-    tags: []
     description: Pinch zoom, swipe navigation, swipe up/down UI toggle, double-tap fullscreen,
       long-press diagnostics, video gesture controls
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:41.938Z
-    status:
-      implementation: implemented
+    notes: []
   - _ulid: 01KK693VXRSHB18XVWTR19AVW3
     slugs:
       - android-updater
     title: Mobile Auto-Updater
     type: feature
-    tags: []
     description: APK self-update mechanism. Currently stubbed — needs Tauri-native updater.
+    status:
+      implementation: not_started
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
+    tags: []
     created: 2026-03-08T08:30:42.104Z
-    status:
-      implementation: not_started
+    notes: []
   - _ulid: 01KK693W4VHHNWH16KD0Q5F5BA
     slugs:
       - android-api-routing
     title: Mobile API Routing
     type: feature
-    tags: []
     description: Local proxy for remote server requests, CORS handling, JWT token auth, remote proxy
       handler in Rust backend
+    status:
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-08T08:30:42.331Z
-    status:
-      implementation: implemented
+    tags: []
     requirements:
       - _ulid: 01KKEB30D9TOKEN0EXPIRY0HD00
         slugs:
@@ -180,19 +321,22 @@ features:
         title: 401 Token Expiry Handling
         type: requirement
         description: >
-          API response interceptor detects 401 status mid-session and redirects mobile
-          users to server select screen with re-pair prompt. Stale token cleared.
+          API response interceptor detects 401 status mid-session and redirects mobile users to
+          server select screen with re-pair prompt. Stale token cleared.
         acceptance_criteria:
           - API interceptor detects 401 responses and redirects to server picker
           - Stale token is cleared from the server entry
           - User sees re-pair prompt, not a generic error
+    created: 2026-03-08T08:30:42.331Z
+    notes: []
   - _ulid: 01KKEB30E5MOBILE0RESILIENCE
     slugs:
       - mobile-resilience
     title: Mobile Client Resilience
     type: feature
-    tags: []
     description: Connectivity monitoring, offline detection, and automatic reconnection for mobile clients
+    status:
+      implementation: not_started
     depends_on: []
     implements: []
     relates_to:
@@ -200,10 +344,7 @@ features:
       - android-server-select
     tests: []
     traits: []
-    notes: []
-    created: 2026-03-12T00:00:00.000Z
-    status:
-      implementation: not_started
+    tags: []
     requirements:
       - _ulid: 01KKEB30F1CONNECTIVITY0MON0
         slugs:
@@ -211,8 +352,8 @@ features:
         title: Server Connectivity Monitoring
         type: requirement
         description: >
-          Mobile app periodically pings server health endpoint. Connection loss shows
-          visible offline banner. Banner clears automatically when connection is restored.
+          Mobile app periodically pings server health endpoint. Connection loss shows visible
+          offline banner. Banner clears automatically when connection is restored.
         acceptance_criteria:
           - Mobile app periodically pings server health endpoint
           - Connection loss shows a visible offline banner
@@ -224,9 +365,12 @@ features:
         title: Automatic Reconnection
         type: requirement
         description: >
-          On reconnection detection, app re-subscribes to SSE events and performs a full
-          data refresh to recover state missed during offline period.
+          On reconnection detection, app re-subscribes to SSE events and performs a full data
+          refresh to recover state missed during offline period.
         acceptance_criteria:
           - On reconnection, app re-subscribes to SSE events
           - App performs full data refresh to recover missed state
           - No user action required to resume normal operation
+    created: 2026-03-12T00:00:00.000Z
+    notes: []
+notes: []
