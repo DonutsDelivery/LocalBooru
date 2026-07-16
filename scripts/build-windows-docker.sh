@@ -62,7 +62,10 @@ npm --prefix frontend test
 npm --prefix frontend run build
 
 cargo check --locked --manifest-path src-tauri/Cargo.toml --target "$TARGET"
-cargo tauri build --ci --target "$TARGET" --bundles nsis
+cargo tauri build \
+  --ci \
+  --target "$TARGET" \
+  --config src-tauri/tauri.windows.conf.json
 [[ "$(sha256sum Cargo.lock | cut -d' ' -f1)" == "$LOCK_HASH_BEFORE" ]]
 
 BINARY="$RELEASE_DIR/localbooru.exe"
