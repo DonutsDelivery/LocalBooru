@@ -37,7 +37,7 @@ mkdir -p "$BUILD_ROOT" "$SCCACHE_ROOT" "$DIST_PATH"
 
 if [[ "$REBUILD" == 1 ]] || ! "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "==> Building Windows MSVC/Wine image $IMAGE"
-  "$DOCKER" build -t "$IMAGE" -f "$DOCKERFILE" "$ROOT"
+  "$DOCKER" build -t "$IMAGE" - < "$DOCKERFILE"
 fi
 
 printf '==> Building Windows x64 artifacts with %s jobs\n' "$JOBS"
