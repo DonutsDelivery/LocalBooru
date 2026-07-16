@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import ComfyUIConfigModal from '../components/ComfyUIConfigModal'
-import { getLibraryStats, updateDirectory, tagUntagged, clearDirectoryTagQueue, fetchLibraries, addLibrary, mountLibrary, unmountLibrary, removeLibrary, listParentDirectories, removeParentDirectory } from '../api'
+import { getLibraryStats, updateDirectory, tagUntagged, clearDirectoryTagQueue, fetchLibraries, addLibrary, mountLibrary, unmountLibrary, removeLibrary, listParentDirectories, removeParentDirectory, subscribeToLibraryEvents } from '../api'
 import { getDesktopAPI, isDesktopApp } from '../tauriAPI'
 import { toast } from '../components/Toast'
 import { useAddonStatus } from '../hooks/useAddonStatus'
@@ -85,6 +85,17 @@ function DirectoriesPage() {
     getLibraryStats().then(setStats).catch(console.error)
     refreshLibraries()
     refreshParentDirs()
+  }, [])
+
+  // Listen for auto-added directories from parent directory polling (new subdirs created inside watched parents)
+  useEffect(() => {
+    const unsubscribe = subscribeToLibraryEvents((event) => {
+      if (event.type === 'directory_added') {
+        refreshDirectories().catch(console.error)
+        refreshParentDirs().catch(console.error)
+      }
+    })
+    return unsubscribe
   }, [])
 
   // Resolve active library UUID (primary lib uses its real UUID, not 'primary')

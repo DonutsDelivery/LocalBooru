@@ -30,7 +30,10 @@ logger = logging.getLogger("auto-tagger")
 _model = None
 _tags_data = None
 _model_loaded = False
-_use_gpu = os.environ.get("USE_GPU", "true").lower() == "true"
+_requested_device = os.environ.get("TAGGER_REQUESTED_DEVICE", "auto").lower()
+_available_providers = []
+_active_provider = None
+_provider_warning = None
 
 # Model input size for WD-Tagger-V3
 MODEL_INPUT_SIZE = 448
@@ -53,7 +56,7 @@ def _find_model_dir() -> Optional[Path]:
     env_dir = os.environ.get("TAGGER_MODEL_DIR")
     if env_dir:
         p = Path(env_dir)
-        if (p / "model.onnx").exists():
+        if (p / "model.onnx").exists() and (p / "selected_tags.csv").exists():
             return p
 
     # Data directory based locations
@@ -61,7 +64,7 @@ def _find_model_dir() -> Optional[Path]:
     if data_dir:
         for model_name in ["vit-v3", "eva02-large-v3", "swinv2-v3"]:
             p = Path(data_dir) / "models" / "tagger" / model_name
-            if (p / "model.onnx").exists():
+            if (p / "model.onnx").exists() and (p / "selected_tags.csv").exists():
                 return p
 
     # Home directory fallback
@@ -75,7 +78,7 @@ def _find_model_dir() -> Optional[Path]:
 
 
 def _try_download_model() -> Optional[Path]:
-    """Attempt to download the default vit-v3 model from HuggingFace."""
+    """Attempt to download the selected tagger model from HuggingFace."""
     try:
         from huggingface_hub import hf_hub_download
     except ImportError:
@@ -83,14 +86,23 @@ def _try_download_model() -> Optional[Path]:
         return None
 
     data_dir = os.environ.get("LOCALBOORU_DATA_DIR", str(Path.home() / ".localbooru"))
-    dest = Path(data_dir) / "models" / "tagger" / "vit-v3"
-    dest.mkdir(parents=True, exist_ok=True)
+    model_name = os.environ.get("TAGGER_MODEL", "vit-v3")
+    model_repositories = {
+        "vit-v3": "SmilingWolf/wd-vit-tagger-v3",
+        "eva02-large-v3": "SmilingWolf/wd-eva02-large-tagger-v3",
+        "swinv2-v3": "SmilingWolf/wd-swinv2-tagger-v3",
+    }
+    repo_id = model_repositories.get(model_name)
+    if repo_id is None:
+        logger.error("Unknown tagger model: %s", model_name)
+        return None
 
-    repo_id = "SmilingWolf/wd-vit-tagger-v3"
+    dest = Path(data_dir) / "models" / "tagger" / model_name
+    dest.mkdir(parents=True, exist_ok=True)
     try:
         logger.info(f"Downloading tagger model from {repo_id}...")
         for filename in ["model.onnx", "selected_tags.csv"]:
-            downloaded = hf_hub_download(
+            hf_hub_download(
                 repo_id=repo_id,
                 filename=filename,
                 local_dir=str(dest),
@@ -107,7 +119,7 @@ def _try_download_model() -> Optional[Path]:
 
 def _load_model():
     """Load the ONNX model and tags data."""
-    global _model, _tags_data, _model_loaded
+    global _model, _tags_data, _model_loaded, _available_providers, _active_provider, _provider_warning
 
     if _model_loaded:
         return
@@ -124,10 +136,12 @@ def _load_model():
 
     import onnxruntime as ort
 
-    providers = []
-    if _use_gpu:
-        providers.append("CUDAExecutionProvider")
-    providers.append("CPUExecutionProvider")
+    _available_providers = ort.get_available_providers()
+    providers = ["CPUExecutionProvider"]
+    if _requested_device in ("auto", "cuda") and "CUDAExecutionProvider" in _available_providers:
+        providers.insert(0, "CUDAExecutionProvider")
+    elif _requested_device == "cuda":
+        _provider_warning = "CUDA was requested but is unavailable; using CPUExecutionProvider."
 
     sess_options = ort.SessionOptions()
     sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
@@ -139,8 +153,8 @@ def _load_model():
         providers=providers,
     )
 
-    active_provider = _model.get_providers()[0] if _model.get_providers() else "Unknown"
-    logger.info(f"Loaded tagger model using {active_provider}")
+    _active_provider = _model.get_providers()[0] if _model.get_providers() else "Unknown"
+    logger.info(f"Loaded tagger model using {_active_provider}")
 
     # Load tags CSV — row index maps to model output index
     _tags_data = {"rating": [], "general": [], "character": []}
@@ -370,9 +384,21 @@ app = FastAPI(title="Auto-Tagger Sidecar")
 
 @app.get("/health")
 async def health():
+    available_providers = _available_providers
+    if not available_providers:
+        try:
+            import onnxruntime as ort
+            available_providers = ort.get_available_providers()
+        except ImportError:
+            available_providers = []
     return {
         "status": "ok",
         "model_loaded": _model_loaded,
+        "requested_device": _requested_device,
+        "requested_provider": _requested_device,
+        "available_providers": available_providers,
+        "active_provider": _active_provider,
+        "provider_warning": _provider_warning,
     }
 
 

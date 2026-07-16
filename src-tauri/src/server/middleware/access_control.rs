@@ -4,12 +4,12 @@ use axum::{
     http::{Request, Response, StatusCode},
     response::IntoResponse,
 };
+use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
-use std::future::Future;
-use std::pin::Pin;
 
 use super::auth::decode_jwt;
 
@@ -18,6 +18,7 @@ const LOCALHOST_ONLY_PREFIXES: &[&str] = &[
     "/api/settings",
     "/api/network",
     "/api/users",
+    "/api/direct-files",
 ];
 
 /// Endpoints exempt from access control (prefix match).
@@ -33,9 +34,7 @@ const EXEMPT_PREFIXES: &[&str] = &[
 ];
 
 /// Endpoints exempt from access control (exact match).
-const EXEMPT_EXACT: &[&str] = &[
-    "/api",
-];
+const EXEMPT_EXACT: &[&str] = &["/api"];
 
 /// Endpoints under localhost-only prefixes that should still be accessible from network.
 const LOCALHOST_EXEMPTIONS: &[&str] = &[
@@ -44,7 +43,7 @@ const LOCALHOST_EXEMPTIONS: &[&str] = &[
     "/api/settings/saved-searches",
     "/api/settings/family-mode",
     "/api/settings/video-playback",
-    "/api/settings/optical-flow",
+    "/api/settings/optical-flow/stop",
     "/api/settings/svp",
     "/api/settings/whisper",
     "/api/settings/cast",
@@ -257,22 +256,20 @@ where
                     auth.strip_prefix("Bearer ")
                         .or_else(|| auth.strip_prefix("bearer "))
                 })
-                .map(|token| {
-                    matches!(decode_jwt(token, &jwt_secret), Ok(c) if !c.is_media_scoped())
-                })
+                .map(
+                    |token| matches!(decode_jwt(token, &jwt_secret), Ok(c) if !c.is_media_scoped()),
+                )
                 .unwrap_or(false);
 
             // Query parameter (for <img>/<video> src URLs): full token, or a media
             // token limited to GET image routes.
-            let has_valid_jwt = has_valid_jwt || req
-                .uri()
-                .query()
-                .and_then(|q| {
-                    q.split('&')
-                        .find_map(|pair| pair.strip_prefix("token="))
-                })
-                .map(|token| query_token_grants(token))
-                .unwrap_or(false);
+            let has_valid_jwt = has_valid_jwt
+                || req
+                    .uri()
+                    .query()
+                    .and_then(|q| q.split('&').find_map(|pair| pair.strip_prefix("token=")))
+                    .map(|token| query_token_grants(token))
+                    .unwrap_or(false);
 
             // Paths explicitly allowed from the network even though they sit under a
             // localhost-only prefix: pairing handshake, login/verify, and user-preference
@@ -294,7 +291,8 @@ where
                 && !is_exempt_path;
 
             if is_localhost_only {
-                let opt_in_allowed = has_valid_jwt
+                let opt_in_allowed = !path.starts_with("/api/direct-files")
+                    && has_valid_jwt
                     && access_level == "local_network"
                     && lan_settings_opt_in(&data_dir);
 
@@ -337,5 +335,84 @@ where
 
             inner.call(req).await
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::middleware::auth::create_jwt;
+    use tower::{service_fn, ServiceExt};
+
+    #[tokio::test]
+    async fn paired_lan_client_can_stop_retired_optical_flow_playback() {
+        let secret = "optical-flow-stop-test-secret";
+        let token = create_jwt(0, "paired-device", "local_network", true, secret).unwrap();
+        let data_dir = std::env::temp_dir().join(format!(
+            "localbooru-access-control-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let inner = service_fn(|_request: Request<Body>| async move {
+            Ok::<_, std::convert::Infallible>(Response::new(Body::empty()))
+        });
+        let service = AccessControlLayer {
+            jwt_secret: secret.into(),
+            data_dir: data_dir.clone(),
+        }
+        .layer(inner);
+
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/api/settings/optical-flow/stop")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([192, 168, 1, 25], 50000))));
+
+        let response = service.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn direct_file_capabilities_are_never_available_to_lan_clients() {
+        let secret = "direct-file-localhost-test-secret";
+        let token = create_jwt(0, "paired-device", "local_network", true, secret).unwrap();
+        let data_dir = std::env::temp_dir().join(format!(
+            "localbooru-direct-file-access-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        std::fs::write(
+            data_dir.join("settings.json"),
+            r#"{"network":{"allow_settings_local_network":true}}"#,
+        )
+        .unwrap();
+
+        let inner = service_fn(|_request: Request<Body>| async move {
+            Ok::<_, std::convert::Infallible>(Response::new(Body::empty()))
+        });
+        let service = AccessControlLayer {
+            jwt_secret: secret.into(),
+            data_dir: data_dir.clone(),
+        }
+        .layer(inner);
+        let mut request = Request::builder()
+            .method("GET")
+            .uri("/api/direct-files/unguessable-token")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([192, 168, 1, 25], 50000))));
+
+        let response = service.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let _ = std::fs::remove_dir_all(data_dir);
     }
 }

@@ -29,9 +29,8 @@ pub fn query_directory_images(
     let mut sql_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
     // Exclude missing files
-    where_clauses.push(
-        "i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing')".into(),
-    );
+    where_clauses
+        .push("i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing')".into());
 
     // Media type filtering (uses indexed file_extension column)
     if !params.show_images && !params.show_videos {
@@ -93,10 +92,25 @@ pub fn query_directory_images(
     if let Some(ref timeframe) = params.timeframe {
         let now = chrono::Local::now();
         let start = match timeframe.as_str() {
-            "today" => now.date_naive().and_hms_opt(0, 0, 0).map(|dt| dt.to_string()),
-            "week" => Some((now - chrono::Duration::days(7)).format("%Y-%m-%d %H:%M:%S").to_string()),
-            "month" => Some((now - chrono::Duration::days(30)).format("%Y-%m-%d %H:%M:%S").to_string()),
-            "year" => Some((now - chrono::Duration::days(365)).format("%Y-%m-%d %H:%M:%S").to_string()),
+            "today" => now
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .map(|dt| dt.to_string()),
+            "week" => Some(
+                (now - chrono::Duration::days(7))
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+            ),
+            "month" => Some(
+                (now - chrono::Duration::days(30))
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+            ),
+            "year" => Some(
+                (now - chrono::Duration::days(365))
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+            ),
             _ => None,
         };
         if let Some(start_dt) = start {
@@ -117,10 +131,18 @@ pub fn query_directory_images(
 
     // Tag filters (need to resolve tag names → IDs via main DB)
     if !params.tags.is_empty() {
-        let placeholders: Vec<String> = (1..=params.tags.len()).map(|i| format!("?{}", i)).collect();
-        let query = format!("SELECT id, name FROM tags WHERE name IN ({})", placeholders.join(", "));
+        let placeholders: Vec<String> =
+            (1..=params.tags.len()).map(|i| format!("?{}", i)).collect();
+        let query = format!(
+            "SELECT id, name FROM tags WHERE name IN ({})",
+            placeholders.join(", ")
+        );
         let mut stmt = main_conn.prepare(&query)?;
-        let tag_params: Vec<&dyn rusqlite::types::ToSql> = params.tags.iter().map(|t| t as &dyn rusqlite::types::ToSql).collect();
+        let tag_params: Vec<&dyn rusqlite::types::ToSql> = params
+            .tags
+            .iter()
+            .map(|t| t as &dyn rusqlite::types::ToSql)
+            .collect();
         let resolved: std::collections::HashMap<String, i64> = stmt
             .query_map(tag_params.as_slice(), |row| {
                 Ok((row.get::<_, String>(1)?, row.get::<_, i64>(0)?))
@@ -147,10 +169,19 @@ pub fn query_directory_images(
 
     // Exclude tags
     if !params.exclude_tags.is_empty() {
-        let placeholders: Vec<String> = (1..=params.exclude_tags.len()).map(|i| format!("?{}", i)).collect();
-        let query = format!("SELECT id, name FROM tags WHERE name IN ({})", placeholders.join(", "));
+        let placeholders: Vec<String> = (1..=params.exclude_tags.len())
+            .map(|i| format!("?{}", i))
+            .collect();
+        let query = format!(
+            "SELECT id, name FROM tags WHERE name IN ({})",
+            placeholders.join(", ")
+        );
         let mut stmt = main_conn.prepare(&query)?;
-        let tag_params: Vec<&dyn rusqlite::types::ToSql> = params.exclude_tags.iter().map(|t| t as &dyn rusqlite::types::ToSql).collect();
+        let tag_params: Vec<&dyn rusqlite::types::ToSql> = params
+            .exclude_tags
+            .iter()
+            .map(|t| t as &dyn rusqlite::types::ToSql)
+            .collect();
         let resolved: std::collections::HashMap<String, i64> = stmt
             .query_map(tag_params.as_slice(), |row| {
                 Ok((row.get::<_, String>(1)?, row.get::<_, i64>(0)?))
@@ -372,8 +403,10 @@ fn get_file_info_batch(
         "SELECT image_id, original_path, file_status FROM image_files WHERE image_id IN ({})",
         placeholders.join(",")
     );
-    let params: Vec<&dyn rusqlite::types::ToSql> =
-        image_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    let params: Vec<&dyn rusqlite::types::ToSql> = image_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params.as_slice(), |row| {
@@ -411,8 +444,10 @@ fn get_tags_batch(
         "SELECT image_id, tag_id FROM image_tags WHERE image_id IN ({})",
         placeholders.join(",")
     );
-    let params: Vec<&dyn rusqlite::types::ToSql> =
-        image_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    let params: Vec<&dyn rusqlite::types::ToSql> = image_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
 
     let mut stmt = dir_conn.prepare(&sql)?;
     let rows = stmt.query_map(params.as_slice(), |row| {
@@ -438,8 +473,10 @@ fn get_tags_batch(
         "SELECT id, name, category FROM tags WHERE id IN ({})",
         placeholders.join(",")
     );
-    let params: Vec<&dyn rusqlite::types::ToSql> =
-        tag_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    let params: Vec<&dyn rusqlite::types::ToSql> = tag_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
 
     let mut stmt = main_conn.prepare(&sql)?;
     let tag_rows = stmt.query_map(params.as_slice(), |row| {
@@ -525,8 +562,10 @@ pub fn get_image_tags_from_directory(
         "SELECT name, category FROM tags WHERE id IN ({}) ORDER BY category, name",
         placeholders.join(",")
     );
-    let params: Vec<&dyn rusqlite::types::ToSql> =
-        tag_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    let params: Vec<&dyn rusqlite::types::ToSql> = tag_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
 
     let mut stmt = main_conn.prepare(&sql)?;
     let tags = stmt

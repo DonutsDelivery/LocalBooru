@@ -38,10 +38,14 @@ pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
 
     let output = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "format=duration:stream=width,height",
-            "-of", "json",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "format=duration:stream=width,height",
+            "-of",
+            "json",
             file_path,
         ])
         .output()
@@ -58,10 +62,7 @@ pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
     let width = stream.get("width")?.as_i64()? as i32;
     let height = stream.get("height")?.as_i64()? as i32;
 
-    let duration_str = json
-        .get("format")?
-        .get("duration")?
-        .as_str()?;
+    let duration_str = json.get("format")?.get("duration")?.as_str()?;
     let duration = duration_str.parse::<f64>().ok()?;
 
     Some((width, height, duration))
@@ -92,8 +93,12 @@ pub fn get_low_priority_prefix() -> Vec<String> {
 
         if ionice_ok {
             return vec![
-                "ionice".into(), "-c".into(), "3".into(),
-                "nice".into(), "-n".into(), "19".into(),
+                "ionice".into(),
+                "-c".into(),
+                "3".into(),
+                "nice".into(),
+                "-n".into(),
+                "19".into(),
             ];
         }
     }
@@ -107,10 +112,7 @@ pub fn get_hwaccel_args() -> Vec<String> {
         if !check_ffmpeg_available() {
             return vec![];
         }
-        let output = Command::new("ffmpeg")
-            .args(["-hwaccels"])
-            .output()
-            .ok();
+        let output = Command::new("ffmpeg").args(["-hwaccels"]).output().ok();
 
         if let Some(out) = output {
             let stdout = String::from_utf8_lossy(&out.stdout);
@@ -197,8 +199,10 @@ pub fn extract_preview_frames(
         let t = start + interval * i as f64;
         seek_times.push(t);
         cmd_args.extend([
-            "-ss".into(), format!("{:.3}", t),
-            "-i".into(), video_path.into(),
+            "-ss".into(),
+            format!("{:.3}", t),
+            "-i".into(),
+            video_path.into(),
         ]);
     }
 
@@ -207,11 +211,16 @@ pub fn extract_preview_frames(
     for i in 0..num_frames {
         let out_path = output_dir.join(format!("frame_{}.webp", i));
         cmd_args.extend([
-            "-map".into(), format!("{}:v", i),
-            "-frames:v".into(), "1".into(),
-            "-vf".into(), format!("scale={}:-1", frame_width),
-            "-c:v".into(), "libwebp".into(),
-            "-quality".into(), "80".into(),
+            "-map".into(),
+            format!("{}:v", i),
+            "-frames:v".into(),
+            "1".into(),
+            "-vf".into(),
+            format!("scale={}:-1", frame_width),
+            "-c:v".into(),
+            "libwebp".into(),
+            "-quality".into(),
+            "80".into(),
             out_path.to_string_lossy().into_owned(),
         ]);
         output_paths.push(out_path);
@@ -266,11 +275,7 @@ pub fn generate_video_previews(
 /// Generate a video thumbnail using ffmpeg.
 ///
 /// Seeks to the middle of the video and extracts a single keyframe.
-pub fn generate_video_thumbnail(
-    video_path: &str,
-    output_path: &str,
-    size: u32,
-) -> bool {
+pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) -> bool {
     if !check_ffmpeg_available() {
         return false;
     }
@@ -282,19 +287,23 @@ pub fn generate_video_thumbnail(
 
     let mut cmd_args = get_low_priority_prefix();
     cmd_args.push("ffmpeg".into());
-    cmd_args.extend([
-        "-y".into(),
-        "-skip_frame".into(), "nokey".into(),
-    ]);
+    cmd_args.extend(["-y".into(), "-skip_frame".into(), "nokey".into()]);
     cmd_args.extend(get_hwaccel_args());
     cmd_args.extend([
-        "-ss".into(), format!("{:.3}", seek_time),
-        "-i".into(), video_path.into(),
-        "-vframes".into(), "1".into(),
-        "-vsync".into(), "passthrough".into(),
-        "-vf".into(), format!("scale={}:-1", size),
-        "-c:v".into(), "libwebp".into(),
-        "-quality".into(), "85".into(),
+        "-ss".into(),
+        format!("{:.3}", seek_time),
+        "-i".into(),
+        video_path.into(),
+        "-vframes".into(),
+        "1".into(),
+        "-vsync".into(),
+        "passthrough".into(),
+        "-vf".into(),
+        format!("scale={}:-1", size),
+        "-c:v".into(),
+        "libwebp".into(),
+        "-quality".into(),
+        "85".into(),
         output_path.into(),
     ]);
 

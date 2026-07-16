@@ -416,8 +416,8 @@ def get_video_info(video_path: str) -> dict:
 
 
 def detect_audio_gain(video_path: str) -> Optional[float]:
-    """Detect gain needed to normalize the loudest peak to -2 dB.
-    Uses ffmpeg volumedetect on first 15 seconds. Returns dB gain or None."""
+    """Detect attenuation needed to keep the loudest peak at or below -2 dB.
+    Uses ffmpeg volumedetect on first 15 seconds. Never returns positive gain."""
     try:
         r = subprocess.run(
             ["ffmpeg", "-i", video_path, "-vn",
@@ -433,8 +433,8 @@ def detect_audio_gain(video_path: str) -> Optional[float]:
             return None
 
         max_volume = float(m.group(1))
-        gain_db = -2.0 - max_volume
-        return max(-12.0, min(24.0, gain_db))
+        gain_db = min(0.0, -2.0 - max_volume)
+        return max(-12.0, min(0.0, gain_db))
     except Exception as e:
         logger.warning(f"Audio gain detection failed: {e}")
         return None
@@ -556,7 +556,7 @@ class SVPStream:
         script_path = self._temp_dir / "svp_stdin.vpy"
         script_path.write_text(script)
 
-        # Detect audio gain for normalization to -2 dB peak
+        # Detect attenuation for peaks above -2 dB. Quiet sources are not boosted.
         self._audio_gain_db = None
         if info.get("has_audio", True):
             self._audio_gain_db = detect_audio_gain(self.video_path)
@@ -608,11 +608,11 @@ class SVPStream:
 
             encode_cmd.extend(["-c:a", "aac", "-b:a", "192k"])
 
-            # Normalize peak to -2 dB (uniform gain, no dynamics processing)
-            if self._audio_gain_db is not None and abs(self._audio_gain_db) > 0.5:
+            # Attenuate peaks above -2 dB only. Never boost quiet sources.
+            if self._audio_gain_db is not None and self._audio_gain_db < -0.5:
                 encode_cmd.extend(["-af", f"volume={self._audio_gain_db}dB"])
                 logger.info(
-                    f"[SVP {self.stream_id}] Audio normalization: {self._audio_gain_db:=+.1f} dB (peak → -2 dB)"
+                    f"[SVP {self.stream_id}] Audio peak attenuation: {self._audio_gain_db:+.1f} dB"
                 )
 
             gop = self.target_fps * 2
@@ -933,7 +933,12 @@ async def stream_file(stream_id: str, filename: str):
     if not stream or not stream.hls_dir:
         raise HTTPException(status_code=404, detail="Stream not found")
 
-    file_path = stream.hls_dir / filename
+    # Guard against path traversal: `filename` comes from the URL, so resolve it
+    # and confirm it stays directly inside the stream's hls_dir before serving.
+    hls_dir = stream.hls_dir.resolve()
+    file_path = (hls_dir / filename).resolve()
+    if hls_dir not in file_path.parents:
+        raise HTTPException(status_code=404, detail="File not found")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
 

@@ -1,5 +1,5 @@
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response, Json};
+use axum::response::{IntoResponse, Json, Response};
 
 /// Application error type that converts to proper HTTP responses.
 #[derive(Debug)]

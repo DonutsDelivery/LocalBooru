@@ -1,0 +1,28 @@
+.addon-settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.addon-settings-nav button {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 8px 12px;
+}
+
+.addon-settings-nav button:hover,
+.addon-settings-nav button:focus-visible {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.addon-settings-nav button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}

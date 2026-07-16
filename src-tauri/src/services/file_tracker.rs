@@ -90,11 +90,6 @@ pub fn scan_directory(
         )));
     }
 
-    // Clean deleted files first if requested
-    if clean_deleted {
-        stats.removed = clean_deleted_files(lib, directory_id)? as i64;
-    }
-
     // Walk the directory for media files
     let walker: Box<dyn Iterator<Item = walkdir::DirEntry>> = if recursive {
         Box::new(
@@ -118,7 +113,11 @@ pub fn scan_directory(
             continue;
         }
         // Skip files inside the dumpster subfolder (pruned images)
-        if entry.path().components().any(|c| c.as_os_str() == "dumpster") {
+        if entry
+            .path()
+            .components()
+            .any(|c| c.as_os_str() == "dumpster")
+        {
             continue;
         }
         if !importer::is_media_file(entry.path()) {
@@ -141,12 +140,45 @@ pub fn scan_directory(
         }
     }
 
-    // Update last_scanned_at in main DB
+    // Clean stale paths only after discovery/import. If a file was moved while
+    // the app was offline, its new path can first attach to the existing hash;
+    // removing the old reference then preserves tags, favorites, and thumbnail.
+    if clean_deleted {
+        stats.removed = clean_deleted_files(lib, directory_id)? as i64;
+    }
+
+    // Reconcile cached directory counts after additions, changes, and removals.
+    // Import-time increments make new media visible quickly; this authoritative
+    // recount corrects deletions and interrupted/modified imports.
+    let dir_pool = lib.directory_db.get_pool(directory_id)?;
+    let dir_conn = dir_pool.get()?;
+    let image_count: i64 =
+        dir_conn.query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))?;
+    let tagged_count: i64 = dir_conn.query_row(
+        "SELECT COUNT(DISTINCT image_id) FROM image_tags",
+        [],
+        |row| row.get(0),
+    )?;
+    let favorited_count: i64 = dir_conn.query_row(
+        "SELECT COUNT(*) FROM images WHERE is_favorite = 1",
+        [],
+        |row| row.get(0),
+    )?;
+
+    // Update last_scanned_at and cached counts in the library DB.
     let main_conn = lib.main_pool.get()?;
     let now = chrono::Utc::now().to_rfc3339();
     main_conn.execute(
-        "UPDATE watch_directories SET last_scanned_at = ?1 WHERE id = ?2",
-        params![&now, directory_id],
+        "UPDATE watch_directories
+         SET last_scanned_at = ?1, image_count = ?2, tagged_count = ?3, favorited_count = ?4
+         WHERE id = ?5",
+        params![
+            &now,
+            image_count,
+            tagged_count,
+            favorited_count,
+            directory_id
+        ],
     )?;
 
     Ok(stats)
@@ -161,14 +193,10 @@ pub fn clean_deleted_files(lib: &LibraryContext, directory_id: i64) -> Result<i6
     let mut removed: i64 = 0;
 
     // Get all file references
-    let mut stmt = conn.prepare(
-        "SELECT id, image_id, original_path FROM image_files",
-    )?;
+    let mut stmt = conn.prepare("SELECT id, image_id, original_path FROM image_files")?;
 
     let files: Vec<(i64, i64, String)> = stmt
-        .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
         .filter_map(|r| r.ok())
         .collect();
 
@@ -224,13 +252,12 @@ pub fn verify_directory_files(
     let dir_pool = lib.directory_db.get_pool(directory_id)?;
     let conn = dir_pool.get()?;
 
-    let mut stmt =
-        conn.prepare("SELECT id, image_id, original_path FROM image_files WHERE file_status != 'drive_offline'")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, image_id, original_path FROM image_files WHERE file_status != 'drive_offline'",
+    )?;
 
     let files: Vec<(i64, i64, String)> = stmt
-        .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
         .filter_map(|r| r.ok())
         .collect();
 

@@ -26,9 +26,15 @@ pub struct ListTagsQuery {
     pub library_id: Option<String>,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_per_page() -> i64 { 50 }
-fn default_sort() -> String { "count".into() }
+fn default_page() -> i64 {
+    1
+}
+fn default_per_page() -> i64 {
+    50
+}
+fn default_sort() -> String {
+    "count".into()
+}
 
 /// Aggregate tag counts across per-directory databases, filtered by allowed
 /// ratings and visible directories.
@@ -118,11 +124,19 @@ pub async fn list_tags(
         // When family mode is locked, compute tag counts from only SFW images
         let filtered_tag_counts: Option<HashMap<i64, i64>> = if family_locked {
             let sfw_ratings: Vec<&str> = vec!["pg", "pg13"];
-            Some(aggregate_filtered_tag_counts(&lib.directory_db, &visible_dir_ids, &sfw_ratings)?)
+            Some(aggregate_filtered_tag_counts(
+                &lib.directory_db,
+                &visible_dir_ids,
+                &sfw_ratings,
+            )?)
         } else if visible_dir_ids.is_some() {
             // Non-localhost access: filter to visible directories but all ratings
             let all_ratings: Vec<&str> = vec!["pg", "pg13", "r", "x", "xxx"];
-            Some(aggregate_filtered_tag_counts(&lib.directory_db, &visible_dir_ids, &all_ratings)?)
+            Some(aggregate_filtered_tag_counts(
+                &lib.directory_db,
+                &visible_dir_ids,
+                &all_ratings,
+            )?)
         } else {
             None // Localhost + unlocked: no filtering, use stored post_count
         };
@@ -247,7 +261,9 @@ pub struct AutocompleteQuery {
     pub library_id: Option<String>,
 }
 
-fn default_autocomplete_limit() -> i64 { 10 }
+fn default_autocomplete_limit() -> i64 {
+    10
+}
 
 /// GET /api/tags/autocomplete — Tag autocomplete with prefix priority.
 pub async fn autocomplete_tags(
@@ -256,7 +272,9 @@ pub async fn autocomplete_tags(
     Query(q): Query<AutocompleteQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     if q.q.is_empty() {
-        return Err(AppError::BadRequest("Query parameter 'q' is required".into()));
+        return Err(AppError::BadRequest(
+            "Query parameter 'q' is required".into(),
+        ));
     }
 
     let state_clone = state.clone();
@@ -275,11 +293,13 @@ pub async fn autocomplete_tags(
         // When filtering is needed, get visible tag IDs
         let visible_tag_ids: Option<HashSet<i64>> = if family_locked {
             let sfw_ratings: Vec<&str> = vec!["pg", "pg13"];
-            let counts = aggregate_filtered_tag_counts(&lib.directory_db, &visible_dir_ids, &sfw_ratings)?;
+            let counts =
+                aggregate_filtered_tag_counts(&lib.directory_db, &visible_dir_ids, &sfw_ratings)?;
             Some(counts.keys().copied().collect())
         } else if visible_dir_ids.is_some() {
             let all_ratings: Vec<&str> = vec!["pg", "pg13", "r", "x", "xxx"];
-            let counts = aggregate_filtered_tag_counts(&lib.directory_db, &visible_dir_ids, &all_ratings)?;
+            let counts =
+                aggregate_filtered_tag_counts(&lib.directory_db, &visible_dir_ids, &all_ratings)?;
             Some(counts.keys().copied().collect())
         } else {
             None
@@ -295,7 +315,11 @@ pub async fn autocomplete_tags(
             if ids.is_empty() {
                 return Ok(vec![]);
             }
-            let id_list: String = ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
+            let id_list: String = ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
             format!(" AND id IN ({})", id_list)
         } else {
             String::new()
@@ -314,16 +338,13 @@ pub async fn autocomplete_tags(
 
         let mut stmt = conn.prepare(&sql)?;
         let tags: Vec<serde_json::Value> = stmt
-            .query_map(
-                params![prefix_pattern, contains_pattern, limit],
-                |row| {
-                    Ok(json!({
-                        "name": row.get::<_, String>(0)?,
-                        "category": row.get::<_, String>(1)?,
-                        "post_count": row.get::<_, i32>(2)?
-                    }))
-                },
-            )?
+            .query_map(params![prefix_pattern, contains_pattern, limit], |row| {
+                Ok(json!({
+                    "name": row.get::<_, String>(0)?,
+                    "category": row.get::<_, String>(1)?,
+                    "post_count": row.get::<_, i32>(2)?
+                }))
+            })?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -352,13 +373,14 @@ pub async fn tag_stats(
         let conn = lib.main_pool.get()?;
 
         // Total count
-        let total: i64 =
-            conn.query_row("SELECT COUNT(*) FROM tags", [], |row| row.get(0))?;
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM tags", [], |row| row.get(0))?;
 
         // Count by category
         let mut stmt = conn.prepare("SELECT category, COUNT(*) FROM tags GROUP BY category")?;
         let by_category: std::collections::HashMap<String, i64> = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -414,9 +436,7 @@ pub async fn get_tag(
             },
         )
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => {
-                AppError::NotFound("Tag not found".into())
-            }
+            rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Tag not found".into()),
             other => AppError::from(other),
         })
     })

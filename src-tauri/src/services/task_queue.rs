@@ -5,8 +5,8 @@ use std::time::Duration;
 use dashmap::DashMap;
 use rusqlite::params;
 use serde_json::Value;
-use tokio_util::sync::CancellationToken;
 use tokio::sync::{Notify, Semaphore};
+use tokio_util::sync::CancellationToken;
 
 use crate::addons::manager::AddonStatus;
 use crate::db::library::LibraryContext;
@@ -25,6 +25,13 @@ pub const TASK_UPLOAD: &str = "upload";
 pub const TASK_AGE_DETECT: &str = "age_detect";
 pub const TASK_EXTRACT_METADATA: &str = "extract_metadata";
 pub const TASK_COMPLETE_IMPORTS: &str = "complete_directory_imports";
+
+// Higher values are claimed first. Keep serving/index work ahead of derived
+// artifacts, and keep ML work behind thumbnails.
+pub const PRIORITY_INDEX: i32 = 300;
+pub const PRIORITY_THUMBNAILS: i32 = 200;
+pub const PRIORITY_METADATA: i32 = 100;
+pub const PRIORITY_AGE_DETECT: i32 = 10;
 
 pub const STATUS_PENDING: &str = "pending";
 pub const STATUS_PROCESSING: &str = "processing";
@@ -120,10 +127,7 @@ impl BackgroundTaskQueue {
 
         let semaphore = Arc::new(Semaphore::new(num_workers));
 
-        log::info!(
-            "[TaskQueue] Starting {} worker(s)",
-            num_workers
-        );
+        log::info!("[TaskQueue] Starting {} worker(s)", num_workers);
 
         // Spawn N worker tasks
         for worker_id in 0..num_workers {
@@ -165,10 +169,7 @@ impl BackgroundTaskQueue {
                             }
                         }
                         Err(e) => {
-                            log::error!(
-                                "[TaskQueue] Worker {} error: {}",
-                                worker_id, e
-                            );
+                            log::error!("[TaskQueue] Worker {} error: {}", worker_id, e);
                             tokio::time::sleep(Duration::from_secs(2)).await;
                         }
                     }
@@ -202,6 +203,27 @@ impl BackgroundTaskQueue {
                 log::info!("[TaskQueue] Tag guardian stopped");
             });
         }
+
+        // Catch age work missed while the detector addon was starting or
+        // temporarily unavailable.
+        {
+            let running = self.running.clone();
+            let state = state.clone();
+
+            tokio::spawn(async move {
+                log::info!("[TaskQueue] Age guardian started");
+                tokio::time::sleep(Duration::from_secs(30)).await;
+
+                while running.load(Ordering::SeqCst) {
+                    if let Err(e) = run_age_guardian(&state).await {
+                        log::error!("[TaskQueue] Age guardian error: {}", e);
+                    }
+                    tokio::time::sleep(Duration::from_secs(300)).await;
+                }
+
+                log::info!("[TaskQueue] Age guardian stopped");
+            });
+        }
     }
 
     /// Stop the background worker.
@@ -232,7 +254,10 @@ fn read_worker_count(state: &AppState) -> usize {
     );
 
     match result {
-        Ok(val) => val.parse::<usize>().unwrap_or_else(|_| default_workers()).max(1),
+        Ok(val) => val
+            .parse::<usize>()
+            .unwrap_or_else(|_| default_workers())
+            .max(1),
         Err(_) => default_workers(),
     }
 }
@@ -259,47 +284,49 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
 
     // Fetch next task (blocking DB operation)
     // Uses atomic UPDATE + SELECT to prevent two workers claiming the same task.
-    let task_info = tokio::task::spawn_blocking(move || -> Result<Option<(i64, String, String, i64)>, AppError> {
-        let conn = state_clone.main_db().get()?;
+    let task_info = tokio::task::spawn_blocking(
+        move || -> Result<Option<(i64, String, String, i64)>, AppError> {
+            let conn = state_clone.main_db().get()?;
 
-        // Atomically claim the highest-priority pending task:
-        // 1. Find the best candidate
-        // 2. UPDATE it to 'processing' only if it's still 'pending'
-        // 3. Check changes() to confirm we actually claimed it
-        let result = conn.query_row(
-            "SELECT id, task_type, payload, COALESCE(attempts, 0) FROM task_queue
+            // Atomically claim the highest-priority pending task:
+            // 1. Find the best candidate
+            // 2. UPDATE it to 'processing' only if it's still 'pending'
+            // 3. Check changes() to confirm we actually claimed it
+            let result = conn.query_row(
+                "SELECT id, task_type, payload, COALESCE(attempts, 0) FROM task_queue
              WHERE status = ?1
              ORDER BY priority DESC, created_at ASC
              LIMIT 1",
-            params![STATUS_PENDING],
-            |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, i64>(3)?,
-                ))
-            },
-        );
+                params![STATUS_PENDING],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                    ))
+                },
+            );
 
-        match result {
-            Ok(task) => {
-                // Atomically claim: only update if still pending
-                let claimed = conn.execute(
-                    "UPDATE task_queue SET status = ?1, started_at = datetime('now')
+            match result {
+                Ok(task) => {
+                    // Atomically claim: only update if still pending
+                    let claimed = conn.execute(
+                        "UPDATE task_queue SET status = ?1, started_at = datetime('now')
                      WHERE id = ?2 AND status = ?3",
-                    params![STATUS_PROCESSING, task.0, STATUS_PENDING],
-                )?;
-                if claimed == 0 {
-                    // Another worker already claimed it, try again
-                    return Ok(None);
+                        params![STATUS_PROCESSING, task.0, STATUS_PENDING],
+                    )?;
+                    if claimed == 0 {
+                        // Another worker already claimed it, try again
+                        return Ok(None);
+                    }
+                    Ok(Some(task))
                 }
-                Ok(Some(task))
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(AppError::from(e)),
             }
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(AppError::from(e)),
-        }
-    })
+        },
+    )
     .await??;
 
     let (task_id, task_type, payload_str, attempts) = match task_info {
@@ -309,7 +336,9 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
 
     log::info!(
         "[TaskQueue] Processing task #{} ({}) [attempt {}]",
-        task_id, task_type, attempts + 1
+        task_id,
+        task_type,
+        attempts + 1
     );
 
     // Broadcast task started event
@@ -417,7 +446,12 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
 }
 
 /// Execute a task based on its type.
-async fn execute_task(state: &AppState, task_type: &str, payload: &Value, cancel: &CancellationToken) -> Result<(), AppError> {
+async fn execute_task(
+    state: &AppState,
+    task_type: &str,
+    payload: &Value,
+    cancel: &CancellationToken,
+) -> Result<(), AppError> {
     // Resolve the target library from payload (defaults to primary)
     let library_id = payload["library_id"].as_str();
     let lib = state.resolve_library(library_id)?;
@@ -443,6 +477,7 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value, cancel
 
             let clean_deleted = payload["clean_deleted"].as_bool().unwrap_or(false);
             let fast_import = payload["fast_import"].as_bool().unwrap_or(true);
+            let recursive = payload["recursive"].as_bool().unwrap_or(true);
 
             let state_clone = state.clone();
             let lib = lib.clone();
@@ -453,7 +488,7 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value, cancel
                     &lib,
                     directory_id,
                     &dir_path_clone,
-                    true, // recursive
+                    recursive,
                     clean_deleted,
                     fast_import,
                 )?;
@@ -479,7 +514,7 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value, cancel
                         "directory_path": directory_path,
                         "library_id": library_id,
                     }),
-                    0, // lower priority than scans (priority 2)
+                    PRIORITY_THUMBNAILS,
                     None,
                 )?;
             }
@@ -517,7 +552,8 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value, cancel
 
             log::info!(
                 "[TaskQueue] Upload task processed for image #{} in directory #{}",
-                image_id, directory_id
+                image_id,
+                directory_id
             );
         }
 
@@ -531,10 +567,7 @@ async fn execute_task(state: &AppState, task_type: &str, payload: &Value, cancel
             let complete_import = payload["complete_import"].as_bool().unwrap_or(false);
 
             // Resolve image path from payload or directory DB
-            let mut image_path = payload["image_path"]
-                .as_str()
-                .unwrap_or("")
-                .to_string();
+            let mut image_path = payload["image_path"].as_str().unwrap_or("").to_string();
 
             if image_path.is_empty() {
                 if let (Some(img_id), Some(dir_id)) = (image_id, directory_id) {
@@ -644,7 +677,7 @@ fn complete_directory_imports(
          JOIN image_files f ON f.image_id = i.id
          WHERE f.file_exists = 1
          AND COALESCE(f.file_status, '') != 'drive_offline'
-         GROUP BY i.id"
+         GROUP BY i.id",
     )?;
 
     let all_images: Vec<(i64, String, String)> = thumb_stmt
@@ -667,7 +700,11 @@ fn complete_directory_imports(
     let thumbnails_generated: u32;
 
     if total_thumbs > 0 {
-        log::info!("[TaskQueue] Directory #{}: {} images need thumbnails", directory_id, total_thumbs);
+        log::info!(
+            "[TaskQueue] Directory #{}: {} images need thumbnails",
+            directory_id,
+            total_thumbs
+        );
 
         // Broadcast pass 1 start
         if let Some(events) = state.events() {
@@ -772,10 +809,17 @@ fn complete_directory_imports(
          WHERE f.file_exists = 1
          AND COALESCE(f.file_status, '') != 'drive_offline'
          AND (i.perceptual_hash IS NULL OR i.width IS NULL)
-         GROUP BY i.id"
+         GROUP BY i.id",
     )?;
 
-    let images: Vec<(i64, String, Option<String>, Option<i32>, Option<f64>, String)> = stmt
+    let images: Vec<(
+        i64,
+        String,
+        Option<String>,
+        Option<i32>,
+        Option<f64>,
+        String,
+    )> = stmt
         .query_map([], |row| {
             Ok((
                 row.get(0)?,
@@ -843,7 +887,8 @@ fn complete_directory_imports(
                 }
             }
 
-            let phash = existing_phash.or_else(|| importer::calculate_perceptual_hash(original_path));
+            let phash =
+                existing_phash.or_else(|| importer::calculate_perceptual_hash(original_path));
             if let Some(phash) = phash {
                 conn.execute(
                     "UPDATE images SET perceptual_hash = ?1 WHERE id = ?2",
@@ -897,7 +942,75 @@ fn complete_directory_imports(
         directory_id, thumbnails_generated, hashes_computed, probes_completed
     );
 
+    let age_tasks = enqueue_missing_age_detection(state, lib, directory_id)?;
+    if age_tasks > 0 {
+        log::info!(
+            "[TaskQueue] Queued {} age-detection tasks after thumbnails for directory #{}",
+            age_tasks,
+            directory_id
+        );
+    }
+
     Ok(())
+}
+
+fn enqueue_missing_age_detection(
+    state: &AppState,
+    lib: &LibraryContext,
+    directory_id: i64,
+) -> Result<u32, AppError> {
+    let auto_age_detect: bool = lib.main_pool.get()?.query_row(
+        "SELECT auto_age_detect FROM watch_directories WHERE id = ?1",
+        params![directory_id],
+        |row| row.get(0),
+    )?;
+    if !auto_age_detect {
+        return Ok(0);
+    }
+
+    let pool = lib.directory_db.get_pool(directory_id)?;
+    let conn = pool.get()?;
+    let mut stmt = conn.prepare(
+        "SELECT i.id, f.original_path
+         FROM images i
+         JOIN image_files f ON f.image_id = i.id
+         WHERE i.age_detection_data IS NULL
+           AND f.file_exists = 1
+           AND COALESCE(f.file_status, '') != 'drive_offline'
+         GROUP BY i.id",
+    )?;
+    let images: Vec<(i64, String)> = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .filter_map(|row| row.ok())
+        .filter(|(_, path)| !importer::is_video_file(path))
+        .collect();
+    drop(stmt);
+    drop(conn);
+
+    let mut queued = 0u32;
+    for (image_id, image_path) in images {
+        let payload = serde_json::json!({
+            "image_id": image_id,
+            "directory_id": directory_id,
+            "image_path": image_path,
+            "library_id": lib.uuid,
+        });
+        if enqueue_task(
+            state,
+            TASK_AGE_DETECT,
+            &payload,
+            PRIORITY_AGE_DETECT,
+            Some(image_id),
+        )?
+        .is_some()
+        {
+            queued += 1;
+        }
+    }
+
+    Ok(queued)
 }
 
 // ─── TASK_TAG handler ────────────────────────────────────────────────────────
@@ -909,15 +1022,16 @@ fn complete_directory_imports(
 /// The auto-tagger addon (port 18001) receives a POST to /predict with the
 /// image file path and returns predicted tags with confidence scores.
 /// If the addon is not running, the task is skipped (not failed).
-async fn execute_tag_task(state: &AppState, lib: &Arc<LibraryContext>, payload: &Value) -> Result<(), AppError> {
+async fn execute_tag_task(
+    state: &AppState,
+    lib: &Arc<LibraryContext>,
+    payload: &Value,
+) -> Result<(), AppError> {
     let image_id = payload["image_id"]
         .as_i64()
         .ok_or_else(|| AppError::Internal("Missing image_id in tag task".into()))?;
     let directory_id = payload["directory_id"].as_i64();
-    let mut image_path = payload["image_path"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let mut image_path = payload["image_path"].as_str().unwrap_or("").to_string();
 
     // Resolve image path from directory DB if not in the payload
     if image_path.is_empty() {
@@ -942,7 +1056,8 @@ async fn execute_tag_task(state: &AppState, lib: &Arc<LibraryContext>, payload: 
     if image_path.is_empty() || !std::path::Path::new(&image_path).exists() {
         log::warn!(
             "[TaskQueue] Tag task for image #{}: file not found at '{}'",
-            image_id, image_path
+            image_id,
+            image_path
         );
         return Ok(());
     }
@@ -994,7 +1109,8 @@ async fn execute_tag_task(state: &AppState, lib: &Arc<LibraryContext>, payload: 
         Err(e) => {
             log::warn!(
                 "[TaskQueue] Failed to reach auto-tagger for image #{}: {}",
-                image_id, e
+                image_id,
+                e
             );
             return Ok(());
         }
@@ -1005,7 +1121,9 @@ async fn execute_tag_task(state: &AppState, lib: &Arc<LibraryContext>, payload: 
         let body = response.text().await.unwrap_or_default();
         log::warn!(
             "[TaskQueue] auto-tagger returned {} for image #{}: {}",
-            status, image_id, body
+            status,
+            image_id,
+            body
         );
         return Ok(());
     }
@@ -1126,17 +1244,18 @@ async fn execute_tag_task(state: &AppState, lib: &Arc<LibraryContext>, payload: 
 /// Expected payload: { "image_id": N, "directory_id": N }
 /// The sidecar returns: { "num_faces": N, "faces": [...], "min_age": N, "max_age": N, "detected_ages": "..." }
 /// Results are written to the directory DB's images table.
-async fn execute_age_detect_task(state: &AppState, lib: &Arc<LibraryContext>, payload: &Value) -> Result<(), AppError> {
+async fn execute_age_detect_task(
+    state: &AppState,
+    lib: &Arc<LibraryContext>,
+    payload: &Value,
+) -> Result<(), AppError> {
     let image_id = payload["image_id"]
         .as_i64()
         .ok_or_else(|| AppError::Internal("Missing image_id in age_detect task".into()))?;
     let directory_id = payload["directory_id"].as_i64();
 
     // Resolve image path
-    let mut image_path = payload["image_path"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let mut image_path = payload["image_path"].as_str().unwrap_or("").to_string();
 
     if image_path.is_empty() {
         if let Some(dir_id) = directory_id {
@@ -1160,7 +1279,8 @@ async fn execute_age_detect_task(state: &AppState, lib: &Arc<LibraryContext>, pa
     if image_path.is_empty() || !std::path::Path::new(&image_path).exists() {
         log::warn!(
             "[TaskQueue] Age detect task for image #{}: file not found at '{}'",
-            image_id, image_path
+            image_id,
+            image_path
         );
         return Ok(());
     }
@@ -1205,7 +1325,11 @@ async fn execute_age_detect_task(state: &AppState, lib: &Arc<LibraryContext>, pa
     let response = match response {
         Ok(r) => r,
         Err(e) => {
-            log::warn!("[TaskQueue] Failed to reach age-detector for image #{}: {}", image_id, e);
+            log::warn!(
+                "[TaskQueue] Failed to reach age-detector for image #{}: {}",
+                image_id,
+                e
+            );
             return Ok(());
         }
     };
@@ -1213,12 +1337,20 @@ async fn execute_age_detect_task(state: &AppState, lib: &Arc<LibraryContext>, pa
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        log::warn!("[TaskQueue] age-detector returned {} for image #{}: {}", status, image_id, body);
+        log::warn!(
+            "[TaskQueue] age-detector returned {} for image #{}: {}",
+            status,
+            image_id,
+            body
+        );
         return Ok(());
     }
 
     let result: Value = response.json().await.map_err(|e| {
-        AppError::Internal(format!("Failed to parse age-detector response for image #{}: {}", image_id, e))
+        AppError::Internal(format!(
+            "Failed to parse age-detector response for image #{}: {}",
+            image_id, e
+        ))
     })?;
 
     let num_faces = result["num_faces"].as_i64().unwrap_or(0);
@@ -1236,14 +1368,24 @@ async fn execute_age_detect_task(state: &AppState, lib: &Arc<LibraryContext>, pa
             conn.execute(
                 "UPDATE images SET num_faces = ?1, min_detected_age = ?2, max_detected_age = ?3,
                  detected_ages = ?4, age_detection_data = ?5 WHERE id = ?6",
-                params![num_faces, min_age, max_age, &detected_ages, &detection_data, image_id],
+                params![
+                    num_faces,
+                    min_age,
+                    max_age,
+                    &detected_ages,
+                    &detection_data,
+                    image_id
+                ],
             )?;
             log::info!(
                 "[TaskQueue] Age detection for image #{}: {} faces, ages {}",
-                image_id, num_faces, detected_ages
+                image_id,
+                num_faces,
+                detected_ages
             );
             Ok(())
-        }).await??;
+        })
+        .await??;
     }
 
     Ok(())
@@ -1275,9 +1417,8 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
             let main_conn = lib.main_pool.get()?;
 
             // Get all enabled directories with auto_tag enabled
-            let mut stmt = main_conn.prepare(
-                "SELECT id, path, auto_tag FROM watch_directories WHERE enabled = 1"
-            )?;
+            let mut stmt = main_conn
+                .prepare("SELECT id, path, auto_tag FROM watch_directories WHERE enabled = 1")?;
 
             let dirs: Vec<(i64, String, bool)> = stmt
                 .query_map([], |row| {
@@ -1317,15 +1458,12 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
                      WHERE it.image_id IS NULL
                      AND if2.file_exists = 1
                      AND COALESCE(if2.file_status, '') != 'drive_offline'
-                     LIMIT 50"
+                     LIMIT 50",
                 )?;
 
                 let untagged: Vec<(i64, String)> = img_stmt
                     .query_map([], |row| {
-                        Ok((
-                            row.get::<_, i64>(0)?,
-                            row.get::<_, String>(1)?,
-                        ))
+                        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
                     })?
                     .filter_map(|r| r.ok())
                     .filter(|(_, path)| !importer::is_video_file(path))
@@ -1346,7 +1484,8 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
                         Err(e) => {
                             log::warn!(
                                 "[TagGuardian] Failed to enqueue tag task for image #{}: {}",
-                                image_id, e
+                                image_id,
+                                e
                             );
                         }
                     }
@@ -1359,11 +1498,46 @@ async fn run_tag_guardian(state: &AppState) -> Result<(), AppError> {
     .await??;
 
     if queued > 0 {
-        log::info!("[TagGuardian] Queued {} tag tasks for untagged images", queued);
+        log::info!(
+            "[TagGuardian] Queued {} tag tasks for untagged images",
+            queued
+        );
         if let Some(tq) = state.task_queue() {
             tq.wake();
         }
     }
+
+    Ok(())
+}
+
+async fn run_age_guardian(state: &AppState) -> Result<(), AppError> {
+    if state.addon_manager().get_addon_status("age-detector") != AddonStatus::Running {
+        return Ok(());
+    }
+
+    let state = state.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        for lib in state.library_manager().all_mounted() {
+            let directory_ids: Vec<i64> = {
+                let conn = lib.main_pool.get()?;
+                let mut stmt = conn.prepare(
+                    "SELECT id FROM watch_directories
+                     WHERE enabled = 1 AND auto_age_detect = 1",
+                )?;
+                let ids = stmt
+                    .query_map([], |row| row.get(0))?
+                    .filter_map(|row| row.ok())
+                    .collect();
+                ids
+            };
+
+            for directory_id in directory_ids {
+                enqueue_missing_age_detection(&state, &lib, directory_id)?;
+            }
+        }
+        Ok(())
+    })
+    .await??;
 
     Ok(())
 }
@@ -1486,10 +1660,7 @@ fn run_metadata_extraction(
                     );
                 }
                 "no_metadata" => {
-                    log::debug!(
-                        "[TaskQueue] No AI metadata found in image #{}",
-                        image_id
-                    );
+                    log::debug!("[TaskQueue] No AI metadata found in image #{}", image_id);
                 }
                 "config_mismatch" => {
                     log::info!(
@@ -1594,12 +1765,22 @@ pub fn enqueue_task(
 
     // Directory-level deduplication for directory-scoped tasks:
     // Prevent duplicate scan/import/verify tasks for the same directory.
-    if matches!(task_type, TASK_SCAN_DIRECTORY | TASK_COMPLETE_IMPORTS | TASK_VERIFY_FILES) {
+    if matches!(
+        task_type,
+        TASK_SCAN_DIRECTORY | TASK_COMPLETE_IMPORTS | TASK_VERIFY_FILES
+    ) {
         if let Some(dir_id) = payload["directory_id"].as_i64() {
             let pat_comma = format!("%\"directory_id\":{},%", dir_id);
             let pat_comma_sp = format!("%\"directory_id\": {},%", dir_id);
             let pat_brace = format!("%\"directory_id\":{}}}%", dir_id);
             let pat_brace_sp = format!("%\"directory_id\": {}}}%", dir_id);
+            // If completion is already running, permit one pending catch-up
+            // task for media that arrives after its initial query snapshot.
+            let second_status = if task_type == TASK_COMPLETE_IMPORTS {
+                STATUS_PENDING
+            } else {
+                STATUS_PROCESSING
+            };
 
             let exists: bool = conn
                 .query_row(
@@ -1609,7 +1790,7 @@ pub fn enqueue_task(
                     params![
                         task_type,
                         STATUS_PENDING,
-                        STATUS_PROCESSING,
+                        second_status,
                         &pat_comma,
                         &pat_comma_sp,
                         &pat_brace,
@@ -1622,38 +1803,35 @@ pub fn enqueue_task(
             if exists {
                 log::debug!(
                     "[TaskQueue] Skipping duplicate {} for directory #{}",
-                    task_type, dir_id
+                    task_type,
+                    dir_id
                 );
                 return Ok(None);
             }
         }
     }
 
-    // Image-level deduplication check — use boundary-aware patterns to avoid false positives
-    // (e.g. image_id 1 must not match image_id 10 or 100).
+    // Image IDs are local to each per-directory database, so dedupe on the
+    // complete library + directory + image identity rather than image_id alone.
     if let Some(image_id) = dedupe_key {
-        let pat_comma = format!("%\"image_id\":{},%", image_id);
-        let pat_comma_sp = format!("%\"image_id\": {},%", image_id);
-        let pat_brace = format!("%\"image_id\":{}}}%", image_id);
-        let pat_brace_sp = format!("%\"image_id\": {}}}%", image_id);
-        let patterns = [pat_comma, pat_comma_sp, pat_brace, pat_brace_sp];
-
-        let exists: bool = conn
-            .query_row(
-                "SELECT COUNT(*) FROM task_queue
-                 WHERE task_type = ?1 AND status = ?2
-                 AND (payload LIKE ?3 OR payload LIKE ?4 OR payload LIKE ?5 OR payload LIKE ?6)",
-                params![
-                    task_type,
-                    STATUS_PENDING,
-                    &patterns[0],
-                    &patterns[1],
-                    &patterns[2],
-                    &patterns[3],
-                ],
-                |row| row.get::<_, i64>(0).map(|c| c > 0),
-            )
-            .unwrap_or(false);
+        let directory_id = payload["directory_id"].as_i64();
+        let library_id = payload["library_id"].as_str().unwrap_or("primary");
+        let mut stmt = conn.prepare(
+            "SELECT payload FROM task_queue
+             WHERE task_type = ?1 AND status IN (?2, ?3)",
+        )?;
+        let exists = stmt
+            .query_map(
+                params![task_type, STATUS_PENDING, STATUS_PROCESSING],
+                |row| row.get::<_, String>(0),
+            )?
+            .filter_map(|row| row.ok())
+            .filter_map(|value| serde_json::from_str::<Value>(&value).ok())
+            .any(|existing| {
+                existing["image_id"].as_i64() == Some(image_id)
+                    && existing["directory_id"].as_i64() == directory_id
+                    && existing["library_id"].as_str().unwrap_or("primary") == library_id
+            });
 
         if exists {
             return Ok(None);
@@ -1686,4 +1864,112 @@ pub fn clear_duplicate_tasks(state: &AppState) -> Result<i64, AppError> {
         params![STATUS_PENDING],
     )?;
     Ok(removed as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema::init_directory_db;
+
+    fn temp_test_dir(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("localbooru-task-{}-{}", name, uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn age_detection_is_queued_after_index_and_thumbnail_work() {
+        assert!(PRIORITY_INDEX > PRIORITY_THUMBNAILS);
+        assert!(PRIORITY_THUMBNAILS > PRIORITY_AGE_DETECT);
+
+        let data_dir = temp_test_dir("age-priority");
+        let media_dir = data_dir.join("media");
+        let media_path = media_dir.join("image.jpg");
+        std::fs::create_dir_all(&media_dir).unwrap();
+        std::fs::write(&media_path, b"image").unwrap();
+
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let lib = state.library_manager().primary().clone();
+        let directory_id = {
+            let conn = lib.main_pool.get().unwrap();
+            conn.execute(
+                "INSERT INTO watch_directories (path, name, auto_age_detect) VALUES (?1, 'Media', 1)",
+                params![media_dir.to_string_lossy()],
+            )
+            .unwrap();
+            conn.last_insert_rowid()
+        };
+        let pool = lib.directory_db.get_pool(directory_id).unwrap();
+        let conn = pool.get().unwrap();
+        init_directory_db(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO images (filename, file_hash) VALUES ('image.jpg', 'hash')",
+            [],
+        )
+        .unwrap();
+        let image_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO image_files (image_id, original_path, file_exists, file_status)
+             VALUES (?1, ?2, 1, 'available')",
+            params![image_id, media_path.to_string_lossy()],
+        )
+        .unwrap();
+
+        let queued = enqueue_missing_age_detection(&state, &lib, directory_id).unwrap();
+        assert_eq!(queued, 1);
+        let priority: i32 = state
+            .main_db()
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT priority FROM task_queue WHERE task_type = 'age_detect'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(priority, PRIORITY_AGE_DETECT);
+
+        // Per-directory databases reuse integer image IDs. Queue identity must
+        // include the directory, or image #1 suppresses image #1 elsewhere.
+        let second_media_dir = data_dir.join("media-2");
+        let second_media_path = second_media_dir.join("image.jpg");
+        std::fs::create_dir_all(&second_media_dir).unwrap();
+        std::fs::write(&second_media_path, b"image").unwrap();
+        let second_directory_id = {
+            let conn = lib.main_pool.get().unwrap();
+            conn.execute(
+                "INSERT INTO watch_directories (path, name, auto_age_detect) VALUES (?1, 'Media 2', 1)",
+                params![second_media_dir.to_string_lossy()],
+            )
+            .unwrap();
+            conn.last_insert_rowid()
+        };
+        let second_pool = lib.directory_db.get_pool(second_directory_id).unwrap();
+        let second_conn = second_pool.get().unwrap();
+        init_directory_db(&second_conn).unwrap();
+        second_conn
+            .execute(
+                "INSERT INTO images (filename, file_hash) VALUES ('image.jpg', 'hash-2')",
+                [],
+            )
+            .unwrap();
+        let second_image_id = second_conn.last_insert_rowid();
+        assert_eq!(second_image_id, image_id);
+        second_conn
+            .execute(
+                "INSERT INTO image_files (image_id, original_path, file_exists, file_status)
+                 VALUES (?1, ?2, 1, 'available')",
+                params![second_image_id, second_media_path.to_string_lossy()],
+            )
+            .unwrap();
+        assert_eq!(
+            enqueue_missing_age_detection(&state, &lib, second_directory_id).unwrap(),
+            1
+        );
+
+        drop(second_conn);
+        drop(second_pool);
+        drop(conn);
+        drop(pool);
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
 }

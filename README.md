@@ -12,9 +12,9 @@ A local image library with automatic AI tagging, designed for organizing and bro
 
 | Platform | Download |
 |----------|----------|
-| **Windows** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Windows.zip) &#124; [Portable (EXE)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Portable.exe) &#124; [Installer](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Setup.exe) |
+| **Windows (legacy 0.3.33)** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-Windows.zip) &#124; [Portable (EXE)](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-Portable.exe) &#124; [Installer](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-Setup.exe) |
 | **Linux** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.zip) &#124; [AppImage](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.AppImage) &#124; [.deb](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.deb) &#124; [.rpm](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.rpm) |
-| **macOS** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.zip) &#124; [DMG (Apple Silicon)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.dmg) |
+| **macOS (legacy 0.3.33)** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-macOS-arm64.zip) &#124; [DMG (Apple Silicon)](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-macOS-arm64.dmg) |
 
 ### USB Portable Mode
 
@@ -144,36 +144,19 @@ npm run build:win
 ### Tauri (Recommended)
 
 ```bash
-# Install Rust (if not installed)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Install Tauri CLI
-cargo install tauri-cli
-
-# Prepare Python bundle
-node scripts/prepare-python-bundle-linux.js
-
-# Build for Linux
-./scripts/build-tauri-linux.sh
+# Build all verified Linux release artifacts with Docker/Podman
+npm run release:linux
 
 # Or build specific formats
-./scripts/build-tauri-linux.sh --appimage
-./scripts/build-tauri-linux.sh --deb
-./scripts/build-tauri-linux.sh --rpm
+npm run tauri:build:linux:appimage
+npm run tauri:build:linux:deb
+npm run tauri:build:linux:rpm
 ```
 
-See [docs/LINUX_PACKAGING.md](docs/LINUX_PACKAGING.md) for detailed build instructions and system dependencies.
-
-### Electron (Legacy)
-
-```bash
-# Build for current platform
-npm run build
-
-# Build for specific platforms
-npm run build:linux
-npm run build:win
-```
+See [docs/LINUX_PACKAGING.md](docs/LINUX_PACKAGING.md) and the
+[release infrastructure guide](docs/agents/release-and-infrastructure.md) for
+artifact names, persistent cache configuration, and verification gates. The
+retired Electron workflow must not be used for current releases.
 
 ## License
 

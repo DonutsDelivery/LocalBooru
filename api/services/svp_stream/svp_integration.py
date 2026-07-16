@@ -4,14 +4,18 @@ SVP/VapourSynth script generation for frame interpolation.
 Generates VapourSynth scripts that use SVPflow plugins for motion-compensated
 frame interpolation. Supports both regular SVP pipeline and NVOF (NVIDIA Optical Flow).
 """
-import os
 from typing import Optional
 
-from ..svp_platform import get_svp_plugin_full_paths, get_source_filter_paths
+from ..svp_platform import get_svp_plugin_full_paths
 from .config import SVP_PRESETS, build_svp_params
 
 
 def generate_vspipe_stdin_script(
+    width: int,
+    height: int,
+    fps_num: int,
+    fps_den: int,
+    num_frames: int,
     target_fps: int,
     preset: str = "balanced",
     use_nvof: bool = True,
@@ -23,94 +27,123 @@ def generate_vspipe_stdin_script(
     custom_smooth: Optional[str] = None,
 ) -> str:
     """
-    Generate a VapourSynth script that reads Y4M from stdin and outputs SVP-processed Y4M.
+    Generate a VapourSynth script that reads raw yuv420p frames from stdin.
 
-    This script is meant to be run with vspipe, reading from FFmpeg's Y4M output:
-        ffmpeg -i video.mp4 -f yuv4mpegpipe - | vspipe -c y4m script.vpy - | ffmpeg -f yuv4mpegpipe -i - ...
-
-    NO PYTHON IN THE FRAME PATH - rawsource reads directly from stdin.
+    VapourSynth has no built-in stdin video source, so the generated script
+    creates a correctly-shaped clip and fills each requested frame from
+    FFmpeg's rawvideo pipe.
     """
-    preset_config = SVP_PRESETS.get(preset, SVP_PRESETS["balanced"])
-
-    # Get SVP parameters
     super_params, analyse_params, smooth_params = build_svp_params(
         target_fps, preset, shader, artifact_masking, frame_interpolation,
         custom_super, custom_analyse, custom_smooth
     )
 
-    # Get NVOF block size for this preset
-    nvof_blk = preset_config.get("nvof_blk", 16)
+    if use_nvof and "nvof:" not in analyse_params:
+        analyse_params = analyse_params.replace("{gpu:1,", "{gpu:1,nvof:1,")
+    elif not use_nvof:
+        super_params = super_params.replace("gpu:1", "gpu:0")
+        analyse_params = analyse_params.replace("gpu:1", "gpu:0")
+        analyse_params = analyse_params.replace(",nvof:1", "").replace("nvof:1,", "")
+        if not custom_smooth:
+            smooth_params = smooth_params.replace("gpuid:0,", "")
 
-    # Resolve platform-specific SVP plugin paths
     _flow1_path, _flow2_path = get_svp_plugin_full_paths()
 
-    # Rawsource plugin path (user-installed)
-    rawsource_path = os.path.expanduser("~/.local/lib/vapoursynth/libvsrawsource.so")
+    frame_size = width * height * 3 // 2
+    chroma_width = width // 2
+    chroma_height = height // 2
 
-    if use_nvof:
-        svp_processing = f'''
-# NVOF Pipeline - uses NVIDIA Optical Flow hardware
-# Pick optimal vec_src ratio based on resolution
-NVOF_MIN_WIDTH = 160
-NVOF_MIN_HEIGHT = 128
-
-for ratio in [8, 6, 4, 2, 1]:
-    test_w = clip.width // ratio
-    test_h = clip.height // ratio
-    test_w = (test_w // 2) * 2
-    test_h = (test_h // 2) * 2
-    if test_w >= NVOF_MIN_WIDTH and test_h >= NVOF_MIN_HEIGHT:
-        if {nvof_blk} >= 16 and ratio <= 4:
-            break
-        elif {nvof_blk} >= 8 and ratio <= 2:
-            break
-        elif ratio <= 1:
-            break
-
-new_w = clip.width // ratio
-new_h = clip.height // ratio
-new_w = (new_w // 2) * 2
-new_h = (new_h // 2) * 2
-
-if new_w < NVOF_MIN_WIDTH or new_h < NVOF_MIN_HEIGHT:
-    new_w = (clip.width // 2) * 2
-    new_h = (clip.height // 2) * 2
-
-nvof_src = clip.resize.Bicubic(new_w, new_h)
-smooth = core.svp2.SmoothFps_NVOF(clip, '{smooth_params}', vec_src=nvof_src, src=clip, fps=src_fps)
-'''
-    else:
-        svp_processing = f'''
-# Regular SVP Pipeline - CPU motion estimation, GPU rendering
-super_clip = core.svp1.Super(clip, '{super_params}')
-vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, '{analyse_params}')
-smooth = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"],
-    vectors["clip"], vectors["data"], '{smooth_params}', src=clip, fps=src_fps)
-'''
-
-    script = f'''import vapoursynth as vs
+    return f'''import ctypes
+import sys
+import vapoursynth as vs
 core = vs.core
 
-# Load plugins
-core.std.LoadPlugin("{rawsource_path}")
+WIDTH = {width}
+HEIGHT = {height}
+FPS_NUM = {fps_num}
+FPS_DEN = {fps_den}
+NUM_FRAMES = {num_frames}
+FRAME_SIZE = {frame_size}
+CHROMA_WIDTH = {chroma_width}
+CHROMA_HEIGHT = {chroma_height}
+stdin = sys.stdin.buffer
+next_frame = 0
+last_frame = None
+
+# Load SVP plugins
 core.std.LoadPlugin("{_flow1_path}")
 core.std.LoadPlugin("{_flow2_path}")
 
-# Read Y4M from stdin - NO PYTHON FRAME HANDLING
-clip = core.raws.Source("-")
+# Create a clip with source geometry, then fill requested frames from stdin.
+clip = core.std.BlankClip(
+    width=WIDTH,
+    height=HEIGHT,
+    format=vs.YUV420P8,
+    length=max(NUM_FRAMES, 1),
+    fpsnum=FPS_NUM,
+    fpsden=FPS_DEN,
+)
 
-# Get source fps for SVP
-src_fps = float(clip.fps)
+def read_exact(size):
+    data = bytearray()
+    while len(data) < size:
+        chunk = stdin.read(size - len(data))
+        if not chunk:
+            break
+        data.extend(chunk)
+    return bytes(data)
 
-# Convert to YUV420P8 if needed
-if clip.format.id != vs.YUV420P8:
-    clip = core.resize.Bicubic(clip, format=vs.YUV420P8, matrix_in_s="709", matrix_s="709")
+def write_plane(frame, plane, src, width, height):
+    stride = frame.get_stride(plane)
+    ptr = frame.get_write_ptr(plane)
+    pos = 0
+    for y in range(height):
+        ctypes.memmove(ptr.value + y * stride, src[pos:pos + width], width)
+        pos += width
 
-{svp_processing}
+def source_frame(n, f):
+    global next_frame, last_frame
+    if n < next_frame and last_frame is not None:
+        return last_frame
+    while next_frame < n:
+        skipped = read_exact(FRAME_SIZE)
+        if len(skipped) < FRAME_SIZE:
+            break
+        next_frame += 1
 
+    raw = read_exact(FRAME_SIZE)
+    if len(raw) < FRAME_SIZE:
+        if last_frame is not None:
+            return last_frame
+        raw = raw + bytes(FRAME_SIZE - len(raw))
+
+    out = f.copy()
+    y_size = WIDTH * HEIGHT
+    uv_size = CHROMA_WIDTH * CHROMA_HEIGHT
+    write_plane(out, 0, raw[:y_size], WIDTH, HEIGHT)
+    write_plane(out, 1, raw[y_size:y_size + uv_size], CHROMA_WIDTH, CHROMA_HEIGHT)
+    write_plane(out, 2, raw[y_size + uv_size:y_size + uv_size * 2], CHROMA_WIDTH, CHROMA_HEIGHT)
+    next_frame = n + 1
+    last_frame = out
+    return out
+
+clip = core.std.ModifyFrame(clip, clip, source_frame)
+
+super_params = '{super_params}'
+analyse_params = '{analyse_params}'
+smooth_params = '{smooth_params}'
+
+super_clip = core.svp1.Super(clip, super_params)
+vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
+
+src_fps = clip.fps.numerator / clip.fps.denominator
+smooth = core.svp2.SmoothFps(
+    clip, super_clip["clip"], super_clip["data"],
+    vectors["clip"], vectors["data"],
+    smooth_params, src=clip, fps=src_fps
+)
 smooth.set_output()
 '''
-    return script
 
 
 def generate_ffmpeg_svp_script(

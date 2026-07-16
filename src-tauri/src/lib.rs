@@ -1,32 +1,48 @@
 use std::path::PathBuf;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
-#[cfg(desktop)]
-use std::sync::Arc;
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(desktop)]
-use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState};
+use std::sync::Arc;
 #[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+#[cfg(desktop)]
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder};
 
 pub mod addons;
 mod commands;
 pub mod db;
+mod direct_file;
+pub mod native_video;
 pub mod routes;
 pub mod server;
 pub mod services;
+#[cfg(target_os = "linux")]
+mod svp_manager_bridge;
 
 use commands::{
-    backend_start, backend_stop, backend_restart, backend_status,
-    backend_health_check, backend_get_port, backend_get_local_ip,
-    backend_get_network_settings,
-    show_in_folder, get_app_version, quit_app,
-    copy_image_to_clipboard, show_image_context_menu,
+    backend_get_local_ip, backend_get_network_settings, backend_get_port, backend_health_check,
+    backend_restart, backend_start, backend_status, backend_stop, copy_image_to_clipboard,
+    get_app_version, quit_app, set_remote_proxy, show_image_context_menu, show_in_folder,
     test_remote_server, verify_remote_handshake,
-    set_remote_proxy,
 };
+use direct_file::{
+    direct_file_request_from_args, pick_direct_media_file, release_direct_media_file,
+    report_direct_file_stage, take_startup_media_file, DirectFileState,
+};
+use native_video::commands::{
+    native_video_capabilities, native_video_first_frame, native_video_open,
+    native_video_release_viewport, native_video_renderer_failed,
+    native_video_set_desktop_player_mode, native_video_set_display_mode,
+    native_video_set_interpolation, native_video_set_muted, native_video_set_paused,
+    native_video_set_speed, native_video_set_viewport, native_video_set_volume,
+    native_video_show_image, NativeVideoState,
+};
+use native_video::coordinator::{DesktopPlayerMode, RuntimeCapabilities};
 use server::state::AppState;
+#[cfg(target_os = "linux")]
+use svp_manager_bridge::{update_svp_manager_playback, SvpManagerBridge};
 
 /// Default port for the embedded HTTP server.
 const DEFAULT_PORT: u16 = 8790;
@@ -43,7 +59,9 @@ fn get_data_dir(#[allow(unused)] app: &tauri::App) -> PathBuf {
     // Mobile (Android/iOS): use Tauri's app data directory
     #[cfg(mobile)]
     {
-        return app.path().app_data_dir()
+        return app
+            .path()
+            .app_data_dir()
             .unwrap_or_else(|_| PathBuf::from("."));
     }
 
@@ -79,7 +97,11 @@ fn get_frontend_dir() -> Option<PathBuf> {
         // Also check one level up (dev builds)
         let dist_alt = dir.parent().and_then(|p| {
             let d = p.join("frontend").join("dist");
-            if d.exists() { Some(d) } else { None }
+            if d.exists() {
+                Some(d)
+            } else {
+                None
+            }
         });
         if dist_alt.is_some() {
             return dist_alt;
@@ -162,17 +184,68 @@ pub fn run() {
         if std::env::var("GST_GL_PLATFORM").is_err() {
             std::env::set_var("GST_GL_PLATFORM", "egl");
         }
+        // Development hook for the original WebKit/GStreamer player. The
+        // preloaded shim assigns the named passthrough element to playbin's
+        // video-filter property inside WebKitWebProcess. It does not replace
+        // the WebView or create another video surface.
+        let filter_build = std::env::var_os("LOCALBOORU_GSTREAMER_SVP_DIR")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(PathBuf::from)
+                    .map(|home| home.join(".local/lib/localbooru"))
+            })
+            .unwrap_or_default();
+        let hook = filter_build.join("liblocalbooru-webkit-gst-hook.so");
+        // The preload interposer proved unsafe with WebKit's playbin lifetime:
+        // keep it opt-in for diagnostics only. Production integration uses the
+        // narrow WebKit source patch instead.
+        if std::env::var_os("LOCALBOORU_ENABLE_WEBKIT_GST_HOOK").is_some() && hook.is_file() {
+            let mut preload = vec![hook];
+            if let Some(existing) = std::env::var_os("LD_PRELOAD") {
+                preload.extend(std::env::split_paths(&existing));
+            }
+            if let Ok(value) = std::env::join_paths(preload) {
+                std::env::set_var("LD_PRELOAD", value);
+            }
+
+            // Use GStreamer's built-in no-op element for the attachment gate.
+            // The SVP element replaces this only after the hook itself is
+            // accepted by the user.
+            std::env::set_var("WEBKIT_GST_VIDEO_FILTER", "identity");
+        }
     }
+
+    #[cfg(target_os = "linux")]
+    let svp_bridge = {
+        let bridge = SvpManagerBridge::new();
+        bridge.configure_environment();
+        bridge
+    };
 
     let mut builder = tauri::Builder::default();
 
     // Single instance: focus existing window if already running (desktop only)
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(quit_flag) = app.try_state::<Arc<AtomicBool>>() {
                 if quit_flag.load(Ordering::SeqCst) {
                     return;
+                }
+            }
+            if let Some(mut request) =
+                direct_file_request_from_args(args.into_iter().map(PathBuf::from))
+            {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let token = state.register_direct_file(&request.file_path);
+                    request.url = format!("/api/direct-files/{token}");
+                    request.direct_file_token = token;
+                    log::info!(
+                        "[DirectFile] opening media from second instance {}",
+                        request.filename
+                    );
+                    let _ = app.emit("direct-file-open-requested", request);
                 }
             }
             if let Some(window) = app.get_webview_window("main") {
@@ -198,89 +271,316 @@ pub fn run() {
             .plugin(tauri_plugin_window_state::Builder::new().build());
     }
 
-    builder = builder
-        .setup(|app| {
-            // Logging — always enabled (Android logcat, desktop stdout)
-            app.handle().plugin(
-                tauri_plugin_log::Builder::default()
-                    .level(log::LevelFilter::Info)
-                    .build(),
-            )?;
+    builder = builder.setup(move |app| {
+        // Logging — always enabled (Android logcat, desktop stdout)
+        app.handle().plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
+                .build(),
+        )?;
 
-            // ── Initialize AppState (database + config) ──
-            let data_dir = get_data_dir(app);
-            let port = DEFAULT_PORT;
-            let app_state = AppState::new(&data_dir, port)
-                .map_err(|e| format!("Failed to initialize app state: {}", e))?;
+        // ── Initialize AppState (database + config) ──
+        let data_dir = get_data_dir(app);
+        let port = DEFAULT_PORT;
+        let app_state = AppState::new(&data_dir, port)
+            .map_err(|e| format!("Failed to initialize app state: {}", e))?;
 
-            // Store AppState for both Tauri commands and axum server
-            app.manage(app_state.clone());
+        // The replacement native player is quarantined while SVP integration moves
+        // into the original WebKit/GStreamer player. It must not attach a GTK
+        // viewport or launch its helper from the product runtime.
+        #[cfg(target_os = "linux")]
+        let native_runtime_spike: Option<PathBuf> = None;
+        #[cfg(target_os = "linux")]
+        let video_playback =
+            crate::routes::settings::get_config_section(&data_dir, "video_playback");
+        #[cfg(target_os = "linux")]
+        let desktop_player_mode = DesktopPlayerMode::React;
 
-            // ── Asset-protocol scope ──
-            // Config scope is `[]` (deny all); grant `asset://` read access to the
-            // currently configured watch directories so local media loads. Dirs
-            // added later are granted at their INSERT sites via allow_asset_dir().
-            {
-                let scope = app.asset_protocol_scope();
-                app_state.set_asset_scope(scope);
-                match app_state.main_db().get() {
-                    Ok(conn) => {
+        #[cfg(target_os = "linux")]
+        let native_force_copy = video_playback
+            .get("native_video_force_copy")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+            || std::env::var_os("LOCALBOORU_NATIVE_RUNTIME_FORCE_COPY").is_some();
+        #[cfg(target_os = "linux")]
+        let native_diagnostics = video_playback
+            .get("native_video_diagnostics")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        #[cfg(target_os = "linux")]
+        let native_safe_mode = true;
+        // Store AppState for both Tauri commands and axum server
+        app.manage(app_state.clone());
+        #[cfg(target_os = "linux")]
+        {
+            svp_bridge.start(app.handle().clone());
+            app.manage(svp_bridge.clone());
+        }
+        let startup_media = direct_file_request_from_args(std::env::args_os().map(PathBuf::from));
+        if let Some(request) = &startup_media {
+            log::info!("[DirectFile] captured startup video {}", request.filename);
+        }
+        app.manage(DirectFileState::new(startup_media));
+        #[cfg(target_os = "linux")]
+        app.manage(NativeVideoState::new_with_options(
+            RuntimeCapabilities {
+                desktop_tauri: cfg!(desktop),
+                native_renderer_available: !native_safe_mode,
+                safe_mode: native_safe_mode,
+                desktop_player_mode,
+            },
+            native_force_copy,
+            native_diagnostics,
+        ));
+        #[cfg(not(target_os = "linux"))]
+        app.manage(NativeVideoState::new(RuntimeCapabilities {
+            desktop_tauri: cfg!(desktop),
+            native_renderer_available: false,
+            safe_mode: false,
+            desktop_player_mode: DesktopPlayerMode::React,
+        }));
+
+        // ── Asset-protocol scope ──
+        // Config scope is `[]` (deny all); grant `asset://` read access to the
+        // currently configured watch directories so local media loads. Dirs
+        // added later are granted at their INSERT sites via allow_asset_dir().
+        // Capturing the scope is cheap; database/path enumeration happens on
+        // a blocking worker after the HTTP server has been launched.
+        app_state.set_asset_scope(app.asset_protocol_scope());
+
+        // ── Start embedded axum server ──
+        #[cfg(desktop)]
+        let frontend_dir = get_frontend_dir();
+        #[cfg(mobile)]
+        let frontend_dir: Option<PathBuf> = None;
+
+        log::info!("[Startup] Data dir: {}", data_dir.display());
+        log::info!("[Startup] Frontend dir: {:?}", frontend_dir);
+
+        // Bind the frontend-serving backend before any library mount, recursive
+        // filesystem walk, queue drain, or addon health check can delay it.
+        let server_state = app_state.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = server::start_server(server_state, frontend_dir).await {
+                log::error!("Axum server error: {}", e);
+            }
+        });
+
+        let services_state = app_state.clone();
+        tauri::async_runtime::spawn(async move {
+            let mount_state = services_state.clone();
+            match tokio::task::spawn_blocking(move || mount_state.auto_mount_libraries()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => log::error!("[Libraries] Auto-mount failed: {}", e),
+                Err(e) => log::error!("[Libraries] Auto-mount worker failed: {}", e),
+            }
+
+            // Enumerating paths can touch external libraries, so keep it off
+            // the async executor too.
+            let scope_state = services_state.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                for lib in scope_state.library_manager().all_mounted() {
+                    if let Ok(conn) = lib.main_pool.get() {
                         if let Ok(mut stmt) = conn.prepare("SELECT path FROM watch_directories") {
                             if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
                                 for path in rows.flatten() {
-                                    app_state.allow_asset_dir(&path);
+                                    scope_state.allow_asset_dir(&path);
                                 }
                             }
                         }
                     }
-                    Err(e) => log::warn!("[AssetScope] Could not load watch dirs at startup: {}", e),
+                }
+            })
+            .await;
+
+            let mut watcher =
+                services::directory_watcher::DirectoryWatcher::new(services_state.clone());
+            watcher.start();
+            services_state.set_directory_watcher(std::sync::Arc::new(watcher));
+
+            services_state
+                .task_queue_arc()
+                .start(services_state.clone());
+
+            // Sidecar startup has its own health timeout and must not gate Axum.
+            #[cfg(desktop)]
+            services_state.addon_manager().resume_addons().await;
+
+            // Watcher stays alive via AppState Arc until server shuts down
+        });
+
+        // ── Desktop: Window setup + Tray icon ──
+        #[cfg(desktop)]
+        {
+            let window = app.get_webview_window("main").unwrap();
+
+            #[cfg(target_os = "linux")]
+            let native_viewport_attached = if native_runtime_spike.is_some() {
+                match native_video::platform::linux::attach(&window) {
+                    Ok(()) => {
+                        log::info!("[NativeVideo] GTK viewport host attached for runtime spike");
+                        true
+                    }
+                    Err(error) => {
+                        log::warn!("[NativeVideo] GTK viewport unavailable: {error}");
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+
+            #[cfg(target_os = "linux")]
+            if let Some(path) = native_runtime_spike {
+                if native_viewport_attached {
+                    native_video::platform::linux::set_bounds(
+                        native_video::platform::linux::ViewportBounds {
+                            x: 80,
+                            y: 80,
+                            width: 960,
+                            height: 540,
+                        },
+                    )?;
+                }
+                let state = app.state::<NativeVideoState>();
+                match state.open_runtime_media(
+                    app.handle(),
+                    -1,
+                    path.to_string_lossy().into_owned(),
+                    0.0,
+                ) {
+                    Ok(snapshot) => {
+                        log::info!(
+                            "[NativeVideo] managed runtime spike opened generation {}",
+                            snapshot.generation
+                        );
+                        if std::env::var_os("LOCALBOORU_NATIVE_RUNTIME_SPIKE_MUTED").is_some() {
+                            state.send_runtime_control(
+                                native_video::protocol::NativeVideoCommand::SetMuted {
+                                    muted: true,
+                                },
+                            )?;
+                        }
+                        if std::env::var_os("LOCALBOORU_NATIVE_RUNTIME_SPIKE_CONTROLS")
+                            .is_some()
+                        {
+                            state.send_runtime_control(
+                                native_video::protocol::NativeVideoCommand::SetVolume {
+                                    volume: 0.4,
+                                },
+                            )?;
+                            state.send_runtime_control(
+                                native_video::protocol::NativeVideoCommand::SetMuted {
+                                    muted: true,
+                                },
+                            )?;
+                            state.send_runtime_control(
+                                native_video::protocol::NativeVideoCommand::SetSpeed { speed: 1.5 },
+                            )?;
+                            state.send_runtime_control(
+                                native_video::protocol::NativeVideoCommand::SetSubtitleDelay {
+                                    seconds: 0.75,
+                                },
+                            )?;
+                            log::info!(
+                                "[NativeVideo] managed runtime spike requested canonical control state"
+                            );
+                        }
+                        if std::env::var_os("LOCALBOORU_NATIVE_RUNTIME_SPIKE_SVP").is_some() {
+                            state.send_runtime_control(
+                                native_video::protocol::NativeVideoCommand::SetInterpolation {
+                                    engine: "svp".to_string(),
+                                    preset: Some("balanced".to_string()),
+                                    target_fps: 60,
+                                },
+                            )?;
+                            log::info!(
+                                "[NativeVideo] managed runtime spike requested SVP at 60 fps"
+                            );
+                        }
+                        if std::env::var_os("LOCALBOORU_NATIVE_RUNTIME_SPIKE_FULLSCREEN")
+                            .is_some()
+                        {
+                            native_video::platform::linux::set_fullscreen(true)?;
+                            log::info!(
+                                "[NativeVideo] managed runtime spike entered fullscreen"
+                            );
+                        }
+                        if std::env::var_os("LOCALBOORU_NATIVE_RUNTIME_SPIKE_GEOMETRY_MATRIX")
+                            .is_some()
+                        {
+                            let geometry_app = app.handle().clone();
+                            std::thread::spawn(move || {
+                                use native_video::display_geometry::DisplayMode;
+                                use native_video::platform::linux::ViewportBounds;
+                                let steps = [
+                                    (ViewportBounds { x: 20, y: 80, width: 480, height: 270 }, DisplayMode::Fit, false),
+                                    (ViewportBounds { x: 80, y: 80, width: 960, height: 540 }, DisplayMode::Fill, false),
+                                    (ViewportBounds { x: 20, y: 120, width: 1200, height: 400 }, DisplayMode::Original, false),
+                                    (ViewportBounds { x: 1280, y: 80, width: 480, height: 720 }, DisplayMode::Fit, false),
+                                    (ViewportBounds { x: 0, y: 0, width: 960, height: 540 }, DisplayMode::Fit, true),
+                                    (ViewportBounds { x: 80, y: 80, width: 960, height: 540 }, DisplayMode::Fit, false),
+                                ];
+                                for (index, (bounds, mode, fullscreen)) in
+                                    steps.into_iter().enumerate()
+                                {
+                                    std::thread::sleep(std::time::Duration::from_millis(650));
+                                    let _ = geometry_app.run_on_main_thread(move || {
+                                        let _ = native_video::platform::linux::set_fullscreen(fullscreen);
+                                        let _ = native_video::platform::linux::set_bounds(bounds);
+                                        let _ = native_video::platform::linux::set_display_mode(mode);
+                                        log::info!(
+                                            "[NativeVideo] geometry matrix step={} bounds={}x{}+{},{} mode={:?} fullscreen={}",
+                                            index,
+                                            bounds.width,
+                                            bounds.height,
+                                            bounds.x,
+                                            bounds.y,
+                                            mode,
+                                            fullscreen
+                                        );
+                                    });
+                                }
+                            });
+                        }
+                        let app_handle = app.handle().clone();
+                        let spike_generation = snapshot.generation;
+                        let spike_seconds =
+                            std::env::var("LOCALBOORU_NATIVE_RUNTIME_SPIKE_SECONDS")
+                                .ok()
+                                .and_then(|value| value.parse::<u64>().ok())
+                                .unwrap_or(6)
+                                .clamp(5, 43_200);
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_secs(spike_seconds));
+                            let state = app_handle.state::<NativeVideoState>();
+                            if state.current_generation() != spike_generation {
+                                log::info!(
+                                    "[NativeVideo] managed runtime spike close skipped; generation {spike_generation} is no longer active"
+                                );
+                                return;
+                            }
+                            let snapshot = state.show_runtime_image(&app_handle, -2);
+                            log::info!(
+                                "[NativeVideo] managed runtime spike closed at generation {}",
+                                snapshot.generation
+                            );
+                        });
+                    }
+                    Err(error) => {
+                        log::error!("[NativeVideo] managed runtime spike failed: {error}");
+                    }
                 }
             }
 
-            // ── Start embedded axum server ──
-            #[cfg(desktop)]
-            let frontend_dir = get_frontend_dir();
-            #[cfg(mobile)]
-            let frontend_dir: Option<PathBuf> = None;
-
-            log::info!("[Startup] Data dir: {}", data_dir.display());
-            log::info!("[Startup] Frontend dir: {:?}", frontend_dir);
-
-            tauri::async_runtime::spawn(async move {
-                // Start directory watcher (needs tokio runtime for internal spawns)
-                let mut watcher = services::directory_watcher::DirectoryWatcher::new(app_state.clone());
-                watcher.start();
-
-                // Store watcher in AppState so route handlers can register/unregister directories
-                let watcher_arc = std::sync::Arc::new(watcher);
-                app_state.set_directory_watcher(watcher_arc);
-
-                // Start task queue worker (needs tokio runtime)
-                app_state.task_queue_arc().start(app_state.clone());
-
-                // Resume addons that were previously enabled (desktop only — no addon sidecars on mobile)
-                #[cfg(desktop)]
-                app_state.addon_manager().resume_addons().await;
-
-                if let Err(e) = server::start_server(app_state, frontend_dir).await {
-                    log::error!("Axum server error: {}", e);
-                }
-
-                // Watcher stays alive via AppState Arc until server shuts down
-            });
-
-            // ── Desktop: Window setup + Tray icon ──
-            #[cfg(desktop)]
+            // Enable GPU-accelerated compositing in WebKitGTK.
+            // Combined with VA-API decoders + DMA-BUF renderer, this gives
+            // a zero-copy video path: NVDEC → DMA-BUF → GL texture → compositor.
+            #[cfg(target_os = "linux")]
             {
-                let window = app.get_webview_window("main").unwrap();
-
-                // Enable GPU-accelerated compositing in WebKitGTK.
-                // Combined with VA-API decoders + DMA-BUF renderer, this gives
-                // a zero-copy video path: NVDEC → DMA-BUF → GL texture → compositor.
-                #[cfg(target_os = "linux")]
-                {
-                    use webkit2gtk::{WebViewExt, SettingsExt};
-                    window.with_webview(|webview| {
+                use webkit2gtk::{SettingsExt, WebViewExt};
+                window
+                    .with_webview(|webview| {
                         let wv = &webview.inner();
                         if let Some(settings) = wv.settings() {
                             settings.set_hardware_acceleration_policy(
@@ -288,92 +588,94 @@ pub fn run() {
                             );
                             log::info!("[WebView] Hardware acceleration policy set to OnDemand");
                         }
-                    }).ok();
-                }
-
-                // ── Tray icon ──
-                // On Linux, kded6 (KDE Daemon) may claim the StatusNotifierWatcher
-                // D-Bus name without loading the actual watcher module, which prevents
-                // tray icons from appearing. Ensure the module is loaded.
-                #[cfg(target_os = "linux")]
-                {
-                    let _ = std::process::Command::new("dbus-send")
-                        .args([
-                            "--session",
-                            "--dest=org.kde.kded6",
-                            "--type=method_call",
-                            "--print-reply",
-                            "/kded",
-                            "org.kde.kded6.loadModule",
-                            "string:statusnotifierwatcher",
-                        ])
-                        .output();
-                }
-
-                let quit_flag = Arc::new(AtomicBool::new(false));
-                app.manage(quit_flag.clone());
-
-                let open_item = MenuItem::with_id(app, "open", "Open LocalBooru", true, None::<&str>)?;
-                let browser_item = MenuItem::with_id(app, "browser", "Open in Browser", true, None::<&str>)?;
-                let separator = PredefinedMenuItem::separator(app)?;
-                let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-                let menu = Menu::with_items(app, &[&open_item, &browser_item, &separator, &quit_item])?;
-
-                let quit_flag_menu = quit_flag.clone();
-                let server_port = port;
-                let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
-                let _tray = TrayIconBuilder::new()
-                    .icon(tray_icon)
-                    .menu(&menu)
-                    .tooltip("LocalBooru")
-                    .on_menu_event(move |app_handle, event| {
-                        match event.id.as_ref() {
-                            "open" => {
-                                if let Some(window) = app_handle.get_webview_window("main") {
-                                    show_window(&window);
-                                }
-                            }
-                            "browser" => {
-                                let url = format!("http://127.0.0.1:{}", server_port);
-                                #[cfg(target_os = "linux")]
-                                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-                                #[cfg(target_os = "macos")]
-                                let _ = std::process::Command::new("open").arg(&url).spawn();
-                                #[cfg(target_os = "windows")]
-                                let _ = std::process::Command::new("cmd")
-                                    .args(["/c", "start", &url])
-                                    .spawn();
-                            }
-                            "quit" => {
-                                // Kill FFmpeg transcode processes before exiting
-                                if let Some(state) = app_handle.try_state::<AppState>() {
-                                    state.transcode_manager().stop_all();
-                                }
-                                quit_flag_menu.store(true, Ordering::SeqCst);
-                                app_handle.exit(0);
-                            }
-                            _ => {}
-                        }
                     })
-                    .on_tray_icon_event(|tray, event| {
-                        if let tauri::tray::TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            button_state: MouseButtonState::Up,
-                            ..
-                        } = event
-                        {
-                            if let Some(window) = tray.app_handle().get_webview_window("main") {
+                    .ok();
+            }
+
+            // ── Tray icon ──
+            // On Linux, kded6 (KDE Daemon) may claim the StatusNotifierWatcher
+            // D-Bus name without loading the actual watcher module, which prevents
+            // tray icons from appearing. Ensure the module is loaded.
+            #[cfg(target_os = "linux")]
+            {
+                let _ = std::process::Command::new("dbus-send")
+                    .args([
+                        "--session",
+                        "--dest=org.kde.kded6",
+                        "--type=method_call",
+                        "--print-reply",
+                        "/kded",
+                        "org.kde.kded6.loadModule",
+                        "string:statusnotifierwatcher",
+                    ])
+                    .output();
+            }
+
+            let quit_flag = Arc::new(AtomicBool::new(false));
+            app.manage(quit_flag.clone());
+
+            let open_item = MenuItem::with_id(app, "open", "Open LocalBooru", true, None::<&str>)?;
+            let browser_item =
+                MenuItem::with_id(app, "browser", "Open in Browser", true, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open_item, &browser_item, &separator, &quit_item])?;
+
+            let quit_flag_menu = quit_flag.clone();
+            let server_port = port;
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
+            let _tray = TrayIconBuilder::new()
+                .icon(tray_icon)
+                .menu(&menu)
+                .tooltip("LocalBooru")
+                .on_menu_event(move |app_handle, event| {
+                    match event.id.as_ref() {
+                        "open" => {
+                            if let Some(window) = app_handle.get_webview_window("main") {
                                 show_window(&window);
                             }
                         }
-                    })
-                    .build(app)?;
-            }
+                        "browser" => {
+                            let url = format!("http://127.0.0.1:{}", server_port);
+                            #[cfg(target_os = "linux")]
+                            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                            #[cfg(target_os = "macos")]
+                            let _ = std::process::Command::new("open").arg(&url).spawn();
+                            #[cfg(target_os = "windows")]
+                            let _ = std::process::Command::new("cmd")
+                                .args(["/c", "start", &url])
+                                .spawn();
+                        }
+                        "quit" => {
+                            // Kill FFmpeg transcode processes before exiting
+                            if let Some(state) = app_handle.try_state::<AppState>() {
+                                state.transcode_manager().stop_all();
+                            }
+                            quit_flag_menu.store(true, Ordering::SeqCst);
+                            app_handle.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            show_window(&window);
+                        }
+                    }
+                })
+                .build(app)?;
+        }
 
-            log::info!("LocalBooru v2 started (embedded Rust backend)");
+        log::info!("LocalBooru v2 started (embedded Rust backend)");
 
-            Ok(())
-        });
+        Ok(())
+    });
 
     // Desktop: close-to-tray behavior
     #[cfg(desktop)]
@@ -420,10 +722,30 @@ pub fn run() {
             quit_app,
             copy_image_to_clipboard,
             show_image_context_menu,
+            pick_direct_media_file,
+            release_direct_media_file,
+            report_direct_file_stage,
+            #[cfg(target_os = "linux")]
+            update_svp_manager_playback,
+            take_startup_media_file,
             // Mobile: remote server connection (bypasses WebView mixed-content)
             test_remote_server,
             verify_remote_handshake,
             set_remote_proxy,
+            native_video_capabilities,
+            native_video_open,
+            native_video_show_image,
+            native_video_first_frame,
+            native_video_renderer_failed,
+            native_video_release_viewport,
+            native_video_set_interpolation,
+            native_video_set_muted,
+            native_video_set_paused,
+            native_video_set_volume,
+            native_video_set_speed,
+            native_video_set_viewport,
+            native_video_set_desktop_player_mode,
+            native_video_set_display_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

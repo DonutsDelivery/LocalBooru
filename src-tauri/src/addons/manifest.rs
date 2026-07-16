@@ -31,7 +31,17 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             name: "Age Detector",
             description: "Detect and classify age ratings in images using deep learning",
             port: 18002,
-            python_deps: &["torch", "torchvision", "transformers", "ultralytics", "insightface", "onnxruntime", "numpy", "Pillow", "opencv-python-headless"],
+            python_deps: &[
+                "torch",
+                "torchvision",
+                "transformers",
+                "ultralytics",
+                "insightface",
+                "onnxruntime",
+                "numpy",
+                "Pillow",
+                "opencv-python-headless",
+            ],
         },
         AddonManifest {
             id: "whisper-subtitles",
@@ -42,16 +52,10 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             python_deps: &["faster-whisper==1.2.1", "numpy"],
         },
         AddonManifest {
-            id: "frame-interpolation",
-            name: "Frame Interpolation",
-            description: "Increase video frame rate using optical flow and neural network interpolation",
-            port: 18004,
-            python_deps: &["numpy", "opencv-python", "rife-ncnn-vulkan-python-tntwise"],
-        },
-        AddonManifest {
             id: "cast",
             name: "Chromecast/DLNA",
-            description: "Cast media to Chromecast and DLNA-compatible devices on the local network",
+            description:
+                "Cast media to Chromecast and DLNA-compatible devices on the local network",
             port: 18006,
             // pychromecast pinned (M1, top-level lib); it resolves compatible
             // async-upnp-client/aiohttp, so those stay unpinned to avoid a cap conflict.

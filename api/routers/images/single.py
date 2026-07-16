@@ -72,6 +72,7 @@ async def get_file_info(path: str = Query(...), db: AsyncSession = Depends(get_d
 async def upload_image(
     file: UploadFile = File(...),
     auto_tag: bool = True,
+    directory_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Upload a new image manually"""
@@ -82,7 +83,7 @@ async def upload_image(
         tmp_path = tmp.name
 
     try:
-        result = await import_image(tmp_path, db, auto_tag=auto_tag)
+        result = await import_image(tmp_path, db, auto_tag=auto_tag, watch_directory_id=directory_id)
         return result
     finally:
         # Clean up temp file

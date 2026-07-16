@@ -344,6 +344,18 @@ export async function deleteImage(imageId, deleteFile = false, directoryId = nul
   return response.data
 }
 
+export async function uploadImage(file, directoryId = null) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const params = {}
+  if (directoryId) params.directory_id = directoryId
+  const response = await api.post('/images/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    params
+  })
+  return response.data
+}
+
 // Batch operations
 export async function batchDeleteImages(imageIds, deleteFiles = false) {
   const response = await api.post('/images/batch/delete', {
@@ -909,15 +921,16 @@ export function getMediaUrl(path) {
     return url
   }
 
-  // Dev mode or Tauri mobile (local server) - serve media directly from backend
-  // On Tauri mobile, frontend is at https://tauri.localhost so relative paths don't work
+  // Dev mode and packaged Tauri apps serve media from the embedded backend.
+  // Their frontend origin is Vite or the Tauri asset protocol, so relative media
+  // paths do not reach the HTTP server.
   const isDevServer = ['5173', '5174', '5175', '5210'].includes(window.location.port)
-  if (isDevServer || isMobileApp()) {
+  if (isDevServer || isTauriApp()) {
     const cleanPath = path.startsWith('/') ? path : `/${path}`
     return `http://127.0.0.1:8790${cleanPath}`
   }
 
-  // On web or Tauri desktop (production), relative URLs work fine
+  // The browser frontend is served by the backend, so same-origin paths work.
   return path
 }
 
@@ -1167,8 +1180,9 @@ export async function playVideoInterpolated(filePath, startPosition = 0, quality
 }
 
 export async function stopInterpolatedStream() {
-  const response = await api.post('/settings/optical-flow/stop')
-  return response.data
+  // FFmpeg interpolation is retired. Keep the cleanup call harmless while older
+  // Lightbox stream-state paths are retained for compatibility.
+  return { success: true }
 }
 
 // SVP (SmoothVideo Project) Interpolation API
@@ -1433,6 +1447,36 @@ export async function startAddon(id) {
 
 export async function stopAddon(id) {
   const response = await api.post(`/addons/${id}/stop`)
+  return response.data
+}
+
+export async function updateAddon(id) {
+  const response = await api.post(`/addons/${id}/update`)
+  return response.data
+}
+
+export async function getAddonHealth(id) {
+  const response = await api.get(`/addons/${id}/api/health`)
+  return response.data
+}
+
+export async function getAutoTaggerConfig() {
+  const response = await api.get('/settings/auto-tagger')
+  return response.data
+}
+
+export async function updateAutoTaggerConfig(config) {
+  const response = await api.post('/settings/auto-tagger', config)
+  return response.data
+}
+
+export async function getModels() {
+  const response = await api.get('/settings/models')
+  return response.data
+}
+
+export async function downloadModel(modelName) {
+  const response = await api.post('/settings/models/download', { model_name: modelName })
   return response.data
 }
 

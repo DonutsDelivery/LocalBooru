@@ -56,9 +56,7 @@ async fn check_update(
 ) -> Result<Json<Value>, AppError> {
     let update_available = q.current_version != APP_VERSION;
     let apk_path = find_apk_path(&state);
-    let apk_available = apk_path
-        .map(|p| p.exists())
-        .unwrap_or(false);
+    let apk_available = apk_path.map(|p| p.exists()).unwrap_or(false);
 
     Ok(Json(json!({
         "version": APP_VERSION,
@@ -68,11 +66,9 @@ async fn check_update(
 }
 
 /// GET /api/app-update/download — Download the APK file.
-async fn download_update(
-    State(state): State<AppState>,
-) -> Result<Response, AppError> {
-    let apk_path = find_apk_path(&state)
-        .ok_or_else(|| AppError::NotFound("No APK file found".into()))?;
+async fn download_update(State(state): State<AppState>) -> Result<Response, AppError> {
+    let apk_path =
+        find_apk_path(&state).ok_or_else(|| AppError::NotFound("No APK file found".into()))?;
 
     if !apk_path.exists() {
         return Err(AppError::NotFound("APK file not found".into()));
@@ -85,7 +81,10 @@ async fn download_update(
 
     Ok(Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/vnd.android.package-archive")
+        .header(
+            header::CONTENT_TYPE,
+            "application/vnd.android.package-archive",
+        )
         .header(header::CONTENT_LENGTH, metadata.len())
         .header(
             header::CONTENT_DISPOSITION,

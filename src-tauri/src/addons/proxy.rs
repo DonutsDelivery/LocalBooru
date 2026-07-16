@@ -1,5 +1,5 @@
 use axum::body::Body;
-use axum::extract::{Path as AxumPath, State, Request};
+use axum::extract::{Path as AxumPath, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 
@@ -19,15 +19,9 @@ pub async fn proxy_to_addon(
     request: Request,
 ) -> Result<Response, AppError> {
     // 1. Get the addon's base URL (checks addon is running and has a port)
-    let base_url = state
-        .addon_manager()
-        .addon_url(&addon_id)
-        .ok_or_else(|| {
-            AppError::ServiceUnavailable(format!(
-                "Addon '{}' is not running or not found",
-                addon_id
-            ))
-        })?;
+    let base_url = state.addon_manager().addon_url(&addon_id).ok_or_else(|| {
+        AppError::ServiceUnavailable(format!("Addon '{}' is not running or not found", addon_id))
+    })?;
 
     // 2. Build target URL: http://127.0.0.1:{port}/{rest}?{original_query}
     let uri = request.uri().clone();
@@ -35,7 +29,12 @@ pub async fn proxy_to_addon(
     let target_url = if query_string.is_empty() {
         format!("{}/{}", base_url.trim_end_matches('/'), rest)
     } else {
-        format!("{}/{}?{}", base_url.trim_end_matches('/'), rest, query_string)
+        format!(
+            "{}/{}?{}",
+            base_url.trim_end_matches('/'),
+            rest,
+            query_string
+        )
     };
 
     // 3. Extract pieces from the incoming request
@@ -76,10 +75,7 @@ pub async fn proxy_to_addon(
 
     // 5. Send the request to the addon sidecar
     let response = outgoing.send().await.map_err(|e| {
-        AppError::ServiceUnavailable(format!(
-            "Failed to reach addon '{}': {}",
-            addon_id, e
-        ))
+        AppError::ServiceUnavailable(format!("Failed to reach addon '{}': {}", addon_id, e))
     })?;
 
     // 6. Convert the reqwest response back to an axum response

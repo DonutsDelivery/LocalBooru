@@ -1,0 +1,18 @@
+# Age-detector standalone deps (for running the detector outside the Tauri app,
+# e.g. to serve DonutBooru over Tailscale). Install into a Python 3.11 venv:
+#   python3.11 -m venv ~/.localbooru/addons/age-detector/venv
+#   ~/.localbooru/addons/age-detector/venv/bin/pip install -r requirements.txt
+# Uses the default (CUDA) torch wheel on Linux; insightface runs on CPU per app.py.
+numpy
+pillow
+opencv-python-headless
+torch
+torchvision
+onnxruntime
+insightface
+ultralytics
+transformers
+timm
+huggingface_hub
+fastapi
+uvicorn[standard]

@@ -5,6 +5,7 @@ Media files are registered here and served through the main FastAPI server
 at /api/cast-media/ endpoints (see api/routers/cast.py).
 """
 import logging
+import json
 import subprocess
 from pathlib import Path
 from typing import Dict, Optional
@@ -53,57 +54,82 @@ def unregister_media(media_id: str) -> None:
 
 # ── Chromecast compatibility check ──────────────────────────────────
 
+def _parse_fps(value: str) -> float:
+    """Parse ffprobe frame-rate strings like '30000/1001'."""
+    if "/" in value:
+        num, den = value.split("/", 1)
+        den_float = float(den)
+        return float(num) / den_float if den_float > 0 else 0.0
+    return float(value)
+
+
 def is_chromecast_compatible(path: str) -> bool:
     """Check whether a video file can be direct-played by Chromecast.
 
-    Chromecast supports H.264 video + AAC audio inside an MP4/MOV container.
+    This intentionally uses a conservative common-denominator profile:
+    MP4/MOV, H.264 8-bit 4:2:0, level <= 4.1, AAC/MP3 audio, and
+    1080p30 or 720p60 limits. Anything else is sent through HLS transcoding.
     Uses ffprobe to inspect the file.
 
     Returns True if the file is compatible, False otherwise.
     """
     try:
-        # Check container format
-        fmt_result = subprocess.run(
+        result = subprocess.run(
             [
-                "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=format_name",
-                "-of", "csv=p=0",
+                "ffprobe", "-v", "error",
+                "-show_entries",
+                "format=format_name:stream=codec_name,profile,level,pix_fmt,width,height,avg_frame_rate",
+                "-select_streams", "v:0",
+                "-of", "json",
                 path,
             ],
             capture_output=True,
             text=True,
             timeout=10,
         )
-        if fmt_result.returncode != 0:
+        if result.returncode != 0:
             return False
 
-        format_name = fmt_result.stdout.strip().lower()
+        data = json.loads(result.stdout)
+        format_name = data.get("format", {}).get("format_name", "").lower()
         # format_name can be comma-separated list like "mov,mp4,m4a,3gp,3g2,mj2"
         compatible_formats = {"mov", "mp4", "m4a", "3gp", "3g2", "mj2"}
         format_parts = {f.strip() for f in format_name.split(",")}
         if not format_parts & compatible_formats:
             return False
 
-        # Check video codec
-        video_result = subprocess.run(
-            [
-                "ffprobe",
-                "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=codec_name",
-                "-of", "csv=p=0",
-                path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if video_result.returncode != 0:
+        streams = data.get("streams") or []
+        if not streams:
             return False
 
-        video_codec = video_result.stdout.strip().lower()
-        if video_codec != "h264":
+        video = streams[0]
+        if str(video.get("codec_name", "")).lower() != "h264":
+            return False
+
+        profile = str(video.get("profile", "")).lower()
+        if "10" in profile or "4:2:2" in profile or "4:4:4" in profile:
+            return False
+
+        pix_fmt = str(video.get("pix_fmt", "")).lower()
+        if pix_fmt not in {"yuv420p", "yuvj420p", "nv12"}:
+            return False
+
+        level = int(video.get("level") or 0)
+        if level > 41:
+            return False
+
+        width = int(video.get("width") or 0)
+        height = int(video.get("height") or 0)
+        if width <= 0 or height <= 0 or width > 1920 or height > 1080:
+            return False
+
+        try:
+            fps = _parse_fps(str(video.get("avg_frame_rate") or "30/1"))
+        except (ValueError, ZeroDivisionError):
+            fps = 30.0
+        if height > 720 and fps > 30.5:
+            return False
+        if height <= 720 and fps > 60.5:
             return False
 
         # Check audio codec (no audio is acceptable)
@@ -121,7 +147,7 @@ def is_chromecast_compatible(path: str) -> bool:
             timeout=10,
         )
         audio_codec = audio_result.stdout.strip().lower()
-        if audio_codec and audio_codec != "aac":
+        if audio_codec and audio_codec not in {"aac", "mp3"}:
             return False
 
         return True

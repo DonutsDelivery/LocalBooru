@@ -1,21 +1,22 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock as StdRwLock};
 
 use tokio::sync::RwLock;
 
 use crate::addons::manager::AddonManager;
-use crate::db::pool::DbPool;
 use crate::db::directory_db::DirectoryDbManager;
 use crate::db::library::{LibraryContext, LibraryManager};
+use crate::db::pool::DbPool;
 use crate::routes::cast::CastState;
-use crate::routes::migration::{SharedMigrationState, create_migration_state};
-use crate::routes::models::{ModelRegistry, create_model_registry};
+use crate::routes::migration::{create_migration_state, SharedMigrationState};
+use crate::routes::models::{create_model_registry, ModelRegistry};
 use crate::routes::network::{HandshakeManager, SharedHandshakeManager};
-use crate::routes::share::{ShareSessions, create_share_sessions};
-use crate::routes::svp_web::{WebDownloadRegistry, create_download_registry};
+use crate::routes::share::{create_share_sessions, ShareSessions};
+use crate::routes::svp_web::{create_download_registry, WebDownloadRegistry};
 use crate::services::directory_watcher::DirectoryWatcher;
-use crate::services::events::{SharedEvents, create_events};
+use crate::services::events::{create_events, SharedEvents};
 use crate::services::rate_limit::RateLimiter;
 use crate::services::task_queue::BackgroundTaskQueue;
 use crate::services::transcode::TranscodeManager;
@@ -64,6 +65,8 @@ struct AppStateInner {
     /// `forbid` is permanent, so we only ever `allow_directory` here — a removed
     /// watch dir stays asset-readable until the next launch (config scope is `[]`).
     asset_scope: std::sync::OnceLock<tauri::scope::fs::Scope>,
+    /// Explicitly selected non-library media, keyed by an unguessable URL token.
+    direct_files: StdRwLock<HashMap<String, PathBuf>>,
     /// Family mode lock state (true = locked, hides non-family-safe content)
     family_mode_locked: AtomicBool,
     /// Whether the HTTP server is listening and accepting connections
@@ -102,7 +105,10 @@ fn load_or_generate_jwt_secret(data_dir: &Path) -> Result<String, Box<dyn std::e
             let secret = generate_jwt_secret();
             obj.as_object_mut()
                 .ok_or("settings.json is not a JSON object")?
-                .insert("jwt_secret".into(), serde_json::Value::String(secret.clone()));
+                .insert(
+                    "jwt_secret".into(),
+                    serde_json::Value::String(secret.clone()),
+                );
             std::fs::write(&settings_path, serde_json::to_string_pretty(&obj)?)?;
             return Ok(secret);
         }
@@ -142,7 +148,10 @@ fn load_family_mode_initial_lock(data_dir: &Path) -> bool {
         None => return false,
     };
     let enabled = fm.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-    let auto_lock = fm.get("auto_lock_on_start").and_then(|v| v.as_bool()).unwrap_or(true);
+    let auto_lock = fm
+        .get("auto_lock_on_start")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     enabled && auto_lock
 }
 
@@ -155,52 +164,6 @@ impl AppState {
         // Create primary library context (opens/creates DB, loads UUID)
         let primary = LibraryContext::open(data_dir, "Local Library")?;
         let library_manager = LibraryManager::new(primary);
-
-        // Auto-mount libraries registered with auto_mount = 1
-        {
-            let conn = library_manager.primary().main_pool.get()?;
-            let mut stmt = conn.prepare(
-                "SELECT uuid, name, path FROM mounted_libraries WHERE auto_mount = 1 ORDER BY mount_order"
-            )?;
-            let libraries: Vec<(String, String, String)> = stmt.query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })?.filter_map(|r| r.ok()).collect();
-            drop(stmt);
-            drop(conn);
-
-            for (uuid, name, path) in libraries {
-                let lib_path = PathBuf::from(&path);
-                match LibraryContext::open(&lib_path, &name) {
-                    Ok(ctx) => {
-                        if ctx.uuid != uuid {
-                            log::warn!(
-                                "[Libraries] UUID mismatch for '{}': expected {}, got {}",
-                                name, uuid, ctx.uuid
-                            );
-                        }
-                        library_manager.mount(ctx);
-                        // Update last_mounted_at timestamp
-                        if let Ok(conn) = library_manager.primary().main_pool.get() {
-                            let _ = conn.execute(
-                                "UPDATE mounted_libraries SET last_mounted_at = datetime('now') WHERE uuid = ?1",
-                                rusqlite::params![uuid],
-                            );
-                        }
-                        log::info!("[Libraries] Auto-mounted library '{}' from {}", name, path);
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "[Libraries] Failed to auto-mount library '{}' at {}: {}",
-                            name, path, e
-                        );
-                    }
-                }
-            }
-        }
 
         // Load or generate per-install JWT secret
         let jwt_secret = load_or_generate_jwt_secret(data_dir)?;
@@ -270,6 +233,7 @@ impl AppState {
                 http_client,
                 directory_watcher: std::sync::OnceLock::new(),
                 asset_scope: std::sync::OnceLock::new(),
+                direct_files: StdRwLock::new(HashMap::new()),
                 family_mode_locked: AtomicBool::new(family_mode_locked),
                 server_ready: AtomicBool::new(false),
                 remote_proxy: RwLock::new(None),
@@ -304,6 +268,74 @@ impl AppState {
     /// Get the library manager.
     pub fn library_manager(&self) -> &LibraryManager {
         &self.inner.library_manager
+    }
+
+    /// Mount auxiliary libraries configured with `auto_mount = 1`.
+    ///
+    /// This performs filesystem and SQLite I/O and must run on a blocking worker,
+    /// never on the HTTP-serving async runtime or Tauri's setup thread.
+    pub fn auto_mount_libraries(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let conn = self.inner.library_manager.primary().main_pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT uuid, name, path FROM mounted_libraries WHERE auto_mount = 1 ORDER BY mount_order"
+        )?;
+        let libraries: Vec<(String, String, String)> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        drop(stmt);
+        drop(conn);
+
+        for (uuid, name, path) in libraries {
+            let lib_path = PathBuf::from(&path);
+            // An unmounted external drive may leave an empty mount-point folder
+            // behind. The folder existing is not enough: only mount a library
+            // whose database marker is actually present.
+            if !lib_path.join("library.db").is_file() {
+                log::warn!(
+                    "[Libraries] Skipping auto-mount for '{}' at {}: library.db is unavailable",
+                    name,
+                    path
+                );
+                continue;
+            }
+            match LibraryContext::open(&lib_path, &name) {
+                Ok(ctx) => {
+                    if ctx.uuid != uuid {
+                        log::warn!(
+                            "[Libraries] UUID mismatch for '{}': expected {}, got {}",
+                            name,
+                            uuid,
+                            ctx.uuid
+                        );
+                    }
+                    self.inner.library_manager.mount(ctx);
+                    if let Ok(conn) = self.inner.library_manager.primary().main_pool.get() {
+                        let _ = conn.execute(
+                            "UPDATE mounted_libraries SET last_mounted_at = datetime('now') WHERE uuid = ?1",
+                            rusqlite::params![uuid],
+                        );
+                    }
+                    log::info!("[Libraries] Auto-mounted library '{}' from {}", name, path);
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[Libraries] Failed to auto-mount library '{}' at {}: {}",
+                        name,
+                        path,
+                        e
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Resolve a library by UUID. Returns the primary library when `library_id`
@@ -428,6 +460,28 @@ impl AppState {
         }
     }
 
+    /// Register one user-selected file for Range-capable HTTP playback.
+    pub fn register_direct_file(&self, path: &Path) -> String {
+        let token = uuid::Uuid::new_v4().to_string();
+        if let Ok(mut files) = self.inner.direct_files.write() {
+            files.clear();
+            files.insert(token.clone(), path.to_path_buf());
+        }
+        token
+    }
+
+    /// Resolve an unguessable direct-file token to its selected path.
+    pub fn direct_file_path(&self, token: &str) -> Option<PathBuf> {
+        self.inner.direct_files.read().ok()?.get(token).cloned()
+    }
+
+    /// Revoke a direct-file capability when its lightbox closes or is replaced.
+    pub fn revoke_direct_file(&self, token: &str) {
+        if let Ok(mut files) = self.inner.direct_files.write() {
+            files.remove(token);
+        }
+    }
+
     /// Check if family mode is currently locked.
     pub fn is_family_mode_locked(&self) -> bool {
         self.inner.family_mode_locked.load(Ordering::Relaxed)
@@ -435,7 +489,9 @@ impl AppState {
 
     /// Set the family mode lock state.
     pub fn set_family_mode_locked(&self, locked: bool) {
-        self.inner.family_mode_locked.store(locked, Ordering::Relaxed);
+        self.inner
+            .family_mode_locked
+            .store(locked, Ordering::Relaxed);
     }
 
     /// Check if the HTTP server is ready (listening on port).
@@ -473,7 +529,12 @@ impl AppState {
     /// Check if local network access is enabled in settings.json.
     /// Used to determine whether to bind to 0.0.0.0 or 127.0.0.1.
     pub fn is_lan_enabled(&self) -> bool {
-        let settings_path = self.inner.library_manager.primary().data_dir.join("settings.json");
+        let settings_path = self
+            .inner
+            .library_manager
+            .primary()
+            .data_dir
+            .join("settings.json");
         let contents = match std::fs::read_to_string(&settings_path) {
             Ok(c) => c,
             Err(_) => return false,
@@ -486,5 +547,76 @@ impl AppState {
             .and_then(|n| n.get("local_network_enabled"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_test_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("localbooru-{}-{}", name, uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn auxiliary_libraries_are_deferred_until_background_mount() {
+        let primary_dir = temp_test_dir("primary");
+        let auxiliary_dir = temp_test_dir("auxiliary");
+        std::fs::create_dir_all(&primary_dir).unwrap();
+        let auxiliary = LibraryContext::create(&auxiliary_dir, "Auxiliary").unwrap();
+        let auxiliary_uuid = auxiliary.uuid.clone();
+        drop(auxiliary);
+
+        // First run: create and register a brand-new external library.
+        let state = AppState::new(&primary_dir, 0).unwrap();
+        {
+            let conn = state.main_db().get().unwrap();
+            conn.execute(
+                "INSERT INTO mounted_libraries (uuid, name, path, auto_mount, mount_order)
+                 VALUES (?1, 'Auxiliary', ?2, 1, 1)",
+                rusqlite::params![auxiliary_uuid, auxiliary_dir.to_string_lossy()],
+            )
+            .unwrap();
+        }
+        drop(state);
+
+        // Restart: constructing core state must not touch the external library.
+        // The background mount phase opens it only after the server can bind.
+        let restarted = AppState::new(&primary_dir, 0).unwrap();
+        assert!(!restarted.library_manager().is_mounted(&auxiliary_uuid));
+        restarted.auto_mount_libraries().unwrap();
+        assert!(restarted.library_manager().is_mounted(&auxiliary_uuid));
+
+        drop(restarted);
+        let _ = std::fs::remove_dir_all(primary_dir);
+        let _ = std::fs::remove_dir_all(auxiliary_dir);
+    }
+
+    #[test]
+    fn auto_mount_does_not_create_database_in_empty_mount_point() {
+        let primary_dir = temp_test_dir("primary-empty-mount");
+        let mount_point = temp_test_dir("empty-mount");
+        std::fs::create_dir_all(&primary_dir).unwrap();
+        std::fs::create_dir_all(&mount_point).unwrap();
+
+        let state = AppState::new(&primary_dir, 0).unwrap();
+        let missing_uuid = uuid::Uuid::new_v4().to_string();
+        {
+            let conn = state.main_db().get().unwrap();
+            conn.execute(
+                "INSERT INTO mounted_libraries (uuid, name, path, auto_mount, mount_order)
+                 VALUES (?1, 'Offline', ?2, 1, 1)",
+                rusqlite::params![missing_uuid, mount_point.to_string_lossy()],
+            )
+            .unwrap();
+        }
+
+        state.auto_mount_libraries().unwrap();
+        assert!(!state.library_manager().is_mounted(&missing_uuid));
+        assert!(!mount_point.join("library.db").exists());
+
+        drop(state);
+        let _ = std::fs::remove_dir_all(primary_dir);
+        let _ = std::fs::remove_dir_all(mount_point);
     }
 }

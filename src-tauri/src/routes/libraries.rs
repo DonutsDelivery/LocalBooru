@@ -13,7 +13,12 @@ use crate::server::state::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_libraries).post(add_library))
-        .route("/{uuid}", get(get_library).patch(update_library).delete(remove_library))
+        .route(
+            "/{uuid}",
+            get(get_library)
+                .patch(update_library)
+                .delete(remove_library),
+        )
         .route("/{uuid}/mount", post(mount_library))
         .route("/{uuid}/unmount", post(unmount_library))
 }
@@ -67,7 +72,7 @@ async fn list_libraries(State(state): State<AppState>) -> Result<Json<Value>, Ap
         // Registered auxiliary libraries
         let mut stmt = conn.prepare(
             "SELECT uuid, name, path, auto_mount, mount_order, last_mounted_at, created_at
-             FROM mounted_libraries ORDER BY mount_order, created_at"
+             FROM mounted_libraries ORDER BY mount_order, created_at",
         )?;
 
         let rows: Vec<(String, String, String, bool, i32, Option<String>, String)> = stmt
@@ -317,6 +322,12 @@ async fn mount_library(
             .map_err(|_| AppError::NotFound(format!("Library '{}' not registered", uuid)))?;
 
         let lib_path = std::path::PathBuf::from(&path);
+        if !lib_path.join("library.db").is_file() {
+            return Err(AppError::BadRequest(format!(
+                "Library database is unavailable at: {}",
+                path
+            )));
+        }
         let ctx = LibraryContext::open(&lib_path, &name)
             .map_err(|e| AppError::Internal(format!("Failed to open library: {}", e)))?;
 
@@ -344,7 +355,9 @@ async fn unmount_library(
     let library_manager = state.library_manager();
 
     if uuid == "primary" || uuid == library_manager.primary().uuid {
-        return Err(AppError::BadRequest("Cannot unmount the primary library".into()));
+        return Err(AppError::BadRequest(
+            "Cannot unmount the primary library".into(),
+        ));
     }
 
     let was_mounted = library_manager.unmount(&uuid);
@@ -417,7 +430,9 @@ async fn remove_library(
         let library_manager = state_clone.library_manager();
 
         if uuid == "primary" || uuid == library_manager.primary().uuid {
-            return Err(AppError::BadRequest("Cannot remove the primary library".into()));
+            return Err(AppError::BadRequest(
+                "Cannot remove the primary library".into(),
+            ));
         }
 
         // Unmount if mounted
@@ -446,10 +461,7 @@ async fn remove_library(
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /// Get basic stats for a library (total images, directories, tags).
-fn get_library_stats(
-    _state: &AppState,
-    lib: &LibraryContext,
-) -> Result<Value, AppError> {
+fn get_library_stats(_state: &AppState, lib: &LibraryContext) -> Result<Value, AppError> {
     let main_conn = lib.main_pool.get()?;
 
     let total_tags: i64 = main_conn
@@ -460,19 +472,14 @@ fn get_library_stats(
         .query_row("SELECT COUNT(*) FROM watch_directories", [], |r| r.get(0))
         .unwrap_or(0);
 
-    // Count images across directory DBs
-    let mut total_images: i64 = 0;
-    let dir_ids = lib.directory_db.get_all_directory_ids();
-    for dir_id in &dir_ids {
-        if let Ok(pool) = lib.directory_db.get_pool(*dir_id) {
-            if let Ok(conn) = pool.get() {
-                let count: i64 = conn
-                    .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
-                    .unwrap_or(0);
-                total_images += count;
-            }
-        }
-    }
+    // Use cached image_count from watch_directories (fast path for large DBs)
+    let total_images: i64 = main_conn
+        .query_row(
+            "SELECT COALESCE(SUM(image_count), 0) FROM watch_directories",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
 
     Ok(json!({
         "total_images": total_images,

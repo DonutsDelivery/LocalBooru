@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getAddons, installAddon, uninstallAddon, startAddon, stopAddon } from '../api'
+import { getAddons, installAddon, uninstallAddon, startAddon, stopAddon, updateAddon } from '../api'
 import './AddonManager.css'
 
 export default function AddonManager() {
@@ -9,8 +9,17 @@ export default function AddonManager() {
   const pollRef = useRef(null)
 
   useEffect(() => {
-    loadAddons()
+    let active = true
+    getAddons()
+      .then((data) => {
+        if (active) setAddons(data.addons || [])
+      })
+      .catch((error) => console.error('Failed to load addons:', error))
+      .finally(() => {
+        if (active) setLoading(false)
+      })
     return () => {
+      active = false
       if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [])
@@ -39,16 +48,6 @@ export default function AddonManager() {
     }
   }, [addons, actionInProgress])
 
-  async function loadAddons() {
-    try {
-      setLoading(true)
-      const data = await getAddons()
-      setAddons(data.addons || [])
-    } catch (e) {
-      console.error('Failed to load addons:', e)
-    }
-    setLoading(false)
-  }
 
   async function handleAction(addonId, action) {
     setActionInProgress(prev => ({ ...prev, [addonId]: action }))
@@ -57,6 +56,7 @@ export default function AddonManager() {
       else if (action === 'uninstall') await uninstallAddon(addonId)
       else if (action === 'start') await startAddon(addonId)
       else if (action === 'stop') await stopAddon(addonId)
+      else if (action === 'repair') await updateAddon(addonId)
       // Refresh after action
       const data = await getAddons()
       setAddons(data.addons || [])
@@ -142,6 +142,13 @@ export default function AddonManager() {
                       className="addon-btn start"
                     >
                       {busy === 'start' ? 'Starting...' : 'Start'}
+                    </button>
+                    <button
+                      onClick={() => handleAction(addon.id, 'repair')}
+                      disabled={!!busy}
+                      className="addon-btn"
+                    >
+                      {busy === 'repair' ? 'Updating...' : 'Repair'}
                     </button>
                     <button
                       onClick={() => {

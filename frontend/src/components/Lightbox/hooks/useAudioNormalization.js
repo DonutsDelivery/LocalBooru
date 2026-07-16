@@ -2,64 +2,68 @@ import { useCallback, useRef } from 'react'
 import { getAudioGain } from '../../../api'
 
 /**
- * Applies audio peak normalization to a video element via Web Audio API.
+ * Applies audio peak attenuation to a video element.
  *
  * Used for direct-play (original quality, no FFmpeg stream), since stream paths
- * (SVP / transcode) already apply normalization in FFmpeg with -af volume=XdB.
- *
- * The AudioContext + source node are created once and reused — browsers only
- * allow createMediaElementSource to be called once per element.
+ * (SVP / transcode) already apply peak attenuation in FFmpeg with -af volume=XdB.
  */
 export function useAudioNormalization(mediaRef) {
-  const ctxRef = useRef(null)
-  const gainNodeRef = useRef(null)
+  const attenuationRef = useRef(1)
+  const outputVolumeRef = useRef(1)
+  const outputMutedRef = useRef(false)
+  const requestSeqRef = useRef(0)
 
-  const _ensureChain = useCallback(() => {
-    if (ctxRef.current) return true
+  const applyElementVolume = useCallback(() => {
     const video = mediaRef.current
-    if (!video) return false
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)()
-      const source = ctx.createMediaElementSource(video)
-      const gain = ctx.createGain()
-      source.connect(gain)
-      gain.connect(ctx.destination)
-      ctxRef.current = ctx
-      gainNodeRef.current = gain
-      return true
-    } catch (e) {
-      // createMediaElementSource may fail on Android WebView or cross-origin src
-      console.warn('[AudioNorm] Failed to create Web Audio chain:', e?.message)
-      return false
-    }
+    if (!video) return
+    const effectiveVolume = outputMutedRef.current
+      ? 0
+      : outputVolumeRef.current * attenuationRef.current
+    video.volume = Math.max(0, Math.min(1, effectiveVolume))
+    video.muted = outputMutedRef.current || outputVolumeRef.current === 0
   }, [mediaRef])
 
-  // Apply normalization for direct play — queries gain from backend and sets it.
+  // Apply attenuation for direct play. Positive gain is ignored intentionally.
   const applyNormalization = useCallback(async (filePath) => {
-    if (!_ensureChain()) return
+    const requestSeq = ++requestSeqRef.current
+    attenuationRef.current = 1
+    applyElementVolume()
     try {
       const { gain_db } = await getAudioGain(filePath)
-      if (gain_db != null && Math.abs(gain_db) > 0.5) {
-        const linear = Math.pow(10, gain_db / 20)
-        gainNodeRef.current.gain.value = linear
-        console.log(`[AudioNorm] Direct play: ${gain_db > 0 ? '+' : ''}${gain_db.toFixed(1)} dB (×${linear.toFixed(1)})`)
+      if (requestSeq !== requestSeqRef.current) return
+      if (gain_db != null && gain_db < -0.5) {
+        const cappedGainDb = Math.max(gain_db, -12)
+        attenuationRef.current = Math.pow(10, cappedGainDb / 20)
+        console.log(`[AudioNorm] Direct play attenuation: ${cappedGainDb.toFixed(1)} dB`)
       } else {
-        gainNodeRef.current.gain.value = 1.0
+        attenuationRef.current = 1
       }
-      if (ctxRef.current.state === 'suspended') {
-        ctxRef.current.resume().catch(() => {})
-      }
+      applyElementVolume()
     } catch (e) {
       console.warn('[AudioNorm] gain fetch failed:', e?.message)
     }
-  }, [_ensureChain])
+  }, [applyElementVolume])
 
-  // Reset to unity gain — call when switching to a stream that already normalizes.
+  // Reset to unity gain when switching to a stream that handles attenuation server-side.
   const resetGain = useCallback(() => {
-    if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = 1.0
-    }
-  }, [])
+    requestSeqRef.current += 1
+    attenuationRef.current = 1
+    applyElementVolume()
+  }, [applyElementVolume])
 
-  return { applyNormalization, resetGain }
+  const setOutputVolume = useCallback((volume) => {
+    outputVolumeRef.current = Math.max(0, Math.min(1, volume))
+    if (volume > 0) outputMutedRef.current = false
+    applyElementVolume()
+    return true
+  }, [applyElementVolume])
+
+  const setOutputMuted = useCallback((muted, volume = 1) => {
+    outputMutedRef.current = muted
+    outputVolumeRef.current = Math.max(0, Math.min(1, volume))
+    applyElementVolume()
+    return true
+  }, [applyElementVolume])
+
+  return { applyNormalization, resetGain, setOutputVolume, setOutputMuted }
 }

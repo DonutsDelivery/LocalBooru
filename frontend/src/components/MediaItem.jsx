@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { getMediaUrl, fetchPreviewFrames } from '../api'
+import { getMediaUrl, fetchPreviewFrames, uploadImage } from '../api'
+import { getDesktopAPI } from '../tauriAPI'
+import { toast } from './Toast'
+import ContextMenu from './ContextMenu'
 import './MediaItem.css'
 
 // Check if filename is a video
@@ -9,10 +12,11 @@ const isVideo = (filename) => {
   return ['webm', 'mp4', 'mov', 'mkv'].includes(ext)
 }
 
-function MediaItem({ image, onClick, isSelectable = false, isSelected = false, onSelect }) {
+function MediaItem({ image, onClick, isSelectable = false, isSelected = false, onSelect, onImageUpdate }) {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
   const [localRating] = useState(image?.rating)
+  const [contextMenu, setContextMenu] = useState(null)
 
   // Preview frames state
   const [previewFrames, setPreviewFrames] = useState([])
@@ -105,8 +109,65 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
   // Note: Slideshow only starts on subsequent hovers after frames are loaded
   // This prevents flickering issues during initial frame fetch
 
+  const handleCopyImage = useCallback(async () => {
+    if (!image) return
+
+    const desktopAPI = getDesktopAPI()
+    if (desktopAPI?.copyImageToClipboard) {
+      const result = await desktopAPI.copyImageToClipboard(getMediaUrl(image.url))
+      if (result.success) {
+        toast.success('Copied to clipboard!')
+      } else {
+        toast.error('Cannot copy this file')
+      }
+    } else {
+      try {
+        const response = await fetch(getMediaUrl(image.url))
+        const blob = await response.blob()
+        await navigator.clipboard.write([
+          new ClipboardItem({ [blob.type]: blob })
+        ])
+        toast.success('Copied to clipboard!')
+      } catch {
+        toast.error('Cannot copy this file')
+      }
+    }
+  }, [image])
+
+  const handlePasteImage = useCallback(async () => {
+    try {
+      const items = await navigator.clipboard.read()
+      let imageBlob = null
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          imageBlob = await item.getType(imageType)
+          break
+        }
+      }
+      if (!imageBlob) {
+        toast.error('No image found in clipboard')
+        return
+      }
+      const ext = imageBlob.type.split('/')[1] || 'png'
+      const file = new File([imageBlob], `pasted-image.${ext}`, { type: imageBlob.type })
+      await uploadImage(file, image.directory_id)
+      toast.success('Image pasted!')
+      onImageUpdate?.()
+    } catch (err) {
+      toast.error('Failed to paste image: ' + err.message)
+    }
+  }, [image, onImageUpdate])
+
+  const handleContextMenu = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }, [])
+
   // Handle click - either select or open lightbox
   const handleClick = (e) => {
+    setContextMenu(null)
     if (isSelectable) {
       e.preventDefault()
       e.stopPropagation()
@@ -190,6 +251,7 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
       className={`media-item ${loaded ? 'loaded' : 'loading'} ${fileStatus !== 'available' ? 'unavailable' : ''} ${isSelectable ? 'selectable' : ''} ${isSelected ? 'selected' : ''}`}
       data-image-id={image.id}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -254,6 +316,24 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
 
       {/* File status overlay */}
       {renderStatusOverlay()}
+
+      {contextMenu && (
+        <ContextMenu
+          position={contextMenu}
+          onClose={() => setContextMenu(null)}
+          items={[
+            {
+              label: 'Copy Image',
+              onClick: handleCopyImage
+            },
+            {
+              label: 'Paste Image',
+              onClick: handlePasteImage,
+              disabled: !image?.directory_id
+            }
+          ]}
+        />
+      )}
     </div>
   )
 }

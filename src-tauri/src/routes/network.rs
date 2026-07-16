@@ -252,9 +252,7 @@ struct HandshakeVerifyRequest {
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// GET /api/network — Get current network configuration and status.
-async fn get_network_config(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
+async fn get_network_config(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let data_dir = state.data_dir().to_path_buf();
     let port = state.port();
 
@@ -484,9 +482,8 @@ async fn upnp_open_port(Json(body): Json<UPnPPortRequest>) -> Result<Json<Value>
     let protocol = parse_protocol(protocol_str)?;
 
     // Determine local IP to map the port to
-    let local_ip_str = get_local_ip().ok_or_else(|| {
-        AppError::Internal("Could not determine local IP address".into())
-    })?;
+    let local_ip_str = get_local_ip()
+        .ok_or_else(|| AppError::Internal("Could not determine local IP address".into()))?;
     let local_addr: std::net::SocketAddr = format!("{}:{}", local_ip_str, internal_port)
         .parse()
         .map_err(|e| AppError::Internal(format!("Invalid local address: {}", e)))?;
@@ -500,7 +497,13 @@ async fn upnp_open_port(Json(body): Json<UPnPPortRequest>) -> Result<Json<Value>
     let lease_duration = 0u32;
 
     gateway
-        .add_port(protocol, body.external_port, local_addr, lease_duration, description)
+        .add_port(
+            protocol,
+            body.external_port,
+            local_addr,
+            lease_duration,
+            description,
+        )
         .await
         .map_err(|e| AppError::Internal(format!("Failed to add UPnP port mapping: {}", e)))?;
 
@@ -610,10 +613,10 @@ async fn verify_handshake(
 
     // Issue a JWT for the paired device
     let token = create_jwt(
-        0,                  // user_id: 0 for device pairing (not a user account)
+        0, // user_id: 0 for device pairing (not a user account)
         "qr_paired_device",
         "local_network",
-        true,               // can_write
+        true, // can_write
         state.jwt_secret(),
     )?;
 

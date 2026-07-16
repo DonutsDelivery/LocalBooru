@@ -22,7 +22,10 @@ pub fn router() -> Router<AppState> {
         .route("/batch/delete", post(batch::batch_delete))
         .route("/batch/retag", post(batch::batch_retag))
         .route("/batch/age-detect", post(batch::batch_age_detect))
-        .route("/batch/extract-metadata", post(batch::batch_extract_metadata))
+        .route(
+            "/batch/extract-metadata",
+            post(batch::batch_extract_metadata),
+        )
         .route("/batch/move", post(batch::batch_move))
         // Dynamic routes (/{image_id}/...)
         .route("/{image_id}", get(single::get_image))
@@ -31,10 +34,19 @@ pub fn router() -> Router<AppState> {
         .route("/{image_id}/thumbnail", get(single::get_image_thumbnail))
         .route("/{image_id}/favorite", post(single::toggle_favorite))
         .route("/{image_id}/rating", patch(single::update_rating))
-        .route("/{image_id}/preview-frames", get(single::get_preview_frames))
-        .route("/{image_id}/preview-frame/{frame_index}", get(single::get_preview_frame))
+        .route(
+            "/{image_id}/preview-frames",
+            get(single::get_preview_frames),
+        )
+        .route(
+            "/{image_id}/preview-frame/{frame_index}",
+            get(single::get_preview_frame),
+        )
         // Adjustment endpoints
-        .route("/{image_id}/preview-adjust", post(adjustments::preview_adjust))
+        .route(
+            "/{image_id}/preview-adjust",
+            post(adjustments::preview_adjust),
+        )
         .route("/{image_id}/preview", get(adjustments::get_preview))
         .route("/{image_id}/preview", delete(adjustments::discard_preview))
         .route("/{image_id}/adjust", post(adjustments::apply_adjust))

@@ -1,7 +1,7 @@
 use axum::{
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
-    response::{IntoResponse, Response, Json},
+    response::{IntoResponse, Json, Response},
 };
 use serde::{Deserialize, Serialize};
 
@@ -104,9 +104,7 @@ pub fn decode_jwt(token: &str, secret: &str) -> Result<Claims, crate::server::er
         &validation,
     )
     .map(|data| data.claims)
-    .map_err(|_| {
-        crate::server::error::AppError::Unauthorized("Invalid or expired token".into())
-    })
+    .map_err(|_| crate::server::error::AppError::Unauthorized("Invalid or expired token".into()))
 }
 
 // ─── Auth extractor ───────────────────────────────────────────────────────────

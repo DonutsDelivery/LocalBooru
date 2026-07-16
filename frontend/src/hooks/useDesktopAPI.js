@@ -1,13 +1,13 @@
 /**
  * React hook for desktop API access
  *
- * Provides a unified API that works in both Electron and Tauri environments.
+ * Provides access to the supported Tauri desktop environment.
  */
 import { useState, useEffect } from 'react'
-import { getDesktopAPI, isDesktopApp, isTauriApp, isElectronApp } from '../tauriAPI'
+import { getDesktopAPI, isDesktopApp, isTauriApp } from '../tauriAPI'
 
 /**
- * Hook to access the desktop API (Electron or Tauri)
+ * Hook to access the Tauri desktop API.
  * Returns null when running in a browser without desktop features
  */
 export function useDesktopAPI() {
@@ -20,7 +20,7 @@ export function useDesktopAPI() {
     setReady(true)
   }, [])
 
-  return { api, ready, isDesktopApp: isDesktopApp(), isTauri: isTauriApp(), isElectron: isElectronApp() }
+  return { api, ready, isDesktopApp: isDesktopApp(), isTauri: isTauriApp() }
 }
 
 /**
@@ -35,13 +35,6 @@ export function useIsDesktop() {
  */
 export function useIsTauri() {
   return isTauriApp()
-}
-
-/**
- * Hook to check if running in Electron
- */
-export function useIsElectron() {
-  return isElectronApp()
 }
 
 export default useDesktopAPI

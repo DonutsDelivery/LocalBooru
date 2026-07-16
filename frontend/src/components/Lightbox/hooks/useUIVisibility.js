@@ -66,7 +66,7 @@ export function useUIVisibility(containerRef) {
     }
 
     try {
-      const el = document.documentElement
+      const el = containerRef.current || document.documentElement
       const fsElement = document.fullscreenElement ?? document.webkitFullscreenElement
       if (!fsElement) {
         if (el.requestFullscreen) {

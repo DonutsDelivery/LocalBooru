@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo, useState } from 'react'
 import MediaItem from './MediaItem'
 import FolderItem from './FolderItem'
 import { getColumnCount } from '../utils/gridLayout'
+import { nextLoadRetryDelay } from '../utils/galleryState'
 import './MasonryGrid.css'
 
 // Distribute images into columns based on aspect ratio to balance heights
@@ -86,6 +87,7 @@ function MasonryGrid({
   const loadingRef = useRef(loading)
   const onLoadMoreRef = useRef(onLoadMore)
   const loadingTimeoutRef = useRef(null)
+  const retryDelayRef = useRef(50)
 
   // Keep refs in sync
   useEffect(() => {
@@ -136,12 +138,13 @@ function MasonryGrid({
         if (loadingTimeoutRef.current) {
           clearTimeout(loadingTimeoutRef.current)
         }
-        loadingTimeoutRef.current = setTimeout(() => {
+        loadingTimeoutRef.current = setTimeout(async () => {
           // Double-check state hasn't changed during debounce
           if (hasMoreRef.current && !loadingRef.current) {
-            onLoadMoreRef.current()
+            const succeeded = await onLoadMoreRef.current()
+            retryDelayRef.current = nextLoadRetryDelay(retryDelayRef.current, succeeded !== false)
           }
-        }, 50)
+        }, retryDelayRef.current)
       }
     }
 
@@ -165,6 +168,16 @@ function MasonryGrid({
       }
     }
   }, []) // Empty deps - observer created once, uses refs for current values
+
+  // IntersectionObserver only reports threshold crossings. If a request fails
+  // while the sentinel stays visible, loading=false alone does not trigger it
+  // again. Re-observe after every settled load so transient backend failures
+  // recover with bounded exponential backoff instead of locking at one page.
+  useEffect(() => {
+    if (loading || !hasMore || !observerRef.current || !loadMoreRef.current) return
+    observerRef.current.unobserve(loadMoreRef.current)
+    observerRef.current.observe(loadMoreRef.current)
+  }, [loading, hasMore, images.length])
 
   if (!images.length && !loading) {
     return (
@@ -202,6 +215,7 @@ function MasonryGrid({
                     user={user}
                     onRatingChange={onImageUpdate}
                     onReject={onImageUpdate}
+                    onImageUpdate={onImageUpdate}
                     showStatus={showStatus}
                     isSelectable={isSelectable}
                     isSelected={selectedImages.has(image.id)}

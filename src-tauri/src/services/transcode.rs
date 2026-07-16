@@ -3,7 +3,7 @@
 //! Spawns FFmpeg processes to transcode video files into HLS segments.
 //! Supports hardware-accelerated encoding (NVENC) with automatic fallback
 //! to software encoding (libx264).
-//! Audio is normalized to -2 dBTP peak via pre-scan volumedetect.
+//! Audio peak safety attenuates overly loud sources via pre-scan volumedetect.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -80,7 +80,10 @@ fn detect_hw_caps() -> &'static HwCaps {
 
         log::info!(
             "[Transcode] Hardware caps: NVENC={}, CUDA hwaccel={}, scale_cuda={}, full_gpu={}",
-            hw.nvenc, hw.cuda_hwaccel, hw.scale_cuda, hw.full_gpu()
+            hw.nvenc,
+            hw.cuda_hwaccel,
+            hw.scale_cuda,
+            hw.full_gpu()
         );
         hw
     })
@@ -108,10 +111,14 @@ async fn detect_video_info(path: &str) -> VideoInfo {
     // Get video stream info
     if let Ok(output) = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height,duration,avg_frame_rate",
-            "-of", "csv=p=0",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height,duration,avg_frame_rate",
+            "-of",
+            "csv=p=0",
         ])
         .arg(path)
         .stdout(Stdio::piped())
@@ -143,9 +150,12 @@ async fn detect_video_info(path: &str) -> VideoInfo {
     if info.duration <= 0.0 {
         if let Ok(output) = Command::new("ffprobe")
             .args([
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "csv=p=0",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
             ])
             .arg(path)
             .stdout(Stdio::piped())
@@ -163,10 +173,14 @@ async fn detect_video_info(path: &str) -> VideoInfo {
     // Check for audio stream
     if let Ok(output) = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-select_streams", "a:0",
-            "-show_entries", "stream=codec_type",
-            "-of", "csv=p=0",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
         ])
         .arg(path)
         .stdout(Stdio::piped())
@@ -181,23 +195,32 @@ async fn detect_video_info(path: &str) -> VideoInfo {
 
     log::info!(
         "[Transcode] Detected: {}x{}, {:.1}s, {:.2}fps, audio={}",
-        info.width, info.height, info.duration, info.avg_fps, info.has_audio
+        info.width,
+        info.height,
+        info.duration,
+        info.avg_fps,
+        info.has_audio
     );
 
     info
 }
 
-/// Detect the audio gain needed to normalize the loudest peak to -2 dB.
+/// Detect attenuation needed to keep the loudest peak at or below -2 dB.
 /// Uses ffmpeg volumedetect on the first 15 seconds for a quick estimate.
-/// Returns the gain in dB to apply (e.g., +6.3 means add 6.3 dB).
+/// Returns a non-positive dB value. Quiet sources are never amplified.
 pub async fn detect_audio_gain(path: &str) -> Option<f64> {
     let output = Command::new("ffmpeg")
         .args([
-            "-i", path,
-            "-vn",           // no video, audio only
-            "-af", "volumedetect",
-            "-t", "15",      // analyze first 15 seconds
-            "-f", "null", "-",
+            "-i",
+            path,
+            "-vn", // no video, audio only
+            "-af",
+            "volumedetect",
+            "-t",
+            "15", // analyze first 15 seconds
+            "-f",
+            "null",
+            "-",
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -211,19 +234,13 @@ pub async fn detect_audio_gain(path: &str) -> Option<f64> {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let re = Regex::new(r"max_volume:\s*([-\d.]+)\s*dB").ok()?;
-    let max_volume: f64 = re
-        .captures(&stderr)?
-        .get(1)?
-        .as_str()
-        .parse()
-        .ok()?;
+    let max_volume: f64 = re.captures(&stderr)?.get(1)?.as_str().parse().ok()?;
 
-    // Gain needed to bring peak to -2 dB
-    let gain_db = -2.0 - max_volume;
+    // Gain needed to bring peak to -2 dB, but never amplify quiet sources.
+    let gain_db = (-2.0 - max_volume).min(0.0);
 
-    // Clamp: don't cut more than -12 dB (avoids clipping).
-    // Upper limit of +48 dB covers whisper-quiet sources (-50 dB peak → -2 dB).
-    Some(gain_db.clamp(-12.0, 48.0))
+    // Clamp: don't attenuate more than -12 dB.
+    Some(gain_db.clamp(-12.0, 0.0))
 }
 
 /// A single active transcode stream with its FFmpeg process and HLS output directory.
@@ -363,7 +380,11 @@ impl TranscodeManager {
             audio_gain_db,
         );
 
-        log::info!("[Transcode {}] Starting FFmpeg: {}", stream_id, cmd.join(" "));
+        log::info!(
+            "[Transcode {}] Starting FFmpeg: {}",
+            stream_id,
+            cmd.join(" ")
+        );
 
         // Spawn FFmpeg — on Linux, set PR_SET_PDEATHSIG so the child is killed
         // automatically when the parent process exits (even via SIGKILL / process::exit).
@@ -437,10 +458,7 @@ impl TranscodeManager {
 
         let info = TranscodeStreamInfo {
             stream_id: stream_id.clone(),
-            stream_url: format!(
-                "/api/settings/transcode/stream/{}/playlist.m3u8",
-                stream_id
-            ),
+            stream_url: format!("/api/settings/transcode/stream/{}/playlist.m3u8", stream_id),
             duration: video_info.duration,
             start_position,
             source_resolution: Resolution {
@@ -456,6 +474,16 @@ impl TranscodeManager {
     /// Get the HLS directory for a stream.
     pub fn get_stream_hls_dir(&self, stream_id: &str) -> Option<PathBuf> {
         self.streams.get(stream_id).map(|s| s.hls_dir.clone())
+    }
+
+    /// Stop a single active stream.
+    pub fn stop_stream(&self, stream_id: &str) -> bool {
+        if let Some((_, mut stream)) = self.streams.remove(stream_id) {
+            stream.stop();
+            true
+        } else {
+            false
+        }
     }
 
     /// Stop all active streams.
@@ -529,8 +557,10 @@ fn build_ffmpeg_command(
     // Hardware-accelerated decoding: decode directly to GPU memory
     if use_gpu_pipeline {
         cmd.extend([
-            "-hwaccel".into(), "cuda".into(),
-            "-hwaccel_output_format".into(), "cuda".into(),
+            "-hwaccel".into(),
+            "cuda".into(),
+            "-hwaccel_output_format".into(),
+            "cuda".into(),
         ]);
     }
 
@@ -606,19 +636,28 @@ fn build_ffmpeg_command(
     // Video encoder
     if hw.nvenc {
         cmd.extend([
-            "-c:v".into(), "h264_nvenc".into(),
+            "-c:v".into(),
+            "h264_nvenc".into(),
             // p1 = fastest preset (lowest latency, ideal for real-time streaming)
-            "-preset".into(), "p1".into(),
-            "-g".into(), gop_size.to_string(),
-            "-keyint_min".into(), gop_size.to_string(),
+            "-preset".into(),
+            "p1".into(),
+            "-g".into(),
+            gop_size.to_string(),
+            "-keyint_min".into(),
+            gop_size.to_string(),
         ]);
     } else {
         cmd.extend([
-            "-c:v".into(), "libx264".into(),
-            "-preset".into(), "ultrafast".into(),
-            "-tune".into(), "zerolatency".into(),
-            "-g".into(), gop_size.to_string(),
-            "-keyint_min".into(), gop_size.to_string(),
+            "-c:v".into(),
+            "libx264".into(),
+            "-preset".into(),
+            "ultrafast".into(),
+            "-tune".into(),
+            "zerolatency".into(),
+            "-g".into(),
+            gop_size.to_string(),
+            "-keyint_min".into(),
+            gop_size.to_string(),
         ]);
     }
 
@@ -632,18 +671,21 @@ fn build_ffmpeg_command(
     // Audio
     if video_info.has_audio {
         cmd.extend([
-            "-c:a".into(), "aac".into(),
-            "-ar".into(), "48000".into(),
-            "-ac".into(), "2".into(),
-            "-b:a".into(), "192k".into(),
+            "-c:a".into(),
+            "aac".into(),
+            "-ar".into(),
+            "48000".into(),
+            "-ac".into(),
+            "2".into(),
+            "-b:a".into(),
+            "192k".into(),
         ]);
 
-        // Normalize peak to -2 dB (uniform gain, no dynamics processing)
+        // Attenuate peaks above -2 dB only. Never boost quiet sources.
         if let Some(gain_db) = audio_gain_db {
-            // Only apply meaningful gain changes (more than 0.5 dB)
-            if gain_db.abs() > 0.5 {
+            if gain_db < -0.5 {
                 cmd.extend(["-af".into(), format!("volume={}dB", gain_db)]);
-                log::info!("[Transcode] Audio normalization: {:+.1} dB (peak → -2 dB)", gain_db);
+                log::info!("[Transcode] Audio peak attenuation: {:+.1} dB", gain_db);
             }
         }
     } else {
@@ -652,10 +694,14 @@ fn build_ffmpeg_command(
 
     // HLS output
     cmd.extend([
-        "-f".into(), "hls".into(),
-        "-hls_time".into(), "2".into(),
-        "-hls_list_size".into(), "0".into(),
-        "-hls_flags".into(), "append_list".into(),
+        "-f".into(),
+        "hls".into(),
+        "-hls_time".into(),
+        "2".into(),
+        "-hls_list_size".into(),
+        "0".into(),
+        "-hls_flags".into(),
+        "append_list".into(),
         "-hls_segment_filename".into(),
         hls_dir.join("segment_%d.ts").to_string_lossy().into(),
         hls_dir.join("playlist.m3u8").to_string_lossy().into(),

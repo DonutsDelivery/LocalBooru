@@ -1,11 +1,12 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.3.10",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build && cp ../assets/icon.png dist/",
+    "test": "node --test src/**/*.test.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },

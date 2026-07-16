@@ -14,6 +14,14 @@
   overflow: hidden;
 }
 
+/* Once the native player has drawn its first frame it owns the lightbox
+   surface. Preserve only the static black backing instead of painting the
+   React media, toolbar, controls, and interaction layers underneath it. */
+.lightbox.native-player-active > * {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* Top toolbar */
 .lightbox-toolbar {
   position: absolute;
@@ -753,6 +761,22 @@ video.lightbox-media {
 
 .svp-error {
   background: rgba(156, 39, 176, 0.9) !important;
+}
+
+.svp-cancel-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 4px 10px;
+  margin-top: 4px;
+  transition: background 0.15s;
+}
+
+.svp-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* VFR fix badge */

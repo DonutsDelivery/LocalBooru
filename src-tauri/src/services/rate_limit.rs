@@ -78,10 +78,7 @@ impl RateLimiter {
     /// rather than every login attempt.
     pub fn record_attempt(&self, key: &str) {
         let now = Instant::now();
-        self.attempts
-            .entry(key.to_string())
-            .or_default()
-            .push(now);
+        self.attempts.entry(key.to_string()).or_default().push(now);
     }
 
     /// Remove all expired entries from the map to free memory.
@@ -94,7 +91,10 @@ impl RateLimiter {
             .attempts
             .iter()
             .filter_map(|entry| {
-                let dominated = entry.value().iter().all(|t| now.duration_since(*t) >= window);
+                let dominated = entry
+                    .value()
+                    .iter()
+                    .all(|t| now.duration_since(*t) >= window);
                 if dominated {
                     Some(entry.key().clone())
                 } else {

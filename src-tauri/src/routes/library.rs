@@ -95,8 +95,7 @@ async fn library_stats(State(state): State<AppState>) -> Result<Json<Value>, App
                                 rating
                             };
                             let entry = by_rating.entry(key).or_insert(json!(0));
-                            *entry =
-                                json!(entry.as_i64().unwrap_or(0) + count);
+                            *entry = json!(entry.as_i64().unwrap_or(0) + count);
                         }
                     }
 
@@ -307,7 +306,8 @@ async fn list_tasks(
         let count_sql = format!("SELECT COUNT(*) FROM task_queue {}", where_clause);
         let total: i64 = {
             let mut stmt = conn.prepare(&count_sql)?;
-            let refs: Vec<&dyn rusqlite::types::ToSql> = bind_values.iter().map(|b| b.as_ref()).collect();
+            let refs: Vec<&dyn rusqlite::types::ToSql> =
+                bind_values.iter().map(|b| b.as_ref()).collect();
             stmt.query_row(refs.as_slice(), |row| row.get(0))?
         };
 
@@ -459,10 +459,7 @@ async fn clear_completed_tasks(
 
 /// GET /api/library/queue/paused — Check if queue is paused.
 async fn queue_paused(State(state): State<AppState>) -> Json<Value> {
-    let paused = state
-        .task_queue()
-        .map(|tq| tq.is_paused())
-        .unwrap_or(false);
+    let paused = state.task_queue().map(|tq| tq.is_paused()).unwrap_or(false);
     Json(json!({ "paused": paused }))
 }
 
@@ -501,10 +498,7 @@ async fn clear_pending(State(state): State<AppState>) -> Result<Json<Value>, App
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;
-        let deleted = conn.execute(
-            "DELETE FROM task_queue WHERE status = 'pending'",
-            [],
-        )?;
+        let deleted = conn.execute("DELETE FROM task_queue WHERE status = 'pending'", [])?;
         Ok::<_, AppError>(Json(json!({ "cleared": deleted })))
     })
     .await?
@@ -533,10 +527,7 @@ async fn clear_directory_pending(
         for (task_id, payload_str) in tasks {
             if let Ok(payload) = serde_json::from_str::<Value>(&payload_str) {
                 if payload["directory_id"].as_i64() == Some(directory_id) {
-                    conn.execute(
-                        "DELETE FROM task_queue WHERE id = ?1",
-                        params![task_id],
-                    )?;
+                    conn.execute("DELETE FROM task_queue WHERE id = ?1", params![task_id])?;
                     cleared += 1;
                 }
             }
@@ -905,7 +896,9 @@ async fn file_missing(
                 }
             }
         }
-        Ok::<_, AppError>(Json(json!({ "marked_missing": false, "message": "File not found in any directory" })))
+        Ok::<_, AppError>(Json(
+            json!({ "marked_missing": false, "message": "File not found in any directory" }),
+        ))
     })
     .await?
 }

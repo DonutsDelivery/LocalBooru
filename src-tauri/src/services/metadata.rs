@@ -494,8 +494,7 @@ pub fn parse_comfyui_metadata(
                     }
                 }
                 if metadata.sampler.is_none() {
-                    if let Some(sampler_name) =
-                        inputs.get("sampler_name").and_then(|v| v.as_str())
+                    if let Some(sampler_name) = inputs.get("sampler_name").and_then(|v| v.as_str())
                     {
                         metadata.sampler = Some(sampler_name.to_string());
                     }
@@ -601,7 +600,12 @@ pub fn extract_and_save_metadata(
     comfyui_negative_node_ids: Option<&[String]>,
     format_hint: &str,
 ) -> Result<ExtractionResult, String> {
-    let result = extract_metadata(file_path, comfyui_node_ids, comfyui_negative_node_ids, format_hint);
+    let result = extract_metadata(
+        file_path,
+        comfyui_node_ids,
+        comfyui_negative_node_ids,
+        format_hint,
+    );
 
     if result.status != "success" {
         return Ok(result);
@@ -675,7 +679,10 @@ mod tests {
     fn test_parse_a1111_basic() {
         let text = "beautiful landscape, mountains\nNegative prompt: ugly, blurry\nSteps: 20, Sampler: Euler a, CFG scale: 7.5, Seed: 12345, Model: sd_xl_base";
         let meta = parse_a1111_metadata(text);
-        assert_eq!(meta.prompt.as_deref(), Some("beautiful landscape, mountains"));
+        assert_eq!(
+            meta.prompt.as_deref(),
+            Some("beautiful landscape, mountains")
+        );
         assert_eq!(meta.negative_prompt.as_deref(), Some("ugly, blurry"));
         assert_eq!(meta.steps, Some(20));
         assert_eq!(meta.sampler.as_deref(), Some("Euler a"));
@@ -686,7 +693,8 @@ mod tests {
 
     #[test]
     fn test_parse_a1111_no_negative() {
-        let text = "a cat sitting on a mat\nSteps: 30, Sampler: DPM++ 2M, CFG scale: 12, Seed: 99999";
+        let text =
+            "a cat sitting on a mat\nSteps: 30, Sampler: DPM++ 2M, CFG scale: 12, Seed: 99999";
         let meta = parse_a1111_metadata(text);
         assert_eq!(meta.prompt.as_deref(), Some("a cat sitting on a mat"));
         assert!(meta.negative_prompt.is_none());

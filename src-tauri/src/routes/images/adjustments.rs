@@ -34,10 +34,8 @@ pub async fn preview_adjust(
 
     let state_clone = state.clone();
 
-    let file_path = tokio::task::spawn_blocking(move || {
-        find_image_file_path(&state_clone, image_id)
-    })
-    .await??;
+    let file_path =
+        tokio::task::spawn_blocking(move || find_image_file_path(&state_clone, image_id)).await??;
 
     let data_dir = state.data_dir().to_path_buf();
     let brightness = adjustments.brightness;
@@ -65,8 +63,11 @@ pub async fn preview_adjust(
         let adj_hash = format!(
             "{:x}",
             xxhash_rust::xxh64::xxh64(
-                format!("{}_{}_{}", adjustments.brightness, adjustments.contrast, adjustments.gamma)
-                    .as_bytes(),
+                format!(
+                    "{}_{}_{}",
+                    adjustments.brightness, adjustments.contrast, adjustments.gamma
+                )
+                .as_bytes(),
                 0,
             )
         );
@@ -317,10 +318,7 @@ fn find_image_file_hash(state: &AppState, image_id: i64) -> Result<String, AppEr
 
 /// Apply brightness, contrast, and gamma adjustments to an image.
 /// Ports the Python numpy/PIL implementation.
-fn apply_adjustments_to_image(
-    img: &DynamicImage,
-    adj: &ImageAdjustmentRequest,
-) -> DynamicImage {
+fn apply_adjustments_to_image(img: &DynamicImage, adj: &ImageAdjustmentRequest) -> DynamicImage {
     let rgb = img.to_rgb8();
     let (width, height) = rgb.dimensions();
     let mut buffer: Vec<f32> = rgb.as_raw().iter().map(|&v| v as f32).collect();

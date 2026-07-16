@@ -67,7 +67,11 @@ pub async fn batch_delete(
     })))
 }
 
-fn delete_single_image(state: &AppState, image_id: i64, delete_files: bool) -> Result<(), AppError> {
+fn delete_single_image(
+    state: &AppState,
+    image_id: i64,
+    delete_files: bool,
+) -> Result<(), AppError> {
     let mut file_hash: Option<String> = None;
 
     // Search directory DBs
@@ -83,9 +87,8 @@ fn delete_single_image(state: &AppState, image_id: i64, delete_files: bool) -> R
             file_hash = Some(hash);
 
             if delete_files {
-                let mut stmt = dir_conn.prepare(
-                    "SELECT original_path FROM image_files WHERE image_id = ?1",
-                )?;
+                let mut stmt = dir_conn
+                    .prepare("SELECT original_path FROM image_files WHERE image_id = ?1")?;
                 let paths: Vec<String> = stmt
                     .query_map(params![image_id], |row| row.get(0))?
                     .filter_map(|r| r.ok())
@@ -95,8 +98,14 @@ fn delete_single_image(state: &AppState, image_id: i64, delete_files: bool) -> R
                 }
             }
 
-            dir_conn.execute("DELETE FROM image_tags WHERE image_id = ?1", params![image_id])?;
-            dir_conn.execute("DELETE FROM image_files WHERE image_id = ?1", params![image_id])?;
+            dir_conn.execute(
+                "DELETE FROM image_tags WHERE image_id = ?1",
+                params![image_id],
+            )?;
+            dir_conn.execute(
+                "DELETE FROM image_files WHERE image_id = ?1",
+                params![image_id],
+            )?;
             dir_conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
         }
     }
@@ -113,9 +122,8 @@ fn delete_single_image(state: &AppState, image_id: i64, delete_files: bool) -> R
                 file_hash = Some(hash);
 
                 if delete_files {
-                    let mut stmt = main_conn.prepare(
-                        "SELECT original_path FROM image_files WHERE image_id = ?1",
-                    )?;
+                    let mut stmt = main_conn
+                        .prepare("SELECT original_path FROM image_files WHERE image_id = ?1")?;
                     let paths: Vec<String> = stmt
                         .query_map(params![image_id], |row| row.get(0))?
                         .filter_map(|r| r.ok())
@@ -125,8 +133,14 @@ fn delete_single_image(state: &AppState, image_id: i64, delete_files: bool) -> R
                     }
                 }
 
-                main_conn.execute("DELETE FROM image_tags WHERE image_id = ?1", params![image_id])?;
-                main_conn.execute("DELETE FROM image_files WHERE image_id = ?1", params![image_id])?;
+                main_conn.execute(
+                    "DELETE FROM image_tags WHERE image_id = ?1",
+                    params![image_id],
+                )?;
+                main_conn.execute(
+                    "DELETE FROM image_files WHERE image_id = ?1",
+                    params![image_id],
+                )?;
                 main_conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
             }
             Err(_) => return Err(AppError::NotFound("Image not found".into())),
@@ -163,14 +177,13 @@ pub async fn batch_retag(
         let mut errors: Vec<serde_json::Value> = Vec::new();
 
         for image_id in &request.image_ids {
-            let (dir_id, image_path) =
-                match find_image_path_for_metadata(&state_clone, *image_id) {
-                    Ok(info) => info,
-                    Err(e) => {
-                        errors.push(json!({"id": image_id, "error": e.to_string()}));
-                        continue;
-                    }
-                };
+            let (dir_id, image_path) = match find_image_path_for_metadata(&state_clone, *image_id) {
+                Ok(info) => info,
+                Err(e) => {
+                    errors.push(json!({"id": image_id, "error": e.to_string()}));
+                    continue;
+                }
+            };
 
             let payload = json!({
                 "image_id": image_id,
@@ -220,14 +233,13 @@ pub async fn batch_age_detect(
         let mut errors: Vec<serde_json::Value> = Vec::new();
 
         for image_id in &request.image_ids {
-            let (dir_id, image_path) =
-                match find_image_path_for_metadata(&state_clone, *image_id) {
-                    Ok(info) => info,
-                    Err(e) => {
-                        errors.push(json!({"id": image_id, "error": e.to_string()}));
-                        continue;
-                    }
-                };
+            let (dir_id, image_path) = match find_image_path_for_metadata(&state_clone, *image_id) {
+                Ok(info) => info,
+                Err(e) => {
+                    errors.push(json!({"id": image_id, "error": e.to_string()}));
+                    continue;
+                }
+            };
 
             let payload = json!({
                 "image_id": image_id,
@@ -278,14 +290,13 @@ pub async fn batch_extract_metadata(
 
         for image_id in &request.image_ids {
             // Find the directory and file path for this image
-            let (dir_id, image_path) =
-                match find_image_path_for_metadata(&state_clone, *image_id) {
-                    Ok(info) => info,
-                    Err(e) => {
-                        errors.push(json!({"id": image_id, "error": e.to_string()}));
-                        continue;
-                    }
-                };
+            let (dir_id, image_path) = match find_image_path_for_metadata(&state_clone, *image_id) {
+                Ok(info) => info,
+                Err(e) => {
+                    errors.push(json!({"id": image_id, "error": e.to_string()}));
+                    continue;
+                }
+            };
 
             let payload = json!({
                 "image_id": image_id,
@@ -406,9 +417,8 @@ fn move_single_image(state: &AppState, image_id: i64, target_path: &str) -> Resu
         let dir_pool = state.directory_db().get_pool(dir_id)?;
         let dir_conn = dir_pool.get()?;
 
-        let mut stmt = dir_conn.prepare(
-            "SELECT id, original_path FROM image_files WHERE image_id = ?1",
-        )?;
+        let mut stmt =
+            dir_conn.prepare("SELECT id, original_path FROM image_files WHERE image_id = ?1")?;
         let files: Vec<(i64, String)> = stmt
             .query_map(params![image_id], |row| Ok((row.get(0)?, row.get(1)?)))?
             .filter_map(|r| r.ok())

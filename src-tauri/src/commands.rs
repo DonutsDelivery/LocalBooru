@@ -2,9 +2,9 @@
 //!
 //! The axum backend is embedded in the Tauri process — no separate process management needed.
 
-use tauri::{AppHandle, Manager, State};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use tauri::{AppHandle, Manager, State};
 
 use crate::server::state::AppState;
 
@@ -286,16 +286,26 @@ pub async fn test_remote_server(url: String) -> Result<TestServerResult, String>
     match client.get(format!("{}/api", url)).send().await {
         Ok(resp) => {
             if resp.status() == 401 {
-                Ok(TestServerResult { success: false, error: Some("Authentication required".into()) })
+                Ok(TestServerResult {
+                    success: false,
+                    error: Some("Authentication required".into()),
+                })
             } else if !resp.status().is_success() {
-                Ok(TestServerResult { success: false, error: Some(format!("Server returned {}", resp.status())) })
+                Ok(TestServerResult {
+                    success: false,
+                    error: Some(format!("Server returned {}", resp.status())),
+                })
             } else {
-                Ok(TestServerResult { success: true, error: None })
+                Ok(TestServerResult {
+                    success: true,
+                    error: None,
+                })
             }
         }
-        Err(e) => {
-            Ok(TestServerResult { success: false, error: Some(e.to_string()) })
-        }
+        Err(e) => Ok(TestServerResult {
+            success: false,
+            error: Some(e.to_string()),
+        }),
     }
 }
 
@@ -310,7 +320,10 @@ pub struct HandshakeResult {
 }
 
 #[tauri::command]
-pub async fn verify_remote_handshake(url: String, nonce: String) -> Result<HandshakeResult, String> {
+pub async fn verify_remote_handshake(
+    url: String,
+    nonce: String,
+) -> Result<HandshakeResult, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .danger_accept_invalid_certs(true)
@@ -318,23 +331,48 @@ pub async fn verify_remote_handshake(url: String, nonce: String) -> Result<Hands
         .map_err(|e| e.to_string())?;
 
     let body = serde_json::json!({ "nonce": nonce });
-    match client.post(format!("{}/api/network/verify-handshake", url)).json(&body).send().await {
+    match client
+        .post(format!("{}/api/network/verify-handshake", url))
+        .json(&body)
+        .send()
+        .await
+    {
         Ok(resp) => {
             if !resp.status().is_success() {
-                return Ok(HandshakeResult { success: false, token: None, error: Some(format!("HTTP {}", resp.status())) });
+                return Ok(HandshakeResult {
+                    success: false,
+                    token: None,
+                    error: Some(format!("HTTP {}", resp.status())),
+                });
             }
             match resp.json::<serde_json::Value>().await {
                 Ok(body) => {
-                    let token = body.get("token").and_then(|t| t.as_str()).map(|s| s.to_string());
-                    let success = body.get("success").and_then(|s| s.as_bool()).unwrap_or(token.is_some());
-                    Ok(HandshakeResult { success, token, error: None })
+                    let token = body
+                        .get("token")
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string());
+                    let success = body
+                        .get("success")
+                        .and_then(|s| s.as_bool())
+                        .unwrap_or(token.is_some());
+                    Ok(HandshakeResult {
+                        success,
+                        token,
+                        error: None,
+                    })
                 }
-                Err(e) => Ok(HandshakeResult { success: false, token: None, error: Some(e.to_string()) })
+                Err(e) => Ok(HandshakeResult {
+                    success: false,
+                    token: None,
+                    error: Some(e.to_string()),
+                }),
             }
         }
-        Err(e) => {
-            Ok(HandshakeResult { success: false, token: None, error: Some(e.to_string()) })
-        }
+        Err(e) => Ok(HandshakeResult {
+            success: false,
+            token: None,
+            error: Some(e.to_string()),
+        }),
     }
 }
 
@@ -349,7 +387,11 @@ pub async fn set_remote_proxy(
     fallback_url: Option<String>,
     token: Option<String>,
 ) -> Result<(), String> {
-    log::info!("[Proxy] Setting remote proxy to: {:?} (fallback: {:?})", url, fallback_url);
+    log::info!(
+        "[Proxy] Setting remote proxy to: {:?} (fallback: {:?})",
+        url,
+        fallback_url
+    );
     state.set_remote_proxy(url, fallback_url, token).await;
     Ok(())
 }

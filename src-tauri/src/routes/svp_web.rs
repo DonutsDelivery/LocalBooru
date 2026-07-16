@@ -282,8 +282,7 @@ async fn run_ytdlp_download(
                         // Fire-and-forget SVP play request via the sidecar bridge
                         let client = state.http_client();
                         if let Some(base_url) = addon_mgr.addon_url("svp") {
-                            let play_url =
-                                format!("{}/svp/play", base_url.trim_end_matches('/'));
+                            let play_url = format!("{}/svp/play", base_url.trim_end_matches('/'));
                             let _ = client
                                 .post(&play_url)
                                 .json(&json!({ "file_path": file_path }))
@@ -399,9 +398,7 @@ struct DrmCheckQuery {
 
 /// GET /svp/web/drm-check?url=... — Check if a URL is DRM-protected or live.
 /// Runs `yt-dlp --dump-json` to inspect the URL metadata.
-async fn svp_web_drm_check(
-    Query(q): Query<DrmCheckQuery>,
-) -> Result<Json<Value>, AppError> {
+async fn svp_web_drm_check(Query(q): Query<DrmCheckQuery>) -> Result<Json<Value>, AppError> {
     if !ytdlp_available() {
         return Err(AppError::ServiceUnavailable(
             "yt-dlp is not installed or not found in PATH".into(),
@@ -442,16 +439,12 @@ async fn svp_web_drm_check(
         )));
     }
 
-    let info: Value = serde_json::from_slice(&result.stdout).map_err(|e| {
-        AppError::Internal(format!("Failed to parse yt-dlp JSON output: {}", e))
-    })?;
+    let info: Value = serde_json::from_slice(&result.stdout)
+        .map_err(|e| AppError::Internal(format!("Failed to parse yt-dlp JSON output: {}", e)))?;
 
     // Check for DRM indicators
     let has_drm = info.get("drm_style").is_some()
-        || info
-            .get("drm")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
+        || info.get("drm").and_then(|v| v.as_bool()).unwrap_or(false)
         || info
             .get("_has_drm")
             .and_then(|v| v.as_bool())

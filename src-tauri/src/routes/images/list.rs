@@ -41,9 +41,15 @@ pub struct ListImagesQuery {
     pub sort: String,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_per_page() -> i64 { 50 }
-fn default_sort() -> String { "newest".into() }
+fn default_page() -> i64 {
+    1
+}
+fn default_per_page() -> i64 {
+    50
+}
+fn default_sort() -> String {
+    "newest".into()
+}
 
 /// GET /api/images — List images with filtering and pagination.
 pub async fn list_images(
@@ -274,9 +280,8 @@ pub async fn list_images(
 
         // Fallback: query main/legacy DB
         let main_conn = state_clone.main_db().get()?;
-        let visible_dir_ids: Option<HashSet<i64>> = {
-            get_visible_directory_ids(&main_conn, tier, family_locked)?
-        };
+        let visible_dir_ids: Option<HashSet<i64>> =
+            { get_visible_directory_ids(&main_conn, tier, family_locked)? };
         query_main_db_images(&main_conn, &params, visible_dir_ids.as_ref())
     })
     .await??;
@@ -366,7 +371,10 @@ pub async fn list_folders(
             } else {
                 // Filter to only visible directories
                 if let Some(ref visible_ids) = visible_dir_ids {
-                    all_dir_ids.into_iter().filter(|id| visible_ids.contains(id)).collect()
+                    all_dir_ids
+                        .into_iter()
+                        .filter(|id| visible_ids.contains(id))
+                        .collect()
                 } else {
                     all_dir_ids
                 }
@@ -384,10 +392,15 @@ pub async fn list_folders(
                     |row| row.get::<_, i64>(0),
                 ) {
                     Ok(id) => tag_ids.push(id),
-                    Err(_) => { skip_lib = true; break; } // Tag doesn't exist in this library
+                    Err(_) => {
+                        skip_lib = true;
+                        break;
+                    } // Tag doesn't exist in this library
                 }
             }
-            if skip_lib { continue; }
+            if skip_lib {
+                continue;
+            }
 
             for dir_id in &dir_ids_to_query {
                 if !lib.directory_db.db_exists(*dir_id) {
@@ -402,101 +415,104 @@ pub async fn list_folders(
                     Err(_) => continue,
                 };
 
-            // Build WHERE clause
-            let mut where_parts: Vec<String> = Vec::new();
-            where_parts.push(
-                "i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing')".into(),
-            );
-
-            if favorites_only {
-                where_parts.push("i.is_favorite = 1".into());
-            }
-
-            if !rating_list.is_empty() {
-                let quoted: Vec<String> = rating_list.iter().map(|r| format!("'{}'", r)).collect();
-                where_parts.push(format!(
-                    "(i.rating IN ({}) OR i.rating IS NULL)",
-                    quoted.join(",")
-                ));
-            }
-
-            // Tag filters
-            for tag_id in &tag_ids {
-                where_parts.push(format!(
-                    "i.id IN (SELECT image_id FROM image_tags WHERE tag_id = {})",
-                    tag_id
-                ));
-            }
-
-            let where_sql = format!("WHERE {}", where_parts.join(" AND "));
-
-            // Count by import_source
-            let count_sql = format!(
-                "SELECT i.import_source, COUNT(i.id) FROM images i {} GROUP BY i.import_source",
-                where_sql
-            );
-
-            if let Ok(mut stmt) = dir_conn.prepare(&count_sql) {
-                if let Ok(rows) = stmt.query_map([], |row| {
-                    Ok((row.get::<_, Option<String>>(0)?, row.get::<_, i64>(1)?))
-                }) {
-                    for row in rows.flatten() {
-                        let key = row.0.unwrap_or_default();
-                        let entry = folders_map
-                            .entry(key.clone())
-                            .or_insert((0, None, None, None, *dir_id));
-                        entry.0 += row.1;
-                    }
-                }
-            }
-
-            // Get representative thumbnail for each folder
-            for (key, entry) in folders_map.iter_mut() {
-                if entry.1.is_some() {
-                    continue; // Already have thumbnail
-                }
-
-                let (source_filter, source_param): (String, Option<String>) = if key.is_empty() {
-                    ("i.import_source IS NULL".to_string(), None)
-                } else {
-                    ("i.import_source = ?1".to_string(), Some(key.clone()))
-                };
-
-                let thumb_sql = format!(
-                    "SELECT i.id, i.width, i.height, i.created_at FROM images i {} AND {} \
-                     ORDER BY COALESCE(i.file_modified_at, i.created_at) DESC LIMIT 1",
-                    where_sql, source_filter
+                // Build WHERE clause
+                let mut where_parts: Vec<String> = Vec::new();
+                where_parts.push(
+                    "i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing')"
+                        .into(),
                 );
 
-                if let Ok(mut stmt) = dir_conn.prepare(&thumb_sql) {
-                    let thumb_result = if let Some(ref param_val) = source_param {
-                        stmt.query_row(rusqlite::params![param_val], |row| {
-                            Ok((
-                                row.get::<_, i64>(0)?,
-                                row.get::<_, Option<i32>>(1)?,
-                                row.get::<_, Option<i32>>(2)?,
-                            ))
-                        })
+                if favorites_only {
+                    where_parts.push("i.is_favorite = 1".into());
+                }
+
+                if !rating_list.is_empty() {
+                    let quoted: Vec<String> =
+                        rating_list.iter().map(|r| format!("'{}'", r)).collect();
+                    where_parts.push(format!(
+                        "(i.rating IN ({}) OR i.rating IS NULL)",
+                        quoted.join(",")
+                    ));
+                }
+
+                // Tag filters
+                for tag_id in &tag_ids {
+                    where_parts.push(format!(
+                        "i.id IN (SELECT image_id FROM image_tags WHERE tag_id = {})",
+                        tag_id
+                    ));
+                }
+
+                let where_sql = format!("WHERE {}", where_parts.join(" AND "));
+
+                // Count by import_source
+                let count_sql = format!(
+                    "SELECT i.import_source, COUNT(i.id) FROM images i {} GROUP BY i.import_source",
+                    where_sql
+                );
+
+                if let Ok(mut stmt) = dir_conn.prepare(&count_sql) {
+                    if let Ok(rows) = stmt.query_map([], |row| {
+                        Ok((row.get::<_, Option<String>>(0)?, row.get::<_, i64>(1)?))
+                    }) {
+                        for row in rows.flatten() {
+                            let key = row.0.unwrap_or_default();
+                            let entry = folders_map
+                                .entry(key.clone())
+                                .or_insert((0, None, None, None, *dir_id));
+                            entry.0 += row.1;
+                        }
+                    }
+                }
+
+                // Get representative thumbnail for each folder
+                for (key, entry) in folders_map.iter_mut() {
+                    if entry.1.is_some() {
+                        continue; // Already have thumbnail
+                    }
+
+                    let (source_filter, source_param): (String, Option<String>) = if key.is_empty()
+                    {
+                        ("i.import_source IS NULL".to_string(), None)
                     } else {
-                        stmt.query_row([], |row| {
-                            Ok((
-                                row.get::<_, i64>(0)?,
-                                row.get::<_, Option<i32>>(1)?,
-                                row.get::<_, Option<i32>>(2)?,
-                            ))
-                        })
+                        ("i.import_source = ?1".to_string(), Some(key.clone()))
                     };
-                    if let Ok(thumb) = thumb_result {
-                        entry.1 = Some(format!(
-                            "/api/images/{}/thumbnail?directory_id={}",
-                            thumb.0, *dir_id
-                        ));
-                        entry.2 = thumb.1;
-                        entry.3 = thumb.2;
+
+                    let thumb_sql = format!(
+                        "SELECT i.id, i.width, i.height, i.created_at FROM images i {} AND {} \
+                     ORDER BY COALESCE(i.file_modified_at, i.created_at) DESC LIMIT 1",
+                        where_sql, source_filter
+                    );
+
+                    if let Ok(mut stmt) = dir_conn.prepare(&thumb_sql) {
+                        let thumb_result = if let Some(ref param_val) = source_param {
+                            stmt.query_row(rusqlite::params![param_val], |row| {
+                                Ok((
+                                    row.get::<_, i64>(0)?,
+                                    row.get::<_, Option<i32>>(1)?,
+                                    row.get::<_, Option<i32>>(2)?,
+                                ))
+                            })
+                        } else {
+                            stmt.query_row([], |row| {
+                                Ok((
+                                    row.get::<_, i64>(0)?,
+                                    row.get::<_, Option<i32>>(1)?,
+                                    row.get::<_, Option<i32>>(2)?,
+                                ))
+                            })
+                        };
+                        if let Ok(thumb) = thumb_result {
+                            entry.1 = Some(format!(
+                                "/api/images/{}/thumbnail?directory_id={}",
+                                thumb.0, *dir_id
+                            ));
+                            entry.2 = thumb.1;
+                            entry.3 = thumb.2;
+                        }
                     }
                 }
             }
-        }
         } // end for lib in &target_libs
 
         // Build folder list (skip single-item folders)
@@ -504,7 +520,11 @@ pub async fn list_folders(
             .iter()
             .filter(|(_, data)| data.0 > 1)
             .map(|(key, data)| {
-                let path = if key.is_empty() { None } else { Some(key.as_str()) };
+                let path = if key.is_empty() {
+                    None
+                } else {
+                    Some(key.as_str())
+                };
                 let name = if key.is_empty() {
                     "Unfiled".to_string()
                 } else {
@@ -614,10 +634,25 @@ fn query_main_db_images(
     if let Some(ref timeframe) = params.timeframe {
         let now = chrono::Local::now();
         let start = match timeframe.as_str() {
-            "today" => now.date_naive().and_hms_opt(0, 0, 0).map(|dt| dt.to_string()),
-            "week" => Some((now - chrono::Duration::days(7)).format("%Y-%m-%d %H:%M:%S").to_string()),
-            "month" => Some((now - chrono::Duration::days(30)).format("%Y-%m-%d %H:%M:%S").to_string()),
-            "year" => Some((now - chrono::Duration::days(365)).format("%Y-%m-%d %H:%M:%S").to_string()),
+            "today" => now
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .map(|dt| dt.to_string()),
+            "week" => Some(
+                (now - chrono::Duration::days(7))
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+            ),
+            "month" => Some(
+                (now - chrono::Duration::days(30))
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+            ),
+            "year" => Some(
+                (now - chrono::Duration::days(365))
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+            ),
             _ => None,
         };
         if let Some(start_dt) = start {
@@ -725,26 +760,26 @@ fn query_main_db_images(
     let mut stmt = conn.prepare(&select_sql)?;
     let rows = stmt.query_map(param_refs.as_slice(), |row| {
         Ok((
-            row.get::<_, i64>(0)?,       // id
-            row.get::<_, String>(1)?,     // filename
-            row.get::<_, Option<String>>(2)?, // original_filename
-            row.get::<_, String>(3)?,     // file_hash
-            row.get::<_, Option<i32>>(4)?, // width
-            row.get::<_, Option<i32>>(5)?, // height
-            row.get::<_, Option<i64>>(6)?, // file_size
-            row.get::<_, Option<f64>>(7)?, // duration
-            row.get::<_, String>(8)?,     // rating
-            row.get::<_, bool>(9)?,       // is_favorite
+            row.get::<_, i64>(0)?,             // id
+            row.get::<_, String>(1)?,          // filename
+            row.get::<_, Option<String>>(2)?,  // original_filename
+            row.get::<_, String>(3)?,          // file_hash
+            row.get::<_, Option<i32>>(4)?,     // width
+            row.get::<_, Option<i32>>(5)?,     // height
+            row.get::<_, Option<i64>>(6)?,     // file_size
+            row.get::<_, Option<f64>>(7)?,     // duration
+            row.get::<_, String>(8)?,          // rating
+            row.get::<_, bool>(9)?,            // is_favorite
             row.get::<_, Option<String>>(10)?, // prompt
             row.get::<_, Option<String>>(11)?, // negative_prompt
             row.get::<_, Option<String>>(12)?, // model_name
             row.get::<_, Option<String>>(13)?, // sampler
             row.get::<_, Option<String>>(14)?, // seed
-            row.get::<_, Option<i32>>(15)?, // steps
-            row.get::<_, Option<f64>>(16)?, // cfg_scale
-            row.get::<_, Option<i32>>(17)?, // num_faces
-            row.get::<_, Option<i32>>(18)?, // min_detected_age
-            row.get::<_, Option<i32>>(19)?, // max_detected_age
+            row.get::<_, Option<i32>>(15)?,    // steps
+            row.get::<_, Option<f64>>(16)?,    // cfg_scale
+            row.get::<_, Option<i32>>(17)?,    // num_faces
+            row.get::<_, Option<i32>>(18)?,    // min_detected_age
+            row.get::<_, Option<i32>>(19)?,    // max_detected_age
             row.get::<_, Option<String>>(20)?, // created_at
             row.get::<_, Option<String>>(21)?, // import_source
         ))
@@ -813,10 +848,7 @@ fn query_main_db_images(
     let tags_by_image = get_legacy_tags_batch(conn, &image_ids)?;
 
     // Build directory name lookup for watch_directory_ids found in file_info
-    let dir_ids_needed: HashSet<i64> = file_info
-        .values()
-        .filter_map(|info| info.2)
-        .collect();
+    let dir_ids_needed: HashSet<i64> = file_info.values().filter_map(|info| info.2).collect();
     let dir_names = get_directory_names_batch(conn, &dir_ids_needed)?;
 
     let images: Vec<serde_json::Value> = image_rows
@@ -884,8 +916,10 @@ fn get_legacy_file_info_batch(
          FROM image_files WHERE image_id IN ({})",
         placeholders.join(",")
     );
-    let params: Vec<&dyn rusqlite::types::ToSql> =
-        image_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    let params: Vec<&dyn rusqlite::types::ToSql> = image_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params.as_slice(), |row| {
@@ -921,8 +955,10 @@ fn get_legacy_tags_batch(
         "SELECT image_id, tag_id FROM image_tags WHERE image_id IN ({})",
         placeholders.join(",")
     );
-    let params: Vec<&dyn rusqlite::types::ToSql> =
-        image_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    let params: Vec<&dyn rusqlite::types::ToSql> = image_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params.as_slice(), |row| {
@@ -948,8 +984,10 @@ fn get_legacy_tags_batch(
         "SELECT id, name, category FROM tags WHERE id IN ({})",
         placeholders.join(",")
     );
-    let params: Vec<&dyn rusqlite::types::ToSql> =
-        tag_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    let params: Vec<&dyn rusqlite::types::ToSql> = tag_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
 
     let mut stmt = conn.prepare(&sql)?;
     let tag_rows = stmt.query_map(params.as_slice(), |row| {
@@ -982,58 +1020,109 @@ fn get_legacy_tags_batch(
 fn sort_merged_images(images: &mut Vec<serde_json::Value>, sort: &str) {
     match sort {
         "newest" => images.sort_by(|a, b| {
-            let a_date = a["file_modified_at"].as_str().or(a["created_at"].as_str()).unwrap_or("");
-            let b_date = b["file_modified_at"].as_str().or(b["created_at"].as_str()).unwrap_or("");
-            b_date.cmp(a_date)
-                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+            let a_date = a["file_modified_at"]
+                .as_str()
+                .or(a["created_at"].as_str())
+                .unwrap_or("");
+            let b_date = b["file_modified_at"]
+                .as_str()
+                .or(b["created_at"].as_str())
+                .unwrap_or("");
+            b_date.cmp(a_date).then_with(|| {
+                b["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&a["id"].as_i64().unwrap_or(0))
+            })
         }),
         "oldest" => images.sort_by(|a, b| {
-            let a_date = a["file_modified_at"].as_str().or(a["created_at"].as_str()).unwrap_or("");
-            let b_date = b["file_modified_at"].as_str().or(b["created_at"].as_str()).unwrap_or("");
-            a_date.cmp(b_date)
-                .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+            let a_date = a["file_modified_at"]
+                .as_str()
+                .or(a["created_at"].as_str())
+                .unwrap_or("");
+            let b_date = b["file_modified_at"]
+                .as_str()
+                .or(b["created_at"].as_str())
+                .unwrap_or("");
+            a_date.cmp(b_date).then_with(|| {
+                a["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&b["id"].as_i64().unwrap_or(0))
+            })
         }),
         "filename_asc" => images.sort_by(|a, b| {
             let a_name = a["original_filename"].as_str().unwrap_or("").to_lowercase();
             let b_name = b["original_filename"].as_str().unwrap_or("").to_lowercase();
-            a_name.cmp(&b_name)
-                .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+            a_name.cmp(&b_name).then_with(|| {
+                a["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&b["id"].as_i64().unwrap_or(0))
+            })
         }),
         "filename_desc" => images.sort_by(|a, b| {
             let a_name = a["original_filename"].as_str().unwrap_or("").to_lowercase();
             let b_name = b["original_filename"].as_str().unwrap_or("").to_lowercase();
-            b_name.cmp(&a_name)
-                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+            b_name.cmp(&a_name).then_with(|| {
+                b["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&a["id"].as_i64().unwrap_or(0))
+            })
         }),
         "filesize_largest" => images.sort_by(|a, b| {
             let a_size = a["file_size"].as_i64().unwrap_or(0);
             let b_size = b["file_size"].as_i64().unwrap_or(0);
-            b_size.cmp(&a_size)
-                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+            b_size.cmp(&a_size).then_with(|| {
+                b["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&a["id"].as_i64().unwrap_or(0))
+            })
         }),
         "filesize_smallest" => images.sort_by(|a, b| {
             let a_size = a["file_size"].as_i64().unwrap_or(0);
             let b_size = b["file_size"].as_i64().unwrap_or(0);
-            a_size.cmp(&b_size)
-                .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+            a_size.cmp(&b_size).then_with(|| {
+                a["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&b["id"].as_i64().unwrap_or(0))
+            })
         }),
         "resolution_high" => images.sort_by(|a, b| {
             let a_res = a["width"].as_i64().unwrap_or(0) * a["height"].as_i64().unwrap_or(0);
             let b_res = b["width"].as_i64().unwrap_or(0) * b["height"].as_i64().unwrap_or(0);
-            b_res.cmp(&a_res)
-                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+            b_res.cmp(&a_res).then_with(|| {
+                b["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&a["id"].as_i64().unwrap_or(0))
+            })
         }),
         "resolution_low" => images.sort_by(|a, b| {
             let a_res = a["width"].as_i64().unwrap_or(0) * a["height"].as_i64().unwrap_or(0);
             let b_res = b["width"].as_i64().unwrap_or(0) * b["height"].as_i64().unwrap_or(0);
-            a_res.cmp(&b_res)
-                .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+            a_res.cmp(&b_res).then_with(|| {
+                a["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&b["id"].as_i64().unwrap_or(0))
+            })
         }),
         "duration_longest" => images.sort_by(|a, b| {
             let a_dur = a["duration"].as_f64().unwrap_or(0.0);
             let b_dur = b["duration"].as_f64().unwrap_or(0.0);
-            b_dur.partial_cmp(&a_dur).unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+            b_dur
+                .partial_cmp(&a_dur)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    b["id"]
+                        .as_i64()
+                        .unwrap_or(0)
+                        .cmp(&a["id"].as_i64().unwrap_or(0))
+                })
         }),
         "duration_shortest" => images.sort_by(|a, b| {
             let a_null = a["duration"].is_null();
@@ -1041,21 +1130,36 @@ fn sort_merged_images(images: &mut Vec<serde_json::Value>, sort: &str) {
             a_null.cmp(&b_null).then_with(|| {
                 let a_dur = a["duration"].as_f64().unwrap_or(0.0);
                 let b_dur = b["duration"].as_f64().unwrap_or(0.0);
-                a_dur.partial_cmp(&b_dur).unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+                a_dur
+                    .partial_cmp(&b_dur)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| {
+                        a["id"]
+                            .as_i64()
+                            .unwrap_or(0)
+                            .cmp(&b["id"].as_i64().unwrap_or(0))
+                    })
             })
         }),
         "folder_asc" => images.sort_by(|a, b| {
             let a_src = a["import_source"].as_str().unwrap_or("").to_lowercase();
             let b_src = b["import_source"].as_str().unwrap_or("").to_lowercase();
-            a_src.cmp(&b_src)
-                .then_with(|| a["id"].as_i64().unwrap_or(0).cmp(&b["id"].as_i64().unwrap_or(0)))
+            a_src.cmp(&b_src).then_with(|| {
+                a["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&b["id"].as_i64().unwrap_or(0))
+            })
         }),
         "folder_desc" => images.sort_by(|a, b| {
             let a_src = a["import_source"].as_str().unwrap_or("").to_lowercase();
             let b_src = b["import_source"].as_str().unwrap_or("").to_lowercase();
-            b_src.cmp(&a_src)
-                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+            b_src.cmp(&a_src).then_with(|| {
+                b["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&a["id"].as_i64().unwrap_or(0))
+            })
         }),
         "random" => {
             use rand::seq::SliceRandom;
@@ -1064,10 +1168,20 @@ fn sort_merged_images(images: &mut Vec<serde_json::Value>, sort: &str) {
         }
         // Default: newest
         _ => images.sort_by(|a, b| {
-            let a_date = a["file_modified_at"].as_str().or(a["created_at"].as_str()).unwrap_or("");
-            let b_date = b["file_modified_at"].as_str().or(b["created_at"].as_str()).unwrap_or("");
-            b_date.cmp(a_date)
-                .then_with(|| b["id"].as_i64().unwrap_or(0).cmp(&a["id"].as_i64().unwrap_or(0)))
+            let a_date = a["file_modified_at"]
+                .as_str()
+                .or(a["created_at"].as_str())
+                .unwrap_or("");
+            let b_date = b["file_modified_at"]
+                .as_str()
+                .or(b["created_at"].as_str())
+                .unwrap_or("");
+            b_date.cmp(a_date).then_with(|| {
+                b["id"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&a["id"].as_i64().unwrap_or(0))
+            })
         }),
     }
 }
@@ -1088,8 +1202,10 @@ fn get_directory_names_batch(
         "SELECT id, COALESCE(name, path) FROM watch_directories WHERE id IN ({})",
         placeholders.join(",")
     );
-    let params: Vec<&dyn rusqlite::types::ToSql> =
-        ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    let params: Vec<&dyn rusqlite::types::ToSql> = ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params.as_slice(), |row| {

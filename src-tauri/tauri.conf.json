@@ -7,7 +7,7 @@
     "frontendDist": "../frontend/dist",
     "devUrl": "http://localhost:5210",
     "beforeDevCommand": { "script": "npm run dev", "cwd": "../frontend" },
-    "beforeBuildCommand": { "script": "npm run build", "cwd": "../frontend" }
+    "beforeBuildCommand": { "script": "npm run build:frontend", "cwd": ".." }
   },
   "app": {
     "windows": [
@@ -51,7 +51,7 @@
     "publisher": "DonutsDelivery",
     "linux": {
       "appimage": {
-        "bundleMediaFramework": false,
+        "bundleMediaFramework": true,
         "files": {}
       },
       "deb": {
@@ -59,7 +59,10 @@
           "libc6",
           "libgtk-3-0",
           "libwebkit2gtk-4.1-0",
-          "libjavascriptcoregtk-4.1-0"
+          "libjavascriptcoregtk-4.1-0",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-plugins-bad"
         ],
         "recommends": [
           "ffmpeg"
@@ -71,7 +74,10 @@
       "rpm": {
         "depends": [
           "webkit2gtk4.1",
-          "gtk3"
+          "gtk3",
+          "gstreamer1-plugins-base",
+          "gstreamer1-plugins-good",
+          "gstreamer1-plugins-bad-free"
         ],
         "release": "1",
         "epoch": 0,

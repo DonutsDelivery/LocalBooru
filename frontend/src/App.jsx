@@ -4,21 +4,22 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { BrowserRouter, Routes, Route, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+
 import { isMobileApp, LOCAL_SERVER } from './serverManager'
 import MasonryGrid from './components/MasonryGrid'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
 import TitleBar from './components/TitleBar'
+import { createDirectFileItem } from './directFilePlayback'
 import ToastContainer, { toast } from './components/Toast'
 import ComfyUIConfigModal from './components/ComfyUIConfigModal'
 import NetworkSettings from './components/NetworkSettings'
 import ServerSettings from './components/ServerSettings'
 import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
-import OpticalFlowSettings from './components/OpticalFlowSettings'
-import WhisperSubtitleSettings from './components/WhisperSubtitleSettings'
-import CastSettings from './components/CastSettings'
+
 import AddonManager from './components/AddonManager'
+import AddonSettings from './components/AddonSettings'
 import TaskManager from './components/TaskManager'
 import QRConnect from './components/QRConnect'
 import ContinueWatching from './components/ContinueWatching'
@@ -28,6 +29,7 @@ import CollectionsPage from './pages/CollectionsPage'
 import CollectionDetailPage from './pages/CollectionDetailPage'
 import WatchPage from './pages/WatchPage'
 import { getColumnCount, tileWidths } from './utils/gridLayout'
+import { isUnexpectedEmptyPage, mergeFirstPage } from './utils/galleryState'
 import { useAllAddonStatuses } from './hooks/useAddonStatus'
 import './App.css'
 
@@ -94,12 +96,12 @@ function VideoPlaybackSettings() {
     })
   }, [])
 
-  const handleToggle = async (field, value) => {
+  const handleToggle = async (key, value) => {
     setSaving(true)
     try {
       const { updateVideoPlaybackConfig } = await import('./api')
-      const result = await updateVideoPlaybackConfig({ [field]: value })
-      setConfig(result)
+      const updated = await updateVideoPlaybackConfig({ [key]: value })
+      setConfig(updated)
     } catch (e) {
       console.error('Failed to save video playback config:', e)
     }
@@ -245,24 +247,6 @@ function SettingsPage() {
   const [queuePaused, setQueuePaused] = useState(false)
   const [stats, setStats] = useState(null)
   const [dumpsterPath, setDumpsterPath] = useState('')
-  const { isInstalled } = useAllAddonStatuses()
-  const [ageDetection, setAgeDetection] = useState({
-    enabled: false,
-    installed: false,
-    installing: false,
-    progress: '',
-    dependencies: {}
-  })
-
-  const refreshAgeDetectionStatus = async () => {
-    try {
-      const { getAgeDetectionStatus } = await import('./api')
-      const status = await getAgeDetectionStatus()
-      setAgeDetection(status)
-    } catch (e) {
-      console.error('Failed to get age detection status:', e)
-    }
-  }
 
   useEffect(() => {
     import('./api').then(({ getQueueStatus, getQueuePaused }) => {
@@ -270,7 +254,6 @@ function SettingsPage() {
       getQueuePaused().then(data => setQueuePaused(data.paused)).catch(console.error)
     })
     getLibraryStats().then(setStats).catch(console.error)
-    refreshAgeDetectionStatus()
     // Load saved dumpster path
     const saved = localStorage.getItem('localbooru_dumpster_path')
     if (saved) setDumpsterPath(saved)
@@ -290,13 +273,6 @@ function SettingsPage() {
     }
   }, [queueStatus?.by_status?.pending, queueStatus?.by_status?.processing])
 
-  // Poll for installation progress
-  useEffect(() => {
-    if (ageDetection.installing) {
-      const interval = setInterval(refreshAgeDetectionStatus, 2000)
-      return () => clearInterval(interval)
-    }
-  }, [ageDetection.installing])
 
   const handleDumpsterPathChange = (e) => {
     const path = e.target.value
@@ -346,9 +322,7 @@ function SettingsPage() {
             {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
             <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
               <VideoPlaybackSettings />
-              <OpticalFlowSettings />
-              {isInstalled('whisper-subtitles') && <WhisperSubtitleSettings />}
-              {isInstalled('cast') && <CastSettings />}
+
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'network' ? 'active' : ''}`}>
@@ -369,6 +343,10 @@ function SettingsPage() {
 
             <div className={`settings-tab-content ${activeTab === 'addons' ? 'active' : ''}`}>
               <AddonManager />
+            </div>
+
+            <div className={`settings-tab-content ${activeTab === 'addon-settings' ? 'active' : ''}`}>
+              <AddonSettings />
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'tasks' ? 'active' : ''}`}>
@@ -394,98 +372,6 @@ function SettingsPage() {
               </div>
             </section>
             <FamilyModeSettings />
-            {isInstalled('age-detector') && (
-            <section>
-              <h2>Age Detection (Optional)</h2>
-              <p className="setting-description">
-                Detect faces and estimate ages in images. Requires ~2GB of additional dependencies (PyTorch, etc).
-              </p>
-
-              <div className="age-detection-status">
-                <div className="deps-status">
-                  <strong>Dependencies:</strong>
-                  {Object.entries(ageDetection.dependencies || {}).filter(([dep]) => !dep.endsWith('_error')).map(([dep, installed]) => (
-                    <span key={dep} className={`dep-badge ${installed ? 'installed' : 'missing'}`}>
-                      {dep}: {installed ? '✓' : '✗'}
-                    </span>
-                  ))}
-                </div>
-                {ageDetection.dependencies?.torch_error && (
-                  <p className="error-message" style={{color: '#ff6b6b', marginTop: '8px', fontSize: '0.9em'}}>
-                    {ageDetection.dependencies.torch_error}
-                  </p>
-                )}
-
-                {!ageDetection.installed && !ageDetection.installing && (
-                  <button
-                    onClick={async () => {
-                      if (!confirm('Install age detection dependencies?\n\nThis will download ~2GB of data and may take several minutes.')) return
-                      try {
-                        const { installAgeDetection } = await import('./api')
-                        const result = await installAgeDetection()
-                        console.log('Install result:', result)
-                        if (!result.success) {
-                          toast.error(result.error || 'Failed to start installation')
-                        }
-                        refreshAgeDetectionStatus()
-                      } catch (e) {
-                        console.error('Install error:', e)
-                        toast.error('Failed to start installation: ' + e.message)
-                      }
-                    }}
-                    className="install-btn"
-                  >
-                    Install Dependencies (~2GB)
-                  </button>
-                )}
-
-                {ageDetection.installing && (
-                  <div className="install-progress">
-                    <span className="spinner"></span>
-                    <span>{ageDetection.progress || 'Installing...'}</span>
-                  </div>
-                )}
-
-                {ageDetection.installed && (
-                  <div className="toggle-setting">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={ageDetection.enabled}
-                        onChange={async (e) => {
-                          const newValue = e.target.checked
-                          const { toggleAgeDetection } = await import('./api')
-                          const result = await toggleAgeDetection(newValue)
-                          if (result.success) {
-                            setAgeDetection(prev => ({ ...prev, enabled: newValue }))
-                          } else {
-                            toast.error(result.error || 'Failed to toggle')
-                          }
-                        }}
-                      />
-                      Enable age detection on new images
-                    </label>
-                    {ageDetection.enabled && (
-                      <button
-                        onClick={async () => {
-                          try {
-                            const { detectAgesRetrospective } = await import('./api')
-                            const result = await detectAgesRetrospective()
-                            toast.success(result.message || `Queued ${result.queued} images for age detection`)
-                          } catch (e) {
-                            toast.error('Failed: ' + e.message)
-                          }
-                        }}
-                        style={{ marginLeft: '1rem' }}
-                      >
-                        Run on existing images
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </section>
-            )}
 
             <section>
               <h2>Dumpster Location</h2>
@@ -543,19 +429,15 @@ function SettingsPage() {
               </section>
             )}
 
-            {(window.electronAPI?.isElectron || window.__TAURI_INTERNALS__) && (
+            {window.__TAURI_INTERNALS__ && (
               <section>
                 <h2>Application</h2>
-                {window.__TAURI_INTERNALS__ && <AutostartToggle />}
+                <AutostartToggle />
                 <button onClick={async () => {
                   if (!confirm('Quit LocalBooru completely?\n\nThis will stop the background server and close the application.')) return
-                  if (window.electronAPI?.quitApp) {
-                    window.electronAPI.quitApp()
-                  } else if (window.__TAURI_INTERNALS__) {
-                    const { getDesktopAPI } = await import('./tauriAPI')
-                    const api = getDesktopAPI()
-                    if (api?.quitApp) api.quitApp()
-                  }
+                  const { getDesktopAPI } = await import('./tauriAPI')
+                  const api = getDesktopAPI()
+                  if (api?.quitApp) api.quitApp()
                 }} className="danger-btn">
                   Quit Application
                 </button>
@@ -569,6 +451,95 @@ function SettingsPage() {
   )
 }
 
+let startupMediaRequestPromise = null
+
+function readStartupMediaRequest() {
+  if (!startupMediaRequestPromise) {
+    startupMediaRequestPromise = import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke('take_startup_media_file'))
+  }
+  return startupMediaRequestPromise
+}
+
+function DirectFilePlayer() {
+  const [item, setItem] = useState(null)
+
+  useEffect(() => {
+    const token = item?.direct_file_token
+    if (!token) return undefined
+    return () => {
+      import('@tauri-apps/api/core')
+        .then(({ invoke }) => invoke('release_direct_media_file', { token }))
+        .catch(() => {})
+    }
+  }, [item?.direct_file_token])
+
+  const openRequest = useCallback((request) => {
+    setItem(createDirectFileItem({
+      ...request,
+      url: request.url,
+    }))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    let unlistenOpenRequest
+    const openPicker = async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const request = await invoke('pick_direct_media_file')
+        if (!cancelled && request) openRequest(request)
+      } catch (error) {
+        console.error('Failed to open direct media file:', error)
+        toast.error(`Could not open media: ${error}`)
+      }
+    }
+    const handleOpenFile = () => { openPicker() }
+    const handleKeyDown = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'o') {
+        event.preventDefault()
+        openPicker()
+      }
+    }
+    window.addEventListener('localbooru-open-file', handleOpenFile)
+    window.addEventListener('keydown', handleKeyDown)
+    import('@tauri-apps/api/event')
+      .then(({ listen }) => listen('direct-file-open-requested', (event) => {
+        if (!cancelled && event.payload) openRequest(event.payload)
+      }))
+      .then((unlisten) => {
+        if (cancelled) unlisten()
+        else unlistenOpenRequest = unlisten
+      })
+      .catch((error) => console.error('Failed to listen for direct media files:', error))
+    readStartupMediaRequest()
+      .then((request) => {
+        if (!cancelled && request) openRequest(request)
+      })
+      .catch((error) => console.error('Failed to read startup media file:', error))
+    return () => {
+      cancelled = true
+      unlistenOpenRequest?.()
+      window.removeEventListener('localbooru-open-file', handleOpenFile)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [openRequest])
+
+  if (!item) return null
+  return <Lightbox
+    images={[item]}
+    currentIndex={0}
+    total={1}
+    onClose={() => setItem(null)}
+    onNav={() => {}}
+    onTagClick={() => {}}
+    onImageUpdate={() => {}}
+    onSidebarHover={() => {}}
+    sidebarOpen={false}
+    onDelete={() => setItem(null)}
+  />
+}
+
 function Gallery() {
   const { isInstalled: isAddonInstalled } = useAllAddonStatuses()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -580,16 +551,28 @@ function Gallery() {
   const [total, setTotal] = useState(0)
   const [filtersInitialized, setFiltersInitialized] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
+
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
   const [stats, setStats] = useState(null)
   const statsUpdateTimeout = useRef(null)
   const lightboxIndexRef = useRef(null)
+  const loadingMoreRef = useRef(false)
+  const pageRef = useRef(page)
+  const imagesRef = useRef(images)
 
   // Keep ref in sync with state (for use in timeouts)
   useEffect(() => {
     lightboxIndexRef.current = lightboxIndex
   }, [lightboxIndex])
+
+  useEffect(() => {
+    pageRef.current = page
+  }, [page])
+
+  useEffect(() => {
+    imagesRef.current = images
+  }, [images])
 
   // Handle browser back button for lightbox (works on mobile and desktop)
   useEffect(() => {
@@ -799,9 +782,10 @@ function Gallery() {
     // If folder grouping is active and no specific folder selected, load folders instead
     if (groupByFolders && !currentFolder) {
       if (pageNum === 1 && !append) {
-        return loadFolders()
+        await loadFolders()
+        return true
       }
-      return
+      return true
     }
 
     setLoading(true)
@@ -827,6 +811,18 @@ function Gallery() {
         per_page: calculatePerPage(tileSize)
       })
 
+      // A transiently unhealthy backend can return an empty middle page while
+      // still reporting more rows. Do not advance past that gap permanently;
+      // the infinite-scroll recovery path will request the same page again.
+      if (isUnexpectedEmptyPage({
+        append,
+        pageLength: result.images.length,
+        total: result.total,
+        loaded: imagesRef.current.length
+      })) {
+        throw new Error(`Empty page ${pageNum} while ${result.total - imagesRef.current.length} images remain`)
+      }
+
       if (append) {
         // Deduplicate when appending to avoid showing same image twice
         setImages(prev => {
@@ -840,10 +836,13 @@ function Gallery() {
       setTotal(result.total)
       // Note: hasMore is computed by useEffect based on actual images.length
       setPage(pageNum)
+      return true
     } catch (error) {
       console.error('Failed to load images:', error)
+      return false
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders])
 
   // Update a single image in the images array
@@ -898,30 +897,76 @@ function Gallery() {
     getLibraryStats().then(setStats).catch(console.error)
   }, [])
 
-  // Subscribe to real-time library events (debounced refresh)
-  // Waits 2s after last event, then refreshes once
-  // Only refreshes images when: sorted by newest, scrolled to top, and not in lightbox
-  const triggerDebouncedRefresh = useCallback(() => {
-    if (statsUpdateTimeout.current) {
-      clearTimeout(statsUpdateTimeout.current)
+  const refreshNewImages = useCallback(async () => {
+    // Folder summary cards have their own aggregation and should not be replaced
+    // while the user is browsing them.
+    if (groupByFolders && !currentFolder) return true
+
+    const preserveAnchor = window.scrollY >= 200 || lightboxIndexRef.current !== null
+    const anchor = preserveAnchor
+      ? Array.from(document.querySelectorAll('[data-image-id]'))
+          .map(element => ({ element, rect: element.getBoundingClientRect() }))
+          .filter(({ rect }) => rect.bottom > 0)
+          .sort((a, b) => a.rect.top - b.rect.top)[0]
+      : null
+
+    try {
+      const result = await fetchImages({
+        tags: currentTags,
+        rating: currentRating,
+        favorites_only: favoritesOnly,
+        directory_id: currentDirectoryId,
+        library_id: currentLibraryId,
+        min_age: currentMinAge,
+        max_age: currentMaxAge,
+        timeframe: currentTimeframe,
+        filename: currentFilename,
+        min_width: currentResolution?.width,
+        min_height: currentResolution?.height,
+        orientation: currentOrientation,
+        min_duration: currentDuration?.min,
+        max_duration: currentDuration?.max,
+        import_source: currentFolder,
+        sort: currentSort,
+        page: 1,
+        per_page: calculatePerPage(tileSize)
+      })
+
+      if (currentSort !== 'random') {
+        setImages(previous => mergeFirstPage(previous, result.images))
+      }
+      setTotal(result.total)
+
+      if (anchor) {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (!anchor.element.isConnected) return
+          const nextTop = anchor.element.getBoundingClientRect().top
+          window.scrollBy(0, nextTop - anchor.rect.top)
+        }))
+      }
+      return true
+    } catch (error) {
+      console.error('Failed to refresh newly indexed images:', error)
+      return false
     }
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders])
+
+  // Subscribe to real-time library events (debounced incremental refresh).
+  // Existing items, scroll position, selection, and lightbox identity stay intact.
+  const triggerDebouncedRefresh = useCallback(() => {
+    // Throttle rather than trailing-debounce: a long startup scan may emit
+    // continuously for minutes, and resetting the timer on every image would
+    // hide all new media until the scan completely finished.
+    if (statsUpdateTimeout.current) return
     statsUpdateTimeout.current = setTimeout(() => {
+      statsUpdateTimeout.current = null
       // Always update stats
       getLibraryStats().then(setStats).catch(console.error)
+      refreshNewImages()
+    }, 750)
+  }, [refreshNewImages])
 
-      // Only refresh images if sorted by newest, scrolled near top, and not in lightbox
-      // Use ref for lightbox check since timeout captures stale closure values
-      const isAtTop = window.scrollY < 200
-      const isNewest = currentSort === 'newest'
-      const isInLightbox = lightboxIndexRef.current !== null
-
-      if (isNewest && isAtTop && !isInLightbox) {
-        loadImages(1, false)
-      }
-    }, 2000)
-  }, [loadImages, currentSort])
-
-  // On visibility change, start debounce - backlog events will keep resetting it
+  // Catch up immediately after the app returns to the foreground.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -947,11 +992,15 @@ function Gallery() {
     }
   }, [triggerDebouncedRefresh])
 
-  const handleLoadMore = () => {
-    if (!loading && hasMore) {
-      loadImages(page + 1, true)
+  const handleLoadMore = useCallback(async () => {
+    if (loading || !hasMore || loadingMoreRef.current) return true
+    loadingMoreRef.current = true
+    try {
+      return await loadImages(pageRef.current + 1, true)
+    } finally {
+      loadingMoreRef.current = false
     }
-  }
+  }, [loading, hasMore, loadImages])
 
   // Jump to a specific image number in the results
   const jumpToImage = useCallback(async (targetIndex) => {
@@ -1112,7 +1161,10 @@ function Gallery() {
     // Keep sidebar visible to show image details
   }
 
+
   const handleLightboxClose = useCallback(() => {
+    // Reset load-more guard in case it was left set by an aborted fetch
+    loadingMoreRef.current = false
     // Scroll to the image that was being viewed
     const imageId = lightboxIndex
 
@@ -1141,9 +1193,10 @@ function Gallery() {
     let newIndex = currentIdx + direction
 
     // Navigating past the end - load more if available
-    if (newIndex >= images.length && hasMore && !loading) {
-      // Load more images
-      const nextPage = page + 1
+    // Use ref to prevent concurrent load-more (stale closure on images/page)
+    if (newIndex >= images.length && hasMore && !loading && !loadingMoreRef.current) {
+      loadingMoreRef.current = true
+      const nextPage = pageRef.current + 1
       try {
         const result = await fetchImages({
           tags: currentTags,
@@ -1167,23 +1220,31 @@ function Gallery() {
         })
 
         if (result.images.length > 0) {
-          // Deduplicate to avoid showing same image twice
-          const existingIds = new Set(images.map(img => img.id))
-          const newImages = result.images.filter(img => !existingIds.has(img.id))
-
-          if (newImages.length > 0) {
-            setImages(prev => [...prev, ...newImages])
-            setTotal(result.total)  // Update total in case it changed
-            // Note: hasMore is computed by useEffect based on actual images.length
+          // Deduplicate using functional updater to avoid stale closure on images
+          let navigated = false
+          setImages(prev => {
+            const existingIds = new Set(prev.map(img => img.id))
+            const newImages = result.images.filter(img => !existingIds.has(img.id))
+            if (newImages.length > 0) {
+              navigated = true
+              setLightboxIndex(newImages[0].id)
+              return [...prev, ...newImages]
+            }
+            return prev
+          })
+          if (navigated) {
+            setTotal(result.total)
             setPage(nextPage)
-            // Navigate to the first new image
-            setLightboxIndex(newImages[0].id)
+            loadingMoreRef.current = false
             return
           }
         }
+        // Nothing new loaded — advance page anyway so next attempt tries further
+        setPage(nextPage)
       } catch (error) {
         console.error('Failed to load more images:', error)
       }
+      loadingMoreRef.current = false
     }
 
     // Stay at boundaries - don't wrap
@@ -1651,7 +1712,7 @@ function Gallery() {
   )
 }
 
-function App() {
+function AppShell() {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
   const [backendReady, setBackendReady] = useState(!isTauri)
   const [mobileReady, setMobileReady] = useState(false)
@@ -1828,7 +1889,10 @@ function App() {
 
   return (
     <>
-      <TitleBar onSwitchServer={handleDisconnect} />
+      <TitleBar
+        onSwitchServer={handleDisconnect}
+        onOpenFile={() => window.dispatchEvent(new CustomEvent('localbooru-open-file'))}
+      />
       <ToastContainer />
       <BrowserRouter>
         <BackButtonHandler />
@@ -1867,6 +1931,13 @@ function BackButtonHandler() {
   }, [navigate, location.pathname])
 
   return null
+}
+
+function App() {
+  return <>
+    <DirectFilePlayer />
+    <AppShell />
+  </>
 }
 
 export default App

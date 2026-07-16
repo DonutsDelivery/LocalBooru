@@ -14,6 +14,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 use super::manifest::{get_addon_manifest, get_addon_registry};
 use super::sidecar;
+use crate::routes::settings::get_config_section;
 
 /// Runtime state for a single addon, including its process handle when running.
 struct AddonState {
@@ -110,6 +111,68 @@ impl AddonManager {
         self.addon_dir(id).join("venv")
     }
 
+    fn dependency_list(
+        &self,
+        id: &str,
+        manifest: &super::manifest::AddonManifest,
+    ) -> Vec<&'static str> {
+        let mut deps = vec!["uvicorn[standard]", "fastapi"];
+        deps.extend_from_slice(manifest.python_deps);
+        if id == "auto-tagger" && (cfg!(target_os = "linux") || cfg!(target_os = "windows")) {
+            deps.retain(|dependency| *dependency != "onnxruntime");
+            deps.push("onnxruntime-gpu");
+        }
+        deps
+    }
+
+    fn sidecar_env(&self, id: &str) -> Vec<(String, String)> {
+        let mut envs = vec![(
+            "LOCALBOORU_DATA_DIR".into(),
+            self.data_dir.to_string_lossy().into_owned(),
+        )];
+        if id != "auto-tagger" {
+            return envs;
+        }
+
+        let config = get_config_section(&self.data_dir, "auto_tagger");
+        let model = config
+            .get("model")
+            .and_then(|value| value.as_str())
+            .unwrap_or("vit-v3");
+        let device = config
+            .get("device")
+            .and_then(|value| value.as_str())
+            .unwrap_or("auto");
+        let general_threshold = config
+            .get("general_threshold")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(0.35);
+        let character_threshold = config
+            .get("character_threshold")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(0.75);
+
+        envs.extend([
+            (
+                "TAGGER_MODEL_DIR".into(),
+                self.data_dir
+                    .join("models")
+                    .join("tagger")
+                    .join(model)
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            ("TAGGER_MODEL".into(), model.into()),
+            ("TAGGER_REQUESTED_DEVICE".into(), device.into()),
+            ("TAGGER_THRESHOLD".into(), general_threshold.to_string()),
+            (
+                "TAGGER_CHARACTER_THRESHOLD".into(),
+                character_threshold.to_string(),
+            ),
+        ]);
+        envs
+    }
+
     /// Path to the persisted state file for an addon: `{addon_dir}/state.json`.
     fn state_file_path(&self, id: &str) -> PathBuf {
         self.addon_dir(id).join("state.json")
@@ -124,14 +187,16 @@ impl AddonManager {
                 if let Err(e) = std::fs::write(&path, json) {
                     log::warn!(
                         "[AddonManager] Failed to write state file for '{}': {}",
-                        id, e
+                        id,
+                        e
                     );
                 }
             }
             Err(e) => {
                 log::warn!(
                     "[AddonManager] Failed to serialize state for '{}': {}",
-                    id, e
+                    id,
+                    e
                 );
             }
         }
@@ -169,10 +234,7 @@ impl AddonManager {
                         log::info!("[AddonManager] Successfully resumed addon '{}'", id);
                     }
                     Err(e) => {
-                        log::error!(
-                            "[AddonManager] Failed to resume addon '{}': {}",
-                            id, e
-                        );
+                        log::error!("[AddonManager] Failed to resume addon '{}': {}", id, e);
                     }
                 }
             }
@@ -243,8 +305,7 @@ impl AddonManager {
     /// This is a blocking operation (venv creation + pip install) and should be called
     /// from a context where blocking is acceptable (e.g. `tokio::task::spawn_blocking`).
     pub fn install_addon(&self, id: &str) -> Result<(), String> {
-        let manifest =
-            get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
 
         let addon_dir = self.addon_dir(id);
         let venv_dir = self.venv_dir(id);
@@ -255,8 +316,8 @@ impl AddonManager {
         }
 
         // Find a usable Python interpreter
-        let python = sidecar::find_python()
-            .ok_or_else(|| "Could not find Python 3 on PATH".to_string())?;
+        let python =
+            sidecar::find_python().ok_or_else(|| "Could not find Python 3 on PATH".to_string())?;
 
         // Ensure addon directory exists
         std::fs::create_dir_all(&addon_dir)
@@ -265,9 +326,9 @@ impl AddonManager {
         // Create virtual environment
         sidecar::create_venv(&python, &venv_dir)?;
 
-        // Install uvicorn (always needed) plus addon-specific dependencies
-        let mut deps: Vec<&str> = vec!["uvicorn[standard]", "fastapi"];
-        deps.extend_from_slice(manifest.python_deps);
+        // Install uvicorn plus add-on dependencies. CUDA-capable platforms use
+        // the ONNX GPU wheel, which retains a CPU execution-provider fallback.
+        let deps = self.dependency_list(id, manifest);
         sidecar::install_deps(&venv_dir, &deps)?;
 
         // Deploy embedded app.py if available
@@ -284,12 +345,28 @@ impl AddonManager {
         Ok(())
     }
 
+    /// Reinstall an existing addon's dependencies and redeploy its embedded source.
+    pub fn repair_addon(&self, id: &str) -> Result<(), String> {
+        let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        let venv_dir = self.venv_dir(id);
+        if !venv_dir.exists() {
+            return self.install_addon(id);
+        }
+        let deps = self.dependency_list(id, manifest);
+        sidecar::install_deps(&venv_dir, &deps)?;
+        if let Some(source) = super::sources::get_addon_source(id) {
+            std::fs::write(self.addon_dir(id).join("app.py"), source)
+                .map_err(|error| format!("Failed to deploy addon source: {}", error))?;
+        }
+        self.set_status(id, AddonStatus::Installed);
+        Ok(())
+    }
+
     /// Uninstall an addon by removing its entire directory from disk.
     ///
     /// If the addon is currently running, it will be stopped first.
     pub fn uninstall_addon(&self, id: &str) -> Result<(), String> {
-        let _ = get_addon_manifest(id)
-            .ok_or_else(|| format!("Unknown addon: {}", id))?;
+        let _ = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
 
         // Stop if running
         let current_status = self.get_addon_status(id);
@@ -325,8 +402,7 @@ impl AddonManager {
     /// The addon must be installed. The process is spawned asynchronously
     /// and health-checked before marking it as running.
     pub async fn start_addon(&self, id: &str) -> Result<(), String> {
-        let manifest =
-            get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
 
         let current = self.get_addon_status(id);
         if current == AddonStatus::Running {
@@ -342,6 +418,7 @@ impl AddonManager {
         let python = sidecar::get_venv_python(&venv_dir);
         let app_dir = self.addon_dir(id);
         let port = manifest.port;
+        let sidecar_env = self.sidecar_env(id);
 
         // Always deploy the latest embedded app.py before starting.
         // This ensures addons installed before their app.py existed get
@@ -358,7 +435,7 @@ impl AddonManager {
         }
 
         // Spawn the sidecar
-        let child = match sidecar::spawn_sidecar(&python, &app_dir, port).await {
+        let child = match sidecar::spawn_sidecar(&python, &app_dir, port, &sidecar_env).await {
             Ok(c) => c,
             Err(e) => {
                 self.set_status(id, AddonStatus::Error(e.clone()));
@@ -402,8 +479,7 @@ impl AddonManager {
 
     /// Stop a running addon by killing its sidecar process.
     pub async fn stop_addon(&self, id: &str) -> Result<(), String> {
-        let _ = get_addon_manifest(id)
-            .ok_or_else(|| format!("Unknown addon: {}", id))?;
+        let _ = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
 
         let process = {
             let mut state = self

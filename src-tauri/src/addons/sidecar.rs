@@ -51,7 +51,11 @@ pub fn find_python() -> Option<PathBuf> {
 
 /// Resolve an executable name to its full path using `which` (Unix) or `where` (Windows).
 fn resolve_executable(name: &str) -> Option<PathBuf> {
-    let cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    let cmd = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
 
     Command::new(cmd)
         .arg(name)
@@ -96,7 +100,10 @@ pub fn create_venv(python: &Path, venv_dir: &Path) -> Result<(), String> {
         return Err(format!("venv creation failed: {}", stderr.trim()));
     }
 
-    log::info!("[Addon] venv created successfully at {}", venv_dir.display());
+    log::info!(
+        "[Addon] venv created successfully at {}",
+        venv_dir.display()
+    );
     Ok(())
 }
 
@@ -111,11 +118,7 @@ pub fn install_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
     }
 
     let pip = get_venv_pip(venv_dir);
-    log::info!(
-        "[Addon] Installing deps via {}: {:?}",
-        pip.display(),
-        deps
-    );
+    log::info!("[Addon] Installing deps via {}: {:?}", pip.display(), deps);
 
     let mut args = vec!["install", "--upgrade"];
     args.extend(deps.iter().copied());
@@ -166,6 +169,7 @@ pub async fn spawn_sidecar(
     python: &Path,
     app_dir: &Path,
     port: u16,
+    envs: &[(String, String)],
 ) -> Result<tokio::process::Child, String> {
     log::info!(
         "[Addon] Spawning sidecar: {} -m uvicorn app:app --port {} (cwd: {})",
@@ -188,6 +192,10 @@ pub async fn spawn_sidecar(
     .stdout(std::process::Stdio::piped())
     .stderr(std::process::Stdio::piped())
     .env("PYTHONUNBUFFERED", "1");
+
+    for (key, value) in envs {
+        cmd.env(key, value);
+    }
 
     // Unix: create a new process group for clean shutdown
     #[cfg(unix)]
@@ -263,9 +271,7 @@ pub fn kill_process(pid: u32) {
             .args(["-9", &format!("-{}", pid)])
             .output();
         // Also kill the specific PID in case it was not in a group
-        let _ = Command::new("kill")
-            .args(["-9", &pid.to_string()])
-            .output();
+        let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
     }
 
     #[cfg(target_os = "windows")]

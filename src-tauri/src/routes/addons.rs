@@ -14,6 +14,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_addons))
         .route("/{addon_id}", get(get_addon))
         .route("/{addon_id}/install", post(install_addon))
+        .route("/{addon_id}/update", post(repair_addon))
         .route("/{addon_id}/uninstall", post(uninstall_addon))
         .route("/{addon_id}/start", post(start_addon))
         .route("/{addon_id}/stop", post(stop_addon))
@@ -24,9 +25,7 @@ pub fn router() -> Router<AppState> {
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// GET /api/addons — List all addons with their current status.
-async fn list_addons(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, AppError> {
+async fn list_addons(State(state): State<AppState>) -> Result<Json<serde_json::Value>, AppError> {
     let addons = state.addon_manager().list_addons();
     Ok(Json(json!({ "addons": addons })))
 }
@@ -73,6 +72,24 @@ async fn install_addon(
     })))
 }
 
+/// POST /api/addons/{addon_id}/update — Repair an add-on after dependency changes.
+async fn repair_addon(
+    State(state): State<AppState>,
+    AxumPath(addon_id): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let state_clone = state.clone();
+    let id = addon_id.clone();
+    tokio::task::spawn_blocking(move || {
+        state_clone
+            .addon_manager()
+            .repair_addon(&id)
+            .map_err(|e| AppError::Internal(format!("Failed to repair addon '{}': {}", id, e)))
+    })
+    .await??;
+
+    Ok(Json(json!({ "status": "updated", "addon_id": addon_id })))
+}
+
 /// POST /api/addons/{addon_id}/uninstall — Remove an addon.
 ///
 /// Stops the addon first if running, then removes its directory.
@@ -91,9 +108,7 @@ async fn uninstall_addon(
         state_clone
             .addon_manager()
             .uninstall_addon(&id)
-            .map_err(|e| {
-                AppError::Internal(format!("Failed to uninstall addon '{}': {}", id, e))
-            })
+            .map_err(|e| AppError::Internal(format!("Failed to uninstall addon '{}': {}", id, e)))
     })
     .await??;
 

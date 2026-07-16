@@ -12,15 +12,29 @@ Detection cascade:
 Endpoints:
   GET  /health  → health check + backend availability
   POST /detect  → detect faces and estimate ages in an image
+                  ({"file_path": ...} local, or {"url": ...} remote download)
+
+Remote deployment (DonutBooru auto-moderation):
+  The Tauri app spawns this addon bound to 127.0.0.1, which a remote server
+  cannot reach. To serve DonutBooru's VPS over Tailscale, run it standalone,
+  bound to all interfaces, instead:
+
+      python -m uvicorn app:app --host 0.0.0.0 --port 18002
+
+  (see run_standalone.sh). Optionally set AGE_SCAN_SECRET to require the
+  X-Scan-Secret header. Tailscale is the trust boundary; do not expose publicly.
 """
 
 import logging
 import os
+import secrets
+import tempfile
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
@@ -307,6 +321,29 @@ def detect_ages(image_path: str) -> dict:
     }
 
 
+# ─── Remote image fetch (for URL-based detection) ──────────────────────────────
+
+MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 MB safety cap
+
+
+def _download_to_temp(url: str) -> str:
+    """Download a public image URL to a size-capped temp file. Caller deletes it."""
+    request = urllib.request.Request(url, headers={"User-Agent": "age-detector/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as resp:
+            data = resp.read(MAX_DOWNLOAD_BYTES + 1)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch image: {e}")
+    if len(data) > MAX_DOWNLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Image exceeds size cap")
+    if not data:
+        raise HTTPException(status_code=502, detail="Empty image response")
+    fd, tmp_path = tempfile.mkstemp(suffix=".img")
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    return tmp_path
+
+
 # ─── FastAPI app ──────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Age Detector Sidecar")
@@ -329,11 +366,43 @@ async def health():
 
 
 class DetectRequest(BaseModel):
-    file_path: str
+    file_path: Optional[str] = None
+    url: Optional[str] = None
 
 
 @app.post("/detect")
-async def detect(req: DetectRequest):
+async def detect(req: DetectRequest, x_scan_secret: Optional[str] = Header(default=None)):
+    # Optional shared secret (defense-in-depth atop Tailscale). Enforced only if set.
+    expected_secret = os.environ.get("AGE_SCAN_SECRET")
+    if expected_secret and not (x_scan_secret and secrets.compare_digest(x_scan_secret, expected_secret)):
+        raise HTTPException(status_code=401, detail="Invalid scan secret")
+
+    # Remote mode: fetch a public image URL. Used by DonutBooru over Tailscale,
+    # since the calling server cannot see this machine's local files.
+    if req.url:
+        tmp_path = None
+        try:
+            tmp_path = _download_to_temp(req.url)
+            return detect_ages(tmp_path)
+        except HTTPException:
+            raise
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+        except Exception as e:
+            logger.error(f"Detection failed for url {req.url}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    # Local mode (original localbooru behavior): detect from a local file path.
+    if not req.file_path:
+        raise HTTPException(status_code=422, detail="file_path or url required")
     if not os.path.exists(req.file_path):
         raise HTTPException(status_code=404, detail="Image file not found")
 

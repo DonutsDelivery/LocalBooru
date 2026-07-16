@@ -22,7 +22,10 @@ pub fn router() -> Router<AppState> {
                 .patch(update_collection)
                 .delete(delete_collection),
         )
-        .route("/{collection_id}/items", post(add_items).delete(remove_items))
+        .route(
+            "/{collection_id}/items",
+            post(add_items).delete(remove_items),
+        )
         .route("/{collection_id}/items/reorder", patch(reorder_items))
 }
 
@@ -63,8 +66,8 @@ async fn list_collections(State(state): State<AppState>) -> Result<Json<Value>, 
         let collections: Vec<Value> = stmt
             .query_map([], |row| {
                 let cover_image_id: Option<i64> = row.get(3)?;
-                let cover_thumbnail_url = cover_image_id
-                    .map(|id| format!("/api/images/{}/thumbnail", id));
+                let cover_thumbnail_url =
+                    cover_image_id.map(|id| format!("/api/images/{}/thumbnail", id));
                 Ok(json!({
                     "id": row.get::<_, i64>(0)?,
                     "name": row.get::<_, String>(1)?,

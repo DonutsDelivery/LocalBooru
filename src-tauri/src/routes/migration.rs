@@ -156,9 +156,7 @@ pub fn router() -> Router<AppState> {
 /// GET /settings/migration - Return current migration status.
 ///
 /// Returns the current storage mode, migration status, and progress (if running).
-async fn get_migration_status(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
+async fn get_migration_status(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let migration = state.migration_state().read().await;
 
     // Determine current storage mode by checking if per-directory DBs exist
@@ -196,16 +194,13 @@ async fn get_migration_status(
 /// GET /settings/migration/directories - List watch directories with image counts and sizes.
 ///
 /// Returns per-directory info useful for selective migration planning.
-async fn get_migration_directories(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
+async fn get_migration_directories(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let state_clone = state.clone();
     let result = tokio::task::spawn_blocking(move || {
         let main_conn = state_clone.main_db().get()?;
 
-        let mut stmt = main_conn.prepare(
-            "SELECT id, path, name FROM watch_directories ORDER BY id",
-        )?;
+        let mut stmt =
+            main_conn.prepare("SELECT id, path, name FROM watch_directories ORDER BY id")?;
 
         let directories: Vec<Value> = stmt
             .query_map([], |row| {
@@ -222,26 +217,25 @@ async fn get_migration_directories(
                 });
 
                 // Query the per-directory database for image count and total file size
-                let (image_count, total_size) =
-                    if let Ok(dir_pool) = state_clone.directory_db().get_pool(dir_id) {
-                        if let Ok(dir_conn) = dir_pool.get() {
-                            let count: i64 = dir_conn
-                                .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
-                                .unwrap_or(0);
-                            let size: i64 = dir_conn
-                                .query_row(
-                                    "SELECT COALESCE(SUM(file_size), 0) FROM images",
-                                    [],
-                                    |r| r.get(0),
-                                )
-                                .unwrap_or(0);
-                            (count, size)
-                        } else {
-                            (0, 0)
-                        }
+                let (image_count, total_size) = if let Ok(dir_pool) =
+                    state_clone.directory_db().get_pool(dir_id)
+                {
+                    if let Ok(dir_conn) = dir_pool.get() {
+                        let count: i64 = dir_conn
+                            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+                            .unwrap_or(0);
+                        let size: i64 = dir_conn
+                            .query_row("SELECT COALESCE(SUM(file_size), 0) FROM images", [], |r| {
+                                r.get(0)
+                            })
+                            .unwrap_or(0);
+                        (count, size)
                     } else {
                         (0, 0)
-                    };
+                    }
+                } else {
+                    (0, 0)
+                };
 
                 let path_exists = Path::new(&path).exists();
                 let db_exists = state_clone.directory_db().db_exists(dir_id);
@@ -309,7 +303,8 @@ async fn validate_migration(
         } else {
             // Full mode: get all directory IDs
             let mut stmt = main_conn.prepare("SELECT id FROM watch_directories")?;
-            let ids: Vec<i64> = stmt.query_map([], |row| row.get(0))?
+            let ids: Vec<i64> = stmt
+                .query_map([], |row| row.get(0))?
                 .filter_map(|r| r.ok())
                 .collect();
             ids
@@ -367,21 +362,18 @@ async fn validate_migration(
                             .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
                             .unwrap_or(0);
                         let size: i64 = conn
-                            .query_row(
-                                "SELECT COALESCE(SUM(file_size), 0) FROM images",
-                                [],
-                                |r| r.get(0),
-                            )
+                            .query_row("SELECT COALESCE(SUM(file_size), 0) FROM images", [], |r| {
+                                r.get(0)
+                            })
                             .unwrap_or(0);
 
                         image_count += count;
                         estimated_size += size;
 
                         // Verify sample files are accessible
-                        let mut file_stmt = conn
-                            .prepare(
-                                "SELECT original_path FROM image_files WHERE file_exists = 1 LIMIT 5",
-                            )?;
+                        let mut file_stmt = conn.prepare(
+                            "SELECT original_path FROM image_files WHERE file_exists = 1 LIMIT 5",
+                        )?;
                         let sample_paths: Vec<String> = file_stmt
                             .query_map([], |row| row.get(0))?
                             .filter_map(|r| r.ok())
@@ -403,10 +395,7 @@ async fn validate_migration(
                         }
                     }
                     Err(e) => {
-                        errors.push(format!(
-                            "Directory '{}' DB connection failed: {}",
-                            label, e
-                        ));
+                        errors.push(format!("Directory '{}' DB connection failed: {}", label, e));
                     }
                 },
                 Err(e) => {
@@ -464,7 +453,8 @@ async fn start_migration(
     } else {
         let main_conn = state.main_db().get()?;
         let mut stmt = main_conn.prepare("SELECT id FROM watch_directories")?;
-        let ids: Vec<i64> = stmt.query_map([], |row| row.get::<_, i64>(0))?
+        let ids: Vec<i64> = stmt
+            .query_map([], |row| row.get::<_, i64>(0))?
             .filter_map(|r| r.ok())
             .collect();
         ids
@@ -726,15 +716,29 @@ fn migrate_single_directory(
     let dir_pool = match state.directory_db().get_pool(dir_id) {
         Ok(p) => p,
         Err(e) => {
-            errors.push(format!("Failed to open DB for directory '{}': {}", label, e));
-            return DirectoryMigrationResult { migrated, skipped, errors };
+            errors.push(format!(
+                "Failed to open DB for directory '{}': {}",
+                label, e
+            ));
+            return DirectoryMigrationResult {
+                migrated,
+                skipped,
+                errors,
+            };
         }
     };
     let dir_conn = match dir_pool.get() {
         Ok(c) => c,
         Err(e) => {
-            errors.push(format!("Failed to get connection for directory '{}': {}", label, e));
-            return DirectoryMigrationResult { migrated, skipped, errors };
+            errors.push(format!(
+                "Failed to get connection for directory '{}': {}",
+                label, e
+            ));
+            return DirectoryMigrationResult {
+                migrated,
+                skipped,
+                errors,
+            };
         }
     };
 
@@ -743,7 +747,11 @@ fn migrate_single_directory(
         Ok(c) => c,
         Err(e) => {
             errors.push(format!("Failed to get main DB connection: {}", e));
-            return DirectoryMigrationResult { migrated, skipped, errors };
+            return DirectoryMigrationResult {
+                migrated,
+                skipped,
+                errors,
+            };
         }
     };
 
@@ -760,7 +768,11 @@ fn migrate_single_directory(
         Ok(s) => s,
         Err(e) => {
             errors.push(format!("Failed to prepare query for '{}': {}", label, e));
-            return DirectoryMigrationResult { migrated, skipped, errors };
+            return DirectoryMigrationResult {
+                migrated,
+                skipped,
+                errors,
+            };
         }
     };
 
@@ -926,9 +938,9 @@ fn migrate_single_directory(
         }
 
         // Migrate image_tags for this image
-        if let Ok(mut tag_stmt) = dir_conn.prepare(
-            "SELECT tag_id, confidence, is_manual FROM image_tags WHERE image_id = ?1",
-        ) {
+        if let Ok(mut tag_stmt) = dir_conn
+            .prepare("SELECT tag_id, confidence, is_manual FROM image_tags WHERE image_id = ?1")
+        {
             let tags: Vec<(i64, Option<f64>, bool)> = tag_stmt
                 .query_map(params![dir_image_id], |row| {
                     Ok((row.get(0)?, row.get(1)?, row.get(2)?))
@@ -949,13 +961,15 @@ fn migrate_single_directory(
         migrated += 1;
     }
 
-    DirectoryMigrationResult { migrated, skipped, errors }
+    DirectoryMigrationResult {
+        migrated,
+        skipped,
+        errors,
+    }
 }
 
 /// GET /settings/migration/status - Return current migration progress details.
-async fn get_migration_progress(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
+async fn get_migration_progress(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let migration = state.migration_state().read().await;
 
     let result = match &migration.progress {
@@ -992,9 +1006,7 @@ async fn get_migration_progress(
 ///
 /// Sets the migration status to Cancelled, which the background task checks
 /// periodically and will stop processing further records.
-async fn stop_migration(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
+async fn stop_migration(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let mut migration = state.migration_state().write().await;
 
     if migration.status != MigrationStatus::Running {
@@ -1025,9 +1037,7 @@ async fn stop_migration(
 /// Removes images from the main DB that were inserted during the migration
 /// but whose source directory DB records still exist (i.e., the per-directory
 /// DB is still the source of truth). Only runs when status is failed or cancelled.
-async fn cleanup_migration(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
+async fn cleanup_migration(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     {
         let migration = state.migration_state().read().await;
         if migration.status == MigrationStatus::Running {
@@ -1052,9 +1062,8 @@ async fn cleanup_migration(
             if let Ok(dir_pool) = state_clone.directory_db().get_pool(*dir_id) {
                 if let Ok(dir_conn) = dir_pool.get() {
                     // Get all file_hashes from the directory DB
-                    let mut stmt = dir_conn.prepare(
-                        "SELECT file_hash FROM images WHERE file_hash IS NOT NULL",
-                    )?;
+                    let mut stmt = dir_conn
+                        .prepare("SELECT file_hash FROM images WHERE file_hash IS NOT NULL")?;
                     let hashes: Vec<String> = stmt
                         .query_map([], |row| row.get(0))?
                         .filter_map(|r| r.ok())
@@ -1080,10 +1089,8 @@ async fn cleanup_migration(
                                 "DELETE FROM image_files WHERE image_id = ?1",
                                 params![image_id],
                             )?;
-                            main_conn.execute(
-                                "DELETE FROM images WHERE id = ?1",
-                                params![image_id],
-                            )?;
+                            main_conn
+                                .execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
                             removed += 1;
                         }
                     }
@@ -1112,9 +1119,7 @@ async fn cleanup_migration(
 ///
 /// Compares record counts between source (per-directory DBs) and target (main DB)
 /// to confirm all records were migrated successfully.
-async fn verify_migration(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
+async fn verify_migration(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let state_clone = state.clone();
     let result = tokio::task::spawn_blocking(move || {
         let main_conn = state_clone.main_db().get()?;
@@ -1288,7 +1293,8 @@ async fn validate_import(
         let dir_ids: Vec<i64> = if requested_ids.is_empty() {
             // All directories
             let mut stmt = main_conn.prepare("SELECT id FROM watch_directories")?;
-            let ids: Vec<i64> = stmt.query_map([], |row| row.get(0))?
+            let ids: Vec<i64> = stmt
+                .query_map([], |row| row.get(0))?
                 .filter_map(|r| r.ok())
                 .collect();
             ids
@@ -1354,21 +1360,16 @@ async fn validate_import(
                             .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
                             .unwrap_or(0);
                         let size: i64 = conn
-                            .query_row(
-                                "SELECT COALESCE(SUM(file_size), 0) FROM images",
-                                [],
-                                |r| r.get(0),
-                            )
+                            .query_row("SELECT COALESCE(SUM(file_size), 0) FROM images", [], |r| {
+                                r.get(0)
+                            })
                             .unwrap_or(0);
 
                         image_count += count;
                         estimated_size += size;
                     }
                     Err(e) => {
-                        errors.push(format!(
-                            "Directory '{}' DB connection failed: {}",
-                            label, e
-                        ));
+                        errors.push(format!("Directory '{}' DB connection failed: {}", label, e));
                     }
                 },
                 Err(e) => {
@@ -1419,7 +1420,8 @@ async fn start_import(
     let dir_ids: Vec<i64> = if requested_ids.is_empty() {
         let main_conn = state.main_db().get()?;
         let mut stmt = main_conn.prepare("SELECT id FROM watch_directories")?;
-        let ids: Vec<i64> = stmt.query_map([], |row| row.get::<_, i64>(0))?
+        let ids: Vec<i64> = stmt
+            .query_map([], |row| row.get::<_, i64>(0))?
             .filter_map(|r| r.ok())
             .collect();
         ids

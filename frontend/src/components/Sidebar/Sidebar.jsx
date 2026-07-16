@@ -470,7 +470,7 @@ function Sidebar({
         {isSettingsPage && onSettingsTabChange && (
           <div className="sidebar-section settings-nav">
             {[['general','General'], ['video','Video'], ['network','Network'],
-              ['servers','Servers'], ['mobile','Mobile'], ['data','Data'], ['addons','Addons'], ['tasks','Tasks']
+              ['servers','Servers'], ['mobile','Mobile'], ['data','Data'], ['addons','Addons'], ['addon-settings','Add-on Settings'], ['tasks','Tasks']
             ].map(([key, label]) => (
               <button key={key}
                 className={`settings-nav-item ${settingsTab === key ? 'active' : ''}`}

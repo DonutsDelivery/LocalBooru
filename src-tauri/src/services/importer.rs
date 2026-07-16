@@ -158,7 +158,8 @@ pub fn calculate_perceptual_hash(file_path: &str) -> Option<String> {
         hasher.update(&buf);
 
         // Sample middle
-        file.seek(SeekFrom::Start(file_size / 2 - sample_size / 2)).ok()?;
+        file.seek(SeekFrom::Start(file_size / 2 - sample_size / 2))
+            .ok()?;
         file.read_exact(&mut buf).ok()?;
         hasher.update(&buf);
 
@@ -216,7 +217,7 @@ pub fn get_image_dimensions(file_path: &str) -> Option<(u32, u32)> {
 /// Handles RGBA, LA, and palette images that may have transparency.
 /// Returns an RGB8 image suitable for encoding to formats that don't support alpha.
 fn composite_on_white(img: &image::DynamicImage) -> image::RgbImage {
-    use image::{Rgba, RgbImage, Rgb};
+    use image::{Rgb, RgbImage, Rgba};
 
     let rgba = img.to_rgba8();
     let (w, h) = (rgba.width(), rgba.height());
@@ -456,14 +457,81 @@ pub fn import_image(
         )
         .ok();
 
-    if existing.is_some() {
-        return Ok(ImportResult {
-            status: ImportStatus::Duplicate,
-            image_id: existing,
-            directory_id: Some(directory_id),
-            filename: None,
-            message: Some("Path already imported".into()),
-        });
+    if let Some(existing_id) = existing {
+        // Path already in DB — check if file content has changed since import
+        let stored_mtime: Option<String> = dir_conn
+            .query_row(
+                "SELECT file_modified_at FROM images WHERE id = ?1",
+                params![existing_id],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        let current_mtime = std::fs::metadata(file_path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(system_time_to_rfc3339);
+
+        if stored_mtime.is_some() && current_mtime.is_some() && stored_mtime == current_mtime {
+            return Ok(ImportResult {
+                status: ImportStatus::Duplicate,
+                image_id: Some(existing_id),
+                directory_id: Some(directory_id),
+                filename: None,
+                message: Some("Path already imported".into()),
+            });
+        }
+
+        let current_hash = calculate_quick_hash(file_path)
+            .map_err(|e| AppError::Internal(format!("Hash error: {}", e)))?;
+
+        let stored_hash: Option<String> = dir_conn
+            .query_row(
+                "SELECT file_hash FROM images WHERE id = ?1",
+                params![existing_id],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if stored_hash.as_deref() == Some(&current_hash) {
+            if let Some(ref mtime) = current_mtime {
+                let _ = dir_conn.execute(
+                    "UPDATE images SET file_modified_at = ?1 WHERE id = ?2",
+                    params![mtime, existing_id],
+                );
+            }
+            return Ok(ImportResult {
+                status: ImportStatus::Duplicate,
+                image_id: Some(existing_id),
+                directory_id: Some(directory_id),
+                filename: None,
+                message: Some("Path already imported".into()),
+            });
+        }
+
+        // Content changed — clean up old records and re-import
+        let ref_count: i64 = dir_conn
+            .query_row(
+                "SELECT COUNT(*) FROM image_files WHERE image_id = ?1",
+                params![existing_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        dir_conn.execute(
+            "DELETE FROM image_files WHERE original_path = ?1",
+            params![file_path],
+        )?;
+
+        if ref_count <= 1 {
+            if let Some(old_hash) = stored_hash {
+                let old_thumb = format!("{}.webp", &old_hash[..16.min(old_hash.len())]);
+                let _ = std::fs::remove_file(lib.thumbnails_dir().join(&old_thumb));
+            }
+            dir_conn.execute("DELETE FROM images WHERE id = ?1", params![existing_id])?;
+        }
+        // Fall through to normal import below
     }
 
     // Calculate quick hash
@@ -575,7 +643,10 @@ pub fn import_image(
         )
     }) {
         Ok(_) => dir_conn.last_insert_rowid(),
-        Err(e) if e.to_string().contains("UNIQUE constraint failed: images.file_hash") => {
+        Err(e)
+            if e.to_string()
+                .contains("UNIQUE constraint failed: images.file_hash") =>
+        {
             // Race condition: hash was inserted between our check and INSERT.
             // Fall back to adding a file reference.
             let existing_id: i64 = dir_conn
@@ -636,6 +707,14 @@ pub fn import_image(
                 "filename": &filename,
                 "thumbnail": format!("/api/images/{}/thumbnail?directory_id={}", image_id, directory_id)
             }),
+        );
+    }
+
+    // Increment cached image_count (for fast /directories at startup/large DBs)
+    if let Ok(main_conn) = lib.main_pool.get() {
+        let _ = main_conn.execute(
+            "UPDATE watch_directories SET image_count = image_count + 1 WHERE id = ?1",
+            rusqlite::params![directory_id],
         );
     }
 

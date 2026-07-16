@@ -21,7 +21,10 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     streamTransitioningRef,
     getCurrentAbsoluteTime,
     restartSVPFromPosition,
-    restartTranscodeFromPosition
+    cancelPendingSVPRestart,
+    restartTranscodeFromPosition,
+    setAudioOutputVolume,
+    setAudioOutputMuted
   } = streamState
 
   // Video player state
@@ -58,6 +61,33 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
       _setCurrentTime(timeOrFn)
     }
   }, [])
+
+  const isStreamTimeBuffered = useCallback((absoluteTime, streamStartOffset, manifestDuration = 0) => {
+    const video = mediaRef.current
+    if (!video) return false
+
+    const hlsTime = absoluteTime - streamStartOffset
+    if (hlsTime < -0.25) return false
+
+    const ranges = video.buffered
+    for (let i = 0; i < ranges.length; i++) {
+      if (hlsTime >= ranges.start(i) - 0.5 && hlsTime <= ranges.end(i) + 0.5) {
+        return true
+      }
+    }
+
+    // Before the browser exposes buffered ranges, keep the previous manifest
+    // based behavior so startup seeks do not always restart the stream.
+    return ranges.length === 0 && hlsTime >= -0.5 && hlsTime <= manifestDuration + 0.5
+  }, [mediaRef])
+
+  const seekWithinStream = useCallback((absoluteTime, streamStartOffset) => {
+    const hlsTime = absoluteTime - streamStartOffset
+    cancelPendingSVPRestart?.()
+    setSvpPendingSeek(null)
+    mediaRef.current.currentTime = Math.max(0, hlsTime)
+    setCurrentTime(absoluteTime)
+  }, [mediaRef, setCurrentTime, setSvpPendingSeek, cancelPendingSVPRestart])
 
   // Direct DOM update for timeline elements (no React re-render)
   const updateTimeDisplay = useCallback((time) => {
@@ -111,19 +141,14 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
 
     // For SVP streams, check if we need to restart from a new position
     if (svpStreamUrl) {
-      const bufferedEnd = svpStartOffset + svpBufferedDuration
-      const bufferedStart = svpStartOffset
-
-      if (newTime < bufferedStart - 1 || newTime > bufferedEnd + 2) {
+      if (!isStreamTimeBuffered(newTime, svpStartOffset, svpBufferedDuration)) {
+        setCurrentTime(newTime)
+        setSvpPendingSeek(newTime)
         restartSVPFromPosition(newTime)
         return
       }
 
-      // Seek within current stream
-      const hlsTime = newTime - svpStartOffset
-      setSvpPendingSeek(null)
-      mediaRef.current.currentTime = Math.max(0, hlsTime)
-      setCurrentTime(newTime)
+      seekWithinStream(newTime, svpStartOffset)
       return
     }
 
@@ -156,7 +181,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     if (wasPlaying) {
       mediaRef.current.play().catch(() => {})
     }
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, getCurrentAbsoluteTime, restartSVPFromPosition, restartTranscodeFromPosition])
+  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, getCurrentAbsoluteTime, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
 
   // Toggle video play/pause
   const toggleVideoPlay = useCallback(() => {
@@ -269,22 +294,15 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
 
     // For SVP streams, check if we need to restart from a new position
     if (svpStreamUrl) {
-      // Calculate the actual buffered range in absolute video time
-      const bufferedEnd = svpStartOffset + svpBufferedDuration
-      const bufferedStart = svpStartOffset
-
-      // Need to restart if seeking outside the current buffered range
-      if (newTime < bufferedStart - 1 || newTime > bufferedEnd + 2) {
-        console.log(`[SVP] Seeking to ${newTime.toFixed(1)}s, buffered range: ${bufferedStart.toFixed(1)}-${bufferedEnd.toFixed(1)}s. Restarting stream...`)
+      if (!isStreamTimeBuffered(newTime, svpStartOffset, svpBufferedDuration)) {
+        console.log(`[SVP] Seeking to ${newTime.toFixed(1)}s outside browser buffer. Restarting stream...`)
+        setCurrentTime(newTime)
+        setSvpPendingSeek(newTime)
         restartSVPFromPosition(newTime)
         return
       }
 
-      // Seek within current stream (convert to HLS stream time)
-      const hlsTime = newTime - svpStartOffset
-      setSvpPendingSeek(null)
-      mediaRef.current.currentTime = Math.max(0, hlsTime)
-      setCurrentTime(newTime)
+      seekWithinStream(newTime, svpStartOffset)
       return
     }
 
@@ -313,7 +331,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
       mediaRef.current.currentTime = newTime
     }
     setCurrentTime(newTime)
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition])
+  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
 
   const handleSeekStart = useCallback((e) => {
     setIsSeeking(true)
@@ -340,15 +358,13 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     const seekTime = currentTimeRef.current
 
     if (svpStreamUrl) {
-      const bufferedEnd = svpStartOffset + svpBufferedDuration
-      const bufferedStart = svpStartOffset
-      if (seekTime < bufferedStart - 1 || seekTime > bufferedEnd + 2) {
+      if (!isStreamTimeBuffered(seekTime, svpStartOffset, svpBufferedDuration)) {
+        setCurrentTime(seekTime)
+        setSvpPendingSeek(seekTime)
         restartSVPFromPosition(seekTime)
         return
       }
-      const hlsTime = seekTime - svpStartOffset
-      setSvpPendingSeek(null)
-      mediaRef.current.currentTime = Math.max(0, hlsTime)
+      seekWithinStream(seekTime, svpStartOffset)
       return
     }
 
@@ -366,7 +382,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
 
     // Direct play - precise seek to final position
     mediaRef.current.currentTime = seekTime
-  }, [isSeeking, mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition])
+  }, [isSeeking, mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
 
   // Touch handlers for video timeline (mobile)
   const handleSeekTouchStart = useCallback((e) => {
@@ -379,16 +395,13 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     const newTime = percent * duration
 
     if (svpStreamUrl) {
-      const bufferedEnd = svpStartOffset + svpBufferedDuration
-      const bufferedStart = svpStartOffset
-      if (newTime < bufferedStart - 1 || newTime > bufferedEnd + 2) {
+      if (!isStreamTimeBuffered(newTime, svpStartOffset, svpBufferedDuration)) {
+        setCurrentTime(newTime)
+        setSvpPendingSeek(newTime)
         restartSVPFromPosition(newTime)
         return
       }
-      const hlsTime = newTime - svpStartOffset
-      setSvpPendingSeek(null)
-      mediaRef.current.currentTime = Math.max(0, hlsTime)
-      setCurrentTime(newTime)
+      seekWithinStream(newTime, svpStartOffset)
       return
     }
     if (transcodeStreamUrl) {
@@ -412,7 +425,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
       mediaRef.current.currentTime = newTime
     }
     setCurrentTime(newTime)
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition])
+  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
 
   const handleSeekTouchMove = useCallback((e) => {
     if (!isSeeking) return
@@ -438,15 +451,13 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     const seekTime = currentTimeRef.current
 
     if (svpStreamUrl) {
-      const bufferedEnd = svpStartOffset + svpBufferedDuration
-      const bufferedStart = svpStartOffset
-      if (seekTime < bufferedStart - 1 || seekTime > bufferedEnd + 2) {
+      if (!isStreamTimeBuffered(seekTime, svpStartOffset, svpBufferedDuration)) {
+        setCurrentTime(seekTime)
+        setSvpPendingSeek(seekTime)
         restartSVPFromPosition(seekTime)
         return
       }
-      const hlsTime = seekTime - svpStartOffset
-      setSvpPendingSeek(null)
-      mediaRef.current.currentTime = Math.max(0, hlsTime)
+      seekWithinStream(seekTime, svpStartOffset)
       return
     }
     if (transcodeStreamUrl) {
@@ -464,30 +475,39 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     }
     // Direct play - precise seek to final position
     mediaRef.current.currentTime = seekTime
-  }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition])
+  }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
 
   // Handle volume change
   const handleVolumeChange = useCallback((e) => {
     const newVolume = parseFloat(e.target.value)
     setVolume(newVolume)
     if (mediaRef.current) {
-      mediaRef.current.volume = newVolume
-      mediaRef.current.muted = newVolume === 0
+      const handledByAudioGraph = setAudioOutputVolume?.(newVolume)
+      if (!handledByAudioGraph) {
+        mediaRef.current.volume = newVolume
+        mediaRef.current.muted = newVolume === 0
+      }
       setIsMuted(newVolume === 0)
     }
-  }, [mediaRef])
+  }, [mediaRef, setAudioOutputVolume])
 
   // Toggle mute
   const toggleMute = useCallback(() => {
     if (!mediaRef.current) return
     if (isMuted) {
-      mediaRef.current.muted = false
+      const handledByAudioGraph = setAudioOutputMuted?.(false, volume)
+      if (!handledByAudioGraph) {
+        mediaRef.current.muted = false
+      }
       setIsMuted(false)
     } else {
-      mediaRef.current.muted = true
+      const handledByAudioGraph = setAudioOutputMuted?.(true, volume)
+      if (!handledByAudioGraph) {
+        mediaRef.current.muted = true
+      }
       setIsMuted(true)
     }
-  }, [mediaRef, isMuted])
+  }, [mediaRef, isMuted, volume, setAudioOutputMuted])
 
   // Increase playback speed
   const increaseSpeed = useCallback(() => {
@@ -525,12 +545,17 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     if (!mediaRef.current) return
     const newVolume = Math.max(0, Math.min(1, volume + delta))
     setVolume(newVolume)
-    mediaRef.current.volume = newVolume
+    const handledByAudioGraph = setAudioOutputVolume?.(newVolume)
+    if (!handledByAudioGraph) {
+      mediaRef.current.volume = newVolume
+    }
     if (newVolume > 0 && isMuted) {
       setIsMuted(false)
-      mediaRef.current.muted = false
+      if (!handledByAudioGraph) {
+        mediaRef.current.muted = false
+      }
     }
-  }, [mediaRef, volume, isMuted])
+  }, [mediaRef, volume, isMuted, setAudioOutputVolume])
 
   // Cycle video display mode
   const cycleDisplayMode = useCallback(() => {
@@ -543,6 +568,42 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
       }
     })
   }, [])
+
+  const restorePlaybackState = useCallback((state) => {
+    if (!state) return []
+    const position = Number.isFinite(state.position) ? Math.max(0, state.position) : 0
+    const restoredDuration = Number.isFinite(state.duration) ? Math.max(0, state.duration) : 0
+    const restoredVolume = Number.isFinite(state.volume) ? Math.max(0, Math.min(1, state.volume)) : 1
+    const restoredSpeed = Number.isFinite(state.speed) ? Math.max(0.25, Math.min(4, state.speed)) : 1
+    const displayMode = ['fit', 'fill', 'original'].includes(state.display_mode) ? state.display_mode : 'fit'
+    setCurrentTime(position)
+    setDuration(restoredDuration)
+    durationRef.current = restoredDuration
+    setIsPlaying(!state.paused)
+    setVolume(restoredVolume)
+    setIsMuted(Boolean(state.muted))
+    setPlaybackSpeed(restoredSpeed)
+    setVideoDisplayMode(displayMode)
+    const media = mediaRef.current
+    if (media) {
+      const applyPosition = () => {
+        if (Number.isFinite(media.duration)) media.currentTime = Math.min(position, media.duration)
+      }
+      if (media.readyState >= 1) applyPosition()
+      else media.addEventListener('loadedmetadata', applyPosition, { once: true })
+      media.volume = restoredVolume
+      media.muted = Boolean(state.muted)
+      media.playbackRate = restoredSpeed
+      if (state.paused) media.pause()
+      else media.play().catch(() => {})
+    }
+    const unsupported = []
+    if (state.selected_audio_track != null) unsupported.push('selected_audio_track')
+    if (state.selected_subtitle_track != null) unsupported.push('selected_subtitle_track')
+    if (state.subtitle_delay) unsupported.push('subtitle_delay')
+    if (state.svp_enabled) unsupported.push('native_svp_configuration')
+    return unsupported
+  }, [mediaRef, setCurrentTime])
 
   // Reset playback state
   const resetPlaybackState = useCallback(() => {
@@ -599,6 +660,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
     frameAdvance,
     adjustVolume,
     cycleDisplayMode,
+    restorePlaybackState,
     resetPlaybackState
   }
 }

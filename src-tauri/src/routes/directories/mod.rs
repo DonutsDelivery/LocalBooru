@@ -22,11 +22,19 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_directories).post(add_directory))
         .route("/add-parent", post(add_parent_directory))
-        .route("/parents", get(list_parent_directories).delete(remove_parent_directory))
+        .route(
+            "/parents",
+            get(list_parent_directories).delete(remove_parent_directory),
+        )
         .route("/bulk-delete", post(bulk_delete))
         .route("/bulk-repair", post(bulk_repair))
         .route("/bulk-verify", post(bulk_verify))
-        .route("/{directory_id}", get(get_directory).patch(update_directory).delete(remove_directory))
+        .route(
+            "/{directory_id}",
+            get(get_directory)
+                .patch(update_directory)
+                .delete(remove_directory),
+        )
         .route("/{directory_id}/scan", post(scan_directory))
         .route("/{directory_id}/repair", post(repair_directory))
         .route("/{directory_id}/verify", post(verify_directory))
@@ -34,8 +42,14 @@ pub fn router() -> Router<AppState> {
         .route("/{directory_id}/path", patch(update_directory_path))
         .route("/{directory_id}/clean-deleted", post(clean_deleted))
         .route("/{directory_id}/comfyui-nodes", get(get_comfyui_nodes))
-        .route("/{directory_id}/comfyui-config", patch(update_comfyui_config))
-        .route("/{directory_id}/reextract-metadata", post(reextract_metadata))
+        .route(
+            "/{directory_id}/comfyui-config",
+            patch(update_comfyui_config),
+        )
+        .route(
+            "/{directory_id}/reextract-metadata",
+            post(reextract_metadata),
+        )
         .route("/dedup", post(dedup_directories))
 }
 
@@ -190,7 +204,8 @@ async fn list_directories(
             let mut stmt = main_conn.prepare(
                 "SELECT id, path, name, enabled, recursive, auto_tag, auto_age_detect,
                         last_scanned_at, created_at, public_access, show_images, show_videos,
-                        parent_path, metadata_format, family_safe, lan_visible
+                        parent_path, metadata_format, family_safe, lan_visible,
+                        image_count, tagged_count, favorited_count
                  FROM watch_directories",
             )?;
 
@@ -213,32 +228,11 @@ async fn list_directories(
                     let family_safe: bool = row.get::<_, Option<bool>>(14)?.unwrap_or(true);
                     let lan_visible: bool = row.get::<_, Option<bool>>(15)?.unwrap_or(true);
 
-                    // Get image count from per-directory DB
-                    let mut image_count: i64 = 0;
-                    let mut tagged_count: i64 = 0;
-                    let mut favorited_count: i64 = 0;
-
-                    if let Ok(dir_pool) = lib.directory_db.get_pool(dir_id) {
-                        if let Ok(dir_conn) = dir_pool.get() {
-                            image_count = dir_conn
-                                .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
-                                .unwrap_or(0);
-                            tagged_count = dir_conn
-                                .query_row(
-                                    "SELECT COUNT(DISTINCT image_id) FROM image_tags",
-                                    [],
-                                    |r| r.get(0),
-                                )
-                                .unwrap_or(0);
-                            favorited_count = dir_conn
-                                .query_row(
-                                    "SELECT COUNT(*) FROM images WHERE is_favorite = 1",
-                                    [],
-                                    |r| r.get(0),
-                                )
-                                .unwrap_or(0);
-                        }
-                    }
+                    // Use cached counts from watch_directories (populated on import/delete/tag for fast startup)
+                    // Eliminates expensive per-dir DB COUNT(*) for large DBs and external libraries.
+                    let image_count: i64 = row.get::<_, Option<i64>>(16)?.unwrap_or(0);
+                    let tagged_count: i64 = row.get::<_, Option<i64>>(17)?.unwrap_or(0);
+                    let favorited_count: i64 = row.get::<_, Option<i64>>(18)?.unwrap_or(0);
 
                     let display_name = name.unwrap_or_else(|| {
                         Path::new(&path)
@@ -297,17 +291,20 @@ async fn list_directories(
         let tier = AccessTier::from_ip(&client_ip);
         let family_locked = state_clone.is_family_mode_locked();
 
-        let mut filtered: Vec<Value> = all_dirs.into_iter().filter(|d| {
-            // Family mode: hide non-family-safe when locked
-            if family_locked && !d["family_safe"].as_bool().unwrap_or(true) {
-                return false;
-            }
-            match tier {
-                AccessTier::Localhost => true,
-                AccessTier::LocalNetwork => d["lan_visible"].as_bool().unwrap_or(true),
-                AccessTier::Public => d["public_access"].as_bool().unwrap_or(false),
-            }
-        }).collect();
+        let mut filtered: Vec<Value> = all_dirs
+            .into_iter()
+            .filter(|d| {
+                // Family mode: hide non-family-safe when locked
+                if family_locked && !d["family_safe"].as_bool().unwrap_or(true) {
+                    return false;
+                }
+                match tier {
+                    AccessTier::Localhost => true,
+                    AccessTier::LocalNetwork => d["lan_visible"].as_bool().unwrap_or(true),
+                    AccessTier::Public => d["public_access"].as_bool().unwrap_or(false),
+                }
+            })
+            .collect();
 
         // Natural sort by name (e.g. "1", "2", "10" instead of "1", "10", "2")
         filtered.sort_by(|a, b| {
@@ -339,15 +336,13 @@ async fn add_directory(
 
     let lib = state.resolve_library(data.library_id.as_deref())?;
     let path_str = resolved_path.to_string_lossy().to_string();
-    let name = data
-        .name
-        .unwrap_or_else(|| {
-            resolved_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("Unknown")
-                .to_string()
-        });
+    let name = data.name.unwrap_or_else(|| {
+        resolved_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Unknown")
+            .to_string()
+    });
     let recursive = data.recursive;
     let auto_tag = data.auto_tag;
     let auto_age_detect = data.auto_age_detect;
@@ -372,6 +367,7 @@ async fn add_directory(
     let state_clone = state.clone();
     let name_clone = name.clone();
     let path_clone = path_str.clone();
+    let watcher_lib = lib.clone();
 
     let dir_id = tokio::task::spawn_blocking(move || -> Result<i64, AppError> {
         let conn = lib.main_pool.get()?;
@@ -398,9 +394,10 @@ async fn add_directory(
                 "directory_id": dir_id,
                 "directory_path": &path_clone,
                 "library_id": lib.uuid,
+                "recursive": recursive,
                 "fast_import": true
             }),
-            2,
+            task_queue::PRIORITY_INDEX,
             None,
         )?;
 
@@ -410,7 +407,7 @@ async fn add_directory(
 
     // Register with filesystem watcher
     if let Some(watcher) = state.directory_watcher() {
-        watcher.add_directory(dir_id, &path_str, recursive);
+        watcher.add_directory_for_library(dir_id, &path_str, recursive, watcher_lib);
     }
 
     // Grant asset:// read access to the new watch dir (recursive).
@@ -527,9 +524,10 @@ async fn add_parent_directory(
                     "directory_id": dir_id,
                     "directory_path": &path_str,
                     "library_id": lib.uuid,
+                    "recursive": recursive,
                     "fast_import": true
                 }),
-                2,
+                task_queue::PRIORITY_INDEX,
                 None,
             )?;
 
@@ -556,7 +554,7 @@ async fn add_parent_directory(
         let lib = state.resolve_library(data.library_id.as_deref())?;
         for dir in &added {
             if let (Some(id), Some(path)) = (dir["id"].as_i64(), dir["path"].as_str()) {
-                watcher.add_directory(id, path, recursive);
+                watcher.add_directory_for_library(id, path, recursive, lib.clone());
             }
         }
 
@@ -604,7 +602,7 @@ async fn list_parent_directories(
                  FROM watch_directories
                  WHERE parent_path IS NOT NULL AND parent_path != ''
                  GROUP BY parent_path
-                 ORDER BY parent_path"
+                 ORDER BY parent_path",
             )?;
 
             let rows = stmt.query_map([], |row| {
@@ -625,7 +623,8 @@ async fn list_parent_directories(
         }
 
         Ok(result)
-    }).await??;
+    })
+    .await??;
 
     Ok(Json(json!({ "parents": parents })))
 }
@@ -659,9 +658,8 @@ async fn remove_parent_directory(
 
             if remove_children {
                 // Get child directory IDs to clean up their DB pools and watchers
-                let mut stmt = conn.prepare(
-                    "SELECT id FROM watch_directories WHERE parent_path = ?1"
-                )?;
+                let mut stmt =
+                    conn.prepare("SELECT id FROM watch_directories WHERE parent_path = ?1")?;
                 let child_ids: Vec<i64> = stmt
                     .query_map(params![&parent_path], |row| row.get(0))?
                     .filter_map(|r| r.ok())
@@ -695,7 +693,8 @@ async fn remove_parent_directory(
                 Ok((0, cleared))
             }
         }
-    }).await??;
+    })
+    .await??;
 
     // Remove from the polling watcher
     if let Some(watcher) = state.directory_watcher() {
@@ -703,9 +702,15 @@ async fn remove_parent_directory(
     }
 
     let message = if remove_children {
-        format!("Removed parent directory and {} child directories", removed_count)
+        format!(
+            "Removed parent directory and {} child directories",
+            removed_count
+        )
     } else {
-        format!("Stopped watching parent directory ({} directories kept)", cleared_count)
+        format!(
+            "Stopped watching parent directory ({} directories kept)",
+            cleared_count
+        )
     };
 
     Ok(Json(json!({
@@ -874,7 +879,13 @@ async fn remove_directory(
         watcher.remove_directory(directory_id);
     }
 
-    delete_directories_with_lib(state, lib, vec![directory_id], params.keep_images.unwrap_or(false)).await
+    delete_directories_with_lib(
+        state,
+        lib,
+        vec![directory_id],
+        params.keep_images.unwrap_or(false),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -908,7 +919,9 @@ async fn delete_directories_with_lib(
     keep_images: bool,
 ) -> Result<Json<Value>, AppError> {
     if directory_ids.is_empty() {
-        return Ok(Json(json!({"deleted": 0, "images_removed": false, "image_count": 0})));
+        return Ok(Json(
+            json!({"deleted": 0, "images_removed": false, "image_count": 0}),
+        ));
     }
 
     tokio::task::spawn_blocking(move || {
@@ -1012,11 +1025,11 @@ async fn scan_directory(
         let conn = lib.main_pool.get()?;
 
         // Get directory path
-        let dir_path: String = conn
+        let (dir_path, recursive): (String, bool) = conn
             .query_row(
-                "SELECT path FROM watch_directories WHERE id = ?1",
+                "SELECT path, recursive FROM watch_directories WHERE id = ?1",
                 params![directory_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|_| AppError::NotFound("Directory not found".into()))?;
 
@@ -1034,11 +1047,12 @@ async fn scan_directory(
             &json!({
                 "directory_id": directory_id,
                 "directory_path": dir_path,
+                "recursive": recursive,
                 "clean_deleted": clean_deleted,
                 "library_id": lib.uuid,
                 "fast_import": true
             }),
-            2,
+            task_queue::PRIORITY_INDEX,
             None,
         )
     })
@@ -1073,7 +1087,11 @@ async fn verify_directory(
     Ok(Json(result))
 }
 
-fn verify_directory_inner(_state: &AppState, lib: &Arc<LibraryContext>, directory_id: i64) -> Result<Value, AppError> {
+fn verify_directory_inner(
+    _state: &AppState,
+    lib: &Arc<LibraryContext>,
+    directory_id: i64,
+) -> Result<Value, AppError> {
     // Ensure the directory exists in main DB
     let main_conn = lib.main_pool.get()?;
     let _dir_path: String = main_conn
@@ -1168,12 +1186,15 @@ async fn prune_directory(
 ) -> Result<Json<Value>, AppError> {
     log::info!(
         "[Prune] Request: directory_id={}, library_id={:?}",
-        directory_id, q.library_id
+        directory_id,
+        q.library_id
     );
     let lib = state.resolve_library(q.library_id.as_deref())?;
     log::info!(
         "[Prune] Resolved library: uuid={}, name={}, data_dir={}",
-        lib.uuid, lib.name, lib.data_dir.display()
+        lib.uuid,
+        lib.name,
+        lib.data_dir.display()
     );
     let result = tokio::task::spawn_blocking(move || {
         let main_conn = lib.main_pool.get()?;
@@ -1210,7 +1231,9 @@ async fn prune_directory(
             .unwrap_or(0);
         log::info!(
             "[Prune] DB stats: total_images={}, favorited={}, to_prune={}",
-            total_images, favorited_images, total_images - favorited_images
+            total_images,
+            favorited_images,
+            total_images - favorited_images
         );
 
         // Get non-favorited images with their file paths
@@ -1489,10 +1512,7 @@ async fn clean_deleted(
 ///
 /// 1. Walks the filesystem to build a filename->path map
 /// 2. For each DB record: if path exists mark valid, else try filename match, else delete
-fn repair_directory_inner(
-    lib: &Arc<LibraryContext>,
-    directory_id: i64,
-) -> Result<Value, AppError> {
+fn repair_directory_inner(lib: &Arc<LibraryContext>, directory_id: i64) -> Result<Value, AppError> {
     let main_conn = lib.main_pool.get()?;
 
     let (dir_path, recursive): (String, bool) = main_conn
@@ -1512,7 +1532,12 @@ fn repair_directory_inner(
     let mut name_to_paths: HashMap<String, Vec<String>> = HashMap::new();
 
     let walker: Box<dyn Iterator<Item = walkdir::DirEntry>> = if recursive {
-        Box::new(walkdir::WalkDir::new(&dir_path).follow_links(true).into_iter().filter_map(|e| e.ok()))
+        Box::new(
+            walkdir::WalkDir::new(&dir_path)
+                .follow_links(true)
+                .into_iter()
+                .filter_map(|e| e.ok()),
+        )
     } else {
         Box::new(
             walkdir::WalkDir::new(&dir_path)
@@ -1528,7 +1553,11 @@ fn repair_directory_inner(
             continue;
         }
         // Skip files inside the dumpster subfolder (pruned images)
-        if entry.path().components().any(|c| c.as_os_str() == "dumpster") {
+        if entry
+            .path()
+            .components()
+            .any(|c| c.as_os_str() == "dumpster")
+        {
             continue;
         }
         if !importer::is_media_file(entry.path()) {
@@ -1564,7 +1593,10 @@ fn repair_directory_inner(
 
     for (file_id, image_id, original_path) in files {
         // Remove records pointing into the dumpster (pruned images)
-        if Path::new(&original_path).components().any(|c| c.as_os_str() == "dumpster") {
+        if Path::new(&original_path)
+            .components()
+            .any(|c| c.as_os_str() == "dumpster")
+        {
             conn.execute("DELETE FROM image_files WHERE id = ?1", params![file_id])?;
             let other_count: i64 = conn
                 .query_row(
@@ -1681,10 +1713,8 @@ async fn repair_directory(
     Query(q): Query<LibraryQuery>,
 ) -> Result<Json<Value>, AppError> {
     let lib = state.resolve_library(q.library_id.as_deref())?;
-    let result = tokio::task::spawn_blocking(move || {
-        repair_directory_inner(&lib, directory_id)
-    })
-    .await??;
+    let result =
+        tokio::task::spawn_blocking(move || repair_directory_inner(&lib, directory_id)).await??;
 
     Ok(Json(result))
 }
@@ -1821,7 +1851,12 @@ async fn get_comfyui_nodes(
         let main_conn = lib.main_pool.get()?;
 
         // Get directory path and current config
-        let (dir_path, recursive, prompt_ids_str, negative_ids_str): (String, bool, Option<String>, Option<String>) = main_conn
+        let (dir_path, recursive, prompt_ids_str, negative_ids_str): (
+            String,
+            bool,
+            Option<String>,
+            Option<String>,
+        ) = main_conn
             .query_row(
                 "SELECT path, recursive, comfyui_prompt_node_ids, comfyui_negative_node_ids
                  FROM watch_directories WHERE id = ?1",
@@ -1838,17 +1873,32 @@ async fn get_comfyui_nodes(
         let current_prompt_ids: Vec<String> = prompt_ids_str
             .as_deref()
             .filter(|s| !s.trim().is_empty())
-            .map(|s| s.split(',').map(|id| id.trim().to_string()).filter(|id| !id.is_empty()).collect())
+            .map(|s| {
+                s.split(',')
+                    .map(|id| id.trim().to_string())
+                    .filter(|id| !id.is_empty())
+                    .collect()
+            })
             .unwrap_or_default();
         let current_negative_ids: Vec<String> = negative_ids_str
             .as_deref()
             .filter(|s| !s.trim().is_empty())
-            .map(|s| s.split(',').map(|id| id.trim().to_string()).filter(|id| !id.is_empty()).collect())
+            .map(|s| {
+                s.split(',')
+                    .map(|id| id.trim().to_string())
+                    .filter(|id| !id.is_empty())
+                    .collect()
+            })
             .unwrap_or_default();
 
         // Walk directory to find PNG files (up to 5 samples)
         let walker: Box<dyn Iterator<Item = walkdir::DirEntry>> = if recursive {
-            Box::new(walkdir::WalkDir::new(&dir_path).follow_links(true).into_iter().filter_map(|e| e.ok()))
+            Box::new(
+                walkdir::WalkDir::new(&dir_path)
+                    .follow_links(true)
+                    .into_iter()
+                    .filter_map(|e| e.ok()),
+            )
         } else {
             Box::new(
                 walkdir::WalkDir::new(&dir_path)
@@ -1878,7 +1928,9 @@ async fn get_comfyui_nodes(
         }
 
         // Scan each sample for ComfyUI metadata and collect unique nodes
-        let text_keys = ["text", "string", "prompt", "clip_l", "clip_g", "positive", "negative"];
+        let text_keys = [
+            "text", "string", "prompt", "clip_l", "clip_g", "positive", "negative",
+        ];
         let mut seen_nodes: HashSet<String> = HashSet::new();
         let mut nodes: Vec<Value> = Vec::new();
 
@@ -2084,7 +2136,7 @@ async fn reextract_metadata(
             "SELECT i.id, f.original_path
              FROM images i
              JOIN image_files f ON f.image_id = i.id
-             WHERE f.file_exists = 1"
+             WHERE f.file_exists = 1",
         )?;
 
         let images: Vec<(i64, String)> = stmt
@@ -2103,15 +2155,16 @@ async fn reextract_metadata(
                     "image_path": image_path,
                     "library_id": lib.uuid
                 }),
-                1,  // lower priority than scans
-                Some(*image_id),  // dedupe by image_id
+                1,               // lower priority than scans
+                Some(*image_id), // dedupe by image_id
             ) {
                 Ok(Some(_)) => queued += 1,
                 Ok(None) => {} // duplicate, skip
                 Err(e) => {
                     log::warn!(
                         "[ReextractMetadata] Failed to enqueue task for image #{}: {}",
-                        image_id, e
+                        image_id,
+                        e
                     );
                 }
             }
@@ -2134,9 +2187,7 @@ async fn reextract_metadata(
 /// Finds paths that exist in multiple libraries and removes the duplicates
 /// from the newer (smaller) library, keeping the older (larger) one.
 /// Also handles intra-library duplicates.
-async fn dedup_directories(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
+async fn dedup_directories(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let mut total_removed = 0;
 
     let libraries = state.library_manager().all_mounted();
@@ -2147,17 +2198,20 @@ async fn dedup_directories(
 
     for (lib_idx, lib) in libraries.iter().enumerate() {
         let lib_clone = lib.clone();
-        let entries: Vec<(String, i64)> = tokio::task::spawn_blocking(move || -> Result<Vec<(String, i64)>, AppError> {
-            let conn = lib_clone.main_pool.get()?;
-            let mut stmt = conn.prepare("SELECT path, id FROM watch_directories")?;
-            let rows = stmt
-                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
-                .map_err(|e| AppError::Internal(e.to_string()))?
-                .filter_map(|r| r.ok())
-                .collect();
-            Ok(rows)
-        })
-        .await??;
+        let entries: Vec<(String, i64)> =
+            tokio::task::spawn_blocking(move || -> Result<Vec<(String, i64)>, AppError> {
+                let conn = lib_clone.main_pool.get()?;
+                let mut stmt = conn.prepare("SELECT path, id FROM watch_directories")?;
+                let rows = stmt
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                    })
+                    .map_err(|e| AppError::Internal(e.to_string()))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                Ok(rows)
+            })
+            .await??;
 
         for (path, dir_id) in entries {
             path_to_libs
@@ -2189,16 +2243,19 @@ async fn dedup_directories(
                 tokio::task::spawn_blocking(move || {
                     let _ = lib_clone.directory_db.delete_directory_db(did);
                     if let Ok(conn) = lib_clone.main_pool.get() {
-                        let _ = conn.execute(
-                            "DELETE FROM watch_directories WHERE id = ?1",
-                            params![did],
-                        );
+                        let _ = conn
+                            .execute("DELETE FROM watch_directories WHERE id = ?1", params![did]);
                     }
                 })
                 .await
                 .ok();
                 total_removed += 1;
-                log::info!("[Dedup] Removed cross-library duplicate: {} (id {} from lib {})", path, dir_id, lib_uuid);
+                log::info!(
+                    "[Dedup] Removed cross-library duplicate: {} (id {} from lib {})",
+                    path,
+                    dir_id,
+                    lib_uuid
+                );
             }
         }
     }
@@ -2213,7 +2270,7 @@ async fn dedup_directories(
                  WHERE path IN (
                      SELECT path FROM watch_directories GROUP BY path HAVING COUNT(*) > 1
                  )
-                 ORDER BY path, id"
+                 ORDER BY path, id",
             )?;
             let rows: Vec<(i64, String)> = stmt
                 .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -2233,7 +2290,10 @@ async fn dedup_directories(
 
             for dir_id in &duplicate_ids {
                 let _ = lib_clone.directory_db.delete_directory_db(*dir_id);
-                conn.execute("DELETE FROM watch_directories WHERE id = ?1", params![dir_id])?;
+                conn.execute(
+                    "DELETE FROM watch_directories WHERE id = ?1",
+                    params![dir_id],
+                )?;
             }
 
             Ok(duplicate_ids.len())

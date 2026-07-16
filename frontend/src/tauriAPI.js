@@ -15,26 +15,23 @@ let tauriInvoke = null
 let tauriEvent = null
 let tauriDialog = null
 let tauriShell = null
-let tauriClipboard = null
 let tauriWindow = null
 
 async function loadTauriModules() {
   if (!isTauri()) return false
 
   try {
-    const [core, event, dialog, shell, clipboard, windowMod] = await Promise.all([
+    const [core, event, dialog, shell, windowMod] = await Promise.all([
       import('@tauri-apps/api/core'),
       import('@tauri-apps/api/event'),
       import('@tauri-apps/plugin-dialog'),
       import('@tauri-apps/plugin-shell'),
-      import('@tauri-apps/plugin-clipboard-manager'),
       import('@tauri-apps/api/window')
     ])
     tauriInvoke = core.invoke
     tauriEvent = event
     tauriDialog = dialog
     tauriShell = shell
-    tauriClipboard = clipboard
     tauriWindow = windowMod
     return true
   } catch (e) {
@@ -53,7 +50,6 @@ const tauriAPI = {
   // Platform info
   platform: isTauri() ? 'tauri' : null,
   isTauri: isTauri(),
-  isElectron: false,
 
   // Get API URL for backend communication
   getApiUrl: async () => {
@@ -167,11 +163,11 @@ const tauriAPI = {
     try {
       const status = await tauriInvoke('backend_status')
       return status.mode === 'portable'
-    } catch (e) {
+    } catch {
       return false
     }
   },
-  onUpdaterStatus: (callback) => {
+  onUpdaterStatus: () => {
     // TODO: Implement Tauri updater events
     return () => {}
   },
@@ -272,47 +268,50 @@ const tauriAPI = {
     } catch (e) {
       console.error('[TauriAPI] showImageContextMenu failed:', e)
     }
+  },
+
+  updateSvpManagerPlayback: async (update) => {
+    await tauriReady
+    if (!tauriInvoke) return
+    await tauriInvoke('update_svp_manager_playback', { update })
+  },
+
+  subscribeToSvpManager: async ({ onFilterChanged, onPaused } = {}) => {
+    await tauriReady
+    if (!tauriEvent) return () => {}
+    const unlisteners = await Promise.all([
+      onFilterChanged
+        ? tauriEvent.listen('svp-manager-filter-changed', event => onFilterChanged(event.payload))
+        : null,
+      onPaused
+        ? tauriEvent.listen('svp-manager-set-paused', event => onPaused(event.payload))
+        : null,
+    ])
+    return () => {
+      for (const unlisten of unlisteners) unlisten?.()
+    }
   }
 }
 
 /**
- * Unified API that works in both Electron and Tauri
- * Falls back to Electron API if available, otherwise uses Tauri API
+ * Tauri desktop API for the supported desktop shell.
  */
 export function getDesktopAPI() {
-  // Check for Electron first
-  if (typeof window !== 'undefined' && window.electronAPI) {
-    return window.electronAPI
-  }
-
-  // Check for Tauri
-  if (isTauri()) {
-    return tauriAPI
-  }
-
-  // No desktop API available (running in browser)
-  return null
+  return isTauri() ? tauriAPI : null
 }
 
 /**
- * Check if running in a desktop environment (Electron or Tauri)
+ * Check if running in the Tauri desktop shell.
  */
 export function isDesktopApp() {
-  return (typeof window !== 'undefined' && window.electronAPI) || isTauri()
-}
-
-/**
- * Check if running in Tauri specifically
- */
-export function isTauriApp() {
   return isTauri()
 }
 
 /**
- * Check if running in Electron specifically
+ * Check if running in Tauri specifically.
  */
-export function isElectronApp() {
-  return typeof window !== 'undefined' && window.electronAPI?.isElectron
+export function isTauriApp() {
+  return isTauri()
 }
 
 // =============================================================================
@@ -1027,6 +1026,115 @@ const videoControlAPI = {
   }
 }
 
+const nativeVideoAPI = {
+  capabilities: async () => {
+    await tauriReady
+    if (!tauriInvoke) return { desktop_tauri: false, native_renderer_available: false, safe_mode: false, desktop_player_mode: 'react' }
+    return tauriInvoke('native_video_capabilities')
+  },
+
+  setDesktopPlayerMode: async (mode) => {
+    await tauriReady
+    if (!tauriInvoke) return false
+    return tauriInvoke('native_video_set_desktop_player_mode', { mode })
+  },
+
+  open: async (itemId, path, resumePosition = 0) => {
+    await tauriReady
+    if (!tauriInvoke) return null
+    return tauriInvoke('native_video_open', { itemId, path, resumePosition })
+  },
+
+  showImage: async (itemId) => {
+    await tauriReady
+    if (!tauriInvoke) return null
+    return tauriInvoke('native_video_show_image', { itemId })
+  },
+
+  firstFrame: async (generation) => {
+    await tauriReady
+    if (!tauriInvoke) return null
+    return tauriInvoke('native_video_first_frame', { generation })
+  },
+
+  rendererFailed: async (generation) => {
+    await tauriReady
+    if (!tauriInvoke) return null
+    return tauriInvoke('native_video_renderer_failed', { generation })
+  },
+
+  releaseViewport: async (generation) => {
+    await tauriReady
+    if (!tauriInvoke) return false
+    return tauriInvoke('native_video_release_viewport', { generation })
+  },
+
+  setInterpolation: async (engine, preset = null, targetFps = 60) => {
+    await tauriReady
+    if (!tauriInvoke) return false
+    await tauriInvoke('native_video_set_interpolation', { engine, preset, targetFps })
+    return true
+  },
+
+  setPaused: async (paused) => {
+    await tauriReady
+    if (!tauriInvoke) return false
+    await tauriInvoke('native_video_set_paused', { paused })
+    return true
+  },
+
+  setMuted: async (muted) => {
+    await tauriReady
+    if (!tauriInvoke) return false
+    await tauriInvoke('native_video_set_muted', { muted })
+    return true
+  },
+
+  setVolume: async (volume) => {
+    await tauriReady
+    if (!tauriInvoke) return false
+    await tauriInvoke('native_video_set_volume', { volume })
+    return true
+  },
+
+  setSpeed: async (speed) => {
+    await tauriReady
+    if (!tauriInvoke) return false
+    await tauriInvoke('native_video_set_speed', { speed })
+    return true
+  },
+
+  setViewport: async ({ x, y, width, height, visible }) => {
+    await tauriReady
+    if (!tauriInvoke) return false
+    await tauriInvoke('native_video_set_viewport', {
+      request: { x, y, width, height, visible }
+    })
+    return true
+  },
+
+  setDisplayMode: async (mode) => {
+    await tauriReady
+    if (!tauriInvoke) return false
+    await tauriInvoke('native_video_set_display_mode', { mode })
+    return true
+  },
+
+  subscribe: async ({ onSnapshot, onEvent, onError, onExit } = {}) => {
+    await tauriReady
+    if (!tauriEvent) return () => {}
+    const unlisteners = await Promise.all([
+      onSnapshot ? tauriEvent.listen('native-video-snapshot', event => onSnapshot(event.payload)) : null,
+      onEvent ? tauriEvent.listen('native-video-event', event => onEvent(event.payload)) : null,
+      onError ? tauriEvent.listen('native-video-runtime-error', event => onError(event.payload)) : null,
+      onExit ? tauriEvent.listen('native-video-runtime-exited', event => onExit(event.payload)) : null,
+    ])
+    return () => {
+      for (const unlisten of unlisteners) unlisten?.()
+    }
+  }
+}
+
 // Export the Tauri API and detection functions
-export { tauriAPI, isTauri, videoControlAPI }
+export { tauriAPI, isTauri, videoControlAPI, nativeVideoAPI }
 export default getDesktopAPI

@@ -4,7 +4,6 @@ import {
   getMediaUrl,
   getAssetUrl,
   isUsingLocalServer,
-  getOpticalFlowConfig,
   playVideoInterpolated,
   stopInterpolatedStream,
   getSVPConfig,
@@ -13,22 +12,27 @@ import {
   playVideoTranscode,
   stopTranscodeStream
 } from '../../../api'
-import { isMobileApp } from '../../../serverManager'
+import { isLinuxDesktopApp, isMobileApp } from '../../../serverManager'
 import { isVideo } from '../utils/helpers'
 import { useAudioNormalization } from './useAudioNormalization'
+import { shouldRestartStalledSVP } from './svpStallGuard'
+import { getCodecFallbackStartPosition } from './codecFallback'
+import { shouldStartSVPPlayback } from './svpBuffering'
 
 /**
  * Hook for managing HLS/SVP/OpticalFlow video streaming
  * @param {object} addonStatus - { svpInstalled } from useAddonStatus
  */
 export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus = {}) {
-  const { svpInstalled = false } = addonStatus
-  const { applyNormalization, resetGain } = useAudioNormalization(mediaRef)
+  const { svpInstalled = false, enabled = true } = addonStatus
+  const nativeSvpPlayback = isLinuxDesktopApp()
+  const { applyNormalization, resetGain, setOutputVolume, setOutputMuted } = useAudioNormalization(mediaRef)
   // HLS streaming ref
   const hlsRef = useRef(null)
 
-  // Optical flow interpolation state
-  const [opticalFlowConfig, setOpticalFlowConfig] = useState(null)
+  // Retained stream state for compatibility with existing lightbox consumers.
+  // FFmpeg interpolation is retired; SVP is the sole interpolation engine.
+  const [opticalFlowConfig] = useState({ enabled: false })
   const [opticalFlowLoading, setOpticalFlowLoading] = useState(false)
   const [opticalFlowError, setOpticalFlowError] = useState(null)
   const [opticalFlowStreamUrl, setOpticalFlowStreamUrl] = useState(null)
@@ -78,23 +82,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   const startSVPStreamRef = useRef(null)
   const startInterpolatedStreamRef = useRef(null)
 
-  // Load optical flow config on mount (native FFmpeg minterpolate, no addon needed)
-  useEffect(() => {
-    async function loadOpticalFlowConfig() {
-      try {
-        const config = await getOpticalFlowConfig()
-        setOpticalFlowConfig(config)
-      } catch (err) {
-        console.error('Failed to load optical flow config:', err)
-        setOpticalFlowConfig({ enabled: false })
-      }
-    }
-    loadOpticalFlowConfig()
-  }, [])
 
   // Load SVP config on mount (only if addon installed)
   useEffect(() => {
-    if (!svpInstalled) {
+    if (!svpInstalled && !nativeSvpPlayback) {
       setSvpConfig({ enabled: false })
       setSvpConfigLoaded(true)
       return
@@ -111,7 +102,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       }
     }
     loadSVPConfig()
-  }, [svpInstalled])
+  }, [svpInstalled, nativeSvpPlayback])
 
   // Auto-dismiss SVP error toast after 5 seconds
   useEffect(() => {
@@ -434,6 +425,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     if (transcodeHlsRef.current) { transcodeHlsRef.current.destroy(); transcodeHlsRef.current = null }
 
     // Reset all streaming state for the new video
+    resetGain()
     setOpticalFlowError(null)
     setOpticalFlowStreamUrl(null)
     setOpticalFlowLoading(false)
@@ -470,6 +462,21 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     return () => { cancelled = true }
   }, [image?.id])
 
+  // Native GTK owns playback exclusively. Tear down every browser/HLS producer
+  // as soon as native ownership is selected so two decoders cannot run.
+  useEffect(() => {
+    if (enabled) return
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
+    if (svpHlsRef.current) { svpHlsRef.current.destroy(); svpHlsRef.current = null }
+    if (transcodeHlsRef.current) { transcodeHlsRef.current.destroy(); transcodeHlsRef.current = null }
+    resetGain()
+    Promise.all([
+      stopSVPStream().catch(() => {}),
+      stopInterpolatedStream().catch(() => {}),
+      stopTranscodeStream().catch(() => {}),
+    ]).catch(() => {})
+  }, [enabled, resetGain])
+
   // Stop SVP stream
   const stopSVP = useCallback(async () => {
     if (svpHlsRef.current) {
@@ -484,6 +491,27 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     await stopSVPStream()
   }, [])
 
+  // Cancel SVP while it's loading/buffering — stops the stream and disables SVP in-memory
+  const cancelSVPLoading = useCallback(() => {
+    svpRestartTokenRef.current += 1
+    svpQueuedRestartRef.current = null
+    svpStartingRef.current = false
+    svpRestartingRef.current = false
+    streamTransitioningRef.current = false
+    setSvpLoading(false)
+    setSvpPendingSeek(null)
+    if (svpHlsRef.current) {
+      svpHlsRef.current.destroy()
+      svpHlsRef.current = null
+    }
+    setSvpStreamUrl(null)
+    setSvpTotalDuration(null)
+    setSvpBufferedDuration(0)
+    setSvpError(null)
+    setSvpConfig(prev => prev ? { ...prev, enabled: false } : prev)
+    stopSVPStream().catch(() => {})
+  }, [])
+
   // Use a ref for currentQuality so the auto-start effect doesn't re-fire on quality changes.
   // Quality changes are handled by handleQualityChange — auto-start only handles new image opens.
   const currentQualityRef = useRef(currentQuality)
@@ -493,17 +521,18 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   // Priority: SVP (if enabled) > Optical Flow (if enabled) > Transcode (if quality != original)
   // NOTE: currentQuality is intentionally NOT a dependency — quality changes are handled by handleQualityChange
   useEffect(() => {
+    if (!enabled) return
     // Wait for cleanup to complete before starting new streams. Without this,
     // stop_all_*_streams() from cleanup could kill the newly started stream.
     if (!cleanupDoneRef.current) return
 
-    // Wait until both configs have loaded from the API before auto-starting.
+    // Wait for the sole supported interpolation engine to load.
     // Without this gate, the effect fires 3 times during startup:
     //   1. initial mount (both configs null)
     //   2. svpConfig loads (undefined→false)
     //   3. opticalFlowConfig loads (undefined→false)
     // Each fire starts a transcode that kills the previous one via stop_all_transcode_streams().
-    if (svpConfig === null || opticalFlowConfig === null) return
+    if (svpConfig === null) return
 
     if (image && isVideo(image.filename)) {
       const quality = currentQualityRef.current
@@ -512,15 +541,16 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         opticalFlowEnabled: opticalFlowConfig?.enabled,
         currentQuality: quality
       })
-      // Prefer SVP if enabled
-      if (svpConfig?.enabled) {
+      // Desktop LocalBooru uses the original WebKit player with the
+      // Manager-controlled GStreamer/VapourSynth filter. Do not start the
+      // retired local HLS producer in that mode.
+      if (svpConfig?.enabled && nativeSvpPlayback) {
+        if (image.file_path) applyNormalization(image.file_path)
+      }
+      // Remote/mobile clients retain the existing streaming route.
+      else if (svpConfig?.enabled) {
         console.log('[Auto-start] Starting SVP stream...')
         startSVPStreamRef.current()
-      }
-      // Fall back to optical flow if enabled
-      else if (opticalFlowConfig?.enabled) {
-        console.log('[Auto-start] Starting OpticalFlow stream...')
-        startInterpolatedStreamRef.current()
       }
       // If quality is not original, use transcode
       else if ((!transcodeStreamUrl) && quality !== 'original') {
@@ -552,7 +582,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         applyNormalization(image.file_path)
       }
     }
-  }, [image?.id, cleanupSeq, svpConfig?.enabled, opticalFlowConfig?.enabled])
+  }, [enabled, image?.id, cleanupSeq, svpConfig?.enabled, nativeSvpPlayback])
 
   // Setup HLS player when optical flow stream is active
   useEffect(() => {
@@ -819,11 +849,19 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     const isTimeBuffered = (time) => {
       const ranges = video.buffered
       for (let i = 0; i < ranges.length; i++) {
-        if (time >= ranges.start(i) - 0.25 && time <= ranges.end(i) + 0.25) {
-          return true
-        }
+        if (time >= ranges.start(i) && time <= ranges.end(i)) return true
       }
       return false
+    }
+
+    const bufferedAhead = () => {
+      const ranges = video.buffered
+      for (let i = 0; i < ranges.length; i++) {
+        if (ranges.start(i) <= video.currentTime && ranges.end(i) > video.currentTime) {
+          return ranges.end(i) - video.currentTime
+        }
+      }
+      return 0
     }
 
     if (Hls.isSupported()) {
@@ -914,7 +952,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         }
         setSvpPendingSeek(null)
         setSvpLoading(false)
-        playSVPVideo()
+        if (shouldStartSVPPlayback(bufferedAhead())) playSVPVideo()
       })
 
       playOnCanPlay = () => {
@@ -929,7 +967,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         }
         setSvpPendingSeek(null)
         setSvpLoading(false)
-        playSVPVideo()
+        if (shouldStartSVPPlayback(bufferedAhead())) playSVPVideo()
       }
       video.addEventListener('canplay', playOnCanPlay)
 
@@ -941,7 +979,11 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
         stallTimer = setTimeout(() => {
           if (cancelled || streamTransitioningRef.current) return
-          if (video.readyState >= 3 && isTimeBuffered(video.currentTime || 0)) return
+          if (!shouldRestartStalledSVP({
+            hasBufferedFragment,
+            readyState: video.readyState,
+            isBuffered: isTimeBuffered(video.currentTime || 0),
+          })) return
 
           console.warn('[SVP HLS] Stalled outside buffered range, restarting stream', {
             hlsTime: video.currentTime,
@@ -959,7 +1001,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       }
       video.addEventListener('waiting', handleStall)
       video.addEventListener('stalled', handleStall)
-      video.addEventListener('suspend', handleStall)
 
       // Track available duration from HLS manifest for seek handling
       hls.on(Hls.Events.LEVEL_UPDATED, (event, data) => {
@@ -1080,7 +1121,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       if (handleStall) {
         video.removeEventListener('waiting', handleStall)
         video.removeEventListener('stalled', handleStall)
-        video.removeEventListener('suspend', handleStall)
       }
       if (startupTimer) {
         clearTimeout(startupTimer)
@@ -1345,6 +1385,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       console.warn('[Codec] Browser cannot decode video codec, falling back to transcode')
       codecFallbackStartedRef.current = true
       setCodecFallbackActive(true)
+      const startPosition = getCodecFallbackStartPosition(video.currentTime)
 
       // Stop audio-only playback immediately so user doesn't hear disembodied audio
       video.pause()
@@ -1352,10 +1393,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       video.load()
 
       // Auto-start transcoding at original quality (re-encode to H.264, same resolution)
-      playVideoTranscode(image.file_path, 0, null).then(result => {
+      playVideoTranscode(image.file_path, startPosition, null).then(result => {
         if (result.success) {
           hadTranscodeStreamRef.current = true
-          setTranscodeStartOffset(0)
+          setTranscodeStartOffset(startPosition)
           if (result.duration) setTranscodeTotalDuration(result.duration)
           if (result.source_resolution) setSourceResolution(result.source_resolution)
           setTranscodeStreamUrl(result.stream_url)
@@ -1375,6 +1416,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     opticalFlowError,
     opticalFlowStreamUrl,
     // SVP state
+    nativeSvpPlayback,
     svpConfig,
     setSvpConfig,
     svpConfigLoaded,
@@ -1408,10 +1450,13 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     startSVPStream,
     startSVPStreamRef,
     stopSVP,
+    cancelSVPLoading,
     resetStreamingState,
     handleQualityChange,
     codecFallbackActive,
     checkCodecFallback,
+    setAudioOutputVolume: setOutputVolume,
+    setAudioOutputMuted: setOutputMuted,
     streamError
   }
 }

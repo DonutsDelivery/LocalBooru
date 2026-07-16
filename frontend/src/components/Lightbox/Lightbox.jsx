@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { getMediaUrl, getAssetUrl, isUsingLocalServer, getSVPConfig, updateSVPConfig, stopSVPStream, stopInterpolatedStream, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo, uploadImage } from '../../api'
+import { getMediaUrl, getAssetUrl, isUsingLocalServer, getSVPConfig, updateSVPConfig, stopSVPStream, stopInterpolatedStream, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo, uploadImage, getFileDimensions } from '../../api'
 import { isMobileApp } from '../../serverManager'
 import { getDesktopAPI } from '../../tauriAPI'
 import { toast } from '../Toast'
@@ -140,8 +140,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Refs
   const mediaRef = useRef(null)
   const containerRef = useRef(null)
+  const svpResumeRef = useRef(null)
+  const svpSourceFpsRef = useRef(null)
+  const svpDisableTimerRef = useRef(null)
+  const svpFpsProbePendingRef = useRef(false)
+  const svpTransitionRef = useRef({ active: false, token: 0, timer: null })
+  const svpFilterActiveRef = useRef(false)
+  const svpFailOpenRef = useRef(false)
+  const [svpPipelineGeneration, setSvpPipelineGeneration] = useState(0)
 
   const image = images[currentIndex]
+  const isVideoFile = isVideo(image?.original_filename)
 
   // UI visibility and fullscreen hook
   const {
@@ -156,8 +165,19 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const { installed: whisperInstalled } = useAddonStatus('whisper-subtitles')
   const { installed: castInstalled } = useAddonStatus('cast')
   const { installed: svpInstalled } = useAddonStatus('svp')
+  const casting = useCastSession(mediaRef, image)
   // Video streaming hook
-  const streaming = useVideoStreaming(mediaRef, image, currentQuality, { svpInstalled })
+  const streaming = useVideoStreaming(mediaRef, image, currentQuality, {
+    svpInstalled,
+    enabled: !casting.isCasting && !image?.is_local_direct_file,
+  })
+  const svpPathEnabled = Boolean(
+    streaming.nativeSvpPlayback
+    && !streaming.svpStreamUrl
+    && !streaming.opticalFlowStreamUrl
+    && !streaming.transcodeStreamUrl
+  )
+  const libraryImageId = image?.is_local_direct_file ? null : image?.id
 
   // Video playback hook - pass streaming state
   const playback = useVideoPlayback(mediaRef, {
@@ -178,14 +198,171 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     restartTranscodeFromPosition: streaming.restartTranscodeFromPosition,
     setAudioOutputVolume: streaming.setAudioOutputVolume,
     setAudioOutputMuted: streaming.setAudioOutputMuted
-  }, image?.id, image?.directory_id)
+  }, libraryImageId, image?.directory_id)
+
+  const reportSvpPlayback = useCallback((video = mediaRef.current, fps = svpSourceFpsRef.current) => {
+    const desktopAPI = getDesktopAPI()
+    if (!desktopAPI?.updateSvpManagerPlayback || !video || !svpPathEnabled || svpFailOpenRef.current || !image?.file_path || !fps) return
+    svpSourceFpsRef.current = fps
+    desktopAPI.updateSvpManagerPlayback({
+      enabled: true,
+      path: image.file_path,
+      width: video.videoWidth,
+      height: video.videoHeight,
+      fps,
+      duration: Number.isFinite(video.duration) ? video.duration : 0,
+      paused: video.paused,
+    }).catch(error => console.warn('[SVPManager] playback update failed:', error))
+  }, [image?.file_path, svpPathEnabled])
+
+  const measureAndReportSvpPlayback = useCallback((video) => {
+    if (!svpPathEnabled || !image?.file_path) return
+    if (svpSourceFpsRef.current) {
+      reportSvpPlayback(video)
+      return
+    }
+    const metadataFps = Number(image?.video_fps || image?.frame_rate || image?.fps)
+    if (Number.isFinite(metadataFps) && metadataFps > 0) {
+      reportSvpPlayback(video, metadataFps)
+      return
+    }
+    const sampleDecodedFrames = () => {
+      if (!video.requestVideoFrameCallback) return
+      let previousMediaTime = null
+      const sampleFrame = (_now, metadata) => {
+        if (previousMediaTime !== null && metadata.mediaTime > previousMediaTime) {
+          const measuredFps = 1 / (metadata.mediaTime - previousMediaTime)
+          if (Number.isFinite(measuredFps) && measuredFps > 1 && measuredFps < 240) {
+            reportSvpPlayback(video, measuredFps)
+            return
+          }
+        }
+        previousMediaTime = metadata.mediaTime
+        video.requestVideoFrameCallback(sampleFrame)
+      }
+      video.requestVideoFrameCallback(sampleFrame)
+    }
+    if (!image?.is_local_direct_file && !svpFpsProbePendingRef.current) {
+      svpFpsProbePendingRef.current = true
+      getFileDimensions(image.file_path)
+        .then(info => {
+          const fps = Number(info?.fps)
+          if (Number.isFinite(fps) && fps > 0) reportSvpPlayback(video, fps)
+          else sampleDecodedFrames()
+        })
+        .catch(sampleDecodedFrames)
+        .finally(() => { svpFpsProbePendingRef.current = false })
+      return
+    }
+    sampleDecodedFrames()
+  }, [image?.file_path, image?.video_fps, image?.frame_rate, image?.fps, image?.is_local_direct_file, reportSvpPlayback, svpPathEnabled])
+
+  useEffect(() => {
+    svpSourceFpsRef.current = null
+    svpFpsProbePendingRef.current = false
+    svpFailOpenRef.current = false
+  }, [image?.id])
+
+  useEffect(() => {
+    const video = mediaRef.current
+    if (svpPathEnabled && video?.readyState >= 1) measureAndReportSvpPlayback(video)
+  }, [svpPathEnabled, image?.id, measureAndReportSvpPlayback])
+
+  useEffect(() => {
+    const desktopAPI = getDesktopAPI()
+    if (!desktopAPI?.subscribeToSvpManager) return
+    let unsubscribe = () => {}
+    desktopAPI.subscribeToSvpManager({
+      onFilterChanged: ({ enabled }) => {
+        svpFilterActiveRef.current = Boolean(enabled)
+        const video = mediaRef.current
+        if (!svpResumeRef.current && video) {
+          svpResumeRef.current = { currentTime: video.currentTime, paused: video.paused }
+        }
+
+        const transition = svpTransitionRef.current
+        transition.active = true
+        transition.token += 1
+        const token = transition.token
+        if (transition.timer) clearTimeout(transition.timer)
+
+        if (video) {
+          video.pause()
+          video.removeAttribute('src')
+          video.load()
+        }
+
+        transition.timer = setTimeout(() => {
+          if (svpTransitionRef.current.token !== token) return
+          svpTransitionRef.current.timer = null
+          setSvpPipelineGeneration(generation => generation + 1)
+        }, 150)
+      },
+      onPaused: (paused) => {
+        const video = mediaRef.current
+        if (!video) return
+        if (paused) {
+          if (!svpResumeRef.current) {
+            svpResumeRef.current = { currentTime: video.currentTime, paused: video.paused }
+          }
+          video.pause()
+        } else if (svpTransitionRef.current.active) {
+          if (svpResumeRef.current) svpResumeRef.current.paused = false
+        } else {
+          video.play().catch(() => {})
+        }
+      },
+    }).then(unlisten => { unsubscribe = unlisten })
+    return () => {
+      unsubscribe()
+      if (svpTransitionRef.current.timer) {
+        clearTimeout(svpTransitionRef.current.timer)
+        svpTransitionRef.current.timer = null
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (svpPathEnabled) return
+    svpFilterActiveRef.current = false
+    svpFailOpenRef.current = false
+    getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(() => {})
+  }, [svpPathEnabled, image?.id])
+
+  const failOpenNativeSvp = useCallback((video) => {
+    if (!svpPathEnabled || !svpFilterActiveRef.current || svpFailOpenRef.current) return
+    svpFailOpenRef.current = true
+    svpFilterActiveRef.current = false
+    video?.pause()
+    getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(error => {
+      console.warn('[SVPManager] failed to disable broken native graph:', error)
+    })
+  }, [svpPathEnabled])
+
+  useEffect(() => {
+    if (svpDisableTimerRef.current) {
+      clearTimeout(svpDisableTimerRef.current)
+      svpDisableTimerRef.current = null
+    }
+    return () => {
+      svpDisableTimerRef.current = setTimeout(() => {
+        const video = mediaRef.current
+        if (video) {
+          video.pause()
+          video.removeAttribute('src')
+          video.load()
+        }
+        getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(() => {})
+      }, 0)
+    }
+  }, [image?.id])
 
   // Zoom and pan hook
   const zoomPan = useZoomPan(mediaRef, containerRef, resetHideTimer, image)
 
   // Timeline preview hook (for video thumbnail preview on hover)
   const timelinePreview = useTimelinePreview(
-    image?.id,
+    libraryImageId,
     image?.directory_id,
     playback.duration
   )
@@ -214,13 +391,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Share stream hook (host side)
   const shareStream = useShareStream(mediaRef, {
-    imageId: image?.id,
+    imageId: libraryImageId,
     directoryId: image?.directory_id,
     isVideoFile: isVideo(image?.original_filename),
   })
 
-  // Cast session hook (Chromecast / DLNA)
-  const casting = useCastSession(mediaRef, image)
 
   // Video gesture hook (tap zones + drag-to-seek)
   const gestures = useVideoGestures(playback, resetHideTimer)
@@ -275,11 +450,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Check for resume position when opening a video
   useEffect(() => {
-    if (!image || !isVideo(image.filename)) return
+    if (!libraryImageId || !image || !isVideo(image.filename)) return
     setResumePosition(null)
     clearTimeout(resumeTimerRef.current)
 
-    getPlaybackPosition(image.id).then(data => {
+    getPlaybackPosition(libraryImageId).then(data => {
       if (data.position > 10 && !data.completed) {
         setResumePosition(data)
         // Auto-dismiss after 5s
@@ -288,7 +463,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }).catch(() => {})
 
     return () => clearTimeout(resumeTimerRef.current)
-  }, [image?.id])
+  }, [libraryImageId])
 
   // Auto-generate subtitles when opening a video (if enabled)
   useEffect(() => {
@@ -936,20 +1111,22 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Determine if we should play the video directly (no streaming)
   const shouldPlayDirect = useMemo(() => {
+    if (image?.is_local_direct_file) return true
     return streaming.svpConfigLoaded
       && !streaming.svpStreamUrl
       && !streaming.opticalFlowStreamUrl
       && !streaming.transcodeStreamUrl
       && !streaming.svpLoading
       && !streaming.codecFallbackActive
-      && currentQuality === 'original'
-      && (!streaming.svpConfig?.enabled || streaming.svpError)
+      && (currentQuality === 'original' || (streaming.nativeSvpPlayback && streaming.svpConfig?.enabled))
+      && (!streaming.svpConfig?.enabled || streaming.nativeSvpPlayback || streaming.svpError)
       && (!streaming.opticalFlowConfig?.enabled || streaming.opticalFlowError)
   }, [
     streaming.svpConfigLoaded, streaming.svpStreamUrl, streaming.opticalFlowStreamUrl,
     streaming.transcodeStreamUrl, streaming.svpLoading, streaming.codecFallbackActive,
-    currentQuality, streaming.svpConfig?.enabled, streaming.svpError,
-    streaming.opticalFlowConfig?.enabled, streaming.opticalFlowError
+    currentQuality, streaming.svpConfig?.enabled, streaming.nativeSvpPlayback, streaming.svpError,
+    streaming.opticalFlowConfig?.enabled, streaming.opticalFlowError,
+    image?.is_local_direct_file
   ])
 
   // On Tauri mobile with local server, use asset protocol to serve videos directly from disk.
@@ -958,16 +1135,38 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // The asset protocol serves from the filesystem directly, bypassing this bottleneck.
   const directVideoSrc = useMemo(() => {
     if (!shouldPlayDirect || !image?.url) return undefined
+    if (image?.is_local_direct_file) {
+      return getMediaUrl(image.url)
+    }
     if (isMobileApp() && isUsingLocalServer() && image?.file_path) {
       const assetUrl = getAssetUrl(image.file_path)
       if (assetUrl) return assetUrl
     }
     return getMediaUrl(image.url)
-  }, [shouldPlayDirect, image?.url, image?.file_path])
+  }, [shouldPlayDirect, image?.url, image?.file_path, image?.is_local_direct_file])
+
+  const directFileStartedRef = useRef(false)
+  const directFileLastTimeRef = useRef(0)
+  useEffect(() => {
+    directFileStartedRef.current = false
+    directFileLastTimeRef.current = 0
+  }, [image?.id])
+
+  const reportDirectFileStage = useCallback((stage, video = mediaRef.current) => {
+    if (!image?.is_local_direct_file) return
+    const error = video?.error
+    let details = ''
+    if (video) {
+      details = ` ready=${video.readyState} network=${video.networkState} time=${video.currentTime.toFixed(3)} duration=${Number.isFinite(video.duration) ? video.duration.toFixed(3) : video.duration} paused=${video.paused} loop=${video.loop}`
+      if (error) details += ` error=${error.code}:${error.message}`
+    }
+    import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke('report_direct_file_stage', { stage: `${stage}${details}` }))
+      .catch(() => {})
+  }, [image?.is_local_direct_file])
 
   if (!image) return null
 
-  const isVideoFile = isVideo(image.original_filename)
   const fileStatus = image.file_status || 'available'
   const isUnavailable = fileStatus !== 'available'
 
@@ -1431,21 +1630,69 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             onTouchEnd={casting.isCasting ? undefined : gestures.handleTouchEnd}
           >
             <video
-              key={image.id}
+              key={`${image.id}-${svpPipelineGeneration}`}
               ref={mediaRef}
               src={directVideoSrc}
               preload="auto"
               autoPlay
               playsInline
-              loop={!autoAdvance.isEnabled}
+              loop={false}
               className={`lightbox-media video-display-${playback.videoDisplayMode} ${streaming.svpStreamUrl ? 'svp-streaming' : streaming.opticalFlowStreamUrl ? 'interpolated-streaming' : streaming.transcodeStreamUrl ? 'transcode-streaming' : ''}`}
               style={zoomPan.getZoomTransform()}
               onClick={handleVideoClick}
-              onPlay={playback.handleVideoPlay}
-              onPause={playback.handleVideoPause}
-              onTimeUpdate={playback.handleTimeUpdate}
-              onLoadedMetadata={handleLoadedMetadataWithResolution}
-              onCanPlay={handleVideoCanPlay}
+              onLoadStart={(event) => reportDirectFileStage('loadstart', event.currentTarget)}
+              onLoadedData={(event) => reportDirectFileStage('loadeddata', event.currentTarget)}
+              onPlay={(event) => {
+                playback.handleVideoPlay(event)
+                reportSvpPlayback(event.currentTarget)
+                reportDirectFileStage('play', event.currentTarget)
+              }}
+              onPlaying={(event) => reportDirectFileStage('playing', event.currentTarget)}
+              onPause={(event) => {
+                playback.handleVideoPause(event)
+                reportSvpPlayback(event.currentTarget)
+                reportDirectFileStage('pause', event.currentTarget)
+              }}
+              onTimeUpdate={(event) => {
+                playback.handleTimeUpdate(event)
+                const previousTime = directFileLastTimeRef.current
+                const nextTime = event.currentTarget.currentTime
+                if (image?.is_local_direct_file && previousTime > 1 && nextTime < previousTime - 1) {
+                  reportDirectFileStage(`time-reset-from-${previousTime.toFixed(3)}`, event.currentTarget)
+                }
+                directFileLastTimeRef.current = nextTime
+                if (!directFileStartedRef.current && event.currentTarget.currentTime > 0) {
+                  directFileStartedRef.current = true
+                  reportDirectFileStage('time-advanced', event.currentTarget)
+                }
+              }}
+              onLoadedMetadata={(event) => {
+                handleLoadedMetadataWithResolution(event)
+                const resume = svpResumeRef.current
+                if (resume) {
+                  event.currentTarget.currentTime = resume.currentTime
+                  if (!resume.paused) event.currentTarget.play().catch(() => {})
+                  svpResumeRef.current = null
+                }
+                svpTransitionRef.current.active = false
+                measureAndReportSvpPlayback(event.currentTarget)
+                reportDirectFileStage('loadedmetadata', event.currentTarget)
+              }}
+              onCanPlay={(event) => {
+                handleVideoCanPlay(event)
+                reportDirectFileStage('canplay', event.currentTarget)
+              }}
+              onWaiting={(event) => reportDirectFileStage('waiting', event.currentTarget)}
+              onStalled={(event) => reportDirectFileStage('stalled', event.currentTarget)}
+              onSeeking={(event) => reportDirectFileStage('seeking', event.currentTarget)}
+              onSeeked={(event) => reportDirectFileStage('seeked', event.currentTarget)}
+              onEmptied={(event) => reportDirectFileStage('emptied', event.currentTarget)}
+              onAbort={(event) => reportDirectFileStage('abort', event.currentTarget)}
+              onEnded={(event) => reportDirectFileStage('ended', event.currentTarget)}
+              onError={(event) => {
+                reportDirectFileStage('error', event.currentTarget)
+                failOpenNativeSvp(event.currentTarget)
+              }}
               onContextMenu={handleVideoContextMenu}
             />
             {/* Video diagnostics — press I to toggle, B for bare mode */}
@@ -1731,6 +1978,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               <div className="interpolate-loading svp-loading">
                 <div className="interpolate-loading-spinner" />
                 <span>SVP: Buffering {streaming.svpConfig?.target_fps || 60} FPS...</span>
+                <button className="svp-cancel-btn" onClick={streaming.cancelSVPLoading} title="Cancel SVP">✕</button>
               </div>
             )}
             {/* SVP streaming indicator */}
@@ -1744,6 +1992,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               <div className="interpolate-loading svp-loading">
                 <div className="interpolate-loading-spinner" />
                 <span>Buffering to {formatTime(streaming.svpPendingSeek)}...</span>
+                <button className="svp-cancel-btn" onClick={streaming.cancelSVPLoading} title="Cancel SVP">✕</button>
               </div>
             )}
             {/* SVP error toast */}
@@ -1939,7 +2188,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 streaming.svpStartingRef.current = false
 
                 // Start new stream if enabled
-                if (newConfig.enabled && image && isVideo(image.filename)) {
+                if (newConfig.enabled && !streaming.nativeSvpPlayback && image && isVideo(image.filename)) {
                   // Small delay to ensure state is cleared
                   setTimeout(() => {
                     streaming.startSVPStreamRef.current?.()
@@ -1955,7 +2204,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       )}
 
       {/* Quality selector */}
-      {isVideoFile && (
+      {isVideoFile && !(streaming.nativeSvpPlayback && streaming.svpConfig?.enabled) && (
         <QualitySelector
           isOpen={showQualitySelector}
           onClose={() => setShowQualitySelector(false)}

@@ -1,5 +1,6 @@
 :root {
   /* Dark grey theme (ComfyUI style) */
+  color-scheme: dark;
   --bg-primary: #141414;
   --bg-secondary: #1e1e1e;
   --bg-tertiary: #282828;
@@ -134,6 +135,11 @@ select {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 10px;
+}
+
+select option {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 /* Custom scrollbar */

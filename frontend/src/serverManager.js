@@ -25,6 +25,10 @@ export function isTauriApp() {
   return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
 }
 
+export function isLinuxDesktopApp() {
+  return isTauriApp() && !isMobileApp() && /Linux/i.test(navigator.userAgent)
+}
+
 // Default server structure
 function createServer(data) {
   return {

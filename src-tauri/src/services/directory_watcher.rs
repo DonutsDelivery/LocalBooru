@@ -71,7 +71,10 @@ impl DirectoryWatcher {
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
         self.shutdown_tx = Some(shutdown_tx);
 
-        tokio::spawn(async move {
+        // Watch registration, recursive WalkDir scans, and SQLite backfills are
+        // synchronous. Keep the startup lifecycle on Tokio's blocking pool so
+        // it cannot starve Axum or the frontend health-check command.
+        tokio::task::spawn_blocking(move || {
             // Load enabled directories from main DB
             let directories = match load_enabled_directories(&state) {
                 Ok(dirs) => dirs,
@@ -87,7 +90,9 @@ impl DirectoryWatcher {
             );
 
             for (dir_id, dir_path, recursive, lib) in &directories {
-                if let Err(e) = add_watch(&state, &watches, *dir_id, dir_path, *recursive, lib.clone()) {
+                if let Err(e) =
+                    add_watch(&state, &watches, *dir_id, dir_path, *recursive, lib.clone())
+                {
                     log::error!(
                         "[Watcher] Failed to watch directory {} ({}): {}",
                         dir_id,
@@ -125,13 +130,55 @@ impl DirectoryWatcher {
                 poll_parent_directories(poll_state, poll_watches, poll_parents).await;
             });
 
+            // Backfill cached counts for dirs with 0 (one-time for existing large DBs after adding the columns)
+            // Runs in background so it doesn't block startup; updates image/tagged/fav counts from per-dir DBs
+            let backfill_dirs = directories.clone();
+            let _backfill_state = state.clone(); // kept for future if needed
+            tokio::task::spawn_blocking(move || {
+                for (dir_id, _p, _r, lib) in &backfill_dirs {
+                    if let Ok(main_conn) = lib.main_pool.get() {
+                        let cur: i64 = main_conn.query_row(
+                            "SELECT COALESCE(image_count, 0) FROM watch_directories WHERE id = ?1",
+                            params![*dir_id], |r| r.get(0)
+                        ).unwrap_or(0);
+                        if cur == 0 {
+                            if let Ok(dpool) = lib.directory_db.get_pool(*dir_id) {
+                                if let Ok(dconn) = dpool.get() {
+                                    let ic: i64 = dconn
+                                        .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+                                        .unwrap_or(0);
+                                    let tc: i64 = dconn
+                                        .query_row(
+                                            "SELECT COUNT(DISTINCT image_id) FROM image_tags",
+                                            [],
+                                            |r| r.get(0),
+                                        )
+                                        .unwrap_or(0);
+                                    let fc: i64 = dconn
+                                        .query_row(
+                                            "SELECT COUNT(*) FROM images WHERE is_favorite=1",
+                                            [],
+                                            |r| r.get(0),
+                                        )
+                                        .unwrap_or(0);
+                                    let _ = main_conn.execute(
+                                        "UPDATE watch_directories SET image_count=?1, tagged_count=?2, favorited_count=?3 WHERE id=?4",
+                                        params![ic, tc, fc, *dir_id]
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
             // Run startup scan for recently modified files
             for (dir_id, dir_path, recursive, lib) in &directories {
                 startup_scan(&state, lib, *dir_id, dir_path, *recursive);
             }
 
             // Wait for shutdown
-            shutdown_rx.recv().await;
+            shutdown_rx.blocking_recv();
             log::info!("[Watcher] Shutting down");
         });
     }
@@ -156,8 +203,21 @@ impl DirectoryWatcher {
     }
 
     /// Add a watch for a directory in a specific library.
-    pub fn add_directory_for_library(&self, directory_id: i64, path: &str, recursive: bool, library: Arc<LibraryContext>) {
-        if let Err(e) = add_watch(&self.state, &self.watches, directory_id, path, recursive, library) {
+    pub fn add_directory_for_library(
+        &self,
+        directory_id: i64,
+        path: &str,
+        recursive: bool,
+        library: Arc<LibraryContext>,
+    ) {
+        if let Err(e) = add_watch(
+            &self.state,
+            &self.watches,
+            directory_id,
+            path,
+            recursive,
+            library,
+        ) {
             log::error!(
                 "[Watcher] Failed to add watch for directory {}: {}",
                 directory_id,
@@ -197,7 +257,10 @@ impl DirectoryWatcher {
         };
         if let Ok(mut pd) = self.parent_dirs.lock() {
             pd.insert(parent_path.to_string(), settings);
-            log::info!("[ParentWatcher] Registered parent directory for polling: {}", parent_path);
+            log::info!(
+                "[ParentWatcher] Registered parent directory for polling: {}",
+                parent_path
+            );
         }
     }
 
@@ -243,7 +306,10 @@ impl DirectoryWatcher {
 
         for id in &stale_ids {
             if watches.remove(id).is_some() {
-                log::info!("[Watcher] refresh: removed stale watch for directory {}", id);
+                log::info!(
+                    "[Watcher] refresh: removed stale watch for directory {}",
+                    id
+                );
             }
         }
 
@@ -281,7 +347,14 @@ impl DirectoryWatcher {
         drop(watches);
 
         for (dir_id, dir_path, recursive, lib) in &to_add {
-            if let Err(e) = add_watch(&self.state, &self.watches, *dir_id, dir_path, *recursive, lib.clone()) {
+            if let Err(e) = add_watch(
+                &self.state,
+                &self.watches,
+                *dir_id,
+                dir_path,
+                *recursive,
+                lib.clone(),
+            ) {
                 log::error!(
                     "[Watcher] refresh: failed to add watch for directory {} ({}): {}",
                     dir_id,
@@ -302,11 +375,14 @@ impl DirectoryWatcher {
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
-fn load_enabled_directories(state: &AppState) -> Result<Vec<(i64, String, bool, Arc<LibraryContext>)>, String> {
+fn load_enabled_directories(
+    state: &AppState,
+) -> Result<Vec<(i64, String, bool, Arc<LibraryContext>)>, String> {
     let mut all_dirs = Vec::new();
 
     for lib in state.library_manager().all_mounted() {
-        let conn = lib.main_pool
+        let conn = lib
+            .main_pool
             .get()
             .map_err(|e| format!("DB error for library '{}': {}", lib.name, e))?;
 
@@ -315,9 +391,7 @@ fn load_enabled_directories(state: &AppState) -> Result<Vec<(i64, String, bool, 
             .map_err(|e| format!("Query error: {}", e))?;
 
         let dirs: Vec<(i64, String, bool)> = stmt
-            .query_map([], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
             .map_err(|e| format!("Query error: {}", e))?
             .filter_map(|r| r.ok())
             .collect();
@@ -349,13 +423,12 @@ fn add_watch(
     // Capture the tokio runtime handle so we can spawn from the notify thread
     let rt_handle = tokio::runtime::Handle::current();
 
-    let mut watcher = notify::recommended_watcher(move |event: Result<Event, notify::Error>| {
-        match event {
+    let mut watcher =
+        notify::recommended_watcher(move |event: Result<Event, notify::Error>| match event {
             Ok(ev) => handle_fs_event(&state_clone, &lib_clone, dir_id, ev, &rt_handle),
             Err(e) => log::error!("[Watcher] Error in directory {}: {}", dir_id, e),
-        }
-    })
-    .map_err(|e| format!("Failed to create watcher: {}", e))?;
+        })
+        .map_err(|e| format!("Failed to create watcher: {}", e))?;
 
     let mode = if recursive {
         RecursiveMode::Recursive
@@ -415,7 +488,8 @@ fn load_parent_directories(state: &AppState) -> Result<Vec<(String, ParentSettin
     let mut parents = Vec::new();
 
     for lib in state.library_manager().all_mounted() {
-        let conn = lib.main_pool
+        let conn = lib
+            .main_pool
             .get()
             .map_err(|e| format!("DB error for library '{}': {}", lib.name, e))?;
 
@@ -425,7 +499,7 @@ fn load_parent_directories(state: &AppState) -> Result<Vec<(String, ParentSettin
                 "SELECT parent_path, recursive, auto_tag, auto_age_detect
                  FROM watch_directories
                  WHERE parent_path IS NOT NULL AND enabled = 1
-                 GROUP BY parent_path"
+                 GROUP BY parent_path",
             )
             .map_err(|e| format!("Query error: {}", e))?;
 
@@ -438,12 +512,15 @@ fn load_parent_directories(state: &AppState) -> Result<Vec<(String, ParentSettin
             .collect();
 
         for (parent_path, recursive, auto_tag, auto_age_detect) in rows {
-            parents.push((parent_path, ParentSettings {
-                recursive,
-                auto_tag,
-                auto_age_detect,
-                library: lib.clone(),
-            }));
+            parents.push((
+                parent_path,
+                ParentSettings {
+                    recursive,
+                    auto_tag,
+                    auto_age_detect,
+                    library: lib.clone(),
+                },
+            ));
         }
     }
 
@@ -578,9 +655,10 @@ async fn poll_parent_directories(
                                 "directory_id": dir_id,
                                 "directory_path": &subdir_path_clone,
                                 "library_id": lib.uuid,
+                                "recursive": recursive,
                                 "fast_import": true
                             }),
-                            2,
+                            task_queue::PRIORITY_INDEX,
                             None,
                         ).map_err(|e| e.to_string())?;
 
@@ -618,11 +696,14 @@ async fn poll_parent_directories(
 
                         // Emit event so frontend updates
                         if let Some(events) = state_clone.events() {
-                            events.library.broadcast("directory_added", json!({
-                                "id": dir_id,
-                                "path": subdir_path,
-                                "name": subdir_name,
-                            }));
+                            events.library.broadcast(
+                                "directory_added",
+                                json!({
+                                    "id": dir_id,
+                                    "path": subdir_path,
+                                    "name": subdir_name,
+                                }),
+                            );
                         }
                     }
                     Ok(Err(e)) => {
@@ -641,7 +722,13 @@ async fn poll_parent_directories(
     }
 }
 
-fn handle_fs_event(state: &AppState, lib: &Arc<LibraryContext>, directory_id: i64, event: Event, rt: &tokio::runtime::Handle) {
+fn handle_fs_event(
+    state: &AppState,
+    lib: &Arc<LibraryContext>,
+    directory_id: i64,
+    event: Event,
+    rt: &tokio::runtime::Handle,
+) {
     match event.kind {
         // New file created
         EventKind::Create(_) => {
@@ -755,7 +842,12 @@ fn handle_fs_event(state: &AppState, lib: &Arc<LibraryContext>, directory_id: i6
 }
 
 /// Wait for a file to stabilize (not being written to), then import it with retry.
-async fn debounced_import(state: AppState, lib: Arc<LibraryContext>, directory_id: i64, file_path: String) {
+async fn debounced_import(
+    state: AppState,
+    lib: Arc<LibraryContext>,
+    directory_id: i64,
+    file_path: String,
+) {
     // Wait 1 second for file to settle
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -786,7 +878,7 @@ async fn debounced_import(state: AppState, lib: Arc<LibraryContext>, directory_i
         let fp = file_path.clone();
 
         match tokio::task::spawn_blocking(move || {
-            importer::import_image(&state_clone, &lib_clone, &fp, directory_id, false)
+            importer::import_image(&state_clone, &lib_clone, &fp, directory_id, true)
         })
         .await
         {
@@ -798,6 +890,16 @@ async fn debounced_import(state: AppState, lib: Arc<LibraryContext>, directory_i
                             .file_name()
                             .and_then(|n| n.to_str())
                             .unwrap_or(&file_path)
+                    );
+                    let _ = task_queue::enqueue_task(
+                        &state,
+                        task_queue::TASK_COMPLETE_IMPORTS,
+                        &json!({
+                            "directory_id": directory_id,
+                            "library_id": lib.uuid,
+                        }),
+                        task_queue::PRIORITY_THUMBNAILS,
+                        None,
                     );
                 }
                 return;
@@ -843,146 +945,106 @@ async fn debounced_import(state: AppState, lib: Arc<LibraryContext>, directory_i
 /// if recursive=true. Skips directories that already have a pending
 /// `scan_directory` task to avoid duplicate work. Updates `last_scanned_at`
 /// after completion.
-fn startup_scan(state: &AppState, lib: &Arc<LibraryContext>, directory_id: i64, dir_path: &str, recursive: bool) {
-    let conn = match lib.main_pool.get() {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-
-    // ── Duplicate scan prevention ────────────────────────────────────────
-    // Check if there's already a pending scan_directory task for this directory
-    let has_pending_scan: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM task_queue
-             WHERE task_type = 'scan_directory'
-               AND status IN ('pending', 'processing')
-               AND payload LIKE ?1",
-            params![format!("%\"directory_id\":{}%", directory_id)],
-            |row| row.get::<_, i64>(0),
-        )
-        .unwrap_or(0)
-        > 0;
-
-    if has_pending_scan {
-        log::info!(
-            "[Watcher] Skipping startup scan for directory {} — scan task already queued",
-            directory_id
-        );
+fn startup_scan(
+    state: &AppState,
+    lib: &Arc<LibraryContext>,
+    directory_id: i64,
+    dir_path: &str,
+    recursive: bool,
+) {
+    let start = std::time::Instant::now();
+    if !std::path::Path::new(dir_path).is_dir() {
         return;
     }
 
-    // Get last_scanned_at
-    let last_scanned: Option<String> = conn
-        .query_row(
-            "SELECT last_scanned_at FROM watch_directories WHERE id = ?1",
-            params![directory_id],
-            |row| row.get(0),
-        )
-        .ok()
-        .flatten();
-
-    if last_scanned.is_none() {
-        // Never scanned — skip startup scan (full scan should be triggered separately)
-        return;
-    }
-
-    // Parse timestamp
-    let last_dt = match last_scanned.and_then(|s| {
-        chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.f%z")
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S"))
-            .ok()
-    }) {
-        Some(dt) => dt,
-        None => return,
-    };
-
-    let dir_path_owned = dir_path.to_string();
-    let dir_path = std::path::Path::new(&dir_path_owned);
-    if !dir_path.exists() {
-        return;
-    }
-
-    // ── Recursive flag respect ───────────────────────────────────────────
-    // Only walk subdirectories if the directory has recursive=true.
-    let mut new_files = Vec::new();
-
-    let walker = walkdir::WalkDir::new(dir_path)
-        .follow_links(true)
-        .max_depth(if recursive { usize::MAX } else { 1 });
-
-    for entry in walker.into_iter().filter_map(|e| e.ok()) {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        if is_in_dumpster(entry.path()) {
-            continue;
-        }
-        if !importer::is_media_file(entry.path()) {
-            continue;
-        }
-
-        // Check if modified after last scan
-        if let Ok(metadata) = entry.metadata() {
-            if let Ok(modified) = metadata.modified() {
-                let mod_dt = chrono::DateTime::<chrono::Utc>::from(modified).naive_utc();
-                if mod_dt > last_dt {
-                    new_files.push(entry.path().to_string_lossy().to_string());
-                }
-            }
-        }
-    }
-
-    if new_files.is_empty() {
-        // No new files, but still update last_scanned_at
-        update_last_scanned_at(lib, directory_id);
-        return;
-    }
-
-    log::info!(
-        "[Watcher] Startup: found {} modified files in directory {}",
-        new_files.len(),
-        directory_id
+    let result = task_queue::enqueue_task(
+        state,
+        task_queue::TASK_SCAN_DIRECTORY,
+        &json!({
+            "directory_id": directory_id,
+            "directory_path": dir_path,
+            "library_id": lib.uuid,
+            "recursive": recursive,
+            "clean_deleted": true,
+            "fast_import": true,
+        }),
+        task_queue::PRIORITY_INDEX,
+        None,
     );
 
-    let state_clone = state.clone();
-    let lib_clone = lib.clone();
-    tokio::spawn(async move {
-        for file_path in new_files {
-            let sc = state_clone.clone();
-            let lc = lib_clone.clone();
-            let fp = file_path.clone();
-            let _ = tokio::task::spawn_blocking(move || {
-                importer::import_image(&sc, &lc, &fp, directory_id, false)
-            })
-            .await;
-        }
-
-        // ── Update last_scanned_at after scan completes ──────────────────
-        update_last_scanned_at(&lib_clone, directory_id);
-    });
+    match result {
+        Ok(Some(_)) => log::info!(
+            "[Watcher] Queued startup reconciliation for directory {} in {:?}",
+            directory_id,
+            start.elapsed()
+        ),
+        Ok(None) => log::debug!(
+            "[Watcher] Startup reconciliation already queued for directory {}",
+            directory_id
+        ),
+        Err(e) => log::error!(
+            "[Watcher] Failed to queue startup reconciliation for directory {}: {}",
+            directory_id,
+            e
+        ),
+    }
 }
 
-/// Update the `last_scanned_at` timestamp for a directory to now.
-fn update_last_scanned_at(lib: &LibraryContext, directory_id: i64) {
-    let now = chrono::Utc::now().to_rfc3339();
-    if let Ok(conn) = lib.main_pool.get() {
-        match conn.execute(
-            "UPDATE watch_directories SET last_scanned_at = ?1 WHERE id = ?2",
-            params![&now, directory_id],
-        ) {
-            Ok(_) => {
-                log::debug!(
-                    "[Watcher] Updated last_scanned_at for directory {}",
-                    directory_id
-                );
-            }
-            Err(e) => {
-                log::error!(
-                    "[Watcher] Failed to update last_scanned_at for directory {}: {}",
-                    directory_id,
-                    e
-                );
-            }
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_test_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "localbooru-watcher-{}-{}",
+            name,
+            uuid::Uuid::new_v4()
+        ))
+    }
+
+    #[test]
+    fn startup_queues_fast_reconciliation_for_never_scanned_directory() {
+        let data_dir = temp_test_dir("startup-reconcile");
+        let watch_dir = data_dir.join("media");
+        std::fs::create_dir_all(&watch_dir).unwrap();
+
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let lib = state.library_manager().primary().clone();
+        let directory_id = {
+            let conn = lib.main_pool.get().unwrap();
+            conn.execute(
+                "INSERT INTO watch_directories (path, name, recursive) VALUES (?1, 'Media', 0)",
+                params![watch_dir.to_string_lossy()],
+            )
+            .unwrap();
+            conn.last_insert_rowid()
+        };
+
+        startup_scan(
+            &state,
+            &lib,
+            directory_id,
+            watch_dir.to_str().unwrap(),
+            false,
+        );
+
+        let payload: String = state
+            .main_db()
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT payload FROM task_queue WHERE task_type = 'scan_directory'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(payload["directory_id"], directory_id);
+        assert_eq!(payload["recursive"], false);
+        assert_eq!(payload["clean_deleted"], true);
+        assert_eq!(payload["fast_import"], true);
+
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
     }
 }

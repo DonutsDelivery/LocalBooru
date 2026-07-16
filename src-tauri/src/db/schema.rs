@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::db::migrations::{run_main_migrations, run_directory_migrations};
+use crate::db::migrations::{run_directory_migrations, run_main_migrations};
 
 /// Initialize the main library database schema.
 /// Creates all tables and runs migrations (idempotent).
@@ -47,7 +47,10 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             show_images INTEGER NOT NULL DEFAULT 1,
             show_videos INTEGER NOT NULL DEFAULT 1,
             family_safe INTEGER NOT NULL DEFAULT 1,
-            lan_visible INTEGER NOT NULL DEFAULT 1
+            lan_visible INTEGER NOT NULL DEFAULT 1,
+            image_count INTEGER NOT NULL DEFAULT 0,
+            tagged_count INTEGER NOT NULL DEFAULT 0,
+            favorited_count INTEGER NOT NULL DEFAULT 0
         );
 
         -- Images (main/legacy — per-directory DBs are primary now)

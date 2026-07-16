@@ -331,9 +331,11 @@ async fn login(
     let rate_limit_key = format!("login:{}", client_ip);
 
     // Check rate limit before processing (counts all attempts including successful ones)
-    state
-        .rate_limiter()
-        .check_rate_limit(&rate_limit_key, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECS)?;
+    state.rate_limiter().check_rate_limit(
+        &rate_limit_key,
+        LOGIN_MAX_ATTEMPTS,
+        LOGIN_WINDOW_SECS,
+    )?;
 
     let jwt_secret = state.jwt_secret().to_owned();
     let state_clone = state.clone();

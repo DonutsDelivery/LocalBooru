@@ -11,9 +11,7 @@ pub struct Migration {
 /// Ensure the schema_version table exists, then return the current version.
 /// Version 0 means no migrations have been applied yet.
 fn get_schema_version(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)",
-    )?;
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)")?;
     let version: i64 = conn
         .query_row(
             "SELECT COALESCE(MAX(version), 0) FROM schema_version",
@@ -55,9 +53,7 @@ pub fn run_migrations(conn: &Connection, migrations: &[Migration]) -> Result<(),
             Err(e) => {
                 // Check for benign errors (duplicate column, table/index already exists)
                 let msg = e.to_string();
-                if msg.contains("duplicate column name")
-                    || msg.contains("already exists")
-                {
+                if msg.contains("duplicate column name") || msg.contains("already exists") {
                     log::info!(
                         "[Migration] v{} skipped (already applied): {}",
                         version,
@@ -72,11 +68,7 @@ pub fn run_migrations(conn: &Connection, migrations: &[Migration]) -> Result<(),
                 } else {
                     // Real error: rollback and propagate
                     conn.execute_batch("ROLLBACK;").ok();
-                    log::error!(
-                        "[Migration] v{} failed: {}",
-                        version,
-                        e
-                    );
+                    log::error!("[Migration] v{} failed: {}", version, e);
                     return Err(e);
                 }
             }
@@ -134,6 +126,13 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
                   WHEN LOWER(original_path) LIKE '%.mkv' THEN 'mkv' \
                 END \
               WHERE file_extension IS NULL;",
+    },
+    // v6: Add cached image/tagged/favorited counts to watch_directories for fast directory listing at startup/large DBs
+    Migration {
+        description: "Add cached counts to watch_directories for fast /directories responses",
+        sql: "ALTER TABLE watch_directories ADD COLUMN image_count INTEGER NOT NULL DEFAULT 0;\
+              ALTER TABLE watch_directories ADD COLUMN tagged_count INTEGER NOT NULL DEFAULT 0;\
+              ALTER TABLE watch_directories ADD COLUMN favorited_count INTEGER NOT NULL DEFAULT 0;",
     },
 ];
 

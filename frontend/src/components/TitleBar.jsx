@@ -1,21 +1,20 @@
 /**
  * Custom Title Bar Component
  * Replaces the native OS title bar for a consistent look
- * Only renders in Electron/Tauri environment or mobile app
+ * Only renders in Tauri or the mobile app.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isMobileApp } from '../serverManager';
-import { getDesktopAPI, isDesktopApp, isTauri } from '../tauriAPI';
+import { getDesktopAPI, isTauri } from '../tauriAPI';
 import UpdateBanner from './UpdateBanner';
 import './TitleBar.css';
 
 const TITLE_BAR_HEIGHT = 32;
 
-export default function TitleBar({ onSwitchServer }) {
+export default function TitleBar({ onSwitchServer, onOpenFile }) {
   const [isMaximized, setIsMaximized] = useState(false);
-  const isElectron = window.electronAPI?.isElectron;
   const isTauriApp = isTauri();
-  const isDesktop = isElectron || isTauriApp;
+  const isDesktop = isTauriApp;
   const isMobile = isMobileApp();
   const apiRef = useRef(null);
 
@@ -77,17 +76,6 @@ export default function TitleBar({ onSwitchServer }) {
     checkMaximized();
   }, [isDesktop]);
 
-  // Check for updates when window gains focus (Electron only for now)
-  useEffect(() => {
-    if (!isElectron) return;
-
-    const handleFocus = () => {
-      window.electronAPI.checkForUpdate?.();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [isElectron]);
 
   // Programmatic drag for Tauri (data-tauri-drag-region only works on direct element, not children)
   const handleDragMouseDown = useCallback((e) => {
@@ -135,7 +123,7 @@ export default function TitleBar({ onSwitchServer }) {
     );
   }
 
-  // Only render full title bar in Electron or Tauri
+  // Only render the full title bar in Tauri.
   if (!isDesktop) {
     return null;
   }
@@ -182,10 +170,20 @@ export default function TitleBar({ onSwitchServer }) {
             <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="currentColor" opacity="0.85"/>
           </svg>
         </div>
-        <span className="title-bar-title">LocalBooru {isTauriApp ? '(Tauri)' : isElectron ? '(Electron)' : ''}</span>
+        <span className="title-bar-title">LocalBooru</span>
       </div>
 
       <div className="title-bar-controls">
+        <button
+          className="title-bar-btn"
+          onClick={onOpenFile}
+          title="Open video file (Ctrl+O)"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M3 6.5h7l2 2h9v10H3z"/>
+            <path d="M3 8.5V5h7l2 2"/>
+          </svg>
+        </button>
         <button
           className="title-bar-btn quit"
           onClick={handleQuit}

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use crate::db::pool::{create_main_pool, DbPool};
 use crate::db::directory_db::DirectoryDbManager;
+use crate::db::pool::{create_main_pool, DbPool};
 use crate::db::schema::init_main_db;
 
 /// Encapsulates everything needed for one library instance:
@@ -171,7 +171,10 @@ fn load_or_generate_library_uuid(data_dir: &Path) -> Result<String, Box<dyn std:
             let uuid = generate_uuid_v4();
             obj.as_object_mut()
                 .ok_or("settings.json is not a JSON object")?
-                .insert("library_uuid".into(), serde_json::Value::String(uuid.clone()));
+                .insert(
+                    "library_uuid".into(),
+                    serde_json::Value::String(uuid.clone()),
+                );
             std::fs::write(&settings_path, serde_json::to_string_pretty(&obj)?)?;
             return Ok(uuid);
         }

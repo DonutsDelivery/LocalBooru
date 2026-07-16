@@ -35,26 +35,17 @@ pub async fn get_file_info(
         .canonicalize()
         .map_err(|_| AppError::BadRequest("Invalid file path".into()))?;
 
-    // Validate path is within a known watch directory
+    // Validate path is within a known watch directory in any mounted library.
     let state_clone = state.clone();
     let resolved_clone = resolved.clone();
     let allowed = tokio::task::spawn_blocking(move || {
-        let conn = state_clone.main_db().get()?;
-        let mut stmt = conn.prepare("SELECT path FROM watch_directories")?;
-        let paths: Vec<String> = stmt
-            .query_map([], |row| row.get(0))?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        for wd_path in &paths {
-            let wd = PathBuf::from(wd_path);
-            if let Ok(wd_resolved) = wd.canonicalize() {
-                if resolved_clone.starts_with(&wd_resolved) {
-                    return Ok::<bool, AppError>(true);
-                }
-            }
-        }
-        Ok(false)
+        Ok::<bool, AppError>(
+            crate::server::utils::validate_path_in_watch_dir(
+                &state_clone,
+                &resolved_clone.to_string_lossy(),
+            )
+            .is_ok(),
+        )
     })
     .await??;
 
@@ -361,9 +352,7 @@ pub async fn get_image_file(
         }
 
         // Search all directory DBs
-        if let Some(found_dir) =
-            find_image_directory(&lib.directory_db, image_id, None)
-        {
+        if let Some(found_dir) = find_image_directory(&lib.directory_db, image_id, None) {
             let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
             if let Ok(path) = dir_conn.query_row(
@@ -439,9 +428,7 @@ pub async fn get_image_thumbnail(
         }
 
         // Search directory DBs
-        if let Some(found_dir) =
-            find_image_directory(&lib.directory_db, image_id, None)
-        {
+        if let Some(found_dir) = find_image_directory(&lib.directory_db, image_id, None) {
             let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
             if let Ok(hash) = dir_conn.query_row(
@@ -504,7 +491,21 @@ pub async fn get_image_thumbnail(
                 if Path::new(path).exists() {
                     let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
                     let thumb_output = thumb_dir.join(&thumb_name);
-                    if crate::services::importer::generate_thumbnail(path, thumb_output.to_str().unwrap_or(""), 300) {
+                    let thumb_ok = if crate::services::importer::is_video_file(path) {
+                        crate::services::importer::generate_video_thumbnail(
+                            path,
+                            thumb_output.to_str().unwrap_or(""),
+                            300,
+                        )
+                    } else {
+                        crate::services::importer::generate_thumbnail(
+                            path,
+                            thumb_output.to_str().unwrap_or(""),
+                            300,
+                        )
+                    };
+
+                    if thumb_ok {
                         return Ok(true);
                     }
                 }
@@ -554,9 +555,7 @@ pub async fn toggle_favorite(
         }
 
         // Search directory DBs
-        if let Some(found_dir) =
-            find_image_directory(&lib.directory_db, image_id, None)
-        {
+        if let Some(found_dir) = find_image_directory(&lib.directory_db, image_id, None) {
             let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
             if let Ok(current) = dir_conn.query_row(
@@ -633,9 +632,7 @@ pub async fn update_rating(
         }
 
         // Search directory DBs
-        if let Some(found_dir) =
-            find_image_directory(&lib.directory_db, image_id, None)
-        {
+        if let Some(found_dir) = find_image_directory(&lib.directory_db, image_id, None) {
             let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
             dir_conn.execute(
@@ -714,6 +711,14 @@ pub async fn delete_image(
                     dir_conn.execute("DELETE FROM image_tags WHERE image_id = ?1", params![image_id])?;
                     dir_conn.execute("DELETE FROM image_files WHERE image_id = ?1", params![image_id])?;
                     dir_conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
+
+                    // Decrement cached count for fast listing
+                    if let Ok(main_conn) = lib.main_pool.get() {
+                        let _ = main_conn.execute(
+                            "UPDATE watch_directories SET image_count = MAX(0, image_count - 1) WHERE id = ?1",
+                            params![dir_id],
+                        );
+                    }
                 }
             }
         }
@@ -830,10 +835,7 @@ pub async fn upload_image(
         let name = field.name().unwrap_or("").to_string();
         match name.as_str() {
             "file" => {
-                let filename = field
-                    .file_name()
-                    .unwrap_or("upload")
-                    .to_string();
+                let filename = field.file_name().unwrap_or("upload").to_string();
                 let data = field
                     .bytes()
                     .await
@@ -848,17 +850,17 @@ pub async fn upload_image(
                 auto_tag = val == "true" || val == "1";
             }
             "directory_id" => {
-                let val = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::BadRequest(format!("Failed to read directory_id: {}", e)))?;
+                let val = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read directory_id: {}", e))
+                })?;
                 directory_id = val.parse::<i64>().ok();
             }
             _ => {}
         }
     }
 
-    let (filename, data) = file_data.ok_or_else(|| AppError::BadRequest("Missing file field".into()))?;
+    let (filename, data) =
+        file_data.ok_or_else(|| AppError::BadRequest("Missing file field".into()))?;
 
     // Determine the target directory ID
     let dir_id = match directory_id {
@@ -888,7 +890,11 @@ pub async fn upload_image(
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("bin");
-    let tmp_path = std::env::temp_dir().join(format!("localbooru_upload_{}.{}", uuid::Uuid::new_v4(), ext));
+    let tmp_path = std::env::temp_dir().join(format!(
+        "localbooru_upload_{}.{}",
+        uuid::Uuid::new_v4(),
+        ext
+    ));
 
     tokio::fs::write(&tmp_path, &data).await?;
 
@@ -1016,11 +1022,7 @@ pub async fn get_preview_frames(
     .await??;
 
     // Check if this is a video
-    let ext = filename
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_lowercase();
+    let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
     let video_extensions = ["webm", "mp4", "mov", "avi", "mkv"];
     if !video_extensions.contains(&ext.as_str()) {
         return Ok(Json(json!({
@@ -1053,7 +1055,10 @@ pub async fn get_preview_frames(
     // No frames exist yet -- trigger background generation if source file is available
     if let Some(ref path) = original_path {
         let file_status = crate::services::file_tracker::check_file_availability(path);
-        if matches!(file_status, crate::services::file_tracker::FileStatus::Available) {
+        if matches!(
+            file_status,
+            crate::services::file_tracker::FileStatus::Available
+        ) {
             let video_path = path.clone();
             let hash = file_hash.clone();
             let dd = data_dir.clone();

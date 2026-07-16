@@ -55,7 +55,10 @@ impl DirectoryDbManager {
         let pool = self.get_pool(directory_id)?;
         let conn = pool.get()?;
         init_directory_db(&conn)?;
-        log::info!("[DirectoryDB] Created database for directory {}", directory_id);
+        log::info!(
+            "[DirectoryDB] Created database for directory {}",
+            directory_id
+        );
         Ok(())
     }
 
@@ -71,7 +74,10 @@ impl DirectoryDbManager {
         let db_path = self.db_path(directory_id);
         if db_path.exists() {
             fs::remove_file(&db_path)?;
-            log::info!("[DirectoryDB] Deleted database for directory {}", directory_id);
+            log::info!(
+                "[DirectoryDB] Deleted database for directory {}",
+                directory_id
+            );
         }
         // Also clean up WAL and SHM files
         let wal_path = db_path.with_extension("db-wal");

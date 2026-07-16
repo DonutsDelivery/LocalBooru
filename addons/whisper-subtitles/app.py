@@ -15,6 +15,7 @@ Endpoints:
 import asyncio
 import atexit
 import io
+import json
 import logging
 import os
 import shutil
@@ -328,6 +329,9 @@ class WhisperSubtitleStream:
                     "stream_id": self.stream_id,
                     "chunks_processed": chunk_idx,
                     "cached": self.cache_subtitles,
+                    "cue_path": str(self.cached_vtt_path or self.vtt_path),
+                    "cue_format": "vtt",
+                    "source_type": "whisper",
                 })
 
         except asyncio.CancelledError:
@@ -387,7 +391,28 @@ class WhisperSubtitleStream:
             video = Path(self.video_path)
             suffix = f".{self.language}.translated.vtt" if self.task == "translate" else f".{self.language}.vtt"
             cache_path = video.with_suffix(suffix)
-            shutil.copy2(str(self.vtt_path), str(cache_path))
+            temporary_path = cache_path.with_name(
+                f".{cache_path.name}.tmp-{uuid.uuid4().hex}"
+            )
+            shutil.copy2(str(self.vtt_path), str(temporary_path))
+            os.replace(temporary_path, cache_path)
+            metadata_path = Path(f"{cache_path}.localbooru.json")
+            metadata_temporary_path = metadata_path.with_name(
+                f".{metadata_path.name}.tmp-{uuid.uuid4().hex}"
+            )
+            metadata_temporary_path.write_text(
+                json.dumps({
+                    "source_type": "whisper",
+                    "cue_format": "vtt",
+                    "language": self.language,
+                    "task": self.task,
+                    "model_size": self.model_size,
+                }, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            os.replace(metadata_temporary_path, metadata_path)
+            self.cached_vtt_path = cache_path
+            self.vtt_path = cache_path
             logger.info(f"[{self.stream_id}] Cached VTT to {cache_path}")
         except Exception as e:
             logger.warning(f"[{self.stream_id}] Failed to cache VTT: {e}")
@@ -498,6 +523,9 @@ async def generate(req: GenerateRequest):
         "stream_id": stream_id,
         "cached": stream.cached_vtt_path is not None,
         "completed": stream.completed,
+        "cue_path": str(stream.vtt_path) if stream.vtt_path else None,
+        "cue_format": "vtt",
+        "source_type": "whisper",
     }
 
 
@@ -522,6 +550,26 @@ async def serve_vtt(stream_id: str):
             "Access-Control-Allow-Origin": "*",
         },
     )
+
+
+@app.get("/whisper/status/{stream_id}")
+async def generation_status(stream_id: str):
+    stream = _active_streams.get(stream_id)
+    if not stream:
+        raise HTTPException(status_code=404, detail="Stream not found")
+    state = "failed" if stream.error else (
+        "completed" if stream.completed else ("generating" if stream._running else "pending")
+    )
+    return {
+        "stream_id": stream_id,
+        "state": state,
+        "error": stream.error,
+        "cue_path": str(stream.cached_vtt_path or stream.vtt_path) if stream.vtt_path else None,
+        "cue_format": "vtt",
+        "source_type": "whisper",
+        "language": stream.language,
+        "progress": 100.0 if stream.completed else None,
+    }
 
 
 @app.get("/whisper/events/{stream_id}")

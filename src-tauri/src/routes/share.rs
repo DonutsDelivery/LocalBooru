@@ -6,7 +6,7 @@
 
 use std::convert::Infallible;
 
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, Request, State};
 use axum::response::sse::{Event, Sse};
 use axum::response::Json;
 use axum::routing::{delete, get, post};
@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
 use crate::routes::images::helpers::find_image_directory;
+use crate::routes::images::single::{get_image_file, DirectoryQuery};
 use crate::server::error::AppError;
 use crate::server::state::AppState;
 use crate::server::utils::get_local_ip;
@@ -91,6 +92,7 @@ pub fn router() -> Router<AppState> {
         .route("/{token}/info", get(session_info))
         .route("/{token}/events", get(session_events))
         .route("/{token}/hls/playlist.m3u8", get(hls_playlist))
+        .route("/{token}/hls/media", get(hls_media))
 }
 
 // ---- Request / response models ----
@@ -299,9 +301,7 @@ async fn session_info(
 /// GET /api/share/network-info -- Return network info for sharing.
 ///
 /// Detects the local IP so remote devices know where to connect.
-async fn network_info(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, AppError> {
+async fn network_info(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let port = state.port();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -373,10 +373,9 @@ async fn session_events(
 
 /// GET /api/share/{token}/hls/playlist.m3u8 -- Serve HLS playlist for the shared media.
 ///
-/// For now, returns a simple single-segment HLS playlist that points to the
-/// source file served via the existing `/api/images/{id}/file` endpoint.
-/// This allows HLS-compatible players to stream the media without a full
-/// transcode pipeline.
+/// Returns a simple single-segment HLS playlist whose media URI remains under
+/// the share token. The token-scoped media route delegates to the existing
+/// Range-aware image/video response after validating the live session.
 async fn hls_playlist(
     State(state): State<AppState>,
     AxumPath(token): AxumPath<String>,
@@ -392,10 +391,9 @@ async fn hls_playlist(
     let state_clone = state.clone();
 
     // Look up the duration from the directory DB
-    let (duration, dir_id) = tokio::task::spawn_blocking(move || {
-        let dir_id = directory_id.or_else(|| {
-            find_image_directory(state_clone.directory_db(), image_id, None)
-        });
+    let (duration, _dir_id) = tokio::task::spawn_blocking(move || {
+        let dir_id = directory_id
+            .or_else(|| find_image_directory(state_clone.directory_db(), image_id, None));
 
         let dir_id = match dir_id {
             Some(id) => id,
@@ -406,7 +404,9 @@ async fn hls_playlist(
             return Ok((0.0, Some(dir_id)));
         }
 
-        let dir_pool = state_clone.directory_db().get_pool(dir_id)
+        let dir_pool = state_clone
+            .directory_db()
+            .get_pool(dir_id)
             .map_err(|e| AppError::Internal(e.to_string()))?;
         let dir_conn = dir_pool.get()?;
 
@@ -422,13 +422,39 @@ async fn hls_playlist(
     })
     .await??;
 
-    let resolved_dir_id = dir_id.unwrap_or(0);
-    let file_url = format!(
-        "/api/images/{}/file?directory_id={}",
-        image_id, resolved_dir_id
-    );
+    let playlist = build_hls_playlist(duration);
 
-    // Generate a simple HLS VOD playlist pointing to the source file.
+    Ok(axum::response::Response::builder()
+        .header("Content-Type", "application/vnd.apple.mpegurl")
+        .header("Cache-Control", "no-cache")
+        .body(axum::body::Body::from(playlist))
+        .unwrap())
+}
+
+async fn hls_media(
+    State(state): State<AppState>,
+    AxumPath(token): AxumPath<String>,
+    request: Request,
+) -> Result<axum::response::Response, AppError> {
+    let session = state
+        .share_sessions()
+        .get(&token)
+        .ok_or_else(|| AppError::NotFound(format!("Share session '{}' not found", token)))?
+        .clone();
+    get_image_file(
+        State(state),
+        AxumPath(session.image_id),
+        Query(DirectoryQuery {
+            directory_id: session.directory_id,
+            library_id: None,
+        }),
+        request,
+    )
+    .await
+}
+
+fn build_hls_playlist(duration: f64) -> String {
+    // Generate a simple HLS VOD playlist pointing to the token-scoped media route.
     // If the duration is known, use it; otherwise default to a large value
     // so the player treats it as a long segment.
     let target_duration = if duration > 0.0 {
@@ -438,24 +464,40 @@ async fn hls_playlist(
         7200
     };
 
-    let playlist = format!(
+    format!(
         "#EXTM3U\n\
          #EXT-X-VERSION:3\n\
          #EXT-X-TARGETDURATION:{target_duration}\n\
          #EXT-X-MEDIA-SEQUENCE:0\n\
          #EXT-X-PLAYLIST-TYPE:VOD\n\
          #EXTINF:{duration:.3},\n\
-         {file_url}\n\
+         media\n\
          #EXT-X-ENDLIST\n",
         target_duration = target_duration,
-        duration = if duration > 0.0 { duration } else { target_duration as f64 },
-        file_url = file_url,
-    );
-
-    Ok(axum::response::Response::builder()
-        .header("Content-Type", "application/vnd.apple.mpegurl")
-        .header("Cache-Control", "no-cache")
-        .body(axum::body::Body::from(playlist))
-        .unwrap())
+        duration = if duration > 0.0 {
+            duration
+        } else {
+            target_duration as f64
+        },
+    )
 }
 
+#[cfg(test)]
+mod tests {
+    use super::build_hls_playlist;
+
+    #[test]
+    fn hls_playlist_uses_token_scoped_media_and_known_duration() {
+        let playlist = build_hls_playlist(12.25);
+        assert!(playlist.contains("#EXT-X-TARGETDURATION:13\n"));
+        assert!(playlist.contains("#EXTINF:12.250,\nmedia\n"));
+        assert!(!playlist.contains("/api/images/"));
+    }
+
+    #[test]
+    fn hls_playlist_uses_bounded_default_for_unknown_duration() {
+        let playlist = build_hls_playlist(0.0);
+        assert!(playlist.contains("#EXT-X-TARGETDURATION:7200\n"));
+        assert!(playlist.contains("#EXTINF:7200.000,\nmedia\n"));
+    }
+}

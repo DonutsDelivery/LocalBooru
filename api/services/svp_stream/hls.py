@@ -131,7 +131,10 @@ class SVPStream:
             return False
         try:
             content = self.playlist_path.read_text()
-            return "segment_" in content and "#EXTINF" in content
+            return "segment_" in content and any(
+                line.startswith("#EXTINF:") and not line.startswith("#EXTINF:0")
+                for line in content.splitlines()
+            )
         except:
             return False
 
@@ -174,8 +177,15 @@ class SVPStream:
         self._temp_dir = Path(tempfile.mkdtemp(prefix='svp_stream_'))
         logger.info(f"[SVP {self.stream_id}] HLS output: {self._temp_dir}")
 
-        # Generate vspipe stdin script (reads Y4M from stdin, no Python frame handling)
+        stream_width, stream_height = self.target_resolution or (self._width, self._height)
+
+        # Generate vspipe stdin script (reads raw frames from stdin)
         script = generate_vspipe_stdin_script(
+            stream_width,
+            stream_height,
+            self._src_fps_num,
+            self._src_fps_den,
+            self._num_frames,
             self.target_fps,
             self.preset,
             use_nvof=self.use_nvof,
@@ -200,15 +210,15 @@ class SVPStream:
     async def _run_pipeline(self):
         """Run the FFmpeg -> vspipe -> FFmpeg pipeline.
 
-        Three-stage pipeline with NO PYTHON in the frame path:
-        1. FFmpeg decodes video to Y4M (hardware accelerated)
-        2. vspipe reads Y4M from stdin, processes with SVP, outputs Y4M
+        Three-stage pipeline:
+        1. FFmpeg decodes video to raw yuv420p frames
+        2. vspipe reads raw frames from stdin, processes with SVP, outputs Y4M
         3. FFmpeg encodes Y4M to HLS
 
         This is the same architecture that native SVP uses for real-time playback.
         """
         try:
-            # Stage 1: FFmpeg decode to Y4M
+            # Stage 1: FFmpeg decode to raw yuv420p frames
             decode_cmd = [
                 'ffmpeg',
                 '-hwaccel', 'auto',  # Use NVDEC/VAAPI if available
@@ -230,7 +240,9 @@ class SVPStream:
                 decode_cmd.extend(['-vf', f'scale={width}:{height}:flags=lanczos'])
 
             decode_cmd.extend([
-                '-f', 'yuv4mpegpipe',
+                '-an',
+                '-sn',
+                '-f', 'rawvideo',
                 '-pix_fmt', 'yuv420p',
                 '-'
             ])
@@ -238,6 +250,7 @@ class SVPStream:
             # Stage 2: vspipe with SVP processing
             vspipe_cmd = [
                 'vspipe',
+                '--requests', '1',
                 '-c', 'y4m',
                 str(self._script_path),
                 '-'
@@ -247,8 +260,8 @@ class SVPStream:
             encode_cmd = [
                 'ffmpeg',
                 '-y',
-                '-probesize', '32',
-                '-analyzeduration', '0',
+                '-probesize', '1000000',
+                '-analyzeduration', '1000000',
                 '-fflags', '+nobuffer+flush_packets',
                 '-f', 'yuv4mpegpipe',
                 '-i', '-',  # Y4M from vspipe
@@ -300,8 +313,8 @@ class SVPStream:
                 '-keyint_min', str(self.target_fps),
                 '-f', 'hls',
                 '-hls_time', '4',
-                '-hls_list_size', '20',
-                '-hls_flags', 'delete_segments+append_list+split_by_time',
+                '-hls_list_size', '0',
+                '-hls_flags', 'append_list+split_by_time',
                 '-hls_segment_filename', str(self._temp_dir / 'segment_%03d.ts'),
                 str(self.playlist_path)
             ])

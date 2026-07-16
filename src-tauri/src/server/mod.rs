@@ -1,22 +1,22 @@
-pub mod state;
-pub mod middleware;
 pub mod error;
+pub mod middleware;
+pub mod state;
 pub mod utils;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use axum::{
-    Router,
     body::Body,
     extract::{Request, State},
-    http::{Method, StatusCode, header, HeaderMap, HeaderValue},
-    response::{Json, IntoResponse, Response},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
+    response::{IntoResponse, Json, Response},
     routing::get,
+    Router,
 };
-use tower_http::cors::{CorsLayer, AllowOrigin};
-use tower_http::set_header::SetResponseHeaderLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
 
 use self::middleware::AccessControlLayer;
 use self::state::AppState;
@@ -65,6 +65,10 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
     let api = Router::new()
         .route("/api", get(api_root))
         .route("/health", get(health))
+        .route(
+            "/api/direct-files/{token}",
+            get(crate::direct_file::serve_direct_media_file),
+        )
         .nest("/api/images", crate::routes::images::router())
         .nest("/api/tags", crate::routes::tags::router())
         .nest("/api/directories", crate::routes::directories::router())
@@ -72,7 +76,10 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         .nest("/api/collections", crate::routes::collections::router())
         .nest("/api/users", crate::routes::users::router())
         .nest("/api/settings", crate::routes::settings::router())
-        .nest("/api/settings/migration", crate::routes::migration::router())
+        .nest(
+            "/api/settings/migration",
+            crate::routes::migration::router(),
+        )
         .nest("/api/settings/svp/web", crate::routes::svp_web::router())
         .nest("/api/settings/models", crate::routes::models::router())
         .nest("/api/network", crate::routes::network::router())
@@ -80,6 +87,7 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         .nest("/api/app-update", crate::routes::app_update::router())
         .nest("/api/addons", crate::routes::addons::router())
         .nest("/api/cast", crate::routes::cast::router())
+        .nest("/api/cast-media", crate::routes::cast::media_router())
         .nest("/api/share", crate::routes::share::router())
         .nest("/api/libraries", crate::routes::libraries::router());
 
@@ -196,10 +204,7 @@ async fn health() -> Json<serde_json::Value> {
 /// (connect refused/timeout). HTTP error responses are NOT retried — a 5xx means
 /// the primary server is reachable, so flipping to the fallback would just hide
 /// real server problems behind a working secondary path.
-async fn remote_proxy_handler(
-    State(state): State<AppState>,
-    req: Request,
-) -> Response {
+async fn remote_proxy_handler(State(state): State<AppState>, req: Request) -> Response {
     let proxy = state.get_remote_proxy().await;
     let cfg = match proxy {
         Some(c) => c,
@@ -210,7 +215,11 @@ async fn remote_proxy_handler(
 
     // Capture parts we need before consuming `req` for the body.
     let path = req.uri().path().to_string();
-    let query = req.uri().query().map(|q| format!("?{}", q)).unwrap_or_default();
+    let query = req
+        .uri()
+        .query()
+        .map(|q| format!("?{}", q))
+        .unwrap_or_default();
     let method = req.method().clone();
     let headers_snapshot: Vec<(axum::http::HeaderName, axum::http::HeaderValue)> = req
         .headers()
@@ -223,7 +232,11 @@ async fn remote_proxy_handler(
     let body_bytes = match axum::body::to_bytes(req.into_body(), 100 * 1024 * 1024).await {
         Ok(b) => b,
         Err(e) => {
-            return (StatusCode::BAD_REQUEST, format!("Failed to read request body: {}", e)).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Failed to read request body: {}", e),
+            )
+                .into_response();
         }
     };
 
