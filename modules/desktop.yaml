@@ -222,6 +222,11 @@ features:
             then: the standard video player receives bounded locally processed media and responds to the user's
               SVP Manager state
             when: SVP playback starts
+          - given: the packaged Apple Silicon macOS app has a working user-installed SVP setup
+            id: ac-macos-route
+            then: the standard video player receives bounded locally processed media and responds to the user's
+              SVP Manager state
+            when: SVP playback starts
         tags: []
         created: 2026-07-16T23:26:13.143Z
         notes: []
