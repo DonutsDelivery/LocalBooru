@@ -14,7 +14,8 @@
     "tauri:build:linux:appimage": "./scripts/build-linux-local.sh --appimage",
     "tauri:build:linux:deb": "./scripts/build-linux-local.sh --deb",
     "tauri:build:linux:rpm": "./scripts/build-linux-local.sh --rpm",
-    "release:linux": "./scripts/build-linux-local.sh"
+    "release:linux": "./scripts/build-linux-local.sh",
+    "release:windows": "./scripts/build-windows-local.sh"
   },
   "keywords": ["booru", "image-gallery", "tagger", "tauri"],
   "license": "MIT"
