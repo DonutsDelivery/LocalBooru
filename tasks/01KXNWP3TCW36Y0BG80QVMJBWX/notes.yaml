@@ -1,0 +1,58 @@
+notes:
+  - _ulid: 01KXNWP3TBCVAFM8GFG1JJ7Y0E
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Installable built-in gallery mode for rapidly keeping or reversibly discarding media from the
+      current filtered and sorted view, with one-step undo and optional daily or weekly goals.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given Curation Game is not installed, when the user installs it from Addons, then the
+      feature installs without Python, a virtual environment, a port, or a sidecar process and its
+      launcher and settings become available immediately
+
+      - ac-2: Given the gallery has any combination of library, directory, folder, tags, rating,
+      age, timeframe, filename, resolution, orientation, duration, and sort filters, when the user
+      starts Curation Game, then the run snapshots those filters and sort, supports all visible
+      directories or mounted libraries when selected, and starts with the first non-favorite in
+      masonry order
+
+      - ac-3: Given a non-favorited candidate is current, when the user chooses Keep, then the item
+      is idempotently favorited, removed from the candidate queue, counted once, and the next
+      candidate is shown
+
+      - ac-4: Given a candidate is current, when the user chooses Discard, then all active file
+      references move to the configured Prune dumpster convention while database identity, tags, and
+      thumbnail metadata remain available for undo
+
+      - ac-5: Given the latest successful action was Keep or Discard, when the user chooses Undo,
+      then that action and its goal count are reversed and the same item is shown again without
+      overwriting filesystem collisions
+
+      - ac-6: Given more than one query page matches the run, when the user curates beyond the first
+      50 items, then the queue refills without offset skips, duplicates, or reintroducing favorited
+      or discarded items
+
+      - ac-7: Given no matching non-favorites remain, when the run completes, then the UI says no
+      more images are left to curate and offers to unfavorite all currently matching favorites and
+      restart when such favorites exist
+
+      - ac-8: Given the user configures an optional daily or weekly target, when Keep, Discard, or
+      Undo succeeds, then the current client persists and displays progress with Keep and Discard
+      incrementing and Undo decrementing the original local-day bucket
+
+      - ac-9: Given Curation Game is active, when the user interacts with the lightbox, then large
+      Keep and Discard buttons, a smaller Undo button, and curation keyboard shortcuts are available
+      while normal favorite, permanent delete, navigation, and video seek controls cannot bypass a
+      decision
+
+      - ac-10: Given Curation Game is inactive or uninstalled, when the user uses the gallery,
+      lightbox, favorites, deletion, Prune, sorting, or pagination, then existing behavior remains
+      available and curation data is not altered by uninstalling the add-on
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-16T16:38:17.676Z

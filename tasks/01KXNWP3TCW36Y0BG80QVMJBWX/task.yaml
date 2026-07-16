@@ -1,0 +1,19 @@
+_ulid: 01KXNWP3TCW36Y0BG80QVMJBWX
+slugs:
+  - task-curation-game
+title: Implement Curation Game add-on
+type: task
+spec_ref: "@curation-game"
+derivation: auto
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags:
+  - gallery
+  - addons
+  - curation
+vcs_refs: []
+created_at: 2026-07-16T16:38:17.676Z
+todos: []
