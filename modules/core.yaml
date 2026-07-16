@@ -458,8 +458,8 @@ features:
       - frame-interpolation
     title: Frame Interpolation
     type: feature
-    description: SVP integration for 60/120/144fps, FFmpeg minterpolate fallback, NVIDIA Optical Flow,
-      quality presets
+    description: Playback can use a user-installed SmoothVideo Project setup to increase video cadence
+      while retaining LocalBooru standard playback controls.
     status:
       implementation: implemented
     depends_on: []
