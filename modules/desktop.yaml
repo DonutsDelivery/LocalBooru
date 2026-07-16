@@ -202,6 +202,19 @@ features:
         tags: []
         created: 2026-07-16T23:26:10.641Z
         notes: []
+      - _ulid: 01KXPM11MQPPDWEB5P0GM0ZM9Z
+        slugs:
+          - svp-platform-routing
+        title: Platform-specific SVP connection
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-16T23:26:13.143Z
+        notes: []
     created: 2026-07-16T23:26:05.987Z
     notes: []
 notes: []
