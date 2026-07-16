@@ -235,6 +235,19 @@ features:
         tags: []
         created: 2026-07-16T23:26:13.143Z
         notes: []
+      - _ulid: 01KXPM14S2J3DVRD9Q0RRNPQX5
+        slugs:
+          - svp-manager-transitions
+        title: Reliable SVP Manager transitions
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-16T23:26:16.354Z
+        notes: []
     created: 2026-07-16T23:26:05.987Z
     notes: []
 notes: []
