@@ -1472,7 +1472,14 @@ pub fn native_video_set_paused(
     state: State<'_, NativeVideoState>,
     paused: bool,
 ) -> Result<(), String> {
-    state.send_runtime_control(NativeVideoCommand::SetPaused { paused })
+    #[cfg(target_os = "linux")]
+    return state.send_runtime_control(NativeVideoCommand::SetPaused { paused });
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (state, paused);
+        Err("native video playback is not implemented on this platform".to_string())
+    }
 }
 
 #[tauri::command]
@@ -1480,7 +1487,14 @@ pub fn native_video_set_muted(
     state: State<'_, NativeVideoState>,
     muted: bool,
 ) -> Result<(), String> {
-    state.send_runtime_control(NativeVideoCommand::SetMuted { muted })
+    #[cfg(target_os = "linux")]
+    return state.send_runtime_control(NativeVideoCommand::SetMuted { muted });
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (state, muted);
+        Err("native video playback is not implemented on this platform".to_string())
+    }
 }
 
 #[tauri::command]
@@ -1491,9 +1505,16 @@ pub fn native_video_set_volume(
     if !volume.is_finite() {
         return Err("native video volume must be finite".to_string());
     }
-    state.send_runtime_control(NativeVideoCommand::SetVolume {
+    #[cfg(target_os = "linux")]
+    return state.send_runtime_control(NativeVideoCommand::SetVolume {
         volume: volume.clamp(0.0, 1.0),
-    })
+    });
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (state, volume);
+        Err("native video playback is not implemented on this platform".to_string())
+    }
 }
 
 #[tauri::command]
@@ -1504,9 +1525,16 @@ pub fn native_video_set_speed(
     if !speed.is_finite() {
         return Err("native video speed must be finite".to_string());
     }
-    state.send_runtime_control(NativeVideoCommand::SetSpeed {
+    #[cfg(target_os = "linux")]
+    return state.send_runtime_control(NativeVideoCommand::SetSpeed {
         speed: speed.clamp(0.5, 2.0),
-    })
+    });
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (state, speed);
+        Err("native video playback is not implemented on this platform".to_string())
+    }
 }
 
 #[tauri::command]
@@ -1547,11 +1575,11 @@ pub fn native_video_release_viewport(
     state: State<'_, NativeVideoState>,
     generation: u64,
 ) -> Result<bool, String> {
-    if state.current_generation() != generation {
-        return Ok(false);
-    }
     #[cfg(target_os = "linux")]
     {
+        if state.current_generation() != generation {
+            return Ok(false);
+        }
         let (sender, receiver) = mpsc::sync_channel(1);
         app.run_on_main_thread(move || {
             let _ = sender.send(super::platform::linux::set_visible(false));
@@ -1565,7 +1593,7 @@ pub fn native_video_release_viewport(
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = app;
+        let _ = (app, state, generation);
         Ok(false)
     }
 }
