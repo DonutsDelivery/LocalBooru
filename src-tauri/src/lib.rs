@@ -108,13 +108,18 @@ fn get_frontend_dir() -> Option<PathBuf> {
         }
     }
 
-    // Workspace-relative fallback
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(|p| p.join("frontend").join("dist"));
-    if let Some(ref ws) = workspace {
-        if ws.exists() {
-            return workspace;
+    // Workspace-relative fallback is only useful for local debug builds.
+    // Keeping CARGO_MANIFEST_DIR out of release binaries avoids embedding the
+    // builder's absolute checkout path in otherwise portable packages.
+    #[cfg(debug_assertions)]
+    {
+        let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(|p| p.join("frontend").join("dist"));
+        if let Some(ref ws) = workspace {
+            if ws.exists() {
+                return workspace;
+            }
         }
     }
 
