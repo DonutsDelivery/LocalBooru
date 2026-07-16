@@ -254,6 +254,10 @@ features:
             id: ac-changed-graph
             then: exactly one replacement graph becomes active using an immutable copy of the final contents
             when: LocalBooru applies the change
+          - given: one Manager process currently controls LocalBooru
+            id: ac-controller-ownership
+            then: the competing process is rejected until the active controller disconnects
+            when: a different Manager process attempts to take control
         tags: []
         created: 2026-07-16T23:26:16.354Z
         notes: []
