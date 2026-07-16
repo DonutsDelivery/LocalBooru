@@ -217,6 +217,11 @@ features:
             id: ac-linux-route
             then: the existing Linux media pipeline applies the Manager-selected interpolation graph
             when: SVP playback starts
+          - given: the packaged Windows app has a working user-installed SVP setup
+            id: ac-windows-route
+            then: the standard video player receives bounded locally processed media and responds to the user's
+              SVP Manager state
+            when: SVP playback starts
         tags: []
         created: 2026-07-16T23:26:13.143Z
         notes: []
