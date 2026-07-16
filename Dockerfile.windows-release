@@ -30,6 +30,12 @@ WORKDIR /opt/msvc-wine
 RUN PYTHONUNBUFFERED=1 ./vsdownload.py --accept-license --dest /opt/msvc && \
     ./install.sh /opt/msvc
 
+# Tauri's supported NSIS cross-build path may use LLVM resource/linker tools,
+# while native Rust build scripts still use the genuine MSVC wrappers above.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential clang llvm lld \
+ && rm -rf /var/lib/apt/lists/*
+
 ARG NODE_VERSION=20.19.4
 RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
       | tar -xJ -C /opt && \
@@ -43,6 +49,7 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
 ENV RUSTUP_HOME=/root/.rustup \
     CC_x86_64_pc_windows_msvc=cl \
     CXX_x86_64_pc_windows_msvc=cl \
+    AR_x86_64_pc_windows_msvc=/opt/msvc/bin/x64/lib \
     CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=/opt/msvc/bin/x64/link
 
 WORKDIR /build/worktree

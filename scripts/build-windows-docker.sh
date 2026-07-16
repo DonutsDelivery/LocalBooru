@@ -20,6 +20,7 @@ export PATH="/opt/msvc/bin/x64:/opt/node/bin:/root/.cargo/bin:$PATH"
 export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=/opt/msvc/bin/x64/link
 export CC_x86_64_pc_windows_msvc=cl
 export CXX_x86_64_pc_windows_msvc=cl
+export AR_x86_64_pc_windows_msvc=/opt/msvc/bin/x64/lib
 
 cleanup_ownership() {
   if [[ "${HOST_UID:-0}" != 0 ]]; then
@@ -51,6 +52,8 @@ cargo --version
 cargo tauri --version
 node --version
 npm --version
+makensis -VERSION
+command -v cl link lib rc llvm-rc >/dev/null
 cl 2>&1 | sed -n '1,4p' || true
 sccache --start-server >/dev/null 2>&1 || true
 
