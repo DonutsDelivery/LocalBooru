@@ -561,7 +561,7 @@ tasks:
     title: Define bounded SVP processing-session protocol
     type: task
     spec_ref: "@svp-bounded-stream"
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 1
@@ -572,6 +572,7 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-07-16T23:27:26.908Z
+    started_at: 2026-07-16T23:28:28.731Z
     automation: needs_review
   - _ulid: 01KXPM3A6VM0FFA4RGPXYMBCWM
     slugs:

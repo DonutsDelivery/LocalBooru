@@ -9,7 +9,7 @@ description: Implement and test the platform-neutral session contract for open, 
 spec_ref: "@svp-bounded-stream"
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
@@ -19,6 +19,18 @@ tags:
   - protocol
   - desktop
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-07-16T23:28:28.731Z
+        previous: null
+    command: task-start
+    timestamp: 2026-07-16T23:28:28.731Z
 created_at: 2026-07-16T23:27:26.908Z
+started_at: 2026-07-16T23:28:28.731Z
 todos: []
 automation: needs_review
