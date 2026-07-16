@@ -17,7 +17,6 @@ export CARGO_BUILD_JOBS="$JOBS"
 export SCCACHE_DIR="${SCCACHE_DIR:-/ccache}"
 export RUSTC_WRAPPER=sccache
 export PATH="/opt/msvc/bin/x64:/opt/node/bin:/root/.cargo/bin:$PATH"
-export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=/opt/msvc/bin/x64/link
 export CC_x86_64_pc_windows_msvc=cl
 export CXX_x86_64_pc_windows_msvc=cl
 export AR_x86_64_pc_windows_msvc=/opt/msvc/bin/x64/lib
@@ -25,6 +24,12 @@ export AR_x86_64_pc_windows_msvc=/opt/msvc/bin/x64/lib
 # child exits before opening its pipes. Raw mode preserves linker output and
 # bypasses that helper without changing the MSVC toolchain.
 export WINE_MSVC_RAW_STDOUT=1
+
+# Export native Unix paths for the genuine MSVC/Windows SDK libraries, then
+# use LLD in MSVC mode for Rust's very large final link. Passing that link
+# through Wine exceeds its reliable command/output path for this application.
+BIN=/opt/msvc/bin/x64 . /opt/msvc-wine/msvcenv-native.sh
+export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=/usr/bin/lld-link
 
 cleanup_ownership() {
   if [[ "${HOST_UID:-0}" != 0 ]]; then
