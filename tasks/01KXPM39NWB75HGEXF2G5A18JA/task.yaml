@@ -1,0 +1,24 @@
+_ulid: 01KXPM39NWB75HGEXF2G5A18JA
+slugs:
+  - svp-session-protocol
+title: Define bounded SVP processing-session protocol
+type: task
+description: Implement and test the platform-neutral session contract for open, metadata, absolute
+  start, generation-scoped seek, pause, resume, stop, terminal error, bounded segment ownership, and
+  deterministic fake output.
+spec_ref: "@svp-bounded-stream"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags:
+  - svp
+  - protocol
+  - desktop
+vcs_refs: []
+created_at: 2026-07-16T23:27:26.908Z
+todos: []
+automation: needs_review
