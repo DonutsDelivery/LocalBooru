@@ -1,1 +1,7 @@
-notes: []
+notes:
+  - _ulid: 01KXPC03ZSSZSXD3ECXF7ES4BJ
+    content: Started in the main working tree after approving the mobile overhaul plan. Existing
+      curation and native-video changes will be preserved.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-16T21:05:54.169Z
