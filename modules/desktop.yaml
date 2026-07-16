@@ -135,6 +135,11 @@ features:
     relates_to: []
     tests: []
     traits: []
+    acceptance_criteria:
+      - given: SVP is installed and enabled on a supported Linux, Windows, or Apple Silicon macOS desktop
+        id: ac-supported-desktops
+        then: LocalBooru presents SVP-interpolated playback through the standard video player and controls
+        when: the user opens a compatible video
     tags: []
     created: 2026-07-16T23:26:05.987Z
     notes: []
