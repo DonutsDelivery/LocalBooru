@@ -7,12 +7,70 @@ This document is the operational source of truth for LocalBooru release builds.
 | Platform | Normal build owner | Fallback |
 |---|---|---|
 | Linux x86_64 | Local Docker/Podman | Manual `Linux release fallback` GitHub workflow |
-| Windows | Not yet supported by the Tauri release pipeline | None; the removed workflow built obsolete Electron artifacts |
-| macOS | Not yet supported by the Tauri release pipeline | None; the removed workflow built obsolete Electron artifacts |
+| Windows x86_64 | Local MSVC/Wine Docker build | Native `windows-2022` job in the manual fallback workflow |
+| macOS universal | Native `macos-14` job in the manual fallback workflow | None; Apple tooling is required |
 | iOS | GitHub workflow / Apple toolchain | `.github/workflows/build-ios.yml` |
 
-Do not restore tag-triggered desktop publishing until a current Tauri pipeline has
-been implemented and verified for that platform.
+Desktop workflows upload inspection artifacts only. Tag creation and publication
+remain explicit operator actions after every promised platform is verified.
+
+## Windows release command
+
+From the repository root on Linux:
+
+```bash
+npm run release:windows
+```
+
+Equivalent direct commands:
+
+```bash
+./scripts/build-windows-local.sh
+./scripts/build-windows-local.sh --rebuild-image
+LOCALBOORU_BUILD_JOBS=4 ./scripts/build-windows-local.sh
+```
+
+`scripts/build-windows-local.sh` is the host entry point;
+`scripts/build-windows-docker.sh` is the internal container entry point. The
+image downloads the genuine MSVC toolchain and Windows SDK through the pinned
+`mstorsjo/msvc-wine` revision, plus Node 20, Rust, Tauri CLI 2.9.4, LLVM/LLD,
+and NSIS. The first image build is intentionally large. Do not redistribute the
+downloaded Microsoft toolchain image.
+
+Source staging uses `git archive HEAD`, so the build always uses the exact
+committed revision and excludes dirty files, sockets, host `node_modules`, APKs,
+and local caches. Commit release changes before invoking the wrapper.
+
+The default persistent directories are:
+
+- `/mnt/storage/Programs/localbooru-build-windows-docker` — Cargo registry,
+  target tree, npm state, and disposable worktree;
+- `/mnt/storage/Programs/localbooru-sccache-windows-docker` — reserved compiler
+  cache directory;
+- `dist-windows-local/` — final verified artifacts.
+
+Override them with `LOCALBOORU_WINDOWS_BUILD_ROOT`,
+`LOCALBOORU_WINDOWS_SCCACHE_ROOT`, and `LOCALBOORU_DIST_WINDOWS_DIR`.
+Ubuntu's sccache 0.7.7 is deliberately not enabled as `RUSTC_WRAPPER`: `cc-rs`
+would apply it to MSVC resource preprocessing, where `/showIncludes` detection
+fails through Wine. Persistent Cargo target reuse remains active. Rust's large
+final Windows link uses native `lld-link` with the genuine MSVC/Windows SDK
+libraries; `cl`, `lib`, and resource compilation continue through the MSVC
+wrappers.
+
+`dist-windows-local/` must contain:
+
+- `LocalBooru-Windows-Setup.exe` — unsigned NSIS installer;
+- `LocalBooru-Windows.zip` — portable x64 executable and license;
+- `SHA256SUMS-Windows` — LF-terminated basename-only hashes.
+
+The container verifies ZIP and NSIS integrity, extracts the installer, requires
+both standalone and installed `LocalBooru.exe` payloads to be PE32+ x86-64,
+rejects private checkout/build paths, and verifies hashes again on the host. The
+outer NSIS launcher may correctly be an i386 PE32 stub. Docker/Wine packaging is
+not Windows GUI acceptance: before publication, install and run the artifacts
+on a real supported Windows system and report Authenticode state accurately.
+See `docs/WINDOWS_PACKAGING.md` for the concise command reference.
 
 ## Linux release command
 
@@ -132,9 +190,10 @@ Logs prove graph setup; visual motion quality still requires human confirmation.
 
 ## GitHub workflow policy
 
-`.github/workflows/build.yml` is manual-only and calls the same Docker wrapper.
-It is an emergency fallback, not the normal release path. It uploads artifacts
-for inspection but does not create a GitHub release.
+`.github/workflows/build.yml` is manual-only. Its Linux job calls the same local
+Docker wrapper; Windows uses native `windows-2022`; macOS uses native `macos-14`
+to produce a universal x86_64/arm64 bundle. These jobs upload short-lived
+inspection artifacts and never create a GitHub release.
 
 Creating tags, pushing commits, signing packages, and publishing a GitHub
 release are explicit operator actions after local artifact verification. Never
