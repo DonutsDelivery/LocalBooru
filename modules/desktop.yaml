@@ -258,6 +258,11 @@ features:
             id: ac-controller-ownership
             then: the competing process is rejected until the active controller disconnects
             when: a different Manager process attempts to take control
+          - given: SVP Manager interpolation and its configured OSD are enabled
+            id: ac-measured-acceptance
+            then: the genuine Manager OSD is visible where supported and measured presented cadence matches the
+              selected interpolation target
+            when: platform acceptance playback is performed
         tags: []
         created: 2026-07-16T23:26:16.354Z
         notes: []
