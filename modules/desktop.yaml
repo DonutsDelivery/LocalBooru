@@ -125,4 +125,17 @@ features:
       - desktop
     created: 2026-07-12T06:35:00.381Z
     notes: []
+  - _ulid: 01KXPM0TN30TDXXDSAZFTJRX3K
+    slugs:
+      - desktop-svp-video
+    title: Cross-platform SVP video playback
+    type: feature
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    tags: []
+    created: 2026-07-16T23:26:05.987Z
+    notes: []
 notes: []
