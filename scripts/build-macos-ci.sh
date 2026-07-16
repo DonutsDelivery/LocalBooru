@@ -51,6 +51,7 @@ ARCHS="$(lipo -archs "$BINARY")"
 [[ " $ARCHS " == *" x86_64 "* ]]
 [[ "$(plutil -extract CFBundleShortVersionString raw "$INFO_PLIST")" == "2.0.0" ]]
 [[ "$(plutil -extract CFBundleIdentifier raw "$INFO_PLIST")" == "com.localbooru.app" ]]
+[[ "$(plutil -extract LSMinimumSystemVersion raw "$INFO_PLIST")" == "11.0" ]]
 hdiutil verify "$DMG"
 
 # Signing credentials are intentionally not required for CI validation. Report
@@ -65,13 +66,13 @@ cp "$DMG" "$DIST_DIR/LocalBooru-macOS-universal.dmg"
 ditto -c -k --sequesterRsrc --keepParent \
   "$APP" "$DIST_DIR/LocalBooru-macOS-universal.zip"
 
-unzip -t "$DIST_DIR/LocalBooru-macOS-universal.zip"
-shasum -a 256 \
-  "$DIST_DIR/LocalBooru-macOS-universal.dmg" \
-  "$DIST_DIR/LocalBooru-macOS-universal.zip" \
-  > "$DIST_DIR/SHA256SUMS-macOS"
 (
   cd "$DIST_DIR"
+  unzip -t LocalBooru-macOS-universal.zip
+  shasum -a 256 \
+    LocalBooru-macOS-universal.dmg \
+    LocalBooru-macOS-universal.zip \
+    > SHA256SUMS-macOS
   shasum -a 256 -c SHA256SUMS-macOS
 )
 
