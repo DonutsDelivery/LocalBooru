@@ -84,7 +84,8 @@ $Lines = foreach ($Artifact in $Artifacts) {
   $Hash = (Get-FileHash -Algorithm SHA256 $Artifact).Hash.ToLowerInvariant()
   "$Hash  $([System.IO.Path]::GetFileName($Artifact))"
 }
-[System.IO.File]::WriteAllLines($Manifest, $Lines, [System.Text.UTF8Encoding]::new($false))
+$ManifestText = ($Lines -join "`n") + "`n"
+[System.IO.File]::WriteAllText($Manifest, $ManifestText, [System.Text.UTF8Encoding]::new($false))
 
 foreach ($Line in Get-Content $Manifest) {
   $Parts = $Line -split '  ', 2
