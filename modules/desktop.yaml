@@ -186,6 +186,9 @@ features:
         type: requirement
         description: Windows and macOS interpolation remains seekable and synchronized without producing
           unbounded buffered media.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
