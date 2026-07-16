@@ -157,6 +157,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: a video is open in the standard player
+            id: ac-existing-player
+            then: the same player and its existing controls remain the user-facing playback surface
+            when: SVP is enabled, disabled, restarted, or reconfigured
         tags: []
         created: 2026-07-16T23:26:08.088Z
         notes: []
