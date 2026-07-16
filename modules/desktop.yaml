@@ -184,6 +184,12 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: SVP playback is active or paused for an extended period
+            id: ac-bounded-buffer
+            then: processing stops advancing until capacity is available and retained media remains within the
+              configured byte and duration limits
+            when: processed media reaches the configured buffer limit
         tags: []
         created: 2026-07-16T23:26:10.641Z
         notes: []
