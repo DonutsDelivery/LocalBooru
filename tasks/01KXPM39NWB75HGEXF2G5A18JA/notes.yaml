@@ -12,3 +12,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-16T23:29:33.920Z
+  - _ulid: 01KXPMFJG7EXTCSP5X6V3TMWY5
+    content: "Implemented the first protocol slice: versioned Pydantic
+      open/command/seek/metadata/segment/event models; generation-owned ProcessingSession and
+      registry; hard byte/duration backpressure; segment acknowledgement and deletion; transactional
+      seek revocation; timestamp and A/V drift rejection; idempotent pause/resume/stop; ordered
+      generation-tagged events; and a deterministic bounded fake producer. Added six behavioral
+      unittest cases with AC annotations. Validation: compileall passes and all six tests pass. Full
+      kspec validate remains blocked by 130 pre-existing malformed legacy records outside this
+      task."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-16T23:34:09.159Z
