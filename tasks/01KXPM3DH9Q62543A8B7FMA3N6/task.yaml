@@ -1,0 +1,25 @@
+_ulid: 01KXPM3DH9Q62543A8B7FMA3N6
+slugs:
+  - svp-desktop-routing-migration
+title: Enable cross-platform desktop SVP routing
+type: task
+description: After Windows, Apple Silicon macOS, and Linux acceptance gates pass, select the
+  platform-specific desktop SVP paths by default while retaining legacy SVP HLS only for browser,
+  mobile, and remote clients.
+spec_ref: "@desktop-svp-video"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on:
+  - "@svp-manager-graph-sessions"
+  - "@svp-linux-lifecycle-acceptance"
+context: []
+priority: 2
+tags:
+  - svp
+  - desktop
+vcs_refs: []
+created_at: 2026-07-16T23:27:30.857Z
+todos: []
+automation: needs_review
