@@ -249,6 +249,8 @@ features:
           - svp-manager-transitions
         title: Reliable SVP Manager transitions
         type: requirement
+        description: Manager-driven graph changes are private, deterministic, and resilient to duplicate or
+          competing control activity.
         depends_on: []
         implements: []
         relates_to: []
