@@ -46,6 +46,8 @@ mkdir -p "$WORKTREE" "$TARGET_DIR" "$CARGO_HOME" "$DIST_DIR" "$SCCACHE_DIR"
   tar \
     --exclude=.git \
     --exclude=target \
+    --exclude='*/node_modules' \
+    --exclude='*/dist' \
     --exclude=dist-windows-local \
     --exclude=dist-linux-local \
     -cf - .
