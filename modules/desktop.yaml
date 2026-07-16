@@ -140,6 +140,11 @@ features:
         id: ac-supported-desktops
         then: LocalBooru presents SVP-interpolated playback through the standard video player and controls
         when: the user opens a compatible video
+      - given: SVP playback cannot start or becomes unavailable
+        id: ac-unavailable-fallback
+        then: LocalBooru returns to one direct playback source at the same safe playback position and
+          reports the SVP failure
+        when: the user opens or continues the video
     tags: []
     created: 2026-07-16T23:26:05.987Z
     notes: []
