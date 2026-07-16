@@ -1,0 +1,25 @@
+_ulid: 01KXPM3ATGQV91XWFMPXSPD2RY
+slugs:
+  - svp-windows-mse-prototype
+title: Prototype deterministic SVP processing on Windows
+type: spike
+description: Use the user-installed VapourSynth environment to produce bounded H.264/AAC fragmented
+  MP4 with deterministic frame doubling and verify packaged WebView2 cadence, timing, seeking,
+  cleanup, and buffer bounds.
+spec_ref: "@svp-platform-routing"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on:
+  - "@svp-html-video-mse"
+context: []
+priority: 1
+tags:
+  - svp
+  - windows
+  - desktop
+vcs_refs: []
+created_at: 2026-07-16T23:27:28.080Z
+todos: []
+automation: manual_only
