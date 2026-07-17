@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01KXPVF1CANZFS6Y93PJ8V3CC3
+    content: "Removed deterministic frame doubling from the desktop production contract and frontend
+      request, disabled desktop sessions until a trusted Manager graph is available, removed the
+      Linux GStreamer duplicate-frame fallback, and converted fMP4 coverage to an identity transport
+      fixture at source cadence. Validation: 19 Python tests, 23 frontend tests, and cargo check
+      pass. Legacy browser/mobile HLS presets remain separate and are not used by the desktop path."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T01:36:11.658Z
