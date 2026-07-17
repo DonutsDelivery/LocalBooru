@@ -24,3 +24,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T07:38:08.116Z
+  - _ulid: 01KXQHEVDZJTZQNKASPJ5G4AN2
+    content: "Approach implemented: preload managed ORT libraries before discovery, construct CUDA-first
+      sessions, explicitly retry CPU on CUDA initialization exceptions, detect silent CPU
+      activation, and preserve requested/available/active status. Behavioral fake-ORT tests cover
+      all three ACs without GPU hardware."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T08:00:34.240Z
