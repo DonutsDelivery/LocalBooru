@@ -231,6 +231,10 @@ features:
             id: ac-stop-superseded-producer
             then: the superseded stream stops and cannot later reclaim playback
             when: another source supersedes it or the video is closed
+          - given: a generated stream is restarted with changed settings but retains the same playback address
+            id: ac-reload-restarted-source
+            then: the player uses the replacement content rather than continuing the prior stream
+            when: the replacement becomes ready
         tags: []
         created: 2026-07-17T01:52:02.713Z
         notes: []
