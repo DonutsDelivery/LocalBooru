@@ -264,6 +264,8 @@ features:
           - credential-storage
         title: JWT Signing Credential Storage
         type: requirement
+        description: The per-install token-signing credential is protected from settings disclosure while
+          remaining stable across application restarts and upgrades.
         depends_on: []
         implements: []
         relates_to: []
