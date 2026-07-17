@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command as TokioCommand;
 
 /// Find a usable `python3` (or `python`) binary on the system PATH.
@@ -47,6 +48,43 @@ pub fn find_python() -> Option<PathBuf> {
     }
 
     None
+}
+
+fn parse_python_minor(version_output: &str) -> Option<u8> {
+    let version = version_output.split_whitespace().find(|part| {
+        part.chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_digit())
+    })?;
+    let mut components = version.split('.');
+    let major = components.next()?.parse::<u8>().ok()?;
+    let minor = components.next()?.parse::<u8>().ok()?;
+    (major == 3).then_some(minor)
+}
+
+pub fn validate_python_minor(python: &Path, minimum: u8, maximum: u8) -> Result<(), String> {
+    let output = Command::new(python)
+        .arg("--version")
+        .output()
+        .map_err(|error| format!("Failed to inspect Python version: {}", error))?;
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let minor = parse_python_minor(&combined)
+        .ok_or_else(|| format!("Could not parse Python version from {:?}", combined.trim()))?;
+    if (minimum..=maximum).contains(&minor) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Auto Tagger requires Python 3.{} through 3.{}, but {} reports {}",
+            minimum,
+            maximum,
+            python.display(),
+            combined.trim()
+        ))
+    }
 }
 
 /// Resolve an executable name to its full path using `which` (Unix) or `where` (Windows).
@@ -109,7 +147,7 @@ pub fn create_venv(python: &Path, venv_dir: &Path) -> Result<(), String> {
 
 /// Install Python dependencies into a virtual environment.
 ///
-/// Runs: `{venv}/bin/pip install {deps...}`
+/// Runs: `{venv_python} -m pip install {deps...}`
 /// Skips the step entirely if `deps` is empty.
 pub fn install_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
     if deps.is_empty() {
@@ -117,13 +155,17 @@ pub fn install_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
         return Ok(());
     }
 
-    let pip = get_venv_pip(venv_dir);
-    log::info!("[Addon] Installing deps via {}: {:?}", pip.display(), deps);
+    let python = get_venv_python(venv_dir);
+    log::info!(
+        "[Addon] Installing deps via {}: {:?}",
+        python.display(),
+        deps
+    );
 
-    let mut args = vec!["install", "--upgrade"];
+    let mut args = vec!["-m", "pip", "install", "--upgrade"];
     args.extend(deps.iter().copied());
 
-    let output = Command::new(&pip)
+    let output = Command::new(&python)
         .args(&args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -139,6 +181,32 @@ pub fn install_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
     Ok(())
 }
 
+/// Remove Python distributions from a virtual environment if present.
+pub fn uninstall_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
+    if deps.is_empty() {
+        return Ok(());
+    }
+
+    let python = get_venv_python(venv_dir);
+    let mut args = vec!["-m", "pip", "uninstall", "-y"];
+    args.extend(deps.iter().copied());
+    let output = Command::new(&python)
+        .args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|error| format!("Failed to run pip uninstall: {}", error))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "pip uninstall failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
 /// Get the path to the Python binary inside a virtual environment.
 ///
 /// Returns `{venv}/bin/python` on Unix or `{venv}\Scripts\python.exe` on Windows.
@@ -150,13 +218,69 @@ pub fn get_venv_python(venv_dir: &Path) -> PathBuf {
     }
 }
 
-/// Get the path to the pip binary inside a virtual environment.
-fn get_venv_pip(venv_dir: &Path) -> PathBuf {
-    if cfg!(target_os = "windows") {
-        venv_dir.join("Scripts").join("pip.exe")
-    } else {
-        venv_dir.join("bin").join("pip")
+const MAX_OUTPUT_LINE_BYTES: usize = 64 * 1024;
+
+async fn drain_output<R, F>(mut reader: R, mut emit: F) -> std::io::Result<()>
+where
+    R: AsyncRead + Unpin,
+    F: FnMut(String),
+{
+    let mut pending = Vec::with_capacity(8 * 1024);
+    let mut chunk = [0_u8; 8 * 1024];
+    let mut line_was_split = false;
+    loop {
+        let count = reader.read(&mut chunk).await?;
+        if count == 0 {
+            if !pending.is_empty() {
+                emit(String::from_utf8_lossy(&pending).into_owned());
+            }
+            return Ok(());
+        }
+
+        for &byte in &chunk[..count] {
+            if byte == b'\n' {
+                while pending.last() == Some(&b'\r') {
+                    pending.pop();
+                }
+                if !pending.is_empty() || !line_was_split {
+                    emit(String::from_utf8_lossy(&pending).into_owned());
+                }
+                pending.clear();
+                line_was_split = false;
+            } else {
+                pending.push(byte);
+                if pending.len() == MAX_OUTPUT_LINE_BYTES {
+                    emit(String::from_utf8_lossy(&pending).into_owned());
+                    pending.clear();
+                    line_was_split = true;
+                }
+            }
+        }
     }
+}
+
+fn format_output_line(addon_id: &str, stream: &str, line: &str) -> String {
+    format!("[Addon:{}][{}] {}", addon_id, stream, line)
+}
+
+fn spawn_output_logger<R>(reader: R, addon_id: String, stream: &'static str)
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let result = drain_output(reader, |line| {
+            log::info!("{}", format_output_line(&addon_id, stream, &line));
+        })
+        .await;
+        if let Err(error) = result {
+            log::warn!(
+                "[Addon:{}][{}] Failed to read sidecar output: {}",
+                addon_id,
+                stream,
+                error
+            );
+        }
+    });
 }
 
 /// Spawn an addon sidecar process running a uvicorn FastAPI app.
@@ -166,6 +290,7 @@ fn get_venv_pip(venv_dir: &Path) -> PathBuf {
 ///
 /// The child process is returned so the caller can track and kill it.
 pub async fn spawn_sidecar(
+    addon_id: &str,
     python: &Path,
     app_dir: &Path,
     port: u16,
@@ -210,9 +335,16 @@ pub async fn spawn_sidecar(
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn addon sidecar: {}", e))?;
+
+    if let Some(stdout) = child.stdout.take() {
+        spawn_output_logger(stdout, addon_id.to_owned(), "stdout");
+    }
+    if let Some(stderr) = child.stderr.take() {
+        spawn_output_logger(stderr, addon_id.to_owned(), "stderr");
+    }
 
     log::info!("[Addon] Sidecar spawned with PID {:?}", child.id());
     Ok(child)
@@ -279,5 +411,101 @@ pub fn kill_process(pid: u32) {
         let _ = Command::new("taskkill")
             .args(["/pid", &pid.to_string(), "/T", "/F"])
             .output();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn auto_tagger_python_version_range_is_bounded() {
+        assert_eq!(parse_python_minor("Python 3.10.14"), Some(10));
+        assert_eq!(parse_python_minor("Python 3.13.1"), Some(13));
+        assert_eq!(parse_python_minor("Python 3.9.20"), Some(9));
+        assert_eq!(parse_python_minor("Python 3.14.0"), Some(14));
+    }
+
+    // AC: @sidecar-diagnostics ac-1
+    // AC: @sidecar-diagnostics ac-3
+    #[tokio::test]
+    async fn output_drain_preserves_lines_and_decodes_invalid_utf8_lossily() {
+        assert_eq!(
+            format_output_line("auto-tagger", "stderr", "CUDA unavailable"),
+            "[Addon:auto-tagger][stderr] CUDA unavailable"
+        );
+
+        let (mut writer, reader) = tokio::io::duplex(64);
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let captured = lines.clone();
+        let drain = tokio::spawn(async move {
+            drain_output(reader, |line| captured.lock().unwrap().push(line))
+                .await
+                .unwrap();
+        });
+
+        writer.write_all(b"first\ninvalid-\xff\r\n").await.unwrap();
+        drop(writer);
+        drain.await.unwrap();
+
+        assert_eq!(
+            *lines.lock().unwrap(),
+            vec!["first".to_string(), "invalid-�".to_string()]
+        );
+    }
+
+    // AC: @sidecar-diagnostics ac-2
+    // AC: @sidecar-diagnostics ac-3
+    #[tokio::test]
+    async fn unterminated_output_is_split_into_bounded_log_lines() {
+        let (mut writer, reader) = tokio::io::duplex(64);
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let captured = lines.clone();
+        let drain = tokio::spawn(async move {
+            drain_output(reader, |line| captured.lock().unwrap().push(line))
+                .await
+                .unwrap();
+        });
+        let payload = vec![b'x'; MAX_OUTPUT_LINE_BYTES * 2 + 17];
+
+        writer.write_all(&payload).await.unwrap();
+        drop(writer);
+        drain.await.unwrap();
+
+        let lines = lines.lock().unwrap();
+        assert_eq!(lines.iter().map(String::len).sum::<usize>(), payload.len());
+        assert!(lines.iter().all(|line| line.len() <= MAX_OUTPUT_LINE_BYTES));
+        assert_eq!(lines.len(), 3);
+    }
+
+    // AC: @sidecar-diagnostics ac-2
+    #[tokio::test]
+    async fn stdout_and_stderr_can_drain_concurrently_past_pipe_capacity() {
+        let (mut stdout_writer, stdout_reader) = tokio::io::duplex(64);
+        let (mut stderr_writer, stderr_reader) = tokio::io::duplex(64);
+        let stdout_drain = tokio::spawn(drain_output(stdout_reader, |_| {}));
+        let stderr_drain = tokio::spawn(drain_output(stderr_reader, |_| {}));
+        let payload = vec![b'x'; 128 * 1024];
+        let stderr_payload = payload.clone();
+
+        let stdout_write = tokio::spawn(async move {
+            stdout_writer.write_all(&payload).await.unwrap();
+            stdout_writer.write_all(b"\n").await.unwrap();
+        });
+        let stderr_write = tokio::spawn(async move {
+            stderr_writer.write_all(&stderr_payload).await.unwrap();
+            stderr_writer.write_all(b"\n").await.unwrap();
+        });
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            stdout_write.await.unwrap();
+            stderr_write.await.unwrap();
+            stdout_drain.await.unwrap().unwrap();
+            stderr_drain.await.unwrap().unwrap();
+        })
+        .await
+        .expect("both streams should drain without blocking");
     }
 }

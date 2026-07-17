@@ -117,6 +117,61 @@ def _try_download_model() -> Optional[Path]:
 
 # ─── Model loading ────────────────────────────────────────────────────────────
 
+def _create_inference_session(ort, model_path, sess_options, requested_device):
+    """Create a provider-aware session with an explicit CPU fallback."""
+    warning = None
+    wants_cuda = requested_device in ("auto", "cuda")
+
+    if wants_cuda:
+        preload_dlls = getattr(ort, "preload_dlls", None)
+        if preload_dlls is not None:
+            try:
+                preload_dlls(directory="")
+            except Exception as exc:
+                warning = f"Unable to preload packaged CUDA libraries: {exc}"
+                logger.warning(warning)
+
+    available_providers = ort.get_available_providers()
+    logger.info(
+        "ONNX Runtime providers for requested device %s: %s",
+        requested_device,
+        available_providers,
+    )
+
+    if wants_cuda and "CUDAExecutionProvider" in available_providers:
+        try:
+            session = ort.InferenceSession(
+                str(model_path),
+                sess_options=sess_options,
+                providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+            )
+        except Exception as exc:
+            warning = f"CUDA provider initialization failed ({exc}); using CPUExecutionProvider."
+            logger.warning(warning)
+            session = ort.InferenceSession(
+                str(model_path),
+                sess_options=sess_options,
+                providers=["CPUExecutionProvider"],
+            )
+        else:
+            active_providers = session.get_providers()
+            if not active_providers or active_providers[0] != "CUDAExecutionProvider":
+                warning = "CUDA was available but did not become active; using CPUExecutionProvider."
+                logger.warning(warning)
+        return session, available_providers, warning
+
+    if requested_device == "cuda":
+        warning = "CUDA was requested but is unavailable; using CPUExecutionProvider."
+        logger.warning(warning)
+
+    session = ort.InferenceSession(
+        str(model_path),
+        sess_options=sess_options,
+        providers=["CPUExecutionProvider"],
+    )
+    return session, available_providers, warning
+
+
 def _load_model():
     """Load the ONNX model and tags data."""
     global _model, _tags_data, _model_loaded, _available_providers, _active_provider, _provider_warning
@@ -136,21 +191,15 @@ def _load_model():
 
     import onnxruntime as ort
 
-    _available_providers = ort.get_available_providers()
-    providers = ["CPUExecutionProvider"]
-    if _requested_device in ("auto", "cuda") and "CUDAExecutionProvider" in _available_providers:
-        providers.insert(0, "CUDAExecutionProvider")
-    elif _requested_device == "cuda":
-        _provider_warning = "CUDA was requested but is unavailable; using CPUExecutionProvider."
-
     sess_options = ort.SessionOptions()
     sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     sess_options.intra_op_num_threads = 4
 
-    _model = ort.InferenceSession(
-        str(model_path),
-        sess_options=sess_options,
-        providers=providers,
+    _model, _available_providers, _provider_warning = _create_inference_session(
+        ort,
+        model_path,
+        sess_options,
+        _requested_device,
     )
 
     _active_provider = _model.get_providers()[0] if _model.get_providers() else "Unknown"

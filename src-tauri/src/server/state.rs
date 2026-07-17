@@ -15,6 +15,7 @@ use crate::routes::models::{create_model_registry, ModelRegistry};
 use crate::routes::network::{HandshakeManager, SharedHandshakeManager};
 use crate::routes::share::{create_share_sessions, ShareSessions};
 use crate::routes::svp_web::{create_download_registry, WebDownloadRegistry};
+use crate::server::credentials::load_or_generate_jwt_secret;
 use crate::services::directory_watcher::DirectoryWatcher;
 use crate::services::events::{create_events, SharedEvents};
 use crate::services::rate_limit::RateLimiter;
@@ -33,7 +34,7 @@ struct AppStateInner {
     library_manager: LibraryManager,
     /// Server port
     port: u16,
-    /// Per-install JWT signing secret (loaded from or generated into settings.json)
+    /// Per-install JWT signing secret loaded from protected credential storage.
     jwt_secret: String,
     /// Event broadcasters (SSE)
     events: SharedEvents,
@@ -87,48 +88,6 @@ pub struct RemoteProxyConfig {
     pub primary_url: String,
     pub fallback_url: Option<String>,
     pub token: Option<String>,
-}
-
-/// Load the JWT secret from `settings.json` in `data_dir`, or generate a new
-/// one if absent. The secret is persisted so tokens survive server restarts.
-fn load_or_generate_jwt_secret(data_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let settings_path = data_dir.join("settings.json");
-
-    // Try to load existing secret from settings.json
-    if settings_path.exists() {
-        let contents = std::fs::read_to_string(&settings_path)?;
-        if let Ok(mut obj) = serde_json::from_str::<serde_json::Value>(&contents) {
-            if let Some(secret) = obj.get("jwt_secret").and_then(|v| v.as_str()) {
-                if !secret.is_empty() {
-                    return Ok(secret.to_owned());
-                }
-            }
-
-            // settings.json exists but has no jwt_secret — generate and merge
-            let secret = generate_jwt_secret();
-            obj.as_object_mut()
-                .ok_or("settings.json is not a JSON object")?
-                .insert(
-                    "jwt_secret".into(),
-                    serde_json::Value::String(secret.clone()),
-                );
-            std::fs::write(&settings_path, serde_json::to_string_pretty(&obj)?)?;
-            return Ok(secret);
-        }
-    }
-
-    // No settings.json at all — create one with just the secret
-    let secret = generate_jwt_secret();
-    let obj = serde_json::json!({ "jwt_secret": secret });
-    std::fs::write(&settings_path, serde_json::to_string_pretty(&obj)?)?;
-    Ok(secret)
-}
-
-/// Generate a random 32-byte hex-encoded JWT secret.
-fn generate_jwt_secret() -> String {
-    use rand::Rng;
-    let bytes: [u8; 32] = rand::thread_rng().gen();
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// Determine whether family mode should start locked based on settings.json.

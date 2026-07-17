@@ -361,10 +361,14 @@ fn load_settings(data_dir: &Path) -> Value {
     }
 }
 
-/// Persist settings to disk as pretty-printed JSON.
+/// Persist settings to disk as pretty-printed JSON without credential material.
 fn save_settings_to_file(data_dir: &Path, settings: &Value) -> std::io::Result<()> {
     let path = settings_path(data_dir);
-    let json_str = serde_json::to_string_pretty(settings)
+    let mut sanitized = settings.clone();
+    if let Some(object) = sanitized.as_object_mut() {
+        object.remove("jwt_secret");
+    }
+    let json_str = serde_json::to_string_pretty(&sanitized)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     std::fs::write(&path, json_str)
 }
@@ -2439,6 +2443,71 @@ mod tests {
     use super::*;
     use axum::http::{Method, Request};
     use tower::ServiceExt;
+
+    // AC: @credential-storage ac-5
+    #[tokio::test]
+    async fn settings_api_rejects_and_redacts_signing_credential_material() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "localbooru-settings-credential-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        std::fs::write(
+            settings_path(&data_dir),
+            r#"{"jwt_secret":"legacy-secret","network":{"enabled":true}}"#,
+        )
+        .unwrap();
+        let state = AppState::new(&data_dir, 0).unwrap();
+        std::fs::write(
+            settings_path(&data_dir),
+            r#"{"jwt_secret":"must-be-redacted","network":{"enabled":true}}"#,
+        )
+        .unwrap();
+
+        let get_response = router()
+            .with_state(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let get_body = axum::body::to_bytes(get_response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let get_json: Value = serde_json::from_slice(&get_body).unwrap();
+        assert!(get_json.get("jwt_secret").is_none());
+
+        save_settings_to_file(
+            &data_dir,
+            &json!({"jwt_secret": "must-not-persist", "network": {"enabled": true}}),
+        )
+        .unwrap();
+        assert!(load_settings(&data_dir).get("jwt_secret").is_none());
+
+        let post_response = router()
+            .with_state(state)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"jwt_secret":"replacement","network":{"enabled":false}}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(post_response.status(), StatusCode::OK);
+        let saved = load_settings(&data_dir);
+        assert!(saved.get("jwt_secret").is_none());
+        assert_eq!(saved["network"]["enabled"], false);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
 
     #[test]
     // AC: @reliable-stream-transitions ac-final-source-owner

@@ -16,6 +16,31 @@ use super::manifest::{get_addon_manifest, get_addon_registry, AddonRuntime};
 use super::sidecar;
 use crate::routes::settings::get_config_section;
 
+const ONNXRUNTIME_CPU: &str = "onnxruntime==1.23.2";
+const ONNXRUNTIME_GPU: &str = "onnxruntime-gpu[cuda,cudnn]==1.23.2";
+
+fn dependency_list_for_platform(
+    id: &str,
+    python_deps: &[&'static str],
+    target_os: &str,
+) -> Vec<&'static str> {
+    let mut deps = vec!["uvicorn[standard]", "fastapi"];
+    deps.extend_from_slice(python_deps);
+
+    if id == "auto-tagger" {
+        deps.retain(|dependency| {
+            *dependency != "onnxruntime" && !dependency.starts_with("onnxruntime==")
+        });
+        if matches!(target_os, "linux" | "windows") {
+            deps.push(ONNXRUNTIME_GPU);
+        } else {
+            deps.push(ONNXRUNTIME_CPU);
+        }
+    }
+
+    deps
+}
+
 /// Runtime state for a single addon, including its process handle when running.
 struct AddonState {
     status: AddonStatus,
@@ -132,13 +157,44 @@ impl AddonManager {
         id: &str,
         manifest: &super::manifest::AddonManifest,
     ) -> Vec<&'static str> {
-        let mut deps = vec!["uvicorn[standard]", "fastapi"];
-        deps.extend_from_slice(manifest.python_deps);
-        if id == "auto-tagger" && (cfg!(target_os = "linux") || cfg!(target_os = "windows")) {
-            deps.retain(|dependency| *dependency != "onnxruntime");
-            deps.push("onnxruntime-gpu");
+        dependency_list_for_platform(id, manifest.python_deps, std::env::consts::OS)
+    }
+
+    fn install_dependencies(
+        &self,
+        id: &str,
+        manifest: &super::manifest::AddonManifest,
+        venv_dir: &Path,
+    ) -> Result<(), String> {
+        let deps = self.dependency_list(id, manifest);
+        if !deps.contains(&ONNXRUNTIME_GPU) {
+            return sidecar::install_deps(venv_dir, &deps);
         }
-        deps
+
+        sidecar::uninstall_deps(venv_dir, &["onnxruntime"])?;
+        if let Err(install_error) = sidecar::install_deps(venv_dir, &deps) {
+            log::warn!(
+                "[Addon:{}] GPU runtime installation failed; restoring CPU runtime",
+                id
+            );
+            let cleanup_error = sidecar::uninstall_deps(venv_dir, &["onnxruntime-gpu"]).err();
+            let restore_result = sidecar::install_deps(venv_dir, &[ONNXRUNTIME_CPU]);
+            return match (cleanup_error, restore_result) {
+                (None, Ok(())) => Err(format!(
+                    "{}; restored the CPU inference runtime",
+                    install_error
+                )),
+                (Some(cleanup_error), Ok(())) => Err(format!(
+                    "{}; restored the CPU inference runtime after GPU cleanup failed: {}",
+                    install_error, cleanup_error
+                )),
+                (_, Err(restore_error)) => Err(format!(
+                    "{}; CPU runtime restoration also failed: {}",
+                    install_error, restore_error
+                )),
+            };
+        }
+        Ok(())
     }
 
     fn sidecar_env(&self, id: &str) -> Vec<(String, String)> {
@@ -352,14 +408,16 @@ impl AddonManager {
         // Find a usable Python interpreter
         let python =
             sidecar::find_python().ok_or_else(|| "Could not find Python 3 on PATH".to_string())?;
+        if id == "auto-tagger" {
+            sidecar::validate_python_minor(&python, 10, 13)?;
+        }
 
         // Create virtual environment
         sidecar::create_venv(&python, &venv_dir)?;
 
         // Install uvicorn plus add-on dependencies. CUDA-capable platforms use
         // the ONNX GPU wheel, which retains a CPU execution-provider fallback.
-        let deps = self.dependency_list(id, manifest);
-        sidecar::install_deps(&venv_dir, &deps)?;
+        self.install_dependencies(id, manifest, &venv_dir)?;
 
         // Deploy embedded addon sources if available.
         if let Some(sources) = super::sources::get_addon_sources(id) {
@@ -387,8 +445,10 @@ impl AddonManager {
         if !venv_dir.exists() {
             return self.install_addon(id);
         }
-        let deps = self.dependency_list(id, manifest);
-        sidecar::install_deps(&venv_dir, &deps)?;
+        if id == "auto-tagger" {
+            sidecar::validate_python_minor(&sidecar::get_venv_python(&venv_dir), 10, 13)?;
+        }
+        self.install_dependencies(id, manifest, &venv_dir)?;
         if let Some(sources) = super::sources::get_addon_sources(id) {
             for (filename, source) in sources {
                 std::fs::write(self.addon_dir(id).join(filename), source)
@@ -481,7 +541,7 @@ impl AddonManager {
         }
 
         // Spawn the sidecar
-        let child = match sidecar::spawn_sidecar(&python, &app_dir, port, &sidecar_env).await {
+        let child = match sidecar::spawn_sidecar(id, &python, &app_dir, port, &sidecar_env).await {
             Ok(c) => c,
             Err(e) => {
                 self.set_status(id, AddonStatus::Error(e.clone()));
@@ -613,6 +673,149 @@ impl AddonManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // AC: @addon-platform-dependencies ac-1
+    #[test]
+    fn auto_tagger_gpu_platforms_include_managed_cuda_dependencies() {
+        for target_os in ["windows", "linux"] {
+            let deps = dependency_list_for_platform("auto-tagger", &["onnxruntime"], target_os);
+            assert!(deps.contains(&ONNXRUNTIME_GPU));
+            assert!(!deps.iter().any(|dependency| *dependency == "onnxruntime"));
+            assert_eq!(
+                deps.iter()
+                    .filter(|dependency| dependency.starts_with("onnxruntime"))
+                    .count(),
+                1
+            );
+        }
+    }
+
+    // AC: @addon-platform-dependencies ac-4
+    #[test]
+    fn auto_tagger_non_gpu_platforms_use_pinned_cpu_runtime() {
+        let deps = dependency_list_for_platform("auto-tagger", &["onnxruntime"], "macos");
+        assert!(deps.contains(&ONNXRUNTIME_CPU));
+        assert!(!deps.iter().any(|dependency| *dependency == ONNXRUNTIME_GPU));
+    }
+
+    // AC: @addon-platform-dependencies ac-3
+    #[test]
+    fn install_and_repair_resolve_the_same_auto_tagger_dependencies() {
+        let manifest = get_addon_manifest("auto-tagger").unwrap();
+        let manager = AddonManager::new(Path::new("unused"));
+        assert_eq!(
+            manager.dependency_list("auto-tagger", manifest),
+            dependency_list_for_platform("auto-tagger", manifest.python_deps, std::env::consts::OS)
+        );
+    }
+
+    // AC: @addon-platform-dependencies ac-3
+    #[cfg(unix)]
+    #[test]
+    fn repair_updates_dependencies_without_removing_persisted_resources() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-addon-repair-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let addon_dir = root.join("addons/auto-tagger");
+        let venv_bin = addon_dir.join("venv/bin");
+        let model = root.join("models/tagger/vit-v3/model.onnx");
+        std::fs::create_dir_all(&venv_bin).unwrap();
+        std::fs::create_dir_all(model.parent().unwrap()).unwrap();
+        std::fs::write(&model, b"model-data").unwrap();
+        std::fs::write(addon_dir.join("state.json"), br#"{"enabled":true}"#).unwrap();
+        std::fs::write(
+            root.join("settings.json"),
+            br#"{"auto_tagger":{"device":"cuda"}}"#,
+        )
+        .unwrap();
+        let python = venv_bin.join("python");
+        let invocations = root.join("pip-invocations");
+        std::fs::write(
+            &python,
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'Python 3.11.9'; else printf '%s\\n' \"$*\" >> '{}'; fi\nexit 0\n",
+                invocations.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let manager = AddonManager::new(&root);
+
+        manager.repair_addon("auto-tagger").unwrap();
+
+        let invocations = std::fs::read_to_string(invocations).unwrap();
+        let commands: Vec<_> = invocations.lines().collect();
+        assert_eq!(commands[0], "-m pip uninstall -y onnxruntime");
+        assert!(commands[1].starts_with("-m pip install --upgrade "));
+        assert!(commands[1].contains(ONNXRUNTIME_GPU));
+        assert!(!commands[1]
+            .split_whitespace()
+            .any(|arg| arg == "onnxruntime"));
+        assert_eq!(std::fs::read(&model).unwrap(), b"model-data");
+        assert_eq!(
+            std::fs::read(addon_dir.join("state.json")).unwrap(),
+            br#"{"enabled":true}"#
+        );
+        assert_eq!(
+            std::fs::read(root.join("settings.json")).unwrap(),
+            br#"{"auto_tagger":{"device":"cuda"}}"#
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @addon-platform-dependencies ac-3
+    #[cfg(unix)]
+    #[test]
+    fn failed_gpu_repair_restores_cpu_inference_runtime() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-addon-rollback-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let venv = root.join("venv");
+        let bin = venv.join("bin");
+        let python = bin.join("python");
+        let invocations = root.join("pip-invocations");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(
+            &python,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nfor arg in \"$@\"; do [ \"$arg\" = '{}' ] && exit 1; done\nexit 0\n",
+                invocations.display(),
+                ONNXRUNTIME_GPU
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let manager = AddonManager::new(&root);
+        let manifest = get_addon_manifest("auto-tagger").unwrap();
+
+        let error = manager
+            .install_dependencies("auto-tagger", manifest, &venv)
+            .unwrap_err();
+
+        assert!(error.contains("restored the CPU inference runtime"));
+        let commands = std::fs::read_to_string(invocations).unwrap();
+        let commands: Vec<_> = commands.lines().collect();
+        assert_eq!(commands[0], "-m pip uninstall -y onnxruntime");
+        assert!(commands[1].contains(ONNXRUNTIME_GPU));
+        assert_eq!(commands[2], "-m pip uninstall -y onnxruntime-gpu");
+        assert_eq!(
+            commands[3],
+            format!("-m pip install --upgrade {}", ONNXRUNTIME_CPU)
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn other_addon_dependencies_are_unchanged() {
+        let deps = dependency_list_for_platform("age-detector", &["torch"], "windows");
+        assert_eq!(deps, vec!["uvicorn[standard]", "fastapi", "torch"]);
+    }
 
     // AC: @curation-game ac-1
     #[test]
