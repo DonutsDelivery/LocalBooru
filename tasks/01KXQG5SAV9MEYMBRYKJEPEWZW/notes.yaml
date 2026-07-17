@@ -53,3 +53,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T08:40:08.523Z
+  - _ulid: 01KXQMXQJMCSNTR7DDJBH20RG8
+    content: "Verification: credential tests 5/5 and settings API test pass; isolated
+      x86_64-pc-windows-msvc compilation passes; independent review found no remaining defects."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T09:01:07.540Z
