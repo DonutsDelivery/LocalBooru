@@ -3,9 +3,9 @@ slugs:
   - svp-session-protocol
 title: Define bounded SVP processing-session protocol
 type: task
-description: Implement and test the platform-neutral session contract for open, metadata, absolute
-  start, generation-scoped seek, pause, resume, stop, terminal error, bounded segment ownership, and
-  deterministic fake output.
+description: Implement and test the graph-agnostic platform-neutral session contract for open,
+  metadata, absolute start, generation-scoped seek, pause, resume, stop, terminal error, and bounded
+  segment ownership; synthetic media is test-fixture-only and never a desktop SVP product graph.
 spec_ref: "@svp-bounded-stream"
 meta_ref: null
 plan_ref: null
@@ -30,6 +30,18 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-07-16T23:28:28.731Z
+  - author: DonutsDelivery
+    changes:
+      description:
+        new: Implement and test the graph-agnostic platform-neutral session contract for open, metadata,
+          absolute start, generation-scoped seek, pause, resume, stop, terminal error, and bounded
+          segment ownership; synthetic media is test-fixture-only and never a desktop SVP product
+          graph.
+        previous: Implement and test the platform-neutral session contract for open, metadata, absolute
+          start, generation-scoped seek, pause, resume, stop, terminal error, bounded segment
+          ownership, and deterministic fake output.
+    command: task-set
+    timestamp: 2026-07-17T01:28:03.917Z
 created_at: 2026-07-16T23:27:26.908Z
 started_at: 2026-07-16T23:28:28.731Z
 todos: []
