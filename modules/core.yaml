@@ -205,6 +205,20 @@ features:
     tests: []
     traits: []
     tags: []
+    requirements:
+      - _ulid: 01KXPWC24SH25E6TTP89BN8RAZ
+        slugs:
+          - reliable-stream-transitions
+        title: Reliable playback source transitions
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-17T01:52:02.713Z
+        notes: []
     created: 2026-03-08T08:30:11.857Z
     notes: []
   - _ulid: 01KK692YKT0WYBPWSX6PH9TFJS
