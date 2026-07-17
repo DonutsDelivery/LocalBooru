@@ -143,6 +143,11 @@ features:
             then: the GPU provider becomes active and requested, available, and active provider status is
               reported accurately
             when: the tagger model loads
+          - given: GPU acceleration is requested but its native runtime cannot initialize
+            id: ac-2
+            then: the add-on records a useful warning, activates the CPU provider when possible, and does not
+              claim that GPU acceleration is active
+            when: the tagger model loads
         tags: []
         created: 2026-07-17T07:37:13.296Z
         notes: []
