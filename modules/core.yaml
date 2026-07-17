@@ -275,6 +275,20 @@ features:
     tests: []
     traits: []
     tags: []
+    requirements:
+      - _ulid: 01KXQG1PN6YD58XR73JATNRSSX
+        slugs:
+          - addon-platform-dependencies
+        title: Platform Add-on Dependencies
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-17T07:35:54.790Z
+        notes: []
     created: 2026-03-08T08:30:12.294Z
     notes: []
   - _ulid: 01KK692Z060X5XY08AV7BW0N5D
