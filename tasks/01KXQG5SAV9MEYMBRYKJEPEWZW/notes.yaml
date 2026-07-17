@@ -1,0 +1,34 @@
+notes:
+  - _ulid: 01KXQG5SAVG1DEQT98VMV46ZHR
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      The per-install token-signing credential is protected from settings disclosure while remaining
+      stable across application restarts and upgrades.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given an installation has a signing credential in legacy settings, when the upgraded
+      application starts, then the same credential is moved to protected storage, removed from
+      settings, and previously issued sessions remain valid
+
+      - ac-2: Given credential migration is interrupted or protected storage cannot be verified,
+      when the application starts again, then migration retries without deleting or rotating the
+      legacy credential
+
+      - ac-3: Given LocalBooru runs under a Windows user account, when the signing credential is
+      persisted, then it is encrypted for that Windows user and is not recoverable as plain text
+      from application settings
+
+      - ac-4: Given LocalBooru runs on a Unix-like platform, when the signing credential is
+      persisted, then it is kept outside ordinary settings with access restricted to the owning user
+
+      - ac-5: Given a client reads or updates application settings, when the request includes or
+      would return signing credential material, then the credential is neither disclosed nor
+      accepted into persisted settings
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T07:38:08.603Z
