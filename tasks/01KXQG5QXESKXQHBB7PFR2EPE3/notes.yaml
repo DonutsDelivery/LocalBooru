@@ -30,3 +30,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T07:38:07.150Z
+  - _ulid: 01KXQG7QX9F6CFMH0035CWRWQ2
+    content: "Approach: centralize the Auto Tagger platform dependency resolver, pin ORT 1.23.2 with
+      managed CUDA/cuDNN extras on Windows/Linux, remove conflicting CPU ORT before install/repair,
+      validate Python 3.10-3.13, and cover all four ACs with behavioral resolver/repair tests. Edge
+      cases: existing venvs, CPU-only fallback, unsupported Python."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T07:39:12.681Z
