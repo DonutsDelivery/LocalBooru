@@ -257,6 +257,12 @@ features:
             then: the trusted desktop backend supplies the active Manager graph revision and the player cannot
               select a graph path or interpolation mode
             when: the request crosses the application API
+          - given: Windows Docker or macOS CI completes without a native machine running a real installed SVP
+              setup
+            id: ac-verification-label
+            then: the result is identified as protocol, compile, or package verification and native SVP playback
+              acceptance remains open
+            when: the result is reported
         tags: []
         created: 2026-07-16T23:26:13.143Z
         notes: []
