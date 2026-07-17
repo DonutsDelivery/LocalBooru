@@ -137,6 +137,12 @@ features:
           - "@addon-platform-dependencies"
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: GPU acceleration is requested and its runtime can initialize
+            id: ac-1
+            then: the GPU provider becomes active and requested, available, and active provider status is
+              reported accurately
+            when: the tagger model loads
         tags: []
         created: 2026-07-17T07:37:13.296Z
         notes: []
