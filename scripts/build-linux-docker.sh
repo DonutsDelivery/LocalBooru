@@ -20,31 +20,18 @@ mkdir -p "$BUILD/downloads" "$DIST" "$CCACHE_DIR"
 ccache --max-size "$CCACHE_MAXSIZE" >/dev/null
 
 echo "==> Refreshing isolated source worktree"
+SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:?LOCALBOORU_SOURCE_REVISION is required}"
+git -c safe.directory="$SOURCE" -C "$SOURCE" cat-file -e "${SOURCE_REVISION}^{commit}"
+RESOLVED_SOURCE_REVISION="$(git -c safe.directory="$SOURCE" -C "$SOURCE" rev-parse "${SOURCE_REVISION}^{commit}")"
+[[ "$RESOLVED_SOURCE_REVISION" == "$SOURCE_REVISION" ]] || {
+  echo "ERROR: source revision did not resolve exactly: $SOURCE_REVISION" >&2
+  exit 1
+}
+printf '==> Staging committed source revision %s\n' "$RESOLVED_SOURCE_REVISION"
 rm -rf "$ROOT"
 mkdir -p "$ROOT"
-tar -C "$SOURCE" -cf - \
-  --mtime="@${SOURCE_DATE_EPOCH:?SOURCE_DATE_EPOCH is required}" \
-  --exclude=.git \
-  --exclude=node_modules \
-  --exclude=frontend/node_modules \
-  --exclude=frontend/dist \
-  --exclude=frontend/android \
-  --exclude=target \
-  --exclude=dist \
-  --exclude=.venv \
-  --exclude=python-venv-linux \
-  --exclude=python-embed \
-  --exclude=build-linux-docker \
-  --exclude=dist-linux-local \
-  --exclude=.ccache-docker \
-  --exclude=native-video/build \
-  --exclude=native-video/build-package \
-  --exclude=gstreamer-svp/build \
-  --exclude=src-tauri/gen \
-  --exclude=src-tauri/backup \
-  --exclude=LocalBooru.apk \
-  --exclude=LocalBooru.apk.idsig \
-  . | tar -C "$ROOT" -xf -
+git -c safe.directory="$SOURCE" -C "$SOURCE" archive --format=tar "$RESOLVED_SOURCE_REVISION" \
+  | tar -C "$ROOT" -xf -
 
 rm -f "$DIST/SHA256SUMS" "$DIST/LocalBooru-Native-Runtime-Sources.tar.xz"
 [[ ",$BUNDLES," == *",appimage,"* ]] && \

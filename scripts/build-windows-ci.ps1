@@ -18,6 +18,7 @@ cargo tauri --version
 rustc --version
 node --version
 npm --version
+python (Join-Path $Root 'scripts\check-release-version.py')
 
 Remove-Item -Recurse -Force $DistDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $DistDir | Out-Null

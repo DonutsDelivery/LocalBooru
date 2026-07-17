@@ -96,8 +96,9 @@ toolchain image after changing `Dockerfile.linux-release`:
 The host wrapper owns Docker/Podman invocation. `scripts/build-linux-docker.sh`
 is an internal container entry point and must not be run directly on the host.
 `scripts/build-tauri-linux.sh` remains only as a compatibility redirect.
-The checkout is mounted read-only; the container refreshes an isolated filtered
-worktree under the persistent build root before npm, Tauri, or Cargo runs.
+The checkout is mounted read-only; the container resolves the requested commit and
+stages it with `git archive`, so uncommitted and untracked host files cannot enter
+the release. The resolved source SHA is printed before npm, Tauri, or Cargo runs.
 
 ## Persistent state
 
@@ -192,8 +193,11 @@ Logs prove graph setup; visual motion quality still requires human confirmation.
 
 `.github/workflows/build.yml` is manual-only. Its Linux job calls the same local
 Docker wrapper; Windows uses native `windows-2022`; macOS uses native `macos-14`
-to produce a universal x86_64/arm64 bundle. These jobs upload short-lived
-inspection artifacts and never create a GitHub release.
+to produce an explicitly ad-hoc-signed universal x86_64/arm64 bundle. The macOS
+artifacts are not Developer ID signed or notarized, so Gatekeeper may still
+require a user override. These jobs upload short-lived inspection artifacts and
+never create a GitHub release. The iOS workflow is also manual-only and uploads
+an Actions artifact without publishing it.
 
 Creating tags, pushing commits, signing packages, and publishing a GitHub
 release are explicit operator actions after local artifact verification. Never

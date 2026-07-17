@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Build and verify LocalBooru's unsigned universal macOS artifacts on native macOS.
+# Build and verify LocalBooru's ad-hoc-signed universal macOS artifacts on native macOS.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+python3 "$ROOT/scripts/check-release-version.py"
 TARGET="universal-apple-darwin"
 TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/src-tauri/target}"
 export CARGO_TARGET_DIR="$TARGET_DIR"
@@ -50,18 +51,19 @@ INFO_PLIST="$APP/Contents/Info.plist"
 ARCHS="$(lipo -archs "$BINARY")"
 [[ " $ARCHS " == *" arm64 "* ]]
 [[ " $ARCHS " == *" x86_64 "* ]]
-[[ "$(plutil -extract CFBundleShortVersionString raw "$INFO_PLIST")" == "2.0.0" ]]
+[[ "$(plutil -extract CFBundleShortVersionString raw "$INFO_PLIST")" == "2.0.1" ]]
 [[ "$(plutil -extract CFBundleIdentifier raw "$INFO_PLIST")" == "com.localbooru.app" ]]
 [[ "$(plutil -extract LSMinimumSystemVersion raw "$INFO_PLIST")" == "11.0" ]]
 hdiutil verify "$DMG"
 
-# Signing credentials are intentionally not required for CI validation. Report
-# the actual signature state so a future notarized publisher can fail closed.
-if codesign --verify --deep --strict "$APP"; then
-  echo "macOS app signature verification passed"
-else
-  echo "macOS app is unsigned/ad-hoc, as expected for this CI artifact"
-fi
+codesign --verify --deep --strict "$APP"
+SIGNATURE_INFO="$(codesign -dvv "$APP" 2>&1)"
+printf '%s\n' "$SIGNATURE_INFO"
+[[ "$SIGNATURE_INFO" == *"Signature=adhoc"* ]] || {
+  echo "ERROR: macOS app is not ad-hoc signed" >&2
+  exit 1
+}
+echo "macOS app ad-hoc signature verification passed"
 
 cp "$DMG" "$DIST_DIR/LocalBooru-macOS-universal.dmg"
 ditto -c -k --sequesterRsrc --keepParent \

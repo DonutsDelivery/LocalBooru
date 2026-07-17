@@ -1,8 +1,6 @@
 name: Build iOS
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
 
 env:
@@ -119,11 +117,3 @@ jobs:
           name: LocalBooru-iOS
           path: LocalBooru.ipa
           if-no-files-found: error
-
-      - name: Upload IPA to release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: LocalBooru.ipa
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

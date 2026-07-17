@@ -49,6 +49,7 @@ git -c safe.directory="$SOURCE_DIR" -C "$SOURCE_DIR" archive --format=tar HEAD \
   | tar -xf - -C "$WORKTREE"
 
 cd "$WORKTREE"
+python3 scripts/check-release-version.py
 rm -rf "$DIST_DIR"/*
 LOCK_HASH_BEFORE="$(sha256sum Cargo.lock | cut -d' ' -f1)"
 

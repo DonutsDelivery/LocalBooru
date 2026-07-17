@@ -26,7 +26,7 @@ function compareSemver(a, b) {
  */
 export async function checkForUpdate() {
   // Updater not yet implemented for Tauri mobile
-  return { available: false, currentVersion: '2.0.0', latestVersion: '2.0.0' };
+  return { available: false, currentVersion: '2.0.1', latestVersion: '2.0.1' };
 }
 
 /**

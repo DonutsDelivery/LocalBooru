@@ -6,6 +6,17 @@ frontend/node_modules/
 dist/
 frontend/dist/
 python-embed/
+/LocalBooru.apk
+/LocalBooru.apk.idsig
+/dist-windows-local/
+/build-windows-docker/
+/.sccache-windows-docker/
+/.android-signing.*/
+/.localbooru-cache-marker.*
+/python-venv-linux/
+/gstreamer-svp/build/
+/verification-mobile/
+/localbooru-*-verify.png
 
 # Rust/Tauri
 target/
@@ -69,6 +80,7 @@ yolov8n.pt
 bench.py
 bench2.py
 test_*.py
+!addons/svp/tests/test_*.py
 /native-video/build/
 /native-video/build-package/
 /src-tauri/binaries/

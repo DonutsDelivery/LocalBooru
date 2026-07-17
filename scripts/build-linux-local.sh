@@ -4,6 +4,19 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+python3 "$ROOT/scripts/check-release-version.py"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
+LOCK_TIMEOUT="${LOCALBOORU_BUILD_LOCK_TIMEOUT:-1800}"
+[[ "$LOCK_TIMEOUT" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
+  echo "ERROR: LOCALBOORU_BUILD_LOCK_TIMEOUT must be a nonnegative number" >&2
+  exit 2
+}
+mkdir -p "$STATE_DIR"
+exec 8>"$STATE_DIR/build-cache.lock"
+flock -w "$LOCK_TIMEOUT" 8 || {
+  echo "ERROR: timed out waiting for another LocalBooru build or cleanup" >&2
+  exit 1
+}
 DOCKERFILE_HASH="$(sha256sum "$ROOT/Dockerfile.linux-release" | cut -c1-12)"
 IMAGE="localbooru-linux-release:ubuntu24.04-webkit2.52.3-v1-$DOCKERFILE_HASH"
 REBUILD=0
@@ -26,6 +39,8 @@ Environment:
   LOCALBOORU_DOCKER_BUILD_ROOT  Persistent build/cache directory
   LOCALBOORU_DIST_LINUX_DIR     Final artifact directory
   LOCALBOORU_BUILD_JOBS         Parallel build limit
+  LOCALBOORU_LINUX_BUILD_LIMIT_GB  Refuse builds above this cache size (default: 30)
+  LOCALBOORU_CCACHE_SIZE         ccache size cap (default: 8G)
 EOF
 }
 
@@ -60,14 +75,88 @@ fi
 BUILD_ROOT="${LOCALBOORU_DOCKER_BUILD_ROOT:-$ROOT/build-linux-docker}"
 DIST_ROOT="${LOCALBOORU_DIST_LINUX_DIR:-$ROOT/dist-linux-local}"
 CCACHE_ROOT="${LOCALBOORU_CCACHE_DIR:-$ROOT/.ccache-docker}"
-SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" log -1 --format=%ct)}"
-for directory in "$BUILD_ROOT" "$DIST_ROOT" "$CCACHE_ROOT"; do
-  mkdir -p "$directory"
-done
+SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
+SOURCE_COMMIT="$(git -C "$ROOT" rev-parse --verify "${SOURCE_REVISION}^{commit}")"
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$SOURCE_COMMIT")}"
+CACHE_MARKER=".localbooru-build-cache"
+
+has_symlink_component() {
+  local current
+  current="$(realpath -ms -- "$1")"
+  while true; do
+    [[ -L "$current" ]] && return 0
+    [[ "$current" == "/" ]] && return 1
+    current="$(dirname "$current")"
+  done
+}
+
+prepare_cache_root() {
+  local path="$1"
+  local default_path="$2"
+  local resolved default_resolved marker_value first_entry marker_temp
+
+  if has_symlink_component "$path"; then
+    echo "ERROR: refusing build cache path with a symlink component: $path" >&2
+    exit 1
+  fi
+
+  resolved="$(realpath -m -- "$path")"
+  default_resolved="$(realpath -m -- "$default_path")"
+  marker_value=""
+  if [[ -f "$resolved/$CACHE_MARKER" ]]; then
+    marker_value="$(< "$resolved/$CACHE_MARKER")"
+  fi
+
+  if [[ "$resolved" != "$default_resolved" && "$marker_value" != "localbooru-build-cache-v1" ]]; then
+    first_entry=""
+    if [[ -d "$resolved" ]]; then
+      first_entry="$(find "$resolved" -mindepth 1 -maxdepth 1 \
+        ! -name "$CACHE_MARKER" ! -name '.localbooru-cache-marker.*' -print -quit)"
+    fi
+    if [[ -n "$first_entry" ]]; then
+      echo "ERROR: custom build cache is nonempty and lacks a valid $CACHE_MARKER marker: $resolved" >&2
+      exit 1
+    fi
+    rm -f "$resolved/$CACHE_MARKER" "$resolved"/.localbooru-cache-marker.*
+  fi
+
+  mkdir -p "$resolved"
+  rm -f "$resolved"/.localbooru-cache-marker.*
+  if [[ "$marker_value" != "localbooru-build-cache-v1" ]]; then
+    marker_temp="$(mktemp "$resolved/.localbooru-cache-marker.XXXXXX")"
+    if ! printf '%s\n' 'localbooru-build-cache-v1' > "$marker_temp"; then
+      rm -f "$marker_temp"
+      echo "ERROR: failed to initialize cache marker for $resolved" >&2
+      exit 1
+    fi
+    mv -f "$marker_temp" "$resolved/$CACHE_MARKER"
+  fi
+  PREPARED_CACHE_ROOT="$resolved"
+}
+
+prepare_cache_root "$BUILD_ROOT" "$ROOT/build-linux-docker"
+BUILD_ROOT="$PREPARED_CACHE_ROOT"
+prepare_cache_root "$CCACHE_ROOT" "$ROOT/.ccache-docker"
+CCACHE_ROOT="$PREPARED_CACHE_ROOT"
+
+mkdir -p "$DIST_ROOT"
 mkdir -p "$BUILD_ROOT/cargo-home" "$BUILD_ROOT/npm-cache"
-BUILD_ROOT="$(readlink -f "$BUILD_ROOT")"
 DIST_ROOT="$(readlink -f "$DIST_ROOT")"
-CCACHE_ROOT="$(readlink -f "$CCACHE_ROOT")"
+
+BUILD_LIMIT_GB="${LOCALBOORU_LINUX_BUILD_LIMIT_GB:-30}"
+[[ "$BUILD_LIMIT_GB" =~ ^[1-9][0-9]*$ ]] || {
+  echo "ERROR: LOCALBOORU_LINUX_BUILD_LIMIT_GB must be a positive integer" >&2
+  exit 2
+}
+BUILD_USAGE_KIB="$(du -sk "$BUILD_ROOT" | cut -f1)"
+BUILD_LIMIT_KIB=$((BUILD_LIMIT_GB * 1024 * 1024))
+if (( BUILD_USAGE_KIB > BUILD_LIMIT_KIB )); then
+  echo "ERROR: Linux build cache is $(du -sh "$BUILD_ROOT" | cut -f1), above the ${BUILD_LIMIT_GB}G limit." >&2
+  echo "Run: npm run clean:builds -- linux-cache --execute" >&2
+  exit 1
+fi
+printf '==> Linux persistent build cache before build: %s (limit: %sG)\n' \
+  "$(du -sh "$BUILD_ROOT" | cut -f1)" "$BUILD_LIMIT_GB"
 
 if [[ "$REBUILD" == 1 ]] || ! "$CONTAINER" image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "==> Building release toolchain image $IMAGE"
@@ -75,6 +164,7 @@ if [[ "$REBUILD" == 1 ]] || ! "$CONTAINER" image inspect "$IMAGE" >/dev/null 2>&
 fi
 
 echo "==> Building LocalBooru Linux artifacts"
+echo "    source:  $SOURCE_COMMIT"
 echo "    bundles: $BUNDLES"
 echo "    jobs:    $JOBS"
 echo "    build:   $BUILD_ROOT"
@@ -87,13 +177,14 @@ echo "    output:  $DIST_ROOT"
   -e RUSTUP_HOME=/opt/rustup \
   -e NPM_CONFIG_CACHE=/build/npm-cache \
   -e SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+  -e LOCALBOORU_SOURCE_REVISION="$SOURCE_COMMIT" \
   -e TZ=UTC \
   -e LC_ALL=C.UTF-8 \
   -e LOCALBOORU_BUILD_JOBS="$JOBS" \
   -e LOCALBOORU_RELEASE_BUNDLES="$BUNDLES" \
   -e CARGO_TARGET_DIR=/build/target \
   -e CCACHE_DIR=/ccache \
-  -e CCACHE_MAXSIZE="${LOCALBOORU_CCACHE_SIZE:-30G}" \
+  -e CCACHE_MAXSIZE="${LOCALBOORU_CCACHE_SIZE:-8G}" \
   -v "$ROOT:/source:ro" \
   -v "$BUILD_ROOT:/build" \
   -v "$BUILD_ROOT/cargo-home:/cargo-home" \
@@ -104,5 +195,6 @@ echo "    output:  $DIST_ROOT"
   bash /source/scripts/build-linux-docker.sh
 
 echo
+printf '==> Linux persistent build cache after build: %s\n' "$(du -sh "$BUILD_ROOT" | cut -f1)"
 echo "==> LocalBooru Linux artifacts"
 find "$DIST_ROOT" -maxdepth 1 -type f -printf '  %f (%s bytes)\n' | sort
