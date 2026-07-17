@@ -142,7 +142,8 @@ features:
     acceptance_criteria:
       - given: SVP is installed and enabled on a supported Linux, Windows, or Apple Silicon macOS desktop
         id: ac-supported-desktops
-        then: LocalBooru presents SVP-interpolated playback through the standard video player and controls
+        then: LocalBooru executes the active Manager-generated graph through the standard video player and
+          controls without selecting interpolation parameters
         when: the user opens a compatible video
       - given: SVP playback cannot start or becomes unavailable
         id: ac-unavailable-fallback
