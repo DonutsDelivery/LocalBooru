@@ -5,12 +5,24 @@ title: "Implement: Platform Add-on Dependencies"
 type: task
 spec_ref: "@addon-platform-dependencies"
 derivation: auto
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-07-17T07:38:55.147Z
+        previous: null
+    command: task-start
+    timestamp: 2026-07-17T07:38:55.147Z
 created_at: 2026-07-17T07:38:07.150Z
+started_at: 2026-07-17T07:38:55.147Z
 todos: []
