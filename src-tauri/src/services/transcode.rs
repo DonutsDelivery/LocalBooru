@@ -7,7 +7,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use dashmap::DashMap;
@@ -303,6 +304,8 @@ impl QualityPreset {
 /// Manages active transcoding streams.
 pub struct TranscodeManager {
     streams: DashMap<String, TranscodeStream>,
+    transition_epoch: AtomicU64,
+    transition_lock: Mutex<()>,
 }
 
 impl TranscodeManager {
@@ -311,7 +314,51 @@ impl TranscodeManager {
         detect_hw_caps();
         Self {
             streams: DashMap::new(),
+            transition_epoch: AtomicU64::new(0),
+            transition_lock: Mutex::new(()),
         }
+    }
+
+    fn claim_transition(&self) -> u64 {
+        self.transition_epoch.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    fn owns_transition(&self, epoch: u64) -> bool {
+        self.transition_epoch.load(Ordering::SeqCst) == epoch
+    }
+
+    fn transition_guard(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.transition_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn claim_transition_and_stop(&self) -> u64 {
+        let _guard = self.transition_guard();
+        let epoch = self.claim_transition();
+        self.stop_registered_streams();
+        epoch
+    }
+
+    fn publish_stream_if_owned(
+        &self,
+        epoch: u64,
+        stream_id: String,
+        stream: TranscodeStream,
+    ) -> Result<(), TranscodeStream> {
+        let _guard = self.transition_guard();
+        if !self.owns_transition(epoch) {
+            return Err(stream);
+        }
+        self.streams.insert(stream_id, stream);
+        Ok(())
+    }
+
+    fn stop_registered_streams(&self) {
+        for mut entry in self.streams.iter_mut() {
+            entry.value_mut().stop();
+        }
+        self.streams.clear();
     }
 
     /// Start a new transcode stream with optional frame interpolation.
@@ -349,18 +396,23 @@ impl TranscodeManager {
         force_cfr: bool,
         target_fps: Option<u32>,
     ) -> Result<TranscodeStreamInfo, String> {
-        // Stop any existing streams first
-        self.stop_all();
+        let transition_epoch = self.claim_transition_and_stop();
 
         let stream_id = uuid::Uuid::new_v4().to_string();
 
         // Detect video info and audio gain
         let video_info = detect_video_info(file_path).await;
+        if !self.owns_transition(transition_epoch) {
+            return Err("Transcode start was superseded".into());
+        }
         let audio_gain_db = if video_info.has_audio {
             detect_audio_gain(file_path).await
         } else {
             None
         };
+        if !self.owns_transition(transition_epoch) {
+            return Err("Transcode start was superseded".into());
+        }
 
         // Create temp directory for HLS segments
         let temp_dir = std::env::temp_dir().join(format!("transcode_{}", &stream_id[..8]));
@@ -417,12 +469,20 @@ impl TranscodeManager {
             height: video_info.height,
             start_position,
         };
+        if !self.owns_transition(transition_epoch) {
+            stream.stop();
+            return Err("Transcode start was superseded".into());
+        }
 
         // Wait for playlist + first segment
         let playlist_path = hls_dir.join("playlist.m3u8");
         let segment_path = hls_dir.join("segment_0.ts");
 
         for attempt in 0..200 {
+            if !self.owns_transition(transition_epoch) {
+                stream.stop();
+                return Err("Transcode start was superseded".into());
+            }
             // 20 seconds max (200 * 100ms)
             if playlist_path.exists() && segment_path.exists() {
                 if let Ok(meta) = std::fs::metadata(&segment_path) {
@@ -467,8 +527,13 @@ impl TranscodeManager {
             },
         };
 
-        self.streams.insert(stream_id, stream);
-        Ok(info)
+        match self.publish_stream_if_owned(transition_epoch, stream_id, stream) {
+            Ok(()) => Ok(info),
+            Err(mut stream) => {
+                stream.stop();
+                Err("Transcode start was superseded".into())
+            }
+        }
     }
 
     /// Get the HLS directory for a stream.
@@ -486,12 +551,11 @@ impl TranscodeManager {
         }
     }
 
-    /// Stop all active streams.
+    /// Stop all active streams and invalidate starts that are still preparing.
     pub fn stop_all(&self) {
-        for mut entry in self.streams.iter_mut() {
-            entry.value_mut().stop();
-        }
-        self.streams.clear();
+        let _guard = self.transition_guard();
+        self.claim_transition();
+        self.stop_registered_streams();
     }
 }
 
@@ -708,4 +772,64 @@ fn build_ffmpeg_command(
     ]);
 
     cmd
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manager() -> TranscodeManager {
+        TranscodeManager {
+            streams: DashMap::new(),
+            transition_epoch: AtomicU64::new(0),
+            transition_lock: Mutex::new(()),
+        }
+    }
+
+    #[test]
+    // AC: @reliable-stream-transitions ac-final-source-owner
+    fn newest_start_owns_the_transcode_transition() {
+        let manager = manager();
+        let first = manager.claim_transition();
+        let second = manager.claim_transition();
+
+        assert!(!manager.owns_transition(first));
+        assert!(manager.owns_transition(second));
+    }
+
+    #[test]
+    // AC: @reliable-stream-transitions ac-stop-superseded-producer
+    fn stop_invalidates_a_start_that_is_still_preparing() {
+        let manager = manager();
+        let preparing = manager.claim_transition();
+
+        manager.stop_all();
+
+        assert!(!manager.owns_transition(preparing));
+    }
+
+    #[test]
+    // AC: @reliable-stream-transitions ac-stop-superseded-producer
+    fn stopped_start_cannot_publish_after_cleanup() {
+        let manager = manager();
+        let preparing = manager.claim_transition_and_stop();
+        manager.stop_all();
+
+        let stream = TranscodeStream {
+            stream_id: "stale".into(),
+            hls_dir: PathBuf::new(),
+            temp_dir: PathBuf::new(),
+            process: None,
+            playlist_ready: true,
+            duration: 1.0,
+            width: 1,
+            height: 1,
+            start_position: 0.0,
+        };
+
+        assert!(manager
+            .publish_stream_if_owned(preparing, "stale".into(), stream)
+            .is_err());
+        assert!(manager.streams.is_empty());
+    }
 }

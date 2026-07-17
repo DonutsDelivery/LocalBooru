@@ -20,6 +20,7 @@ use crate::services::events::{create_events, SharedEvents};
 use crate::services::rate_limit::RateLimiter;
 use crate::services::task_queue::BackgroundTaskQueue;
 use crate::services::transcode::TranscodeManager;
+use crate::svp_manager_snapshot::ManagerGraphSnapshotStore;
 
 /// Shared application state available to all axum handlers.
 #[derive(Clone)]
@@ -58,6 +59,8 @@ struct AppStateInner {
     handshake_manager: SharedHandshakeManager,
     /// Shared HTTP client (connection pool reused across requests)
     http_client: reqwest::Client,
+    /// Immutable SVP Manager graph snapshots trusted by desktop session routes.
+    manager_graph_snapshots: ManagerGraphSnapshotStore,
     /// Directory watcher (set after AppState construction to break circular dep)
     directory_watcher: std::sync::OnceLock<Arc<DirectoryWatcher>>,
     /// Tauri asset-protocol scope (set during app setup). Used to grant `asset://`
@@ -158,6 +161,15 @@ fn load_family_mode_initial_lock(data_dir: &Path) -> bool {
 impl AppState {
     /// Create new AppState, initializing database pools and schema.
     pub fn new(data_dir: &Path, port: u16) -> Result<Self, Box<dyn std::error::Error>> {
+        let snapshots = ManagerGraphSnapshotStore::new(data_dir.join("svp-manager-snapshots"));
+        Self::new_with_manager_graph_snapshots(data_dir, port, snapshots)
+    }
+
+    pub fn new_with_manager_graph_snapshots(
+        data_dir: &Path,
+        port: u16,
+        manager_graph_snapshots: ManagerGraphSnapshotStore,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         // Ensure data directory exists
         std::fs::create_dir_all(data_dir)?;
 
@@ -231,6 +243,7 @@ impl AppState {
                 migration_state,
                 handshake_manager,
                 http_client,
+                manager_graph_snapshots,
                 directory_watcher: std::sync::OnceLock::new(),
                 asset_scope: std::sync::OnceLock::new(),
                 direct_files: StdRwLock::new(HashMap::new()),
@@ -431,6 +444,11 @@ impl AppState {
     /// Get the shared HTTP client (reuses connection pool across requests).
     pub fn http_client(&self) -> &reqwest::Client {
         &self.inner.http_client
+    }
+
+    /// Get the currently trusted SVP Manager graph snapshot store.
+    pub fn manager_graph_snapshots(&self) -> &ManagerGraphSnapshotStore {
+        &self.inner.manager_graph_snapshots
     }
 
     /// Set the directory watcher (called once after AppState construction).

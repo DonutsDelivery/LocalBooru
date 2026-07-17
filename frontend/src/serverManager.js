@@ -29,6 +29,10 @@ export function isLinuxDesktopApp() {
   return isTauriApp() && !isMobileApp() && /Linux/i.test(navigator.userAgent)
 }
 
+export function isWindowsOrMacDesktopApp() {
+  return isTauriApp() && !isMobileApp() && /Windows|Macintosh|Mac OS X/i.test(navigator.userAgent)
+}
+
 // Default server structure
 function createServer(data) {
   return {

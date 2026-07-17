@@ -254,6 +254,7 @@ export async function fetchImages({
   exclude_tags,
   rating,
   favorites_only,
+  exclude_favorites,
   directory_id,
   library_id,
   min_age,
@@ -276,6 +277,7 @@ export async function fetchImages({
   if (exclude_tags) params.append('exclude_tags', exclude_tags)
   if (rating) params.append('rating', rating)
   if (favorites_only) params.append('favorites_only', 'true')
+  if (exclude_favorites) params.append('exclude_favorites', 'true')
   if (directory_id) params.append('directory_id', directory_id)
   if (library_id) params.append('library_id', library_id)
   if (min_age !== undefined && min_age !== null) params.append('min_age', min_age)
@@ -318,6 +320,43 @@ export async function toggleFavorite(imageId, directoryId, libraryId) {
   if (directoryId) params.directory_id = directoryId
   if (libraryId) params.library_id = libraryId
   const response = await api.post(`/images/${imageId}/favorite`, null, { params })
+  return response.data
+}
+
+export async function setFavorite(image, isFavorite) {
+  const response = await api.patch(`/images/${image.id}/favorite`, {
+    is_favorite: isFavorite,
+    directory_id: image.directory_id,
+    library_id: image.library_id || null,
+  })
+  return response.data
+}
+
+export async function discardForCuration(image, dumpsterPath = null) {
+  const response = await api.post(`/images/${image.id}/curation-discard`, {
+    directory_id: image.directory_id,
+    library_id: image.library_id || null,
+    dumpster_path: dumpsterPath || null,
+  })
+  return response.data
+}
+
+export async function restoreCurationDiscard(image) {
+  const response = await api.post(`/images/${image.id}/curation-restore`, {
+    directory_id: image.directory_id,
+    library_id: image.library_id || null,
+  })
+  return response.data
+}
+
+export async function unfavoriteCurationItems(items) {
+  const response = await api.post('/images/curation/unfavorite', {
+    items: items.map(image => ({
+      image_id: image.id,
+      directory_id: image.directory_id,
+      library_id: image.library_id || null,
+    })),
+  })
   return response.data
 }
 
@@ -1196,31 +1235,110 @@ export async function updateSVPConfig(config) {
   return response.data
 }
 
-export async function playVideoSVP(filePath, startPosition = 0, qualityPreset = null) {
+export async function playVideoSVP(filePath, startPosition = 0, qualityPreset = null, signal = undefined, transitionId = undefined) {
   // Longer timeout since SVP processing can take time
   const response = await api.post('/settings/svp/play', {
     file_path: filePath,
     start_position: startPosition,
-    target_resolution: qualityPreset && qualityPreset !== 'original' ? qualityPreset : null
+    target_resolution: qualityPreset && qualityPreset !== 'original' ? qualityPreset : null,
+    client_transition_id: transitionId
   }, {
-    timeout: 60000  // 60 second timeout for initial buffering
+    timeout: 60000,  // 60 second timeout for initial buffering
+    signal
   })
   return response.data
 }
 
-export async function stopSVPStream() {
-  const response = await api.post('/settings/svp/stop')
+export async function stopSVPStream(transitionId = undefined) {
+  const response = await api.post('/settings/svp/stop', {
+    client_transition_id: transitionId
+  })
+  return response.data
+}
+
+export async function openSVPProcessingSession(filePath, startPosition, generation, limits = {}) {
+  const response = await api.post('/settings/svp/sessions', {
+    protocol_version: 1,
+    generation,
+    file_path: filePath,
+    start_position: startPosition,
+    max_buffer_bytes: limits.maxBytes ?? 128 * 1024 * 1024,
+    max_buffer_duration: limits.maxDuration ?? 30
+  }, { timeout: 60000 })
+  return response.data
+}
+
+export async function getSVPProcessingEvents(sessionId, after = -1, limit = 128) {
+  const response = await api.get(`/settings/svp/sessions/${sessionId}/events`, {
+    params: { after, limit }
+  })
+  return response.data
+}
+
+export async function fetchSVPProcessingSegment(sessionId, generation, filename, signal = undefined) {
+  const response = await api.get(
+    `/settings/svp/sessions/${sessionId}/segments/${generation}/${encodeURIComponent(filename)}`,
+    { responseType: 'arraybuffer', signal }
+  )
+  return response.data
+}
+
+export async function acknowledgeSVPInitSegment(sessionId, generation) {
+  const response = await api.delete(`/settings/svp/sessions/${sessionId}/segments/init`, {
+    data: { protocol_version: 1, generation }
+  })
+  return response.data
+}
+
+export async function acknowledgeSVPMediaSegment(sessionId, generation, sequence) {
+  const response = await api.delete(`/settings/svp/sessions/${sessionId}/segments`, {
+    data: { protocol_version: 1, generation, sequence }
+  })
+  return response.data
+}
+
+export async function pauseSVPProcessingSession(sessionId, generation) {
+  const response = await api.post(`/settings/svp/sessions/${sessionId}/pause`, {
+    protocol_version: 1,
+    generation
+  })
+  return response.data
+}
+
+export async function resumeSVPProcessingSession(sessionId, generation) {
+  const response = await api.post(`/settings/svp/sessions/${sessionId}/resume`, {
+    protocol_version: 1,
+    generation
+  })
+  return response.data
+}
+
+export async function seekSVPProcessingSession(sessionId, expectedGeneration, generation, position) {
+  const response = await api.post(`/settings/svp/sessions/${sessionId}/seek`, {
+    protocol_version: 1,
+    expected_generation: expectedGeneration,
+    generation,
+    position
+  })
+  return response.data
+}
+
+export async function stopSVPProcessingSession(sessionId, generation) {
+  const response = await api.delete(`/settings/svp/sessions/${sessionId}`, {
+    params: { expected_generation: generation, protocol_version: 1 }
+  })
   return response.data
 }
 
 // Simple FFmpeg-based transcoding (fallback when SVP/OpticalFlow not available)
-export async function playVideoTranscode(filePath, startPosition = 0, qualityPreset = null) {
+export async function playVideoTranscode(filePath, startPosition = 0, qualityPreset = null, signal = undefined) {
   const response = await api.post('/settings/transcode/play', {
     file_path: filePath,
     start_position: startPosition,
     quality_preset: qualityPreset
   }, {
-    timeout: 60000  // 60 second timeout for buffering
+    timeout: 60000,  // 60 second timeout for buffering
+    signal
   })
   return response.data
 }

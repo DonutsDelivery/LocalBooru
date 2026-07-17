@@ -2975,6 +2975,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -2992,6 +2993,7 @@ dependencies = [
  "uuid",
  "walkdir",
  "webkit2gtk",
+ "windows-sys 0.59.0",
  "xxhash-rust",
 ]
 

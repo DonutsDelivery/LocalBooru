@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { getMediaUrl, getAssetUrl, isUsingLocalServer, getSVPConfig, updateSVPConfig, stopSVPStream, stopInterpolatedStream, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo, uploadImage, getFileDimensions } from '../../api'
+import { getMediaUrl, getAssetUrl, isUsingLocalServer, getSVPConfig, updateSVPConfig, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo, uploadImage, getFileDimensions } from '../../api'
 import { isMobileApp } from '../../serverManager'
 import { getDesktopAPI } from '../../tauriAPI'
 import { toast } from '../Toast'
@@ -85,7 +85,7 @@ function FPSMonitor({ videoRef, visible, onToggleBare }) {
   }}>Loading...</pre>
 }
 
-function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete }) {
+function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete, curationMode = null }) {
   const [processing, setProcessing] = useState(false)
   const [isFavorited, setIsFavorited] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -97,6 +97,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Image adjustment state (Gwenview-style ranges)
   // All sliders: -100 to +100 (0 = no change)
   const [showAdjustments, setShowAdjustments] = useState(false)
+  const [showMobileActions, setShowMobileActions] = useState(false)
   const [adjustments, setAdjustments] = useState({ brightness: 0, contrast: 0, gamma: 0 })
   const [applyingAdjustments, setApplyingAdjustments] = useState(false)
   const [previewUrl, setPreviewUrl] = useState(null)
@@ -142,14 +143,20 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const containerRef = useRef(null)
   const svpResumeRef = useRef(null)
   const svpSourceFpsRef = useRef(null)
-  const svpDisableTimerRef = useRef(null)
   const svpFpsProbePendingRef = useRef(false)
   const svpTransitionRef = useRef({ active: false, token: 0, timer: null })
   const svpFilterActiveRef = useRef(false)
   const svpFailOpenRef = useRef(false)
+  const svpToggleGenerationRef = useRef(0)
+  const svpDesiredEnabledRef = useRef(null)
+  const svpToggleWriteRef = useRef(Promise.resolve())
+  const activeImageKeyRef = useRef(null)
+  const svpPathEnabledRef = useRef(false)
   const [svpPipelineGeneration, setSvpPipelineGeneration] = useState(0)
 
   const image = images[currentIndex]
+  const currentImageKey = image?.url ?? image?.file_path ?? image?.id
+  activeImageKeyRef.current = currentImageKey
   const isVideoFile = isVideo(image?.original_filename)
 
   // UI visibility and fullscreen hook
@@ -158,6 +165,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     isFullscreen,
     resetHideTimer,
     handleMouseMove,
+    handleTouchInteractionStart,
+    consumeRevealTap,
+    cancelRevealTap,
     handleToggleFullscreen
   } = useUIVisibility(containerRef)
 
@@ -173,11 +183,43 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   })
   const svpPathEnabled = Boolean(
     streaming.nativeSvpPlayback
+    && streaming.svpConfig?.enabled
+    && !casting.isCasting
     && !streaming.svpStreamUrl
     && !streaming.opticalFlowStreamUrl
     && !streaming.transcodeStreamUrl
   )
   const libraryImageId = image?.is_local_direct_file ? null : image?.id
+  svpPathEnabledRef.current = svpPathEnabled
+
+  useEffect(() => {
+    if (streaming.svpConfig?.enabled !== undefined) {
+      svpDesiredEnabledRef.current = Boolean(streaming.svpConfig.enabled)
+    }
+  }, [streaming.svpConfig?.enabled])
+
+  useEffect(() => {
+    const transition = svpTransitionRef.current
+    svpToggleGenerationRef.current += 1
+    svpResumeRef.current = null
+    transition.active = false
+    transition.token += 1
+    if (transition.timer) {
+      clearTimeout(transition.timer)
+      transition.timer = null
+    }
+    return () => {
+      svpToggleGenerationRef.current += 1
+      svpResumeRef.current = null
+      transition.active = false
+      transition.token += 1
+      if (transition.timer) {
+        clearTimeout(transition.timer)
+        transition.timer = null
+      }
+      getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(() => {})
+    }
+  }, [currentImageKey])
 
   // Video playback hook - pass streaming state
   const playback = useVideoPlayback(mediaRef, {
@@ -195,6 +237,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     streamTransitioningRef: streaming.streamTransitioningRef,
     getCurrentAbsoluteTime: streaming.getCurrentAbsoluteTime,
     restartSVPFromPosition: streaming.restartSVPFromPosition,
+    cancelPendingSVPRestart: streaming.cancelPendingSVPRestart,
     restartTranscodeFromPosition: streaming.restartTranscodeFromPosition,
     setAudioOutputVolume: streaming.setAudioOutputVolume,
     setAudioOutputMuted: streaming.setAudioOutputMuted
@@ -261,12 +304,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     svpSourceFpsRef.current = null
     svpFpsProbePendingRef.current = false
     svpFailOpenRef.current = false
-  }, [image?.id])
+  }, [currentImageKey])
 
   useEffect(() => {
     const video = mediaRef.current
     if (svpPathEnabled && video?.readyState >= 1) measureAndReportSvpPlayback(video)
-  }, [svpPathEnabled, image?.id, measureAndReportSvpPlayback])
+  }, [svpPathEnabled, currentImageKey, measureAndReportSvpPlayback])
 
   useEffect(() => {
     const desktopAPI = getDesktopAPI()
@@ -274,10 +317,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     let unsubscribe = () => {}
     desktopAPI.subscribeToSvpManager({
       onFilterChanged: ({ enabled }) => {
+        if (!svpPathEnabledRef.current) return
         svpFilterActiveRef.current = Boolean(enabled)
         const video = mediaRef.current
+        const imageKey = activeImageKeyRef.current
         if (!svpResumeRef.current && video) {
-          svpResumeRef.current = { currentTime: video.currentTime, paused: video.paused }
+          svpResumeRef.current = {
+            currentTime: video.currentTime,
+            paused: video.paused,
+            imageKey,
+            media: video,
+          }
         }
 
         const transition = svpTransitionRef.current
@@ -293,17 +343,30 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         }
 
         transition.timer = setTimeout(() => {
-          if (svpTransitionRef.current.token !== token) return
+          if (svpTransitionRef.current.token !== token
+              || activeImageKeyRef.current !== imageKey
+              || mediaRef.current !== video) return
           svpTransitionRef.current.timer = null
           setSvpPipelineGeneration(generation => generation + 1)
         }, 150)
       },
       onPaused: (paused) => {
+        if (!svpPathEnabledRef.current) return
         const video = mediaRef.current
         if (!video) return
+        const imageKey = activeImageKeyRef.current
+        const resume = svpResumeRef.current
+        if (resume && (resume.imageKey !== imageKey || resume.media !== video)) {
+          svpResumeRef.current = null
+        }
         if (paused) {
           if (!svpResumeRef.current) {
-            svpResumeRef.current = { currentTime: video.currentTime, paused: video.paused }
+            svpResumeRef.current = {
+              currentTime: video.currentTime,
+              paused: video.paused,
+              imageKey,
+              media: video,
+            }
           }
           video.pause()
         } else if (svpTransitionRef.current.active) {
@@ -327,7 +390,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     svpFilterActiveRef.current = false
     svpFailOpenRef.current = false
     getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(() => {})
-  }, [svpPathEnabled, image?.id])
+  }, [svpPathEnabled, currentImageKey])
 
   const failOpenNativeSvp = useCallback((video) => {
     if (!svpPathEnabled || !svpFilterActiveRef.current || svpFailOpenRef.current) return
@@ -340,22 +403,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [svpPathEnabled])
 
   useEffect(() => {
-    if (svpDisableTimerRef.current) {
-      clearTimeout(svpDisableTimerRef.current)
-      svpDisableTimerRef.current = null
-    }
+    const video = mediaRef.current
     return () => {
-      svpDisableTimerRef.current = setTimeout(() => {
-        const video = mediaRef.current
-        if (video) {
-          video.pause()
-          video.removeAttribute('src')
-          video.load()
-        }
-        getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(() => {})
-      }, 0)
+      // A keyed remount may leave the old element alive briefly. Never dereference
+      // mediaRef here: it may already point at the next video's element.
+      if (video && mediaRef.current !== video) {
+        video.pause()
+        video.removeAttribute('src')
+        video.load()
+      }
     }
-  }, [image?.id])
+  }, [currentImageKey])
 
   // Zoom and pan hook
   const zoomPan = useZoomPan(mediaRef, containerRef, resetHideTimer, image)
@@ -398,7 +456,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
 
   // Video gesture hook (tap zones + drag-to-seek)
-  const gestures = useVideoGestures(playback, resetHideTimer)
+  const gestures = useVideoGestures(playback, resetHideTimer, cancelRevealTap)
+
+  useEffect(() => {
+    cancelRevealTap()
+  }, [currentIndex, cancelRevealTap])
 
   // Preload next 3 images (skip videos) for smoother navigation
   useEffect(() => {
@@ -631,6 +693,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Handle click on video — delegated to gesture hook (tap zones)
   const handleVideoClick = useCallback((e) => {
+    if (consumeRevealTap()) return
     if (!isVideo(image?.original_filename)) return
     if (casting.isCasting) {
       e.stopPropagation()
@@ -642,7 +705,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       return
     }
     gestures.handleVideoClick(e)
-  }, [image?.original_filename, gestures, casting])
+  }, [image?.original_filename, gestures, casting, consumeRevealTap])
 
   // Collection picker handlers
   const handleOpenCollectionPicker = useCallback(async () => {
@@ -711,32 +774,77 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Handle quality change
   const handleQualityChange = useCallback(async (qualityId) => {
+    const playbackIntent = streaming.capturePlaybackIntent()
     setCurrentQuality(qualityId)
     localStorage.setItem('video_quality_preference', qualityId)
-    await streaming.handleQualityChange(qualityId, playback.setCurrentTime)
-  }, [streaming, playback])
+    await streaming.handleQualityChange(qualityId, playbackIntent)
+  }, [streaming])
 
   // Toggle SVP on/off
-  const handleToggleSVP = useCallback(async () => {
-    const newEnabled = !streaming.svpConfig?.enabled
-    try {
-      const updatedConfig = await updateSVPConfig({ enabled: newEnabled })
-      streaming.setSvpConfig(updatedConfig)
+  const handleToggleSVP = useCallback(() => {
+    const confirmedEnabled = Boolean(streaming.svpConfig?.enabled)
+    const desiredEnabled = svpDesiredEnabledRef.current ?? confirmedEnabled
+    const newEnabled = !desiredEnabled
+    const generation = ++svpToggleGenerationRef.current
+    const playbackIntent = streaming.capturePlaybackIntent()
+    svpDesiredEnabledRef.current = newEnabled
 
-      if (newEnabled) {
-        // Auto-start effect watches svpConfig.enabled and will start the stream
-      } else {
-        setCurrentQuality('original')
-        localStorage.setItem('video_quality_preference', 'original')
-        await streaming.handleQualityChange('original', playback.setCurrentTime)
-        streaming.setSvpError(null)
-        streaming.setSvpLoading(false)
-        streaming.svpStartingRef.current = false
-      }
-    } catch (err) {
-      console.error('Failed to toggle SVP:', err)
-    }
-  }, [streaming, image])
+    const write = svpToggleWriteRef.current
+      .catch(() => {})
+      .then(async () => {
+        // Coalesce queued clicks before issuing another persistent write.
+        if (generation !== svpToggleGenerationRef.current) return
+        const updatedConfig = await updateSVPConfig({ enabled: newEnabled })
+        if (generation !== svpToggleGenerationRef.current) return
+
+        svpDesiredEnabledRef.current = Boolean(updatedConfig.enabled)
+        streaming.setSvpConfig(updatedConfig)
+        if (newEnabled) {
+          if (!streaming.nativeSvpPlayback) {
+            streaming.startSVPStream(playbackIntent.position, playbackIntent, true).catch(error => {
+              console.error('Failed to start SVP:', error)
+            })
+          }
+        } else {
+          setCurrentQuality('original')
+          localStorage.setItem('video_quality_preference', 'original')
+          streaming.handleQualityChange('original', playbackIntent).catch(error => {
+            console.error('Failed to restore original playback:', error)
+          })
+          streaming.setSvpError(null)
+          streaming.setSvpLoading(false)
+        }
+      })
+      .catch(async err => {
+        if (generation !== svpToggleGenerationRef.current) return
+        console.error('Failed to toggle SVP:', err)
+        toast.error('Failed to change SVP playback: ' + err.message)
+        try {
+          let actualConfig
+          try {
+            actualConfig = await updateSVPConfig({ enabled: newEnabled })
+          } catch {
+            actualConfig = await getSVPConfig()
+          }
+          if (generation !== svpToggleGenerationRef.current) return
+          const actualEnabled = Boolean(actualConfig.enabled)
+          svpDesiredEnabledRef.current = actualEnabled
+          streaming.setSvpConfig(actualConfig)
+          if (actualEnabled && !streaming.nativeSvpPlayback) {
+            streaming.startSVPStream(playbackIntent.position, playbackIntent, true).catch(() => {})
+          } else if (!actualEnabled) {
+            streaming.handleQualityChange('original', playbackIntent).catch(() => {})
+          }
+        } catch (reconcileError) {
+          if (generation !== svpToggleGenerationRef.current) return
+          svpDesiredEnabledRef.current = newEnabled
+          streaming.setSvpConfig(previous => previous ? { ...previous, enabled: newEnabled } : previous)
+          console.error('Failed to reconcile SVP config:', reconcileError)
+        }
+      })
+
+    svpToggleWriteRef.current = write
+  }, [streaming])
 
   // Generate preview of adjustments
   const handleGeneratePreview = useCallback(async () => {
@@ -863,6 +971,39 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+
+      if (curationMode) {
+        if (e.repeat || curationMode.busy) return
+        switch (e.key) {
+          case 'Escape':
+            e.preventDefault()
+            onClose()
+            return
+          case 'ArrowLeft':
+          case 'd':
+          case 'D':
+            e.preventDefault()
+            curationMode.onDiscard()
+            return
+          case 'ArrowRight':
+          case 'k':
+          case 'K':
+            e.preventDefault()
+            curationMode.onKeep()
+            return
+          case 'Backspace':
+          case 'u':
+          case 'U':
+            e.preventDefault()
+            if (curationMode.lastAction) curationMode.onUndo()
+            return
+          case 'Delete':
+          case 'f':
+          case 'F':
+            e.preventDefault()
+            return
+        }
+      }
 
       // Handle delete dialog keyboard navigation
       if (showDeleteConfirm) {
@@ -1026,7 +1167,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, playback, image?.original_filename, handleToggleFullscreen, subtitles])
+  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, playback, image?.original_filename, handleToggleFullscreen, subtitles, curationMode])
 
   // Auto-focus Cancel button when delete dialog opens
   useEffect(() => {
@@ -1039,6 +1180,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Handle click navigation - left side = prev, right side = next
   const handleNavClick = (e) => {
+    if (curationMode) return
+    if (consumeRevealTap()) return
     // Don't navigate if we handled this as a touch gesture or if touch moved
     if (zoomPan.touchMoved.current || zoomPan.touchHandled.current) {
       zoomPan.touchMoved.current = false
@@ -1172,16 +1315,24 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   return (
     <div
-      className={`lightbox ${!showUI ? 'ui-hidden' : ''} ${zoomPan.zoom.scale > 1 ? 'zoomed' : ''} ${isFullscreen ? 'fullscreen' : ''} ${isVideoFile ? 'lightbox-video' : ''} ${casting.isCasting ? 'casting-active' : ''}`}
+      className={`lightbox ${!showUI ? 'ui-hidden' : ''} ${zoomPan.zoom.scale > 1 ? 'zoomed' : ''} ${isFullscreen ? 'fullscreen' : ''} ${isVideoFile ? 'lightbox-video' : ''} ${casting.isCasting ? 'casting-active' : ''} ${curationMode ? 'curation-active' : ''}`}
       onClick={handleNavClick}
       onDoubleClick={handleDoubleClick}
       onMouseMove={(e) => { handleMouseMove(); zoomPan.handleMouseMoveDrag(e); }}
       onMouseDown={zoomPan.handleMouseDown}
       onMouseUp={zoomPan.handleMouseUp}
       onMouseLeave={zoomPan.handleMouseUp}
-      onTouchStart={zoomPan.handleTouchStart}
+      onTouchStart={(event) => {
+        handleTouchInteractionStart()
+        zoomPan.handleTouchStart(event)
+      }}
       onTouchMove={(e) => { zoomPan.handleTouchMove(e); zoomPan.handleTouchMoveZoom(e); }}
-      onTouchEnd={(e) => { handleTouchEndWithSidebar(e); zoomPan.handleTouchEndZoom(); }}
+      onTouchEnd={(e) => {
+        handleTouchEndWithSidebar(e)
+        if (zoomPan.touchMoved.current || zoomPan.touchHandled.current) cancelRevealTap()
+        zoomPan.handleTouchEndZoom()
+      }}
+      onTouchCancel={cancelRevealTap}
       ref={containerRef}
     >
       {/* Hidden SVG filter for gamma correction */}
@@ -1195,11 +1346,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         </filter>
       </svg>
       {/* Top toolbar */}
-      {!debugBare && <div className="lightbox-toolbar">
+      {!debugBare && <div className={`lightbox-toolbar ${showMobileActions ? 'mobile-actions-open' : ''}`}>
         <button
           className="lightbox-btn lightbox-menu"
           onClick={() => onSidebarHover && onSidebarHover(!sidebarOpen)}
-          title="Toggle sidebar"
+          title="Media information"
+          aria-label="Media information"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="3" y1="6" x2="21" y2="6"/>
@@ -1212,6 +1364,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           onClick={handleToggleFavorite}
           disabled={processing}
           title={isFavorited ? 'Remove from favorites (F)' : 'Add to favorites (F)'}
+          aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
         >
           <svg viewBox="0 0 24 24" fill={isFavorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
@@ -1256,7 +1409,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           {collectionFeedback && <div className="collection-feedback">{collectionFeedback}</div>}
         </div>
         {castInstalled && isVideo(image?.original_filename) && casting.castConfig?.enabled && (
-          <div className="lightbox-cast-container">
+          <div className="lightbox-cast-container lightbox-secondary-action">
             <button
               className={`lightbox-btn lightbox-cast ${casting.isCasting ? 'active' : ''}`}
               onClick={casting.toggleDevicePicker}
@@ -1340,7 +1493,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           </div>
         )}
         {isVideo(image?.original_filename) && (
-          <div className="lightbox-share-container">
+          <div className="lightbox-share-container lightbox-secondary-action">
             <button
               className={`lightbox-btn lightbox-share ${shareStream.isSharing ? 'active' : ''}`}
               onClick={handleToggleSharePopover}
@@ -1416,7 +1569,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           </div>
         )}
         <button
-          className="lightbox-btn lightbox-delete"
+          className="lightbox-btn lightbox-delete lightbox-secondary-action"
           onClick={() => setShowDeleteConfirm(true)}
           disabled={processing}
           title="Delete image"
@@ -1428,7 +1581,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           </svg>
         </button>
         {!isVideoFile && (
-          <div className="lightbox-adjust-container">
+          <div className="lightbox-adjust-container lightbox-secondary-action">
             <button
               className={`lightbox-btn lightbox-adjust ${showAdjustments ? 'active' : ''}`}
               onClick={() => setShowAdjustments(!showAdjustments)}
@@ -1525,7 +1678,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         )}
         {isVideoFile && svpInstalled && (
           <button
-            className="lightbox-btn lightbox-svp"
+            className="lightbox-btn lightbox-svp lightbox-secondary-action"
             onClick={() => setShowSVPMenu(true)}
             title="SVP Settings"
           >
@@ -1536,10 +1689,22 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             </svg>
           </button>
         )}
+        {isVideoFile && !casting.isCasting && (
+          <button
+            className={`lightbox-btn lightbox-mobile-quality lightbox-secondary-action ${currentQuality !== 'original' ? 'active' : ''}`}
+            onClick={() => setShowQualitySelector(value => !value)}
+            title={`Quality: ${currentQuality === 'original' ? 'Original' : currentQuality}`}
+            aria-label={`Video quality: ${currentQuality === 'original' ? 'Original' : currentQuality}`}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54h2.79v2.71h2V13.83h2.79l-2.75-3.54zM7 9h2v2H7z"/>
+            </svg>
+          </button>
+        )}
         {isVideoFile ? (
           /* Videos: cycle display mode button */
           <button
-            className={`lightbox-btn lightbox-display-mode ${playback.videoDisplayMode !== 'fit' ? 'active' : ''}`}
+            className={`lightbox-btn lightbox-display-mode lightbox-secondary-action ${playback.videoDisplayMode !== 'fit' ? 'active' : ''}`}
             onClick={playback.cycleDisplayMode}
             title={`Display: ${playback.videoDisplayMode} (click to cycle)`}
           >
@@ -1569,7 +1734,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         ) : (
           /* Images: fullscreen toggle button */
           <button
-            className={`lightbox-btn lightbox-fullscreen ${isFullscreen ? 'active' : ''}`}
+            className={`lightbox-btn lightbox-fullscreen lightbox-secondary-action ${isFullscreen ? 'active' : ''}`}
             onClick={handleToggleFullscreen}
             title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >
@@ -1584,7 +1749,20 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </button>
         )}
-        <button className="lightbox-btn lightbox-close" onClick={onClose} title="Close (Esc)">
+        <button
+          className={`lightbox-btn lightbox-more ${showMobileActions ? 'active' : ''}`}
+          onClick={() => setShowMobileActions(value => !value)}
+          aria-label="More media actions"
+          aria-expanded={showMobileActions}
+          title="More actions"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="5" cy="12" r="2"/>
+            <circle cx="12" cy="12" r="2"/>
+            <circle cx="19" cy="12" r="2"/>
+          </svg>
+        </button>
+        <button className="lightbox-btn lightbox-close" onClick={onClose} title="Close (Esc)" aria-label="Close lightbox">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
           </svg>
@@ -1628,9 +1806,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             onTouchStart={casting.isCasting ? undefined : gestures.handleTouchStart}
             onTouchMove={casting.isCasting ? undefined : gestures.handleTouchMove}
             onTouchEnd={casting.isCasting ? undefined : gestures.handleTouchEnd}
+            onTouchCancel={casting.isCasting ? cancelRevealTap : gestures.handleTouchCancel}
           >
             <video
-              key={`${image.id}-${svpPipelineGeneration}`}
+              key={`${currentImageKey}-${svpPipelineGeneration}`}
               ref={mediaRef}
               src={directVideoSrc}
               preload="auto"
@@ -1669,9 +1848,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onLoadedMetadata={(event) => {
                 handleLoadedMetadataWithResolution(event)
                 const resume = svpResumeRef.current
-                if (resume) {
+                if (resume && resume.imageKey === currentImageKey) {
                   event.currentTarget.currentTime = resume.currentTime
                   if (!resume.paused) event.currentTarget.play().catch(() => {})
+                  svpResumeRef.current = null
+                } else if (resume) {
                   svpResumeRef.current = null
                 }
                 svpTransitionRef.current.active = false
@@ -1720,43 +1901,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onTouchMove={(e) => e.stopPropagation()}
               onTouchEnd={(e) => e.stopPropagation()}
             >
-              {/* Centered playback controls */}
-              <div className="video-playback-controls">
-                <button
-                  className="video-nav-btn"
-                  onClick={() => onNav(-1)}
-                  title="Previous (Left Arrow)"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z"/>
-                  </svg>
-                </button>
-                <button
-                  className="video-play-btn-center"
-                  onClick={casting.isCasting ? (() => casting.castStatus?.state === 'playing' ? casting.castPause() : casting.castResume()) : playback.toggleVideoPlay}
-                  title={(casting.isCasting ? casting.castStatus?.state === 'playing' : playback.isPlaying) ? 'Pause (Space)' : 'Play (Space)'}
-                >
-                  {(casting.isCasting ? casting.castStatus?.state === 'playing' : playback.isPlaying) ? (
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                  )}
-                </button>
-                <button
-                  className="video-nav-btn"
-                  onClick={() => onNav(1)}
-                  title="Next (Right Arrow)"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M16 6v12h2V6h-2zm-3.5 6l-8.5 6V6l8.5 6z"/>
-                  </svg>
-                </button>
-              </div>
-              {/* Timeline row */}
+              {/* Timeline and playback controls */}
               <div className="video-controls-row">
               <span className="video-time" ref={casting.isCasting ? null : playback.timeDisplayRef}>
                 {formatTime(casting.isCasting ? (casting.castStatus?.current_time || 0) : playback.currentTime)}
@@ -1834,6 +1979,27 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 </div>
               </div>
               <span className="video-time">{formatTime(casting.isCasting ? (casting.castStatus?.duration || 0) : playback.duration, true)}</span>
+              <div className="video-playback-controls">
+                {!curationMode && <button className="video-nav-btn" onClick={() => onNav(-1)} title="Previous (Left Arrow)" aria-label="Previous media">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z"/></svg>
+                </button>}
+                <button
+                  className="video-play-btn-center"
+                  onClick={casting.isCasting ? (() => casting.castStatus?.state === 'playing' ? casting.castPause() : casting.castResume()) : playback.toggleVideoPlay}
+                  title={(casting.isCasting ? casting.castStatus?.state === 'playing' : playback.isPlaying) ? 'Pause (Space)' : 'Play (Space)'}
+                  aria-label={(casting.isCasting ? casting.castStatus?.state === 'playing' : playback.isPlaying) ? 'Pause' : 'Play'}
+                >
+                  {(casting.isCasting ? casting.castStatus?.state === 'playing' : playback.isPlaying) ? (
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  )}
+                </button>
+                {!curationMode && <button className="video-nav-btn" onClick={() => onNav(1)} title="Next (Right Arrow)" aria-label="Next media">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6v12h2V6h-2zm-3.5 6l-8.5 6V6l8.5 6z"/></svg>
+                </button>}
+              </div>
+              <div className="video-utility-controls">
               {!casting.isCasting && whisperInstalled && (
               <div className="subtitle-btn-container">
                 <button
@@ -1865,6 +2031,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     setShowSubtitleMenu(!showSubtitleMenu)
                   }}
                   title="Subtitle language & task"
+                  aria-label="Subtitle settings"
                 >
                   <svg viewBox="0 0 12 8" fill="currentColor">
                     <path d="M1.41 7.41L6 2.83l4.59 4.58L12 6 6 0 0 6l1.41 1.41z"/>
@@ -1946,6 +2113,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   </svg>
                 )}
               </button>
+              </div>
               </div>
             </div>}
             {/* Playback speed badge */}
@@ -2111,6 +2279,29 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         )}
       </div>
 
+      {curationMode && (
+        <>
+          <div className="curation-status">
+            <strong>Curated {curationMode.processed}</strong>
+            <span>{curationMode.remaining} queued</span>
+            {curationMode.goal?.enabled && (
+              <span>{curationMode.goal.cadence === 'weekly' ? 'Weekly' : 'Daily'} goal {curationMode.progress} / {curationMode.goal.target}</span>
+            )}
+          </div>
+          <div className="curation-controls" onClick={event => event.stopPropagation()}>
+            <button className="curation-action discard" onClick={curationMode.onDiscard} disabled={curationMode.busy} title="Discard (D or Left Arrow)">
+              <span aria-hidden="true">✕</span> Discard
+            </button>
+            <button className="curation-undo" onClick={curationMode.onUndo} disabled={curationMode.busy || !curationMode.lastAction} title="Undo last action (U)">
+              ↶ <span>Undo</span>
+            </button>
+            <button className="curation-action keep" onClick={curationMode.onKeep} disabled={curationMode.busy} title="Keep (K or Right Arrow)">
+              <span aria-hidden="true">★</span> Keep
+            </button>
+          </div>
+        </>
+      )}
+
       {!isVideoFile && (
         <div className="lightbox-counter">
           {currentIndex + 1} / {total}
@@ -2169,33 +2360,32 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           isOpen={showSVPMenu}
           onClose={async () => {
             setShowSVPMenu(false)
-            // Reload SVP config in case it was changed in the menu
+            const playbackIntent = streaming.capturePlaybackIntent()
+            const generation = ++svpToggleGenerationRef.current
+            const imageKey = currentImageKey
             try {
               const newConfig = await getSVPConfig()
+              if (generation !== svpToggleGenerationRef.current
+                  || imageKey !== activeImageKeyRef.current) return
               const configChanged = JSON.stringify(newConfig) !== JSON.stringify(streaming.svpConfig)
+              svpDesiredEnabledRef.current = Boolean(newConfig.enabled)
               streaming.setSvpConfig(newConfig)
+              if (!configChanged) return
 
-              // If config changed, restart the stream with new settings
-              if (configChanged) {
-                // Stop current stream
-                if (streaming.svpStreamUrl) {
-                  await stopSVPStream()
-                  streaming.setSvpStreamUrl(null)
-                }
-                // Clear error (e.g., "fps already at target" with old target)
-                streaming.setSvpError(null)
-                streaming.setSvpLoading(false)
-                streaming.svpStartingRef.current = false
-
-                // Start new stream if enabled
-                if (newConfig.enabled && !streaming.nativeSvpPlayback && image && isVideo(image.filename)) {
-                  // Small delay to ensure state is cleared
-                  setTimeout(() => {
-                    streaming.startSVPStreamRef.current?.()
-                  }, 100)
-                }
+              streaming.setSvpError(null)
+              if (!newConfig.enabled) {
+                setCurrentQuality('original')
+                localStorage.setItem('video_quality_preference', 'original')
+                await streaming.handleQualityChange('original', playbackIntent)
+              } else if (!streaming.nativeSvpPlayback && image && isVideo(image.filename)) {
+                await streaming.stopSVP()
+                if (generation !== svpToggleGenerationRef.current
+                    || imageKey !== activeImageKeyRef.current) return
+                await streaming.startSVPStream(playbackIntent.position, playbackIntent, true, null, true)
               }
             } catch (err) {
+              if (generation !== svpToggleGenerationRef.current
+                  || imageKey !== activeImageKeyRef.current) return
               console.error('Failed to reload SVP config:', err)
             }
           }}
@@ -2218,7 +2408,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       {whisperInstalled && showSubtitleMenu && (
         <>
           <div className="subtitle-menu-popup" onClick={(e) => e.stopPropagation()}>
-            <div className="subtitle-menu-header">Subtitles</div>
+            <div className="subtitle-menu-header">
+              <span>Subtitles</span>
+              <button
+                className={`subtitle-menu-toggle ${subtitles.subtitlesEnabled ? 'active' : ''}`}
+                onClick={subtitles.toggleSubtitles}
+              >
+                {subtitles.subtitlesEnabled ? 'On' : 'Off'}
+              </button>
+              <button className="subtitle-menu-close" onClick={() => setShowSubtitleMenu(false)} aria-label="Close subtitle settings">×</button>
+            </div>
             <div className="subtitle-menu-section">
               <div className="subtitle-menu-label">Source Language</div>
               <div className="subtitle-menu-options">

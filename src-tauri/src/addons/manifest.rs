@@ -5,12 +5,22 @@
 
 use std::sync::LazyLock;
 
+use serde::Serialize;
+
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AddonRuntime {
+    Sidecar,
+    Builtin,
+}
+
 /// Static manifest describing an addon's identity and requirements.
 pub struct AddonManifest {
     pub id: &'static str,
     pub name: &'static str,
     pub description: &'static str,
-    pub port: u16,
+    pub runtime: AddonRuntime,
+    pub port: Option<u16>,
     pub python_deps: &'static [&'static str],
 }
 
@@ -21,7 +31,8 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             id: "auto-tagger",
             name: "Auto Tagger",
             description: "Automatically tag images using ONNX-based classification models",
-            port: 18001,
+            runtime: AddonRuntime::Sidecar,
+            port: Some(18001),
             // huggingface-hub pinned (M1, supply-chain). onnxruntime/numpy/Pillow
             // left unpinned: native/heavy, version constrained by the resolver.
             python_deps: &["onnxruntime", "numpy", "Pillow", "huggingface-hub==1.18.0"],
@@ -30,7 +41,8 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             id: "age-detector",
             name: "Age Detector",
             description: "Detect and classify age ratings in images using deep learning",
-            port: 18002,
+            runtime: AddonRuntime::Sidecar,
+            port: Some(18002),
             python_deps: &[
                 "torch",
                 "torchvision",
@@ -47,7 +59,8 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             id: "whisper-subtitles",
             name: "Whisper Subtitles",
             description: "Generate subtitles from video audio using Whisper speech recognition",
-            port: 18003,
+            runtime: AddonRuntime::Sidecar,
+            port: Some(18003),
             // faster-whisper pinned (M1). numpy left to faster-whisper's resolver.
             python_deps: &["faster-whisper==1.2.1", "numpy"],
         },
@@ -56,7 +69,8 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             name: "Chromecast/DLNA",
             description:
                 "Cast media to Chromecast and DLNA-compatible devices on the local network",
-            port: 18006,
+            runtime: AddonRuntime::Sidecar,
+            port: Some(18006),
             // pychromecast pinned (M1, top-level lib); it resolves compatible
             // async-upnp-client/aiohttp, so those stay unpinned to avoid a cap conflict.
             python_deps: &["pychromecast==14.0.10", "async-upnp-client", "aiohttp"],
@@ -65,8 +79,17 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             id: "svp",
             name: "SVP (SmoothVideo Project)",
             description: "High quality frame interpolation using VapourSynth and SVPflow",
-            port: 18008,
+            runtime: AddonRuntime::Sidecar,
+            port: Some(18008),
             python_deps: &["vapoursynth"],
+        },
+        AddonManifest {
+            id: "curation-game",
+            name: "Curation Game",
+            description: "Rapidly keep or discard media from the current gallery view",
+            runtime: AddonRuntime::Builtin,
+            port: None,
+            python_deps: &[],
         },
     ]
 });
@@ -79,4 +102,18 @@ pub fn get_addon_registry() -> &'static [AddonManifest] {
 /// Look up a single addon manifest by its ID.
 pub fn get_addon_manifest(id: &str) -> Option<&'static AddonManifest> {
     ADDON_REGISTRY.iter().find(|m| m.id == id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // AC: @curation-game ac-1
+    #[test]
+    fn curation_game_is_a_builtin_addon() {
+        let addon = get_addon_manifest("curation-game").unwrap();
+        assert_eq!(addon.runtime, AddonRuntime::Builtin);
+        assert_eq!(addon.port, None);
+        assert!(addon.python_deps.is_empty());
+    }
 }

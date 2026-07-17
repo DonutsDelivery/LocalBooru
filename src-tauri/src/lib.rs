@@ -18,8 +18,9 @@ pub mod native_video;
 pub mod routes;
 pub mod server;
 pub mod services;
-#[cfg(target_os = "linux")]
+#[cfg(desktop)]
 mod svp_manager_bridge;
+mod svp_manager_snapshot;
 
 use commands::{
     backend_get_local_ip, backend_get_network_settings, backend_get_port, backend_health_check,
@@ -41,8 +42,9 @@ use native_video::commands::{
 };
 use native_video::coordinator::{DesktopPlayerMode, RuntimeCapabilities};
 use server::state::AppState;
-#[cfg(target_os = "linux")]
+#[cfg(desktop)]
 use svp_manager_bridge::{update_svp_manager_playback, SvpManagerBridge};
+use svp_manager_snapshot::ManagerGraphSnapshotStore;
 
 /// Default port for the embedded HTTP server.
 const DEFAULT_PORT: u16 = 8790;
@@ -221,9 +223,20 @@ pub fn run() {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    let manager_graph_snapshots =
+        ManagerGraphSnapshotStore::new(std::env::temp_dir().join(format!(
+            "localbooru-svp-snapshots-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        )));
+    std::env::set_var(
+        "LOCALBOORU_SVP_SNAPSHOT_ROOT",
+        manager_graph_snapshots.root(),
+    );
+
+    #[cfg(desktop)]
     let svp_bridge = {
-        let bridge = SvpManagerBridge::new();
+        let bridge = SvpManagerBridge::new(manager_graph_snapshots.clone());
         bridge.configure_environment();
         bridge
     };
@@ -287,8 +300,12 @@ pub fn run() {
         // ── Initialize AppState (database + config) ──
         let data_dir = get_data_dir(app);
         let port = DEFAULT_PORT;
-        let app_state = AppState::new(&data_dir, port)
-            .map_err(|e| format!("Failed to initialize app state: {}", e))?;
+        let app_state = AppState::new_with_manager_graph_snapshots(
+            &data_dir,
+            port,
+            manager_graph_snapshots.clone(),
+        )
+        .map_err(|e| format!("Failed to initialize app state: {}", e))?;
 
         // The replacement native player is quarantined while SVP integration moves
         // into the original WebKit/GStreamer player. It must not attach a GTK
@@ -316,7 +333,7 @@ pub fn run() {
         let native_safe_mode = true;
         // Store AppState for both Tauri commands and axum server
         app.manage(app_state.clone());
-        #[cfg(target_os = "linux")]
+        #[cfg(desktop)]
         {
             svp_bridge.start(app.handle().clone());
             app.manage(svp_bridge.clone());
@@ -730,7 +747,7 @@ pub fn run() {
             pick_direct_media_file,
             release_direct_media_file,
             report_direct_file_stage,
-            #[cfg(target_os = "linux")]
+            #[cfg(desktop)]
             update_svp_manager_playback,
             take_startup_media_file,
             // Mobile: remote server connection (bypasses WebView mixed-content)

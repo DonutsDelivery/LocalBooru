@@ -1,19 +1,43 @@
-use axum::body::Body;
-use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
-use axum::http::{header, StatusCode};
+use axum::body::{Body, Bytes};
+use axum::extract::{ConnectInfo, OriginalUri, Path as AxumPath, Query, State};
+use axum::http::{header, Method, StatusCode};
 use axum::response::{Json, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{any, delete, get, post};
 use axum::Router;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use crate::addons::manager::AddonStatus;
 use crate::server::error::AppError;
 use crate::server::middleware::AccessTier;
 use crate::server::state::AppState;
 use crate::services::transcode::QualityPreset;
+
+static LEGACY_SVP_TRANSITION_EPOCH: AtomicU64 = AtomicU64::new(0);
+static LEGACY_SVP_CLIENT_TRANSITION_EPOCH: AtomicU64 = AtomicU64::new(0);
+static LEGACY_SVP_TRANSITION_LOCK: Mutex<()> = Mutex::new(());
+
+fn owns_legacy_svp_transition(epoch: u64) -> bool {
+    LEGACY_SVP_TRANSITION_EPOCH.load(Ordering::SeqCst) == epoch
+}
+
+fn claim_legacy_svp_client_transition(epoch: Option<u64>) -> Option<u64> {
+    let _guard = LEGACY_SVP_TRANSITION_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(epoch) = epoch {
+        let previous = LEGACY_SVP_CLIENT_TRANSITION_EPOCH.load(Ordering::SeqCst);
+        if epoch < previous {
+            return None;
+        }
+        LEGACY_SVP_CLIENT_TRANSITION_EPOCH.store(epoch, Ordering::SeqCst);
+    }
+    Some(LEGACY_SVP_TRANSITION_EPOCH.fetch_add(1, Ordering::SeqCst) + 1)
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -57,6 +81,8 @@ pub fn router() -> Router<AppState> {
         .route("/svp/play", post(bridge_svp_play))
         .route("/svp/stop", post(bridge_svp_stop))
         .route("/svp/stream/{stream_id}/{filename}", get(bridge_svp_stream))
+        .route("/svp/sessions", any(bridge_svp_sessions_root))
+        .route("/svp/sessions/{*path}", any(bridge_svp_sessions_path))
         // ─── Whisper subtitle streaming (sidecar bridge) ──────────────────
         .route("/whisper/install", post(bridge_whisper_install))
         .route("/whisper/generate", post(bridge_whisper_generate))
@@ -1860,12 +1886,31 @@ async fn bridge_svp_play(
     State(state): State<AppState>,
     Json(mut body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
+    let body_obj = body
+        .as_object_mut()
+        .ok_or_else(|| AppError::BadRequest("SVP play request must be an object".to_string()))?;
+    let client_transition_id = body_obj
+        .remove("client_transition_id")
+        .map(|value| {
+            value.as_u64().filter(|epoch| *epoch > 0).ok_or_else(|| {
+                AppError::BadRequest("client_transition_id must be a positive integer".to_string())
+            })
+        })
+        .transpose()?;
+    let transition_epoch = claim_legacy_svp_client_transition(client_transition_id)
+        .ok_or_else(|| AppError::ServiceUnavailable("SVP start was superseded".to_string()))?;
+    body_obj.insert("transition_id".to_string(), json!(transition_epoch));
     if state.addon_manager().get_addon_status("svp") != AddonStatus::Running {
         state
             .addon_manager()
             .start_addon("svp")
             .await
             .map_err(AppError::ServiceUnavailable)?;
+    }
+    if !owns_legacy_svp_transition(transition_epoch) {
+        return Err(AppError::ServiceUnavailable(
+            "SVP start was superseded".to_string(),
+        ));
     }
 
     let config = get_config_section(state.data_dir(), "svp");
@@ -1890,11 +1935,31 @@ async fn bridge_svp_play(
         }
     }
 
-    bridge_post(&state, "svp", "/svp/play", &body, Some("svp")).await
+    let result = bridge_post(&state, "svp", "/svp/play", &body, Some("svp")).await?;
+    if !owns_legacy_svp_transition(transition_epoch) {
+        return Err(AppError::ServiceUnavailable(
+            "SVP start was superseded".to_string(),
+        ));
+    }
+    Ok(result)
 }
 
 /// POST /svp/stop — Stop SVP streams via sidecar.
-async fn bridge_svp_stop(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn bridge_svp_stop(
+    State(state): State<AppState>,
+    body: Option<Json<Value>>,
+) -> Result<Json<Value>, AppError> {
+    let client_transition_id = body
+        .as_ref()
+        .and_then(|Json(value)| value.get("client_transition_id"))
+        .map(|value| {
+            value.as_u64().filter(|epoch| *epoch > 0).ok_or_else(|| {
+                AppError::BadRequest("client_transition_id must be a positive integer".to_string())
+            })
+        })
+        .transpose()?;
+    let transition_epoch = claim_legacy_svp_client_transition(client_transition_id)
+        .ok_or_else(|| AppError::ServiceUnavailable("SVP stop was superseded".to_string()))?;
     if state.addon_manager().get_addon_status("svp") != AddonStatus::Running {
         return Ok(Json(json!({
             "success": true,
@@ -1902,7 +1967,14 @@ async fn bridge_svp_stop(State(state): State<AppState>) -> Result<Json<Value>, A
         })));
     }
 
-    bridge_post(&state, "svp", "/svp/stop", &json!({}), None).await
+    bridge_post(
+        &state,
+        "svp",
+        "/svp/stop",
+        &json!({ "transition_id": transition_epoch }),
+        None,
+    )
+    .await
 }
 
 /// GET /svp/stream/{stream_id}/{filename} — Serve SVP HLS files via sidecar.
@@ -1916,6 +1988,128 @@ async fn bridge_svp_stream(
         &format!("/svp/stream/{}/{}", stream_id, filename),
     )
     .await
+}
+
+fn prepare_svp_session_open(
+    mut request: Value,
+    graph: Option<crate::svp_manager_snapshot::ManagerGraphSnapshot>,
+) -> Result<(String, Bytes), AppError> {
+    let object = request
+        .as_object_mut()
+        .ok_or_else(|| AppError::BadRequest("Session request must be an object".to_string()))?;
+    if object.contains_key("graph") {
+        return Err(AppError::BadRequest(
+            "SVP graph selection is owned by the desktop Manager bridge".to_string(),
+        ));
+    }
+    let file_path = object
+        .get("file_path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::BadRequest("file_path is required".to_string()))?
+        .to_owned();
+    let graph = graph.ok_or_else(|| {
+        AppError::ServiceUnavailable("No trusted SVP Manager graph is available".to_string())
+    })?;
+    object.insert(
+        "graph".to_string(),
+        serde_json::to_value(graph)
+            .map_err(|error| AppError::Internal(format!("Failed to encode SVP graph: {error}")))?,
+    );
+    let body = serde_json::to_vec(&request)
+        .map(Bytes::from)
+        .map_err(|error| {
+            AppError::Internal(format!("Failed to encode session request: {error}"))
+        })?;
+    Ok((file_path, body))
+}
+
+async fn bridge_svp_sessions_root(
+    State(state): State<AppState>,
+    method: Method,
+    OriginalUri(uri): OriginalUri,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    if method == Method::POST {
+        let request: Value = serde_json::from_slice(&body)
+            .map_err(|error| AppError::BadRequest(format!("Invalid session request: {}", error)))?;
+        let graph = state.manager_graph_snapshots().current();
+        let (file_path, body) = prepare_svp_session_open(request, graph)?;
+        crate::server::utils::validate_path_in_watch_dir(&state, &file_path)?;
+        return bridge_svp_session_request(&state, method, "/svp/sessions", uri.query(), body)
+            .await;
+    }
+    bridge_svp_session_request(&state, method, "/svp/sessions", uri.query(), body).await
+}
+
+async fn bridge_svp_sessions_path(
+    State(state): State<AppState>,
+    AxumPath(path): AxumPath<String>,
+    method: Method,
+    OriginalUri(uri): OriginalUri,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    bridge_svp_session_request(
+        &state,
+        method,
+        &format!("/svp/sessions/{}", path),
+        uri.query(),
+        body,
+    )
+    .await
+}
+
+async fn bridge_svp_session_request(
+    state: &AppState,
+    method: Method,
+    sidecar_path: &str,
+    query: Option<&str>,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    if state.addon_manager().get_addon_status("svp") != AddonStatus::Running {
+        state
+            .addon_manager()
+            .start_addon("svp")
+            .await
+            .map_err(AppError::ServiceUnavailable)?;
+    }
+    let base_url = state
+        .addon_manager()
+        .addon_url("svp")
+        .ok_or_else(|| AppError::ServiceUnavailable("SVP addon is not running".to_string()))?;
+    let mut url = format!("{}{}", base_url.trim_end_matches('/'), sidecar_path);
+    if let Some(query) = query {
+        url.push('?');
+        url.push_str(query);
+    }
+    let request_method = reqwest::Method::from_bytes(method.as_str().as_bytes())
+        .map_err(|error| AppError::BadRequest(format!("Invalid request method: {}", error)))?;
+    let mut request = state.http_client().request(request_method, &url);
+    if !body.is_empty() {
+        request = request
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body.to_vec());
+    }
+    let response = request.send().await.map_err(|error| {
+        AppError::ServiceUnavailable(format!("Failed to reach SVP addon: {}", error))
+    })?;
+    let status = StatusCode::from_u16(response.status().as_u16())
+        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("application/octet-stream")
+        .to_string();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| AppError::Internal(format!("Failed to read SVP response: {}", error)))?;
+    Ok(Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .body(Body::from(bytes))
+        .unwrap())
 }
 
 // ─── Whisper subtitle bridge ─────────────────────────────────────────────────
@@ -2246,6 +2440,29 @@ mod tests {
     use axum::http::{Method, Request};
     use tower::ServiceExt;
 
+    #[test]
+    // AC: @reliable-stream-transitions ac-final-source-owner
+    // AC: @reliable-stream-transitions ac-stop-superseded-producer
+    fn legacy_svp_transition_epoch_assigns_one_latest_owner() {
+        let first = claim_legacy_svp_client_transition(None).unwrap();
+        let second = claim_legacy_svp_client_transition(None).unwrap();
+        assert!(!owns_legacy_svp_transition(first));
+        assert!(owns_legacy_svp_transition(second));
+
+        claim_legacy_svp_client_transition(None).unwrap();
+        assert!(!owns_legacy_svp_transition(second));
+    }
+
+    #[test]
+    // AC: @reliable-stream-transitions ac-stop-superseded-producer
+    fn legacy_svp_rejects_a_delayed_client_transition() {
+        let base = LEGACY_SVP_CLIENT_TRANSITION_EPOCH.load(Ordering::SeqCst);
+        let newest = base + 2;
+        assert!(claim_legacy_svp_client_transition(Some(newest)).is_some());
+        assert!(claim_legacy_svp_client_transition(Some(newest - 1)).is_none());
+        assert!(claim_legacy_svp_client_transition(Some(newest)).is_some());
+    }
+
     #[tokio::test]
     async fn retired_optical_flow_stop_remains_compatible_with_existing_clients() {
         let data_dir = std::env::temp_dir().join(format!(
@@ -2269,6 +2486,42 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    // AC: @svp-platform-routing ac-opaque-session-request
+    fn session_open_injects_only_the_backend_owned_manager_graph() {
+        let graph = crate::svp_manager_snapshot::ManagerGraphSnapshot {
+            kind: "manager_snapshot",
+            revision: 7,
+            snapshot_path: "/private/graph-7.vpy".to_string(),
+            snapshot_sha256: "a".repeat(64),
+        };
+        let (file_path, body) = prepare_svp_session_open(
+            json!({"file_path": "/media/video.mp4", "generation": 1}),
+            Some(graph),
+        )
+        .unwrap();
+        let request: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(file_path, "/media/video.mp4");
+        assert_eq!(request["graph"]["kind"], "manager_snapshot");
+        assert_eq!(request["graph"]["revision"], 7);
+        assert_eq!(request["graph"]["snapshot_path"], "/private/graph-7.vpy");
+        assert_eq!(request["graph"]["snapshot_sha256"], "a".repeat(64));
+    }
+
+    #[test]
+    // AC: @svp-platform-routing ac-opaque-session-request
+    fn session_open_rejects_client_graphs_and_missing_manager_graphs() {
+        let client_graph = prepare_svp_session_open(
+            json!({"file_path": "/media/video.mp4", "graph": {"kind": "manager_snapshot"}}),
+            None,
+        );
+        assert!(matches!(client_graph, Err(AppError::BadRequest(_))));
+
+        let unavailable = prepare_svp_session_open(json!({"file_path": "/media/video.mp4"}), None);
+        assert!(matches!(unavailable, Err(AppError::ServiceUnavailable(_))));
     }
 
     #[test]

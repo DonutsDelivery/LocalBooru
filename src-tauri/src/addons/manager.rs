@@ -12,7 +12,7 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as TokioMutex;
 
-use super::manifest::{get_addon_manifest, get_addon_registry};
+use super::manifest::{get_addon_manifest, get_addon_registry, AddonRuntime};
 use super::sidecar;
 use crate::routes::settings::get_config_section;
 
@@ -29,7 +29,9 @@ pub struct AddonInfo {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub port: u16,
+    pub runtime: AddonRuntime,
+    pub port: Option<u16>,
+    pub requires_start: bool,
     pub status: AddonStatus,
     pub installed: bool,
 }
@@ -67,9 +69,12 @@ impl AddonManager {
         // Initialize state for every known addon
         for manifest in get_addon_registry() {
             let addon_dir = addons_base.join(manifest.id);
-            let venv_dir = addon_dir.join("venv");
+            let installed = match manifest.runtime {
+                AddonRuntime::Sidecar => addon_dir.join("venv").exists(),
+                AddonRuntime::Builtin => addon_dir.join("installed.json").exists(),
+            };
 
-            let status = if venv_dir.exists() {
+            let status = if installed {
                 AddonStatus::Installed
             } else {
                 AddonStatus::NotInstalled
@@ -109,6 +114,17 @@ impl AddonManager {
     /// The venv directory for a specific addon.
     fn venv_dir(&self, id: &str) -> PathBuf {
         self.addon_dir(id).join("venv")
+    }
+
+    fn install_marker(&self, id: &str) -> PathBuf {
+        self.addon_dir(id).join("installed.json")
+    }
+
+    fn is_installed(&self, manifest: &super::manifest::AddonManifest) -> bool {
+        match manifest.runtime {
+            AddonRuntime::Sidecar => self.venv_dir(manifest.id).exists(),
+            AddonRuntime::Builtin => self.install_marker(manifest.id).exists(),
+        }
     }
 
     fn dependency_list(
@@ -220,10 +236,13 @@ impl AddonManager {
 
         let mut resumed = 0u32;
         for manifest in get_addon_registry() {
+            if manifest.runtime == AddonRuntime::Builtin {
+                continue;
+            }
             let id = manifest.id;
 
             // Only attempt to resume installed addons that were previously enabled
-            let is_installed = self.venv_dir(id).exists();
+            let is_installed = self.is_installed(manifest);
             let was_enabled = self.load_enabled_state(id).unwrap_or(false);
 
             if is_installed && was_enabled {
@@ -257,13 +276,15 @@ impl AddonManager {
                     .map(|s| s.status.clone())
                     .unwrap_or(AddonStatus::NotInstalled);
 
-                let installed = self.venv_dir(manifest.id).exists();
+                let installed = self.is_installed(manifest);
 
                 AddonInfo {
                     id: manifest.id.to_string(),
                     name: manifest.name.to_string(),
                     description: manifest.description.to_string(),
+                    runtime: manifest.runtime,
                     port: manifest.port,
+                    requires_start: manifest.runtime == AddonRuntime::Sidecar,
                     status,
                     installed,
                 }
@@ -280,13 +301,15 @@ impl AddonManager {
             .map(|s| s.status.clone())
             .unwrap_or(AddonStatus::NotInstalled);
 
-        let installed = self.venv_dir(id).exists();
+        let installed = self.is_installed(manifest);
 
         Some(AddonInfo {
             id: manifest.id.to_string(),
             name: manifest.name.to_string(),
             description: manifest.description.to_string(),
+            runtime: manifest.runtime,
             port: manifest.port,
+            requires_start: manifest.runtime == AddonRuntime::Sidecar,
             status,
             installed,
         })
@@ -310,18 +333,25 @@ impl AddonManager {
         let addon_dir = self.addon_dir(id);
         let venv_dir = self.venv_dir(id);
 
-        if venv_dir.exists() {
+        if self.is_installed(manifest) {
             log::info!("[AddonManager] Addon '{}' already installed", id);
+            return Ok(());
+        }
+
+        std::fs::create_dir_all(&addon_dir)
+            .map_err(|e| format!("Failed to create addon directory: {}", e))?;
+
+        if manifest.runtime == AddonRuntime::Builtin {
+            std::fs::write(self.install_marker(id), "{\"installed\":true}\n")
+                .map_err(|e| format!("Failed to write install marker: {}", e))?;
+            self.set_status(id, AddonStatus::Installed);
+            log::info!("[AddonManager] Built-in addon '{}' installed", id);
             return Ok(());
         }
 
         // Find a usable Python interpreter
         let python =
             sidecar::find_python().ok_or_else(|| "Could not find Python 3 on PATH".to_string())?;
-
-        // Ensure addon directory exists
-        std::fs::create_dir_all(&addon_dir)
-            .map_err(|e| format!("Failed to create addon directory: {}", e))?;
 
         // Create virtual environment
         sidecar::create_venv(&python, &venv_dir)?;
@@ -331,11 +361,13 @@ impl AddonManager {
         let deps = self.dependency_list(id, manifest);
         sidecar::install_deps(&venv_dir, &deps)?;
 
-        // Deploy embedded app.py if available
-        if let Some(source) = super::sources::get_addon_source(id) {
-            std::fs::write(addon_dir.join("app.py"), source)
-                .map_err(|e| format!("Failed to write app.py: {}", e))?;
-            log::info!("[AddonManager] Deployed app.py for addon '{}'", id);
+        // Deploy embedded addon sources if available.
+        if let Some(sources) = super::sources::get_addon_sources(id) {
+            for (filename, source) in sources {
+                std::fs::write(addon_dir.join(filename), source)
+                    .map_err(|e| format!("Failed to write {}: {}", filename, e))?;
+            }
+            log::info!("[AddonManager] Deployed sources for addon '{}'", id);
         }
 
         // Update state
@@ -348,15 +380,20 @@ impl AddonManager {
     /// Reinstall an existing addon's dependencies and redeploy its embedded source.
     pub fn repair_addon(&self, id: &str) -> Result<(), String> {
         let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        if manifest.runtime == AddonRuntime::Builtin {
+            return Err(format!("Addon '{}' does not require a sidecar", id));
+        }
         let venv_dir = self.venv_dir(id);
         if !venv_dir.exists() {
             return self.install_addon(id);
         }
         let deps = self.dependency_list(id, manifest);
         sidecar::install_deps(&venv_dir, &deps)?;
-        if let Some(source) = super::sources::get_addon_source(id) {
-            std::fs::write(self.addon_dir(id).join("app.py"), source)
-                .map_err(|error| format!("Failed to deploy addon source: {}", error))?;
+        if let Some(sources) = super::sources::get_addon_sources(id) {
+            for (filename, source) in sources {
+                std::fs::write(self.addon_dir(id).join(filename), source)
+                    .map_err(|error| format!("Failed to deploy {}: {}", filename, error))?;
+            }
         }
         self.set_status(id, AddonStatus::Installed);
         Ok(())
@@ -403,6 +440,9 @@ impl AddonManager {
     /// and health-checked before marking it as running.
     pub async fn start_addon(&self, id: &str) -> Result<(), String> {
         let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        if manifest.runtime == AddonRuntime::Builtin {
+            return Err(format!("Addon '{}' does not require a sidecar", id));
+        }
 
         let current = self.get_addon_status(id);
         if current == AddonStatus::Running {
@@ -417,15 +457,21 @@ impl AddonManager {
         let venv_dir = self.venv_dir(id);
         let python = sidecar::get_venv_python(&venv_dir);
         let app_dir = self.addon_dir(id);
-        let port = manifest.port;
+        let port = manifest.port.expect("sidecar addons must have a port");
         let sidecar_env = self.sidecar_env(id);
 
-        // Always deploy the latest embedded app.py before starting.
-        // This ensures addons installed before their app.py existed get
-        // the source, and running addons pick up code updates on restart.
-        if let Some(source) = super::sources::get_addon_source(id) {
-            if let Err(e) = std::fs::write(app_dir.join("app.py"), source) {
-                log::warn!("[AddonManager] Failed to deploy app.py for '{}': {}", id, e);
+        // Always deploy the latest embedded sources before starting.
+        // This ensures installed addons pick up source updates on restart.
+        if let Some(sources) = super::sources::get_addon_sources(id) {
+            for (filename, source) in sources {
+                if let Err(e) = std::fs::write(app_dir.join(filename), source) {
+                    log::warn!(
+                        "[AddonManager] Failed to deploy {} for '{}': {}",
+                        filename,
+                        id,
+                        e
+                    );
+                }
             }
         }
 
@@ -479,7 +525,10 @@ impl AddonManager {
 
     /// Stop a running addon by killing its sidecar process.
     pub async fn stop_addon(&self, id: &str) -> Result<(), String> {
-        let _ = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        if manifest.runtime == AddonRuntime::Builtin {
+            return Err(format!("Addon '{}' does not require a sidecar", id));
+        }
 
         let process = {
             let mut state = self
@@ -519,7 +568,9 @@ impl AddonManager {
         let status = self.get_addon_status(id);
 
         if status == AddonStatus::Running {
-            Some(format!("http://127.0.0.1:{}", manifest.port))
+            manifest
+                .port
+                .map(|port| format!("http://127.0.0.1:{}", port))
         } else {
             None
         }
@@ -556,5 +607,22 @@ impl AddonManager {
         if let Some(mut state) = self.addons.get_mut(id) {
             state.status = status;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // AC: @curation-game ac-1
+    #[test]
+    fn builtin_install_does_not_create_a_venv() {
+        let root =
+            std::env::temp_dir().join(format!("localbooru-addon-test-{}", uuid::Uuid::new_v4()));
+        let manager = AddonManager::new(&root);
+        manager.install_addon("curation-game").unwrap();
+        assert!(root.join("addons/curation-game/installed.json").exists());
+        assert!(!root.join("addons/curation-game/venv").exists());
+        let _ = std::fs::remove_dir_all(root);
     }
 }

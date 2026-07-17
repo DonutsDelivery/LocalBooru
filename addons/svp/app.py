@@ -27,9 +27,19 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+
+from fmp4_processor import Fmp4SessionProcessor
+from manager_graph import (
+    ManagerGraphUnavailable,
+    generate_manager_snapshot_stdin_script,
+    load_manager_snapshot,
+    trusted_snapshot_root,
+)
+from session_api import ProcessorUnavailable, ProcessingSessionService, create_session_router
+from session_protocol import OpenSessionRequest, SessionMetadata
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -82,6 +92,52 @@ def get_svp_plugin_full_paths() -> Tuple[str, str]:
     return (Path(base, f1).as_posix(), Path(base, f2).as_posix())
 
 
+def get_vspipe_path() -> Optional[str]:
+    configured = os.environ.get("LOCALBOORU_VSPIPE")
+    if configured and os.path.isfile(configured):
+        return configured
+    discovered = shutil.which("vspipe")
+    if discovered:
+        return discovered
+
+    candidates = []
+    if _is_windows():
+        program_files = [
+            os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
+            os.environ.get("PROGRAMFILES", r"C:\Program Files"),
+        ]
+        for root in program_files:
+            candidates.extend([
+                os.path.join(root, "SVP 4", "mpv64", "vspipe.exe"),
+                os.path.join(root, "VapourSynth", "core64", "vspipe.exe"),
+            ])
+    elif _is_macos():
+        candidates = ["/opt/homebrew/bin/vspipe", "/usr/local/bin/vspipe"]
+
+    return next((path for path in candidates if os.path.isfile(path)), None)
+
+
+def get_ffmpeg_path() -> Optional[str]:
+    configured = os.environ.get("LOCALBOORU_FFMPEG")
+    if configured and os.path.isfile(configured):
+        return configured
+    return shutil.which("ffmpeg")
+
+
+def get_ffprobe_path() -> Optional[str]:
+    configured = os.environ.get("LOCALBOORU_FFPROBE")
+    if configured and os.path.isfile(configured):
+        return configured
+    discovered = shutil.which("ffprobe")
+    if discovered:
+        return discovered
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg:
+        return None
+    sibling = os.path.join(os.path.dirname(ffmpeg), "ffprobe.exe" if _is_windows() else "ffprobe")
+    return sibling if os.path.isfile(sibling) else None
+
+
 def get_clean_env() -> dict:
     """Minimal environment for vspipe subprocess (avoids venv conflicts)."""
     if _is_linux():
@@ -110,19 +166,35 @@ def get_clean_env() -> dict:
             except AttributeError:
                 pass
     elif _is_windows():
+        path = os.environ.get("PATH", "")
+        vspipe_path = get_vspipe_path()
+        if vspipe_path:
+            tool_dir = os.path.dirname(vspipe_path)
+            path = os.pathsep.join(part for part in (tool_dir, path) if part)
         env = {
-            "PATH": os.environ.get("PATH", ""),
+            "PATH": path,
             "SYSTEMROOT": os.environ.get("SYSTEMROOT", r"C:\WINDOWS"),
             "TEMP": os.environ.get("TEMP", os.environ.get("TMP", "")),
             "APPDATA": os.environ.get("APPDATA", ""),
         }
+        if vspipe_path:
+            env["PYTHONPATH"] = os.pathsep.join(
+                part for part in (os.path.dirname(vspipe_path), os.environ.get("PYTHONPATH", "")) if part
+            )
     else:  # macOS
         home = os.environ.get("HOME", "/tmp")
         paths = ["/usr/bin", "/bin", "/usr/local/bin"]
         if platform.machine() == "arm64":
             paths.append("/opt/homebrew/bin")
         env = {"PATH": ":".join(paths), "HOME": home, "LANG": "en_US.UTF-8"}
-    for key in ("LOCALBOORU_VS_PYTHON", "LOCALBOORU_SVP_PLUGIN_PATH", "LOCALBOORU_VS_PLUGIN_PATH"):
+    for key in (
+        "LOCALBOORU_FFMPEG",
+        "LOCALBOORU_FFPROBE",
+        "LOCALBOORU_VSPIPE",
+        "LOCALBOORU_VS_PYTHON",
+        "LOCALBOORU_SVP_PLUGIN_PATH",
+        "LOCALBOORU_VS_PLUGIN_PATH",
+    ):
         val = os.environ.get(key)
         if val:
             env[key] = val
@@ -132,8 +204,11 @@ def get_clean_env() -> dict:
 # ─── SVP availability detection ──────────────────────────────────────────────
 
 def check_vspipe() -> bool:
+    executable = get_vspipe_path()
+    if not executable:
+        return False
     try:
-        r = subprocess.run(["vspipe", "--version"], capture_output=True, timeout=5)
+        r = subprocess.run([executable, "--version"], capture_output=True, timeout=5, env=get_clean_env())
         return r.returncode == 0
     except Exception:
         return False
@@ -156,8 +231,11 @@ def check_svp_plugins() -> bool:
 
 
 def check_nvenc() -> bool:
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg:
+        return False
     try:
-        r = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"],
+        r = subprocess.run([ffmpeg, "-hide_banner", "-encoders"],
                            capture_output=True, text=True, timeout=5)
         return "h264_nvenc" in r.stdout if r.returncode == 0 else False
     except Exception:
@@ -217,6 +295,7 @@ def generate_vspipe_stdin_script(
     custom_super: Optional[str] = None,
     custom_analyse: Optional[str] = None,
     custom_smooth: Optional[str] = None,
+    graph_script: Optional[str] = None,
 ) -> str:
     """Generate a VapourSynth script that reads raw yuv420p frames from stdin and applies SVP."""
     preset_config = SVP_PRESETS.get(preset, SVP_PRESETS["balanced"])
@@ -250,6 +329,26 @@ def generate_vspipe_stdin_script(
             smooth_params = smooth_params.replace("gpuid:0,", "")
 
     flow1, flow2 = get_svp_plugin_full_paths()
+    plugin_setup = f'''core.std.LoadPlugin("{flow1}")
+core.std.LoadPlugin("{flow2}")'''
+    processing = f'''# SVP parameters (preset: {preset})
+super_params = '{super_params}'
+analyse_params = '{analyse_params}'
+smooth_params = '{smooth_params}'
+
+# SVP processing pipeline
+super_clip = core.svp1.Super(clip, super_params)
+vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
+
+src_fps = clip.fps.numerator / clip.fps.denominator
+smooth = core.svp2.SmoothFps(
+    clip, super_clip["clip"], super_clip["data"],
+    vectors["clip"], vectors["data"],
+    smooth_params, src=clip, fps=src_fps
+)'''
+    if graph_script is not None:
+        plugin_setup = ""
+        processing = graph_script
 
     frame_size = width * height * 3 // 2
     chroma_width = width // 2
@@ -272,9 +371,8 @@ stdin = sys.stdin.buffer
 next_frame = 0
 last_frame = None
 
-# Load SVP plugins
-core.std.LoadPlugin("{flow1}")
-core.std.LoadPlugin("{flow2}")
+# Load processing plugins when the selected graph requires them
+{plugin_setup}
 
 # vspipe has no built-in stdin video source. Create a clip with the source
 # geometry, then fill each requested frame from FFmpeg's rawvideo pipe.
@@ -332,21 +430,7 @@ def source_frame(n, f):
 
 clip = core.std.ModifyFrame(clip, clip, source_frame)
 
-# SVP parameters (preset: {preset})
-super_params = '{super_params}'
-analyse_params = '{analyse_params}'
-smooth_params = '{smooth_params}'
-
-# SVP processing pipeline
-super_clip = core.svp1.Super(clip, super_params)
-vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
-
-src_fps = clip.fps.numerator / clip.fps.denominator
-smooth = core.svp2.SmoothFps(
-    clip, super_clip["clip"], super_clip["data"],
-    vectors["clip"], vectors["data"],
-    smooth_params, src=clip, fps=src_fps
-)
+{processing}
 
 smooth.set_output()
 '''
@@ -356,9 +440,12 @@ smooth.set_output()
 
 def get_video_info(video_path: str) -> dict:
     """Get video metadata via ffprobe."""
+    ffprobe = get_ffprobe_path()
+    if not ffprobe:
+        return {"success": False}
     try:
         r = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+            [ffprobe, "-v", "error", "-select_streams", "v:0",
              "-show_entries", "stream=width,height,duration,r_frame_rate,avg_frame_rate,nb_frames",
              "-show_entries", "format=duration",
              "-of", "json", video_path],
@@ -396,7 +483,7 @@ def get_video_info(video_path: str) -> dict:
         # Check for audio stream
         has_audio = False
         audio_check = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+            [ffprobe, "-v", "error", "-select_streams", "a:0",
              "-show_entries", "stream=codec_type",
              "-of", "csv=p=0", video_path],
             capture_output=True, text=True, timeout=10,
@@ -418,9 +505,12 @@ def get_video_info(video_path: str) -> dict:
 def detect_audio_gain(video_path: str) -> Optional[float]:
     """Detect attenuation needed to keep the loudest peak at or below -2 dB.
     Uses ffmpeg volumedetect on first 15 seconds. Never returns positive gain."""
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg:
+        return None
     try:
         r = subprocess.run(
-            ["ffmpeg", "-i", video_path, "-vn",
+            [ffmpeg, "-i", video_path, "-vn",
              "-af", "volumedetect", "-t", "15",
              "-f", "null", "-"],
             capture_output=True, text=True, timeout=30,
@@ -443,6 +533,21 @@ def detect_audio_gain(video_path: str) -> Optional[float]:
 # ─── Stream manager ──────────────────────────────────────────────────────────
 
 _active_streams: Dict[str, "SVPStream"] = {}
+_legacy_stream_epoch = 0
+
+
+def _claim_legacy_stream_transition(requested_epoch: Optional[int] = None) -> int:
+    global _legacy_stream_epoch
+    if requested_epoch is not None:
+        if requested_epoch > _legacy_stream_epoch:
+            _legacy_stream_epoch = requested_epoch
+        return requested_epoch
+    _legacy_stream_epoch += 1
+    return _legacy_stream_epoch
+
+
+def _owns_legacy_stream_transition(epoch: int) -> bool:
+    return epoch == _legacy_stream_epoch
 
 
 class SVPStream:
@@ -468,6 +573,8 @@ class SVPStream:
         self.target_fps = target_fps
         self.preset = preset if preset in SVP_PRESETS else "balanced"
         self.use_nvenc = check_nvenc()
+        self.ffmpeg_executable = get_ffmpeg_path() or "ffmpeg"
+        self.vspipe_executable = get_vspipe_path() or "vspipe"
         self.stream_id = uuid.uuid4().hex[:8]
         self.start_position = start_position
         self.target_bitrate = target_bitrate
@@ -482,6 +589,7 @@ class SVPStream:
         self.custom_smooth = custom_smooth
 
         self._running = False
+        self._stopped = False
         self._task = None
         self._decode_proc = None
         self._vspipe_proc = None
@@ -522,11 +630,11 @@ class SVPStream:
         except Exception:
             return False
 
-    async def start(self) -> bool:
+    def _prepare(self) -> Optional[Path]:
         info = get_video_info(self.video_path)
         if not info["success"]:
             self._error = "Failed to get video info"
-            return False
+            return None
 
         self._width = info["width"]
         self._height = info["height"]
@@ -536,12 +644,10 @@ class SVPStream:
         fps_ratio = self.target_fps / self._src_fps if self._src_fps > 0 else 2.0
         if 0.95 <= fps_ratio <= 1.05:
             self._error = f"Source fps ({self._src_fps:.2f}) already near target ({self.target_fps}fps)"
-            return False
+            return None
 
         self._temp_dir = Path(tempfile.mkdtemp(prefix="svp_stream_"))
-
         stream_width, stream_height = self.target_resolution or (self._width, self._height)
-
         script = generate_vspipe_stdin_script(
             stream_width, stream_height, info["src_fps_num"], info["src_fps_den"],
             info["num_frames"],
@@ -556,11 +662,20 @@ class SVPStream:
         script_path = self._temp_dir / "svp_stdin.vpy"
         script_path.write_text(script)
 
-        # Detect attenuation for peaks above -2 dB. Quiet sources are not boosted.
         self._audio_gain_db = None
         if info.get("has_audio", True):
             self._audio_gain_db = detect_audio_gain(self.video_path)
+        return script_path
 
+    async def start(self) -> bool:
+        script_path = await asyncio.to_thread(self._prepare)
+        if script_path is None:
+            return False
+        if self._stopped:
+            if self._temp_dir and self._temp_dir.exists():
+                shutil.rmtree(self._temp_dir, ignore_errors=True)
+                self._temp_dir = None
+            return False
         self._running = True
         self._task = asyncio.create_task(self._run_pipeline(script_path))
         return True
@@ -568,7 +683,7 @@ class SVPStream:
     async def _run_pipeline(self, script_path: Path):
         try:
             # Stage 1: FFmpeg decode to raw yuv420p frames
-            decode_cmd = ["ffmpeg", "-hwaccel", "auto", "-threads", "0"]
+            decode_cmd = [self.ffmpeg_executable, "-hwaccel", "auto", "-threads", "0"]
             if self.start_position > 0:
                 decode_cmd.extend(["-ss", str(self.start_position)])
             decode_cmd.extend(["-i", self.video_path])
@@ -578,11 +693,11 @@ class SVPStream:
             decode_cmd.extend(["-an", "-sn", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"])
 
             # Stage 2: vspipe with SVP
-            vspipe_cmd = ["vspipe", "--requests", "1", "-c", "y4m", str(script_path), "-"]
+            vspipe_cmd = [self.vspipe_executable, "--requests", "1", "-c", "y4m", str(script_path), "-"]
 
             # Stage 3: FFmpeg encode to HLS
             encode_cmd = [
-                "ffmpeg", "-y",
+                self.ffmpeg_executable, "-y",
                 "-probesize", "1000000", "-analyzeduration", "1000000",
                 "-fflags", "+nobuffer+flush_packets",
                 "-f", "yuv4mpegpipe", "-i", "-",
@@ -735,6 +850,7 @@ class SVPStream:
         self._decode_proc = self._vspipe_proc = self._ffmpeg_proc = None
 
     async def stop_async(self):
+        self._stopped = True
         self._running = False
         if self._task:
             self._task.cancel()
@@ -750,6 +866,7 @@ class SVPStream:
         _active_streams.pop(self.stream_id, None)
 
     def stop(self):
+        self._stopped = True
         self._running = False
         if self._task:
             self._task.cancel()
@@ -765,13 +882,15 @@ class SVPStream:
         while time.time() - start < timeout:
             if self.playlist_ready:
                 return True
-            if self._error:
+            if self._error or not self._running:
                 return False
             await asyncio.sleep(0.3)
         return False
 
 
-async def stop_all_streams():
+async def stop_all_streams(*, invalidate_pending: bool = True):
+    if invalidate_pending:
+        _claim_legacy_stream_transition()
     await asyncio.gather(
         *(s.stop_async() for s in list(_active_streams.values())),
         return_exceptions=True,
@@ -782,9 +901,130 @@ def is_gpu_renderer_error(error: Optional[str]) -> bool:
     return bool(error and "unable to init GPU-based renderer" in error)
 
 
+def _manager_source_info(file_path: str) -> dict:
+    info = get_video_info(file_path)
+    if (
+        not info.get("success")
+        or info.get("width", 0) <= 0
+        or info.get("height", 0) <= 0
+        or info.get("duration", 0) <= 0
+        or info.get("src_fps", 0) <= 0
+    ):
+        raise ProcessorUnavailable("Source metadata is unavailable for SVP processing")
+    return info
+
+
+def _parse_vspipe_info(output: str) -> Tuple[int, int, float]:
+    def integer(label: str) -> int:
+        match = re.search(rf"(?im)^{re.escape(label)}\s*:\s*(\d+)\s*$", output)
+        if not match:
+            raise ProcessorUnavailable(f"Manager graph did not report {label.lower()}")
+        return int(match.group(1))
+
+    width = integer("Width")
+    height = integer("Height")
+    fps_match = re.search(r"(?im)^FPS\s*:\s*(\d+)\s*/\s*(\d+)", output)
+    format_match = re.search(r"(?im)^Format(?: Name)?\s*:\s*([^\r\n]+)", output)
+    if not fps_match or int(fps_match.group(2)) <= 0:
+        raise ProcessorUnavailable("Manager graph did not report a constant frame rate")
+    if not format_match or "YUV420P8" not in format_match.group(1).upper():
+        raise ProcessorUnavailable("Manager graph output must be constant YUV420P8")
+    output_fps = int(fps_match.group(1)) / int(fps_match.group(2))
+    if width <= 0 or height <= 0 or width > 16384 or height > 16384 or output_fps <= 0 or output_fps > 1000:
+        raise ProcessorUnavailable("Manager graph output metadata is invalid")
+    return width, height, output_fps
+
+
+def _probe_manager_graph(graph, info: dict, vspipe: str) -> Tuple[int, int, float]:
+    script = generate_manager_snapshot_stdin_script(
+        graph,
+        info["width"],
+        info["height"],
+        info["src_fps_num"],
+        info["src_fps_den"],
+        info["num_frames"],
+    )
+    with tempfile.TemporaryDirectory(prefix="localbooru-svp-probe-") as temp_dir:
+        script_path = Path(temp_dir) / "manager-probe.vpy"
+        script_path.write_text(script, encoding="utf-8")
+        result = subprocess.run(
+            [vspipe, "--info", str(script_path), "-"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=get_clean_env(),
+        )
+    if result.returncode != 0:
+        detail = result.stderr.strip()[-1000:] or "vspipe graph evaluation failed"
+        raise ProcessorUnavailable(detail)
+    return _parse_vspipe_info(result.stdout)
+
+
+def processing_session_metadata(request: OpenSessionRequest) -> SessionMetadata:
+    try:
+        root = trusted_snapshot_root()
+        graph = load_manager_snapshot(request.graph, root)
+        info = _manager_source_info(request.file_path)
+        vspipe = get_vspipe_path()
+        if not vspipe or not get_ffmpeg_path() or not get_ffprobe_path():
+            raise ProcessorUnavailable("FFmpeg, ffprobe, and vspipe are required")
+        width, height, output_fps = _probe_manager_graph(graph, info, vspipe)
+        codecs = "avc1.640034, mp4a.40.2" if info.get("has_audio") else "avc1.640034"
+        return SessionMetadata(
+            source_duration=info["duration"],
+            width=width,
+            height=height,
+            source_fps=info["src_fps"],
+            output_fps=output_fps,
+            mime_type=f'video/mp4; codecs="{codecs}"',
+            initial_source_position=request.start_position,
+            max_av_drift_ms=50.0,
+        )
+    except ManagerGraphUnavailable as error:
+        raise ProcessorUnavailable(str(error)) from error
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ProcessorUnavailable(f"Manager graph evaluation failed: {error}") from error
+
+
+def start_processing_session(session):
+    try:
+        graph = load_manager_snapshot(session.graph, trusted_snapshot_root())
+        info = _manager_source_info(session.file_path)
+        ffmpeg = get_ffmpeg_path()
+        vspipe = get_vspipe_path()
+        if not ffmpeg or not vspipe:
+            raise ProcessorUnavailable("FFmpeg and vspipe are required")
+
+        def build_manager_script(_width, _height, fps_num, fps_den, num_frames, _target_fps):
+            return generate_manager_snapshot_stdin_script(
+                graph,
+                info["width"],
+                info["height"],
+                fps_num,
+                fps_den,
+                num_frames,
+            )
+
+        return Fmp4SessionProcessor(
+            session,
+            build_manager_script,
+            get_clean_env,
+            ffmpeg_executable=ffmpeg,
+            vspipe_executable=vspipe,
+        )
+    except ManagerGraphUnavailable as error:
+        raise ProcessorUnavailable(str(error)) from error
+
+
 # ─── FastAPI app ──────────────────────────────────────────────────────────────
 
 app = FastAPI(title="SVP Sidecar")
+processing_session_service = ProcessingSessionService(
+    Path(tempfile.gettempdir()) / f"localbooru-svp-sessions-{os.getpid()}",
+    metadata_provider=processing_session_metadata,
+    session_started=start_processing_session,
+)
+app.include_router(create_session_router(processing_session_service))
 
 
 @app.get("/health")
@@ -822,16 +1062,51 @@ class PlayRequest(BaseModel):
 
 
 @app.post("/svp/play")
-async def play(req: PlayRequest):
+async def play(request: Request):
+    try:
+        payload = await request.json()
+    except Exception as error:
+        raise HTTPException(status_code=422, detail="Invalid SVP play request") from error
+
+    requested_epoch = payload.get("transition_id") if isinstance(payload, dict) else None
+    if requested_epoch is not None and (not isinstance(requested_epoch, int) or requested_epoch < 1):
+        raise HTTPException(status_code=422, detail="transition_id must be a positive integer")
+    transition_epoch = _claim_legacy_stream_transition(requested_epoch)
+    if not _owns_legacy_stream_transition(transition_epoch):
+        raise HTTPException(status_code=409, detail="SVP start was superseded")
+    await asyncio.to_thread(processing_session_service.stop_all)
+    await stop_all_streams(invalidate_pending=False)
+    if not _owns_legacy_stream_transition(transition_epoch):
+        raise HTTPException(status_code=409, detail="SVP start was superseded")
+
+    try:
+        req = PlayRequest.model_validate(payload)
+    except ValidationError as error:
+        raise HTTPException(status_code=422, detail=error.errors()) from error
+
     if not os.path.exists(req.file_path):
         raise HTTPException(status_code=404, detail="Video file not found")
 
-    if not check_vspipe():
+    vspipe_available, ffmpeg_available, plugins_available = await asyncio.to_thread(
+        lambda: (check_vspipe(), bool(get_ffmpeg_path()), check_svp_plugins())
+    )
+    if not _owns_legacy_stream_transition(transition_epoch):
+        raise HTTPException(status_code=409, detail="SVP start was superseded")
+    if not vspipe_available:
         raise HTTPException(status_code=503, detail="vspipe not available")
-    if not check_svp_plugins():
+    if not ffmpeg_available:
+        raise HTTPException(status_code=503, detail="FFmpeg not available")
+    if not plugins_available:
         raise HTTPException(status_code=503, detail="SVP plugins not found")
 
-    await stop_all_streams()
+    async def reject_if_superseded(candidate: Optional[SVPStream] = None):
+        if _owns_legacy_stream_transition(transition_epoch):
+            return
+        if candidate is not None:
+            await candidate.stop_async()
+        raise HTTPException(status_code=409, detail="SVP start was superseded")
+
+    await reject_if_superseded()
 
     res = None
     if req.target_resolution:
@@ -859,6 +1134,7 @@ async def play(req: PlayRequest):
     stream = make_stream(req.use_nvof)
 
     started = await stream.start()
+    await reject_if_superseded(stream)
     if not started:
         error = stream.error or "Failed to start SVP stream"
         stream.stop()
@@ -874,16 +1150,19 @@ async def play(req: PlayRequest):
         raise HTTPException(status_code=500, detail=error)
 
     ready = await stream.wait_for_ready(timeout=45)
+    await reject_if_superseded(stream)
     if not ready and stream.error:
         error = stream.error
         stream.stop()
-        if req.use_nvof:
+        if req.use_nvof and is_gpu_renderer_error(error):
             logger.warning(
                 "[SVP] vspipe failed with NVOF enabled; retrying with CPU SVP"
             )
             await asyncio.sleep(0)  # yield to let GPU task finalizer complete
+            await reject_if_superseded()
             stream = make_stream(False)
             started = await stream.start()
+            await reject_if_superseded(stream)
             if not started:
                 fallback_error = stream.error or "Failed to start SVP CPU fallback stream"
                 stream.stop()
@@ -892,6 +1171,7 @@ async def play(req: PlayRequest):
                     detail=f"{error}\nCPU fallback also failed: {fallback_error}",
                 )
             ready = await stream.wait_for_ready(timeout=45)
+            await reject_if_superseded(stream)
             if ready:
                 return {
                     "success": True,
@@ -911,6 +1191,10 @@ async def play(req: PlayRequest):
             )
         raise HTTPException(status_code=500, detail=error)
 
+    if not ready:
+        await stream.stop_async()
+        raise HTTPException(status_code=504, detail="SVP stream did not become ready")
+
     return {
         "success": True,
         "stream_id": stream.stream_id,
@@ -922,8 +1206,19 @@ async def play(req: PlayRequest):
 
 
 @app.post("/svp/stop")
-async def stop():
-    await stop_all_streams()
+async def stop(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    requested_epoch = payload.get("transition_id") if isinstance(payload, dict) else None
+    if requested_epoch is not None and (not isinstance(requested_epoch, int) or requested_epoch < 1):
+        raise HTTPException(status_code=422, detail="transition_id must be a positive integer")
+    transition_epoch = _claim_legacy_stream_transition(requested_epoch)
+    if not _owns_legacy_stream_transition(transition_epoch):
+        raise HTTPException(status_code=409, detail="SVP stop was superseded")
+    await asyncio.to_thread(processing_session_service.stop_all)
+    await stop_all_streams(invalidate_pending=False)
     return {"success": True, "message": "All SVP streams stopped"}
 
 

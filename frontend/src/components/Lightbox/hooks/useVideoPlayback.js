@@ -83,7 +83,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
 
   const seekWithinStream = useCallback((absoluteTime, streamStartOffset) => {
     const hlsTime = absoluteTime - streamStartOffset
-    cancelPendingSVPRestart?.()
+    cancelPendingSVPRestart?.(absoluteTime)
     setSvpPendingSeek(null)
     mediaRef.current.currentTime = Math.max(0, hlsTime)
     setCurrentTime(absoluteTime)

@@ -71,6 +71,7 @@ npm --prefix frontend test
 npm --prefix frontend run build
 
 cargo check --locked --manifest-path src-tauri/Cargo.toml --target "$TARGET"
+cargo test --locked --manifest-path src-tauri/Cargo.toml --target "$TARGET" --lib --no-run
 cargo tauri build \
   --ci \
   --target "$TARGET" \

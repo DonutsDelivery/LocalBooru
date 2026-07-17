@@ -29,6 +29,7 @@ npm --prefix "$ROOT/frontend" ci
 npm --prefix "$ROOT/frontend" test
 npm --prefix "$ROOT/frontend" run build
 
+cargo test --locked --manifest-path "$ROOT/src-tauri/Cargo.toml" --lib
 cargo check --locked --manifest-path "$ROOT/src-tauri/Cargo.toml"
 (
   cd "$ROOT"

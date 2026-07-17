@@ -1,23 +1,28 @@
-#![cfg(target_os = "linux")]
-
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
+use std::path::PathBuf;
 use std::{
-    fs,
-    hash::{DefaultHasher, Hash, Hasher},
-    io,
-    os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
+    fs, io,
+    path::Path,
     sync::{Arc, Mutex},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{UnixListener, UnixStream},
-};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+#[cfg(target_os = "windows")]
+use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+#[cfg(unix)]
+use tokio::net::{UnixListener, UnixStream};
 
+use crate::svp_manager_snapshot::ManagerGraphSnapshotStore;
+
+#[cfg(unix)]
 const MPV_SOCKET_PATH: &str = "/tmp/mpvsocket";
+#[cfg(target_os = "windows")]
+const MPV_SOCKET_PATH: &str = r"\\.\pipe\mpvpipe";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +41,7 @@ pub struct SvpPlaybackUpdate {
 struct FilterChanged {
     enabled: bool,
     script_path: Option<String>,
+    graph_revision: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -49,7 +55,6 @@ struct PlaybackState {
     paused: bool,
     filter_active: bool,
     script_path: Option<String>,
-    script_signature: u64,
     output_fps: f64,
 }
 
@@ -65,7 +70,6 @@ impl Default for PlaybackState {
             paused: true,
             filter_active: false,
             script_path: None,
-            script_signature: 0,
             output_fps: 0.0,
         }
     }
@@ -75,51 +79,63 @@ impl Default for PlaybackState {
 pub struct SvpManagerBridge {
     playback: Arc<Mutex<PlaybackState>>,
     transition: Arc<Mutex<()>>,
-    controller: Arc<Mutex<Option<(libc::pid_t, usize)>>>,
+    controller: Arc<Mutex<Option<(u32, usize)>>>,
+    snapshots: ManagerGraphSnapshotStore,
+    #[cfg(target_os = "linux")]
     filter_file: PathBuf,
+    #[cfg(target_os = "linux")]
     script_file: PathBuf,
-    script_snapshot: PathBuf,
+    #[cfg(unix)]
     control_socket: PathBuf,
 }
 
 impl SvpManagerBridge {
-    pub fn new() -> Self {
+    pub fn new(snapshots: ManagerGraphSnapshotStore) -> Self {
+        #[cfg(target_os = "linux")]
         let uid = unsafe { libc::geteuid() };
         Self {
             playback: Arc::new(Mutex::new(PlaybackState::default())),
             transition: Arc::new(Mutex::new(())),
             controller: Arc::new(Mutex::new(None)),
+            snapshots,
+            #[cfg(target_os = "linux")]
             filter_file: PathBuf::from(format!("/tmp/localbooru-svp-filter-{uid}")),
+            #[cfg(target_os = "linux")]
             script_file: PathBuf::from(format!("/tmp/localbooru-svp-script-{uid}")),
-            script_snapshot: PathBuf::from(format!("/tmp/localbooru-svp-runtime-{uid}.py")),
+            #[cfg(target_os = "linux")]
             control_socket: PathBuf::from(format!("/tmp/localbooru-mpv-control-{uid}")),
+            #[cfg(target_os = "macos")]
+            control_socket: PathBuf::from(MPV_SOCKET_PATH),
         }
     }
 
     pub fn configure_environment(&self) {
-        std::env::set_var("WEBKIT_GST_VIDEO_FILTER_FILE", &self.filter_file);
-        std::env::set_var("LOCALBOORU_VS_SCRIPT_FILE", &self.script_file);
-        let native_svp_enabled =
-            std::env::var("LOCALBOORU_ENABLE_NATIVE_SVP").as_deref() == Ok("1");
-        if native_svp_enabled {
-            std::env::set_var("LOCALBOORU_MPV_CONTROL_UPSTREAM", &self.control_socket);
-        } else {
-            std::env::remove_var("LOCALBOORU_MPV_CONTROL_UPSTREAM");
-        }
+        std::env::set_var("LOCALBOORU_SVP_SNAPSHOT_ROOT", self.snapshots.root());
+        #[cfg(target_os = "linux")]
+        {
+            std::env::set_var("WEBKIT_GST_VIDEO_FILTER_FILE", &self.filter_file);
+            std::env::set_var("LOCALBOORU_VS_SCRIPT_FILE", &self.script_file);
+            let native_svp_enabled =
+                std::env::var("LOCALBOORU_ENABLE_NATIVE_SVP").as_deref() == Ok("1");
+            if native_svp_enabled {
+                std::env::set_var("LOCALBOORU_MPV_CONTROL_UPSTREAM", &self.control_socket);
+            } else {
+                std::env::remove_var("LOCALBOORU_MPV_CONTROL_UPSTREAM");
+            }
 
-        if let Some(home) = dirs::home_dir() {
-            let plugin_dir = home.join(".local/lib/localbooru");
-            let mut paths = vec![plugin_dir];
-            if let Some(existing) = std::env::var_os("GST_PLUGIN_PATH") {
-                paths.extend(std::env::split_paths(&existing));
+            if let Some(home) = dirs::home_dir() {
+                let plugin_dir = home.join(".local/lib/localbooru");
+                let mut paths = vec![plugin_dir];
+                if let Some(existing) = std::env::var_os("GST_PLUGIN_PATH") {
+                    paths.extend(std::env::split_paths(&existing));
+                }
+                if let Ok(joined) = std::env::join_paths(paths) {
+                    std::env::set_var("GST_PLUGIN_PATH", joined);
+                }
             }
-            if let Ok(joined) = std::env::join_paths(paths) {
-                std::env::set_var("GST_PLUGIN_PATH", joined);
-            }
+            let _ = fs::remove_file(&self.filter_file);
+            let _ = fs::remove_file(&self.script_file);
         }
-        let _ = fs::remove_file(&self.filter_file);
-        let _ = fs::remove_file(&self.script_file);
-        let _ = fs::remove_file(&self.script_snapshot);
     }
 
     pub fn start(&self, app: AppHandle) {
@@ -131,19 +147,16 @@ impl SvpManagerBridge {
         });
     }
 
+    #[cfg(unix)]
     async fn run_server(self, app: AppHandle) -> io::Result<()> {
         if UnixStream::connect(&self.control_socket).await.is_ok() {
             log::warn!(
-                "[SVPManager] {} is already owned by another LocalBooru process",
+                "[SVPManager] {} is already owned by another process",
                 self.control_socket.display()
             );
             return Ok(());
         }
-        match fs::remove_file(&self.control_socket) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
+        remove_stale_control_socket(&self.control_socket)?;
 
         let listener = UnixListener::bind(&self.control_socket)?;
         fs::set_permissions(&self.control_socket, fs::Permissions::from_mode(0o600))?;
@@ -154,18 +167,9 @@ impl SvpManagerBridge {
 
         loop {
             let (stream, _) = listener.accept().await?;
-            let peer_pid = match stream
-                .peer_cred()
-                .ok()
-                .and_then(|credentials| credentials.pid())
-            {
-                Some(pid) => pid,
-                None => {
-                    log::warn!(
-                        "[SVPManager] rejecting control connection without peer credentials"
-                    );
-                    continue;
-                }
+            let Some(peer_pid) = unix_peer_pid(&stream) else {
+                log::warn!("[SVPManager] rejecting control connection without peer PID");
+                continue;
             };
             let bridge = self.clone();
             if !bridge.claim_controller(peer_pid) {
@@ -183,7 +187,36 @@ impl SvpManagerBridge {
         }
     }
 
-    fn claim_controller(&self, pid: libc::pid_t) -> bool {
+    #[cfg(target_os = "windows")]
+    async fn run_server(self, app: AppHandle) -> io::Result<()> {
+        let mut first_instance = true;
+        loop {
+            let server = ServerOptions::new()
+                .first_pipe_instance(first_instance)
+                .create(MPV_SOCKET_PATH)?;
+            first_instance = false;
+            server.connect().await?;
+            let Some(peer_pid) = windows_named_pipe_client_pid(&server) else {
+                log::warn!("[SVPManager] rejecting named-pipe connection without client PID");
+                continue;
+            };
+            let bridge = self.clone();
+            if !bridge.claim_controller(peer_pid) {
+                log::warn!("[SVPManager] rejecting competing controller process {peer_pid}");
+                continue;
+            }
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let result = bridge.handle_connection(server, app).await;
+                bridge.release_controller(peer_pid);
+                if let Err(error) = result {
+                    log::debug!("[SVPManager] control connection closed: {error}");
+                }
+            });
+        }
+    }
+
+    fn claim_controller(&self, pid: u32) -> bool {
         let Ok(mut controller) = self.controller.lock() else {
             return false;
         };
@@ -200,7 +233,7 @@ impl SvpManagerBridge {
         }
     }
 
-    fn release_controller(&self, pid: libc::pid_t) {
+    fn release_controller(&self, pid: u32) {
         let Ok(mut controller) = self.controller.lock() else {
             return;
         };
@@ -216,8 +249,11 @@ impl SvpManagerBridge {
         }
     }
 
-    async fn handle_connection(&self, stream: UnixStream, app: AppHandle) -> io::Result<()> {
-        let (reader, mut writer) = stream.into_split();
+    async fn handle_connection<S>(&self, stream: S, app: AppHandle) -> io::Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
+        let (reader, mut writer) = tokio::io::split(stream);
         let mut lines = BufReader::new(reader).lines();
         while let Some(line) = lines.next_line().await? {
             let request: Value = match serde_json::from_str(&line) {
@@ -386,45 +422,54 @@ impl SvpManagerBridge {
             .transition
             .lock()
             .map_err(|_| io::Error::other("transition state poisoned"))?;
-        let script_contents = fs::read_to_string(script_path)?;
-        let script_signature = {
-            let mut hasher = DefaultHasher::new();
-            script_contents.hash(&mut hasher);
-            hasher.finish()
-        };
-        if self
-            .playback
-            .lock()
-            .map(|state| {
-                state.filter_active
-                    && state.script_path.as_deref() == Some(script_path)
-                    && state.script_signature == script_signature
-            })
-            .unwrap_or(false)
+        let (snapshot, changed) = self.snapshots.prepare_file(Path::new(script_path))?;
+        if !changed
+            && self
+                .playback
+                .lock()
+                .map(|state| state.filter_active)
+                .unwrap_or(false)
         {
             return Ok(());
         }
-        write_runtime_file(&self.script_snapshot, &script_contents)?;
-        write_runtime_file(
-            &self.script_file,
-            self.script_snapshot.to_string_lossy().as_ref(),
-        )?;
-        write_runtime_file(&self.filter_file, "localbooruvs")?;
         let mut state = self
             .playback
             .lock()
             .map_err(|_| io::Error::other("state poisoned"))?;
+        #[cfg(target_os = "linux")]
+        if let Err(error) = (|| {
+            write_runtime_file(&self.script_file, &snapshot.snapshot_path)?;
+            write_runtime_file(&self.filter_file, "localbooruvs")
+        })() {
+            let _ = fs::remove_file(&self.script_file);
+            let _ = fs::remove_file(&self.filter_file);
+            return Err(error);
+        }
+        if changed {
+            if let Err(error) = self.snapshots.commit(snapshot.clone()) {
+                #[cfg(target_os = "linux")]
+                {
+                    let _ = fs::remove_file(&self.script_file);
+                    let _ = fs::remove_file(&self.filter_file);
+                }
+                return Err(error);
+            }
+        }
         state.filter_active = true;
         state.script_path = Some(script_path.to_owned());
-        state.script_signature = script_signature;
-        state.output_fps = script_output_fps(script_path, state.fps).unwrap_or(state.fps);
+        state.output_fps =
+            script_output_fps(&snapshot.snapshot_path, state.fps).unwrap_or(state.fps);
         drop(state);
-        log::info!("[SVPManager] enabling Manager script {script_path}");
+        log::info!(
+            "[SVPManager] enabling Manager graph revision {} from {script_path}",
+            snapshot.revision
+        );
         let _ = app.emit(
             "svp-manager-filter-changed",
             FilterChanged {
                 enabled: true,
                 script_path: Some(script_path.to_owned()),
+                graph_revision: Some(snapshot.revision),
             },
         );
         Ok(())
@@ -443,13 +488,15 @@ impl SvpManagerBridge {
         {
             return Ok(());
         }
-        let _ = fs::remove_file(&self.filter_file);
-        let _ = fs::remove_file(&self.script_file);
-        let _ = fs::remove_file(&self.script_snapshot);
+        #[cfg(target_os = "linux")]
+        {
+            let _ = fs::remove_file(&self.filter_file);
+            let _ = fs::remove_file(&self.script_file);
+        }
+        self.snapshots.clear_current();
         if let Ok(mut state) = self.playback.lock() {
             state.filter_active = false;
             state.script_path = None;
-            state.script_signature = 0;
             state.output_fps = state.fps;
         }
         log::info!("[SVPManager] disabling interpolation filter");
@@ -458,12 +505,70 @@ impl SvpManagerBridge {
             FilterChanged {
                 enabled: false,
                 script_path: None,
+                graph_revision: None,
             },
         );
         Ok(())
     }
 }
 
+#[cfg(unix)]
+fn remove_stale_control_socket(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if !metadata.file_type().is_socket() || metadata.uid() != unsafe { libc::geteuid() } {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "refusing to remove an unowned control-socket path",
+        ));
+    }
+    fs::remove_file(path)
+}
+
+#[cfg(target_os = "linux")]
+fn unix_peer_pid(stream: &UnixStream) -> Option<u32> {
+    stream
+        .peer_cred()
+        .ok()
+        .and_then(|credentials| credentials.pid())
+        .and_then(|pid| u32::try_from(pid).ok())
+}
+
+#[cfg(target_os = "macos")]
+fn unix_peer_pid(stream: &UnixStream) -> Option<u32> {
+    use std::os::fd::AsRawFd;
+
+    let mut pid: libc::pid_t = 0;
+    let mut length = std::mem::size_of::<libc::pid_t>() as libc::socklen_t;
+    let result = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_LOCAL,
+            libc::LOCAL_PEERPID,
+            (&mut pid as *mut libc::pid_t).cast(),
+            &mut length,
+        )
+    };
+    (result == 0).then(|| u32::try_from(pid).ok()).flatten()
+}
+
+#[cfg(target_os = "windows")]
+fn windows_named_pipe_client_pid(server: &NamedPipeServer) -> Option<u32> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::System::Pipes::GetNamedPipeClientProcessId;
+
+    let mut pid = 0;
+    let result = unsafe { GetNamedPipeClientProcessId(server.as_raw_handle() as HANDLE, &mut pid) };
+    (result != 0).then_some(pid)
+}
+
+#[cfg(target_os = "linux")]
 fn write_runtime_file(path: &Path, value: &str) -> io::Result<()> {
     let file_name = path
         .file_name()
@@ -516,9 +621,18 @@ pub fn update_svp_manager_playback(
 mod tests {
     use super::*;
 
+    fn test_bridge() -> SvpManagerBridge {
+        let snapshots = ManagerGraphSnapshotStore::new(std::env::temp_dir().join(format!(
+            "localbooru-svp-bridge-test-{}",
+            uuid::Uuid::new_v4()
+        )));
+        SvpManagerBridge::new(snapshots)
+    }
+
+    // AC: @svp-manager-transitions ac-controller-ownership
     #[test]
     fn controller_ownership_allows_one_process_and_its_parallel_connections() {
-        let bridge = SvpManagerBridge::new();
+        let bridge = test_bridge();
         assert!(bridge.claim_controller(101));
         assert!(bridge.claim_controller(101));
         assert!(!bridge.claim_controller(202));
@@ -529,6 +643,47 @@ mod tests {
         assert!(bridge.claim_controller(202));
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unix_transport_reports_the_controlling_process() {
+        let path = std::env::temp_dir().join(format!(
+            "localbooru-manager-peer-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let listener = UnixListener::bind(&path).unwrap();
+        let client = tokio::spawn({
+            let path = path.clone();
+            async move { UnixStream::connect(path).await.unwrap() }
+        });
+        let (server, _) = listener.accept().await.unwrap();
+
+        assert_eq!(unix_peer_pid(&server), Some(std::process::id()));
+        drop(client.await.unwrap());
+        drop(listener);
+        let _ = fs::remove_file(path);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn named_pipe_transport_reports_the_controlling_process() {
+        use tokio::net::windows::named_pipe::ClientOptions;
+
+        let name = format!(r"\\.\pipe\localbooru-manager-peer-{}", uuid::Uuid::new_v4());
+        let server = ServerOptions::new()
+            .first_pipe_instance(true)
+            .create(&name)
+            .unwrap();
+        let client = ClientOptions::new().open(&name).unwrap();
+        server.connect().await.unwrap();
+
+        assert_eq!(
+            windows_named_pipe_client_pid(&server),
+            Some(std::process::id())
+        );
+        drop(client);
+    }
+
+    #[cfg(target_os = "linux")]
     #[test]
     fn runtime_file_replace_is_atomic_and_private() {
         let path = std::env::temp_dir().join(format!(

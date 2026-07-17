@@ -11,11 +11,6 @@
 #define MIN_CACHE_BYTES (256LL * 1024 * 1024)
 #define MAX_CACHE_BYTES (1024LL * 1024 * 1024)
 
-static const char *default_script =
-    "import vapoursynth as vs\n"
-    "core = vs.core\n"
-    "core.std.Interleave([video_in, video_in], extend=True).set_output()\n";
-
 static gchar *get_script_path(void) {
     const char *direct_path = g_getenv("LOCALBOORU_VS_SCRIPT");
     if (direct_path && *direct_path)
@@ -490,9 +485,13 @@ static gboolean create_graph(GstLocalBooruVS *self, GstCaps **output_caps) {
     self->vsapi->freeMap(variables);
 
     gchar *script_path = get_script_path();
-    int result = script_path && *script_path
-        ? self->vssapi->evaluateFile(self->script, script_path)
-        : self->vssapi->evaluateBuffer(self->script, default_script, "localbooru-double-rate.vpy");
+    if (!script_path || !*script_path) {
+        GST_ERROR_OBJECT(self, "No SVP Manager graph is active");
+        g_free(script_path);
+        destroy_graph(self);
+        return FALSE;
+    }
+    int result = self->vssapi->evaluateFile(self->script, script_path);
     g_free(script_path);
     if (result) {
         const char *error = self->vssapi->getError(self->script);

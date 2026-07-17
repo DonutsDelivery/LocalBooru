@@ -3,10 +3,7 @@ use std::sync::{
     Mutex,
 };
 #[cfg(target_os = "linux")]
-use std::{
-    sync::mpsc,
-    time::Duration,
-};
+use std::{sync::mpsc, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
