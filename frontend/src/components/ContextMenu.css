@@ -2,6 +2,9 @@
   position: fixed;
   z-index: 10000;
   min-width: 180px;
+  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 16px);
+  max-height: calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 16px);
+  overflow-y: auto;
   background: var(--bg-elevated, #303030);
   border: 1px solid var(--border, #3a3a3a);
   border-radius: 8px;

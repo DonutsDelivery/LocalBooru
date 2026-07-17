@@ -10,6 +10,7 @@ import UpdateBanner from './UpdateBanner';
 import './TitleBar.css';
 
 const TITLE_BAR_HEIGHT = 32;
+const MOBILE_TITLE_BAR_HEIGHT = 44;
 
 export default function TitleBar({ onSwitchServer, onOpenFile }) {
   const [isMaximized, setIsMaximized] = useState(false);
@@ -23,38 +24,13 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
     apiRef.current = getDesktopAPI();
   }, []);
 
-  // Set CSS variable for title bar height offset + desktop class for transparent window
+  // Set the live title bar offset and desktop transparency class.
   useEffect(() => {
     if (isMobile) {
-      // On Android, env(safe-area-inset-top) is unreliable in WebView.
-      // The Kotlin layer injects --android-status-bar-height via evaluateJavascript,
-      // but it may not be available yet when React mounts. Poll briefly for it,
-      // and fall back to 24px (standard Android status bar) if not found.
-      const applyMobileHeight = () => {
-        const androidHeight = getComputedStyle(document.documentElement)
-          .getPropertyValue('--android-status-bar-height').trim();
-        const inset = androidHeight || '24px';
-        document.documentElement.style.setProperty(
-          '--title-bar-height',
-          `calc(${TITLE_BAR_HEIGHT}px + ${inset})`
-        );
-        return !!androidHeight;
-      };
-
-      // Apply immediately with whatever we have
-      const found = applyMobileHeight();
-
-      // If the Kotlin-injected variable wasn't ready, retry a few times
-      if (!found) {
-        let attempts = 0;
-        const interval = setInterval(() => {
-          attempts++;
-          if (applyMobileHeight() || attempts >= 10) {
-            clearInterval(interval);
-          }
-        }, 50);
-        return () => clearInterval(interval);
-      }
+      document.documentElement.style.setProperty(
+        '--title-bar-height',
+        `calc(${MOBILE_TITLE_BAR_HEIGHT}px + var(--safe-top))`
+      );
     } else if (isDesktop) {
       document.documentElement.style.setProperty('--title-bar-height', `${TITLE_BAR_HEIGHT}px`);
       document.documentElement.classList.add('desktop-app');

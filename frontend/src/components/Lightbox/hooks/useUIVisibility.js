@@ -1,5 +1,9 @@
 import { useCallback, useState, useRef, useEffect } from 'react'
 
+export function shouldRevealOnly(isUIVisible) {
+  return !isUIVisible
+}
+
 // Detect if the native Fullscreen API is available and functional.
 // Android WebView often has requestFullscreen defined but it silently fails
 // or is blocked by the Tauri WebView wrapper.
@@ -19,14 +23,18 @@ export function useUIVisibility(containerRef) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const hideUITimeout = useRef(null)
   const usingCssFullscreen = useRef(!hasNativeFullscreen())
+  const showUIRef = useRef(true)
+  const consumeRevealTapRef = useRef(false)
 
   // Auto-hide UI after inactivity
   const resetHideTimer = useCallback(() => {
+    showUIRef.current = true
     setShowUI(true)
     if (hideUITimeout.current) {
       clearTimeout(hideUITimeout.current)
     }
     hideUITimeout.current = setTimeout(() => {
+      showUIRef.current = false
       setShowUI(false)
     }, 3000)
   }, [])
@@ -46,6 +54,31 @@ export function useUIVisibility(containerRef) {
     resetHideTimer()
   }, [resetHideTimer])
 
+  const handleTouchInteractionStart = useCallback(() => {
+    consumeRevealTapRef.current = shouldRevealOnly(showUIRef.current)
+    resetHideTimer()
+  }, [resetHideTimer])
+
+  const consumeRevealTap = useCallback(() => {
+    if (!consumeRevealTapRef.current) return false
+    consumeRevealTapRef.current = false
+    return true
+  }, [])
+
+  const cancelRevealTap = useCallback(() => {
+    consumeRevealTapRef.current = false
+  }, [])
+
+  const toggleCssFullscreen = useCallback(() => {
+    setIsFullscreen(prev => {
+      const next = !prev
+      if (window.AndroidImmersive) {
+        next ? window.AndroidImmersive.enter() : window.AndroidImmersive.exit()
+      }
+      return next
+    })
+  }, [])
+
   // Fullscreen toggle handler
   // On platforms where the native Fullscreen API works (desktop browsers),
   // use it so the entire page goes fullscreen including sibling elements.
@@ -53,15 +86,7 @@ export function useUIVisibility(containerRef) {
   // which covers the title bar and uses the full viewport via position/z-index.
   const handleToggleFullscreen = useCallback(async () => {
     if (usingCssFullscreen.current) {
-      // CSS-based fallback: just toggle the state directly
-      setIsFullscreen(prev => {
-        const next = !prev
-        // Android immersive mode: hide/show status bar + nav bar
-        if (window.AndroidImmersive) {
-          next ? window.AndroidImmersive.enter() : window.AndroidImmersive.exit()
-        }
-        return next
-      })
+      toggleCssFullscreen()
       return
     }
 
@@ -85,9 +110,9 @@ export function useUIVisibility(containerRef) {
       console.error('Fullscreen error:', err)
       // If the native API threw, switch to CSS fallback for this session
       usingCssFullscreen.current = true
-      setIsFullscreen(prev => !prev)
+      toggleCssFullscreen()
     }
-  }, [])
+  }, [containerRef, toggleCssFullscreen])
 
   // Exit immersive mode when component unmounts (lightbox closes)
   useEffect(() => {
@@ -119,6 +144,9 @@ export function useUIVisibility(containerRef) {
     isFullscreen,
     resetHideTimer,
     handleMouseMove,
+    handleTouchInteractionStart,
+    consumeRevealTap,
+    cancelRevealTap,
     handleToggleFullscreen
   }
 }

@@ -107,15 +107,22 @@
   outline-offset: -2px;
 }
 
-/* Mobile title bar — account for status bar / notch */
+/* Mobile title bar — keep interactive chrome inside live system insets. */
 .title-bar.mobile {
   -webkit-app-region: no-drag;
-  padding-top: var(--android-status-bar-height, 24px);
-  height: calc(32px + var(--android-status-bar-height, 24px));
+  height: calc(44px + var(--safe-top));
+  padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
+  border-radius: 0;
 }
 
 .title-bar.mobile .title-bar-drag {
   -webkit-app-region: no-drag;
+  padding-left: 12px;
+}
+
+.title-bar.mobile .title-bar-btn {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
 }
 
 /* Switch server button */
@@ -142,7 +149,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 6px max(12px, var(--safe-right)) 6px max(12px, var(--safe-left));
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--glass-border);
   z-index: 999;

@@ -174,3 +174,29 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+@media (max-width: 768px) {
+  .addon-manager .addon-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .addon-card,
+  .addon-card-header {
+    min-width: 0;
+  }
+
+  .addon-card-header,
+  .addon-actions {
+    flex-wrap: wrap;
+  }
+
+  .addon-card-header h3,
+  .addon-description {
+    overflow-wrap: anywhere;
+  }
+
+  .addon-btn {
+    min-height: var(--touch-target);
+    flex: 1 1 110px;
+  }
+}

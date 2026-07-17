@@ -35,6 +35,8 @@
   /* Window chrome */
   --window-radius: 12px;
   --title-bar-height: 0px;
+  --app-height: 100vh;
+  --touch-target: 44px;
 
   /* System safe areas. On Android the native layer injects --android-inset-*
      live on every insets change (rotation, immersive mode) because
@@ -71,6 +73,12 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+@supports (height: 100dvh) {
+  :root {
+    --app-height: 100dvh;
+  }
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -79,7 +87,7 @@
 
 html, body {
   box-sizing: content-box !important;
-  height: 100vh;
+  height: var(--app-height);
   overflow: hidden;
   background: var(--bg-primary);
   padding: 0 !important;
@@ -88,7 +96,7 @@ html, body {
 }
 
 #root {
-  height: 100vh;
+  height: var(--app-height);
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);

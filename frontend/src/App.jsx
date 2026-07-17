@@ -30,7 +30,10 @@ import CollectionDetailPage from './pages/CollectionDetailPage'
 import WatchPage from './pages/WatchPage'
 import { getColumnCount, tileWidths } from './utils/gridLayout'
 import { isUnexpectedEmptyPage, mergeFirstPage } from './utils/galleryState'
+import { classifySidebarSwipe } from './utils/sidebarGestures'
 import { useAllAddonStatuses } from './hooks/useAddonStatus'
+import { useCurationGame } from './hooks/useCurationGame'
+import { useMobileDrawer } from './hooks/useMobileDrawer'
 import './App.css'
 
 // Calculate how many items to load based on viewport and tile size
@@ -284,25 +287,25 @@ function SettingsPage() {
     }
   }
 
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const settingsDrawer = useMobileDrawer()
 
   return (
     <div className="app">
       <div className="main-container">
-        {sidebarOpen && (
+        {settingsDrawer.isOpen && (
           <div
             className="sidebar-backdrop"
-            onClick={() => setSidebarOpen(false)}
+            onClick={settingsDrawer.close}
           />
         )}
         <Sidebar
           stats={stats}
           settingsTab={activeTab}
           onSettingsTabChange={setActiveTab}
-          mobileOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
+          mobileOpen={settingsDrawer.isOpen}
+          onClose={settingsDrawer.close}
         />
-        {!sidebarOpen && <div className="swipe-hint" onClick={() => setSidebarOpen(true)} />}
+        {!settingsDrawer.isOpen && <div className="swipe-hint" onClick={settingsDrawer.open} />}
         <main className="content with-sidebar">
           <div className="page settings-page">
             <div className="page-header">
@@ -311,7 +314,7 @@ function SettingsPage() {
                   <path d="M19 12H5M12 19l-7-7 7-7"/>
                 </svg>
               </button>
-              <button className="menu-btn mobile-only" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
+              <button className="menu-btn mobile-only" onClick={settingsDrawer.open} aria-label="Open menu">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M3 12h18M3 6h18M3 18h18"/>
                 </svg>
@@ -375,7 +378,7 @@ function SettingsPage() {
 
             <section>
               <h2>Dumpster Location</h2>
-              <p className="setting-description">Where pruned (non-favorited) images are moved to. Leave empty to use default (~/.localbooru/dumpster)</p>
+              <p className="setting-description">Where pruned or discarded media is moved. Leave empty to use each watched directory’s dumpster subfolder.</p>
               <input
                 type="text"
                 value={dumpsterPath}
@@ -664,6 +667,25 @@ function Gallery() {
   const groupByFolders = searchParams.get('group') === 'folders'
   const currentFolder = searchParams.get('folder') || null
 
+  const galleryQuery = useMemo(() => ({
+    tags: currentTags,
+    rating: currentRating,
+    favorites_only: favoritesOnly,
+    directory_id: currentDirectoryId,
+    library_id: currentLibraryId,
+    min_age: currentMinAge,
+    max_age: currentMaxAge,
+    timeframe: currentTimeframe,
+    filename: currentFilename,
+    min_width: currentResolution?.width,
+    min_height: currentResolution?.height,
+    orientation: currentOrientation,
+    min_duration: currentDuration?.min,
+    max_duration: currentDuration?.max,
+    import_source: currentFolder,
+    sort: currentSort,
+  }), [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort])
+
   // Track if we're waiting for localStorage params to be applied to URL
   const [pendingParamsFromStorage, setPendingParamsFromStorage] = useState(false)
 
@@ -730,25 +752,19 @@ function Gallery() {
 
   // Touch handling for mobile sidebar
   const touchStartX = useRef(null)
+  const touchStartY = useRef(null)
 
   const handleTouchStart = useCallback((e) => {
-    touchStartX.current = e.touches[0].clientX
-  }, [])
-
-  const handleTouchEnd = useCallback((e) => {
-    if (touchStartX.current === null || window.innerWidth > 1024) return
-    // Don't control gallery sidebar when lightbox is open - it has its own touch handling
-    if (lightboxIndex !== null) {
+    const interactiveTarget = e.target.closest('button, input, select, textarea, [role="slider"]')
+    const sidebarOpener = e.target.closest('.gallery-menu-btn, .swipe-hint')
+    if (interactiveTarget && !sidebarOpener) {
       touchStartX.current = null
+      touchStartY.current = null
       return
     }
-    const deltaX = e.changedTouches[0].clientX - touchStartX.current
-    if (Math.abs(deltaX) > 50) {
-      if (deltaX > 0 && !sidebarOpen) setSidebarOpen(true)
-      if (deltaX < 0 && sidebarOpen) setSidebarOpen(false)
-    }
-    touchStartX.current = null
-  }, [sidebarOpen, lightboxIndex])
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }, [])
 
   // Load folders for folder grouping view
   const loadFolders = useCallback(async () => {
@@ -851,6 +867,33 @@ function Gallery() {
       img.id === imageId ? { ...img, ...updates } : img
     ))
   }, [])
+
+  const curation = useCurationGame({
+    loadedImages: images,
+    filters: galleryQuery,
+    onGalleryRefresh: () => loadImages(1, false),
+  })
+
+  const handleTouchEnd = useCallback((e) => {
+    if (touchStartX.current === null || window.innerWidth > 1024) return
+    // Don't control gallery sidebar when either lightbox mode is open.
+    if (lightboxIndex !== null || curation.active) {
+      touchStartX.current = null
+      touchStartY.current = null
+      return
+    }
+    const endTouch = e.changedTouches[0]
+    const action = classifySidebarSwipe({
+      startX: touchStartX.current,
+      deltaX: endTouch.clientX - touchStartX.current,
+      deltaY: endTouch.clientY - touchStartY.current,
+      isOpen: sidebarOpen
+    })
+    if (action === 'open') setSidebarOpen(true)
+    if (action === 'close') setSidebarOpen(false)
+    touchStartX.current = null
+    touchStartY.current = null
+  }, [sidebarOpen, lightboxIndex, curation.active])
 
   // Handle image deletion from lightbox
   const handleImageDelete = useCallback((imageId) => {
@@ -1399,9 +1442,12 @@ function Gallery() {
             setSidebarOpen(false)
           }}
           mobileOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
+          onClose={() => {
+            setSidebarOpen(false)
+            setLightboxSidebarHover(false)
+          }}
           currentTags={currentTags}
-          selectedImage={lightboxIndex !== null ? images.find(img => img.id === lightboxIndex) : null}
+          selectedImage={curation.active ? curation.current : (lightboxIndex !== null ? images.find(img => img.id === lightboxIndex) : null)}
           onSearch={handleSearch}
           initialTags={currentTags}
           initialRating={currentRating}
@@ -1420,13 +1466,19 @@ function Gallery() {
           onToggleGroupByFolders={handleToggleGroupByFolders}
           total={total}
           stats={stats}
-          lightboxMode={lightboxIndex !== null}
+          lightboxMode={lightboxIndex !== null || curation.active}
           lightboxHover={lightboxSidebarHover}
           onMouseLeave={() => setLightboxSidebarHover(false)}
           onFamilyModeChange={() => { loadImages(1, false); loadTags() }}
         />
 
-        {!sidebarOpen && <div className="swipe-hint" onClick={() => setSidebarOpen(true)} />}
+        {!sidebarOpen && lightboxIndex === null && !curation.active && (
+          <button className="gallery-menu-btn mobile-only" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12h18M3 6h18M3 18h18"/>
+            </svg>
+          </button>
+        )}
 
         <main className="content with-sidebar">
           {currentFolder && (
@@ -1527,6 +1579,21 @@ function Gallery() {
                   </svg>
                 </button>
               </div>
+            )}
+
+            {isAddonInstalled('curation-game') && (
+              <button
+                className="floating-select-btn curation-launch-btn"
+                onClick={() => curation.start()}
+                disabled={curation.loading || curation.busy}
+                title="Review matching media with Keep and Discard"
+                aria-label="Open Curation Game"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 3l3 6 6 3-6 3-3 6-3-6-6-3 6-3 3-6z"/>
+                </svg>
+                <span className="curation-launch-label">Curation Game</span>
+              </button>
             )}
 
             <button
@@ -1694,18 +1761,50 @@ function Gallery() {
         )}
       </div>
 
-      {lightboxIndex !== null && (
+      {curation.complete && (
+        <div className="modal-overlay curation-complete-overlay">
+          <div className="modal-content curation-complete-dialog">
+            <h2>No more media left to curate</h2>
+            <p>You’ve reviewed every non-favorited image and video in this view.</p>
+            {curation.matchingFavoriteCount > 0 && (
+              <p>Unfavorite all {curation.matchingFavoriteCount.toLocaleString()} matching items and start another curation run?</p>
+            )}
+            <div className="modal-actions">
+              {curation.lastAction && <button onClick={curation.undo} disabled={curation.busy}>Undo Last</button>}
+              <button onClick={curation.exit} disabled={curation.busy}>Done</button>
+              {curation.matchingFavoriteCount > 0 && (
+                <button className="primary-btn" onClick={curation.unfavoriteAllAndRestart} disabled={curation.busy}>
+                  {curation.busy ? 'Resetting…' : 'Unfavorite & Run Again'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(lightboxIndex !== null || (curation.active && curation.current)) && !curation.complete && (
         <Lightbox
-          images={images}
-          currentIndex={images.findIndex(img => img.id === lightboxIndex)}
-          total={total}
-          onClose={handleLightboxClose}
-          onNav={handleLightboxNav}
+          images={curation.active ? curation.queue : images}
+          currentIndex={curation.active ? 0 : images.findIndex(img => img.id === lightboxIndex)}
+          total={curation.active ? curation.queue.length : total}
+          onClose={curation.active ? curation.exit : handleLightboxClose}
+          onNav={curation.active ? (() => {}) : handleLightboxNav}
           onTagClick={handleTagClick}
           onImageUpdate={handleImageUpdate}
           onSidebarHover={setLightboxSidebarHover}
           sidebarOpen={lightboxSidebarHover}
           onDelete={handleImageDelete}
+          curationMode={curation.active ? {
+            busy: curation.busy,
+            processed: curation.processed,
+            remaining: curation.queue.length,
+            lastAction: curation.lastAction,
+            goal: curation.goal,
+            progress: curation.progress,
+            onKeep: curation.keep,
+            onDiscard: curation.discard,
+            onUndo: curation.undo,
+          } : null}
         />
       )}
     </div>

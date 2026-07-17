@@ -403,3 +403,31 @@
 .directory-summary strong {
   color: var(--text-primary);
 }
+
+@media (max-width: 768px) {
+  .migration-settings {
+    min-width: 0;
+    padding: 0;
+  }
+
+  .migration-options {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  .migration-option,
+  .path-row,
+  .path-row code {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .path-row label {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+
+  .migration-option button {
+    min-height: var(--touch-target);
+  }
+}

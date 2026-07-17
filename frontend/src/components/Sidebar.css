@@ -39,8 +39,8 @@
 /* Version Info - Fixed at bottom of sidebar */
 .version-info {
   position: fixed;
-  bottom: 8px;
-  left: 8px;
+  bottom: max(8px, var(--safe-bottom));
+  left: max(8px, var(--safe-left));
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1742,8 +1742,8 @@
 
 @media (max-width: 1024px) {
   .sidebar {
-    width: 85vw;
-    max-width: 400px;
+    width: min(85vw, 400px);
+    padding-left: var(--safe-left);
     transform: translateX(-100%);
     opacity: 0;
     z-index: 1001;
@@ -1762,10 +1762,10 @@
   .sidebar-close {
     display: flex;
     position: absolute;
-    top: 10px;
-    right: 10px;
-    width: 36px;
-    height: 36px;
+    top: 8px;
+    right: 8px;
+    width: var(--touch-target);
+    height: var(--touch-target);
     align-items: center;
     justify-content: center;
     background: var(--bg-tertiary);
@@ -1785,7 +1785,36 @@
     width: 20px;
     height: 20px;
   }
+  .sidebar-content {
+    padding-bottom: max(12px, var(--safe-bottom));
+  }
 
+  .sidebar-nav {
+    padding-right: calc(20px + var(--touch-target));
+  }
+
+  .sidebar .search-input-wrapper {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .sidebar .search-icon {
+    top: 50%;
+    left: 12px;
+    width: 18px;
+    height: 18px;
+    transform: translateY(-50%);
+  }
+
+  .sidebar .search-input {
+    min-width: 0;
+    padding: 10px 36px 10px 42px;
+  }
+
+  .sidebar.lightbox-mode .image-info {
+    order: -1;
+    padding-top: calc(var(--touch-target) + 4px);
+  }
 
   /* Larger text on mobile */
   .sidebar-section h3,

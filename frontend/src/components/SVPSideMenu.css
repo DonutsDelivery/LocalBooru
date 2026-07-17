@@ -14,10 +14,11 @@
 
 .svp-side-menu {
   position: fixed;
-  top: 0;
-  right: 0;
+  top: var(--safe-top);
+  right: var(--safe-right);
+  bottom: var(--safe-bottom);
   width: min(400px, 90vw);
-  height: 100vh;
+  height: auto;
   background: #1a1a1a;
   border-left: 1px solid rgba(255, 255, 255, 0.1);
   z-index: 3000;
@@ -63,8 +64,8 @@
 }
 
 .svp-menu-close {
-  width: 36px;
-  height: 36px;
+  width: var(--touch-target);
+  height: var(--touch-target);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -479,7 +480,8 @@
 /* Mobile adjustments */
 @media (max-width: 480px) {
   .svp-side-menu {
-    width: 100vw;
+    left: var(--safe-left);
+    width: auto;
   }
 
   .svp-menu-header h2 {

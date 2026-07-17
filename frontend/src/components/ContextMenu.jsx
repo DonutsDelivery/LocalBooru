@@ -28,15 +28,18 @@ function ContextMenu({ items, position, onClose }) {
 
   useEffect(() => {
     if (!menuRef.current) return
+
     const rect = menuRef.current.getBoundingClientRect()
-    const overflowX = rect.right > window.innerWidth
-    const overflowY = rect.bottom > window.innerHeight
-    if (overflowX) {
-      menuRef.current.style.left = `${position.x - rect.width}px`
-    }
-    if (overflowY) {
-      menuRef.current.style.top = `${position.y - rect.height}px`
-    }
+    const rootStyles = getComputedStyle(document.documentElement)
+    const inset = (name) => parseFloat(rootStyles.getPropertyValue(name)) || 0
+    const edgeGap = 8
+    const minLeft = inset('--safe-left') + edgeGap
+    const minTop = inset('--safe-top') + edgeGap
+    const maxLeft = Math.max(minLeft, window.innerWidth - inset('--safe-right') - rect.width - edgeGap)
+    const maxTop = Math.max(minTop, window.innerHeight - inset('--safe-bottom') - rect.height - edgeGap)
+
+    menuRef.current.style.left = `${Math.min(Math.max(position.x, minLeft), maxLeft)}px`
+    menuRef.current.style.top = `${Math.min(Math.max(position.y, minTop), maxTop)}px`
   }, [position])
 
   return (

@@ -3,6 +3,7 @@ import { getAddons } from '../api'
 import AgeDetectionSettings from './AgeDetectionSettings'
 import AutoTaggerSettings from './AutoTaggerSettings'
 import CastSettings from './CastSettings'
+import CurationGameSettings from './CurationGameSettings'
 import SVPSettings from './SVPSettings'
 import WhisperSubtitleSettings from './WhisperSubtitleSettings'
 import { getInstalledConfigurableAddons } from './addonSettingsCatalog'
@@ -14,6 +15,7 @@ const SETTINGS_COMPONENTS = {
   'whisper-subtitles': WhisperSubtitleSettings,
   cast: CastSettings,
   svp: SVPSettings,
+  'curation-game': CurationGameSettings,
 }
 
 export default function AddonSettings() {

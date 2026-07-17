@@ -1,5 +1,6 @@
 pub mod adjustments;
 pub mod batch;
+pub mod curation;
 pub mod helpers;
 pub mod list;
 pub mod single;
@@ -27,12 +28,16 @@ pub fn router() -> Router<AppState> {
             post(batch::batch_extract_metadata),
         )
         .route("/batch/move", post(batch::batch_move))
+        .route("/curation/unfavorite", post(curation::unfavorite_many))
         // Dynamic routes (/{image_id}/...)
         .route("/{image_id}", get(single::get_image))
         .route("/{image_id}", delete(single::delete_image))
         .route("/{image_id}/file", get(single::get_image_file))
         .route("/{image_id}/thumbnail", get(single::get_image_thumbnail))
         .route("/{image_id}/favorite", post(single::toggle_favorite))
+        .route("/{image_id}/favorite", patch(curation::set_favorite))
+        .route("/{image_id}/curation-discard", post(curation::discard))
+        .route("/{image_id}/curation-restore", post(curation::restore))
         .route("/{image_id}/rating", patch(single::update_rating))
         .route(
             "/{image_id}/preview-frames",

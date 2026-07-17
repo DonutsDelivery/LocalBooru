@@ -10,6 +10,7 @@ import { getLibraryStats, updateDirectory, tagUntagged, clearDirectoryTagQueue, 
 import { getDesktopAPI, isDesktopApp } from '../tauriAPI'
 import { toast } from '../components/Toast'
 import { useAddonStatus } from '../hooks/useAddonStatus'
+import { useMobileDrawer } from '../hooks/useMobileDrawer'
 
 // Helper to create composite key for directory (avoids ID collisions across libraries)
 const makeDirKey = (dir) => `${dir.library_id || 'primary'}:${dir.id}`
@@ -44,6 +45,7 @@ function DirectoriesPage() {
   const [newLibraryName, setNewLibraryName] = useState('')
   const [newLibraryCreateNew, setNewLibraryCreateNew] = useState(false)
   const [activeLibrary, setActiveLibrary] = useState(null) // null = all libraries
+  const drawer = useMobileDrawer()
 
   const refreshDirectories = async () => {
     const { fetchDirectories } = await import('../api')
@@ -488,10 +490,16 @@ function DirectoriesPage() {
   return (
     <div className="app">
       <div className="main-container">
-        <Sidebar stats={stats} />
+        {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
+        <Sidebar stats={stats} mobileOpen={drawer.isOpen} onClose={drawer.close} />
         <main className="content with-sidebar">
           <div className="page directories-page">
             <div className="page-header">
+              <button className="menu-btn mobile-only" onClick={drawer.open} aria-label="Open menu">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+              </button>
               <button className="back-btn mobile-only" onClick={() => navigate('/')} aria-label="Back to gallery">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M19 12H5M12 19l-7-7 7-7"/>

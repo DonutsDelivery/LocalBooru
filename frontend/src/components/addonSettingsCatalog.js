@@ -4,6 +4,7 @@ export const ADDON_SETTINGS_CATALOG = Object.freeze([
   { id: 'whisper-subtitles', label: 'Whisper Subtitles' },
   { id: 'cast', label: 'Chromecast & DLNA' },
   { id: 'svp', label: 'SVP' },
+  { id: 'curation-game', label: 'Curation Game' },
 ])
 
 export function getInstalledConfigurableAddons(addons) {

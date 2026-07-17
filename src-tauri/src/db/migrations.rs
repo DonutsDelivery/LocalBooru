@@ -134,6 +134,19 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
               ALTER TABLE watch_directories ADD COLUMN tagged_count INTEGER NOT NULL DEFAULT 0;\
               ALTER TABLE watch_directories ADD COLUMN favorited_count INTEGER NOT NULL DEFAULT 0;",
     },
+    // v7-v9: One statement per migration keeps fresh and existing schemas compatible.
+    Migration {
+        description: "Add curation original path to image_files (main DB)",
+        sql: "ALTER TABLE image_files ADD COLUMN curation_original_path TEXT;",
+    },
+    Migration {
+        description: "Add curation discarded timestamp to image_files (main DB)",
+        sql: "ALTER TABLE image_files ADD COLUMN curation_discarded_at TEXT;",
+    },
+    Migration {
+        description: "Index curation discard state (main DB)",
+        sql: "CREATE INDEX IF NOT EXISTS idx_image_files_curation_discarded_at ON image_files(curation_discarded_at);",
+    },
 ];
 
 /// Run all pending migrations on the main library database.
@@ -174,9 +187,76 @@ pub static DIRECTORY_MIGRATIONS: &[Migration] = &[
                 END \
               WHERE file_extension IS NULL;",
     },
+    // v3-v5: One statement per migration keeps fresh and existing schemas compatible.
+    Migration {
+        description: "Add curation original path to image_files",
+        sql: "ALTER TABLE image_files ADD COLUMN curation_original_path TEXT;",
+    },
+    Migration {
+        description: "Add curation discarded timestamp to image_files",
+        sql: "ALTER TABLE image_files ADD COLUMN curation_discarded_at TEXT;",
+    },
+    Migration {
+        description: "Index curation discard state",
+        sql: "CREATE INDEX IF NOT EXISTS idx_image_files_curation_discarded_at ON image_files(curation_discarded_at);",
+    },
 ];
 
 /// Run all pending migrations on a per-directory database.
 pub fn run_directory_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     run_migrations(conn, DIRECTORY_MIGRATIONS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn curation_migrations_work_for_existing_directory_schema() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE image_files (
+                id INTEGER PRIMARY KEY,
+                original_path TEXT NOT NULL,
+                file_status TEXT NOT NULL
+            );",
+        )
+        .unwrap();
+        run_directory_migrations(&conn).unwrap();
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(image_files)")
+            .unwrap()
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(columns.contains(&"curation_original_path".to_string()));
+        assert!(columns.contains(&"curation_discarded_at".to_string()));
+    }
+
+    #[test]
+    fn curation_migrations_tolerate_current_fresh_schema() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE image_files (
+                id INTEGER PRIMARY KEY,
+                original_path TEXT NOT NULL,
+                file_status TEXT NOT NULL,
+                file_extension TEXT,
+                curation_original_path TEXT,
+                curation_discarded_at TEXT
+            );",
+        )
+        .unwrap();
+        run_directory_migrations(&conn).unwrap();
+        let index_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_image_files_curation_discarded_at'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(index_count, 1);
+    }
 }

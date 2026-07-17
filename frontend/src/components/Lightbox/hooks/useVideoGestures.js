@@ -1,10 +1,21 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+export function classifyTapZone(positionRatio) {
+  if (positionRatio < 0.33) return 'backward'
+  if (positionRatio > 0.67) return 'forward'
+  return 'toggle'
+}
+
+export function calculateDragSeek(deltaX, deltaY) {
+  if (Math.abs(deltaX) <= 20 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.5) return null
+  return Math.sign(deltaX) * Math.ceil((Math.abs(deltaX) - 20) / 50 + 0.001) * 10
+}
 
 /**
  * Handles video tap zones (seek ±10s on left/right thirds, play/pause on center)
  * and drag-to-seek gesture (touch only, horizontal drag with overlay).
  */
-export function useVideoGestures(playback, resetHideTimer) {
+export function useVideoGestures(playback, resetHideTimer, cancelRevealTap) {
   // Tap seek indicator: { side: 'left'|'right', amount: number, key: number }
   const [seekIndicator, setSeekIndicator] = useState(null)
   // Drag seek overlay: { amount: number } while dragging
@@ -35,15 +46,15 @@ export function useVideoGestures(playback, resetHideTimer) {
     const container = e.currentTarget
     const rect = container.getBoundingClientRect()
     const x = e.clientX - rect.left
-    const pct = x / rect.width
+    const action = classifyTapZone(x / rect.width)
 
-    if (pct < 0.33) {
+    if (action === 'backward') {
       // Left third — seek back 10s
       playback.seekVideo(-10)
       clearTimeout(indicatorTimer.current)
       setSeekIndicator({ side: 'left', amount: -10, key: Date.now() })
       indicatorTimer.current = setTimeout(() => setSeekIndicator(null), 600)
-    } else if (pct > 0.67) {
+    } else if (action === 'forward') {
       // Right third — seek forward 10s
       playback.seekVideo(10)
       clearTimeout(indicatorTimer.current)
@@ -62,6 +73,7 @@ export function useVideoGestures(playback, resetHideTimer) {
     touchStartX.current = touch.clientX
     touchStartY.current = touch.clientY
     isDragging.current = false
+    wasDragging.current = false
     dragAmount.current = 0
   }, [])
 
@@ -72,28 +84,24 @@ export function useVideoGestures(playback, resetHideTimer) {
     const dx = touch.clientX - touchStartX.current
     const dy = touch.clientY - touchStartY.current
 
-    // Only activate if horizontal movement exceeds threshold and is more horizontal than vertical
+    const amount = calculateDragSeek(dx, dy)
+
     if (!isDragging.current) {
-      if (Math.abs(dx) > 20 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-        isDragging.current = true
-      } else {
-        return
-      }
+      if (amount === null) return
+      isDragging.current = true
+      cancelRevealTap()
     }
 
-    // Prevent sidebar swipe from activating
     e.stopPropagation()
-
-    // Calculate seek amount: 10s steps per ~50px after threshold
-    const absDx = Math.abs(dx)
-    const amount = Math.sign(dx) * Math.ceil((absDx - 20) / 50 + 0.001) * 10
-    dragAmount.current = amount
-    setDragSeek({ amount })
-  }, [])
+    const claimedAmount = amount ?? dragAmount.current
+    dragAmount.current = claimedAmount
+    setDragSeek({ amount: claimedAmount })
+  }, [cancelRevealTap])
 
   // Touch end — perform seek if was dragging, set flag to prevent click
   const handleTouchEnd = useCallback((e) => {
     if (isDragging.current) {
+      e.stopPropagation()
       // Perform the seek
       if (dragAmount.current !== 0) {
         playback.seekVideo(dragAmount.current)
@@ -107,11 +115,22 @@ export function useVideoGestures(playback, resetHideTimer) {
     }
   }, [playback, resetHideTimer])
 
+  const handleTouchCancel = useCallback(() => {
+    setDragSeek(null)
+    isDragging.current = false
+    wasDragging.current = false
+    dragAmount.current = 0
+    cancelRevealTap()
+  }, [cancelRevealTap])
+
+  useEffect(() => () => clearTimeout(indicatorTimer.current), [])
+
   return {
     handleVideoClick,
     handleTouchStart,
     handleTouchMove,
     handleTouchEnd,
+    handleTouchCancel,
     seekIndicator,
     dragSeek,
   }

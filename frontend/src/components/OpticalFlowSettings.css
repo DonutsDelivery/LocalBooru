@@ -423,3 +423,34 @@
   border: 1px solid rgba(244, 67, 54, 0.3);
   color: #f44336;
 }
+
+@media (max-width: 768px) {
+  .optical-flow-settings,
+  .optical-flow-settings .settings-section {
+    min-width: 0;
+  }
+
+  .optical-flow-settings .settings-section {
+    padding: 14px;
+  }
+
+  .optical-flow-settings .setting-row {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .optical-flow-settings .quality-select {
+    width: 100%;
+    min-width: 0;
+    min-height: var(--touch-target);
+  }
+
+  .optical-flow-settings .fps-slider {
+    flex-basis: calc(100% - 82px);
+  }
+
+  .optical-flow-settings .reset-btn,
+  .optical-flow-settings .save-btn {
+    min-height: var(--touch-target);
+  }
+}

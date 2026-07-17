@@ -40,12 +40,18 @@ export function useAddonStatus(addonId) {
 
   useEffect(() => {
     let cancelled = false
-    fetchAddonsCached().then(addons => {
+    const refresh = () => fetchAddonsCached().then(addons => {
       if (cancelled) return
       setAddon(addons.find(a => a.id === addonId) || null)
       setLoading(false)
     })
-    return () => { cancelled = true }
+    refresh()
+    const changed = () => { invalidateAddonCache(); refresh() }
+    window.addEventListener('localbooru-addons-changed', changed)
+    return () => {
+      cancelled = true
+      window.removeEventListener('localbooru-addons-changed', changed)
+    }
   }, [addonId])
 
   return {
@@ -66,12 +72,18 @@ export function useAllAddonStatuses() {
 
   useEffect(() => {
     let cancelled = false
-    fetchAddonsCached().then(list => {
+    const refresh = () => fetchAddonsCached().then(list => {
       if (cancelled) return
       setAddons(list)
       setLoading(false)
     })
-    return () => { cancelled = true }
+    refresh()
+    const changed = () => { invalidateAddonCache(); refresh() }
+    window.addEventListener('localbooru-addons-changed', changed)
+    return () => {
+      cancelled = true
+      window.removeEventListener('localbooru-addons-changed', changed)
+    }
   }, [])
 
   return {

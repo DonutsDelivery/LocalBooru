@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getAddons, installAddon, uninstallAddon, startAddon, stopAddon, updateAddon } from '../api'
+import { invalidateAddonCache } from '../hooks/useAddonStatus'
 import './AddonManager.css'
 
 export default function AddonManager() {
@@ -60,6 +61,8 @@ export default function AddonManager() {
       // Refresh after action
       const data = await getAddons()
       setAddons(data.addons || [])
+      invalidateAddonCache()
+      window.dispatchEvent(new CustomEvent('localbooru-addons-changed'))
     } catch (e) {
       console.error(`Addon ${action} failed:`, e)
     }
@@ -106,7 +109,7 @@ export default function AddonManager() {
     <section className="optical-flow-settings addon-manager">
       <h2>Addons</h2>
       <p className="setting-description">
-        Manage optional Python-based addons for auto-tagging, optical flow, subtitles, and more.
+        Manage optional features and processing add-ons.
       </p>
 
       <div className="addon-grid">
@@ -121,9 +124,9 @@ export default function AddonManager() {
                 </span>
               </div>
               <p className="addon-description">{addon.description}</p>
-              <div className="addon-meta">
+              {addon.port != null && <div className="addon-meta">
                 <span className="addon-port">Port {addon.port}</span>
-              </div>
+              </div>}
               <div className="addon-actions">
                 {addon.status === 'not_installed' && (
                   <button
@@ -134,7 +137,7 @@ export default function AddonManager() {
                     {busy === 'install' ? 'Installing...' : 'Install'}
                   </button>
                 )}
-                {(addon.status === 'installed' || addon.status === 'stopped') && (
+                {(addon.status === 'installed' || addon.status === 'stopped') && addon.requires_start && (
                   <>
                     <button
                       onClick={() => handleAction(addon.id, 'start')}
@@ -161,6 +164,15 @@ export default function AddonManager() {
                       {busy === 'uninstall' ? 'Removing...' : 'Uninstall'}
                     </button>
                   </>
+                )}
+                {(addon.status === 'installed' || addon.status === 'stopped') && !addon.requires_start && (
+                  <button
+                    onClick={() => handleAction(addon.id, 'uninstall')}
+                    disabled={!!busy}
+                    className="addon-btn uninstall"
+                  >
+                    {busy === 'uninstall' ? 'Removing...' : 'Uninstall'}
+                  </button>
                 )}
                 {addon.status === 'running' && (
                   <button

@@ -390,8 +390,8 @@ function Sidebar({
         if (onMouseLeave) onMouseLeave()
       }}
     >
-      {mobileOpen && (
-        <button className="sidebar-close" onClick={onClose}>
+      {(mobileOpen || (lightboxMode && lightboxHover)) && (
+        <button className="sidebar-close" onClick={onClose} aria-label="Close menu">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
           </svg>
@@ -608,7 +608,7 @@ function Sidebar({
         {/* Selected Image Info */}
         {isGalleryPage && selectedImage && (
           <div className="sidebar-section image-info">
-            <h3>Image Info</h3>
+            <h3>Media Info</h3>
             <div className="info-grid">
               <span className="info-label">ID</span>
               <span className="info-value copyable" onClick={() => copyInfoValue('ID', selectedImage.id)} title="Click to copy">

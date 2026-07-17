@@ -1,6 +1,6 @@
 /* Page styles */
 .page {
-  padding: 30px;
+  padding: 30px max(30px, var(--safe-right)) max(30px, var(--safe-bottom)) max(30px, var(--safe-left));
   max-width: 1200px;
   margin: 0 auto;
 }
@@ -652,11 +652,8 @@
 }
 
 .app {
-  height: calc(100vh - var(--title-bar-height, 0px));
+  height: calc(var(--app-height) - var(--title-bar-height, 0px));
   margin-top: var(--title-bar-height, 0px);
-  padding-bottom: var(--safe-bottom, 0px);
-  padding-left: var(--safe-left, 0px);
-  padding-right: var(--safe-right, 0px);
   display: flex;
   flex-direction: column;
 }
@@ -1517,7 +1514,7 @@
 /* Mobile app loading and setup screens */
 .loading-screen,
 .server-setup-screen {
-  min-height: 100vh;
+  min-height: var(--app-height);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1561,4 +1558,243 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+.curation-launch-btn {
+  border-color: rgba(104, 221, 164, .55);
+  color: #8ff0be;
+}
+.curation-complete-overlay { z-index: 2200; }
+.curation-complete-dialog { max-width: 540px; text-align: center; }
+.curation-complete-dialog h2 { margin-top: 0; }
+.curation-complete-dialog .modal-actions { justify-content: center; flex-wrap: wrap; }
+
+.gallery-menu-btn {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .gallery-menu-btn.mobile-only {
+    display: flex;
+    position: fixed;
+    top: calc(var(--title-bar-height) + 8px);
+    left: max(8px, var(--safe-left));
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    align-items: center;
+    justify-content: center;
+    z-index: 700;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--glass-bg);
+    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(14px);
+  }
+
+  .gallery-menu-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .floating-controls {
+    position: relative;
+    order: -1;
+    top: auto;
+    right: auto;
+    left: auto;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: calc(var(--touch-target) + 16px);
+    padding: 8px max(8px, var(--safe-right)) 8px calc(max(8px, var(--safe-left)) + var(--touch-target) + 8px);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    z-index: 650;
+    opacity: 1;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .content > .masonry-container {
+    margin-bottom: var(--safe-bottom);
+    padding: 8px max(8px, var(--safe-right)) 16px max(8px, var(--safe-left));
+    scroll-padding-top: 8px;
+  }
+
+  .folder-breadcrumb {
+    min-width: 0;
+    padding-right: max(16px, var(--safe-right));
+    padding-left: max(16px, var(--safe-left));
+  }
+
+  .folder-breadcrumb-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .batch-action-bar {
+    bottom: max(20px, var(--safe-bottom));
+    max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 16px);
+    box-sizing: border-box;
+  }
+
+  .modal-overlay {
+    padding: max(12px, var(--safe-top)) max(12px, var(--safe-right)) max(12px, var(--safe-bottom)) max(12px, var(--safe-left));
+  }
+
+  .modal-content {
+    max-height: calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 24px);
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .page {
+    width: 100%;
+    max-width: none;
+    padding: 14px max(14px, var(--safe-right)) max(14px, var(--safe-bottom)) max(14px, var(--safe-left));
+  }
+
+  .page h1 {
+    font-size: 1.4rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .back-btn,
+  .menu-btn,
+  .gallery-menu-btn {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+
+  .floating-controls {
+    gap: 6px;
+  }
+
+  .floating-select-btn,
+  .curation-launch-btn,
+  .nav-jump-btn {
+    min-height: var(--touch-target);
+  }
+
+  .tile-size-control {
+    min-height: var(--touch-target);
+    padding-block: 8px;
+  }
+
+  .tile-size-slider::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+  }
+
+  .tile-size-slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+  }
+
+  .content > .masonry-container {
+    padding-top: 4px;
+    padding-bottom: 76px;
+    scroll-padding-top: 4px;
+  }
+
+  .batch-action-bar {
+    bottom: max(8px, var(--safe-bottom));
+    left: max(8px, var(--safe-left));
+    right: max(8px, var(--safe-right));
+    transform: none;
+    animation: none;
+    max-height: calc(var(--app-height) - var(--title-bar-height) - 16px - var(--safe-bottom));
+    overflow-y: auto;
+  }
+
+  .batch-btn,
+  .cancel-btn,
+  .danger-btn,
+  .primary-btn {
+    min-height: var(--touch-target);
+  }
+
+  .modal-overlay {
+    padding: max(12px, var(--safe-top)) max(12px, var(--safe-right)) max(12px, var(--safe-bottom)) max(12px, var(--safe-left));
+  }
+
+  .modal-content {
+    width: min(100%, 400px);
+    max-height: calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 24px);
+    overflow-y: auto;
+  }
+
+  .directory-buttons,
+  .directory-actions,
+  .directory-header,
+  .library-actions {
+    flex-wrap: wrap;
+  }
+
+  .directory-buttons > * {
+    flex: 1 1 180px;
+    min-height: var(--touch-target);
+  }
+
+  .directories-page .directory-list {
+    max-height: none;
+    padding-right: 0;
+    padding-bottom: var(--safe-bottom);
+  }
+
+  .directory-item {
+    padding: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .floating-controls {
+    align-items: stretch;
+  }
+
+  .floating-controls .curation-launch-btn {
+    order: initial;
+    flex: 0 0 var(--touch-target);
+    width: var(--touch-target);
+    min-width: var(--touch-target);
+    padding: 0;
+    justify-content: center;
+  }
+
+  .curation-launch-label {
+    display: none;
+  }
+
+  .directory-buttons {
+    flex-direction: column;
+  }
+
+  .directory-buttons > * {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+
+  .modal-actions > button {
+    flex: 1 1 120px;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .page button:hover,
+  .new-images-banner:hover {
+    transform: none;
+  }
 }

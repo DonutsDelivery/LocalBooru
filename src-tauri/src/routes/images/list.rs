@@ -24,6 +24,8 @@ pub struct ListImagesQuery {
     pub rating: Option<String>,
     #[serde(default)]
     pub favorites_only: bool,
+    #[serde(default)]
+    pub exclude_favorites: bool,
     pub directory_id: Option<i64>,
     pub library_id: Option<String>,
     pub min_age: Option<i32>,
@@ -57,6 +59,12 @@ pub async fn list_images(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<ListImagesQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    if q.favorites_only && q.exclude_favorites {
+        return Err(AppError::BadRequest(
+            "favorites_only and exclude_favorites cannot both be true".into(),
+        ));
+    }
+
     let tag_names: Vec<String> = q
         .tags
         .as_deref()
@@ -94,6 +102,7 @@ pub async fn list_images(
         exclude_tags: exclude_names,
         rating: rating_list,
         favorites_only: q.favorites_only,
+        exclude_favorites: q.exclude_favorites,
         min_age: q.min_age,
         max_age: q.max_age,
         has_faces: q.has_faces,
@@ -418,7 +427,7 @@ pub async fn list_folders(
                 // Build WHERE clause
                 let mut where_parts: Vec<String> = Vec::new();
                 where_parts.push(
-                    "i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing')"
+                    "i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing' AND curation_discarded_at IS NULL)"
                         .into(),
                 );
 
@@ -588,7 +597,7 @@ fn query_main_db_images(
 
     // Exclude missing files
     where_clauses
-        .push("i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing')".into());
+        .push("i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing' AND curation_discarded_at IS NULL)".into());
 
     // Access control: only images from public directories when accessed from public IP
     if let Some(visible_ids) = visible_dir_ids {
@@ -605,6 +614,8 @@ fn query_main_db_images(
 
     if params.favorites_only {
         where_clauses.push("i.is_favorite = 1".into());
+    } else if params.exclude_favorites {
+        where_clauses.push("i.is_favorite = 0".into());
     }
 
     if !params.rating.is_empty() {

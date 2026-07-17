@@ -390,3 +390,44 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+@media (max-width: 768px) {
+  .network-settings,
+  .network-settings .settings-section,
+  .setting-row,
+  .info-row {
+    min-width: 0;
+  }
+
+  .setting-row,
+  .info-row {
+    align-items: stretch;
+  }
+
+  .setting-row label:not(.toggle-label),
+  .setting-row select,
+  .setting-row input:not([type="checkbox"]),
+  .info-value {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .setting-row select,
+  .setting-row input:not([type="checkbox"]),
+  .save-btn {
+    min-height: var(--touch-target);
+  }
+
+  .setting-hint {
+    padding-left: 0;
+  }
+
+  .settings-actions {
+    justify-content: stretch;
+  }
+
+  .settings-actions .save-btn {
+    width: 100%;
+  }
+}

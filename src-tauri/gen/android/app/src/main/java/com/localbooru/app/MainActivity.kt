@@ -1,10 +1,12 @@
 package com.localbooru.app
 
+import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -13,9 +15,13 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : TauriActivity() {
   private var isImmersive = false
+  private var appWebView: WebView? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    enableEdgeToEdge()
+    enableEdgeToEdge(
+      statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+      navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+    )
     super.onCreate(savedInstanceState)
     // Enable Chrome DevTools remote debugging (chrome://inspect) in debug builds
     // only — leaving it on in release lets anyone with USB/ADB inspect the WebView.
@@ -25,6 +31,8 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onWebViewCreate(webView: WebView) {
+    appWebView = webView
+
     // Allow mixed content: the embedded axum server runs on http://127.0.0.1:8790
     // while the WebView serves from https://tauri.localhost. Without this, all
     // HTTP requests (XHR, fetch, img src, video src) would be blocked.
@@ -56,7 +64,6 @@ class MainActivity : TauriActivity() {
           s.setProperty('--android-inset-bottom', '${bottom}px');
           s.setProperty('--android-inset-left', '${left}px');
           s.setProperty('--android-inset-right', '${right}px');
-          s.setProperty('--android-status-bar-height', '${top}px');
         })(document.documentElement.style)
         """.trimIndent(),
         null
@@ -75,27 +82,41 @@ class MainActivity : TauriActivity() {
     webView.addJavascriptInterface(ImmersiveBridge(), "AndroidImmersive")
   }
 
+  override fun onResume() {
+    super.onResume()
+    appWebView?.post { appWebView?.requestApplyInsets() }
+  }
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus && isImmersive) {
+      applyImmersiveMode(true)
+    }
+  }
+
+  private fun applyImmersiveMode(immersive: Boolean) {
+    val controller = WindowCompat.getInsetsController(window, window.decorView)
+    controller.systemBarsBehavior =
+      WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    if (immersive) {
+      controller.hide(WindowInsetsCompat.Type.systemBars())
+    } else {
+      controller.show(WindowInsetsCompat.Type.systemBars())
+    }
+    isImmersive = immersive
+    appWebView?.post { appWebView?.requestApplyInsets() }
+    Log.i("LocalBooru", if (immersive) "Entered immersive mode" else "Exited immersive mode")
+  }
+
   inner class ImmersiveBridge {
     @JavascriptInterface
     fun enter() {
-      runOnUiThread {
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.systemBarsBehavior =
-          WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller.hide(WindowInsetsCompat.Type.systemBars())
-        isImmersive = true
-        Log.i("LocalBooru", "Entered immersive mode")
-      }
+      runOnUiThread { applyImmersiveMode(true) }
     }
 
     @JavascriptInterface
     fun exit() {
-      runOnUiThread {
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.show(WindowInsetsCompat.Type.systemBars())
-        isImmersive = false
-        Log.i("LocalBooru", "Exited immersive mode")
-      }
+      runOnUiThread { applyImmersiveMode(false) }
     }
 
     @JavascriptInterface

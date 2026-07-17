@@ -2,7 +2,7 @@
 export const isVideo = (filename) => {
   if (!filename) return false
   const ext = filename.toLowerCase().split('.').pop()
-  return ['webm', 'mp4', 'mov', 'mkv'].includes(ext)
+  return ['webm', 'mp4', 'mov', 'avi', 'mkv'].includes(ext)
 }
 
 // Format time as MM:SS

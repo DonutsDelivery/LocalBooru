@@ -28,9 +28,10 @@ pub fn query_directory_images(
     let mut where_clauses: Vec<String> = Vec::new();
     let mut sql_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    // Exclude missing files
-    where_clauses
-        .push("i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing')".into());
+    // Exclude missing and intentionally discarded files
+    where_clauses.push(
+        "i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing' AND curation_discarded_at IS NULL)".into(),
+    );
 
     // Media type filtering (uses indexed file_extension column)
     if !params.show_images && !params.show_videos {
@@ -60,6 +61,8 @@ pub fn query_directory_images(
     // Favorites
     if params.favorites_only {
         where_clauses.push("i.is_favorite = 1".into());
+    } else if params.exclude_favorites {
+        where_clauses.push("i.is_favorite = 0".into());
     }
 
     // Rating filter — also include unrated (NULL) images so newly imported files aren't hidden
@@ -588,6 +591,7 @@ pub struct ImageQueryParams {
     pub exclude_tags: Vec<String>,
     pub rating: Vec<String>,
     pub favorites_only: bool,
+    pub exclude_favorites: bool,
     pub min_age: Option<i32>,
     pub max_age: Option<i32>,
     pub has_faces: Option<bool>,

@@ -4,6 +4,7 @@ import { fetchCollection, updateCollection, removeFromCollection, getMediaUrl } 
 import Sidebar from '../components/Sidebar'
 import MasonryGrid from '../components/MasonryGrid'
 import Lightbox from '../components/Lightbox'
+import { useMobileDrawer } from '../hooks/useMobileDrawer'
 
 export default function CollectionDetailPage() {
   const { id } = useParams()
@@ -16,6 +17,7 @@ export default function CollectionDetailPage() {
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState('')
+  const drawer = useMobileDrawer()
 
   const loadCollection = useCallback(async (pageNum = 1, append = false) => {
     try {
@@ -94,32 +96,38 @@ export default function CollectionDetailPage() {
 
   return (
     <div className="app">
-      <Sidebar />
-      <main className="content with-sidebar">
-        <div className="collections-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div className="main-container">
+        {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
+        <Sidebar mobileOpen={drawer.isOpen} onClose={drawer.close} />
+        <main className="content with-sidebar">
+        <div className="collections-header collection-detail-header">
+          <div className="collection-detail-title-row">
+            <button className="menu-btn mobile-only" onClick={drawer.open} aria-label="Open menu">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 12h18M3 6h18M3 18h18"/>
+              </svg>
+            </button>
             <button
-              className="collections-create-btn"
-              style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-primary, #e0e0e0)' }}
+              className="collections-create-btn collection-back-btn"
               onClick={() => navigate('/collections')}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
               Back
             </button>
             {editing ? (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div className="collection-name-editor">
                 <input
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleSaveName() }}
                   autoFocus
-                  style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '1.1rem' }}
+                  className="collection-name-input"
                 />
-                <button onClick={handleSaveName} style={{ padding: '6px 12px', background: '#4fc3f7', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>Save</button>
+                <button onClick={handleSaveName} className="collection-save-btn">Save</button>
               </div>
             ) : (
-              <h1 style={{ margin: 0, cursor: 'pointer' }} onClick={() => { setEditing(true); setEditName(collection?.name || '') }}>
+              <h1 className="collection-editable-name" onClick={() => { setEditing(true); setEditName(collection?.name || '') }}>
                 {collection?.name || 'Loading...'}
                 {collection && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: '8px' }}>({collection.item_count} items)</span>}
               </h1>
@@ -161,7 +169,8 @@ export default function CollectionDetailPage() {
             onImageUpdate={() => loadCollection()}
           />
         )}
-      </main>
+        </main>
+      </div>
     </div>
   )
 }

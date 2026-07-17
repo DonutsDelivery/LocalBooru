@@ -106,6 +106,8 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             file_exists INTEGER NOT NULL DEFAULT 1,
             file_status TEXT NOT NULL DEFAULT 'available'
                 CHECK(file_status IN ('available','missing','drive_offline','unknown')),
+            curation_original_path TEXT,
+            curation_discarded_at TEXT,
             last_verified_at TEXT,
             watch_directory_id INTEGER REFERENCES watch_directories(id) ON DELETE SET NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -279,6 +281,8 @@ pub fn init_directory_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             file_exists INTEGER NOT NULL DEFAULT 1,
             file_status TEXT NOT NULL DEFAULT 'available'
                 CHECK(file_status IN ('available','missing','drive_offline','unknown')),
+            curation_original_path TEXT,
+            curation_discarded_at TEXT,
             last_verified_at TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );

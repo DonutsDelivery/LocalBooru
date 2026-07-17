@@ -1174,6 +1174,11 @@ async fn bulk_verify(
 
 // ─── Prune ───────────────────────────────────────────────────────────────────
 
+#[derive(Default, Deserialize)]
+struct PruneRequest {
+    dumpster_path: Option<String>,
+}
+
 /// POST /api/directories/:directory_id/prune — Move non-favorited images to a dumpster folder.
 ///
 /// Moves non-favorited image files to a "dumpster" subfolder within the directory,
@@ -1183,6 +1188,7 @@ async fn prune_directory(
     State(state): State<AppState>,
     AxumPath(directory_id): AxumPath<i64>,
     Query(q): Query<LibraryQuery>,
+    Json(body): Json<PruneRequest>,
 ) -> Result<Json<Value>, AppError> {
     log::info!(
         "[Prune] Request: directory_id={}, library_id={:?}",
@@ -1213,7 +1219,15 @@ async fn prune_directory(
             return Err(AppError::BadRequest("Directory path does not exist".into()));
         }
 
-        let dumpster_dir = Path::new(&dir_path).join("dumpster");
+        let dumpster_dir = body
+            .dumpster_path
+            .filter(|path| !path.trim().is_empty())
+            .map(|path| {
+                Path::new(&path)
+                    .join(&lib.uuid)
+                    .join(directory_id.to_string())
+            })
+            .unwrap_or_else(|| Path::new(&dir_path).join("dumpster"));
 
         let dir_pool = lib.directory_db.get_pool(directory_id)?;
         let conn = dir_pool.get()?;
@@ -1581,9 +1595,12 @@ fn repair_directory_inner(lib: &Arc<LibraryContext>, directory_id: i64) -> Resul
     let dir_pool = lib.directory_db.get_pool(directory_id)?;
     let conn = dir_pool.get()?;
 
-    let mut stmt = conn.prepare("SELECT id, image_id, original_path FROM image_files")?;
-    let files: Vec<(i64, i64, String)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+    let mut stmt =
+        conn.prepare("SELECT id, image_id, original_path, curation_discarded_at FROM image_files")?;
+    let files: Vec<(i64, i64, String, Option<String>)> = stmt
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?
         .filter_map(|r| r.ok())
         .collect();
 
@@ -1591,11 +1608,12 @@ fn repair_directory_inner(lib: &Arc<LibraryContext>, directory_id: i64) -> Resul
     let mut repaired: i64 = 0;
     let mut removed: i64 = 0;
 
-    for (file_id, image_id, original_path) in files {
+    for (file_id, image_id, original_path, curation_discarded_at) in files {
         // Remove records pointing into the dumpster (pruned images)
-        if Path::new(&original_path)
-            .components()
-            .any(|c| c.as_os_str() == "dumpster")
+        if curation_discarded_at.is_none()
+            && Path::new(&original_path)
+                .components()
+                .any(|c| c.as_os_str() == "dumpster")
         {
             conn.execute("DELETE FROM image_files WHERE id = ?1", params![file_id])?;
             let other_count: i64 = conn
