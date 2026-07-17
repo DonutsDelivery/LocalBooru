@@ -640,8 +640,7 @@ tasks:
     status: pending
     blocked_by: []
     depends_on:
-      - "@svp-windows-mse-prototype"
-      - "@svp-macos-mse-prototype"
+      - "@svp-remove-generated-interpolation"
     priority: 1
     tags:
       - svp
