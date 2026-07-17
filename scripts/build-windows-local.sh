@@ -42,6 +42,9 @@ IMAGE="localbooru-windows-release:msvc-wine-$DOCKERFILE_HASH"
 BUILD_ROOT="${LOCALBOORU_WINDOWS_BUILD_ROOT:-/mnt/storage/Programs/localbooru-build-windows-docker}"
 DIST_PATH="${LOCALBOORU_DIST_WINDOWS_DIR:-$ROOT/dist-windows-local}"
 BUILD_LIMIT_GB="${LOCALBOORU_WINDOWS_BUILD_LIMIT_GB:-30}"
+SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
+SOURCE_COMMIT="$(git -C "$ROOT" rev-parse --verify "${SOURCE_REVISION}^{commit}")"
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$SOURCE_COMMIT")}"
 CACHE_MARKER=".localbooru-build-cache"
 BUILD_ROOT_DEFAULT="/mnt/storage/Programs/localbooru-build-windows-docker"
 
@@ -116,10 +119,13 @@ if [[ "$REBUILD" == 1 ]] || ! "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; 
 fi
 
 printf '==> Building Windows x64 artifacts with %s jobs\n' "$JOBS"
+printf '    source: %s\n' "$SOURCE_COMMIT"
 "$DOCKER" run --rm --init \
   -e HOST_UID="$(id -u)" \
   -e HOST_GID="$(id -g)" \
   -e LOCALBOORU_BUILD_JOBS="$JOBS" \
+  -e LOCALBOORU_SOURCE_REVISION="$SOURCE_COMMIT" \
+  -e SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
   -e npm_config_cache=/build/npm-cache \
   -v "$ROOT:/source:ro" \
   -v "$BUILD_ROOT:/build" \

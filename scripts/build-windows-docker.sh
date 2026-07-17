@@ -3,6 +3,7 @@
 set -euo pipefail
 
 SOURCE_DIR="${LOCALBOORU_SOURCE_DIR:-/source}"
+SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:?LOCALBOORU_SOURCE_REVISION is required}"
 BUILD_ROOT="${LOCALBOORU_WINDOWS_BUILD_ROOT:-/build}"
 WORKTREE="$BUILD_ROOT/worktree"
 TARGET="x86_64-pc-windows-msvc"
@@ -45,7 +46,16 @@ trap cleanup_ownership EXIT
 
 rm -rf "$WORKTREE"
 mkdir -p "$WORKTREE" "$TARGET_DIR" "$CARGO_HOME" "$DIST_DIR" "$SCCACHE_DIR"
-git -c safe.directory="$SOURCE_DIR" -C "$SOURCE_DIR" archive --format=tar HEAD \
+RESOLVED_SOURCE_REVISION="$(
+  git -c safe.directory="$SOURCE_DIR" -C "$SOURCE_DIR" \
+    rev-parse --verify "${SOURCE_REVISION}^{commit}"
+)"
+[[ "$RESOLVED_SOURCE_REVISION" == "$SOURCE_REVISION" ]] || {
+  echo "ERROR: source revision must be an exact commit SHA: $SOURCE_REVISION" >&2
+  exit 1
+}
+git -c safe.directory="$SOURCE_DIR" -C "$SOURCE_DIR" \
+  archive --format=tar "$RESOLVED_SOURCE_REVISION" \
   | tar -xf - -C "$WORKTREE"
 
 cd "$WORKTREE"
@@ -73,6 +83,7 @@ npm --prefix frontend run build
 
 cargo check --locked --manifest-path src-tauri/Cargo.toml --target "$TARGET"
 cargo test --locked --manifest-path src-tauri/Cargo.toml --target "$TARGET" --lib --no-run
+rm -rf "$RELEASE_DIR/bundle/nsis"
 cargo tauri build \
   --ci \
   --target "$TARGET" \
@@ -80,9 +91,16 @@ cargo tauri build \
 [[ "$(sha256sum Cargo.lock | cut -d' ' -f1)" == "$LOCK_HASH_BEFORE" ]]
 
 BINARY="$RELEASE_DIR/localbooru.exe"
-INSTALLER="$(find "$RELEASE_DIR/bundle/nsis" -maxdepth 1 -type f -name '*.exe' -print -quit)"
+mapfile -t INSTALLERS < <(
+  find "$RELEASE_DIR/bundle/nsis" -maxdepth 1 -type f -name '*.exe' -print
+)
+[[ "${#INSTALLERS[@]}" == 1 ]] || {
+  echo "ERROR: expected exactly one freshly generated NSIS installer, found ${#INSTALLERS[@]}" >&2
+  exit 1
+}
+INSTALLER="${INSTALLERS[0]}"
 [[ -s "$BINARY" ]]
-[[ -n "$INSTALLER" && -s "$INSTALLER" ]]
+[[ -s "$INSTALLER" ]]
 
 STAGE="$BUILD_ROOT/portable-stage"
 INSTALLER_PAYLOAD="$BUILD_ROOT/nsis-payload"
