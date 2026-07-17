@@ -234,8 +234,8 @@ features:
             when: SVP playback starts
           - given: the packaged Windows app has a working user-installed SVP setup
             id: ac-windows-route
-            then: the standard video player receives bounded locally processed media and responds to the user's
-              SVP Manager state
+            then: the standard video player receives bounded output from the exact active Manager-generated
+              graph through the Windows integration
             when: SVP playback starts
           - given: the packaged Apple Silicon macOS app has a working user-installed SVP setup
             id: ac-macos-route
