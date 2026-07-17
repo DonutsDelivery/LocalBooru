@@ -1,0 +1,26 @@
+notes:
+  - _ulid: 01KXQG5RVMZ8BQDT8J1XMVYSVN
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Auto Tagger acceleration status distinguishes configured preference, runtime capability,
+      actual model execution, and fallback diagnostics.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given GPU acceleration is requested and its runtime can initialize, when the tagger
+      model loads, then the GPU provider becomes active and requested, available, and active
+      provider status is reported accurately
+
+      - ac-2: Given GPU acceleration is requested but its native runtime cannot initialize, when the
+      tagger model loads, then the add-on records a useful warning, activates the CPU provider when
+      possible, and does not claim that GPU acceleration is active
+
+      - ac-3: Given CPU execution is explicitly requested, when the tagger model loads, then GPU
+      activation is not attempted and the CPU provider is reported as active
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T07:38:08.116Z
