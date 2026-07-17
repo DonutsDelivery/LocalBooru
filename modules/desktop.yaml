@@ -123,6 +123,20 @@ features:
       - addons
       - settings
       - desktop
+    requirements:
+      - _ulid: 01KXQG43AGQBQ0T4ASMJCM9FGF
+        slugs:
+          - auto-tagger-provider-diagnostics
+        title: Auto Tagger Provider Diagnostics
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-17T07:37:13.296Z
+        notes: []
     created: 2026-07-12T06:35:00.381Z
     notes: []
   - _ulid: 01KXPM0TN30TDXXDSAZFTJRX3K
