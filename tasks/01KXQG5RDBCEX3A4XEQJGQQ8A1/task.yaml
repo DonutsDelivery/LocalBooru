@@ -1,0 +1,16 @@
+_ulid: 01KXQG5RDBCEX3A4XEQJGQQ8A1
+slugs:
+  - task-sidecar-diagnostics
+title: "Implement: Sidecar Diagnostics"
+type: task
+spec_ref: "@sidecar-diagnostics"
+derivation: auto
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-07-17T07:38:07.659Z
+todos: []

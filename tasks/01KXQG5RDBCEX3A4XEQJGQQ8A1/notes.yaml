@@ -1,0 +1,26 @@
+notes:
+  - _ulid: 01KXQG5RDBQRQCT637KKWB4F55
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Sidecar process output remains available in application diagnostics without blocking add-on
+      lifecycle operations.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given an add-on sidecar writes output to either standard stream, when the output is
+      produced, then each line appears in the application log with the add-on and stream identified
+
+      - ac-2: Given an add-on writes sustained output to both standard streams simultaneously, when
+      the add-on starts, runs, or stops, then output capture does not block health checks, lifecycle
+      operations, or process exit
+
+      - ac-3: Given sidecar output contains malformed text or either stream closes, when the output
+      is captured, then the remaining output is handled safely and the add-on manager continues
+      operating
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T07:38:07.659Z
