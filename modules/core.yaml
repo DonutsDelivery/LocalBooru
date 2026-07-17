@@ -302,6 +302,10 @@ features:
             id: ac-3
             then: the current platform dependencies are applied without deleting those persisted resources
             when: the user repairs the add-on
+          - given: the Auto Tagger is installed on a platform without supported CUDA acceleration
+            id: ac-4
+            then: a compatible CPU inference runtime is installed without the GPU distribution
+            when: dependencies are provisioned
         tags: []
         created: 2026-07-17T07:35:54.790Z
         notes: []
