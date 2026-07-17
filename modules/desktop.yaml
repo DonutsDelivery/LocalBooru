@@ -193,6 +193,10 @@ features:
             then: playback returns at the same source position and retains its playing or paused state after the
               transition
             when: SVP is enabled, disabled, restarted, or reconfigured
+          - given: an SVP transition is unfinished for one video
+            id: ac-image-transition-owner
+            then: the unfinished transition cannot alter, pause, seek, or resume the newly opened video
+            when: the user navigates to another video
         tags: []
         created: 2026-07-16T23:26:08.088Z
         notes: []
