@@ -702,6 +702,7 @@ tasks:
     depends_on:
       - "@svp-manager-graph-sessions"
       - "@svp-linux-lifecycle-acceptance"
+      - "@svp-native-playback-acceptance"
     priority: 2
     tags:
       - svp

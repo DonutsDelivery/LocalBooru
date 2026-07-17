@@ -14,12 +14,26 @@ blocked_by: []
 depends_on:
   - "@svp-manager-graph-sessions"
   - "@svp-linux-lifecycle-acceptance"
+  - "@svp-native-playback-acceptance"
 context: []
 priority: 2
 tags:
   - svp
   - desktop
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      depends_on:
+        new:
+          - "@svp-manager-graph-sessions"
+          - "@svp-linux-lifecycle-acceptance"
+          - "@svp-native-playback-acceptance"
+        previous:
+          - "@svp-manager-graph-sessions"
+          - "@svp-linux-lifecycle-acceptance"
+    command: task-set
+    timestamp: 2026-07-17T01:27:03.761Z
 created_at: 2026-07-16T23:27:30.857Z
 todos: []
 automation: needs_review
