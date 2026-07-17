@@ -358,6 +358,9 @@ features:
         type: requirement
         description: Sidecar process output remains available in application diagnostics without blocking
           add-on lifecycle operations.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
