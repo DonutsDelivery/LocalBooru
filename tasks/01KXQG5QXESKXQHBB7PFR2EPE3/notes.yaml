@@ -51,3 +51,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T08:40:07.444Z
+  - _ulid: 01KXQMXNPQKJFCFKB0MRTQ1WZY
+    content: "Verification: focused manager tests 7/7 pass; full Rust library suite passes 120 tests
+      with four unrelated rate-limit tests skipped after they hung in the unfiltered run."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T09:01:05.623Z
