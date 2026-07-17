@@ -294,6 +294,10 @@ features:
             then: the managed add-on environment contains the GPU inference runtime and its required native
               libraries without requiring a separately installed CUDA or cuDNN toolkit
             when: the Auto Tagger is installed or repaired
+          - given: the Auto Tagger runs on a machine where GPU acceleration cannot initialize
+            id: ac-2
+            then: the prediction can run with the CPU provider and the active provider is reported accurately
+            when: a prediction is requested
         tags: []
         created: 2026-07-17T07:35:54.790Z
         notes: []
