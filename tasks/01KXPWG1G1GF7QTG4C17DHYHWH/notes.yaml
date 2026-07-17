@@ -1,0 +1,31 @@
+notes:
+  - _ulid: 01KXPWG1G0Y68KCQ4JP5RQP218
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Video playback changes between the original source and generated streaming qualities without
+      allowing superseded sources to take control or lose the user's playback intent.
+
+
+
+      Acceptance Criteria:
+
+      - ac-final-source-owner: Given multiple quality or original-source changes are requested
+      before playback is ready, when the final requested source becomes available, then only the
+      final requested source can produce audio or video
+
+      - ac-preserve-playback-intent: Given a video is playing or paused at a nonzero source
+      position, when playback changes between the original source and a generated streaming quality,
+      then playback returns at the same source position and retains its playing or paused state
+
+      - ac-stop-superseded-producer: Given a generated stream is preparing or active, when another
+      source supersedes it or the video is closed, then the superseded stream stops and cannot later
+      reclaim playback
+
+      - ac-reload-restarted-source: Given a generated stream is restarted with changed settings but
+      retains the same playback address, when the replacement becomes ready, then the player uses
+      the replacement content rather than continuing the prior stream
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T01:54:13.121Z
