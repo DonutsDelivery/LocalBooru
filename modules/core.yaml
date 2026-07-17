@@ -211,6 +211,8 @@ features:
           - reliable-stream-transitions
         title: Reliable playback source transitions
         type: requirement
+        description: Video playback changes between the original source and generated streaming qualities
+          without allowing superseded sources to take control or lose the user's playback intent.
         depends_on: []
         implements: []
         relates_to: []
