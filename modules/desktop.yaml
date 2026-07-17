@@ -150,6 +150,11 @@ features:
         then: LocalBooru returns to one direct playback source at the same safe playback position and
           reports the SVP failure
         when: the user opens or continues the video
+      - given: the user's SVP Manager supplies an interpolation graph
+        id: ac-manager-owned-graph
+        then: LocalBooru executes an immutable copy of those exact graph contents and does not generate
+          interpolation parameters or cadence
+        when: LocalBooru starts or restarts desktop SVP playback
     tags: []
     requirements:
       - _ulid: 01KXPM0WPRYRP0YSMT9XZN3A1Z
