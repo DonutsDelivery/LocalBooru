@@ -5,13 +5,21 @@ title: "Implement: Sidecar Diagnostics"
 type: task
 spec_ref: "@sidecar-diagnostics"
 derivation: auto
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: v2
+  captured_at: 2026-07-17T09:01:48.718Z
+  commit: e3534e5e078b44eeefbe5ce5fab6b87cf2a9b604
+  remote: origin
+  remote_url: https://github.com/DonutsDelivery/LocalBooru.git
+  upstream_ref: refs/heads/v2
 history:
   - author: DonutsDelivery
     changes:
@@ -23,6 +31,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-07-17T07:38:55.658Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: v2
+          captured_at: 2026-07-17T09:01:48.718Z
+          commit: e3534e5e078b44eeefbe5ce5fab6b87cf2a9b604
+          remote: origin
+          remote_url: https://github.com/DonutsDelivery/LocalBooru.git
+          upstream_ref: refs/heads/v2
+        previous: null
+      submitted_at:
+        new: 2026-07-17T09:01:48.732Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-07-17T09:01:48.732Z
 created_at: 2026-07-17T07:38:07.659Z
 started_at: 2026-07-17T07:38:55.658Z
+submitted_at: 2026-07-17T09:01:48.732Z
 todos: []
