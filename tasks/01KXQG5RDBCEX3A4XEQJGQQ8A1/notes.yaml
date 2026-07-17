@@ -24,3 +24,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T07:38:07.659Z
+  - _ulid: 01KXQG7RAGS7GCXR3P1PD6DHSM
+    content: "Approach: take stdout and stderr immediately after spawn and drain them in independent
+      Tokio tasks to the existing log backend with add-on/stream labels. Tests cover concurrent
+      output beyond pipe capacity, invalid UTF-8, EOF, and identity labels for all three ACs."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T07:39:13.104Z
