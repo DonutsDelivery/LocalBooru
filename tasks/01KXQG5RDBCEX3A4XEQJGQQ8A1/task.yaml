@@ -5,8 +5,10 @@ title: "Implement: Sidecar Diagnostics"
 type: task
 spec_ref: "@sidecar-diagnostics"
 derivation: auto
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Implemented in e3534e5e; concurrency and bounded-output tests pass; independent
+  review verified fixes.
 depends_on: []
 context: []
 priority: 1
@@ -51,7 +53,22 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-07-17T09:01:48.732Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Implemented in e3534e5e; concurrency and bounded-output tests pass; independent review verified
+          fixes.
+        previous: null
+      completed_at:
+        new: 2026-07-17T09:02:10.481Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-07-17T09:02:10.490Z
 created_at: 2026-07-17T07:38:07.659Z
 started_at: 2026-07-17T07:38:55.658Z
 submitted_at: 2026-07-17T09:01:48.732Z
+completed_at: 2026-07-17T09:02:10.481Z
 todos: []
