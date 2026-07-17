@@ -129,9 +129,12 @@ features:
           - auto-tagger-provider-diagnostics
         title: Auto Tagger Provider Diagnostics
         type: requirement
+        description: Auto Tagger acceleration status distinguishes configured preference, runtime
+          capability, actual model execution, and fallback diagnostics.
         depends_on: []
         implements: []
-        relates_to: []
+        relates_to:
+          - "@addon-platform-dependencies"
         tests: []
         traits: []
         tags: []
