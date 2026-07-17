@@ -321,6 +321,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: an add-on sidecar writes output to either standard stream
+            id: ac-1
+            then: each line appears in the application log with the add-on and stream identified
+            when: the output is produced
         tags: []
         created: 2026-07-17T07:36:47.181Z
         notes: []
