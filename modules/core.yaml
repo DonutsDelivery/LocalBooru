@@ -281,6 +281,11 @@ features:
             id: ac-2
             then: migration retries without deleting or rotating the legacy credential
             when: the application starts again
+          - given: LocalBooru runs under a Windows user account
+            id: ac-3
+            then: it is encrypted for that Windows user and is not recoverable as plain text from application
+              settings
+            when: the signing credential is persisted
         tags: []
         created: 2026-07-17T07:37:30.567Z
         notes: []
