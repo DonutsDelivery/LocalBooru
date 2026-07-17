@@ -252,6 +252,11 @@ features:
             then: the existing remote streaming behavior remains available without selecting a desktop-only
               integration
             when: the request is supported
+          - given: the desktop player requests an SVP processing session
+            id: ac-opaque-session-request
+            then: the trusted desktop backend supplies the active Manager graph revision and the player cannot
+              select a graph path or interpolation mode
+            when: the request crosses the application API
         tags: []
         created: 2026-07-16T23:26:13.143Z
         notes: []
