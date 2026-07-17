@@ -43,3 +43,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T08:40:08.004Z
+  - _ulid: 01KXQMXPD4P1WHREZPY3S4380W
+    content: "Verification: focused sidecar tests 4/4 pass, including concurrent dual-stream and bounded
+      unterminated output."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T09:01:06.340Z
