@@ -32,3 +32,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T08:00:34.240Z
+  - _ulid: 01KXQMXPYW1WHGB2VZQWE9ATKN
+    content: "Verification: all fake-ORT provider tests and Python compilation pass without GPU/model
+      dependencies."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T09:01:06.908Z
