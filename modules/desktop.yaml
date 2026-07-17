@@ -188,6 +188,11 @@ features:
             then: direct playback becomes the sole playback source and the abandoned SVP start cannot later
               resume or remain active
             when: the user disables SVP
+          - given: a video is playing or paused at a nonzero position
+            id: ac-preserve-playback-intent
+            then: playback returns at the same source position and retains its playing or paused state after the
+              transition
+            when: SVP is enabled, disabled, restarted, or reconfigured
         tags: []
         created: 2026-07-16T23:26:08.088Z
         notes: []
