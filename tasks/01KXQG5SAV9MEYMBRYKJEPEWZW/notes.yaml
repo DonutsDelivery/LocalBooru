@@ -40,3 +40,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T07:39:13.495Z
+  - _ulid: 01KXQJ7V383HGTXE5W8VH53QNF
+    content: Implemented crash-safe legacy migration, Windows DPAPI encrypted blob, Unix 0700/0600
+      storage, atomic settings cleanup, and settings API defense-in-depth. Linux tests and isolated
+      Windows-target compilation pass.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T08:14:13.096Z
