@@ -32,3 +32,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T07:38:08.603Z
+  - _ulid: 01KXQG7RPQ1SZQ624S40N92FN2
+    content: "Approach: migrate the exact legacy signing secret into dedicated protected storage before
+      atomically sanitizing settings. Windows uses per-user DPAPI encryption; Unix uses owner-only
+      storage. Tests cover unchanged migration, retries/failures, permissions, generation stability,
+      and settings API exclusion for all five ACs."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T07:39:13.495Z
