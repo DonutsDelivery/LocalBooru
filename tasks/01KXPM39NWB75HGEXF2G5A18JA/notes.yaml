@@ -24,3 +24,17 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-16T23:34:09.159Z
+  - _ulid: 01KXPP1NKQVC640YA00ATJDF41
+    content: "Review hardening completed. Added generation-owned init-segment readiness; strict
+      finite/extra-forbidden wire models and event payload validation; actual file-size and
+      ownership checks; bounded event replay with cursor expiry; contiguous source timeline
+      enforcement; acknowledged-position fail-open reporting; terminal-state and non-seekable
+      guards; generation-scoped stop; and producer cursor/filename isolation. Expanded behavioral
+      coverage from 6 to 13 passing tests. Deliberately did not expose HTTP routes: the
+      deterministic producer emits test-only placeholder bytes rather than valid fMP4, app.py still
+      owns the legacy HLS lifecycle, and packaged addon deployment currently ships only app.py.
+      Wiring those together now would expose invalid media and create competing lifecycle owners;
+      HTTP/process integration remains for the dependent real fMP4/MSE task."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T00:01:30.743Z
