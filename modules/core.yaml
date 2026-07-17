@@ -281,6 +281,8 @@ features:
           - addon-platform-dependencies
         title: Platform Add-on Dependencies
         type: requirement
+        description: Add-on installation and repair provision compatible platform dependencies while
+          preserving a functional fallback when acceleration is unavailable.
         depends_on: []
         implements: []
         relates_to: []
