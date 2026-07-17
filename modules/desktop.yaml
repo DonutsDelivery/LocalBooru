@@ -183,6 +183,11 @@ features:
             id: ac-ended-transition
             then: playback remains ended and does not restart as an additional audible source
             when: the transition completes
+          - given: SVP is still preparing playback for an open video
+            id: ac-disable-during-start
+            then: direct playback becomes the sole playback source and the abandoned SVP start cannot later
+              resume or remain active
+            when: the user disables SVP
         tags: []
         created: 2026-07-16T23:26:08.088Z
         notes: []
