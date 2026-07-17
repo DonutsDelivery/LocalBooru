@@ -29,3 +29,17 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T01:54:13.121Z
+  - _ulid: 01KXPWGJPXRQ7NQPDACPRXEAPQ
+    content: "Approach: reuse the existing absolute-time offsets, image identity guards, HLS teardown,
+      and MSE generation ownership. Add a small latest-transition generation/snapshot coordinator
+      for SVP and transcode source changes, then add internal cancellation epochs so abandoned
+      backend starts cannot publish. Edge cases: rapid inverse toggles, disable during start, image
+      navigation, paused/ended intent, same URL replacement, and another agent concurrently changing
+      Windows/macOS SVP session support. Test plan: pure coordinator tests for all four linked ACs
+      plus SVP-specific AC annotations, focused Python/Rust epoch tests, then recursive frontend,
+      Python, Cargo, lint/build, and real-app checks. Branch isolation is intentionally skipped
+      because multiple user-authorized agents share the current dirty v2 checkout; changing branches
+      would disrupt their active work."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T01:54:30.749Z
