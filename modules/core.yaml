@@ -213,6 +213,9 @@ features:
         type: requirement
         description: Video playback changes between the original source and generated streaming qualities
           without allowing superseded sources to take control or lose the user's playback intent.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
