@@ -219,8 +219,9 @@ features:
           - svp-platform-routing
         title: Platform-specific SVP connection
         type: requirement
-        description: Each supported desktop connects the standard video player to the user installed SVP
-          using the platform supported integration path.
+        description: Each supported desktop connects the standard video player to the user's installed SVP
+          Manager through the platform control and attachment transports; build verification is
+          distinct from native playback acceptance.
         depends_on: []
         implements: []
         relates_to: []
