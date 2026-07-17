@@ -63,6 +63,7 @@ impl RateLimiter {
 
         // Record this attempt
         timestamps.push(now);
+        drop(entry);
 
         // Periodic cleanup: if the global map has grown large, spawn a
         // lightweight sweep (non-blocking for the caller).
