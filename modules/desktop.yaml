@@ -148,6 +148,10 @@ features:
             then: the add-on records a useful warning, activates the CPU provider when possible, and does not
               claim that GPU acceleration is active
             when: the tagger model loads
+          - given: CPU execution is explicitly requested
+            id: ac-3
+            then: GPU activation is not attempted and the CPU provider is reported as active
+            when: the tagger model loads
         tags: []
         created: 2026-07-17T07:37:13.296Z
         notes: []
