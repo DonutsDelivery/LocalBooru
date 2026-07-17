@@ -218,6 +218,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: multiple quality or original-source changes are requested before playback is ready
+            id: ac-final-source-owner
+            then: only the final requested source can produce audio or video
+            when: the final requested source becomes available
         tags: []
         created: 2026-07-17T01:52:02.713Z
         notes: []
