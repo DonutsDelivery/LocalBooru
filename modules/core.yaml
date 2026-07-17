@@ -298,6 +298,10 @@ features:
             id: ac-2
             then: the prediction can run with the CPU provider and the active provider is reported accurately
             when: a prediction is requested
+          - given: an existing Auto Tagger environment with models, settings, and enabled state
+            id: ac-3
+            then: the current platform dependencies are applied without deleting those persisted resources
+            when: the user repairs the add-on
         tags: []
         created: 2026-07-17T07:35:54.790Z
         notes: []
