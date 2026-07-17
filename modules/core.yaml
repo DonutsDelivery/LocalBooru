@@ -290,6 +290,10 @@ features:
             id: ac-4
             then: it is kept outside ordinary settings with access restricted to the owning user
             when: the signing credential is persisted
+          - given: a client reads or updates application settings
+            id: ac-5
+            then: the credential is neither disclosed nor accepted into persisted settings
+            when: the request includes or would return signing credential material
         tags: []
         created: 2026-07-17T07:37:30.567Z
         notes: []
