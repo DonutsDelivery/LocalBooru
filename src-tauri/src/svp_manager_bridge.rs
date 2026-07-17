@@ -646,10 +646,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn unix_transport_reports_the_controlling_process() {
-        let path = std::env::temp_dir().join(format!(
-            "localbooru-manager-peer-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let path = PathBuf::from("/tmp").join(format!("lb-svp-{}", uuid::Uuid::new_v4().simple()));
         let listener = UnixListener::bind(&path).unwrap();
         let client = tokio::spawn({
             let path = path.clone();

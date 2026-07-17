@@ -710,7 +710,7 @@ mod tests {
     }
 
     // AC: @addon-platform-dependencies ac-3
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn repair_updates_dependencies_without_removing_persisted_resources() {
         use std::os::unix::fs::PermissionsExt;
@@ -767,7 +767,7 @@ mod tests {
     }
 
     // AC: @addon-platform-dependencies ac-3
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn failed_gpu_repair_restores_cpu_inference_runtime() {
         use std::os::unix::fs::PermissionsExt;
