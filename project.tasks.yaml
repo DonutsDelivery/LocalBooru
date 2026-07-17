@@ -617,13 +617,15 @@ tasks:
   - _ulid: 01KXPM3B934NVT60S7FFGWXYNQ
     slugs:
       - svp-macos-mse-prototype
-    title: Port deterministic SVP processing to Apple Silicon macOS
+      - svp-macos-ci-build
+    title: Verify macOS SVP integration in GitHub CI
     type: spike
     spec_ref: "@svp-platform-routing"
     status: pending
     blocked_by: []
     depends_on:
-      - "@svp-windows-mse-prototype"
+      - "@svp-manager-graph-sessions"
+      - "@svp-html-video-mse"
     priority: 2
     tags:
       - svp
