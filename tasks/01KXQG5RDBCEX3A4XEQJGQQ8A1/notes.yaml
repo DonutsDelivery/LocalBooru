@@ -31,3 +31,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T07:39:13.104Z
+  - _ulid: 01KXQJ7TFPXYVV2KWYTGDN3AFQ
+    content: Implemented independent byte-oriented stdout/stderr drain tasks before health polling.
+      Concurrency and malformed UTF-8 tests pass.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T08:14:12.470Z
