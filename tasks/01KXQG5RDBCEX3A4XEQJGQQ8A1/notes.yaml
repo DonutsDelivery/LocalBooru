@@ -37,3 +37,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T08:14:12.470Z
+  - _ulid: 01KXQKQ9J4P37WWRG1DNP8TF1S
+    content: "Review fix: sidecar output without newlines is split into bounded 64 KiB log entries;
+      added behavioral coverage for sustained unterminated output."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T08:40:08.004Z
