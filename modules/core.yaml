@@ -322,6 +322,9 @@ features:
         type: requirement
         description: Add-on installation and repair provision compatible platform dependencies while
           preserving a functional fallback when acceleration is unavailable.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
