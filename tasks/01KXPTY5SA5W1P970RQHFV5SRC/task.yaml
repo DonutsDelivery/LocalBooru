@@ -1,0 +1,27 @@
+_ulid: 01KXPTY5SA5W1P970RQHFV5SRC
+slugs:
+  - svp-native-playback-acceptance
+title: Run native Windows and Apple Silicon SVP playback acceptance
+type: task
+description: On suitable native machines with a user-installed SVP Manager, verify real Manager
+  connection, exact SVPflow graph loading, genuine OSD, cadence, MSE stability, seeking, A/V sync,
+  cleanup, and fail-open. Keep open while no such machines are available.
+spec_ref: "@desktop-svp-video"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on:
+  - "@svp-windows-docker-build"
+  - "@svp-macos-ci-build"
+context: []
+priority: 2
+tags:
+  - svp
+  - windows
+  - macos
+  - manual
+vcs_refs: []
+created_at: 2026-07-17T01:26:59.114Z
+todos: []
+automation: manual_only
