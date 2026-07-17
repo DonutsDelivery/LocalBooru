@@ -277,6 +277,10 @@ features:
             then: the same credential is moved to protected storage, removed from settings, and previously
               issued sessions remain valid
             when: the upgraded application starts
+          - given: credential migration is interrupted or protected storage cannot be verified
+            id: ac-2
+            then: migration retries without deleting or rotating the legacy credential
+            when: the application starts again
         tags: []
         created: 2026-07-17T07:37:30.567Z
         notes: []
