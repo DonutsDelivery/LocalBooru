@@ -286,6 +286,10 @@ features:
             then: it is encrypted for that Windows user and is not recoverable as plain text from application
               settings
             when: the signing credential is persisted
+          - given: LocalBooru runs on a Unix-like platform
+            id: ac-4
+            then: it is kept outside ordinary settings with access restricted to the owning user
+            when: the signing credential is persisted
         tags: []
         created: 2026-07-17T07:37:30.567Z
         notes: []
