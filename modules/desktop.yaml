@@ -296,6 +296,11 @@ features:
             then: the genuine Manager OSD is visible where supported and measured presented cadence matches the
               selected interpolation target
             when: platform acceptance playback is performed
+          - given: no SVP Manager graph is active
+            id: ac-no-active-graph
+            then: LocalBooru uses one direct unfiltered playback source and does not generate a fallback
+              interpolation graph
+            when: desktop playback starts or a graph is removed
         tags: []
         created: 2026-07-16T23:26:16.354Z
         notes: []
