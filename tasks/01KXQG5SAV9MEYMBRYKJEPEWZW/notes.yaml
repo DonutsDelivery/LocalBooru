@@ -47,3 +47,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T08:14:13.096Z
+  - _ulid: 01KXQKQA2BF4K8AY2NR6XGQ5CY
+    content: "Review fix: settings API test reinserts a credential after state migration to prove GET
+      redaction and directly verifies save-time stripping."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T08:40:08.523Z
