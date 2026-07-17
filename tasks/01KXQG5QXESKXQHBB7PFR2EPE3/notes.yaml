@@ -45,3 +45,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T08:14:11.911Z
+  - _ulid: 01KXQKQ90M3JNDYB8WV521YDHE
+    content: "Review fixes: GPU install failures now remove any partial GPU distribution and restore
+      pinned CPU ORT; repair tests assert exact uninstall/install order and rollback."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T08:40:07.444Z
