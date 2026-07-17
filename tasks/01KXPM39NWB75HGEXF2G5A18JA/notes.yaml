@@ -47,3 +47,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T00:49:57.661Z
+  - _ulid: 01KXPV05HQATHGM14ZSR3HG7E3
+    content: "Requirement correction: LocalBooru does not implement interpolation. The deterministic
+      doubling scaffold must be removed from production; only graph-agnostic session/fMP4/MSE
+      infrastructure remains valid. Production desktop sessions will require an exact immutable
+      graph snapshot from the user's SVP Manager. Prior deterministic results are transport tests,
+      not Windows/macOS SVP support."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T01:28:04.407Z
