@@ -330,6 +330,10 @@ features:
             id: ac-2
             then: output capture does not block health checks, lifecycle operations, or process exit
             when: the add-on starts, runs, or stops
+          - given: sidecar output contains malformed text or either stream closes
+            id: ac-3
+            then: the remaining output is handled safely and the add-on manager continues operating
+            when: the output is captured
         tags: []
         created: 2026-07-17T07:36:47.181Z
         notes: []
