@@ -314,6 +314,8 @@ features:
           - sidecar-diagnostics
         title: Sidecar Diagnostics
         type: requirement
+        description: Sidecar process output remains available in application diagnostics without blocking
+          add-on lifecycle operations.
         depends_on: []
         implements: []
         relates_to: []
