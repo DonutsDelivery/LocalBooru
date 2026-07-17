@@ -131,6 +131,9 @@ features:
         type: requirement
         description: Auto Tagger acceleration status distinguishes configured preference, runtime
           capability, actual model execution, and fallback diagnostics.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to:
