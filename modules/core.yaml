@@ -309,6 +309,19 @@ features:
         tags: []
         created: 2026-07-17T07:35:54.790Z
         notes: []
+      - _ulid: 01KXQG39TD5DZXW5QPH6Z91HYJ
+        slugs:
+          - sidecar-diagnostics
+        title: Sidecar Diagnostics
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-17T07:36:47.181Z
+        notes: []
     created: 2026-03-08T08:30:12.294Z
     notes: []
   - _ulid: 01KK692Z060X5XY08AV7BW0N5D
