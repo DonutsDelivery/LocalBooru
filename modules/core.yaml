@@ -326,6 +326,10 @@ features:
             id: ac-1
             then: each line appears in the application log with the add-on and stream identified
             when: the output is produced
+          - given: an add-on writes sustained output to both standard streams simultaneously
+            id: ac-2
+            then: output capture does not block health checks, lifecycle operations, or process exit
+            when: the add-on starts, runs, or stops
         tags: []
         created: 2026-07-17T07:36:47.181Z
         notes: []
