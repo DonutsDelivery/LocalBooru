@@ -38,3 +38,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T00:01:30.743Z
+  - _ulid: 01KXPRTCCXTED4M3JP66C2C6Z2
+    content: "Implemented and locally verified the versioned generation-safe session protocol, bounded
+      deterministic H.264/AAC fMP4 producer, packaged sidecar modules, Rust proxy, and
+      existing-player MSE controller. Validation: 19 Python tests, 23 frontend tests, frontend
+      build, and cargo check. Windows/WebView2 and Apple Silicon/WKWebView packaged acceptance
+      remain hardware-dependent; Manager graph sessions are intentionally still unavailable."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T00:49:57.661Z
