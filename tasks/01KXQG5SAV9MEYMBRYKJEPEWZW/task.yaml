@@ -5,8 +5,10 @@ title: "Implement: JWT Signing Credential Storage"
 type: task
 spec_ref: "@credential-storage"
 derivation: auto
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Implemented in e3534e5e; migration/API tests and Windows compilation pass;
+  independent review found no remaining defects.
 depends_on: []
 context: []
 priority: 1
@@ -51,7 +53,22 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-07-17T09:01:50.204Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Implemented in e3534e5e; migration/API tests and Windows compilation pass; independent review
+          found no remaining defects.
+        previous: null
+      completed_at:
+        new: 2026-07-17T09:02:11.676Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-07-17T09:02:11.686Z
 created_at: 2026-07-17T07:38:08.603Z
 started_at: 2026-07-17T07:38:56.278Z
 submitted_at: 2026-07-17T09:01:50.204Z
+completed_at: 2026-07-17T09:02:11.676Z
 todos: []
