@@ -1,0 +1,32 @@
+notes:
+  - _ulid: 01KXQG5QXEKFQV85GQTET65ED2
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Add-on installation and repair provision compatible platform dependencies while preserving a
+      functional fallback when acceleration is unavailable.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given a Windows or Linux installation with a compatible NVIDIA driver, when the Auto
+      Tagger is installed or repaired, then the managed add-on environment contains the GPU
+      inference runtime and its required native libraries without requiring a separately installed
+      CUDA or cuDNN toolkit
+
+      - ac-2: Given the Auto Tagger runs on a machine where GPU acceleration cannot initialize, when
+      a prediction is requested, then the prediction can run with the CPU provider and the active
+      provider is reported accurately
+
+      - ac-3: Given an existing Auto Tagger environment with models, settings, and enabled state,
+      when the user repairs the add-on, then the current platform dependencies are applied without
+      deleting those persisted resources
+
+      - ac-4: Given the Auto Tagger is installed on a platform without supported CUDA acceleration,
+      when dependencies are provisioned, then a compatible CPU inference runtime is installed
+      without the GPU distribution
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-17T07:38:07.150Z
