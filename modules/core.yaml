@@ -266,6 +266,9 @@ features:
         type: requirement
         description: The per-install token-signing credential is protected from settings disclosure while
           remaining stable across application restarts and upgrades.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
