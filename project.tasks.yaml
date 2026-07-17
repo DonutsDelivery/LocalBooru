@@ -596,12 +596,14 @@ tasks:
   - _ulid: 01KXPM3ATGQV91XWFMPXSPD2RY
     slugs:
       - svp-windows-mse-prototype
-    title: Prototype deterministic SVP processing on Windows
+      - svp-windows-docker-build
+    title: Verify Windows SVP integration build in local Docker
     type: spike
     spec_ref: "@svp-platform-routing"
     status: pending
     blocked_by: []
     depends_on:
+      - "@svp-manager-graph-sessions"
       - "@svp-html-video-mse"
     priority: 1
     tags:

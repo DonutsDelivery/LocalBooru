@@ -1,17 +1,19 @@
 _ulid: 01KXPM3ATGQV91XWFMPXSPD2RY
 slugs:
   - svp-windows-mse-prototype
-title: Prototype deterministic SVP processing on Windows
+  - svp-windows-docker-build
+title: Verify Windows SVP integration build in local Docker
 type: spike
-description: Use the user-installed VapourSynth environment to produce bounded H.264/AAC fragmented
-  MP4 with deterministic frame doubling and verify packaged WebView2 cadence, timing, seeking,
-  cleanup, and buffer bounds.
+description: Compile the Manager-controlled Windows named-pipe, immutable-graph, bounded fMP4, and
+  MSE integration with the canonical local Docker/MSVC-Wine release build; inspect packages and
+  report compile/package verification without claiming native SVP playback.
 spec_ref: "@svp-platform-routing"
 meta_ref: null
 plan_ref: null
 status: pending
 blocked_by: []
 depends_on:
+  - "@svp-manager-graph-sessions"
   - "@svp-html-video-mse"
 context: []
 priority: 1
@@ -20,6 +22,33 @@ tags:
   - windows
   - desktop
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      slugs:
+        new:
+          - svp-windows-mse-prototype
+          - svp-windows-docker-build
+        previous:
+          - svp-windows-mse-prototype
+      title:
+        new: Verify Windows SVP integration build in local Docker
+        previous: Prototype deterministic SVP processing on Windows
+      description:
+        new: Compile the Manager-controlled Windows named-pipe, immutable-graph, bounded fMP4, and MSE
+          integration with the canonical local Docker/MSVC-Wine release build; inspect packages and
+          report compile/package verification without claiming native SVP playback.
+        previous: Use the user-installed VapourSynth environment to produce bounded H.264/AAC fragmented MP4
+          with deterministic frame doubling and verify packaged WebView2 cadence, timing, seeking,
+          cleanup, and buffer bounds.
+      depends_on:
+        new:
+          - "@svp-manager-graph-sessions"
+          - "@svp-html-video-mse"
+        previous:
+          - "@svp-html-video-mse"
+    command: task-set
+    timestamp: 2026-07-17T01:26:50.171Z
 created_at: 2026-07-16T23:27:28.080Z
 todos: []
 automation: manual_only
