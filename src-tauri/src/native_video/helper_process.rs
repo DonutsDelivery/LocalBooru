@@ -317,7 +317,9 @@ fn read_bounded_line(reader: &mut impl BufRead, context: &str) -> Result<Option<
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
     use crate::native_video::surface_channel::SurfaceChannelMessage;
+    #[cfg(target_os = "linux")]
     use crate::native_video::surface_protocol::SurfaceFrameRelease;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -391,6 +393,7 @@ mod tests {
         let _ = fs::remove_file(script);
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn inherited_surface_socket_carries_seqpacket_messages() {
         let script = helper_script(
