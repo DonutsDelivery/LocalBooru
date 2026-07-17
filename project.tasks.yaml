@@ -707,3 +707,21 @@ tasks:
     todos_count: 0
     created_at: 2026-07-16T23:27:30.857Z
     automation: needs_review
+  - _ulid: 01KXPTXJWJ5WXZTCF39QMPF0JQ
+    slugs:
+      - svp-remove-generated-interpolation
+    title: Remove LocalBooru-generated desktop interpolation
+    type: task
+    spec_ref: "@desktop-svp-video"
+    status: pending
+    blocked_by: []
+    depends_on:
+      - "@svp-session-protocol"
+    priority: 1
+    tags:
+      - svp
+      - desktop
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-17T01:26:39.762Z
+    automation: needs_review

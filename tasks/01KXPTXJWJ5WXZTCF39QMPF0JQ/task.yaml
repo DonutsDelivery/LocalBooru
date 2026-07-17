@@ -1,0 +1,24 @@
+_ulid: 01KXPTXJWJ5WXZTCF39QMPF0JQ
+slugs:
+  - svp-remove-generated-interpolation
+title: Remove LocalBooru-generated desktop interpolation
+type: task
+description: Remove deterministic frame doubling and frontend-selected graph modes from the
+  Windows/macOS product path while preserving graph-agnostic bounded fMP4/MSE transport; require a
+  trusted immutable Manager graph and fail open when none is active.
+spec_ref: "@desktop-svp-video"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on:
+  - "@svp-session-protocol"
+context: []
+priority: 1
+tags:
+  - svp
+  - desktop
+vcs_refs: []
+created_at: 2026-07-17T01:26:39.762Z
+todos: []
+automation: needs_review
