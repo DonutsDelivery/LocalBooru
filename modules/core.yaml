@@ -227,6 +227,10 @@ features:
             id: ac-preserve-playback-intent
             then: playback returns at the same source position and retains its playing or paused state
             when: playback changes between the original source and a generated streaming quality
+          - given: a generated stream is preparing or active
+            id: ac-stop-superseded-producer
+            then: the superseded stream stops and cannot later reclaim playback
+            when: another source supersedes it or the video is closed
         tags: []
         created: 2026-07-17T01:52:02.713Z
         notes: []
