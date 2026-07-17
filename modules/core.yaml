@@ -288,6 +288,12 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: a Windows or Linux installation with a compatible NVIDIA driver
+            id: ac-1
+            then: the managed add-on environment contains the GPU inference runtime and its required native
+              libraries without requiring a separately installed CUDA or cuDNN toolkit
+            when: the Auto Tagger is installed or repaired
         tags: []
         created: 2026-07-17T07:35:54.790Z
         notes: []
