@@ -46,3 +46,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-18T09:52:50.940Z
+  - _ulid: 01KXTB77XVSYAWNZZ68QG7PTSV
+    content: "Hardware discovery: strict session.disable_cpu_ep_fallback is incompatible with the
+      shipped WD graphs because ORT intentionally assigns inexpensive shape/control nodes to CPU. A
+      real vit-v3 profile showed 468 CUDA node events / 296.471 ms and 170 CPU events / 0.585 ms.
+      Revised AC-3 to require observed CUDA evidence rather than zero CPU nodes; explicit CUDA keeps
+      CUDA+CPU registration, reports mixed truthfully, and treats zero CUDA events as CPU fallback."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T10:09:16.731Z
