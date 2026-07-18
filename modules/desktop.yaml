@@ -37,6 +37,9 @@ features:
         type: requirement
         description: Desktop activation preserves and reveals an existing LocalBooru instance instead of
           replacing it, while retaining normal launch behavior when no instance is running.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
