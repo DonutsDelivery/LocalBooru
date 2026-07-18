@@ -10,8 +10,12 @@ Endpoints:
 """
 
 import csv
+import json
 import logging
 import os
+import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -28,12 +32,23 @@ logger = logging.getLogger("auto-tagger")
 # ─── Model state ──────────────────────────────────────────────────────────────
 
 _model = None
+_model_path = None
+_ort_module = None
 _tags_data = None
 _model_loaded = False
 _requested_device = os.environ.get("TAGGER_REQUESTED_DEVICE", "auto").lower()
 _available_providers = []
+_registered_providers = []
 _active_provider = None
+_execution_state = "not_run"
+_provider_node_counts = {}
+_provider_duration_ms = {}
 _provider_warning = None
+_profile_warning = None
+_last_timings_ms = None
+_model_load_lock = threading.Lock()
+_first_inference_lock = threading.Lock()
+_prediction_slots = threading.BoundedSemaphore(2)
 
 # Model input size for WD-Tagger-V3
 MODEL_INPUT_SIZE = 448
@@ -117,8 +132,43 @@ def _try_download_model() -> Optional[Path]:
 
 # ─── Model loading ────────────────────────────────────────────────────────────
 
-def _create_inference_session(ort, model_path, sess_options, requested_device):
-    """Create a provider-aware session with an explicit CPU fallback."""
+def _new_session_options(ort):
+    options = ort.SessionOptions()
+    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    options.intra_op_num_threads = 4
+    options.enable_profiling = True
+    options.profile_file_prefix = str(
+        Path(tempfile.gettempdir())
+        / f"localbooru-ort-{os.getpid()}-{time.time_ns()}"
+    )
+    return options
+
+
+def _remove_profile_prefix(prefix):
+    prefix = Path(prefix)
+    for profile_path in prefix.parent.glob(f"{prefix.name}*.json"):
+        _remove_profile_file(profile_path)
+
+
+def _create_ort_session(ort, model_path, providers):
+    options = _new_session_options(ort)
+    try:
+        return ort.InferenceSession(
+            str(model_path),
+            sess_options=options,
+            providers=providers,
+        )
+    except Exception:
+        _remove_profile_prefix(options.profile_file_prefix)
+        raise
+
+
+def _combine_warning(current, message):
+    return f"{current} {message}" if current else message
+
+
+def _create_inference_session(ort, model_path, requested_device):
+    """Create a profiled provider-aware session with an explicit CPU fallback."""
     warning = None
     wants_cuda = requested_device in ("auto", "cuda")
 
@@ -139,93 +189,121 @@ def _create_inference_session(ort, model_path, sess_options, requested_device):
     )
 
     if wants_cuda and "CUDAExecutionProvider" in available_providers:
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
         try:
-            session = ort.InferenceSession(
-                str(model_path),
-                sess_options=sess_options,
-                providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
-            )
+            session = _create_ort_session(ort, model_path, providers)
         except Exception as exc:
-            warning = f"CUDA provider initialization failed ({exc}); using CPUExecutionProvider."
-            logger.warning(warning)
-            session = ort.InferenceSession(
-                str(model_path),
-                sess_options=sess_options,
-                providers=["CPUExecutionProvider"],
+            message = (
+                f"CUDA provider initialization failed ({exc}); "
+                "using CPUExecutionProvider."
+            )
+            warning = _combine_warning(warning, message)
+            logger.warning(message)
+            session = _create_ort_session(
+                ort, model_path, ["CPUExecutionProvider"]
             )
         else:
-            active_providers = session.get_providers()
-            if not active_providers or active_providers[0] != "CUDAExecutionProvider":
-                warning = "CUDA was available but did not become active; using CPUExecutionProvider."
-                logger.warning(warning)
+            registered = session.get_providers()
+            if not registered or registered[0] != "CUDAExecutionProvider":
+                message = (
+                    "CUDA was available but the session registered only CPU; "
+                    "using CPUExecutionProvider."
+                )
+                warning = _combine_warning(warning, message)
+                logger.warning(message)
         return session, available_providers, warning
 
     if requested_device == "cuda":
-        warning = "CUDA was requested but is unavailable; using CPUExecutionProvider."
-        logger.warning(warning)
+        message = "CUDA was requested but is unavailable; using CPUExecutionProvider."
+        warning = _combine_warning(warning, message)
+        logger.warning(message)
 
-    session = ort.InferenceSession(
-        str(model_path),
-        sess_options=sess_options,
-        providers=["CPUExecutionProvider"],
-    )
+    session = _create_ort_session(ort, model_path, ["CPUExecutionProvider"])
     return session, available_providers, warning
 
 
+def _set_loaded_session(session, available_providers, warning, model_path):
+    global _model, _model_path, _model_loaded, _available_providers
+    global _registered_providers, _active_provider, _execution_state
+    global _provider_node_counts, _provider_duration_ms, _provider_warning
+    global _profile_warning
+
+    _model = session
+    _model_path = Path(model_path)
+    _model_loaded = True
+    _available_providers = list(available_providers)
+    _registered_providers = list(session.get_providers())
+    _active_provider = None
+    _execution_state = "not_run"
+    _provider_node_counts = {}
+    _provider_duration_ms = {}
+    _provider_warning = warning
+    _profile_warning = None
+
+
 def _load_model():
-    """Load the ONNX model and tags data."""
-    global _model, _tags_data, _model_loaded, _available_providers, _active_provider, _provider_warning
+    """Load the ONNX model and tags data once."""
+    global _ort_module, _tags_data
 
     if _model_loaded:
         return
 
-    model_dir = _find_model_dir()
-    if model_dir is None:
-        model_dir = _try_download_model()
-    if model_dir is None:
-        logger.error("No tagger model found. Set TAGGER_MODEL_DIR or place model in data dir.")
-        return
+    with _model_load_lock:
+        if _model_loaded:
+            return
 
-    model_path = model_dir / "model.onnx"
-    tags_path = model_dir / "selected_tags.csv"
+        model_dir = _find_model_dir()
+        if model_dir is None:
+            model_dir = _try_download_model()
+        if model_dir is None:
+            logger.error(
+                "No tagger model found. Set TAGGER_MODEL_DIR or place model in data dir."
+            )
+            return
 
-    import onnxruntime as ort
+        model_path = model_dir / "model.onnx"
+        tags_path = model_dir / "selected_tags.csv"
 
-    sess_options = ort.SessionOptions()
-    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    sess_options.intra_op_num_threads = 4
+        import onnxruntime as ort
 
-    _model, _available_providers, _provider_warning = _create_inference_session(
-        ort,
-        model_path,
-        sess_options,
-        _requested_device,
-    )
+        session, available, warning = _create_inference_session(
+            ort,
+            model_path,
+            _requested_device,
+        )
 
-    _active_provider = _model.get_providers()[0] if _model.get_providers() else "Unknown"
-    logger.info(f"Loaded tagger model using {_active_provider}")
+        tags_data = {"rating": [], "general": [], "character": []}
+        with open(tags_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader)
+            for idx, row in enumerate(reader):
+                if len(row) >= 3:
+                    tag_name, category = row[1], row[2]
+                    if category == "9":
+                        tags_data["rating"].append((idx, tag_name))
+                    elif category == "4":
+                        tags_data["character"].append((idx, tag_name))
+                    else:
+                        tags_data["general"].append((idx, tag_name))
 
-    # Load tags CSV — row index maps to model output index
-    _tags_data = {"rating": [], "general": [], "character": []}
-    with open(tags_path, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        next(reader)  # skip header
-        for idx, row in enumerate(reader):
-            if len(row) >= 3:
-                tag_name, category = row[1], row[2]
-                if category == "9":
-                    _tags_data["rating"].append((idx, tag_name))
-                elif category == "4":
-                    _tags_data["character"].append((idx, tag_name))
-                else:
-                    _tags_data["general"].append((idx, tag_name))
+        _ort_module = ort
+        _tags_data = tags_data
+        _set_loaded_session(session, available, warning, model_path)
+        logger.info(
+            "Loaded tagger model with registered providers %s; execution is unverified",
+            _registered_providers,
+        )
+        logger.info(
+            "Loaded %d general, %d character, %d rating tags",
+            len(_tags_data["general"]),
+            len(_tags_data["character"]),
+            len(_tags_data["rating"]),
+        )
 
-    logger.info(
-        f"Loaded {len(_tags_data['general'])} general, "
-        f"{len(_tags_data['character'])} character, "
-        f"{len(_tags_data['rating'])} rating tags"
-    )
-    _model_loaded = True
+
+def _ensure_model_loaded():
+    if not _model_loaded:
+        _load_model()
 
 
 # ─── Preprocessing ────────────────────────────────────────────────────────────
@@ -237,9 +315,7 @@ def preprocess_image(image_path: str) -> np.ndarray:
     img = Image.open(image_path).convert("RGB")
     img = img.resize((MODEL_INPUT_SIZE, MODEL_INPUT_SIZE), Image.Resampling.LANCZOS)
     arr = np.array(img, dtype=np.float32)
-    arr = arr[:, :, ::-1]  # RGB to BGR
-    arr = np.expand_dims(arr, axis=0)
-    return arr
+    return np.ascontiguousarray(arr[:, :, ::-1][None, ...])
 
 
 # ─── Postprocessing / Rating Logic ───────────────────────────────────────────
@@ -421,6 +497,185 @@ def get_tags_from_probs(probs: np.ndarray) -> dict:
     return result
 
 
+def _summarize_profile_events(events):
+    node_counts = {}
+    duration_us = {}
+    for event in events:
+        if event.get("cat") != "Node":
+            continue
+        provider = event.get("args", {}).get("provider")
+        if not provider:
+            continue
+        node_counts[provider] = node_counts.get(provider, 0) + 1
+        duration_us[provider] = duration_us.get(provider, 0.0) + float(
+            event.get("dur", 0.0)
+        )
+
+    durations_ms = {
+        provider: round(duration / 1000.0, 3)
+        for provider, duration in duration_us.items()
+    }
+    providers = set(node_counts)
+    has_cuda = "CUDAExecutionProvider" in providers
+    has_cpu = "CPUExecutionProvider" in providers
+    if has_cuda and has_cpu:
+        state, active = "mixed", "MixedExecutionProviders"
+    elif has_cuda:
+        state, active = "cuda", "CUDAExecutionProvider"
+    elif has_cpu:
+        state, active = "cpu", "CPUExecutionProvider"
+    else:
+        state, active = "unknown", None
+    return state, active, node_counts, durations_ms
+
+
+def _remove_profile_file(profile_path):
+    if not profile_path:
+        return
+    try:
+        Path(profile_path).unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Unable to remove ONNX Runtime profile %s: %s", profile_path, exc)
+
+
+def _finish_execution_profile(session):
+    global _execution_state, _active_provider, _provider_node_counts
+    global _provider_duration_ms, _provider_warning, _profile_warning
+
+    profile_path = None
+    try:
+        profile_path = session.end_profiling()
+        with open(profile_path, "r", encoding="utf-8") as profile_file:
+            document = json.load(profile_file)
+        events = document.get("traceEvents", []) if isinstance(document, dict) else document
+        state, active, counts, durations = _summarize_profile_events(events)
+        _execution_state = state
+        _active_provider = active
+        _provider_node_counts = counts
+        _provider_duration_ms = durations
+        if state == "unknown":
+            _profile_warning = (
+                "ONNX Runtime profiling did not identify which provider executed model nodes."
+            )
+        elif _requested_device == "cuda" and state == "cpu":
+            _provider_warning = _combine_warning(
+                _provider_warning,
+                "CUDA was requested but observed model execution used CPU only.",
+            )
+        elif (
+            _requested_device == "auto"
+            and "CUDAExecutionProvider" in _registered_providers
+            and state == "cpu"
+        ):
+            _provider_warning = _combine_warning(
+                _provider_warning,
+                "CUDA was registered but observed model execution used CPU only.",
+            )
+    except Exception as exc:
+        _execution_state = "unknown"
+        _active_provider = None
+        _provider_node_counts = {}
+        _provider_duration_ms = {}
+        _profile_warning = f"Unable to read ONNX Runtime execution profile: {exc}"
+        logger.warning(_profile_warning)
+    finally:
+        _remove_profile_file(profile_path)
+
+
+def _discard_execution_profile(session):
+    try:
+        _remove_profile_file(session.end_profiling())
+    except Exception:
+        pass
+
+
+def _replace_with_cpu_session(cuda_error):
+    global _ort_module
+
+    old_session = _model
+    _discard_execution_profile(old_session)
+    ort = _ort_module
+    if ort is None:
+        import onnxruntime as ort
+        _ort_module = ort
+    message = f"CUDA execution failed ({cuda_error}); using CPUExecutionProvider."
+    warning = _combine_warning(_provider_warning, message)
+    logger.warning(message)
+    cpu_session = _create_ort_session(
+        ort, _model_path, ["CPUExecutionProvider"]
+    )
+    _set_loaded_session(cpu_session, _available_providers, warning, _model_path)
+
+
+def _run_model(input_name, output_name, image_array):
+    if _execution_state != "not_run":
+        return _model.run([output_name], {input_name: image_array})
+
+    with _first_inference_lock:
+        if _execution_state != "not_run":
+            return _model.run([output_name], {input_name: image_array})
+
+        session = _model
+        try:
+            outputs = session.run([output_name], {input_name: image_array})
+        except Exception as exc:
+            if (
+                _requested_device in ("auto", "cuda")
+                and _registered_providers
+                and _registered_providers[0] == "CUDAExecutionProvider"
+            ):
+                _replace_with_cpu_session(exc)
+                session = _model
+                outputs = session.run([output_name], {input_name: image_array})
+            else:
+                raise
+        _finish_execution_profile(session)
+        return outputs
+
+
+def _predict_image(image_path):
+    global _last_timings_ms
+
+    total_started = time.perf_counter()
+    phase_started = total_started
+    image_array = preprocess_image(image_path)
+    preprocess_ms = (time.perf_counter() - phase_started) * 1000.0
+
+    input_name = _model.get_inputs()[0].name
+    output_name = _model.get_outputs()[0].name
+    phase_started = time.perf_counter()
+    outputs = _run_model(input_name, output_name, image_array)
+    inference_ms = (time.perf_counter() - phase_started) * 1000.0
+
+    phase_started = time.perf_counter()
+    tag_results = get_tags_from_probs(outputs[0][0])
+    postprocess_ms = (time.perf_counter() - phase_started) * 1000.0
+    timings = {
+        "preprocess": round(preprocess_ms, 3),
+        "inference": round(inference_ms, 3),
+        "postprocess": round(postprocess_ms, 3),
+        "total": round((time.perf_counter() - total_started) * 1000.0, 3),
+    }
+    _last_timings_ms = timings
+    logger.info(
+        "Prediction timings (ms): preprocess=%.3f inference=%.3f postprocess=%.3f total=%.3f",
+        timings["preprocess"],
+        timings["inference"],
+        timings["postprocess"],
+        timings["total"],
+    )
+
+    all_tags = tag_results["general_tags"] + tag_results["character_tags"]
+    return {
+        "tags": all_tags,
+        "rating": tag_results["rating"],
+        "rating_scores": tag_results["rating_scores"],
+        "general_count": len(tag_results["general_tags"]),
+        "character_count": len(tag_results["character_tags"]),
+        "timings_ms": timings,
+    }
+
+
 # ─── Video detection ──────────────────────────────────────────────────────────
 
 VIDEO_EXTENSIONS = {".webm", ".mp4", ".mov", ".avi", ".mkv"}
@@ -433,7 +688,7 @@ app = FastAPI(title="Auto-Tagger Sidecar")
 
 @app.get("/health")
 async def health():
-    available_providers = _available_providers
+    available_providers = list(_available_providers)
     if not available_providers:
         try:
             import onnxruntime as ort
@@ -446,8 +701,15 @@ async def health():
         "requested_device": _requested_device,
         "requested_provider": _requested_device,
         "available_providers": available_providers,
+        "registered_providers": list(_registered_providers),
+        "execution_state": _execution_state,
+        "execution_verified": _execution_state in ("cuda", "cpu", "mixed"),
         "active_provider": _active_provider,
+        "provider_node_counts": dict(_provider_node_counts),
+        "provider_duration_ms": dict(_provider_duration_ms),
+        "last_timings_ms": dict(_last_timings_ms) if _last_timings_ms else None,
         "provider_warning": _provider_warning,
+        "profile_warning": _profile_warning,
     }
 
 
@@ -457,8 +719,7 @@ class PredictRequest(BaseModel):
 
 
 @app.post("/predict")
-async def predict(req: PredictRequest):
-    # Skip video files
+def predict(req: PredictRequest):
     ext = Path(req.file_path).suffix.lower()
     if ext in VIDEO_EXTENSIONS:
         return {
@@ -472,35 +733,18 @@ async def predict(req: PredictRequest):
     if not os.path.exists(req.file_path):
         raise HTTPException(status_code=404, detail="Image file not found")
 
-    # Lazy-load model on first request
-    if not _model_loaded:
-        _load_model()
+    with _prediction_slots:
+        _ensure_model_loaded()
+        if not _model_loaded or _model is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Tagger model not loaded. Check model directory.",
+            )
 
-    if not _model_loaded or _model is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Tagger model not loaded. Check model directory.",
-        )
-
-    try:
-        image_array = preprocess_image(req.file_path)
-
-        input_name = _model.get_inputs()[0].name
-        output_name = _model.get_outputs()[0].name
-        outputs = _model.run([output_name], {input_name: image_array})
-        probs = outputs[0][0]
-
-        tag_results = get_tags_from_probs(probs)
-
-        all_tags = tag_results["general_tags"] + tag_results["character_tags"]
-
-        return {
-            "tags": all_tags,
-            "rating": tag_results["rating"],
-            "rating_scores": tag_results["rating_scores"],
-            "general_count": len(tag_results["general_tags"]),
-            "character_count": len(tag_results["character_tags"]),
-        }
-    except Exception as e:
-        logger.error(f"Prediction failed for {req.file_path}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        try:
+            return _predict_image(req.file_path)
+        except Exception as exc:
+            logger.error(
+                "Prediction failed for %s: %s", req.file_path, exc, exc_info=True
+            )
+            raise HTTPException(status_code=500, detail=str(exc))
