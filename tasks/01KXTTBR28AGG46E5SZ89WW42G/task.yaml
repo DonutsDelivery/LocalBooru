@@ -1,0 +1,16 @@
+_ulid: 01KXTTBR28AGG46E5SZ89WW42G
+slugs:
+  - task-desktop-launcher-continuity
+title: "Implement: Desktop launcher continuity"
+type: task
+spec_ref: "@desktop-launcher-continuity"
+derivation: auto
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-07-18T14:33:52.968Z
+todos: []

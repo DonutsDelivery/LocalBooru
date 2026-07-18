@@ -1,0 +1,30 @@
+notes:
+  - _ulid: 01KXTTBR28W3AT55N2H0W14YZZ
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Desktop activation preserves and reveals an existing LocalBooru instance instead of replacing
+      it, while retaining normal launch behavior when no instance is running.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given a recognized development instance is running with its window hidden or
+      minimized, when the normal desktop launcher is activated, then the running process remains
+      alive and its existing window is restored and focused
+
+      - ac-2: Given a recognized development instance is running, when the normal desktop launcher
+      receives a file or URI argument, then the argument is delivered unchanged to the running
+      instance
+
+      - ac-3: Given a recognized development instance is running while installed assets are
+      unavailable or build preparation is busy, when the normal desktop launcher is activated, then
+      the existing instance is contacted without waiting for installed-build preparation
+
+      - ac-4: Given no recognized development instance is running, when the normal desktop launcher
+      is activated, then the installed application launches with the supplied arguments
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T14:33:52.968Z
