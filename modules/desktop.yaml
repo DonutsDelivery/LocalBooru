@@ -153,7 +153,7 @@ features:
             when: the tagger model loads
           - given: CPU execution is explicitly requested
             id: ac-3
-            then: GPU activation is not attempted and the CPU provider is reported as active
+            then: GPU initialization is not attempted and only the CPU provider is registered
             when: the tagger model loads
         tags: []
         created: 2026-07-17T07:37:13.296Z
