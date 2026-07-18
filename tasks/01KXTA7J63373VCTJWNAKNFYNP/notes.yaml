@@ -55,3 +55,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-18T10:09:16.731Z
+  - _ulid: 01KXTCQ0T4E7612AWHSVVRF2PX
+    content: "Verification: 13 Auto Tagger Python tests, all 56 frontend tests, frontend production
+      build, targeted ESLint, 12 focused Rust add-on tests, cargo fmt --check, and all 124 Rust
+      library tests pass. Real EVA02 CUDA smoke observed mixed execution: 1360 CUDA events /
+      1057.570 ms and 560 CPU events / 13.973 ms; execution was unverified before prediction and no
+      temporary profile remained. Clippy -D warnings is blocked by unrelated existing repository
+      warnings. Windows cross-check reached native C compilation but this Linux host lacks MSVC
+      lib.exe. Full kspec validation is blocked by 130 pre-existing schema errors in legacy
+      android/core records; this task's spec and six ACs load correctly."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T10:35:22.308Z
