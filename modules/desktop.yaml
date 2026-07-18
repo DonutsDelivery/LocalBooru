@@ -158,6 +158,19 @@ features:
         tags: []
         created: 2026-07-17T07:37:13.296Z
         notes: []
+      - _ulid: 01KXTA6CN050PSYDJKD84XNCNJ
+        slugs:
+          - auto-tagger-execution-verification
+        title: Auto Tagger Execution Verification
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-18T09:51:20.224Z
+        notes: []
     created: 2026-07-12T06:35:00.381Z
     notes: []
   - _ulid: 01KXPM0TN30TDXXDSAZFTJRX3K
