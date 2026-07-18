@@ -187,6 +187,11 @@ features:
             then: the add-on records the CUDA failure, performs a CPU fallback prediction when possible, and
               does not report CUDA execution
             when: the complete model cannot execute on CUDA
+          - given: a prediction completes
+            id: ac-4
+            then: image preparation, model inference, result processing, and total durations are reported
+              separately
+            when: diagnostic status is recorded
         tags: []
         created: 2026-07-18T09:51:20.224Z
         notes: []
