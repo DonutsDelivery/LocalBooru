@@ -1,6 +1,6 @@
 [package]
 name = "localbooru"
-version = "2.0.1"
+version = "2.0.2"
 description = "Local image library with automatic tagging"
 authors = ["DonutsDelivery <donutsdelivery@users.noreply.github.com>"]
 license = "MIT"
