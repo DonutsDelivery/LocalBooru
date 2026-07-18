@@ -73,6 +73,9 @@ features:
         type: requirement
         description: Explicit application exit stops managed background work before LocalBooru closes, while
           ordinary window close and minimize continue running in the background.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to:
