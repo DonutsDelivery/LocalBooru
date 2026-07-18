@@ -37,3 +37,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-18T14:34:15.049Z
+  - _ulid: 01KXTVVS9W8G225GHDPW9TJ9CP
+    content: "Review refinement: replaced process-path discovery/re-execution with a bounded direct call
+      to Tauri's session D-Bus single-instance endpoint. This removes PID/path/readiness races,
+      avoids launching a 589 MB debug binary, works when installed assets are missing or the build
+      lock is held, and gets an actual method-call result. If the owner disappears, normal installed
+      launch continues; if the owner remains but activation fails, the launcher reports the failure
+      rather than creating a competing instance. AC-2 was narrowed from unsupported URI forwarding
+      to supported file paths."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T15:00:07.100Z
