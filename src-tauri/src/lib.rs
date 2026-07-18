@@ -156,6 +156,15 @@ fn show_window(window: &tauri::WebviewWindow) {
     let _ = window.set_focus();
 }
 
+#[cfg(desktop)]
+fn should_hide_window_on_close(quit_requested: bool) -> bool {
+    !quit_requested
+}
+
+fn should_cleanup_before_exit(exit_code: Option<i32>) -> bool {
+    exit_code.is_none()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // ── Linux: Video pipeline in WebKitGTK ──
@@ -643,7 +652,6 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_item, &browser_item, &separator, &quit_item])?;
 
-            let quit_flag_menu = quit_flag.clone();
             let server_port = port;
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
             let _tray = TrayIconBuilder::new()
@@ -669,12 +677,10 @@ pub fn run() {
                                 .spawn();
                         }
                         "quit" => {
-                            // Kill FFmpeg transcode processes before exiting
-                            if let Some(state) = app_handle.try_state::<AppState>() {
-                                state.transcode_manager().stop_all();
-                            }
-                            quit_flag_menu.store(true, Ordering::SeqCst);
-                            app_handle.exit(0);
+                            let app_handle = app_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                quit_app(app_handle).await;
+                            });
                         }
                         _ => {}
                     }
@@ -705,7 +711,7 @@ pub fn run() {
         builder = builder.on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let quit_flag: tauri::State<Arc<AtomicBool>> = window.app_handle().state();
-                if quit_flag.load(Ordering::SeqCst) {
+                if !should_hide_window_on_close(quit_flag.load(Ordering::SeqCst)) {
                     log::info!("Quit requested, closing window...");
                 } else {
                     log::info!("Window close requested, hiding to tray...");
@@ -727,7 +733,7 @@ pub fn run() {
         });
     }
 
-    builder
+    let app = builder
         .invoke_handler(tauri::generate_handler![
             // Backend commands (compatibility stubs + status)
             backend_start,
@@ -769,6 +775,38 @@ pub fn run() {
             native_video_set_desktop_player_mode,
             native_video_set_display_mode,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+            if should_cleanup_before_exit(code) {
+                api.prevent_exit();
+                let app_handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    quit_app(app_handle).await;
+                });
+            }
+        }
+    });
+}
+
+#[cfg(all(test, desktop))]
+mod tests {
+    use super::{should_cleanup_before_exit, should_hide_window_on_close};
+
+    // AC: @explicit-exit-process-cleanup ac-1
+    // AC: @explicit-exit-process-cleanup ac-2
+    #[test]
+    fn user_requested_exit_runs_cleanup_before_programmatic_exit() {
+        assert!(should_cleanup_before_exit(None));
+        assert!(!should_cleanup_before_exit(Some(0)));
+    }
+
+    // AC: @explicit-exit-process-cleanup ac-3
+    #[test]
+    fn ordinary_close_hides_window_until_explicit_quit() {
+        assert!(should_hide_window_on_close(false));
+        assert!(!should_hide_window_on_close(true));
+    }
 }

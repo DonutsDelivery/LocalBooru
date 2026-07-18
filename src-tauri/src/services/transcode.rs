@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -15,6 +15,7 @@ use dashmap::DashMap;
 use regex::Regex;
 use serde::Deserialize;
 use tokio::process::{Child, Command};
+use tokio::sync::{watch, RwLock as TokioRwLock};
 
 /// Cached hardware capability detection (done once at startup).
 static HW_CAPS: OnceLock<HwCaps> = OnceLock::new();
@@ -124,6 +125,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
         .arg(path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .output()
         .await
     {
@@ -161,6 +163,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
             .arg(path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .kill_on_drop(true)
             .output()
             .await
         {
@@ -186,6 +189,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
         .arg(path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .output()
         .await
     {
@@ -225,6 +229,7 @@ pub async fn detect_audio_gain(path: &str) -> Option<f64> {
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .output()
         .await
         .ok()?;
@@ -306,6 +311,9 @@ pub struct TranscodeManager {
     streams: DashMap<String, TranscodeStream>,
     transition_epoch: AtomicU64,
     transition_lock: Mutex<()>,
+    lifecycle: TokioRwLock<()>,
+    shutdown_signal: watch::Sender<bool>,
+    shutting_down: AtomicBool,
 }
 
 impl TranscodeManager {
@@ -316,6 +324,9 @@ impl TranscodeManager {
             streams: DashMap::new(),
             transition_epoch: AtomicU64::new(0),
             transition_lock: Mutex::new(()),
+            lifecycle: TokioRwLock::new(()),
+            shutdown_signal: watch::channel(false).0,
+            shutting_down: AtomicBool::new(false),
         }
     }
 
@@ -324,7 +335,8 @@ impl TranscodeManager {
     }
 
     fn owns_transition(&self, epoch: u64) -> bool {
-        self.transition_epoch.load(Ordering::SeqCst) == epoch
+        !self.shutting_down.load(Ordering::SeqCst)
+            && self.transition_epoch.load(Ordering::SeqCst) == epoch
     }
 
     fn transition_guard(&self) -> std::sync::MutexGuard<'_, ()> {
@@ -333,11 +345,14 @@ impl TranscodeManager {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn claim_transition_and_stop(&self) -> u64 {
+    fn claim_transition_and_stop(&self) -> Result<u64, String> {
         let _guard = self.transition_guard();
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err("Application shutdown is in progress".into());
+        }
         let epoch = self.claim_transition();
         self.stop_registered_streams();
-        epoch
+        Ok(epoch)
     }
 
     fn publish_stream_if_owned(
@@ -347,7 +362,7 @@ impl TranscodeManager {
         stream: TranscodeStream,
     ) -> Result<(), TranscodeStream> {
         let _guard = self.transition_guard();
-        if !self.owns_transition(epoch) {
+        if self.shutting_down.load(Ordering::SeqCst) || !self.owns_transition(epoch) {
             return Err(stream);
         }
         self.streams.insert(stream_id, stream);
@@ -396,17 +411,29 @@ impl TranscodeManager {
         force_cfr: bool,
         target_fps: Option<u32>,
     ) -> Result<TranscodeStreamInfo, String> {
-        let transition_epoch = self.claim_transition_and_stop();
+        let _lifecycle = self.lifecycle.read().await;
+        let mut shutdown = self.shutdown_signal.subscribe();
+        let transition_epoch = self.claim_transition_and_stop()?;
 
         let stream_id = uuid::Uuid::new_v4().to_string();
 
         // Detect video info and audio gain
-        let video_info = detect_video_info(file_path).await;
+        let video_info = tokio::select! {
+            info = detect_video_info(file_path) => info,
+            _ = shutdown.changed() => {
+                return Err("Application shutdown is in progress".into());
+            }
+        };
         if !self.owns_transition(transition_epoch) {
             return Err("Transcode start was superseded".into());
         }
         let audio_gain_db = if video_info.has_audio {
-            detect_audio_gain(file_path).await
+            tokio::select! {
+                gain = detect_audio_gain(file_path) => gain,
+                _ = shutdown.changed() => {
+                    return Err("Application shutdown is in progress".into());
+                }
+            }
         } else {
             None
         };
@@ -556,6 +583,14 @@ impl TranscodeManager {
         let _guard = self.transition_guard();
         self.claim_transition();
         self.stop_registered_streams();
+    }
+
+    /// Permanently reject new streams and stop all active or preparing transcodes.
+    pub async fn shutdown(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
+        self.shutdown_signal.send_replace(true);
+        let _lifecycle = self.lifecycle.write().await;
+        self.stop_all();
     }
 }
 
@@ -776,6 +811,8 @@ fn build_ffmpeg_command(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     fn manager() -> TranscodeManager {
@@ -783,6 +820,9 @@ mod tests {
             streams: DashMap::new(),
             transition_epoch: AtomicU64::new(0),
             transition_lock: Mutex::new(()),
+            lifecycle: TokioRwLock::new(()),
+            shutdown_signal: watch::channel(false).0,
+            shutting_down: AtomicBool::new(false),
         }
     }
 
@@ -808,11 +848,45 @@ mod tests {
         assert!(!manager.owns_transition(preparing));
     }
 
+    // AC: @explicit-exit-process-cleanup ac-1
+    // AC: @explicit-exit-process-cleanup ac-2
+    #[tokio::test]
+    async fn shutdown_rejects_new_transcode_transitions() {
+        let manager = manager();
+
+        manager.shutdown().await;
+
+        assert!(manager.claim_transition_and_stop().is_err());
+    }
+
+    // AC: @explicit-exit-process-cleanup ac-1
+    // AC: @explicit-exit-process-cleanup ac-2
+    #[tokio::test]
+    async fn shutdown_cancels_in_flight_transcode_before_waiting_for_it() {
+        let manager = Arc::new(manager());
+        let lifecycle = manager.lifecycle.read().await;
+        let mut shutdown_signal = manager.shutdown_signal.subscribe();
+        let shutdown_manager = manager.clone();
+        let shutdown = tokio::spawn(async move {
+            shutdown_manager.shutdown().await;
+        });
+
+        tokio::time::timeout(Duration::from_secs(1), shutdown_signal.changed())
+            .await
+            .expect("shutdown signal timed out")
+            .expect("shutdown signal closed");
+        assert!(*shutdown_signal.borrow());
+        assert!(!shutdown.is_finished());
+
+        drop(lifecycle);
+        shutdown.await.expect("shutdown task failed");
+    }
+
     #[test]
     // AC: @reliable-stream-transitions ac-stop-superseded-producer
     fn stopped_start_cannot_publish_after_cleanup() {
         let manager = manager();
-        let preparing = manager.claim_transition_and_stop();
+        let preparing = manager.claim_transition_and_stop().unwrap();
         manager.stop_all();
 
         let stream = TranscodeStream {

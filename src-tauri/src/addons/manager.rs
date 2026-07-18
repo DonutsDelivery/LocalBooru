@@ -5,12 +5,13 @@
 //! environment under `{data_dir}/addons/{addon_id}/`.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
 
 use super::manifest::{get_addon_manifest, get_addon_registry, AddonRuntime};
 use super::sidecar;
@@ -83,6 +84,8 @@ struct AddonPersistedState {
 pub struct AddonManager {
     addons: DashMap<String, AddonState>,
     data_dir: PathBuf,
+    lifecycle: TokioRwLock<()>,
+    shutting_down: AtomicBool,
 }
 
 impl AddonManager {
@@ -123,6 +126,8 @@ impl AddonManager {
         Self {
             addons,
             data_dir: data_dir.to_path_buf(),
+            lifecycle: TokioRwLock::new(()),
+            shutting_down: AtomicBool::new(false),
         }
     }
 
@@ -499,6 +504,11 @@ impl AddonManager {
     /// The addon must be installed. The process is spawned asynchronously
     /// and health-checked before marking it as running.
     pub async fn start_addon(&self, id: &str) -> Result<(), String> {
+        let lifecycle = self.lifecycle.read().await;
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err("Application shutdown is in progress".into());
+        }
+
         let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
         if manifest.runtime == AddonRuntime::Builtin {
             return Err(format!("Addon '{}' does not require a sidecar", id));
@@ -555,6 +565,7 @@ impl AddonManager {
         if let Some(mut state) = self.addons.get_mut(id) {
             state.process = Some(process.clone());
         }
+        drop(lifecycle);
 
         // Wait for the addon to become healthy
         let healthy = sidecar::wait_for_healthy(port, Duration::from_secs(30)).await;
@@ -585,6 +596,7 @@ impl AddonManager {
 
     /// Stop a running addon by killing its sidecar process.
     pub async fn stop_addon(&self, id: &str) -> Result<(), String> {
+        let _lifecycle = self.lifecycle.read().await;
         let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
         if manifest.runtime == AddonRuntime::Builtin {
             return Err(format!("Addon '{}' does not require a sidecar", id));
@@ -639,23 +651,40 @@ impl AddonManager {
     /// Shut down all running addon sidecar processes.
     ///
     /// Called during application exit to ensure no orphan processes remain.
-    pub fn stop_all(&self) {
+    pub async fn stop_all(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
+        let _lifecycle = self.lifecycle.write().await;
         log::info!("[AddonManager] Stopping all running addons...");
 
+        let mut processes = Vec::new();
         for mut entry in self.addons.iter_mut() {
             let id = entry.key().clone();
-            if let Some(proc) = entry.value_mut().process.take() {
-                if let Ok(mut child) = proc.try_lock() {
-                    if let Some(pid) = child.id() {
-                        log::info!("[AddonManager] Killing addon '{}' (PID {})", id, pid);
-                        sidecar::kill_process(pid);
-                    }
-                    let _ = child.start_kill();
-                }
+            if let Some(process) = entry.value_mut().process.take() {
+                processes.push((id, process));
             }
             // Mark stopped unless uninstalled
             if entry.value().status != AddonStatus::NotInstalled {
                 entry.value_mut().status = AddonStatus::Stopped;
+            }
+        }
+
+        for (id, process) in processes {
+            let mut child = process.lock().await;
+            if let Some(pid) = child.id() {
+                log::info!("[AddonManager] Killing addon '{}' (PID {})", id, pid);
+                sidecar::kill_process(pid);
+            }
+            if let Err(error) = child.start_kill() {
+                log::warn!("[AddonManager] Failed to kill addon '{}': {}", id, error);
+            }
+            if tokio::time::timeout(Duration::from_secs(5), child.wait())
+                .await
+                .is_err()
+            {
+                log::warn!(
+                    "[AddonManager] Timed out waiting for addon '{}' to exit",
+                    id
+                );
             }
         }
 
@@ -809,6 +838,67 @@ mod tests {
             format!("-m pip install --upgrade {}", ONNXRUNTIME_CPU)
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @explicit-exit-process-cleanup ac-1
+    // AC: @explicit-exit-process-cleanup ac-2
+    #[tokio::test]
+    async fn stop_all_waits_for_contended_process_and_reaps_it() {
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = tokio::process::Command::new("sh");
+            command.args(["-c", "sleep 60"]);
+            command
+        };
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = tokio::process::Command::new("cmd");
+            command.args(["/C", "ping -n 60 127.0.0.1 >NUL"]);
+            command
+        };
+        command.kill_on_drop(true);
+        let child = command.spawn().unwrap();
+
+        let process = Arc::new(TokioMutex::new(child));
+        let manager = Arc::new(AddonManager::new(Path::new("unused")));
+        manager.addons.insert(
+            "auto-tagger".to_string(),
+            AddonState {
+                status: AddonStatus::Running,
+                process: Some(process.clone()),
+            },
+        );
+
+        let guard = process.lock().await;
+        let shutdown_manager = manager.clone();
+        let shutdown = tokio::spawn(async move {
+            shutdown_manager.stop_all().await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!shutdown.is_finished());
+
+        drop(guard);
+        tokio::time::timeout(Duration::from_secs(10), shutdown)
+            .await
+            .expect("shutdown timed out")
+            .expect("shutdown task failed");
+
+        let mut child = process.lock().await;
+        assert!(child.try_wait().unwrap().is_some());
+    }
+
+    // AC: @explicit-exit-process-cleanup ac-1
+    // AC: @explicit-exit-process-cleanup ac-2
+    #[tokio::test]
+    async fn stop_all_rejects_new_addon_starts() {
+        let manager = AddonManager::new(Path::new("unused"));
+
+        manager.stop_all().await;
+
+        assert_eq!(
+            manager.start_addon("auto-tagger").await.unwrap_err(),
+            "Application shutdown is in progress"
+        );
     }
 
     #[test]
