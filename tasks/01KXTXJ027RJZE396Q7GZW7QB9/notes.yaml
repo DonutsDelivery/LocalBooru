@@ -38,3 +38,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-18T15:39:52.443Z
+  - _ulid: 01KXV08Y7YVTQJA0ZWF5R1XV3W
+    content: "Review fix pass: added single-flight cleanup so concurrent Quit requests cannot exit
+      early; delayed the quit flag until cleanup completes; gated new/in-flight addon and transcode
+      starts; routed native user-requested app exits through the same cleanup. Added 5-second child
+      wait timeout. Full verification: 129 Rust tests and 52 frontend tests pass; cargo check passes
+      with 5 pre-existing optical-flow dead-code warnings. kspec validate remains blocked by 130
+      pre-existing legacy schema errors."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T16:17:12.446Z
