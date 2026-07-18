@@ -188,9 +188,8 @@ features:
             when: runtime status is viewed
           - given: CUDA execution is explicitly requested
             id: ac-3
-            then: the add-on records the CUDA failure, performs a CPU fallback prediction when possible, and
-              does not report CUDA execution
-            when: the complete model cannot execute on CUDA
+            then: the add-on reports CPU fallback with a diagnostic and does not report CUDA execution
+            when: a prediction completes without any observed CUDA model execution
           - given: a prediction completes
             id: ac-4
             then: image preparation, model inference, result processing, and total durations are reported
