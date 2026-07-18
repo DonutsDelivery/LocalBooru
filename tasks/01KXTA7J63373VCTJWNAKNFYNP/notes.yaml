@@ -67,3 +67,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-18T10:35:22.308Z
+  - _ulid: 01KXTD7MADS3T8NBSX9Y2NY2S0
+    content: Independent review found that first-run CUDA failure in auto mode returned HTTP 500 instead
+      of using the documented CPU fallback. Fixed the fallback condition for both auto and explicit
+      CUDA and parameterized the behavioral test; 14 focused Python tests now pass.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T10:44:26.573Z
