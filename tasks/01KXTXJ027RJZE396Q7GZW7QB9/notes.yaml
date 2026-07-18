@@ -21,3 +21,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-18T15:29:43.495Z
+  - _ulid: 01KXTXKVNVXGS06X4S672X514R
+    content: "Approach: add a shared AppState async shutdown boundary, make AddonManager::stop_all await
+      every tracked child lock and process exit, and route IPC/tray Quit through it while leaving
+      close-to-tray untouched. Edge case: a contended child mutex must not cause cleanup to skip a
+      Python process. Test plan: real child-process contention test for ac-1/ac-2 and existing
+      close/minimize behavioral coverage for ac-3."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T15:30:44.539Z
