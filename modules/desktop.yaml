@@ -85,6 +85,10 @@ features:
             id: ac-2
             then: all managed background process trees stop before the application exits
             when: the user chooses Quit from the system tray
+          - given: LocalBooru is running with active backend services or add-ons
+            id: ac-3
+            then: the application continues running in the background with those services available
+            when: the user closes or minimizes the window without choosing Quit
         tags: []
         created: 2026-07-18T15:29:40.724Z
         notes: []
