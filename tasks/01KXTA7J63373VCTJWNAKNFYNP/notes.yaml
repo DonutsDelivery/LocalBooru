@@ -35,3 +35,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-18T09:51:58.658Z
+  - _ulid: 01KXTA957WFPEWMKK8K9BMK32D
+    content: "Approach: stop treating session provider order as execution evidence; use first-inference
+      ORT profiling for observed provider counts/timings, strict no-CPU-node fallback for explicit
+      CUDA, fresh CPU session fallback, contiguous preprocessing, bounded synchronous prediction,
+      and a UI that separates requested/available/registered/observed states. Tests: synthetic
+      profiles and fake sessions for ACs 1-5, pure frontend formatter coverage for AC-6, plus
+      real-model profile smoke. Branch HEAD exactly matches origin/release/2.0.1; rebase was
+      unnecessary and blocked only by pre-existing user changes."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T09:52:50.940Z
