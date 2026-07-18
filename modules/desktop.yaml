@@ -163,9 +163,12 @@ features:
           - auto-tagger-execution-verification
         title: Auto Tagger Execution Verification
         type: requirement
+        description: Auto Tagger reports model execution from completed prediction evidence and
+          distinguishes GPU inference from CPU preparation and fallback work.
         depends_on: []
         implements: []
-        relates_to: []
+        relates_to:
+          - "@addon-platform-dependencies"
         tests: []
         traits: []
         tags: []
