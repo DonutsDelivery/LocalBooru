@@ -182,6 +182,11 @@ features:
             then: CUDA-only, CPU-only, mixed, or unknown execution is reported according to the providers that
               processed the model
             when: runtime status is viewed
+          - given: CUDA execution is explicitly requested
+            id: ac-3
+            then: the add-on records the CUDA failure, performs a CPU fallback prediction when possible, and
+              does not report CUDA execution
+            when: the complete model cannot execute on CUDA
         tags: []
         created: 2026-07-18T09:51:20.224Z
         notes: []
