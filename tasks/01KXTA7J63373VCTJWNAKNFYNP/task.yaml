@@ -1,0 +1,17 @@
+_ulid: 01KXTA7J63373VCTJWNAKNFYNP
+slugs:
+  - task-auto-tagger-execution-verification
+title: "Implement: Auto Tagger Execution Verification"
+type: task
+spec_ref: "@auto-tagger-execution-verification"
+derivation: auto
+status: pending
+blocked_by: []
+depends_on:
+  - "@addon-settings-migration"
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-07-18T09:51:58.659Z
+todos: []

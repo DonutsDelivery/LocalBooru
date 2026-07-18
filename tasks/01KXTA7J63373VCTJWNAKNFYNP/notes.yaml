@@ -1,0 +1,37 @@
+notes:
+  - _ulid: 01KXTA7J62CZMS9RVTMZ5MGNPZ
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Auto Tagger reports model execution from completed prediction evidence and distinguishes GPU
+      inference from CPU preparation and fallback work.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given the tagger model has loaded but no prediction has completed, when runtime status
+      is viewed, then execution is reported as unverified and provider registration is not presented
+      as observed GPU execution
+
+      - ac-2: Given a prediction completes with observable model execution evidence, when runtime
+      status is viewed, then CUDA-only, CPU-only, mixed, or unknown execution is reported according
+      to the providers that processed the model
+
+      - ac-3: Given CUDA execution is explicitly requested, when the complete model cannot execute
+      on CUDA, then the add-on records the CUDA failure, performs a CPU fallback prediction when
+      possible, and does not report CUDA execution
+
+      - ac-4: Given a prediction completes, when diagnostic status is recorded, then image
+      preparation, model inference, result processing, and total durations are reported separately
+
+      - ac-5: Given a prediction is running, when runtime health is requested, then health remains
+      responsive without loading a duplicate model process
+
+      - ac-6: Given runtime diagnostics are displayed, when the user reviews Auto Tagger settings,
+      then requested device, runtime availability, session registration, observed execution, timing
+      evidence, and fallback warnings are visibly distinguished
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T09:51:58.658Z
