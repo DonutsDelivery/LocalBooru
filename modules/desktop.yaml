@@ -168,6 +168,7 @@ features:
         depends_on: []
         implements: []
         relates_to:
+          - "@auto-tagger-provider-diagnostics"
           - "@addon-platform-dependencies"
         tests: []
         traits: []
