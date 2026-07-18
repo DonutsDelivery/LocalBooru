@@ -1,0 +1,23 @@
+notes:
+  - _ulid: 01KXTXJ0273RD80EJDFMABB80K
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given LocalBooru has active transcodes and add-on processes, when the user chooses
+      Quit from the title bar or Settings, then all managed background process trees stop before the
+      application exits
+
+      - ac-2: Given LocalBooru has active transcodes and add-on processes, when the user chooses
+      Quit from the system tray, then all managed background process trees stop before the
+      application exits
+
+      - ac-3: Given LocalBooru is running with active backend services or add-ons, when the user
+      closes or minimizes the window without choosing Quit, then the application continues running
+      in the background with those services available
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T15:29:43.495Z
