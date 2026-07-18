@@ -165,6 +165,9 @@ features:
         type: requirement
         description: Auto Tagger reports model execution from completed prediction evidence and
           distinguishes GPU inference from CPU preparation and fallback work.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to:
