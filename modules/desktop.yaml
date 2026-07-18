@@ -56,6 +56,10 @@ features:
             id: ac-3
             then: the existing instance is contacted without waiting for installed-build preparation
             when: the normal desktop launcher is activated
+          - given: no recognized development instance is running
+            id: ac-4
+            then: the installed application launches with the supplied arguments
+            when: the normal desktop launcher is activated
         tags: []
         created: 2026-07-18T14:33:21.018Z
         notes: []
