@@ -857,7 +857,7 @@ tasks:
     title: "Implement: Desktop launcher continuity"
     type: task
     spec_ref: "@desktop-launcher-continuity"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -866,3 +866,4 @@ tasks:
     todos_count: 0
     created_at: 2026-07-18T14:33:52.968Z
     started_at: 2026-07-18T14:34:09.282Z
+    submitted_at: 2026-07-18T15:11:17.635Z
