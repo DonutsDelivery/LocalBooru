@@ -42,6 +42,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: a recognized development instance is running with its window hidden or minimized
+            id: ac-1
+            then: the running process remains alive and its existing window is restored and focused
+            when: the normal desktop launcher is activated
         tags: []
         created: 2026-07-18T14:33:21.018Z
         notes: []
