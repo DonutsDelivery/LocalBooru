@@ -28,3 +28,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-18T14:33:52.968Z
+  - _ulid: 01KXTTCDM9T6QTN73201325TZQ
+    content: "Approach: replace run.sh's dev SIGTERM path with exact-executable single-instance
+      activation before installed-build checks. Preserve original arguments and propagate activation
+      failures. Tests: a temporary compiled helper proves the resident PID survives, arguments are
+      forwarded, build preparation is bypassed, and installed fallback remains unchanged. No changes
+      to Tauri close/Quit behavior."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T14:34:15.049Z
