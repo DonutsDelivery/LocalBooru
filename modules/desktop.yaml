@@ -143,8 +143,8 @@ features:
         acceptance_criteria:
           - given: GPU acceleration is requested and its runtime can initialize
             id: ac-1
-            then: the GPU provider becomes active and requested, available, and active provider status is
-              reported accurately
+            then: the GPU provider is registered with highest priority and requested, available, and registered
+              provider status is reported accurately
             when: the tagger model loads
           - given: GPU acceleration is requested but its native runtime cannot initialize
             id: ac-2
