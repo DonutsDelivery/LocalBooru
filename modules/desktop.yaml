@@ -66,6 +66,19 @@ features:
         tags: []
         created: 2026-07-18T14:33:21.018Z
         notes: []
+      - _ulid: 01KXTXHXBMVKM5XQVQQ5E61GDN
+        slugs:
+          - explicit-exit-process-cleanup
+        title: Explicit Exit Process Cleanup
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-18T15:29:40.724Z
+        notes: []
     created: 2026-03-08T08:30:40.279Z
     notes: []
   - _ulid: 01KK693TCHRCB7G97FXBBAS5HH
