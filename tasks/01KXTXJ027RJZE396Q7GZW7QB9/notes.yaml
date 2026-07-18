@@ -48,3 +48,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-18T16:17:12.446Z
+  - _ulid: 01KXV0WRXD2JCNV69FRH9SGREF
+    content: "Final verification after review fixes: 130 Rust tests and 52 frontend tests pass; cargo
+      check and formatting pass; independent final review reports no findings. GUI smoke was not run
+      because the currently running LocalBooru instance uses the same fixed port/single-instance
+      endpoint and should not be interrupted; the Windows Wine UI remains blocked by WebView2 as
+      previously established."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T16:28:02.349Z
