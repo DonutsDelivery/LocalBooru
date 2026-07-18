@@ -130,7 +130,7 @@ features:
         title: Auto Tagger Provider Diagnostics
         type: requirement
         description: Auto Tagger acceleration status distinguishes configured preference, runtime
-          capability, actual model execution, and fallback diagnostics.
+          capability, session provider registration, and initialization fallback diagnostics.
         status:
           maturity: draft
           implementation: implemented
