@@ -6,6 +6,12 @@ import {
   getModels,
   updateAutoTaggerConfig,
 } from '../api'
+import {
+  formatExecutionState,
+  formatProviderList,
+  formatProviderMetric,
+  formatTimings,
+} from './autoTaggerRuntime'
 import './OpticalFlowSettings.css'
 
 const TAGGER_MODEL_IDS = new Set(['vit-v3', 'eva02-large-v3', 'swinv2-v3'])
@@ -16,6 +22,7 @@ export default function AutoTaggerSettings() {
   const [health, setHealth] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [refreshingHealth, setRefreshingHealth] = useState(false)
   const [downloading, setDownloading] = useState(null)
 
   const load = async () => {
@@ -55,6 +62,17 @@ export default function AutoTaggerSettings() {
     }
   }
 
+  const refreshHealth = async () => {
+    setRefreshingHealth(true)
+    try {
+      setHealth(await getAddonHealth('auto-tagger'))
+    } catch (error) {
+      console.error('Failed to refresh Auto Tagger runtime status:', error)
+    } finally {
+      setRefreshingHealth(false)
+    }
+  }
+
   const download = async (modelName) => {
     setDownloading(modelName)
     try {
@@ -79,8 +97,13 @@ export default function AutoTaggerSettings() {
     return <section className="optical-flow-settings"><h2>Auto Tagger</h2><p className="settings-description">Loading...</p></section>
   }
 
-  const activeProvider = health?.active_provider || 'Not loaded'
-  const providers = health?.available_providers?.join(', ') || 'Start Auto Tagger to inspect providers'
+  const requestedDevice = health?.requested_device || config.device
+  const availableProviders = formatProviderList(health?.available_providers)
+  const registeredProviders = formatProviderList(health?.registered_providers)
+  const observedExecution = formatExecutionState(health?.execution_state)
+  const providerNodeCounts = formatProviderMetric(health?.provider_node_counts)
+  const providerDurations = formatProviderMetric(health?.provider_duration_ms, 'ms')
+  const lastTimings = formatTimings(health?.last_timings_ms)
 
   return (
     <section className="optical-flow-settings">
@@ -139,10 +162,18 @@ export default function AutoTaggerSettings() {
 
       <section className="settings-section">
         <h3>Runtime</h3>
-        <p className="setting-note">Requested device: {health?.requested_device || config.device}</p>
-        <p className="setting-note">Available providers: {providers}</p>
-        <p className="setting-note">Active provider: {activeProvider}</p>
+        <p className="setting-note">Requested device: {requestedDevice}</p>
+        <p className="setting-note">Runtime available: {availableProviders}</p>
+        <p className="setting-note">Session registered: {registeredProviders}</p>
+        <p className="setting-note">Observed execution: {observedExecution}</p>
+        <p className="setting-note">Provider node counts: {providerNodeCounts}</p>
+        <p className="setting-note">Provider durations: {providerDurations}</p>
+        <p className="setting-note">Last prediction timings: {lastTimings}</p>
         {health?.provider_warning && <p className="optical-flow-status warning">{health.provider_warning}</p>}
+        {health?.profile_warning && <p className="optical-flow-status warning">{health.profile_warning}</p>}
+        <button onClick={refreshHealth} disabled={refreshingHealth}>
+          {refreshingHealth ? 'Refreshing...' : 'Refresh Runtime Status'}
+        </button>
       </section>
 
       <button onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save Auto Tagger settings'}</button>
