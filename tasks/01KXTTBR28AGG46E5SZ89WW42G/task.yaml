@@ -5,12 +5,24 @@ title: "Implement: Desktop launcher continuity"
 type: task
 spec_ref: "@desktop-launcher-continuity"
 derivation: auto
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-07-18T14:34:09.282Z
+        previous: null
+    command: task-start
+    timestamp: 2026-07-18T14:34:09.282Z
 created_at: 2026-07-18T14:33:52.968Z
+started_at: 2026-07-18T14:34:09.282Z
 todos: []
