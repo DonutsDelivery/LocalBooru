@@ -196,6 +196,11 @@ features:
             id: ac-5
             then: health remains responsive without loading a duplicate model process
             when: runtime health is requested
+          - given: runtime diagnostics are displayed
+            id: ac-6
+            then: requested device, runtime availability, session registration, observed execution, timing
+              evidence, and fallback warnings are visibly distinguished
+            when: the user reviews Auto Tagger settings
         tags: []
         created: 2026-07-18T09:51:20.224Z
         notes: []
