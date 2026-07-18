@@ -8,55 +8,41 @@ APP="$DATA_HOME/localbooru/local-build/localbooru"
 FRONTEND="$DATA_HOME/localbooru/local-build/frontend/dist/index.html"
 STATE_DIR="$STATE_HOME/localbooru"
 LOG="$STATE_DIR/run.log"
-DEV_APP_PATHS=(
-  "$ROOT/target/debug/localbooru"
-  "/mnt/storage/Programs/localbooru-target-dev/debug/localbooru"
-)
-if [[ -n "${LOCALBOORU_DEV_TARGET_DIR:-}" ]]; then
-  DEV_APP_PATHS+=("$LOCALBOORU_DEV_TARGET_DIR/debug/localbooru")
-fi
+SINGLE_INSTANCE_SERVICE="com.localbooru.app.SingleInstance"
+SINGLE_INSTANCE_PATH="/com/localbooru/app/SingleInstance"
+SINGLE_INSTANCE_INTERFACE="org.SingleInstance.DBus"
 
 mkdir -p "$STATE_DIR"
-
-stop_development_instance() {
-  local proc_link proc_exe pid dev_app
-  local -a dev_pids=()
-
-  for proc_link in /proc/[0-9]*/exe; do
-    proc_exe="$(readlink -f "$proc_link" 2>/dev/null || true)"
-    for dev_app in "${DEV_APP_PATHS[@]}"; do
-      if [[ "$proc_exe" == "$dev_app" ]]; then
-        pid="${proc_link#/proc/}"
-        dev_pids+=("${pid%/exe}")
-        break
-      fi
-    done
-  done
-
-  [[ ${#dev_pids[@]} -gt 0 ]] || return 0
-  if command -v notify-send >/dev/null 2>&1; then
-    notify-send "LocalBooru" "Stopping the development instance before normal launch…"
-  fi
-  kill -TERM "${dev_pids[@]}" 2>/dev/null || true
-
-  for _ in {1..50}; do
-    local running=0
-    for pid in "${dev_pids[@]}"; do
-      kill -0 "$pid" 2>/dev/null && running=1
-    done
-    [[ $running -eq 0 ]] && return 0
-    sleep 0.1
-  done
-
-  printf 'ERROR: LocalBooru development instance did not stop gracefully\n' >&2
-  return 1
-}
-
-stop_development_instance
 
 # Keep desktop-launch logs bounded.
 if [[ -f "$LOG" ]] && (( $(stat -c %s "$LOG") > 5242880 )); then
   mv -f "$LOG" "$LOG.1"
+fi
+
+if command -v busctl >/dev/null 2>&1; then
+  argument_count=$(( $# + 1 ))
+  for _ in 1 2; do
+    if ! busctl --user status "$SINGLE_INSTANCE_SERVICE" >/dev/null 2>&1; then
+      break
+    fi
+    if busctl --user --quiet call \
+        "$SINGLE_INSTANCE_SERVICE" \
+        "$SINGLE_INSTANCE_PATH" \
+        "$SINGLE_INSTANCE_INTERFACE" \
+        ExecuteCallback \
+        ass \
+        "$argument_count" \
+        localbooru \
+        "$@" \
+        "$PWD" >>"$LOG" 2>&1; then
+      exit 0
+    fi
+  done
+
+  if busctl --user status "$SINGLE_INSTANCE_SERVICE" >/dev/null 2>&1; then
+    printf 'ERROR: Failed to activate the running LocalBooru instance\n' >&2
+    exit 1
+  fi
 fi
 
 if [[ ! -x "$APP" || ! -s "$FRONTEND" ]]; then
