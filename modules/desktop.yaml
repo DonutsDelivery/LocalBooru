@@ -177,6 +177,11 @@ features:
             then: execution is reported as unverified and provider registration is not presented as observed GPU
               execution
             when: runtime status is viewed
+          - given: a prediction completes with observable model execution evidence
+            id: ac-2
+            then: CUDA-only, CPU-only, mixed, or unknown execution is reported according to the providers that
+              processed the model
+            when: runtime status is viewed
         tags: []
         created: 2026-07-18T09:51:20.224Z
         notes: []
