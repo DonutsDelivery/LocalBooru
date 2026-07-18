@@ -192,6 +192,10 @@ features:
             then: image preparation, model inference, result processing, and total durations are reported
               separately
             when: diagnostic status is recorded
+          - given: a prediction is running
+            id: ac-5
+            then: health remains responsive without loading a duplicate model process
+            when: runtime health is requested
         tags: []
         created: 2026-07-18T09:51:20.224Z
         notes: []
