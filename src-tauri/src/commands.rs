@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
 use crate::server::state::AppState;
@@ -132,13 +134,15 @@ pub fn get_app_version(app: AppHandle) -> String {
 
 /// Quit the application
 #[tauri::command]
-pub async fn quit_app(app: AppHandle) -> Result<(), String> {
-    // Kill all FFmpeg transcode processes before exiting — process::exit() skips destructors
+pub async fn quit_app(app: AppHandle) {
+    // Explicit exit skips destructors, so finish managed process cleanup first.
     if let Some(state) = app.try_state::<AppState>() {
-        state.transcode_manager().stop_all();
+        state.shutdown_managed_processes().await;
+    }
+    if let Some(quit_flag) = app.try_state::<Arc<AtomicBool>>() {
+        quit_flag.store(true, Ordering::SeqCst);
     }
     app.exit(0);
-    Ok(())
 }
 
 /// Copy image to clipboard response

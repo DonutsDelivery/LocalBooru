@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock as StdRwLock};
 
-use tokio::sync::RwLock;
+use tokio::sync::{OnceCell, RwLock};
 
 use crate::addons::manager::AddonManager;
 use crate::db::directory_db::DirectoryDbManager;
@@ -44,6 +44,8 @@ struct AppStateInner {
     addon_manager: AddonManager,
     /// Transcode manager (FFmpeg HLS streaming)
     transcode_manager: TranscodeManager,
+    /// Single-flight barrier for explicit-exit child process cleanup.
+    managed_process_shutdown: OnceCell<()>,
     /// Rate limiter (in-memory, per-IP sliding window)
     rate_limiter: Arc<RateLimiter>,
     /// Active media share sessions (token -> session)
@@ -194,6 +196,7 @@ impl AppState {
                 task_queue,
                 addon_manager,
                 transcode_manager,
+                managed_process_shutdown: OnceCell::new(),
                 rate_limiter,
                 share_sessions,
                 cast_state,
@@ -363,6 +366,17 @@ impl AppState {
     /// Get the transcode manager.
     pub fn transcode_manager(&self) -> &TranscodeManager {
         &self.inner.transcode_manager
+    }
+
+    /// Stop all managed child processes before explicit application exit.
+    pub async fn shutdown_managed_processes(&self) {
+        self.inner
+            .managed_process_shutdown
+            .get_or_init(|| async {
+                self.inner.addon_manager.stop_all().await;
+                self.inner.transcode_manager.shutdown().await;
+            })
+            .await;
     }
 
     /// Get the rate limiter.
