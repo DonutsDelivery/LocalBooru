@@ -48,3 +48,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-18T15:00:07.100Z
+  - _ulid: 01KXTWEPKJP9QRSE2BVR4XMBXP
+    content: "Verification: launcher shell syntax and focused behavioral tests pass; all 52 frontend
+      tests pass; all 6 direct-file Rust tests pass. Live session D-Bus smoke called the existing
+      single-instance endpoint and preserved PID 2605318. Independent final review reported no
+      findings after retry and timeout fixes. Full kspec validation remains blocked by 130 unrelated
+      legacy schema errors in android/core modules; the new requirement and four ACs load
+      correctly."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-18T15:10:26.930Z
