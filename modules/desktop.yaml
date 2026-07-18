@@ -171,6 +171,12 @@ features:
           - "@addon-platform-dependencies"
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: the tagger model has loaded but no prediction has completed
+            id: ac-1
+            then: execution is reported as unverified and provider registration is not presented as observed GPU
+              execution
+            when: runtime status is viewed
         tags: []
         created: 2026-07-18T09:51:20.224Z
         notes: []
