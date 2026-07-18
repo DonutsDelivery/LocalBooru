@@ -81,6 +81,10 @@ features:
             id: ac-1
             then: all managed background process trees stop before the application exits
             when: the user chooses Quit from the title bar or Settings
+          - given: LocalBooru has active transcodes and add-on processes
+            id: ac-2
+            then: all managed background process trees stop before the application exits
+            when: the user chooses Quit from the system tray
         tags: []
         created: 2026-07-18T15:29:40.724Z
         notes: []
