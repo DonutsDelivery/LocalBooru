@@ -291,6 +291,12 @@ features:
           - "@addon-platform-dependencies"
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: a supported NVIDIA system uses a shipped Auto Tagger model with CUDA requested
+            id: ac-1
+            then: observed execution includes nonzero CUDA model nodes while legitimate inexpensive CPU nodes
+              may remain
+            when: a real model prediction completes
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
