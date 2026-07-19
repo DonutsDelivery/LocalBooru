@@ -971,6 +971,23 @@ features:
       - gallery
       - addons
       - curation
+    requirements:
+      - _ulid: 01KXWFPV1TGK084RXYRG9Z7XD2
+        slugs:
+          - curation-gesture-decisions-recovery
+        title: Curation Gesture Decisions and Recovery
+        type: requirement
+        description: Curation fullscreen gestures commit at most one decision and keep candidate discovery
+          recoverable when refilling fails.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        priority: high
+        tags: []
+        created: 2026-07-19T06:06:11.002Z
+        notes: []
     created: 2026-07-16T16:38:14.885Z
     notes: []
 notes: []
