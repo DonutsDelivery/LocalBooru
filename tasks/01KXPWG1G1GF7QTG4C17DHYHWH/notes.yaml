@@ -57,3 +57,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-17T02:29:57.249Z
+  - _ulid: 01KXX1HYWJHMEZ7SWFGRZH0WT7
+    content: "Follow-up: made stale/overlapping SVP stop cleanup idempotent at both Rust bridge and
+      Python sidecar boundaries. Superseded stops preserve the newer producer but now return success
+      rather than leaking a 409 through the bridge as duplicate 500 UI errors. Added
+      @svp-single-player ac-idempotent-stop and AC-annotated Rust/Python regressions; all 31 SVP
+      tests and all 139 Rust library tests pass."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T11:18:05.458Z
