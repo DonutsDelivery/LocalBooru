@@ -116,6 +116,11 @@ features:
             then: the window resizes in the corresponding cardinal or diagonal direction down to its configured
               minimum size
             when: the user drags any edge or corner with the primary pointer button
+          - given: the custom title bar and resize hit regions are visible
+            id: ac-2
+            then: resize hit regions do not intercept those interactions
+            when: the user interacts with title-bar controls or application content away from the outer resize
+              boundary
         priority: high
         tags: []
         created: 2026-07-19T10:11:03.561Z
