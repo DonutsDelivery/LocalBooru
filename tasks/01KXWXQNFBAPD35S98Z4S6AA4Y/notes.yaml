@@ -9,3 +9,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T10:11:39.574Z
+  - _ulid: 01KXWZ83TGDRG2ZAXJ3TJAD7EW
+    content: Implemented eight Tauri resize directions with behavior tests, body-portaled hit regions
+      above overlays, tri-state/debounced native maximize synchronization, and
+      browser/mobile/maximized gating. Manual Wayland testing exposed native/custom overlap at
+      corners; moved custom hit regions inward beyond Tauri's native 5px border so diagonal drags
+      have a single owner. Frontend 67/67, production build, and diff check pass.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T10:37:45.680Z
