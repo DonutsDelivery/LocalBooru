@@ -303,6 +303,11 @@ features:
               options, preload result, and desired and installed deployment revisions are reported
               without claiming GPU execution
             when: runtime diagnostics are viewed
+          - given: an installed managed Auto Tagger environment has an outdated dependency revision
+            id: ac-3
+            then: dependencies are reconciled through managed Python while models, settings, and enabled state
+              are preserved
+            when: the add-on is installed, repaired, started, or resumed
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
