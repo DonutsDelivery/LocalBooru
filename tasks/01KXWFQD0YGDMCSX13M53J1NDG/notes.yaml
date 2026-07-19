@@ -49,3 +49,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T06:06:44.633Z
+  - _ulid: 01KXWG8HT1FW2ZD4EQX2J693ZE
+    content: "Implemented the test-first curation repair: pure 50px horizontal swipe classification now
+      rejects pinch/control/zoom/pan/vertical gestures; active curation maps right to Keep and left
+      to Discard before sidebar handling; an immediate lock spans mutation, queue advancement, and
+      refill; committed actions survive refill failure; Retry resumes discovery and Exit refreshes
+      the gallery; empty loading/error runs render a recovery overlay instead of no UI. Focused
+      behavioral tests and the production frontend build pass. Targeted lint reports only
+      pre-existing errors in touched large files plus the pre-existing useZoomPan render-ref
+      warning."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T06:15:51.361Z
