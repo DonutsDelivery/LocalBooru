@@ -288,6 +288,7 @@ features:
         relates_to:
           - "@auto-tagger-execution-verification"
           - "@auto-tagger-provider-diagnostics"
+          - "@addon-platform-dependencies"
         tests: []
         traits: []
         priority: high
