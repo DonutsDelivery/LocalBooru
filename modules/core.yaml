@@ -981,7 +981,8 @@ features:
           recoverable when refilling fails.
         depends_on: []
         implements: []
-        relates_to: []
+        relates_to:
+          - "@curation-game"
         tests: []
         traits: []
         priority: high
