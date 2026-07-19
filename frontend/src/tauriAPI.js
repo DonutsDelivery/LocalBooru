@@ -184,6 +184,29 @@ const tauriAPI = {
     }
   },
 
+  startResizeDragging: async (direction) => {
+    await tauriReady
+    if (!tauriWindow) return
+    try {
+      const currentWindow = tauriWindow.getCurrentWindow()
+      await currentWindow.startResizeDragging(direction)
+    } catch (e) {
+      console.error('[TauriAPI] startResizeDragging failed:', e)
+    }
+  },
+
+  onWindowResized: async (callback) => {
+    await tauriReady
+    if (!tauriWindow) return () => {}
+    try {
+      const currentWindow = tauriWindow.getCurrentWindow()
+      return await currentWindow.onResized(callback)
+    } catch (e) {
+      console.error('[TauriAPI] onWindowResized failed:', e)
+      return () => {}
+    }
+  },
+
   minimizeWindow: async () => {
     await tauriReady
     if (!tauriWindow) return

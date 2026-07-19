@@ -34,6 +34,7 @@ pub struct SvpPlaybackUpdate {
     pub fps: Option<f64>,
     pub duration: Option<f64>,
     pub paused: Option<bool>,
+    pub media_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -42,12 +43,21 @@ struct FilterChanged {
     enabled: bool,
     script_path: Option<String>,
     graph_revision: Option<u64>,
+    media_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaybackPaused {
+    paused: bool,
+    media_key: Option<String>,
 }
 
 #[derive(Debug)]
 struct PlaybackState {
     enabled: bool,
     path: Option<String>,
+    media_key: Option<String>,
     width: u32,
     height: u32,
     fps: f64,
@@ -63,6 +73,7 @@ impl Default for PlaybackState {
         Self {
             enabled: false,
             path: None,
+            media_key: None,
             width: 0,
             height: 0,
             fps: 0.0,
@@ -393,10 +404,16 @@ impl SvpManagerBridge {
     ) -> Result<Value, &'static str> {
         if property == "pause" {
             let paused = value.as_bool().unwrap_or(false);
-            if let Ok(mut state) = self.playback.lock() {
+            let media_key = if let Ok(mut state) = self.playback.lock() {
                 state.paused = paused;
-            }
-            let _ = app.emit("svp-manager-set-paused", paused);
+                state.media_key.clone()
+            } else {
+                None
+            };
+            let _ = app.emit(
+                "svp-manager-set-paused",
+                PlaybackPaused { paused, media_key },
+            );
         }
         Ok(Value::Null)
     }
@@ -459,6 +476,7 @@ impl SvpManagerBridge {
         state.script_path = Some(script_path.to_owned());
         state.output_fps =
             script_output_fps(&snapshot.snapshot_path, state.fps).unwrap_or(state.fps);
+        let media_key = state.media_key.clone();
         drop(state);
         log::info!(
             "[SVPManager] enabling Manager graph revision {} from {script_path}",
@@ -470,6 +488,7 @@ impl SvpManagerBridge {
                 enabled: true,
                 script_path: Some(script_path.to_owned()),
                 graph_revision: Some(snapshot.revision),
+                media_key,
             },
         );
         Ok(())
@@ -494,11 +513,14 @@ impl SvpManagerBridge {
             let _ = fs::remove_file(&self.script_file);
         }
         self.snapshots.clear_current();
-        if let Ok(mut state) = self.playback.lock() {
+        let media_key = if let Ok(mut state) = self.playback.lock() {
             state.filter_active = false;
             state.script_path = None;
             state.output_fps = state.fps;
-        }
+            state.media_key.clone()
+        } else {
+            None
+        };
         log::info!("[SVPManager] disabling interpolation filter");
         let _ = app.emit(
             "svp-manager-filter-changed",
@@ -506,6 +528,7 @@ impl SvpManagerBridge {
                 enabled: false,
                 script_path: None,
                 graph_revision: None,
+                media_key,
             },
         );
         Ok(())
@@ -606,6 +629,11 @@ pub fn update_svp_manager_playback(
         .map_err(|_| "SVP state unavailable")?;
     state.enabled = update.enabled;
     state.path = if update.enabled { update.path } else { None };
+    state.media_key = if update.enabled {
+        update.media_key
+    } else {
+        None
+    };
     state.width = update.width.unwrap_or(0);
     state.height = update.height.unwrap_or(0);
     state.fps = update.fps.unwrap_or(0.0);
@@ -627,6 +655,26 @@ mod tests {
             uuid::Uuid::new_v4()
         )));
         SvpManagerBridge::new(snapshots)
+    }
+
+    // AC: @ordinary-lightbox-media-rendering ac-3
+    #[test]
+    fn svp_events_include_the_owning_media_key() {
+        let filter = serde_json::to_value(FilterChanged {
+            enabled: true,
+            script_path: Some("graph.vpy".into()),
+            graph_revision: Some(7),
+            media_key: Some("library:42".into()),
+        })
+        .unwrap();
+        let paused = serde_json::to_value(PlaybackPaused {
+            paused: true,
+            media_key: Some("library:42".into()),
+        })
+        .unwrap();
+
+        assert_eq!(filter["mediaKey"], "library:42");
+        assert_eq!(paused["mediaKey"], "library:42");
     }
 
     // AC: @svp-manager-transitions ac-controller-ownership

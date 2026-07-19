@@ -1,3 +1,42 @@
+/* Frameless window resize hit regions */
+.window-resize-handle {
+  position: fixed;
+  z-index: 2147483647;
+  user-select: none;
+}
+
+.window-resize-handle.north,
+.window-resize-handle.south {
+  left: 5px;
+  right: 5px;
+  height: 5px;
+}
+
+.window-resize-handle.east,
+.window-resize-handle.west {
+  top: 5px;
+  bottom: 5px;
+  width: 5px;
+}
+
+.window-resize-handle.north { top: 0; cursor: n-resize; }
+.window-resize-handle.south { bottom: 0; cursor: s-resize; }
+.window-resize-handle.east { right: 0; cursor: e-resize; }
+.window-resize-handle.west { left: 0; cursor: w-resize; }
+
+.window-resize-handle.north-east,
+.window-resize-handle.north-west,
+.window-resize-handle.south-east,
+.window-resize-handle.south-west {
+  width: 5px;
+  height: 5px;
+}
+
+.window-resize-handle.north-east { top: 0; right: 0; cursor: ne-resize; }
+.window-resize-handle.north-west { top: 0; left: 0; cursor: nw-resize; }
+.window-resize-handle.south-east { bottom: 0; right: 0; cursor: se-resize; }
+.window-resize-handle.south-west { bottom: 0; left: 0; cursor: sw-resize; }
+
 /* Custom Title Bar */
 .title-bar {
   position: fixed;

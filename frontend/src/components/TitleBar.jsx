@@ -4,8 +4,10 @@
  * Only renders in Tauri or the mobile app.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { isMobileApp } from '../serverManager';
 import { getDesktopAPI, isTauri } from '../tauriAPI';
+import { WINDOW_RESIZE_HANDLES, startWindowResize } from '../utils/windowResize.js';
 import UpdateBanner from './UpdateBanner';
 import './TitleBar.css';
 
@@ -13,7 +15,7 @@ const TITLE_BAR_HEIGHT = 32;
 const MOBILE_TITLE_BAR_HEIGHT = 44;
 
 export default function TitleBar({ onSwitchServer, onOpenFile }) {
-  const [isMaximized, setIsMaximized] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(null);
   const isTauriApp = isTauri();
   const isDesktop = isTauriApp;
   const isMobile = isMobileApp();
@@ -39,17 +41,34 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
     }
   }, [isDesktop, isMobile]);
 
-  // Check initial maximized state
+  // Keep resize chrome synchronized with native maximize/restore actions.
   useEffect(() => {
     if (!isDesktop) return;
-    const checkMaximized = async () => {
-      const api = apiRef.current;
-      if (api?.isMaximized) {
-        const maximized = await api.isMaximized();
-        setIsMaximized(maximized);
-      }
+    let cancelled = false;
+    let unlisten = () => {};
+    let syncTimer = null;
+    let syncGeneration = 0;
+    const syncMaximized = async () => {
+      const generation = ++syncGeneration;
+      const maximized = await apiRef.current?.isMaximized?.();
+      if (!cancelled && generation === syncGeneration) setIsMaximized(Boolean(maximized));
     };
-    checkMaximized();
+    const scheduleMaximizedSync = () => {
+      if (syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(syncMaximized, 80);
+    };
+    apiRef.current?.onWindowResized?.(scheduleMaximizedSync).then(stopListening => {
+      if (cancelled) stopListening();
+      else {
+        unlisten = stopListening;
+        syncMaximized();
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (syncTimer) clearTimeout(syncTimer);
+      unlisten();
+    };
   }, [isDesktop]);
 
 
@@ -62,6 +81,16 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
       api.startDragging();
     }
   }, []);
+
+  const handleResizeMouseDown = useCallback((event, direction) => {
+    startWindowResize({
+      event,
+      direction,
+      isDesktop,
+      isMaximized,
+      startResizeDragging: (resizeDirection) => apiRef.current?.startResizeDragging?.(resizeDirection),
+    });
+  }, [isDesktop, isMaximized]);
 
   // On mobile app, show minimal title bar with switch server button
   if (isMobile) {
@@ -134,7 +163,19 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
   };
 
   return (
-    <div className="title-bar">
+    <>
+      {isMaximized === false && createPortal(
+        WINDOW_RESIZE_HANDLES.map(({ direction, edge }) => (
+          <div
+            key={direction}
+            className={`window-resize-handle ${edge}`}
+            onMouseDown={(event) => handleResizeMouseDown(event, direction)}
+            aria-hidden="true"
+          />
+        )),
+        document.body
+      )}
+      <div className="title-bar">
       <div
         className="title-bar-drag"
         onMouseDown={isTauriApp ? handleDragMouseDown : undefined}
@@ -207,6 +248,7 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
           </svg>
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

@@ -5,6 +5,7 @@
  * SSE status subscription, and local↔remote video position sync.
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { isVideoMediaElement } from '../../../utils/lightboxMedia.js'
 import {
   getCastDevices,
   refreshCastDevices,
@@ -67,7 +68,7 @@ export function useCastSession(mediaRef, image) {
   }, [])
 
   useEffect(() => {
-    if (!isCasting || !mediaRef.current) return
+    if (!isCasting || !isVideoMediaElement(mediaRef.current)) return
     mediaRef.current.pause()
   }, [isCasting, mediaRef])
 
@@ -93,7 +94,7 @@ export function useCastSession(mediaRef, image) {
         setActiveDevice(null)
         setCastStatus(null)
         // Keep local playback paused; only restore position.
-        if (mediaRef.current && event.data?.current_time) {
+        if (isVideoMediaElement(mediaRef.current) && event.data?.current_time) {
           mediaRef.current.currentTime = event.data.current_time
         }
         if (sseCleanupRef.current) {
@@ -144,7 +145,7 @@ export function useCastSession(mediaRef, image) {
     if (!image) return
 
     // Save local position and pause local video
-    if (mediaRef.current) {
+    if (isVideoMediaElement(mediaRef.current)) {
       localPositionRef.current = mediaRef.current.currentTime
       mediaRef.current.pause()
     }
@@ -175,7 +176,7 @@ export function useCastSession(mediaRef, image) {
         setCastError(result.error || 'Failed to start casting')
         setTimeout(() => setCastError(null), 5000)
         // Resume local video
-        if (mediaRef.current) {
+        if (isVideoMediaElement(mediaRef.current)) {
           mediaRef.current.play().catch(() => {})
         }
       }
@@ -183,7 +184,7 @@ export function useCastSession(mediaRef, image) {
       console.error('[Cast] Failed to start casting:', e)
       setCastError(e.message || 'Failed to start casting')
       setTimeout(() => setCastError(null), 5000)
-      if (mediaRef.current) {
+      if (isVideoMediaElement(mediaRef.current)) {
         mediaRef.current.play().catch(() => {})
       }
     }
@@ -205,7 +206,7 @@ export function useCastSession(mediaRef, image) {
     }
 
     // Restore local position but leave playback paused.
-    if (mediaRef.current && castStatus?.current_time) {
+    if (isVideoMediaElement(mediaRef.current) && castStatus?.current_time) {
       mediaRef.current.currentTime = castStatus.current_time
     }
     setCastStatus(null)

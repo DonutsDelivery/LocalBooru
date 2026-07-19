@@ -20,6 +20,7 @@ import { useCastSession } from './hooks/useCastSession'
 import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
 import { curationActionForSwipe } from '../../utils/lightboxGestures.js'
+import { isVideoMediaElement, releaseVideoMedia } from '../../utils/lightboxMedia.js'
 
 // Video diagnostics overlay — press I to toggle, B for bare mode (video only)
 function FPSMonitor({ videoRef, visible, onToggleBare }) {
@@ -103,6 +104,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [applyingAdjustments, setApplyingAdjustments] = useState(false)
   const [previewUrl, setPreviewUrl] = useState(null)
   const [generatingPreview, setGeneratingPreview] = useState(false)
+  const [imageLoadError, setImageLoadError] = useState(false)
+  const [imageRetryKey, setImageRetryKey] = useState(0)
 
   // SVP side menu state
   const [showSVPMenu, setShowSVPMenu] = useState(false)
@@ -144,7 +147,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const containerRef = useRef(null)
   const svpResumeRef = useRef(null)
   const svpSourceFpsRef = useRef(null)
-  const svpFpsProbePendingRef = useRef(false)
+  const svpFpsProbePendingRef = useRef(null)
   const svpTransitionRef = useRef({ active: false, token: 0, timer: null })
   const svpFilterActiveRef = useRef(false)
   const svpFailOpenRef = useRef(false)
@@ -246,10 +249,18 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   const reportSvpPlayback = useCallback((video = mediaRef.current, fps = svpSourceFpsRef.current) => {
     const desktopAPI = getDesktopAPI()
-    if (!desktopAPI?.updateSvpManagerPlayback || !video || !svpPathEnabled || svpFailOpenRef.current || !image?.file_path || !fps) return
+    if (!desktopAPI?.updateSvpManagerPlayback
+        || !isVideoMediaElement(video)
+        || mediaRef.current !== video
+        || activeImageKeyRef.current !== currentImageKey
+        || !svpPathEnabled
+        || svpFailOpenRef.current
+        || !image?.file_path
+        || !fps) return
     svpSourceFpsRef.current = fps
     desktopAPI.updateSvpManagerPlayback({
       enabled: true,
+      mediaKey: currentImageKey,
       path: image.file_path,
       width: video.videoWidth,
       height: video.videoHeight,
@@ -257,7 +268,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       duration: Number.isFinite(video.duration) ? video.duration : 0,
       paused: video.paused,
     }).catch(error => console.warn('[SVPManager] playback update failed:', error))
-  }, [image?.file_path, svpPathEnabled])
+  }, [currentImageKey, image?.file_path, svpPathEnabled])
 
   const measureAndReportSvpPlayback = useCallback((video) => {
     if (!svpPathEnabled || !image?.file_path) return
@@ -271,9 +282,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       return
     }
     const sampleDecodedFrames = () => {
+      if (mediaRef.current !== video || activeImageKeyRef.current !== currentImageKey) return
       if (!video.requestVideoFrameCallback) return
       let previousMediaTime = null
       const sampleFrame = (_now, metadata) => {
+        if (mediaRef.current !== video || activeImageKeyRef.current !== currentImageKey) return
         if (previousMediaTime !== null && metadata.mediaTime > previousMediaTime) {
           const measuredFps = 1 / (metadata.mediaTime - previousMediaTime)
           if (Number.isFinite(measuredFps) && measuredFps > 1 && measuredFps < 240) {
@@ -287,42 +300,56 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       video.requestVideoFrameCallback(sampleFrame)
     }
     if (!image?.is_local_direct_file && !svpFpsProbePendingRef.current) {
-      svpFpsProbePendingRef.current = true
+      const probe = { video, imageKey: currentImageKey }
+      svpFpsProbePendingRef.current = probe
       getFileDimensions(image.file_path)
         .then(info => {
+          if (svpFpsProbePendingRef.current !== probe) return
           const fps = Number(info?.fps)
           if (Number.isFinite(fps) && fps > 0) reportSvpPlayback(video, fps)
           else sampleDecodedFrames()
         })
-        .catch(sampleDecodedFrames)
-        .finally(() => { svpFpsProbePendingRef.current = false })
+        .catch(() => {
+          if (svpFpsProbePendingRef.current === probe) sampleDecodedFrames()
+        })
+        .finally(() => {
+          if (svpFpsProbePendingRef.current === probe) svpFpsProbePendingRef.current = null
+        })
       return
     }
     sampleDecodedFrames()
-  }, [image?.file_path, image?.video_fps, image?.frame_rate, image?.fps, image?.is_local_direct_file, reportSvpPlayback, svpPathEnabled])
+  }, [currentImageKey, image?.file_path, image?.video_fps, image?.frame_rate, image?.fps, image?.is_local_direct_file, reportSvpPlayback, svpPathEnabled])
+
+  useEffect(() => {
+    setImageLoadError(false)
+    setImageRetryKey(0)
+  }, [currentImageKey, previewUrl])
 
   useEffect(() => {
     svpSourceFpsRef.current = null
-    svpFpsProbePendingRef.current = false
+    svpFpsProbePendingRef.current = null
     svpFailOpenRef.current = false
   }, [currentImageKey])
 
   useEffect(() => {
     const video = mediaRef.current
-    if (svpPathEnabled && video?.readyState >= 1) measureAndReportSvpPlayback(video)
+    if (svpPathEnabled && isVideoMediaElement(video) && video.readyState >= 1) measureAndReportSvpPlayback(video)
   }, [svpPathEnabled, currentImageKey, measureAndReportSvpPlayback])
 
   useEffect(() => {
     const desktopAPI = getDesktopAPI()
     if (!desktopAPI?.subscribeToSvpManager) return
     let unsubscribe = () => {}
+    let cancelled = false
     desktopAPI.subscribeToSvpManager({
-      onFilterChanged: ({ enabled }) => {
+      onFilterChanged: ({ enabled, mediaKey }) => {
         if (!svpPathEnabledRef.current) return
+        if (mediaKey && mediaKey !== activeImageKeyRef.current) return
         svpFilterActiveRef.current = Boolean(enabled)
         const video = mediaRef.current
+        if (!isVideoMediaElement(video)) return
         const imageKey = activeImageKeyRef.current
-        if (!svpResumeRef.current && video) {
+        if (!svpResumeRef.current) {
           svpResumeRef.current = {
             currentTime: video.currentTime,
             paused: video.paused,
@@ -337,11 +364,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         const token = transition.token
         if (transition.timer) clearTimeout(transition.timer)
 
-        if (video) {
-          video.pause()
-          video.removeAttribute('src')
-          video.load()
-        }
+        releaseVideoMedia(video)
 
         transition.timer = setTimeout(() => {
           if (svpTransitionRef.current.token !== token
@@ -351,10 +374,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           setSvpPipelineGeneration(generation => generation + 1)
         }, 150)
       },
-      onPaused: (paused) => {
+      onPaused: (payload) => {
+        const paused = typeof payload === 'boolean' ? payload : payload?.paused
+        const mediaKey = typeof payload === 'object' ? payload?.mediaKey : null
         if (!svpPathEnabledRef.current) return
+        if (mediaKey && mediaKey !== activeImageKeyRef.current) return
         const video = mediaRef.current
-        if (!video) return
+        if (!isVideoMediaElement(video)) return
         const imageKey = activeImageKeyRef.current
         const resume = svpResumeRef.current
         if (resume && (resume.imageKey !== imageKey || resume.media !== video)) {
@@ -376,8 +402,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           video.play().catch(() => {})
         }
       },
-    }).then(unlisten => { unsubscribe = unlisten })
+    }).then(unlisten => {
+      if (cancelled) unlisten()
+      else unsubscribe = unlisten
+    })
     return () => {
+      cancelled = true
       unsubscribe()
       if (svpTransitionRef.current.timer) {
         clearTimeout(svpTransitionRef.current.timer)
@@ -397,7 +427,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     if (!svpPathEnabled || !svpFilterActiveRef.current || svpFailOpenRef.current) return
     svpFailOpenRef.current = true
     svpFilterActiveRef.current = false
-    video?.pause()
+    if (isVideoMediaElement(video)) video.pause()
     getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(error => {
       console.warn('[SVPManager] failed to disable broken native graph:', error)
     })
@@ -408,11 +438,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     return () => {
       // A keyed remount may leave the old element alive briefly. Never dereference
       // mediaRef here: it may already point at the next video's element.
-      if (video && mediaRef.current !== video) {
-        video.pause()
-        video.removeAttribute('src')
-        video.load()
-      }
+      if (mediaRef.current !== video) releaseVideoMedia(video)
     }
   }, [currentImageKey])
 
@@ -2280,15 +2306,35 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               </div>
             )}
           </div>
+        ) : imageLoadError ? (
+          <div className="lightbox-unavailable missing">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M15 9l-6 6M9 9l6 6"/>
+            </svg>
+            <h3>Image Could Not Be Loaded</h3>
+            <p>The media request failed or this image could not be decoded.</p>
+            <button
+              className="lightbox-confirm-cancel"
+              onClick={(event) => {
+                event.stopPropagation()
+                setImageLoadError(false)
+                setImageRetryKey(value => value + 1)
+              }}
+            >
+              Retry
+            </button>
+          </div>
         ) : (
           <img
-            key={previewUrl ? `${image.id}-preview` : image.id}
+            key={`${previewUrl ? `${image.id}-preview` : image.id}-${imageRetryKey}`}
             ref={mediaRef}
             src={getMediaUrl(previewUrl || image.url)}
             alt=""
             className="lightbox-media"
             style={{ ...(previewUrl ? {} : getFilterStyle()), ...zoomPan.getZoomTransform() }}
             onContextMenu={handleImageContextMenu}
+            onError={() => setImageLoadError(true)}
           />
         )}
       </div>

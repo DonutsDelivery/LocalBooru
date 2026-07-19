@@ -595,7 +595,7 @@ video.lightbox-media {
   height: var(--app-height);
   height: 100dvh;
   /* Override safe-area / title-bar offsets for true edge-to-edge */
-  z-index: 2147483647;
+  z-index: 2147483646;
 }
 
 .lightbox.fullscreen .lightbox-content {
