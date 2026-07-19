@@ -907,7 +907,7 @@ tasks:
     title: Fix curation swipe decisions and refill recovery
     type: task
     spec_ref: "@curation-gesture-decisions-recovery"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -916,6 +916,7 @@ tasks:
     todos_count: 0
     created_at: 2026-07-19T06:06:29.406Z
     started_at: 2026-07-19T06:06:52.653Z
+    submitted_at: 2026-07-19T07:52:34.734Z
   - _ulid: 01KXWHJ179MPQYJ6TM58PQF0DJ
     slugs:
       - task-ordinary-lightbox-media-rendering
