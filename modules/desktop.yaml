@@ -236,7 +236,7 @@ features:
           distinguishes GPU inference from CPU preparation and fallback work.
         status:
           maturity: draft
-          implementation: in_progress
+          implementation: implemented
         depends_on: []
         implements: []
         relates_to:
