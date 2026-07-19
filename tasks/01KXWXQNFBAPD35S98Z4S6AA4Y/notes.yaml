@@ -1,1 +1,11 @@
-notes: []
+notes:
+  - _ulid: 01KXWXRADP8KRX5GJ192J3YX3Q
+    content: "Approach: preserve the transparent custom chrome; expose Tauri startResizeDragging and
+      render eight thin edge/corner hit regions only on desktop while restored. Reuse existing
+      desktopAPI/title-bar platform checks. Edge cases: primary button only, corners above edges,
+      maximized windows, browser/mobile no-op, title buttons unobstructed. Test plan: pure
+      behavioral direction/eligibility tests annotated to all three ACs, frontend suite/build,
+      manual drag verification in the running Linux app."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T10:11:39.574Z
