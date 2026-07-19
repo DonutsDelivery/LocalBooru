@@ -35,3 +35,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T06:38:50.002Z
+  - _ulid: 01KXWHSQDF5X0DJWCHFYKKDD34
+    content: "Evidence clarification: the Windows report does not say the ordinary lightbox is blank on
+      initial open. It says the image disappears only after a fullscreen curation swipe, followed by
+      a soft-lock and no filesystem move. Treat that as @curation-gesture-decisions-recovery
+      evidence, not proof of this ordinary-open regression. Keep this task reproduction-first; do
+      not modify ordinary rendering without separate evidence."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T06:42:42.735Z
