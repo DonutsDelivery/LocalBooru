@@ -98,6 +98,22 @@ features:
         tags: []
         created: 2026-07-18T15:29:40.724Z
         notes: []
+      - _ulid: 01KXWXQ789GTM8SSY53G44WK1N
+        slugs:
+          - frameless-window-resizing
+        title: Frameless Window Resizing
+        type: requirement
+        description: The custom frameless desktop window provides reliable resize hit regions without
+          obstructing title-bar controls or application content.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        priority: high
+        tags: []
+        created: 2026-07-19T10:11:03.561Z
+        notes: []
     created: 2026-03-08T08:30:40.279Z
     notes: []
   - _ulid: 01KK693TCHRCB7G97FXBBAS5HH
