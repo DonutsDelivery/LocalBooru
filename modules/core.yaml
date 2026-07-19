@@ -109,6 +109,11 @@ features:
             then: the lightbox presents an actionable error or retry state instead of an indistinguishable black
               empty surface
             when: the lightbox cannot render the selected image
+          - given: the application is running normally
+            id: ac-3
+            then: explicit-exit cleanup does not run and add-on, transcode, and server lifecycle state remains
+              active
+            when: the user opens or closes an ordinary lightbox
         priority: high
         tags: []
         created: 2026-07-19T06:38:13.576Z
