@@ -144,18 +144,19 @@ class LegacyStreamLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(current.stopped)
         stop_sessions.assert_not_called()
 
-    async def test_stale_external_stop_does_not_stop_current_producers(self):
+    async def test_stale_external_stop_is_a_silent_noop(self):
         # AC: @reliable-stream-transitions ac-stop-superseded-producer
+        # AC: @svp-single-player ac-idempotent-stop
         svp_app._legacy_stream_epoch = 5
         current = FakeStream()
         svp_app._active_streams[current.stream_id] = current
         stale_request = JsonRequest({"transition_id": 4})
 
         with patch.object(svp_app.processing_session_service, "stop_all") as stop_sessions:
-            with self.assertRaises(HTTPException) as raised:
-                await svp_app.stop(stale_request)
+            result = await svp_app.stop(stale_request)
 
-        self.assertEqual(raised.exception.status_code, 409)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["superseded"])
         self.assertFalse(current.stopped)
         stop_sessions.assert_not_called()
 

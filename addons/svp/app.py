@@ -1216,7 +1216,11 @@ async def stop(request: Request):
         raise HTTPException(status_code=422, detail="transition_id must be a positive integer")
     transition_epoch = _claim_legacy_stream_transition(requested_epoch)
     if not _owns_legacy_stream_transition(transition_epoch):
-        raise HTTPException(status_code=409, detail="SVP stop was superseded")
+        return {
+            "success": True,
+            "superseded": True,
+            "message": "A newer SVP transition already completed this cleanup",
+        }
     await asyncio.to_thread(processing_session_service.stop_all)
     await stop_all_streams(invalidate_pending=False)
     return {"success": True, "message": "All SVP streams stopped"}

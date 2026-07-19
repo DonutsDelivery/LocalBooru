@@ -1962,8 +1962,12 @@ async fn bridge_svp_stop(
             })
         })
         .transpose()?;
-    let transition_epoch = claim_legacy_svp_client_transition(client_transition_id)
-        .ok_or_else(|| AppError::ServiceUnavailable("SVP stop was superseded".to_string()))?;
+    let Some(transition_epoch) = claim_legacy_svp_client_transition(client_transition_id) else {
+        return Ok(Json(json!({
+            "success": true,
+            "message": "A newer SVP transition already completed this cleanup"
+        })));
+    };
     if state.addon_manager().get_addon_status("svp") != AddonStatus::Running {
         return Ok(Json(json!({
             "success": true,
@@ -2530,6 +2534,43 @@ mod tests {
         assert!(claim_legacy_svp_client_transition(Some(newest)).is_some());
         assert!(claim_legacy_svp_client_transition(Some(newest - 1)).is_none());
         assert!(claim_legacy_svp_client_transition(Some(newest)).is_some());
+    }
+
+    // AC: @svp-single-player ac-idempotent-stop
+    #[tokio::test]
+    async fn superseded_svp_stop_is_a_silent_success_when_svp_is_not_running() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "localbooru-svp-idempotent-stop-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let newest = LEGACY_SVP_CLIENT_TRANSITION_EPOCH.load(Ordering::SeqCst) + 2;
+        assert!(claim_legacy_svp_client_transition(Some(newest)).is_some());
+
+        let response = router()
+            .with_state(state)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/svp/stop")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"client_transition_id":{}}}"#,
+                        newest - 1
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let result: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["success"], true);
+        let _ = std::fs::remove_dir_all(data_dir);
     }
 
     #[tokio::test]
