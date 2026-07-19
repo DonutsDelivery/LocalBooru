@@ -80,3 +80,8 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T07:52:33.294Z
+  - _ulid: 01KXWNVN218SXE6WQ0APGE92QA
+    content: "Commit hash corrected after excluding unrelated Beads metadata: fcc3bd50."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T07:53:40.161Z
