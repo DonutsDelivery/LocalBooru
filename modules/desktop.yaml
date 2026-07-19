@@ -75,7 +75,7 @@ features:
           ordinary window close and minimize continue running in the background.
         status:
           maturity: draft
-          implementation: in_progress
+          implementation: implemented
         depends_on: []
         implements: []
         relates_to:
