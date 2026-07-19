@@ -297,6 +297,12 @@ features:
             then: observed execution includes nonzero CUDA model nodes while legitimate inexpensive CPU nodes
               may remain
             when: a real model prediction completes
+          - given: CUDA is available and registered but a completed prediction executes zero CUDA model nodes
+            id: ac-2
+            then: model identity, platform, Python and ONNX Runtime versions, NVIDIA package versions, provider
+              options, preload result, and desired and installed deployment revisions are reported
+              without claiming GPU execution
+            when: runtime diagnostics are viewed
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
