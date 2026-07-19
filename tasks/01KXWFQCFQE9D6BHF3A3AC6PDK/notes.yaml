@@ -62,3 +62,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T07:01:56.362Z
+  - _ulid: 01KXWN5MBEPKT66NX7J45ETH39
+    content: "Implemented pinned ORT 1.23.2 CUDA/cuDNN deployment reconciliation with verified CPU
+      fallback, probe-before-marker semantics, runtime/model diagnostics, stale managed-Python
+      recreation, and serialized start/repair/install/uninstall lifecycle ownership. Verification:
+      Auto Tagger tests 15/15, Rust full suite 136/136 before final lifecycle test addition, focused
+      manager suite 15/15, cargo check/fmt passed. Real RTX 4070 SwinV2 profile observed 1,647 CUDA
+      nodes and 885 expected CPU control nodes."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T07:41:38.542Z
