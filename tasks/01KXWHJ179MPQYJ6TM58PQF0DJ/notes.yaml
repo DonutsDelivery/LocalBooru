@@ -1,0 +1,27 @@
+notes:
+  - _ulid: 01KXWHJ178B8JCXMZ5VQ1WZN67
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Opening a gallery image outside Curation Game renders the requested media or an actionable
+      error without activating explicit-exit cleanup.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given the gallery contains a supported image and Curation Game is inactive, when the
+      user opens that image in the ordinary lightbox, then the lightbox requests and visibly renders
+      the selected full-resolution image rather than remaining black or empty
+
+      - ac-2: Given an ordinary lightbox media request or decode fails, when the lightbox cannot
+      render the selected image, then the lightbox presents an actionable error or retry state
+      instead of an indistinguishable black empty surface
+
+      - ac-3: Given the application is running normally, when the user opens or closes an ordinary
+      lightbox, then explicit-exit cleanup does not run and add-on, transcode, and server lifecycle
+      state remains active
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T06:38:30.633Z
