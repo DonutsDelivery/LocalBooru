@@ -906,7 +906,7 @@ tasks:
     title: Fix curation swipe decisions and refill recovery
     type: task
     spec_ref: "@curation-gesture-decisions-recovery"
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 1
@@ -914,3 +914,4 @@ tasks:
     notes_count: 2
     todos_count: 0
     created_at: 2026-07-19T06:06:29.406Z
+    started_at: 2026-07-19T06:06:52.653Z
