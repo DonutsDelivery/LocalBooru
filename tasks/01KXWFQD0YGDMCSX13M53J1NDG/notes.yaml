@@ -78,3 +78,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T07:00:48.065Z
+  - _ulid: 01KXWN5MSD1DHNJFG1GFP2DCGJ
+    content: "Implemented right=Keep/left=Discard gesture classification, immediate at-most-once action
+      locking, commit-before-refill recovery, Retry/Exit overlays, video/control gesture isolation,
+      and stale-candidate gesture rejection. Verification: frontend tests 63/63 and production build
+      passed; ordinary non-curation lightbox/sidebar/video behavior remains routed through existing
+      handlers."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T07:41:38.989Z
