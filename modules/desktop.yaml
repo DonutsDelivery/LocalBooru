@@ -313,6 +313,11 @@ features:
             then: each path converges on the same desired dependency revision and the installed revision is
               recorded only after the probe succeeds
             when: the managed environment is probed
+          - given: GPU dependency reconciliation or CUDA model execution cannot succeed
+            id: ac-5
+            then: a probed CPU deployment remains usable and diagnostics truthfully identify the fallback and
+              repair guidance
+            when: the add-on falls back
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
