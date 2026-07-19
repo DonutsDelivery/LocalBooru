@@ -308,6 +308,11 @@ features:
             then: dependencies are reconciled through managed Python while models, settings, and enabled state
               are preserved
             when: the add-on is installed, repaired, started, or resumed
+          - given: a clean install, stale upgrade, or Repair operation completes successfully
+            id: ac-4
+            then: each path converges on the same desired dependency revision and the installed revision is
+              recorded only after the probe succeeds
+            when: the managed environment is probed
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
