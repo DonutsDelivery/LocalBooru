@@ -276,6 +276,22 @@ features:
         tags: []
         created: 2026-07-18T09:51:20.224Z
         notes: []
+      - _ulid: 01KXWFNQMQD0VK59GE4VC6JT7G
+        slugs:
+          - auto-tagger-runtime-acceleration-deployment
+        title: Auto Tagger Runtime Acceleration Deployment
+        type: requirement
+        description: Auto Tagger managed environments converge on the shipped dependency revision and prove
+          CUDA acceleration from completed real-model execution evidence.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        priority: high
+        tags: []
+        created: 2026-07-19T06:05:34.743Z
+        notes: []
     created: 2026-07-12T06:35:00.381Z
     notes: []
   - _ulid: 01KXPM0TN30TDXXDSAZFTJRX3K
