@@ -93,6 +93,9 @@ features:
         type: requirement
         description: Opening a gallery image outside Curation Game renders the requested media or an
           actionable error without activating explicit-exit cleanup.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
