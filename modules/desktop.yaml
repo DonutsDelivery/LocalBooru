@@ -105,6 +105,9 @@ features:
         type: requirement
         description: The custom frameless desktop window provides reliable resize hit regions without
           obstructing title-bar controls or application content.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
