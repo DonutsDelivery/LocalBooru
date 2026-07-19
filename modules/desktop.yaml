@@ -121,6 +121,10 @@ features:
             then: resize hit regions do not intercept those interactions
             when: the user interacts with title-bar controls or application content away from the outer resize
               boundary
+          - given: the application runs in a browser, on mobile, or in a maximized desktop window
+            id: ac-3
+            then: custom desktop resize dragging is not started
+            when: the outer window boundary receives pointer input
         priority: high
         tags: []
         created: 2026-07-19T10:11:03.561Z
