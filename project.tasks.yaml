@@ -932,3 +932,17 @@ tasks:
     todos_count: 0
     created_at: 2026-07-19T06:38:30.633Z
     started_at: 2026-07-19T06:38:39.318Z
+  - _ulid: 01KXWXQNFBAPD35S98Z4S6AA4Y
+    slugs:
+      - task-frameless-window-resizing
+    title: Restore frameless window resizing
+    type: bug
+    spec_ref: "@frameless-window-resizing"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-19T10:11:18.123Z
