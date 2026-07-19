@@ -1010,6 +1010,10 @@ features:
             then: Retry resumes discovery with the existing query and progress without replaying the decision,
               while Exit returns to a refreshed gallery
             when: the user retries or exits
+          - given: Curation Game is inactive
+            id: ac-6
+            then: existing sidebar, pinch, zoom, pan, navigation, and video behavior remains unchanged
+            when: the same touch gestures are used in the lightbox
         priority: high
         tags: []
         created: 2026-07-19T06:06:11.002Z
