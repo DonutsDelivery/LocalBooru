@@ -985,6 +985,12 @@ features:
           - "@curation-game"
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: Curation Game is active at default zoom with one touch on the media surface
+            id: ac-1
+            then: a right swipe commits Keep and a left swipe commits Discard without invoking lightbox
+              navigation or sidebar gestures
+            when: a horizontally dominant swipe exceeds 50 pixels
         priority: high
         tags: []
         created: 2026-07-19T06:06:11.002Z
