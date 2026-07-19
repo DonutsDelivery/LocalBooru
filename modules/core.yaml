@@ -86,6 +86,22 @@ features:
         description: Favorite toggle in lightbox triggers grid re-sort when sorted by favorites
         acceptance_criteria:
           - When grid sorted by favorites, toggling favorite in lightbox triggers grid re-sort
+      - _ulid: 01KXWHHGJ8EXG5645PQHBPHE0P
+        slugs:
+          - ordinary-lightbox-media-rendering
+        title: Ordinary Lightbox Media Rendering
+        type: requirement
+        description: Opening a gallery image outside Curation Game renders the requested media or an
+          actionable error without activating explicit-exit cleanup.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        priority: high
+        tags: []
+        created: 2026-07-19T06:38:13.576Z
+        notes: []
     created: 2026-03-08T08:30:11.050Z
     notes: []
   - _ulid: 01KK692XSZDQQ8QMADEPVFH0EE
