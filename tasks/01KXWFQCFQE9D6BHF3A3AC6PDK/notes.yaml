@@ -45,3 +45,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T06:06:44.149Z
+  - _ulid: 01KXWJTTW8F2Q1NE3G1YRFE5RP
+    content: "Verified exact ORT 1.23.2 GPU extras against real SwinV2 model: 1,647 CUDA nodes and 885
+      expected CPU nodes; CUDA duration 690.899 ms and CPU duration 6.083 ms. Dependency
+      reconciliation now verifies CUDAExecutionProvider actually loads, restores/probes CPU if
+      install or provider loading fails, records distinct desired/installed revisions for fallback,
+      and computes sidecar diagnostics only after reconciliation. Full Rust library suite passes
+      135/135; Python provider suite passes 15/15."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T07:00:47.624Z
