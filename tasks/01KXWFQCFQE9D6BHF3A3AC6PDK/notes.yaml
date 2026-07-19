@@ -34,3 +34,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T06:06:28.855Z
+  - _ulid: 01KXWFQVDNFP6DMWPKP36DFYG5
+    content: "Approach: add behavioral diagnostics/probe tests first; reproduce the real WD graph in the
+      exact managed environment on RTX 4070; change only the evidenced provider/runtime cause; then
+      add a dependency fingerprint and start/install/Repair reconciliation that preserves models,
+      settings, and enabled state. Edge cases: legitimate mixed CUDA/CPU graphs, zero-CUDA execution
+      despite registration, stale venv upgrades, failed GPU reconciliation with verified CPU
+      restoration, and revision writes only after a successful probe. Test plan: ACs 1-5 each
+      receive behavioral coverage plus real-model CUDA smoke."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T06:06:44.149Z
