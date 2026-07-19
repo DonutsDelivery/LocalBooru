@@ -69,3 +69,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T06:42:43.158Z
+  - _ulid: 01KXWJTVA1JDQD86Q90HRDT2XT
+    content: Implemented explicit right->Keep and left->Discard mapping,
+      one-touch/default-zoom/control-origin filtering, immediate transaction lock,
+      committed-decision preservation across refill failure, and independent Loading/Retry/Exit
+      recovery UI. Full frontend suite passes 61/61 and focused gesture/recovery suite passes 13/13;
+      production build passes. Windows manual fullscreen verification remains outstanding.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T07:00:48.065Z
