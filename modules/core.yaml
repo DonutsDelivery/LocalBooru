@@ -1000,6 +1000,11 @@ features:
             id: ac-3
             then: the current candidate is committed at most once
             when: touch, keyboard, or button input requests another decision
+          - given: the current candidate was successfully kept or discarded and the queue becomes empty
+            id: ac-4
+            then: the committed decision is not repeated and the UI shows loading or visible Retry and Exit
+              recovery controls instead of a black unrendered state
+            when: candidate refill is pending or fails
         priority: high
         tags: []
         created: 2026-07-19T06:06:11.002Z
