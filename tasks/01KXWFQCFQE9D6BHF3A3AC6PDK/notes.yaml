@@ -55,3 +55,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T07:00:47.624Z
+  - _ulid: 01KXWJWY0AYES01HEJMCHK501P
+    content: kspec validate reports schema/reference validation passed for current valid items.
+      Alignment exits 6 because of pre-existing malformed Android/core records plus unrelated
+      orphan/status warnings; no new hotfix item error was reported.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T07:01:56.362Z
