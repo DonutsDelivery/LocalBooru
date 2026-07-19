@@ -979,6 +979,9 @@ features:
         type: requirement
         description: Curation fullscreen gestures commit at most one decision and keep candidate discovery
           recoverable when refilling fails.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to:
