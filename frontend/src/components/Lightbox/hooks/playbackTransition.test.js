@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   capturePlaybackIntent,
   createPlaybackTransitionOwner,
+  createVideoBackendCleanupTracker,
   nextPlaybackSourceRevision,
 } from './playbackTransition.js'
 
@@ -71,6 +72,28 @@ test('invalidating a transition aborts producer startup and image navigation own
 
   assert.equal(starting.signal.aborted, true)
   assert.equal(transitions.isCurrent(starting), false)
+})
+
+test('ordinary images never request video backend cleanup', () => {
+  // AC: @ordinary-lightbox-media-rendering ac-3
+  const cleanup = createVideoBackendCleanupTracker()
+
+  assert.equal(cleanup.replace(false), false)
+  assert.equal(cleanup.disable(false), false)
+  assert.equal(cleanup.unmount(false), false)
+})
+
+test('video backend cleanup is claimed once when playback is replaced or disabled', () => {
+  // AC: @ordinary-lightbox-media-rendering ac-3
+  // AC: @svp-single-player ac-idempotent-stop
+  const replaced = createVideoBackendCleanupTracker()
+  assert.equal(replaced.replace(true), true)
+  assert.equal(replaced.disable(false), false)
+  assert.equal(replaced.unmount(false), false)
+
+  const disabled = createVideoBackendCleanupTracker()
+  assert.equal(disabled.disable(true), true)
+  assert.equal(disabled.unmount(false), false)
 })
 
 test('forced replacement can revise an unchanged playback address', () => {

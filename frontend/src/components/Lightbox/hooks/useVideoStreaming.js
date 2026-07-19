@@ -31,6 +31,7 @@ import { shouldStartSVPPlayback } from './svpBuffering'
 import {
   capturePlaybackIntent as captureTransitionIntent,
   createPlaybackTransitionOwner,
+  createVideoBackendCleanupTracker,
   nextPlaybackSourceRevision,
 } from './playbackTransition'
 
@@ -58,6 +59,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   const imageRef = useRef(image)
   imageRef.current = image
   const currentImageKey = image?.url ?? image?.file_path ?? image?.id
+  const videoBackendCleanupRef = useRef(null)
+  if (!videoBackendCleanupRef.current) {
+    videoBackendCleanupRef.current = createVideoBackendCleanupTracker()
+  }
   const { applyNormalization, resetGain, setOutputVolume, setOutputMuted } = useAudioNormalization(mediaRef)
   // HLS streaming ref
   const hlsRef = useRef(null)
@@ -103,14 +108,19 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     playbackTransitionOwnerRef.current = createPlaybackTransitionOwner()
   }
   const activeStreamOwnerRef = useRef(null)
+  const videoBackendProducerMayExist = useCallback(() => Boolean(
+    activeStreamOwnerRef.current
+      || streamTransitioningRef.current
+      || svpStartingRef.current
+      || svpMseControllerRef.current
+      || hlsRef.current
+      || svpHlsRef.current
+      || transcodeHlsRef.current
+  ), [])
 
   // Source resolution (from original video)
   const [sourceResolution, setSourceResolution] = useState(null)
 
-  // Track which streams were ever started (for cleanup - avoid unnecessary stop calls)
-  const hadSvpStreamRef = useRef(false)
-  const hadOpticalFlowStreamRef = useRef(false)
-  const hadTranscodeStreamRef = useRef(false)
   const [codecFallbackActive, setCodecFallbackActive] = useState(false)  // True when browser can't decode video codec
   const codecFallbackStartedRef = useRef(false)  // Ref guard to prevent double-start
   const [streamError, setStreamError] = useState(null)  // Generic stream error toast
@@ -516,7 +526,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       const result = await playVideoInterpolated(image.file_path, playbackPosition, currentQuality)
 
       if (result.success && result.stream_url) {
-        hadOpticalFlowStreamRef.current = true
         setOpticalFlowStreamUrl(result.stream_url)
         if (result.source_resolution) setSourceResolution(result.source_resolution)
       } else {
@@ -611,7 +620,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
           await mseController.close().catch(() => {})
           return
         }
-        hadSvpStreamRef.current = true
         activeStreamOwnerRef.current = transition
         resetGain()
         setSvpStartOffset(0)
@@ -635,7 +643,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       console.log('[startSVPStream] API result:', result)
 
       if (result.success && result.stream_url) {
-        hadSvpStreamRef.current = true
         activeStreamOwnerRef.current = transition
         resetGain()  // SVP FFmpeg already normalizes audio
         setSvpStartOffset(playbackPosition)
@@ -714,6 +721,9 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       return  // No cleanup needed on first mount
     }
 
+    const shouldStopVideoBackends = videoBackendCleanupRef.current.replace(
+      videoBackendProducerMayExist(),
+    )
     const cleanupGeneration = ++cleanupGenerationRef.current
     const playbackGeneration = playbackTransitionOwnerRef.current.invalidate()
     activeStreamOwnerRef.current = null
@@ -754,23 +764,29 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     setTranscodeBufferedDuration(0)
     setTranscodeStreamUrl(null)
 
-    // Async: stop all backend processes, then signal auto-start can proceed
-    Promise.all([
-      mseCleanup,
-      stopSVPStream(playbackGeneration).catch(() => {}),
-      stopInterpolatedStream().catch(() => {}),
-      stopTranscodeStream().catch(() => {})
-    ]).then(() => {
+    // Only actual video lifecycles may own backend producers. Ordinary image
+    // navigation must not issue global SVP/transcode cleanup requests.
+    const backendCleanup = shouldStopVideoBackends
+      ? Promise.all([
+          stopSVPStream(playbackGeneration).catch(() => {}),
+          stopInterpolatedStream().catch(() => {}),
+          stopTranscodeStream().catch(() => {}),
+        ])
+      : Promise.resolve()
+    Promise.all([mseCleanup, backendCleanup]).then(() => {
       if (cleanupGeneration !== cleanupGenerationRef.current) return
       cleanupDoneRef.current = true
       setCleanupSeq(s => s + 1)
     })
-  }, [currentImageKey])
+  }, [currentImageKey, videoBackendProducerMayExist])
 
   // Native GTK owns playback exclusively. Tear down every browser/HLS producer
   // as soon as native ownership is selected so two decoders cannot run.
   useEffect(() => {
     if (enabled) return
+    const shouldStopVideoBackends = videoBackendCleanupRef.current.disable(
+      videoBackendProducerMayExist(),
+    )
     const cleanupGeneration = ++cleanupGenerationRef.current
     cleanupDoneRef.current = false
     const playbackGeneration = playbackTransitionOwnerRef.current.invalidate()
@@ -792,17 +808,19 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
     const mseCleanup = svpMseControllerRef.current?.close().catch(() => {})
     svpMseControllerRef.current = null
     resetGain()
-    Promise.all([
-      mseCleanup,
-      stopSVPStream(playbackGeneration).catch(() => {}),
-      stopInterpolatedStream().catch(() => {}),
-      stopTranscodeStream().catch(() => {}),
-    ]).then(() => {
+    const backendCleanup = shouldStopVideoBackends
+      ? Promise.all([
+          stopSVPStream(playbackGeneration).catch(() => {}),
+          stopInterpolatedStream().catch(() => {}),
+          stopTranscodeStream().catch(() => {}),
+        ])
+      : Promise.resolve()
+    Promise.all([mseCleanup, backendCleanup]).then(() => {
       if (cleanupGeneration !== cleanupGenerationRef.current) return
       cleanupDoneRef.current = true
       setCleanupSeq(s => s + 1)
     })
-  }, [enabled, resetGain])
+  }, [enabled, resetGain, videoBackendProducerMayExist])
 
   // Stop SVP stream
   const stopSVP = useCallback(async (transitionGeneration = null) => {
@@ -1503,6 +1521,9 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   // Cleanup HLS on unmount
   useEffect(() => {
     return () => {
+      const shouldStopVideoBackends = videoBackendCleanupRef.current.unmount(
+        videoBackendProducerMayExist(),
+      )
       const playbackGeneration = playbackTransitionOwnerRef.current.invalidate()
       activeStreamOwnerRef.current = null
       if (hlsRef.current) {
@@ -1517,16 +1538,15 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         transcodeHlsRef.current.destroy()
         transcodeHlsRef.current = null
       }
-      // Stop SVP unconditionally: a /play request may still be in flight even
-      // before hadSvpStreamRef is set, and leaving vspipe alive can poison the
-      // next stream start.
       svpMseControllerRef.current?.close().catch(() => {})
       svpMseControllerRef.current = null
-      stopSVPStream(playbackGeneration).catch(() => {})
-      if (hadOpticalFlowStreamRef.current) stopInterpolatedStream().catch(() => {})
-      if (hadTranscodeStreamRef.current) stopTranscodeStream().catch(() => {})
+      if (shouldStopVideoBackends) {
+        stopSVPStream(playbackGeneration).catch(() => {})
+        stopInterpolatedStream().catch(() => {})
+        stopTranscodeStream().catch(() => {})
+      }
     }
-  }, [])
+  }, [videoBackendProducerMayExist])
 
   // Reset streaming state (called when image changes)
   const resetStreamingState = useCallback(async (shouldStopStreams = false) => {
@@ -1700,7 +1720,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       if (!result.success || !result.stream_url) {
         throw new Error(result.error || 'Failed to transcode video')
       }
-      hadTranscodeStreamRef.current = true
       activeStreamOwnerRef.current = transition
       resetGain()
       setTranscodeStartOffset(absoluteTime)
@@ -1749,7 +1768,6 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       playVideoTranscode(image.file_path, startPosition, null, transition.signal).then(result => {
         if (!isPlaybackTransitionCurrent(transition)) return
         if (result.success && result.stream_url) {
-          hadTranscodeStreamRef.current = true
           activeStreamOwnerRef.current = transition
           setTranscodeStartOffset(startPosition)
           if (result.duration) setTranscodeTotalDuration(result.duration)

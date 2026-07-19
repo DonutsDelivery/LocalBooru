@@ -68,6 +68,23 @@ export function createPlaybackTransitionOwner() {
   }
 }
 
+export function createVideoBackendCleanupTracker() {
+  let cleanupNeeded = false
+
+  const claim = (producerMayExist = false) => {
+    cleanupNeeded ||= Boolean(producerMayExist)
+    if (!cleanupNeeded) return false
+    cleanupNeeded = false
+    return true
+  }
+
+  return {
+    replace: claim,
+    disable: claim,
+    unmount: claim,
+  }
+}
+
 export function nextPlaybackSourceRevision(revision) {
   return revision + 1
 }
