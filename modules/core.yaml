@@ -996,6 +996,10 @@ features:
             then: no curation decision is committed
             when: a gesture is a pinch, begins on a control, occurs while zoomed or panning, is vertically
               dominant, or does not exceed the threshold
+          - given: a curation decision is already mutating, advancing the queue, or refilling
+            id: ac-3
+            then: the current candidate is committed at most once
+            when: touch, keyboard, or button input requests another decision
         priority: high
         tags: []
         created: 2026-07-19T06:06:11.002Z
