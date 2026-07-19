@@ -1,0 +1,16 @@
+_ulid: 01KXWFQD0YGDMCSX13M53J1NDG
+slugs:
+  - task-curation-gesture-decisions-and-recovery
+title: Fix curation swipe decisions and refill recovery
+type: task
+spec_ref: "@curation-gesture-decisions-recovery"
+derivation: auto
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-07-19T06:06:29.406Z
+todos: []

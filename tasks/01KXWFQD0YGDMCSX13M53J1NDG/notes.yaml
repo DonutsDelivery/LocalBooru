@@ -1,0 +1,40 @@
+notes:
+  - _ulid: 01KXWFQD0XCSF4H501E21N59ZN
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Curation fullscreen gestures commit at most one decision and keep candidate discovery
+      recoverable when refilling fails.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given Curation Game is active at default zoom with one touch on the media surface,
+      when a horizontally dominant swipe exceeds 50 pixels, then a right swipe commits Keep and a
+      left swipe commits Discard without invoking lightbox navigation or sidebar gestures
+
+      - ac-2: Given Curation Game is active, when a gesture is a pinch, begins on a control, occurs
+      while zoomed or panning, is vertically dominant, or does not exceed the threshold, then no
+      curation decision is committed
+
+      - ac-3: Given a curation decision is already mutating, advancing the queue, or refilling, when
+      touch, keyboard, or button input requests another decision, then the current candidate is
+      committed at most once
+
+      - ac-4: Given the current candidate was successfully kept or discarded and the queue becomes
+      empty, when candidate refill is pending or fails, then the committed decision is not repeated
+      and the UI shows loading or visible Retry and Exit recovery controls instead of a black
+      unrendered state
+
+      - ac-5: Given candidate refill previously failed after a successful decision, when the user
+      retries or exits, then Retry resumes discovery with the existing query and progress without
+      replaying the decision, while Exit returns to a refreshed gallery
+
+      - ac-6: Given Curation Game is inactive, when the same touch gestures are used in the
+      lightbox, then existing sidebar, pinch, zoom, pan, navigation, and video behavior remains
+      unchanged
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T06:06:29.406Z
