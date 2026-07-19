@@ -72,3 +72,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T07:41:38.542Z
+  - _ulid: 01KXWNSKREP040GGT1RQD9Y19F
+    content: "Final review fixes: probe the current managed venv before accepting deployment-marker
+      evidence; force reconciliation on drift; serialize Stop with a Stopping state and clean
+      cancelled healthy starts. Final gates: Rust 137/137, manager 15/15, Python 15/15, cargo
+      check/fmt and diff checks passed. Commit 8fcfdc27."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T07:52:33.294Z
