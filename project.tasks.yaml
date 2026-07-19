@@ -923,7 +923,7 @@ tasks:
     title: "Implement: Ordinary Lightbox Media Rendering"
     type: task
     spec_ref: "@ordinary-lightbox-media-rendering"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -932,6 +932,7 @@ tasks:
     todos_count: 0
     created_at: 2026-07-19T06:38:30.633Z
     started_at: 2026-07-19T06:38:39.318Z
+    submitted_at: 2026-07-19T10:38:16.512Z
   - _ulid: 01KXWXQNFBAPD35S98Z4S6AA4Y
     slugs:
       - task-frameless-window-resizing
