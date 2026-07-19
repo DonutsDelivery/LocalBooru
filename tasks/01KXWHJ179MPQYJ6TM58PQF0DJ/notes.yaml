@@ -79,3 +79,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T10:37:46.315Z
+  - _ulid: 01KXX379HPS06D4NNFBGC9R8XY
+    content: "Follow-up regression: ordinary image opens were still running three unconditional
+      video-backend cleanup paths (image-key effect, disabled/native effect, and StrictMode
+      unmount), producing duplicate /settings/svp/stop errors despite no video producer. Added a
+      shared one-shot cleanup tracker so backend stop calls occur only when refs prove a video
+      producer is active or starting; image opens and image-only unmounts issue none. Added
+      @ordinary-lightbox-media-rendering ac-3 tests. Frontend 69/69 and production build pass."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T11:47:13.078Z
