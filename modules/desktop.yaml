@@ -287,6 +287,7 @@ features:
         implements: []
         relates_to:
           - "@auto-tagger-execution-verification"
+          - "@auto-tagger-provider-diagnostics"
         tests: []
         traits: []
         priority: high
