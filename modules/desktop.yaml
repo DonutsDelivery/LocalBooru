@@ -433,6 +433,11 @@ features:
             id: ac-image-transition-owner
             then: the unfinished transition cannot alter, pause, seek, or resume the newly opened video
             when: the user navigates to another video
+          - given: SVP is disabled, unavailable, or has no active stream
+            id: ac-idempotent-stop
+            then: direct playback remains active and expected no-op or superseded stops complete silently
+              without a user-facing API error
+            when: duplicate, stale, or overlapping cleanup requests stop SVP playback
         tags: []
         created: 2026-07-16T23:26:08.088Z
         notes: []
