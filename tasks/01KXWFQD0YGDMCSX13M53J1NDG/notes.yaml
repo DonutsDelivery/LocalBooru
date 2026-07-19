@@ -38,3 +38,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T06:06:29.406Z
+  - _ulid: 01KXWFQVWSTRP8JH8ATXYMHQPY
+    content: "Approach: write pure gesture and curation state tests first; reuse the existing 50px
+      horizontal classifier semantics; give active curation precedence without changing inactive
+      lightbox behavior; serialize the entire mutation/advance/refill transaction with an immediate
+      ref lock; render loading and Retry/Exit independently of a current candidate. Edge cases:
+      pinch, zoom, pan, controls, vertical movement, duplicate touch/key/button input, failed
+      mutation, final-item refill failure, retry without replay, and exit refresh. Test plan: ACs
+      1-6 each receive behavioral coverage."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T06:06:44.633Z
