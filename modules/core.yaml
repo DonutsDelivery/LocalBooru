@@ -104,6 +104,11 @@ features:
             then: the lightbox requests and visibly renders the selected full-resolution image rather than
               remaining black or empty
             when: the user opens that image in the ordinary lightbox
+          - given: an ordinary lightbox media request or decode fails
+            id: ac-2
+            then: the lightbox presents an actionable error or retry state instead of an indistinguishable black
+              empty surface
+            when: the lightbox cannot render the selected image
         priority: high
         tags: []
         created: 2026-07-19T06:38:13.576Z
