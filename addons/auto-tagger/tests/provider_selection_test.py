@@ -46,6 +46,9 @@ class FakeSession:
     def get_providers(self):
         return self._providers
 
+    def get_provider_options(self):
+        return {provider: {"device_id": "0"} for provider in self._providers}
+
     def get_inputs(self):
         return [type("Input", (), {"name": "input"})()]
 
@@ -64,6 +67,8 @@ class FakeSession:
 
 
 class FakeOrt:
+    __version__ = "1.23.2-test"
+
     class GraphOptimizationLevel:
         ORT_ENABLE_ALL = "all"
 
@@ -128,10 +133,45 @@ def test_cuda_registration_is_not_reported_as_execution_before_prediction():
     assert status["active_provider"] is None
 
 
+# AC: @auto-tagger-runtime-acceleration-deployment ac-2
+def test_health_exposes_model_runtime_provider_and_deployment_evidence(tmp_path, monkeypatch):
+    tagger = load_tagger()
+    model = tmp_path / "eva02-large-v3" / "model.onnx"
+    model.parent.mkdir()
+    model.write_bytes(b"real-model-identity")
+    monkeypatch.setenv("TAGGER_DEPLOYMENT_DESIRED", "desired-revision")
+    monkeypatch.setenv("TAGGER_DEPLOYMENT_INSTALLED", "installed-revision")
+    monkeypatch.setenv("TAGGER_DEPLOYMENT_RUNTIME", "cuda")
+    ort = FakeOrt(["CUDAExecutionProvider", "CPUExecutionProvider"])
+    session, available, warning = tagger._create_inference_session(ort, model, "cuda")
+    tagger._ort_module = ort
+    tagger._set_loaded_session(session, available, warning, model)
+
+    status = asyncio.run(tagger.health())
+
+    assert status["model_identity"]["name"] == "eva02-large-v3"
+    assert len(status["model_identity"]["sha256"]) == 64
+    diagnostics = status["runtime_diagnostics"]
+    assert diagnostics["python_version"]
+    assert diagnostics["onnxruntime_version"] == "1.23.2-test"
+    assert diagnostics["architecture"]
+    assert diagnostics["preload"] == {
+        "attempted": True,
+        "succeeded": True,
+        "error": None,
+    }
+    assert diagnostics["provider_options"]["CUDAExecutionProvider"]["device_id"] == "0"
+    assert diagnostics["deployment"] == {
+        "desired_revision": "desired-revision",
+        "installed_revision": "installed-revision",
+        "runtime": "cuda",
+        "warning": None,
+    }
+
+
 # AC: @auto-tagger-execution-verification ac-2
 def test_profile_evidence_reports_cuda_cpu_mixed_and_unknown():
     tagger = load_tagger()
-
     cuda = tagger._summarize_profile_events(
         [{"cat": "Node", "dur": 2500, "args": {"provider": "CUDAExecutionProvider"}}]
     )

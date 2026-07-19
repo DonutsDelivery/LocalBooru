@@ -55,16 +55,61 @@ async fn install_addon(
     State(state): State<AppState>,
     AxumPath(addon_id): AxumPath<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let requires_stop = state
+        .addon_manager()
+        .get_addon(&addon_id)
+        .ok_or_else(|| AppError::NotFound(format!("Addon '{}' not found", addon_id)))?
+        .requires_start;
+    let mut restart_after_install = false;
+    if requires_stop {
+        restart_after_install = state
+            .addon_manager()
+            .begin_repair(&addon_id)
+            .map_err(AppError::Internal)?;
+        if restart_after_install {
+            if let Err(error) = state.addon_manager().stop_addon_for_repair(&addon_id).await {
+                state
+                    .addon_manager()
+                    .finish_failed_repair(&addon_id, error.clone());
+                return Err(AppError::Internal(error));
+            }
+        }
+    }
+
     let state_clone = state.clone();
     let id = addon_id.clone();
 
-    tokio::task::spawn_blocking(move || {
+    let install_result = tokio::task::spawn_blocking(move || {
         state_clone
             .addon_manager()
             .install_addon(&id)
             .map_err(|e| AppError::Internal(format!("Failed to install addon '{}': {}", id, e)))
     })
-    .await??;
+    .await?;
+    if let Err(error) = install_result {
+        if requires_stop {
+            state
+                .addon_manager()
+                .finish_failed_repair(&addon_id, error.to_string());
+        }
+        if restart_after_install {
+            if let Err(restart_error) = state.addon_manager().start_addon(&addon_id).await {
+                return Err(AppError::Internal(format!(
+                    "{}; restoring the running add-on also failed: {}",
+                    error, restart_error
+                )));
+            }
+        }
+        return Err(error);
+    }
+
+    if restart_after_install {
+        state
+            .addon_manager()
+            .start_addon(&addon_id)
+            .await
+            .map_err(AppError::Internal)?;
+    }
 
     Ok(Json(json!({
         "status": "installed",
@@ -77,15 +122,50 @@ async fn repair_addon(
     State(state): State<AppState>,
     AxumPath(addon_id): AxumPath<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let was_running = state
+        .addon_manager()
+        .begin_repair(&addon_id)
+        .map_err(AppError::Internal)?;
+    if was_running {
+        if let Err(error) = state.addon_manager().stop_addon_for_repair(&addon_id).await {
+            state
+                .addon_manager()
+                .finish_failed_repair(&addon_id, error.clone());
+            return Err(AppError::Internal(error));
+        }
+    }
+
     let state_clone = state.clone();
     let id = addon_id.clone();
-    tokio::task::spawn_blocking(move || {
+    let repair_result = tokio::task::spawn_blocking(move || {
         state_clone
             .addon_manager()
             .repair_addon(&id)
             .map_err(|e| AppError::Internal(format!("Failed to repair addon '{}': {}", id, e)))
     })
-    .await??;
+    .await?;
+
+    if let Err(error) = repair_result {
+        state
+            .addon_manager()
+            .finish_failed_repair(&addon_id, error.to_string());
+        if was_running {
+            if let Err(restart_error) = state.addon_manager().start_addon(&addon_id).await {
+                return Err(AppError::Internal(format!(
+                    "{}; restoring the running add-on also failed: {}",
+                    error, restart_error
+                )));
+            }
+        }
+        return Err(error);
+    }
+    if was_running {
+        state
+            .addon_manager()
+            .start_addon(&addon_id)
+            .await
+            .map_err(AppError::Internal)?;
+    }
 
     Ok(Json(json!({ "status": "updated", "addon_id": addon_id })))
 }
@@ -97,20 +177,41 @@ async fn uninstall_addon(
     State(state): State<AppState>,
     AxumPath(addon_id): AxumPath<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // Stop the addon first if it's running
-    let _ = state.addon_manager().stop_addon(&addon_id).await;
+    let requires_stop = state
+        .addon_manager()
+        .get_addon(&addon_id)
+        .ok_or_else(|| AppError::NotFound(format!("Addon '{}' not found", addon_id)))?
+        .requires_start;
+    state
+        .addon_manager()
+        .begin_repair(&addon_id)
+        .map_err(AppError::Internal)?;
+    if requires_stop {
+        if let Err(error) = state.addon_manager().stop_addon_for_repair(&addon_id).await {
+            state
+                .addon_manager()
+                .finish_failed_repair(&addon_id, error.clone());
+            return Err(AppError::Internal(error));
+        }
+    }
 
     // Uninstall (blocking: removes venv directory)
     let state_clone = state.clone();
     let id = addon_id.clone();
 
-    tokio::task::spawn_blocking(move || {
+    let uninstall_result = tokio::task::spawn_blocking(move || {
         state_clone
             .addon_manager()
             .uninstall_addon(&id)
             .map_err(|e| AppError::Internal(format!("Failed to uninstall addon '{}': {}", id, e)))
     })
-    .await??;
+    .await?;
+    if let Err(error) = uninstall_result {
+        state
+            .addon_manager()
+            .finish_failed_repair(&addon_id, error.to_string());
+        return Err(error);
+    }
 
     Ok(Json(json!({
         "status": "uninstalled",

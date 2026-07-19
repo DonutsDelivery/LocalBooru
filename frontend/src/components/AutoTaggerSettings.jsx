@@ -8,6 +8,8 @@ import {
 } from '../api'
 import {
   formatExecutionState,
+  formatPackageVersions,
+  formatPreload,
   formatProviderList,
   formatProviderMetric,
   formatTimings,
@@ -20,6 +22,7 @@ export default function AutoTaggerSettings() {
   const [config, setConfig] = useState(null)
   const [models, setModels] = useState([])
   const [health, setHealth] = useState(null)
+  const [healthError, setHealthError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [refreshingHealth, setRefreshingHealth] = useState(false)
@@ -35,8 +38,10 @@ export default function AutoTaggerSettings() {
       setModels((modelResponse.models || []).filter((model) => TAGGER_MODEL_IDS.has(model.name)))
       try {
         setHealth(await getAddonHealth('auto-tagger'))
-      } catch {
+        setHealthError(null)
+      } catch (error) {
         setHealth(null)
+        setHealthError(error.message || 'Runtime status is unavailable')
       }
     } catch (error) {
       console.error('Failed to load Auto Tagger settings:', error)
@@ -66,8 +71,11 @@ export default function AutoTaggerSettings() {
     setRefreshingHealth(true)
     try {
       setHealth(await getAddonHealth('auto-tagger'))
+      setHealthError(null)
     } catch (error) {
       console.error('Failed to refresh Auto Tagger runtime status:', error)
+      setHealth(null)
+      setHealthError(error.message || 'Runtime status is unavailable')
     } finally {
       setRefreshingHealth(false)
     }
@@ -104,6 +112,11 @@ export default function AutoTaggerSettings() {
   const providerNodeCounts = formatProviderMetric(health?.provider_node_counts)
   const providerDurations = formatProviderMetric(health?.provider_duration_ms, 'ms')
   const lastTimings = formatTimings(health?.last_timings_ms)
+  const diagnostics = health?.runtime_diagnostics
+  const deployment = diagnostics?.deployment
+  const runtimePackages = formatPackageVersions(diagnostics?.packages)
+  const preload = formatPreload(diagnostics?.preload)
+  const modelIdentity = health?.model_identity
 
   return (
     <section className="optical-flow-settings">
@@ -169,6 +182,17 @@ export default function AutoTaggerSettings() {
         <p className="setting-note">Provider node counts: {providerNodeCounts}</p>
         <p className="setting-note">Provider durations: {providerDurations}</p>
         <p className="setting-note">Last prediction timings: {lastTimings}</p>
+        <p className="setting-note">Deployment revision: {deployment?.installed_revision || 'Not recorded'} / desired {deployment?.desired_revision || 'Not available'}</p>
+        <p className="setting-note">Deployment runtime: {deployment?.runtime || 'Not available'}</p>
+        <p className="setting-note">Python / ONNX Runtime: {diagnostics?.python_version || 'Not available'} / {diagnostics?.onnxruntime_version || 'Not available'}</p>
+        <p className="setting-note">Platform: {diagnostics?.platform || 'Not available'} ({diagnostics?.architecture || 'unknown architecture'})</p>
+        <p className="setting-note">Runtime packages: {runtimePackages}</p>
+        <p className="setting-note">Native library preload: {preload}</p>
+        <p className="setting-note">Model identity: {modelIdentity ? `${modelIdentity.name} — ${modelIdentity.sha256 || 'hash unavailable'} (${modelIdentity.bytes ?? 'size unavailable'} bytes)` : 'Not loaded'}</p>
+        <p className="setting-note">Provider options: {diagnostics?.provider_options ? JSON.stringify(diagnostics.provider_options) : 'Not available'}</p>
+        {healthError && <p className="optical-flow-status warning">Runtime status unavailable: {healthError}</p>}
+        {deployment?.warning && <p className="optical-flow-status warning">{deployment.warning}</p>}
+        {diagnostics?.ort_debug_error && <p className="optical-flow-status warning">ORT diagnostics: {diagnostics.ort_debug_error}</p>}
         {health?.provider_warning && <p className="optical-flow-status warning">{health.provider_warning}</p>}
         {health?.profile_warning && <p className="optical-flow-status warning">{health.profile_warning}</p>}
         <button onClick={refreshHealth} disabled={refreshingHealth}>

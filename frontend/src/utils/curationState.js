@@ -1,4 +1,48 @@
 export const CURATION_BATCH_SIZE = 50
+
+export function getCurationRecoveryMode({ active, complete, current, loading, refillError }) {
+  if (!active || complete || current) return null
+  if (refillError) return 'error'
+  if (loading) return 'loading'
+  return null
+}
+
+export function createCurationActionLock() {
+  let locked = false
+  return {
+    tryAcquire() {
+      if (locked) return false
+      locked = true
+      return true
+    },
+    release() {
+      locked = false
+    },
+  }
+}
+
+export function commitCurationAction(state, kind, item, countedDate) {
+  return {
+    ...state,
+    queue: state.queue.slice(1),
+    lastAction: { kind, item, countedDate },
+    processed: state.processed + 1,
+    busy: true,
+    loading: true,
+    complete: false,
+    refillError: null,
+  }
+}
+
+export function markCurationRefillFailure(state, error) {
+  return {
+    ...state,
+    busy: false,
+    loading: false,
+    refillError: error?.message || String(error),
+  }
+}
+
 export const CURATION_REFILL_AT = 10
 
 export function imageLocatorKey(image) {

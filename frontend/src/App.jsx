@@ -31,6 +31,7 @@ import WatchPage from './pages/WatchPage'
 import { getColumnCount, tileWidths } from './utils/gridLayout'
 import { isUnexpectedEmptyPage, mergeFirstPage } from './utils/galleryState'
 import { classifySidebarSwipe } from './utils/sidebarGestures'
+import { getCurationRecoveryMode } from './utils/curationState'
 import { useAllAddonStatuses } from './hooks/useAddonStatus'
 import { useCurationGame } from './hooks/useCurationGame'
 import { useMobileDrawer } from './hooks/useMobileDrawer'
@@ -872,6 +873,14 @@ function Gallery() {
     loadedImages: images,
     filters: galleryQuery,
     onGalleryRefresh: () => loadImages(1, false),
+  })
+
+  const curationRecoveryMode = getCurationRecoveryMode({
+    active: curation.active,
+    complete: curation.complete,
+    current: curation.current,
+    loading: curation.loading,
+    refillError: curation.refillError,
   })
 
   const handleTouchEnd = useCallback((e) => {
@@ -1760,6 +1769,29 @@ function Gallery() {
           </div>
         )}
       </div>
+
+      {curationRecoveryMode && (
+        <div className="modal-overlay curation-complete-overlay">
+          <div className="modal-content curation-complete-dialog">
+            {curationRecoveryMode === 'loading' ? (
+              <>
+                <h2>Loading the next item…</h2>
+                <p>{curation.lastAction ? 'Your last decision has been saved.' : 'Finding the first item…'}</p>
+              </>
+            ) : (
+              <>
+                <h2>Could not load the next item</h2>
+                <p>{curation.refillError}</p>
+                <p>{curation.lastAction ? 'Your last decision has been saved and will not be repeated.' : 'No curation decision was changed.'}</p>
+                <div className="modal-actions">
+                  <button className="primary-btn" onClick={curation.retryRefill} disabled={curation.busy}>Retry</button>
+                  <button onClick={curation.exit} disabled={curation.busy}>Exit</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {curation.complete && (
         <div className="modal-overlay curation-complete-overlay">

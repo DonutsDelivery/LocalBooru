@@ -9,10 +9,16 @@ Endpoints:
   POST /predict  → predict tags for an image file
 """
 
+import contextlib
 import csv
+import hashlib
+import importlib.metadata
+import io
 import json
 import logging
 import os
+import platform
+import sys
 import tempfile
 import threading
 import time
@@ -46,6 +52,9 @@ _provider_duration_ms = {}
 _provider_warning = None
 _profile_warning = None
 _last_timings_ms = None
+_preload_result = {"attempted": False, "succeeded": None, "error": None}
+_runtime_diagnostics = {}
+_model_identity = None
 _model_load_lock = threading.Lock()
 _first_inference_lock = threading.Lock()
 _prediction_slots = threading.BoundedSemaphore(2)
@@ -130,6 +139,80 @@ def _try_download_model() -> Optional[Path]:
         return None
 
 
+def _installed_runtime_packages():
+    names = [
+        "onnxruntime",
+        "onnxruntime-gpu",
+        "nvidia-cublas-cu12",
+        "nvidia-cuda-runtime-cu12",
+        "nvidia-cudnn-cu12",
+        "nvidia-cufft-cu12",
+        "nvidia-curand-cu12",
+    ]
+    packages = {}
+    for name in names:
+        try:
+            packages[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return packages
+
+
+def _model_file_identity(model_path):
+    path = Path(model_path)
+    if not path.exists():
+        return {"path": str(path), "name": path.parent.name or path.name}
+    digest = hashlib.sha256()
+    with open(path, "rb") as model_file:
+        for chunk in iter(lambda: model_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "path": str(path.resolve()),
+        "name": path.parent.name or path.name,
+        "sha256": digest.hexdigest(),
+        "bytes": path.stat().st_size,
+    }
+
+
+def _collect_runtime_diagnostics(ort, session=None):
+    provider_options = {}
+    if session is not None:
+        try:
+            provider_options = session.get_provider_options()
+        except Exception:
+            provider_options = {}
+
+    debug_output = None
+    debug_error = None
+    if os.environ.get("TAGGER_ORT_DEBUG", "").lower() in ("1", "true", "yes"):
+        try:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                ort.print_debug_info()
+            debug_output = output.getvalue()[-16000:]
+        except Exception as exc:
+            debug_error = str(exc)
+
+    return {
+        "python_version": platform.python_version(),
+        "python_executable": sys.executable,
+        "onnxruntime_version": getattr(ort, "__version__", None),
+        "platform": platform.platform(),
+        "architecture": platform.machine(),
+        "packages": _installed_runtime_packages(),
+        "provider_options": provider_options,
+        "preload": dict(_preload_result),
+        "deployment": {
+            "desired_revision": os.environ.get("TAGGER_DEPLOYMENT_DESIRED") or None,
+            "installed_revision": os.environ.get("TAGGER_DEPLOYMENT_INSTALLED") or None,
+            "runtime": os.environ.get("TAGGER_DEPLOYMENT_RUNTIME") or None,
+            "warning": os.environ.get("TAGGER_DEPLOYMENT_WARNING") or None,
+        },
+        "ort_debug_output": debug_output,
+        "ort_debug_error": debug_error,
+    }
+
+
 # ─── Model loading ────────────────────────────────────────────────────────────
 
 def _new_session_options(ort):
@@ -169,15 +252,21 @@ def _combine_warning(current, message):
 
 def _create_inference_session(ort, model_path, requested_device):
     """Create a profiled provider-aware session with an explicit CPU fallback."""
+    global _preload_result
+
     warning = None
     wants_cuda = requested_device in ("auto", "cuda")
+    _preload_result = {"attempted": wants_cuda, "succeeded": None, "error": None}
 
     if wants_cuda:
         preload_dlls = getattr(ort, "preload_dlls", None)
         if preload_dlls is not None:
             try:
                 preload_dlls(directory="")
+                _preload_result["succeeded"] = True
             except Exception as exc:
+                _preload_result["succeeded"] = False
+                _preload_result["error"] = str(exc)
                 warning = f"Unable to preload packaged CUDA libraries: {exc}"
                 logger.warning(warning)
 
@@ -226,7 +315,7 @@ def _set_loaded_session(session, available_providers, warning, model_path):
     global _model, _model_path, _model_loaded, _available_providers
     global _registered_providers, _active_provider, _execution_state
     global _provider_node_counts, _provider_duration_ms, _provider_warning
-    global _profile_warning
+    global _profile_warning, _runtime_diagnostics, _model_identity
 
     _model = session
     _model_path = Path(model_path)
@@ -239,6 +328,9 @@ def _set_loaded_session(session, available_providers, warning, model_path):
     _provider_duration_ms = {}
     _provider_warning = warning
     _profile_warning = None
+    _model_identity = _model_file_identity(model_path)
+    if _ort_module is not None:
+        _runtime_diagnostics = _collect_runtime_diagnostics(_ort_module, session)
 
 
 def _load_model():
@@ -710,6 +802,8 @@ async def health():
         "last_timings_ms": dict(_last_timings_ms) if _last_timings_ms else None,
         "provider_warning": _provider_warning,
         "profile_warning": _profile_warning,
+        "model_identity": dict(_model_identity) if _model_identity else None,
+        "runtime_diagnostics": dict(_runtime_diagnostics),
     }
 
 

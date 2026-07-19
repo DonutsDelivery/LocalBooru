@@ -1,10 +1,11 @@
 import { useCallback, useState, useRef, useEffect, useMemo } from 'react'
 import { isVideo } from '../utils/helpers'
+import { classifyHorizontalSwipe, isGestureCandidateCurrent } from '../../../utils/lightboxGestures.js'
 
 /**
  * Hook for managing zoom and pan gestures for images
  */
-export function useZoomPan(mediaRef, containerRef, resetHideTimer, image) {
+export function useZoomPan(mediaRef, containerRef, resetHideTimer, image, gestureVersion = 0) {
   // Zoom state
   const [zoom, setZoom] = useState({ scale: 1, x: 0, y: 0 })
   const zoomRef = useRef(zoom) // Ref to always have current zoom in callbacks
@@ -16,8 +17,12 @@ export function useZoomPan(mediaRef, containerRef, resetHideTimer, image) {
   // Touch/swipe handling
   const touchStartX = useRef(null)
   const touchStartY = useRef(null)
+  const touchStartCount = useRef(0)
+  const touchBlocked = useRef(false)
   const touchMoved = useRef(false)
   const touchHandled = useRef(false)
+  const touchImageToken = useRef(null)
+  const imageToken = `${image?.directory_id ?? ''}:${image?.id ?? ''}:${image?.file_path ?? image?.url ?? ''}:${gestureVersion}`
 
   // Reset zoom when image changes
   const resetZoom = useCallback(() => {
@@ -137,12 +142,20 @@ export function useZoomPan(mediaRef, containerRef, resetHideTimer, image) {
 
   // Touch start handler
   const handleTouchStart = useCallback((e) => {
-    touchStartX.current = e.touches[0].clientX
-    touchStartY.current = e.touches[0].clientY
+    touchStartCount.current = e.touches.length
+    touchImageToken.current = imageToken
+    touchBlocked.current = Boolean(e.target.closest('button, input, select, textarea, [role="slider"], [data-curation-gesture-block], .lightbox-toolbar, .lightbox-video-controls, .curation-controls, .lightbox-adjustments, .lightbox-confirm-overlay, .subtitle-menu-popup, .quality-selector-popup, .quality-selector-backdrop, .svp-side-menu, .svp-menu-backdrop'))
+    if (touchStartCount.current !== 1) {
+      touchStartX.current = null
+      touchStartY.current = null
+    } else {
+      touchStartX.current = e.touches[0].clientX
+      touchStartY.current = e.touches[0].clientY
+    }
     touchMoved.current = false
     touchHandled.current = false
     resetHideTimer() // Show UI on touch
-  }, [resetHideTimer])
+  }, [resetHideTimer, imageToken])
 
   // Touch move handler (for swipe detection)
   const handleTouchMove = useCallback((e) => {
@@ -155,33 +168,55 @@ export function useZoomPan(mediaRef, containerRef, resetHideTimer, image) {
     }
   }, [])
 
-  // Touch end handler (for sidebar toggle)
-  const handleTouchEnd = useCallback((e, onSidebarHover, sidebarOpen) => {
+  // Touch end handler (curation decisions take precedence over sidebar toggles)
+  const handleTouchEnd = useCallback((e, onSidebarHover, sidebarOpen, onCurationSwipe = null) => {
     if (touchStartX.current === null) return
+    if (!isGestureCandidateCurrent(touchImageToken.current, imageToken)) {
+      if (onCurationSwipe) e.preventDefault()
+      touchStartX.current = null
+      touchStartY.current = null
+      touchStartCount.current = 0
+      touchBlocked.current = false
+      touchMoved.current = true
+      touchHandled.current = true
+      touchImageToken.current = null
+      return
+    }
 
     const touchEndX = e.changedTouches[0].clientX
     const deltaX = touchEndX - touchStartX.current
     const deltaY = e.changedTouches[0].clientY - touchStartY.current
+    if (onCurationSwipe && touchBlocked.current && touchMoved.current) {
+      // A drag that starts on a control is neither a decision nor a control click.
+      e.preventDefault()
+      touchHandled.current = true
+    }
+    const direction = classifyHorizontalSwipe({
+      deltaX,
+      deltaY,
+      zoomScale: zoom.scale,
+      touchCount: touchStartCount.current,
+      blocked: Boolean(onCurationSwipe) && touchBlocked.current,
+      handled: touchHandled.current,
+    })
 
-    // Only handle swipe for sidebar when not zoomed
-    if (zoom.scale <= 1) {
-      // Require a minimum swipe of 50px and horizontal movement must be dominant
-      if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
-        touchHandled.current = true
-
-        // Swipe right = open sidebar, swipe left = close sidebar
-        // Image navigation is done by tapping left/right sides
-        if (deltaX > 0 && !sidebarOpen) {
-          onSidebarHover && onSidebarHover(true)
-        } else if (deltaX < 0 && sidebarOpen) {
-          onSidebarHover && onSidebarHover(false)
-        }
+    if (direction) {
+      touchHandled.current = true
+      if (onCurationSwipe) {
+        onCurationSwipe(direction)
+      } else if (direction === 'right' && !sidebarOpen) {
+        onSidebarHover && onSidebarHover(true)
+      } else if (direction === 'left' && sidebarOpen) {
+        onSidebarHover && onSidebarHover(false)
       }
     }
 
     touchStartX.current = null
     touchStartY.current = null
-  }, [zoom.scale])
+    touchStartCount.current = 0
+    touchBlocked.current = false
+    touchImageToken.current = null
+  }, [zoom.scale, imageToken])
 
   // Pinch-to-zoom for touch (disabled for videos)
   const handleTouchMoveZoom = useCallback((e) => {

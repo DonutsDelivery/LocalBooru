@@ -19,6 +19,7 @@ import { useShareStream } from './hooks/useShareStream'
 import { useCastSession } from './hooks/useCastSession'
 import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
+import { curationActionForSwipe } from '../../utils/lightboxGestures.js'
 
 // Video diagnostics overlay — press I to toggle, B for bare mode (video only)
 function FPSMonitor({ videoRef, visible, onToggleBare }) {
@@ -416,7 +417,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [currentImageKey])
 
   // Zoom and pan hook
-  const zoomPan = useZoomPan(mediaRef, containerRef, resetHideTimer, image)
+  const zoomPan = useZoomPan(
+    mediaRef,
+    containerRef,
+    resetHideTimer,
+    image,
+    curationMode?.gestureVersion,
+  )
 
   // Timeline preview hook (for video thumbnail preview on hover)
   const timelinePreview = useTimelinePreview(
@@ -1216,10 +1223,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
   }
 
-  // Handle touch end with sidebar callback
+  // Handle touch end with curation precedence over the ordinary sidebar gesture
   const handleTouchEndWithSidebar = useCallback((e) => {
-    zoomPan.handleTouchEnd(e, onSidebarHover, sidebarOpen)
-  }, [zoomPan, onSidebarHover, sidebarOpen])
+    const onCurationSwipe = curationMode
+      ? (direction) => {
+          const action = curationActionForSwipe(direction)
+          if (action === 'keep') curationMode.onKeep()
+          else if (action === 'discard') curationMode.onDiscard()
+        }
+      : null
+    zoomPan.handleTouchEnd(e, onSidebarHover, sidebarOpen, onCurationSwipe)
+  }, [zoomPan, onSidebarHover, sidebarOpen, curationMode])
 
   // Handle loaded metadata with source resolution setter
   const handleLoadedMetadataWithResolution = useCallback(() => {
@@ -1803,10 +1817,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         ) : isVideoFile ? (
           <div
             className="lightbox-video-container"
-            onTouchStart={casting.isCasting ? undefined : gestures.handleTouchStart}
-            onTouchMove={casting.isCasting ? undefined : gestures.handleTouchMove}
-            onTouchEnd={casting.isCasting ? undefined : gestures.handleTouchEnd}
-            onTouchCancel={casting.isCasting ? cancelRevealTap : gestures.handleTouchCancel}
+            onTouchStart={casting.isCasting || curationMode ? undefined : gestures.handleTouchStart}
+            onTouchMove={casting.isCasting || curationMode ? undefined : gestures.handleTouchMove}
+            onTouchEnd={casting.isCasting || curationMode ? undefined : gestures.handleTouchEnd}
+            onTouchCancel={casting.isCasting || curationMode ? cancelRevealTap : gestures.handleTouchCancel}
           >
             <video
               key={`${currentImageKey}-${svpPipelineGeneration}`}
@@ -1818,7 +1832,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               loop={false}
               className={`lightbox-media video-display-${playback.videoDisplayMode} ${streaming.svpStreamUrl ? 'svp-streaming' : streaming.opticalFlowStreamUrl ? 'interpolated-streaming' : streaming.transcodeStreamUrl ? 'transcode-streaming' : ''}`}
               style={zoomPan.getZoomTransform()}
-              onClick={handleVideoClick}
+              onClick={curationMode ? undefined : handleVideoClick}
               onLoadStart={(event) => reportDirectFileStage('loadstart', event.currentTarget)}
               onLoadedData={(event) => reportDirectFileStage('loadeddata', event.currentTarget)}
               onPlay={(event) => {
@@ -2197,7 +2211,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
             {/* Cast remote control overlay */}
             {casting.isCasting && (
-              <div className="cast-overlay" onClick={(e) => e.stopPropagation()}>
+              <div className="cast-overlay" data-curation-gesture-block onClick={(e) => e.stopPropagation()}>
                 <div className="cast-overlay-icon-wrap">
                   <span className="cast-overlay-pulse" />
                   <span className="cast-overlay-pulse delay" />
@@ -2234,7 +2248,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
             {/* Resume playback toast */}
             {resumePosition && (
-              <div className="resume-toast" onClick={(e) => e.stopPropagation()}>
+              <div className="resume-toast" data-curation-gesture-block onClick={(e) => e.stopPropagation()}>
                 <span>Resume from {formatTime(resumePosition.position)}?</span>
                 <div className="resume-toast-actions">
                   <button className="resume-toast-btn" onClick={() => {
@@ -2247,7 +2261,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
             {/* Auto-advance countdown overlay */}
             {autoAdvance.countdown !== null && (
-              <div className="auto-advance-overlay" onClick={(e) => e.stopPropagation()}>
+              <div className="auto-advance-overlay" data-curation-gesture-block onClick={(e) => e.stopPropagation()}>
                 {/* Next item thumbnail preview */}
                 {images[currentIndex + 1] && (
                   <img

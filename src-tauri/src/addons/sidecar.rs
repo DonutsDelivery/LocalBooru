@@ -207,6 +207,117 @@ pub fn uninstall_deps(venv_dir: &Path, deps: &[&str]) -> Result<(), String> {
     }
 }
 
+/// Probe the installed ONNX Runtime distribution through the managed Python.
+pub fn probe_onnxruntime(
+    venv_dir: &Path,
+    expected_distribution: &str,
+    expected_version: &str,
+) -> Result<serde_json::Value, String> {
+    let python = get_venv_python(venv_dir);
+    let script = r#"import importlib.metadata as m, json, onnxruntime as ort
+names = ['onnxruntime', 'onnxruntime-gpu', 'nvidia-cublas-cu12', 'nvidia-cuda-runtime-cu12', 'nvidia-cudnn-cu12']
+packages = {}
+for name in names:
+    try:
+        packages[name] = m.version(name)
+    except m.PackageNotFoundError:
+        pass
+preload = {'attempted': False, 'succeeded': None, 'error': None}
+if hasattr(ort, 'preload_dlls'):
+    preload['attempted'] = True
+    try:
+        ort.preload_dlls(directory='')
+        preload['succeeded'] = True
+    except Exception as error:
+        preload['succeeded'] = False
+        preload['error'] = str(error)
+print(json.dumps({'onnxruntime': ort.__version__, 'available_providers': ort.get_available_providers(), 'packages': packages, 'preload': preload}))"#;
+    let output = Command::new(&python)
+        .args(["-c", script])
+        .output()
+        .map_err(|error| format!("Failed to probe ONNX Runtime: {}", error))?;
+    if !output.status.success() {
+        return Err(format!(
+            "ONNX Runtime probe failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let probe: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("ONNX Runtime probe returned invalid JSON: {}", error))?;
+    let packages = probe
+        .get("packages")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| "ONNX Runtime probe omitted package versions".to_string())?;
+    if probe.get("onnxruntime").and_then(serde_json::Value::as_str) != Some(expected_version) {
+        return Err(format!(
+            "ONNX Runtime probe imported version {:?}, expected {}",
+            probe.get("onnxruntime"),
+            expected_version
+        ));
+    }
+    if packages
+        .get(expected_distribution)
+        .and_then(serde_json::Value::as_str)
+        != Some(expected_version)
+    {
+        return Err(format!(
+            "ONNX Runtime probe expected {} {}, got {:?}",
+            expected_distribution,
+            expected_version,
+            packages.get(expected_distribution)
+        ));
+    }
+    if expected_distribution == "onnxruntime" && packages.contains_key("onnxruntime-gpu") {
+        return Err("ONNX Runtime CPU probe found a conflicting GPU distribution".to_string());
+    }
+    if expected_distribution == "onnxruntime-gpu" {
+        let preload_failed = probe
+            .get("preload")
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|preload| {
+                preload
+                    .get("attempted")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(true)
+                    && preload
+                        .get("succeeded")
+                        .and_then(serde_json::Value::as_bool)
+                        == Some(false)
+            });
+        if preload_failed {
+            return Err(format!(
+                "ONNX Runtime GPU preload failed: {}",
+                probe
+                    .get("preload")
+                    .and_then(|preload| preload.get("error"))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("unknown native library error")
+            ));
+        }
+        for package in [
+            "nvidia-cublas-cu12",
+            "nvidia-cuda-runtime-cu12",
+            "nvidia-cudnn-cu12",
+        ] {
+            if !packages.contains_key(package) {
+                return Err(format!("ONNX Runtime GPU probe is missing {}", package));
+            }
+        }
+        let cuda_available = probe
+            .get("available_providers")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|providers| {
+                providers
+                    .iter()
+                    .any(|provider| provider.as_str() == Some("CUDAExecutionProvider"))
+            });
+        if !cuda_available {
+            return Err("ONNX Runtime GPU probe could not load CUDAExecutionProvider".to_string());
+        }
+    }
+    Ok(probe)
+}
+
 /// Get the path to the Python binary inside a virtual environment.
 ///
 /// Returns `{venv}/bin/python` on Unix or `{venv}\Scripts\python.exe` on Windows.
@@ -426,6 +537,35 @@ mod tests {
         assert_eq!(parse_python_minor("Python 3.13.1"), Some(13));
         assert_eq!(parse_python_minor("Python 3.9.20"), Some(9));
         assert_eq!(parse_python_minor("Python 3.14.0"), Some(14));
+    }
+
+    // AC: @auto-tagger-runtime-acceleration-deployment ac-2
+    // AC: @auto-tagger-runtime-acceleration-deployment ac-4
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn gpu_probe_rejects_installed_wheels_when_cuda_provider_cannot_load() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-addon-provider-probe-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let bin = root.join("bin");
+        let python = bin.join("python");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(
+            &python,
+            r#"#!/bin/sh
+echo '{"onnxruntime":"1.23.2","available_providers":["CPUExecutionProvider"],"packages":{"onnxruntime-gpu":"1.23.2","nvidia-cublas-cu12":"12.9","nvidia-cuda-runtime-cu12":"12.9","nvidia-cudnn-cu12":"9.24"}}'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let error = probe_onnxruntime(&root, "onnxruntime-gpu", "1.23.2").unwrap_err();
+
+        assert!(error.contains("could not load CUDAExecutionProvider"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     // AC: @sidecar-diagnostics ac-1

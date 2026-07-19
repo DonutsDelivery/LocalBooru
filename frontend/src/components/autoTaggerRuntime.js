@@ -52,3 +52,20 @@ export function formatTimings(timings) {
 
   return entries.length ? entries.join(', ') : 'Not available'
 }
+
+export function formatPackageVersions(packages) {
+  const entries = Object.entries(packages || {})
+  return entries.length
+    ? entries.map(([name, version]) => `${name} ${version}`).join(', ')
+    : 'Not available'
+}
+
+export function formatPreload(preload) {
+  if (!preload) return 'Not available'
+  if (preload.attempted === false) return 'Not attempted'
+  if (preload.succeeded === true) return 'Succeeded'
+  if (preload.succeeded === false) {
+    return preload.error ? `Failed: ${preload.error}` : 'Failed'
+  }
+  return 'Unknown'
+}
