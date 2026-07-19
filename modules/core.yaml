@@ -1005,6 +1005,11 @@ features:
             then: the committed decision is not repeated and the UI shows loading or visible Retry and Exit
               recovery controls instead of a black unrendered state
             when: candidate refill is pending or fails
+          - given: candidate refill previously failed after a successful decision
+            id: ac-5
+            then: Retry resumes discovery with the existing query and progress without replaying the decision,
+              while Exit returns to a refreshed gallery
+            when: the user retries or exits
         priority: high
         tags: []
         created: 2026-07-19T06:06:11.002Z
