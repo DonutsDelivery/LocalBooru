@@ -7,13 +7,21 @@ description: Implement and test eight edge/corner resize hit regions for the cus
 spec_ref: "@frameless-window-resizing"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: hotfix/2.0.3-cuda-curation
+  captured_at: 2026-07-19T10:38:17.031Z
+  commit: fcc3bd503a1b2f3fa8d3d969a6038947c4d286a4
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -25,6 +33,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-07-19T10:11:33.957Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: hotfix/2.0.3-cuda-curation
+          captured_at: 2026-07-19T10:38:17.031Z
+          commit: fcc3bd503a1b2f3fa8d3d969a6038947c4d286a4
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-07-19T10:38:17.037Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-07-19T10:38:17.037Z
 created_at: 2026-07-19T10:11:18.123Z
 started_at: 2026-07-19T10:11:33.957Z
+submitted_at: 2026-07-19T10:38:17.037Z
 todos: []
