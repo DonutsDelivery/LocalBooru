@@ -51,7 +51,7 @@ INFO_PLIST="$APP/Contents/Info.plist"
 ARCHS="$(lipo -archs "$BINARY")"
 [[ " $ARCHS " == *" arm64 "* ]]
 [[ " $ARCHS " == *" x86_64 "* ]]
-[[ "$(plutil -extract CFBundleShortVersionString raw "$INFO_PLIST")" == "2.0.2" ]]
+[[ "$(plutil -extract CFBundleShortVersionString raw "$INFO_PLIST")" == "2.0.3" ]]
 [[ "$(plutil -extract CFBundleIdentifier raw "$INFO_PLIST")" == "com.localbooru.app" ]]
 [[ "$(plutil -extract LSMinimumSystemVersion raw "$INFO_PLIST")" == "11.0" ]]
 hdiutil verify "$DMG"
