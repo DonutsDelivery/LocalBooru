@@ -938,7 +938,7 @@ tasks:
     title: Restore frameless window resizing
     type: bug
     spec_ref: "@frameless-window-resizing"
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 1
@@ -946,3 +946,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-07-19T10:11:18.123Z
+    started_at: 2026-07-19T10:11:33.957Z
