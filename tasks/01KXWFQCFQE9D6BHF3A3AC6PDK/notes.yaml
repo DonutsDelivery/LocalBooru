@@ -1,0 +1,36 @@
+notes:
+  - _ulid: 01KXWFQCFQDQJAFRBVST90STJ5
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Auto Tagger managed environments converge on the shipped dependency revision and prove CUDA
+      acceleration from completed real-model execution evidence.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given a supported NVIDIA system uses a shipped Auto Tagger model with CUDA requested,
+      when a real model prediction completes, then observed execution includes nonzero CUDA model
+      nodes while legitimate inexpensive CPU nodes may remain
+
+      - ac-2: Given CUDA is available and registered but a completed prediction executes zero CUDA
+      model nodes, when runtime diagnostics are viewed, then model identity, platform, Python and
+      ONNX Runtime versions, NVIDIA package versions, provider options, preload result, and desired
+      and installed deployment revisions are reported without claiming GPU execution
+
+      - ac-3: Given an installed managed Auto Tagger environment has an outdated dependency
+      revision, when the add-on is installed, repaired, started, or resumed, then dependencies are
+      reconciled through managed Python while models, settings, and enabled state are preserved
+
+      - ac-4: Given a clean install, stale upgrade, or Repair operation completes successfully, when
+      the managed environment is probed, then each path converges on the same desired dependency
+      revision and the installed revision is recorded only after the probe succeeds
+
+      - ac-5: Given GPU dependency reconciliation or CUDA model execution cannot succeed, when the
+      add-on falls back, then a probed CPU deployment remains usable and diagnostics truthfully
+      identify the fallback and repair guidance
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T06:06:28.855Z
