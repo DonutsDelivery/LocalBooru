@@ -25,3 +25,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T06:38:30.633Z
+  - _ulid: 01KXWHJM4JY96EM2JY0DNP37HN
+    content: "Approach: reproduce the exact 2.0.2 packaged ordinary-image path before changing behavior;
+      compare packaged assets/config with 2.0.1 and trace gallery selection through media
+      response/decode. Preserve explicit-exit cleanup and add behavioral coverage for visible
+      rendering, decode/request failure recovery, and lifecycle isolation. Edge cases: supported
+      WebP decode, failed media request, close/reopen, curation inactive. Test plan: executable
+      frontend behavior for ac-1/ac-2 and Rust lifecycle event behavior for ac-3."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T06:38:50.002Z
