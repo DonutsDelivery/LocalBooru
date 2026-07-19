@@ -283,6 +283,9 @@ features:
         type: requirement
         description: Auto Tagger managed environments converge on the shipped dependency revision and prove
           CUDA acceleration from completed real-model execution evidence.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to:
