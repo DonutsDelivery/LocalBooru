@@ -87,3 +87,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T07:41:38.989Z
+  - _ulid: 01KXWNSMP1GHX67CGPVGVP7HQZ
+    content: "Final review fixes: monotonic gesture generation prevents stale touches across Keep/Undo
+      cycles; settings overlays and control drags cannot bubble into curation decisions. Final
+      frontend tests 63/63 and production build passed. Commit 8fcfdc27."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T07:52:34.241Z
