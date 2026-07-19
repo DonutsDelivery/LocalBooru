@@ -61,3 +61,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T06:15:51.361Z
+  - _ulid: 01KXWHSQTPVZZXB5N396GNX200
+    content: Windows 2.0.2 evidence confirms the candidate renders initially, then either horizontal
+      fullscreen swipe removes the image visually, performs no Keep/Discard move, and leaves a black
+      soft-lock requiring refresh. This narrows the failure to curation gesture/queue handling
+      rather than initial ordinary image decode.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T06:42:43.158Z
