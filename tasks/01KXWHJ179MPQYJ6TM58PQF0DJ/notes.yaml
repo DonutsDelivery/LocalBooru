@@ -71,3 +71,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T10:01:33.185Z
+  - _ulid: 01KXWZ84EBWBZ9FMKPWG2QSQKV
+    content: "Review findings addressed: actual-video guards cover SVP and cast paths without changing
+      cast lifecycle semantics; delayed SVP events cannot call video methods on IMG nodes; preview
+      source changes reset image error recovery. Full frontend 67/67 and Rust 138/138 passed;
+      production build, cargo check/fmt, and diff check pass."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-19T10:37:46.315Z
