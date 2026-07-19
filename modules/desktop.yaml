@@ -285,7 +285,8 @@ features:
           CUDA acceleration from completed real-model execution evidence.
         depends_on: []
         implements: []
-        relates_to: []
+        relates_to:
+          - "@auto-tagger-execution-verification"
         tests: []
         traits: []
         priority: high
