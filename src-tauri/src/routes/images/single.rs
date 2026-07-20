@@ -26,17 +26,17 @@ pub struct DirectoryQuery {
     pub file_hash: Option<String>,
 }
 
-fn resolve_exact_media(
+fn resolve_exact_media_hash(
     library: &crate::db::library::LibraryContext,
     directory_id: i64,
     image_id: i64,
-) -> Result<(PathBuf, String), AppError> {
+) -> Result<String, AppError> {
     if !library.directory_db.db_exists(directory_id) {
         return Err(AppError::NotFound("Directory not found".into()));
     }
     let pool = library.directory_db.get_pool(directory_id)?;
     let connection = pool.get()?;
-    let hash = connection
+    connection
         .query_row(
             "SELECT file_hash FROM images WHERE id = ?1",
             params![image_id],
@@ -45,7 +45,17 @@ fn resolve_exact_media(
         .map_err(|error| match error {
             rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Image not found".into()),
             other => other.into(),
-        })?;
+        })
+}
+
+fn resolve_exact_media(
+    library: &crate::db::library::LibraryContext,
+    directory_id: i64,
+    image_id: i64,
+) -> Result<(PathBuf, String), AppError> {
+    let hash = resolve_exact_media_hash(library, directory_id, image_id)?;
+    let pool = library.directory_db.get_pool(directory_id)?;
+    let connection = pool.get()?;
     let mut statement = connection.prepare(
         "SELECT original_path FROM image_files
          WHERE image_id = ?1 AND file_exists = 1 ORDER BY id",
@@ -446,18 +456,18 @@ pub async fn get_image_thumbnail(
     let library = state.resolve_library(Some(&library_id))?;
     let state_clone = state.clone();
     let library_id_clone = library_id.clone();
-    let (original_path, file_hash) = tokio::task::spawn_blocking(move || {
+    let file_hash = tokio::task::spawn_blocking(move || {
         let lib = state_clone.resolve_library(Some(&library_id_clone))?;
-        let exact = resolve_exact_media(&lib, directory_id, image_id)?;
+        let hash = resolve_exact_media_hash(&lib, directory_id, image_id)?;
         if expected_hash
             .as_deref()
-            .is_some_and(|expected| expected != exact.1)
+            .is_some_and(|expected| expected != hash)
         {
             return Err(AppError::NotFound(
                 "Thumbnail version is no longer current".into(),
             ));
         }
-        Ok(exact)
+        Ok(hash)
     })
     .await??;
 
@@ -467,6 +477,20 @@ pub async fn get_image_thumbnail(
     if thumbnail_path.exists() {
         serve_cached_file(&thumbnail_path, "image/webp").await
     } else {
+        let state_clone = state.clone();
+        let library_id_clone = library_id.clone();
+        let expected_current_hash = file_hash.clone();
+        let original_path = tokio::task::spawn_blocking(move || {
+            let lib = state_clone.resolve_library(Some(&library_id_clone))?;
+            let (path, current_hash) = resolve_exact_media(&lib, directory_id, image_id)?;
+            if current_hash != expected_current_hash {
+                return Err(AppError::NotFound(
+                    "Thumbnail version is no longer current".into(),
+                ));
+            }
+            Ok(path)
+        })
+        .await??;
         let thumb_dir = library.thumbnails_dir();
         let hash = file_hash.clone();
         let regenerated = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
@@ -1080,6 +1104,20 @@ mod tests {
         let exact = resolve_exact_media(&library, 2, 7).unwrap();
         assert_eq!(exact.1, "two");
         assert!(resolve_exact_media(&library, 3, 7).is_err());
+
+        let pool = library.directory_db.get_pool(2).unwrap();
+        let connection = pool.get().unwrap();
+        connection
+            .execute(
+                "INSERT INTO image_files (image_id, original_path, file_extension) VALUES (7, ?1, 'png')",
+                params![root.join("duplicate.png").to_string_lossy()],
+            )
+            .unwrap();
+        assert!(matches!(
+            resolve_exact_media(&library, 2, 7),
+            Err(AppError::BadRequest(message)) if message.contains("ambiguous")
+        ));
+
         drop(library);
         let _ = std::fs::remove_dir_all(root);
     }

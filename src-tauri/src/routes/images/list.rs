@@ -53,6 +53,181 @@ fn default_sort() -> String {
     "newest".into()
 }
 
+fn folder_thumbnail_url(
+    library_id: &str,
+    directory_id: i64,
+    image_id: i64,
+    file_hash: &str,
+) -> String {
+    format!(
+        "/api/images/{}/thumbnail?directory_id={}&library_id={}&file_hash={}",
+        image_id,
+        directory_id,
+        super::adjustments::encode_query_component(library_id),
+        super::adjustments::encode_query_component(file_hash)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::SocketAddr;
+
+    use axum::body::{to_bytes, Body};
+    use axum::extract::ConnectInfo;
+    use axum::http::{Request, StatusCode};
+    use axum::routing::get;
+    use axum::Router;
+    use rusqlite::params;
+    use tower::ServiceExt;
+
+    use super::*;
+
+    fn insert_image(
+        library: &crate::db::library::LibraryContext,
+        directory_id: i64,
+        image_id: i64,
+        file_hash: &str,
+        import_source: &str,
+        modified_at: &str,
+        paths: &[&str],
+    ) {
+        let pool = library.directory_db.get_pool(directory_id).unwrap();
+        let connection = pool.get().unwrap();
+        connection
+            .execute(
+                "INSERT INTO images (id, filename, file_hash, import_source, width, height, file_modified_at)\
+                 VALUES (?1, 'image.png', ?2, ?3, 2, 2, ?4)",
+                params![image_id, file_hash, import_source, modified_at],
+            )
+            .unwrap();
+        for path in paths {
+            connection
+                .execute(
+                    "INSERT INTO image_files (image_id, original_path, file_extension)\
+                     VALUES (?1, ?2, 'png')",
+                    params![image_id, path],
+                )
+                .unwrap();
+        }
+    }
+
+    fn request(uri: &str) -> Request<Body> {
+        let mut request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 50000))));
+        request
+    }
+
+    // AC: @folder-thumbnail-route-identity ac-exact-thumbnail
+    // AC: @folder-thumbnail-route-identity ac-cached-duplicate
+    #[tokio::test]
+    async fn grouped_folder_url_serves_exact_cached_thumbnail_with_colliding_ids() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-folder-thumbnail-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let primary_root = root.join("primary");
+        let secondary_root = root.join("secondary");
+        std::fs::create_dir_all(&primary_root).unwrap();
+        std::fs::create_dir_all(&secondary_root).unwrap();
+        std::fs::write(
+            secondary_root.join("settings.json"),
+            r#"{"library_uuid":"secondary/library + space"}"#,
+        )
+        .unwrap();
+
+        let state = AppState::new(&primary_root, 0).unwrap();
+        let primary = state.library_manager().primary().clone();
+        insert_image(
+            &primary,
+            11,
+            7,
+            "primary-hash",
+            "/primary-folder",
+            "2026-07-20 12:00:00",
+            &["/primary/7.png"],
+        );
+        insert_image(
+            &primary,
+            11,
+            9,
+            "primary-other",
+            "/primary-folder",
+            "2026-07-20 11:00:00",
+            &["/primary/9.png"],
+        );
+
+        let secondary =
+            crate::db::library::LibraryContext::open(&secondary_root, "Secondary").unwrap();
+        insert_image(
+            &secondary,
+            22,
+            7,
+            "secondary+hash-v2",
+            "/secondary-folder",
+            "2026-07-20 12:00:00",
+            &["/secondary/duplicate-a.png", "/secondary/duplicate-b.png"],
+        );
+        insert_image(
+            &secondary,
+            22,
+            8,
+            "secondary-other",
+            "/secondary-folder",
+            "2026-07-20 11:00:00",
+            &["/secondary/8.png"],
+        );
+        let cached_thumbnail = secondary
+            .thumbnails_dir()
+            .join(format!("{}.webp", &"secondary+hash-v2"[..16]));
+        image::DynamicImage::new_rgb8(2, 2)
+            .save(&cached_thumbnail)
+            .unwrap();
+        state.library_manager().mount(secondary);
+
+        let app = Router::new()
+            .route("/api/images/folders", get(list_folders))
+            .route(
+                "/api/images/{image_id}/thumbnail",
+                get(super::super::single::get_image_thumbnail),
+            )
+            .with_state(state);
+
+        let response = app
+            .clone()
+            .oneshot(request("/api/images/folders"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let catalog: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let secondary_folder = catalog["folders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|folder| folder["path"] == "/secondary-folder")
+            .unwrap();
+        let thumbnail_url = secondary_folder["thumbnail_url"].as_str().unwrap();
+        assert_eq!(
+            thumbnail_url,
+            "/api/images/7/thumbnail?directory_id=22&library_id=secondary%2Flibrary%20%2B%20space&file_hash=secondary%2Bhash-v2"
+        );
+
+        let response = app.clone().oneshot(request(thumbnail_url)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(image::load_from_memory(&body).unwrap().width(), 2);
+
+        let stale_url = thumbnail_url.replace("secondary%2Bhash-v2", "stale-hash");
+        let stale_response = app.oneshot(request(&stale_url)).await.unwrap();
+        assert_eq!(stale_response.status(), StatusCode::NOT_FOUND);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
 /// GET /api/images — List images with filtering and pagination.
 pub async fn list_images(
     State(state): State<AppState>,
@@ -488,7 +663,7 @@ pub async fn list_folders(
                     };
 
                     let thumb_sql = format!(
-                        "SELECT i.id, i.width, i.height, i.created_at FROM images i {} AND {} \
+                        "SELECT i.id, i.file_hash, i.width, i.height FROM images i {} AND {} \
                      ORDER BY COALESCE(i.file_modified_at, i.created_at) DESC LIMIT 1",
                         where_sql, source_filter
                     );
@@ -498,26 +673,30 @@ pub async fn list_folders(
                             stmt.query_row(rusqlite::params![param_val], |row| {
                                 Ok((
                                     row.get::<_, i64>(0)?,
-                                    row.get::<_, Option<i32>>(1)?,
+                                    row.get::<_, String>(1)?,
                                     row.get::<_, Option<i32>>(2)?,
+                                    row.get::<_, Option<i32>>(3)?,
                                 ))
                             })
                         } else {
                             stmt.query_row([], |row| {
                                 Ok((
                                     row.get::<_, i64>(0)?,
-                                    row.get::<_, Option<i32>>(1)?,
+                                    row.get::<_, String>(1)?,
                                     row.get::<_, Option<i32>>(2)?,
+                                    row.get::<_, Option<i32>>(3)?,
                                 ))
                             })
                         };
                         if let Ok(thumb) = thumb_result {
-                            entry.1 = Some(format!(
-                                "/api/images/{}/thumbnail?directory_id={}",
-                                thumb.0, *dir_id
+                            entry.1 = Some(folder_thumbnail_url(
+                                &lib.uuid,
+                                *dir_id,
+                                thumb.0,
+                                &thumb.1,
                             ));
-                            entry.2 = thumb.1;
-                            entry.3 = thumb.2;
+                            entry.2 = thumb.2;
+                            entry.3 = thumb.3;
                         }
                     }
                 }

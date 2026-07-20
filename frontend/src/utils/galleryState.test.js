@@ -1,7 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { isUnexpectedEmptyPage, mergeFirstPage, nextLoadRetryDelay } from './galleryState.js'
+import {
+  isUnexpectedEmptyPage,
+  mergeFirstPage,
+  nextLoadRetryDelay,
+  refreshGroupedFolderCatalog,
+  shouldRefreshForLibraryEvent,
+} from './galleryState.js'
 
 // AC: @identity-safe-image-adjustments ac-3
 test('live page merge preserves loaded records while inserting and updating page-one records', () => {
@@ -31,4 +37,29 @@ test('an empty middle page is retried instead of advancing the pagination cursor
   assert.equal(isUnexpectedEmptyPage({ append: true, pageLength: 0, total: 120, loaded: 50 }), true)
   assert.equal(isUnexpectedEmptyPage({ append: true, pageLength: 0, total: 50, loaded: 50 }), false)
   assert.equal(isUnexpectedEmptyPage({ append: false, pageLength: 0, total: 120, loaded: 50 }), false)
+})
+
+// AC: @folder-thumbnail-route-identity ac-rescan-refresh
+test('grouped root refresh replaces stale folder previews after image and scan completion', async () => {
+  assert.equal(shouldRefreshForLibraryEvent({ type: 'image_added' }), true)
+  assert.equal(shouldRefreshForLibraryEvent({
+    type: 'task_completed',
+    data: { task_type: 'scan_directory' },
+  }), true)
+  assert.equal(shouldRefreshForLibraryEvent({
+    type: 'task_completed',
+    data: { task_type: 'tag_image' },
+  }), false)
+
+  let visibleFolders = [{ path: '/set', thumbnail_url: '/thumbnail?file_hash=stale' }]
+  const refreshed = await refreshGroupedFolderCatalog({
+    groupByFolders: true,
+    currentFolder: null,
+    loadFolders: async () => {
+      visibleFolders = [{ path: '/set', thumbnail_url: '/thumbnail?file_hash=current' }]
+    },
+  })
+
+  assert.equal(refreshed, true)
+  assert.equal(visibleFolders[0].thumbnail_url, '/thumbnail?file_hash=current')
 })

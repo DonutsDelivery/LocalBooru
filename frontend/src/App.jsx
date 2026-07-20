@@ -29,7 +29,7 @@ import CollectionsPage from './pages/CollectionsPage'
 import CollectionDetailPage from './pages/CollectionDetailPage'
 import WatchPage from './pages/WatchPage'
 import { getColumnCount, tileWidths } from './utils/gridLayout'
-import { isUnexpectedEmptyPage, mergeFirstPage } from './utils/galleryState'
+import { isUnexpectedEmptyPage, mergeFirstPage, refreshGroupedFolderCatalog, shouldRefreshForLibraryEvent } from './utils/galleryState'
 import { classifySidebarSwipe } from './utils/sidebarGestures'
 import { getCurationRecoveryMode } from './utils/curationState'
 import { adjustmentLocator, imageIdentityKey, imageMatchesLocator, reorderImagesForSort, updateImagesByLocator } from './utils/imageAdjustments.js'
@@ -952,9 +952,11 @@ function Gallery() {
   }, [])
 
   const refreshNewImages = useCallback(async () => {
-    // Folder summary cards have their own aggregation and should not be replaced
-    // while the user is browsing them.
-    if (groupByFolders && !currentFolder) return true
+    // Folder summary cards refresh through their aggregation route so changed
+    // representative identities replace stale content-addressed preview URLs.
+    if (await refreshGroupedFolderCatalog({ groupByFolders, currentFolder, loadFolders })) {
+      return true
+    }
 
     const preserveAnchor = window.scrollY >= 200 || lightboxIndexRef.current !== null
     const anchor = preserveAnchor
@@ -1003,7 +1005,7 @@ function Gallery() {
       console.error('Failed to refresh newly indexed images:', error)
       return false
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders, loadFolders])
 
   // Subscribe to real-time library events (debounced incremental refresh).
   // Existing items, scroll position, selection, and lightbox identity stay intact.
@@ -1034,7 +1036,7 @@ function Gallery() {
   // SSE events also trigger the same debounce
   useEffect(() => {
     const unsubscribe = subscribeToLibraryEvents((event) => {
-      if (event.type === 'image_added') {
+      if (shouldRefreshForLibraryEvent(event)) {
         triggerDebouncedRefresh()
       }
     })

@@ -16,3 +16,15 @@ export function nextLoadRetryDelay(currentDelay, succeeded) {
 export function isUnexpectedEmptyPage({ append, pageLength, total, loaded }) {
   return append && pageLength === 0 && total > loaded
 }
+
+export function shouldRefreshForLibraryEvent(event) {
+  return event?.type === 'image_added' || (
+    event?.type === 'task_completed' && event?.data?.task_type === 'scan_directory'
+  )
+}
+
+export async function refreshGroupedFolderCatalog({ groupByFolders, currentFolder, loadFolders }) {
+  if (!groupByFolders || currentFolder) return false
+  await loadFolders()
+  return true
+}
