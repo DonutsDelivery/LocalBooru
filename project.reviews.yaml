@@ -40,6 +40,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KXZGB925VK9C7B68TG3BMWF5
         timestamp: 2026-07-20T10:15:04.009Z
+      - _ulid: 01KXZGBA9XQ69VH659R7G4KHVM
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KXZGBA9P2PP6FKDZF9Z1QY7K
+        timestamp: 2026-07-20T10:15:05.277Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -103,7 +110,26 @@ reviews:
               EOS."
             created_at: 2026-07-20T10:15:04.006Z
         kind: blocker
+      - _ulid: 01KXZGBA9P2PP6FKDZF9Z1QY7K
+        anchor:
+          type: code
+          commit: f64c423a6acff7b5005f82d2361ab3adb324210f
+          line_end: 62
+          line_start: 52
+          path: addons/lada/packaging/build-bundles.sh
+          side: head
+        entries:
+          - _ulid: 01KXZGBA9Q9C4ND9159D50WD2F
+            author: "@claude"
+            body: "MUST-FIX: the Corresponding Source tar archives the entire add-on root while `build/` and
+              `dist/` live inside it. A reproduction confirms `build/` is included and tar warns
+              that the output archive cannot contain itself. This can copy the multi-GB
+              runtime/models into source and makes output depend on stale build state. Stage an
+              explicit clean source tree or exclude generated directories, and behaviorally verify
+              archive contents."
+            created_at: 2026-07-20T10:15:05.271Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-20T10:11:36.170Z
-    updated_at: 2026-07-20T10:15:04.006Z
+    updated_at: 2026-07-20T10:15:05.271Z
     notes: []
