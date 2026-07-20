@@ -1,0 +1,29 @@
+notes:
+  - _ulid: 01KY05JF1HSVW4R5GN95BN8V7S
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Grouped folder catalogs retain exact representative media identity and refresh their previews
+      after library rescans.
+
+
+
+      Acceptance Criteria:
+
+      - ac-exact-thumbnail: Given the All directories gallery groups media from multiple libraries
+      and directories, when folder catalogs are loaded, then each representative preview URL
+      identifies its exact library, directory, image, and content version and loads the intended
+      thumbnail
+
+      - ac-rescan-refresh: Given a grouped folder catalog remains open while a directory is
+      rescanned, when the scan changes representative image identities and completes, then the
+      catalog refreshes its folder summaries and replaces stale preview URLs without leaving grouped
+      view
+
+      - ac-cached-duplicate: Given a representative image has multiple original file references and
+      a valid cached thumbnail, when the folder catalog requests that thumbnail, then the cached
+      thumbnail is served without choosing an ambiguous original file
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T16:25:59.601Z
