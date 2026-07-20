@@ -47,6 +47,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KXZGBA9P2PP6FKDZF9Z1QY7K
         timestamp: 2026-07-20T10:15:05.277Z
+      - _ulid: 01KXZGBBFC2WNMKA7XDDJV9KBH
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KXZGBBF7NGEHYA5E3MMQ9W55
+        timestamp: 2026-07-20T10:15:06.476Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -129,7 +136,25 @@ reviews:
               archive contents."
             created_at: 2026-07-20T10:15:05.271Z
         kind: blocker
+      - _ulid: 01KXZGBBF7NGEHYA5E3MMQ9W55
+        anchor:
+          type: code
+          commit: f64c423a6acff7b5005f82d2361ab3adb324210f
+          line_end: 48
+          line_start: 39
+          path: addons/lada/src/localbooru_lada/release.py
+          side: head
+        entries:
+          - _ulid: 01KXZGBBF7AKHTHEBY8NJH8HT8
+            author: "@claude"
+            body: "MUST-FIX: the base-artifact audit rejects every `.pt` or `.pth` anywhere, not specifically
+              LADA payloads. Executing it against `usr/share/unrelated-addon/model.pt` raises a LADA
+              violation, so legitimate unrelated model add-ons would fail release verification.
+              Match the exact pinned LADA filenames and LADA/runtime paths instead, with a non-LADA
+              model regression test."
+            created_at: 2026-07-20T10:15:06.471Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-20T10:11:36.170Z
-    updated_at: 2026-07-20T10:15:05.271Z
+    updated_at: 2026-07-20T10:15:06.471Z
     notes: []
