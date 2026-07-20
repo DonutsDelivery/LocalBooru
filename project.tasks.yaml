@@ -1129,13 +1129,8 @@ tasks:
     type: task
     spec_ref: "@lada-runtime-readiness"
     plan_ref: "@plan-managed-lada-gstreamer-add-on"
-    status: blocked
-    blocked_by:
-      - Remaining work requires src-tauri Add-on Manager hardware/driver/package selection, a hard
-        parent-process probe timeout, persisted evidence, and actionable readiness states. The
-        shared plan target lacks src-tauri; that baseline exists only on the active retirement
-        dispatch branch checked out in the original workspace, which this isolated session must not
-        alter. Resume 988ed88 after the retirement task integrates the native baseline.
+    status: in_progress
+    blocked_by: []
     depends_on:
       - "@package-lada-sidecar"
     priority: 1
