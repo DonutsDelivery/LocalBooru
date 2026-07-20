@@ -574,6 +574,19 @@ features:
           - Backend emits SSE event when retag task completes
           - Frontend refreshes image metadata and tag sidebar on retag completion
           - User sees completion indication
+      - _ulid: 01KXZRPCPMSJF59FMFKTZEZF22
+        slugs:
+          - batch-move-dialog-stability
+        title: Batch Move Dialog Stability
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-20T12:40:56.788Z
+        notes: []
     created: 2026-03-08T08:30:13.579Z
     notes: []
   - _ulid: 01KK693084YHJCSVVTMQ77J51H
