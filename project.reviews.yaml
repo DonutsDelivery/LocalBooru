@@ -904,6 +904,16 @@ reviews:
         runner: pytest
         created_at: 2026-07-20T11:05:28.256Z
         completed_at: 2026-07-20T11:05:28.256Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Ruff passed all LADA source and tests
+        name: ruff
+        required: true
+        runner: ruff
+        created_at: 2026-07-20T11:05:29.502Z
+        completed_at: 2026-07-20T11:05:29.502Z
     events:
       - _ulid: 01KXZK6P6PE5ESQZEZJYE45CAF
         actor: "@claude"
@@ -925,6 +935,13 @@ reviews:
           status: pass
           name: pytest
         timestamp: 2026-07-20T11:05:28.267Z
+      - _ulid: 01KXZK7KN7K743YQWXYKQGGBEM
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: ruff
+        timestamp: 2026-07-20T11:05:29.511Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -937,5 +954,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T11:04:59.351Z
-    updated_at: 2026-07-20T11:05:28.256Z
+    updated_at: 2026-07-20T11:05:29.502Z
     notes: []
