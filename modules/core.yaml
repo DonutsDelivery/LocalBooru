@@ -68,6 +68,10 @@ features:
             id: ac-all-directories
             then: each nonempty folder catalog displays its representative preview thumbnail
             when: the user enables Group by folders
+          - given: different directories contain media with overlapping local identifiers
+            id: ac-directory-identity
+            then: each preview resolves from the same library and directory as its represented media
+            when: folder catalogs are rendered across all directories
         tags: []
         created: 2026-07-20T13:03:41.608Z
         notes: []
