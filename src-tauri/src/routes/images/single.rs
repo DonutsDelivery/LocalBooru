@@ -48,6 +48,47 @@ fn resolve_exact_media_hash(
         })
 }
 
+fn resolve_thumbnail_media_hash(
+    library: &crate::db::library::LibraryContext,
+    directory_id: i64,
+    image_id: i64,
+) -> Result<String, AppError> {
+    let hash = resolve_exact_media_hash(library, directory_id, image_id)?;
+    let pool = library.directory_db.get_pool(directory_id)?;
+    let connection = pool.get()?;
+    let has_eligible_file = connection.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM image_files
+             WHERE image_id = ?1 AND file_exists = 1 AND curation_discarded_at IS NULL
+         )",
+        params![image_id],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if has_eligible_file {
+        Ok(hash)
+    } else {
+        Err(AppError::NotFound("Image file not found".into()))
+    }
+}
+
+fn resolve_thumbnail_media(
+    library: &crate::db::library::LibraryContext,
+    directory_id: i64,
+    image_id: i64,
+) -> Result<(PathBuf, String), AppError> {
+    let hash = resolve_thumbnail_media_hash(library, directory_id, image_id)?;
+    let pool = library.directory_db.get_pool(directory_id)?;
+    let connection = pool.get()?;
+    let path = connection.query_row(
+        "SELECT original_path FROM image_files
+         WHERE image_id = ?1 AND file_exists = 1 AND curation_discarded_at IS NULL
+         ORDER BY id LIMIT 1",
+        params![image_id],
+        |row| row.get::<_, String>(0),
+    )?;
+    Ok((PathBuf::from(path), hash))
+}
+
 fn resolve_exact_media(
     library: &crate::db::library::LibraryContext,
     directory_id: i64,
@@ -458,7 +499,7 @@ pub async fn get_image_thumbnail(
     let library_id_clone = library_id.clone();
     let file_hash = tokio::task::spawn_blocking(move || {
         let lib = state_clone.resolve_library(Some(&library_id_clone))?;
-        let hash = resolve_exact_media_hash(&lib, directory_id, image_id)?;
+        let hash = resolve_thumbnail_media_hash(&lib, directory_id, image_id)?;
         if expected_hash
             .as_deref()
             .is_some_and(|expected| expected != hash)
@@ -482,7 +523,7 @@ pub async fn get_image_thumbnail(
         let expected_current_hash = file_hash.clone();
         let original_path = tokio::task::spawn_blocking(move || {
             let lib = state_clone.resolve_library(Some(&library_id_clone))?;
-            let (path, current_hash) = resolve_exact_media(&lib, directory_id, image_id)?;
+            let (path, current_hash) = resolve_thumbnail_media(&lib, directory_id, image_id)?;
             if current_hash != expected_current_hash {
                 return Err(AppError::NotFound(
                     "Thumbnail version is no longer current".into(),

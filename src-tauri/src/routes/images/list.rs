@@ -226,6 +226,167 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(root);
     }
+
+    // AC: @folder-thumbnail-route-identity ac-exact-thumbnail
+    #[tokio::test]
+    async fn exact_cached_thumbnail_requires_an_existing_file_reference() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-cached-thumbnail-reference-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.library_manager().primary().clone();
+        insert_image(
+            &library,
+            11,
+            7,
+            "cached-without-reference",
+            "/folder",
+            "2026-07-20 12:00:00",
+            &["/missing/7.png"],
+        );
+        let pool = library.directory_db.get_pool(11).unwrap();
+        pool.get()
+            .unwrap()
+            .execute(
+                "UPDATE image_files SET file_exists = 0, file_status = 'missing' WHERE image_id = 7",
+                [],
+            )
+            .unwrap();
+        image::DynamicImage::new_rgb8(2, 2)
+            .save(
+                library
+                    .thumbnails_dir()
+                    .join(format!("{}.webp", &"cached-without-reference"[..16])),
+            )
+            .unwrap();
+
+        let app = Router::new()
+            .route(
+                "/api/images/{image_id}/thumbnail",
+                get(super::super::single::get_image_thumbnail),
+            )
+            .with_state(state);
+        let response = app
+            .oneshot(request(
+                "/api/images/7/thumbnail?directory_id=11&library_id=primary&file_hash=cached-without-reference",
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @folder-thumbnail-route-identity ac-cached-duplicate
+    #[tokio::test]
+    async fn exact_uncached_thumbnail_regenerates_from_duplicate_references() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-duplicate-thumbnail-regeneration-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let first_path = root.join("first.png");
+        let second_path = root.join("second.png");
+        image::DynamicImage::new_rgb8(4, 3)
+            .save(&first_path)
+            .unwrap();
+        image::DynamicImage::new_rgb8(5, 3)
+            .save(&second_path)
+            .unwrap();
+
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.library_manager().primary().clone();
+        let first = first_path.to_string_lossy();
+        let second = second_path.to_string_lossy();
+        insert_image(
+            &library,
+            11,
+            7,
+            "uncached-duplicate-hash",
+            "/folder",
+            "2026-07-20 12:00:00",
+            &[first.as_ref(), second.as_ref()],
+        );
+
+        let app = Router::new()
+            .route(
+                "/api/images/{image_id}/thumbnail",
+                get(super::super::single::get_image_thumbnail),
+            )
+            .with_state(state);
+        let response = app
+            .oneshot(request(
+                "/api/images/7/thumbnail?directory_id=11&library_id=primary&file_hash=uncached-duplicate-hash",
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert!(image::load_from_memory(&body).is_ok());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @folder-thumbnail-route-identity ac-exact-thumbnail
+    #[tokio::test]
+    async fn grouped_folder_uses_globally_newest_representative() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-global-folder-thumbnail-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let primary_root = root.join("primary");
+        let secondary_root = root.join("secondary");
+        std::fs::create_dir_all(&primary_root).unwrap();
+        std::fs::create_dir_all(&secondary_root).unwrap();
+        std::fs::write(
+            secondary_root.join("settings.json"),
+            r#"{"library_uuid":"secondary"}"#,
+        )
+        .unwrap();
+
+        let state = AppState::new(&primary_root, 0).unwrap();
+        let primary = state.library_manager().primary().clone();
+        insert_image(
+            &primary,
+            11,
+            7,
+            "older-primary-hash",
+            "/shared-folder",
+            "2026-07-20 11:00:00",
+            &["/primary/7.png"],
+        );
+        let secondary =
+            crate::db::library::LibraryContext::open(&secondary_root, "Secondary").unwrap();
+        insert_image(
+            &secondary,
+            22,
+            8,
+            "newer-secondary-hash",
+            "/shared-folder",
+            "2026-07-20 12:00:00",
+            &["/secondary/8.png"],
+        );
+        state.library_manager().mount(secondary);
+
+        let app = Router::new()
+            .route("/api/images/folders", get(list_folders))
+            .with_state(state);
+        let response = app.oneshot(request("/api/images/folders")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let catalog: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            catalog["folders"][0]["thumbnail_url"],
+            "/api/images/8/thumbnail?directory_id=22&library_id=secondary&file_hash=newer-secondary-hash"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
 
 /// GET /api/images — List images with filtering and pagination.
@@ -533,9 +694,15 @@ pub async fn list_folders(
 
         let mut folders_map: std::collections::HashMap<
             String,
-            (i64, Option<String>, Option<i32>, Option<i32>, i64),
+            (
+                i64,
+                Option<String>,
+                Option<i32>,
+                Option<i32>,
+                Option<(String, String, i64, i64)>,
+            ),
         > = std::collections::HashMap::new();
-        // key -> (count, thumbnail_url, width, height, directory_id)
+        // key -> (count, thumbnail_url, width, height, representative sort key)
 
         for lib in &target_libs {
             let visible_dir_ids: Option<HashSet<i64>> = {
@@ -643,7 +810,7 @@ pub async fn list_folders(
                             let key = row.0.unwrap_or_default();
                             let entry = folders_map
                                 .entry(key.clone())
-                                .or_insert((0, None, None, None, *dir_id));
+                                .or_insert((0, None, None, None, None));
                             entry.0 += row.1;
                         }
                     }
@@ -651,10 +818,6 @@ pub async fn list_folders(
 
                 // Get representative thumbnail for each folder
                 for (key, entry) in folders_map.iter_mut() {
-                    if entry.1.is_some() {
-                        continue; // Already have thumbnail
-                    }
-
                     let (source_filter, source_param): (String, Option<String>) = if key.is_empty()
                     {
                         ("i.import_source IS NULL".to_string(), None)
@@ -663,8 +826,10 @@ pub async fn list_folders(
                     };
 
                     let thumb_sql = format!(
-                        "SELECT i.id, i.file_hash, i.width, i.height FROM images i {} AND {} \
-                     ORDER BY COALESCE(i.file_modified_at, i.created_at) DESC LIMIT 1",
+                        "SELECT i.id, i.file_hash, i.width, i.height, \
+                                COALESCE(i.file_modified_at, i.created_at) \
+                         FROM images i {} AND {} \
+                         ORDER BY COALESCE(i.file_modified_at, i.created_at) DESC, i.id DESC LIMIT 1",
                         where_sql, source_filter
                     );
 
@@ -676,6 +841,7 @@ pub async fn list_folders(
                                     row.get::<_, String>(1)?,
                                     row.get::<_, Option<i32>>(2)?,
                                     row.get::<_, Option<i32>>(3)?,
+                                    row.get::<_, String>(4)?,
                                 ))
                             })
                         } else {
@@ -685,18 +851,28 @@ pub async fn list_folders(
                                     row.get::<_, String>(1)?,
                                     row.get::<_, Option<i32>>(2)?,
                                     row.get::<_, Option<i32>>(3)?,
+                                    row.get::<_, String>(4)?,
                                 ))
                             })
                         };
                         if let Ok(thumb) = thumb_result {
-                            entry.1 = Some(folder_thumbnail_url(
-                                &lib.uuid,
-                                *dir_id,
-                                thumb.0,
-                                &thumb.1,
-                            ));
-                            entry.2 = thumb.2;
-                            entry.3 = thumb.3;
+                            let candidate_key = (thumb.4, lib.uuid.clone(), *dir_id, thumb.0);
+                            let is_newer = entry
+                                .4
+                                .as_ref()
+                                .map(|current| &candidate_key > current)
+                                .unwrap_or(true);
+                            if is_newer {
+                                entry.1 = Some(folder_thumbnail_url(
+                                    &lib.uuid,
+                                    *dir_id,
+                                    thumb.0,
+                                    &thumb.1,
+                                ));
+                                entry.2 = thumb.2;
+                                entry.3 = thumb.3;
+                                entry.4 = Some(candidate_key);
+                            }
                         }
                     }
                 }
