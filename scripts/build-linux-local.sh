@@ -4,19 +4,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 "$ROOT/scripts/check-release-version.py"
+source "$ROOT/scripts/build-startup-status.sh"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
-LOCK_TIMEOUT="${LOCALBOORU_BUILD_LOCK_TIMEOUT:-1800}"
-[[ "$LOCK_TIMEOUT" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
-  echo "ERROR: LOCALBOORU_BUILD_LOCK_TIMEOUT must be a nonnegative number" >&2
-  exit 2
-}
-mkdir -p "$STATE_DIR"
-exec 8>"$STATE_DIR/build-cache.lock"
-flock -w "$LOCK_TIMEOUT" 8 || {
-  echo "ERROR: timed out waiting for another LocalBooru build or cleanup" >&2
-  exit 1
-}
+SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
+localbooru_build_acquire_lock "$STATE_DIR" linux "$SOURCE_REVISION"
+python3 "$ROOT/scripts/check-release-version.py"
 DOCKERFILE_HASH="$(sha256sum "$ROOT/Dockerfile.linux-release" | cut -c1-12)"
 IMAGE="localbooru-linux-release:ubuntu24.04-webkit2.52.3-v1-$DOCKERFILE_HASH"
 REBUILD=0
@@ -75,8 +67,8 @@ fi
 BUILD_ROOT="${LOCALBOORU_DOCKER_BUILD_ROOT:-$ROOT/build-linux-docker}"
 DIST_ROOT="${LOCALBOORU_DIST_LINUX_DIR:-$ROOT/dist-linux-local}"
 CCACHE_ROOT="${LOCALBOORU_CCACHE_DIR:-$ROOT/.ccache-docker}"
-SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
 SOURCE_COMMIT="$(git -C "$ROOT" rev-parse --verify "${SOURCE_REVISION}^{commit}")"
+localbooru_build_write_owner "$SOURCE_COMMIT"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$SOURCE_COMMIT")}"
 CACHE_MARKER=".localbooru-build-cache"
 
@@ -160,6 +152,7 @@ printf '==> Linux persistent build cache before build: %s (limit: %sG)\n' \
 
 if [[ "$REBUILD" == 1 ]] || ! "$CONTAINER" image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "==> Building release toolchain image $IMAGE"
+  localbooru_build_started "$SOURCE_COMMIT" container-image
   "$CONTAINER" build -t "$IMAGE" - < "$ROOT/Dockerfile.linux-release"
 fi
 
@@ -170,6 +163,7 @@ echo "    jobs:    $JOBS"
 echo "    build:   $BUILD_ROOT"
 echo "    output:  $DIST_ROOT"
 
+localbooru_build_started "$SOURCE_COMMIT" artifacts
 "$CONTAINER" run --rm \
   -u "$(id -u):$(id -g)" \
   -e HOME=/tmp \

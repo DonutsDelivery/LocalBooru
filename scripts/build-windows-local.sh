@@ -3,19 +3,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 "$ROOT/scripts/check-release-version.py"
+source "$ROOT/scripts/build-startup-status.sh"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
-LOCK_TIMEOUT="${LOCALBOORU_BUILD_LOCK_TIMEOUT:-1800}"
-[[ "$LOCK_TIMEOUT" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
-  echo "ERROR: LOCALBOORU_BUILD_LOCK_TIMEOUT must be a nonnegative number" >&2
-  exit 2
-}
-mkdir -p "$STATE_DIR"
-exec 8>"$STATE_DIR/build-cache.lock"
-flock -w "$LOCK_TIMEOUT" 8 || {
-  echo "ERROR: timed out waiting for another LocalBooru build or cleanup" >&2
-  exit 1
-}
+SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
+localbooru_build_acquire_lock "$STATE_DIR" windows "$SOURCE_REVISION"
+python3 "$ROOT/scripts/check-release-version.py"
 DOCKERFILE="$ROOT/Dockerfile.windows-release"
 REBUILD=0
 JOBS="${LOCALBOORU_BUILD_JOBS:-$(nproc)}"
@@ -42,8 +34,8 @@ IMAGE="localbooru-windows-release:msvc-wine-$DOCKERFILE_HASH"
 BUILD_ROOT="${LOCALBOORU_WINDOWS_BUILD_ROOT:-/mnt/storage/Programs/localbooru-build-windows-docker}"
 DIST_PATH="${LOCALBOORU_DIST_WINDOWS_DIR:-$ROOT/dist-windows-local}"
 BUILD_LIMIT_GB="${LOCALBOORU_WINDOWS_BUILD_LIMIT_GB:-30}"
-SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
 SOURCE_COMMIT="$(git -C "$ROOT" rev-parse --verify "${SOURCE_REVISION}^{commit}")"
+localbooru_build_write_owner "$SOURCE_COMMIT"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$SOURCE_COMMIT")}"
 CACHE_MARKER=".localbooru-build-cache"
 BUILD_ROOT_DEFAULT="/mnt/storage/Programs/localbooru-build-windows-docker"
@@ -115,11 +107,13 @@ printf '==> Windows persistent build cache before build: %s (limit: %sG)\n' \
 
 if [[ "$REBUILD" == 1 ]] || ! "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "==> Building Windows MSVC/Wine image $IMAGE"
+  localbooru_build_started "$SOURCE_COMMIT" container-image
   "$DOCKER" build -t "$IMAGE" - < "$DOCKERFILE"
 fi
 
 printf '==> Building Windows x64 artifacts with %s jobs\n' "$JOBS"
 printf '    source: %s\n' "$SOURCE_COMMIT"
+localbooru_build_started "$SOURCE_COMMIT" artifacts
 "$DOCKER" run --rm --init \
   -e HOST_UID="$(id -u)" \
   -e HOST_GID="$(id -g)" \
