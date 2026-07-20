@@ -19,3 +19,14 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T11:14:49.999Z
+  - _ulid: 01KXZRF1710GNHNX33F8F7Y7PB
+    content: "Verification in progress: production AddonManager probe path now reaches Ready only from
+      pinned identity plus tensor/model-path evidence; persisted transitional/Ready states are
+      non-authoritative across restarts; Intel render nodes are associated with the detected DRM
+      device; managed command deadlines include inherited output pipes. Current checks: Python 26
+      passed + Ruff, frontend 73 passed + changed-file ESLint, Rust 168 passed serially, cargo
+      clippy completed with existing repository warnings, git diff --check passed. kspec validate
+      remains blocked by 130 pre-existing schema errors in android/core modules."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T12:36:55.649Z
