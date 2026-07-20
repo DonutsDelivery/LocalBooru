@@ -1,0 +1,32 @@
+notes:
+  - _ulid: 01KY0D8ED20E671MD2A58Q5GAG
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Development startup prevents duplicate resource-intensive sessions and uses conservative queue
+      concurrency while preserving normal reconciliation behavior.
+
+
+
+      Acceptance Criteria:
+
+      - ac-duplicate-launch: Given A LocalBooru development session is already active from any
+      worktree, when Another development launch is attempted, then The second launch exits
+      immediately with actionable guidance before starting npm, compilation, the backend, or library
+      work
+
+      - ac-single-launch: Given No LocalBooru development session is active, when Development
+      startup is requested, then The launcher proceeds normally and releases its single-instance
+      ownership when the session exits
+
+      - ac-bounded-workers: Given Development startup has no explicit task worker override, when The
+      backend receives its development environment, then Task queue concurrency defaults to one
+      worker while an explicit valid override remains authoritative
+
+      - ac-reconciliation-preserved: Given Enabled watch directories require startup reconciliation,
+      when The bounded development task queue starts, then Each directory still queues its normal
+      fast reconciliation work and the queue processes that work at bounded concurrency
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T18:40:19.874Z
