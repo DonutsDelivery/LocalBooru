@@ -1,0 +1,23 @@
+notes:
+  - _ulid: 01KXZRQ3CM47C6C388TQ88FKSM
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Selected gallery items can choose a destination and start a batch move without crashing the
+      interface.
+
+
+
+      Acceptance Criteria:
+
+      - ac-directory-envelope: Given the directory service returns its standard directory-list
+      response, when the user opens Move for selected gallery items, then the destination list is
+      rendered and the application remains usable
+
+      - ac-fetch-failure: Given destination directories cannot be loaded, when the user opens Move,
+      then the failure is reported without opening a broken dialog or replacing the interface with a
+      black screen
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T12:41:20.020Z

@@ -1,0 +1,16 @@
+_ulid: 01KXZRQ3CM9A9NX6VYSNSRMT8H
+slugs:
+  - task-batch-move-dialog-stability
+title: "Implement: Batch Move Dialog Stability"
+type: task
+spec_ref: "@batch-move-dialog-stability"
+derivation: auto
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-07-20T12:41:20.020Z
+todos: []
