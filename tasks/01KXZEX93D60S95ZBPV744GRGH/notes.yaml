@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01KXZJB9ASTY4JJJBFE26HG6M2
+    content: "Required final AC coverage: annotate the combined behavioral base-release gate and
+      ordinary-video smoke test with AC: @lada-license-provenance ac-base-artifact-boundary. The
+      package task wires actual unpacked/ASAR inventory auditing into every hosted desktop build but
+      intentionally does not claim the full AC until ordinary playback without LADA is exercised
+      against that audited artifact."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T10:50:01.433Z
