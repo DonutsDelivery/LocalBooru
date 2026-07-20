@@ -696,6 +696,12 @@ features:
             then: the session exposes CUDA provider options, disables automatic execution-provider fallback, and
               records nonzero CUDA execution before reporting GPU acceleration
             when: the live model session is created and inference begins
+          - given: a completed shipped-model prediction records zero CUDA execution
+            id: ac-strict-diagnostic
+            then: the report includes the exact model identity, live provider state and options, native runtime
+              logs, driver and GPU details, resolved runtime packages, and the preserved CUDA
+              failure without requiring command-line access
+            when: the user runs the strict CUDA diagnostic
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
