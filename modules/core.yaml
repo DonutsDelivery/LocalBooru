@@ -55,6 +55,8 @@ features:
           - grouped-folder-catalog-thumbnails
         title: Grouped Folder Catalog Thumbnails
         type: requirement
+        description: Folder catalogs display representative media previews while browsing one directory or
+          all directories together.
         depends_on: []
         implements: []
         relates_to: []
