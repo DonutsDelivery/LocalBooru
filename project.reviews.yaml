@@ -129,9 +129,25 @@ reviews:
           status: skipped
           name: kspec-validation
         timestamp: 2026-07-20T10:15:46.263Z
+      - _ulid: 01KXZGDB023VJBW65GW75K7TZQ
+        actor: claude
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: request_changes
+        timestamp: 2026-07-20T10:16:11.522Z
+      - _ulid: 01KXZGDB028F5QC4RZX3F28VBK
+        actor: claude
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-07-20T10:16:11.522Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs: []
     subject:
       type: task
@@ -247,7 +263,14 @@ reviews:
               retaining an explicit UI disclosure AC."
             created_at: 2026-07-20T10:15:29.445Z
         kind: blocker
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: request_changes
+        reviewer: claude
+        role: reviewer
+        created_at: 2026-07-20T10:16:11.521Z
     created_at: 2026-07-20T10:11:36.170Z
-    updated_at: 2026-07-20T10:15:46.257Z
+    updated_at: 2026-07-20T10:16:11.522Z
     notes: []
