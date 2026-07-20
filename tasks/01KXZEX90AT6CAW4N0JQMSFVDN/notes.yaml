@@ -46,3 +46,12 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T10:20:05.368Z
+  - _ulid: 01KXZH3TKXQK766BGMRFRWH5BH
+    content: "Fix cycle 1 completed in 8370255. Addressed all six blocker threads: generation-specific
+      immutable SHM pools, authenticated hello gating, ErrorMarker failure propagation, tracked-only
+      Corresponding Source staging, exact LADA artifact auditing, and removal/deferment of the false
+      UI AC annotation. Verification: 16 pytest tests passed; Ruff passed; compileall passed; shell
+      syntax passed; sdist and wheel built successfully."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T10:28:28.414Z
