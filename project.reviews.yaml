@@ -1024,9 +1024,16 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-07-20T15:59:30.344Z
+      - _ulid: 01KY042F8XVAJXYVTVX1Q0NKQV
+        actor: "@claude"
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-07-20T15:59:46.973Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@implement-lada-runtime-probes"
     subject:
@@ -1038,5 +1045,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T15:59:30.345Z
-    updated_at: null
+    updated_at: 2026-07-20T15:59:46.964Z
     notes: []
