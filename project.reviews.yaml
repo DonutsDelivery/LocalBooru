@@ -506,6 +506,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KXZHFPW2VDZVYDQNVH2RF5RD
         timestamp: 2026-07-20T10:34:57.807Z
+      - _ulid: 01KXZHFR16TQDGJFGMMCG1Y25S
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KXZHFR0V75WR6WGR6HVKR2MD
+        timestamp: 2026-07-20T10:34:58.982Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -572,7 +579,25 @@ reviews:
               test."
             created_at: 2026-07-20T10:34:57.794Z
         kind: blocker
+      - _ulid: 01KXZHFR0V75WR6WGR6HVKR2MD
+        anchor:
+          type: code
+          commit: "83702557"
+          line_end: 42
+          line_start: 22
+          path: addons/lada/tests/test_release.py
+          side: head
+        entries:
+          - _ulid: 01KXZHFR0WXYET6KD6BY10JM5Z
+            author: "@claude"
+            body: "MUST-FIX: ac-base-artifact-boundary is claimed only by passing synthetic path strings to an
+              otherwise unused helper. No release script enumerates an actual LocalBooru
+              artifact/dependency inventory, and ordinary playback without LADA is not exercised.
+              Wire the audit into the base release verification path and place AC coverage on a
+              behavioral artifact/playback gate rather than this unit test."
+            created_at: 2026-07-20T10:34:58.972Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-20T10:28:50.891Z
-    updated_at: 2026-07-20T10:34:57.794Z
+    updated_at: 2026-07-20T10:34:58.972Z
     notes: []
