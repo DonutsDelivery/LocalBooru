@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .constants import LADA_REVISION, PROTOCOL_VERSION
 from .probe import ProbeConfig, probe_runtime
-from .release import build_release_manifest
+from .release import audit_base_artifact, build_release_manifest, build_runtime_layer
 from .server import ServerConfig, SidecarServer
 
 
@@ -38,16 +38,36 @@ def _manifest(args) -> int:
     for entry in args.bundle:
         name, path = entry.split("=", 1)
         bundles[name] = Path(path)
+    installed_sizes = {}
+    for entry in args.installed_size:
+        name, size = entry.split("=", 1)
+        installed_sizes[name] = int(size)
     manifest = build_release_manifest(
         root,
         bundles,
         source_archive=Path(args.source_archive),
+        installed_sizes=installed_sizes,
     )
     output = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")
     else:
         sys.stdout.write(output)
+    return 0
+
+
+def _build_layer(args) -> int:
+    build_runtime_layer(Path(args.base), Path(args.complete), Path(args.output))
+    return 0
+
+
+def _audit_base(args) -> int:
+    if args.inventory == "-":
+        entries = [line.rstrip("\n") for line in sys.stdin]
+    else:
+        entries = Path(args.inventory).read_text(encoding="utf-8").splitlines()
+    audit_base_artifact(entries)
+    print(json.dumps({"ok": True, "entries": len(entries)}, sort_keys=True))
     return 0
 
 
@@ -68,8 +88,19 @@ def build_parser() -> argparse.ArgumentParser:
     manifest.add_argument("--root", required=True)
     manifest.add_argument("--source-archive", required=True)
     manifest.add_argument("--bundle", action="append", default=[])
+    manifest.add_argument("--installed-size", action="append", default=[])
     manifest.add_argument("--output")
     manifest.set_defaults(run=_manifest)
+
+    layer = subparsers.add_parser("build-layer", help="create a runtime delta from a complete tree")
+    layer.add_argument("--base", required=True)
+    layer.add_argument("--complete", required=True)
+    layer.add_argument("--output", required=True)
+    layer.set_defaults(run=_build_layer)
+
+    audit = subparsers.add_parser("audit-base", help="reject LADA payloads in a base release inventory")
+    audit.add_argument("--inventory", required=True)
+    audit.set_defaults(run=_audit_base)
     return parser
 
 

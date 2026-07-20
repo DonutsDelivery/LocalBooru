@@ -1,5 +1,7 @@
 import hashlib
 import json
+import os
+import shutil
 from pathlib import Path
 from typing import Iterable
 
@@ -14,6 +16,12 @@ _FORBIDDEN_LADA_MODELS = {
     "lada_mosaic_detection_model_v4_accurate.pt",
     "lada_mosaic_detection_model_v4_fast.pt",
     "lada_mosaic_restoration_model_generic_v1.2.pth",
+}
+_EXPECTED_RELEASE_PACKAGES = {
+    "linux_x86_64_common",
+    "linux_x86_64_cuda",
+    "linux_x86_64_xpu",
+    "model_bundle",
 }
 
 
@@ -53,12 +61,42 @@ def audit_base_artifact(paths: Iterable[str]) -> None:
             raise ValueError(f"LADA accelerator runtime must not be present in the base artifact: {entry}")
 
 
-def _artifact(base_url: str, path: Path) -> dict:
-    return {
+def _same_file(left: Path, right: Path) -> bool:
+    return (
+        not right.is_symlink()
+        and right.is_file()
+        and left.stat().st_size == right.stat().st_size
+        and _sha256(left) == _sha256(right)
+    )
+
+
+def build_runtime_layer(base: Path, complete: Path, output: Path) -> None:
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir(parents=True)
+    for source in sorted(complete.rglob("*")):
+        relative = source.relative_to(complete)
+        baseline = base / relative
+        destination = output / relative
+        if source.is_symlink():
+            if baseline.is_symlink() and os.readlink(source) == os.readlink(baseline):
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.symlink_to(os.readlink(source))
+        elif source.is_file() and not _same_file(source, baseline):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+
+
+def _artifact(base_url: str, path: Path, installed_size: int | None = None) -> dict:
+    artifact = {
         "url": f"{base_url}/{path.name}",
         "sha256": _sha256(path),
         "size": path.stat().st_size,
     }
+    if installed_size is not None:
+        artifact["installed_size"] = installed_size
+    return artifact
 
 
 def build_release_manifest(
@@ -66,7 +104,14 @@ def build_release_manifest(
     bundles: dict[str, Path],
     *,
     source_archive: Path,
+    installed_sizes: dict[str, int] | None = None,
 ) -> dict:
+    package_names = set(bundles)
+    if package_names != _EXPECTED_RELEASE_PACKAGES:
+        missing = sorted(_EXPECTED_RELEASE_PACKAGES - package_names)
+        unexpected = sorted(package_names - _EXPECTED_RELEASE_PACKAGES)
+        raise ValueError(f"release package topology mismatch; missing={missing}, unexpected={unexpected}")
+    installed_sizes = installed_sizes or {}
     metadata = load_addon_metadata(root)
     base_url = metadata["release_base_url"].rstrip("/")
     return {
@@ -80,7 +125,7 @@ def build_release_manifest(
         "model_repository": metadata["model_repository"],
         "models": metadata["models"],
         "packages": {
-            name: _artifact(base_url, path)
+            name: _artifact(base_url, path, installed_sizes.get(name))
             for name, path in sorted(bundles.items())
         },
         "corresponding_source": _artifact(base_url, source_archive),

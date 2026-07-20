@@ -14,6 +14,7 @@ _GENERATION_MESSAGES = {
     "release",
     "pause",
     "resume",
+    "seek",
     "eos",
     "error",
 }

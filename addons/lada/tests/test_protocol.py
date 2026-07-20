@@ -28,6 +28,12 @@ def test_protocol_round_trip_and_required_generation():
         assert "generation" in str(error)
     else:
         raise AssertionError("frame without generation must fail")
+    try:
+        decode_message(b'{"type":"seek","request_id":2,"start_ns":0}')
+    except ProtocolError as error:
+        assert "generation" in str(error)
+    else:
+        raise AssertionError("seek without generation must fail")
 
 
 def test_seek_stops_old_restorer_and_increments_generation():

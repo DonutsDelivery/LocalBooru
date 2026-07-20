@@ -18,9 +18,11 @@ localbooru-lada-sidecar serve --config session.json --socket-fd 3
 The package builder produces backend and model archives plus `release-manifest.json`:
 
 ```bash
-LADA_BACKEND=cuda ./packaging/build-bundles.sh
-LADA_BACKEND=xpu ./packaging/build-bundles.sh
+./packaging/build-bundles.sh
+# Optional: LADA_CUDA_VARIANT=cuda-legacy ./packaging/build-bundles.sh
 ```
+
+One invocation produces the common runtime, CUDA and Intel XPU layers, model bundle, Corresponding Source, and a single manifest that binds all four installable packages.
 
 Generated release artifacts are not committed or published automatically. Every offered binary must be accompanied by the exact `source.tar.zst`, license notices, hashes, and source link recorded in its manifest.
 

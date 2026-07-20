@@ -20,6 +20,7 @@ class ServerConfig:
     restoration_model_path: str
     fp16: bool = True
     max_clip_length: int = 180
+    producer_join_timeout_seconds: float = 5.0
 
     @classmethod
     def load(cls, path: Path) -> "ServerConfig":
@@ -76,9 +77,16 @@ class SidecarServer:
         self._controller.stop()
         self._retire_pool()
         if self._producer is not None:
-            self._producer.join(timeout=5)
-            self._producer = None
-        self._stop.clear()
+            self._producer.join(timeout=self._config.producer_join_timeout_seconds)
+            if not self._producer.is_alive():
+                self._producer = None
+
+    def _generation_is_active(self, generation: int) -> bool:
+        return not self._stop.is_set() and generation == self._controller.generation
+
+    def _send_eos(self, generation: int) -> None:
+        if self._generation_is_active(generation):
+            self._send({"type": "eos", "generation": generation})
 
     def _produce(self) -> None:
         generation = self._controller.generation
@@ -110,11 +118,11 @@ class SidecarServer:
                 if self._stop.is_set():
                     return
                 self._publish(frame, generation, pool)
-            self._send({"type": "eos", "generation": generation})
+            self._send_eos(generation)
         except StopIteration:
-            self._send({"type": "eos", "generation": generation})
+            self._send_eos(generation)
         except Exception as error:
-            if not self._stop.is_set():
+            if self._generation_is_active(generation):
                 self._send(
                     {
                         "type": "error",
@@ -166,6 +174,18 @@ class SidecarServer:
             }
         )
 
+    def _quiesce_for_seek(self) -> None:
+        self._stop.set()
+        source = self._controller.restorer
+        if source is not None:
+            source.stop()
+        self._retire_pool()
+        if self._producer is not None:
+            self._producer.join(timeout=self._config.producer_join_timeout_seconds)
+            if self._producer.is_alive():
+                raise ProtocolError("previous frame producer did not stop before seek")
+            self._producer = None
+
     def _handle(self, message: dict) -> bool:
         kind = message["type"]
         if kind != "hello" and not self._authenticated:
@@ -197,16 +217,13 @@ class SidecarServer:
             self._send(started)
             self._start_producer()
         elif kind == "seek":
-            self._stop.set()
+            self._controller.accept_generation(message["generation"])
+            self._quiesce_for_seek()
+            self._stop.clear()
             started = self._controller.seek(
                 start_ns=int(message["start_ns"]),
                 request_id=int(message["request_id"]),
             )
-            self._retire_pool()
-            if self._producer is not None:
-                self._producer.join(timeout=5)
-                self._producer = None
-            self._stop.clear()
             self._send(started)
             self._start_producer()
         elif kind == "release":

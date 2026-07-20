@@ -1,9 +1,15 @@
 import json
 import subprocess
 import tarfile
+import zipfile
 from pathlib import Path
 
-from localbooru_lada.release import audit_base_artifact, build_release_manifest, load_addon_metadata
+from localbooru_lada.release import (
+    audit_base_artifact,
+    build_release_manifest,
+    build_runtime_layer,
+    load_addon_metadata,
+)
 
 ROOT = Path(__file__).parents[1]
 
@@ -19,7 +25,6 @@ def test_addon_metadata_discloses_license_source_sizes_and_models():
     assert all(model["sha256"] and model["source_url"] for model in metadata["models"])
 
 
-# AC: @lada-license-provenance ac-base-artifact-boundary
 def test_base_artifact_audit_rejects_lada_payloads_but_allows_bridge_files():
     audit_base_artifact([
         "usr/bin/localbooru",
@@ -40,6 +45,56 @@ def test_base_artifact_audit_rejects_lada_payloads_but_allows_bridge_files():
             assert path in str(error)
         else:
             raise AssertionError(f"expected {path} to be rejected")
+
+
+def test_release_inventory_gate_enumerates_actual_unpacked_tree(tmp_path):
+    artifact = tmp_path / "linux-unpacked"
+    safe = artifact / "resources" / "app" / "video-player.js"
+    safe.parent.mkdir(parents=True)
+    safe.write_text("ordinary playback", encoding="utf-8")
+
+    inventory = subprocess.run(
+        ["node", ROOT.parents[1] / "scripts" / "list-release-inventory.js", artifact],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    audit_base_artifact(inventory)
+    assert any(entry.endswith("video-player.js") for entry in inventory)
+
+    forbidden = artifact / "resources" / "app" / "addons" / "lada" / "runtime.py"
+    forbidden.parent.mkdir(parents=True)
+    forbidden.write_text("forbidden", encoding="utf-8")
+    inventory = subprocess.run(
+        ["node", ROOT.parents[1] / "scripts" / "list-release-inventory.js", artifact],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    try:
+        audit_base_artifact(inventory)
+    except ValueError as error:
+        assert "runtime.py" in str(error)
+    else:
+        raise AssertionError("actual unpacked LADA payload must fail the release gate")
+
+
+def test_runtime_layer_contains_only_new_and_changed_backend_files(tmp_path):
+    base = tmp_path / "base"
+    complete = tmp_path / "complete"
+    layer = tmp_path / "layer"
+    for root in (base, complete):
+        (root / "site-packages").mkdir(parents=True)
+        (root / "site-packages" / "common.py").write_text("same\n", encoding="utf-8")
+    (base / "site-packages" / "metadata.txt").write_text("common\n", encoding="utf-8")
+    (complete / "site-packages" / "metadata.txt").write_text("cuda\n", encoding="utf-8")
+    (complete / "site-packages" / "torch.so").write_bytes(b"accelerator")
+
+    build_runtime_layer(base, complete, layer)
+
+    assert not (layer / "site-packages" / "common.py").exists()
+    assert (layer / "site-packages" / "metadata.txt").read_text() == "cuda\n"
+    assert (layer / "site-packages" / "torch.so").read_bytes() == b"accelerator"
 
 
 def test_corresponding_source_stages_only_tracked_addon_and_upstream_files(tmp_path):
@@ -93,22 +148,130 @@ def test_corresponding_source_stages_only_tracked_addon_and_upstream_files(tmp_p
     assert not any("dist" in Path(member).parts for member in members)
 
 
+def test_adapter_wheel_and_corresponding_source_use_same_committed_snapshot(tmp_path):
+    repository = tmp_path / "repository"
+    addon = repository / "addon"
+    package = addon / "src" / "fixture_adapter"
+    package.mkdir(parents=True)
+    (addon / "pyproject.toml").write_text(
+        "[build-system]\n"
+        "requires = [\"setuptools>=77\"]\n"
+        "build-backend = \"setuptools.build_meta\"\n\n"
+        "[project]\n"
+        "name = \"fixture-adapter\"\n"
+        "version = \"1.0.0\"\n",
+        encoding="utf-8",
+    )
+    implementation = package / "__init__.py"
+    implementation.write_text('VALUE = "committed"\n', encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    subprocess.run(["git", "add", "."], cwd=repository, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=LADA Test",
+            "-c",
+            "user.email=lada-test@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        cwd=repository,
+        check=True,
+    )
+    implementation.write_text('VALUE = "dirty-sentinel"\n', encoding="utf-8")
+
+    upstream = tmp_path / "upstream-snapshot"
+    upstream.mkdir()
+    (upstream / "LICENSE").write_text("fixture\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=upstream, check=True)
+    subprocess.run(["git", "add", "."], cwd=upstream, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=LADA Test",
+            "-c",
+            "user.email=lada-test@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        cwd=upstream,
+        check=True,
+    )
+
+    stage = tmp_path / "snapshot"
+    subprocess.run(
+        [ROOT / "packaging" / "stage-source.sh", addon, upstream, stage],
+        check=True,
+    )
+    wheel_output = subprocess.run(
+        [
+            ROOT / "packaging" / "build-adapter-wheel.sh",
+            stage / "localbooru-lada-addon",
+            tmp_path / "wheels",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    wheel = Path(wheel_output.stdout.splitlines()[-1])
+    with zipfile.ZipFile(wheel) as handle:
+        built = handle.read("fixture_adapter/__init__.py").decode()
+    staged = (stage / "localbooru-lada-addon" / "src" / "fixture_adapter" / "__init__.py").read_text()
+
+    assert built == staged == 'VALUE = "committed"\n'
+    assert "dirty-sentinel" not in built
+
+
 # AC: @lada-license-provenance ac-binary-source-match
-def test_release_manifest_binds_bundles_to_exact_source_and_hashes(tmp_path):
-    common = tmp_path / "common.tar.zst"
-    common.write_bytes(b"common-bundle")
+def test_release_manifest_binds_complete_bundle_topology_to_exact_source_and_hashes(tmp_path):
+    bundles = {}
+    for name, content in {
+        "linux_x86_64_common": b"common-bundle",
+        "linux_x86_64_cuda": b"cuda-layer",
+        "linux_x86_64_xpu": b"xpu-layer",
+        "model_bundle": b"models",
+    }.items():
+        path = tmp_path / f"{name}.tar.zst"
+        path.write_bytes(content)
+        bundles[name] = path
     source = tmp_path / "source.tar.zst"
     source.write_bytes(b"corresponding-source")
 
     manifest = build_release_manifest(
         ROOT,
-        {"linux_x86_64_common": common},
+        bundles,
         source_archive=source,
+        installed_sizes={name: index for index, name in enumerate(sorted(bundles), start=1)},
     )
 
+    assert set(manifest["packages"]) == set(bundles)
     package = manifest["packages"]["linux_x86_64_common"]
     assert package["sha256"] == "b77b4f593935b6be1ced5a6a724cf0fab0beb53f4e1e682310d28e57801eb7b9"
     assert package["size"] == len(b"common-bundle")
+    assert package["installed_size"] > 0
     assert manifest["corresponding_source"]["sha256"] == "2a5399dfeffd5d8b6e57d3e6ce35b26abf63f06972b5a8f34412a45b74223587"
     assert manifest["corresponding_source"]["url"].endswith("/releases/download/v0.1.0/source.tar.zst")
     json.dumps(manifest)
+
+
+def test_release_manifest_rejects_partial_backend_output(tmp_path):
+    bundle = tmp_path / "cuda.tar.zst"
+    bundle.write_bytes(b"cuda")
+    source = tmp_path / "source.tar.zst"
+    source.write_bytes(b"source")
+
+    try:
+        build_release_manifest(
+            ROOT,
+            {"linux_x86_64_cuda": bundle},
+            source_archive=source,
+        )
+    except ValueError as error:
+        assert "topology mismatch" in str(error)
+        assert "linux_x86_64_common" in str(error)
+    else:
+        raise AssertionError("a one-backend manifest must not overwrite the complete release manifest")
