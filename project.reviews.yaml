@@ -800,6 +800,13 @@ reviews:
           status: skipped
           name: accelerator-build
         timestamp: 2026-07-20T10:54:38.712Z
+      - _ulid: 01KXZJWW1RAW060KEW8TTPJGNQ
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KXZJWW151PFSXN2ETGEWX484
+        timestamp: 2026-07-20T10:59:37.656Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -809,8 +816,28 @@ reviews:
       content_hash: ""
       ref: "@package-lada-sidecar"
       shadow_commit: ""
-    threads: []
+    threads:
+      - _ulid: 01KXZJWW151PFSXN2ETGEWX484
+        anchor:
+          type: code
+          commit: 90cf135a
+          line_end: 42
+          line_start: 29
+          path: addons/lada/packaging/build-bundles.sh
+          side: head
+        entries:
+          - _ulid: 01KXZJWW154A0177FR6RP50KFG
+            author: "@claude"
+            body: "MUST-FIX: the declared torch-free common runtime cannot be built. Against the exact pinned
+              pyproject/uv.lock,  resolves torch 2.9.1 and torchvision 0.24.1 through ultralytics.
+              Therefore the common install includes PyTorch and the explicit guard aborts before any
+              archives or coherent manifest are produced. Build complete CUDA/XPU environments
+              first, derive the common layer from their identical non-accelerator files, and keep
+              backend-specific distributions in accelerator layers; verify with a deterministic
+              split regression."
+            created_at: 2026-07-20T10:59:37.638Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-20T10:54:00.401Z
-    updated_at: 2026-07-20T10:54:38.705Z
+    updated_at: 2026-07-20T10:59:37.638Z
     notes: []
