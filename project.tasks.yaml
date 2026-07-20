@@ -1164,7 +1164,6 @@ tasks:
       - task-grouped-folder-catalog-thumbnails
     title: "Implement: Grouped Folder Catalog Thumbnails"
     type: task
-    spec_ref: "@grouped-folder-catalog-thumbnails"
     status: cancelled
     blocked_by: []
     depends_on: []

@@ -50,34 +50,6 @@ features:
         acceptance_criteria:
           - After image deletion, subsequent loadMore does not skip images
           - Total count stays accurate after single and batch deletes
-      - _ulid: 01KXZT01H8MKJT95R05J04KVMK
-        slugs:
-          - grouped-folder-catalog-thumbnails
-        title: Grouped Folder Catalog Thumbnails
-        type: requirement
-        description: Folder catalogs display representative media previews while browsing one directory or
-          all directories together.
-        status:
-          maturity: draft
-          implementation: in_progress
-        depends_on: []
-        implements: []
-        relates_to: []
-        tests: []
-        traits: []
-        acceptance_criteria:
-          - given: the gallery includes media from multiple directories and the directory filter is set to All
-              directories
-            id: ac-all-directories
-            then: each nonempty folder catalog displays its representative preview thumbnail
-            when: the user enables Group by folders
-          - given: different directories contain media with overlapping local identifiers
-            id: ac-directory-identity
-            then: each preview resolves from the same library and directory as its represented media
-            when: folder catalogs are rendered across all directories
-        tags: []
-        created: 2026-07-20T13:03:41.608Z
-        notes: []
     created: 2026-03-08T08:28:23.993Z
     notes: []
   - _ulid: 01KK692XK9SMJRHRRD784A002E
