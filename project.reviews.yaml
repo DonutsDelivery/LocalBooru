@@ -433,6 +433,16 @@ reviews:
         runner: uv
         created_at: 2026-07-20T10:29:45.798Z
         completed_at: 2026-07-20T10:29:45.798Z
+      - status: skipped
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Repository-wide validation remains blocked by pre-existing malformed Android/Core records;
+          LADA task linkage and AC annotations inspected directly
+        name: kspec-validation
+        required: false
+        created_at: 2026-07-20T10:29:46.911Z
+        completed_at: 2026-07-20T10:29:46.911Z
     events:
       - _ulid: 01KXZH4GJAREQF9NCCC3N56Q0Z
         actor: "@claude"
@@ -468,6 +478,13 @@ reviews:
           status: pass
           name: package-build
         timestamp: 2026-07-20T10:29:45.807Z
+      - _ulid: 01KXZH6796W4E70HF2PVKECN4T
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: skipped
+          name: kspec-validation
+        timestamp: 2026-07-20T10:29:46.918Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -480,5 +497,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T10:28:50.891Z
-    updated_at: 2026-07-20T10:29:45.798Z
+    updated_at: 2026-07-20T10:29:46.911Z
     notes: []
