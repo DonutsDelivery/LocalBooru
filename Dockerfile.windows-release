@@ -1,0 +1,55 @@
+# Reproducible LocalBooru Windows x64 build on Linux using the genuine MSVC
+# toolchain and Windows SDK under Wine. Based on mstorsjo/msvc-wine and the
+# proven DonutStudio local Windows release environment.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    WINEDEBUG=-all \
+    CARGO_TERM_COLOR=always \
+    CARGO_TARGET_DIR=/build/target \
+    SCCACHE_DIR=/ccache \
+    SCCACHE_CACHE_SIZE=20G \
+    RUSTC_WRAPPER=sccache \
+    PATH=/opt/msvc/bin/x64:/opt/node/bin:/root/.cargo/bin:${PATH}
+
+RUN apt-get update && apt-get install -y \
+      wine64 python3 msitools ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      winbind git curl xz-utils zip unzip p7zip-full file nsis sccache \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN $(command -v wine64 || command -v wine) wineboot --init && \
+    while pgrep wineserver >/dev/null; do sleep 1; done
+
+ARG MSVC_WINE_COMMIT=514f8ea34842cd6d831804d0e9658d3a32870ae1
+RUN git clone https://github.com/mstorsjo/msvc-wine /opt/msvc-wine && \
+    git -C /opt/msvc-wine checkout "$MSVC_WINE_COMMIT"
+WORKDIR /opt/msvc-wine
+RUN PYTHONUNBUFFERED=1 ./vsdownload.py --accept-license --dest /opt/msvc && \
+    ./install.sh /opt/msvc
+
+# Tauri's supported NSIS cross-build path may use LLVM resource/linker tools,
+# while native Rust build scripts still use the genuine MSVC wrappers above.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential clang llvm lld \
+ && rm -rf /var/lib/apt/lists/*
+
+ARG NODE_VERSION=20.19.4
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+      | tar -xJ -C /opt && \
+    ln -s "/opt/node-v${NODE_VERSION}-linux-x64" /opt/node
+
+RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain stable && \
+    rustup target add x86_64-pc-windows-msvc && \
+    cargo install tauri-cli --version 2.9.4 --locked
+
+ENV RUSTUP_HOME=/root/.rustup \
+    CC_x86_64_pc_windows_msvc=cl \
+    CXX_x86_64_pc_windows_msvc=cl \
+    AR_x86_64_pc_windows_msvc=/opt/msvc/bin/x64/lib \
+    CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=/opt/msvc/bin/x64/link
+
+WORKDIR /build/worktree

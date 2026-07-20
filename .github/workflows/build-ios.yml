@@ -1,0 +1,119 @@
+name: Build iOS
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-on-failure: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Initialize iOS project
+        run: cargo tauri ios init
+
+      - name: Add iOS permissions
+        run: |
+          PLIST=$(find src-tauri/gen/apple -name "Info.plist" -not -path "*/build/*" | head -1)
+          if [ -z "$PLIST" ]; then
+            echo "::error::Info.plist not found after ios init"
+            find src-tauri/gen/apple -type f | head -30
+            exit 1
+          fi
+          echo "Found Info.plist at: $PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'LocalBooru uses the camera to scan QR codes for server pairing'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'LocalBooru connects to servers on your local network'" "$PLIST"
+
+      - name: Disable code signing
+        run: |
+          PBXPROJ=$(find src-tauri/gen/apple -name "project.pbxproj" | head -1)
+          if [ -z "$PBXPROJ" ]; then
+            echo "::error::project.pbxproj not found"
+            exit 1
+          fi
+          echo "Patching $PBXPROJ to disable code signing..."
+          python3 -c "
+          import re, sys
+
+          path = sys.argv[1]
+          with open(path, 'r') as f:
+              content = f.read()
+
+          # Clear code sign identity
+          content = re.sub(r'CODE_SIGN_IDENTITY = \"[^\"]*\"', 'CODE_SIGN_IDENTITY = \"\"', content)
+
+          # Disable code signing requirements
+          content = content.replace('CODE_SIGNING_REQUIRED = YES', 'CODE_SIGNING_REQUIRED = NO')
+
+          # Add CODE_SIGNING_ALLOWED = NO after each CODE_SIGN_IDENTITY line
+          lines = content.split('\n')
+          new_lines = []
+          for line in lines:
+              new_lines.append(line)
+              if 'CODE_SIGN_IDENTITY = \"\"' in line and 'CODE_SIGNING_ALLOWED' not in line:
+                  indent = line[:len(line) - len(line.lstrip())]
+                  new_lines.append(indent + 'CODE_SIGNING_ALLOWED = NO;')
+
+          with open(path, 'w') as f:
+              f.write('\n'.join(new_lines))
+
+          print('Code signing disabled successfully')
+          " "$PBXPROJ"
+
+      - name: Build iOS (Device)
+        run: cargo tauri ios build --debug --target aarch64
+
+      - name: Package IPA
+        run: |
+          # Find the .app bundle
+          APP_PATH=$(find src-tauri/gen/apple/build -type d -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::.app bundle not found"
+            find src-tauri/gen/apple/build -type f 2>/dev/null | head -30
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
+
+          # Package as IPA (IPA is just a zip with Payload/ structure)
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r LocalBooru.ipa Payload/
+          rm -rf Payload/
+
+          echo "IPA created:"
+          ls -lh LocalBooru.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocalBooru-iOS
+          path: LocalBooru.ipa
+          if-no-files-found: error

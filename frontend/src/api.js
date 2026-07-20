@@ -2,69 +2,195 @@
  * LocalBooru API client - supports both local and multi-server mode
  */
 import axios from 'axios'
-import { isMobileApp, getActiveServer } from './serverManager'
+import { isMobileApp, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
+import { validateServerCertificate, isHttps } from './sslPinning'
+import { adjustmentQuery } from './utils/imageAdjustments.js'
 
 // Current server config (cached for synchronous access)
 let currentServerUrl = null
 let currentServerAuth = null
+let currentServerToken = null  // Raw JWT session token (Authorization header)
+let currentMediaToken = null   // Short-lived, read-only token for media src URLs (H1)
+let mediaTokenExpiry = 0       // epoch ms when currentMediaToken expires
+let currentCertFingerprint = null  // TLS certificate fingerprint for pinning
+let certValidated = false  // Whether certificate has been validated this session
+
+// Detect if running in Tauri
+function isTauriApp() {
+  return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
+}
+
+// Get the local server base URL (for Tauri apps)
+function getLocalServerBase() {
+  const isDevServer = ['5173', '5174', '5175', '5210'].includes(window.location.port)
+  if (isTauriApp()) {
+    return isDevServer ? '' : 'http://127.0.0.1:8790'
+  }
+  return ''
+}
 
 // Get API URL - same origin when served from backend, fallback for dev
 function getApiUrl() {
-  // Mobile app mode - use configured server
+  // Mobile app with remote server on Tauri — route through local proxy
+  if (isMobileApp() && currentServerUrl && isTauriApp()) {
+    return `${getLocalServerBase()}/remote/api`
+  }
+
+  // Mobile app with remote server (non-Tauri, e.g. browser) — direct URL
   if (isMobileApp() && currentServerUrl) {
     return `${currentServerUrl}/api`
   }
 
-  // Check if we're running on localhost with Vite dev server (port 5173/5174)
-  const isDevServer = window.location.port === '5173' || window.location.port === '5174'
-
-  if (isDevServer) {
-    // Dev mode - Vite dev server, need to point to backend
-    return 'http://127.0.0.1:8790/api'
-  }
-
-  // Production - frontend served from backend, use relative URL
-  // This works for both localhost AND network access
-  return '/api'
+  return `${getLocalServerBase()}/api`
 }
 
 // Update the server configuration (call when server changes)
-export async function updateServerConfig() {
+// Optional `workingUrl` should be set to whichever of the server's URLs (primary or fallback)
+// just responded to a probe — it becomes the proxy's primary so we don't pay a 1.5s connect-fail
+// per request while running on the fallback network (e.g. Tailscale when the LAN URL is unreachable).
+export async function updateServerConfig(workingUrl = null) {
   if (!isMobileApp()) return
+
+  // Reset the media token on any server change; it is re-minted below when a
+  // session token is available.
+  currentMediaToken = null
+  mediaTokenExpiry = 0
 
   const server = await getActiveServer()
   if (server) {
+    // Local embedded server — use relative URLs like desktop
+    if (server.isLocal || server.id === LOCAL_SERVER.id) {
+      currentServerUrl = null
+      currentServerAuth = null
+      currentServerToken = null
+      currentCertFingerprint = null
+      certValidated = false
+      // Clear remote proxy on Tauri
+      if (isTauriApp()) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          await invoke('set_remote_proxy', { url: null, fallbackUrl: null, token: null })
+        } catch (e) { console.warn('[API] Failed to clear remote proxy:', e) }
+      }
+      api.defaults.baseURL = getApiUrl()
+      return
+    }
+
     currentServerUrl = server.url
-    if (server.username && server.password) {
+    currentCertFingerprint = server.certFingerprint || null
+    certValidated = false  // Reset validation on server change
+    // Prefer JWT token (from QR pairing) over Basic auth
+    if (server.token) {
+      currentServerAuth = 'Bearer ' + server.token
+      currentServerToken = server.token
+      // Mint a short-lived media token in the background (non-Tauri browser path
+      // uses it in media URLs instead of the session JWT).
+      void fetchMediaToken()
+    } else if (server.username && server.password) {
       currentServerAuth = 'Basic ' + btoa(`${server.username}:${server.password}`)
+      currentServerToken = null
     } else {
       currentServerAuth = null
+      currentServerToken = null
     }
+
+    // Determine which URL to use as proxy primary. If the caller didn't tell us
+    // which one was just verified, fall back to the cached probe result, then probe.
+    let primaryUrl = server.url
+    let fallbackUrl = server.fallbackUrl || null
+    if (server.fallbackUrl) {
+      let resolved = workingUrl || server._lastReachableUrl || null
+      if (!resolved) {
+        try {
+          const probe = await probeServer(server)
+          if (probe.success && probe.url) resolved = probe.url
+        } catch (e) { /* probe failed; fall through to default */ }
+      }
+      if (resolved) {
+        primaryUrl = resolved
+        fallbackUrl = resolved === server.url ? (server.fallbackUrl || null) : server.url
+      }
+    }
+
+    // Normalize: reqwest's URL parser rejects scheme-less inputs with a "builder error".
+    // Older saved entries may have been written without `http://`; patch them on the way out.
+    const ensureScheme = u => (u && !/^https?:\/\//i.test(u)) ? `http://${u}` : u
+    primaryUrl = ensureScheme(primaryUrl)
+    fallbackUrl = ensureScheme(fallbackUrl)
+
+    // On Tauri mobile, configure the local server to proxy to remote server
+    // This avoids mixed-content blocks (https://tauri.localhost -> http://...)
+    if (isTauriApp()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        await invoke('set_remote_proxy', {
+          url: primaryUrl,
+          fallbackUrl,
+          token: server.token || null,
+        })
+      } catch (e) { console.warn('[API] Failed to set remote proxy:', e) }
+    }
+
     // Update axios base URL
-    api.defaults.baseURL = `${server.url}/api`
+    api.defaults.baseURL = getApiUrl()
+
+    // Validate certificate on first connection to HTTPS server
+    if (isHttps(server.url) && currentCertFingerprint) {
+      console.log('[API] Server uses HTTPS with certificate pinning')
+    }
   } else {
     currentServerUrl = null
     currentServerAuth = null
+    currentServerToken = null
+    currentCertFingerprint = null
+    certValidated = false
+    // Clear remote proxy on Tauri
+    if (isTauriApp()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        await invoke('set_remote_proxy', { url: null, fallbackUrl: null, token: null })
+      } catch (e) { console.warn('[API] Failed to clear remote proxy:', e) }
+    }
     api.defaults.baseURL = null
   }
 }
 
 // Check if connected to a server (for mobile app)
+// Returns true on desktop, or on mobile when using local server or a configured remote server
 export function isServerConfigured() {
   if (!isMobileApp()) return true
-  return currentServerUrl !== null
+  // On mobile, we're configured if using local server (currentServerUrl null but baseURL set)
+  // or if connected to a remote server (currentServerUrl not null)
+  return currentServerUrl !== null || api.defaults.baseURL !== null
 }
 
 // Initialize API with base URL
+// On Android, mixed content is enabled in MainActivity.kt so XHR works fine
 const api = axios.create({
   baseURL: getApiUrl(),
-  timeout: 60000  // 60s timeout for busy servers
+  timeout: 120000,  // 120s timeout for busy servers / large operations
 })
 
-// Add request interceptor for auth on mobile
-api.interceptors.request.use((config) => {
-  if (isMobileApp() && currentServerAuth) {
-    config.headers['Authorization'] = currentServerAuth
+
+// Add request interceptor for auth on mobile and certificate validation
+api.interceptors.request.use(async (config) => {
+  if (isMobileApp()) {
+    // Add auth header if available
+    if (currentServerAuth) {
+      config.headers['Authorization'] = currentServerAuth
+    }
+
+    // Validate certificate on first request to HTTPS server with stored fingerprint
+    if (isHttps(currentServerUrl) && currentCertFingerprint && !certValidated) {
+      const result = await validateServerCertificate(currentServerUrl, currentCertFingerprint)
+      if (!result.valid) {
+        // Certificate validation failed - reject the request
+        console.error('[API] Certificate validation failed:', result.error)
+        throw new axios.Cancel(`Certificate validation failed: ${result.error}`)
+      }
+      certValidated = true
+      console.log('[API] Certificate validated successfully')
+    }
   }
   return config
 })
@@ -111,8 +237,8 @@ api.interceptors.response.use(
         message += `\n\nError: ${error.message}`
       }
 
-      // Show popup with error details
-      alert(message)
+      // Show toast with error details
+      import('./components/Toast').then(m => m.toast.error(message))
     } else {
       // Log transient errors to console instead
       console.warn(`[API] Transient error (${duringStartup ? 'startup' : 'network'}): ${method} ${url}`, error.message)
@@ -129,11 +255,20 @@ export async function fetchImages({
   exclude_tags,
   rating,
   favorites_only,
+  exclude_favorites,
   directory_id,
+  library_id,
   min_age,
   max_age,
   has_faces,
   timeframe,
+  filename,
+  min_width,
+  min_height,
+  orientation,
+  min_duration,
+  max_duration,
+  import_source,
   sort = 'newest',
   page = 1,
   per_page = 50
@@ -143,11 +278,20 @@ export async function fetchImages({
   if (exclude_tags) params.append('exclude_tags', exclude_tags)
   if (rating) params.append('rating', rating)
   if (favorites_only) params.append('favorites_only', 'true')
+  if (exclude_favorites) params.append('exclude_favorites', 'true')
   if (directory_id) params.append('directory_id', directory_id)
+  if (library_id) params.append('library_id', library_id)
   if (min_age !== undefined && min_age !== null) params.append('min_age', min_age)
   if (max_age !== undefined && max_age !== null) params.append('max_age', max_age)
   if (has_faces !== undefined && has_faces !== null) params.append('has_faces', has_faces)
   if (timeframe) params.append('timeframe', timeframe)
+  if (filename) params.append('filename', filename)
+  if (min_width !== undefined && min_width !== null) params.append('min_width', min_width)
+  if (min_height !== undefined && min_height !== null) params.append('min_height', min_height)
+  if (orientation) params.append('orientation', orientation)
+  if (min_duration !== undefined && min_duration !== null) params.append('min_duration', min_duration)
+  if (max_duration !== undefined && max_duration !== null) params.append('max_duration', max_duration)
+  if (import_source) params.append('import_source', import_source)
   params.append('sort', sort)
   params.append('page', page)
   params.append('per_page', per_page)
@@ -156,26 +300,99 @@ export async function fetchImages({
   return response.data
 }
 
+export async function fetchFolders({ directory_id, library_id, rating, favorites_only, tags } = {}) {
+  const params = new URLSearchParams()
+  if (directory_id) params.append('directory_id', directory_id)
+  if (library_id) params.append('library_id', library_id)
+  if (rating) params.append('rating', rating)
+  if (favorites_only) params.append('favorites_only', 'true')
+  if (tags) params.append('tags', tags)
+  const response = await api.get(`/images/folders?${params}`)
+  return response.data
+}
+
 export async function fetchImage(id) {
   const response = await api.get(`/images/${id}`)
   return response.data
 }
 
-export async function toggleFavorite(imageId) {
-  const response = await api.post(`/images/${imageId}/favorite`)
+export async function toggleFavorite(imageId, directoryId, libraryId) {
+  const params = {}
+  if (directoryId) params.directory_id = directoryId
+  if (libraryId) params.library_id = libraryId
+  const response = await api.post(`/images/${imageId}/favorite`, null, { params })
   return response.data
 }
 
-export async function updateRating(imageId, rating) {
-  const response = await api.patch(`/images/${imageId}/rating?rating=${rating}`)
+export async function setFavorite(image, isFavorite) {
+  const response = await api.patch(`/images/${image.id}/favorite`, {
+    is_favorite: isFavorite,
+    directory_id: image.directory_id,
+    library_id: image.library_id || null,
+  })
+  return response.data
+}
+
+export async function discardForCuration(image, dumpsterPath = null) {
+  const response = await api.post(`/images/${image.id}/curation-discard`, {
+    directory_id: image.directory_id,
+    library_id: image.library_id || null,
+    dumpster_path: dumpsterPath || null,
+  })
+  return response.data
+}
+
+export async function restoreCurationDiscard(image) {
+  const response = await api.post(`/images/${image.id}/curation-restore`, {
+    directory_id: image.directory_id,
+    library_id: image.library_id || null,
+  })
+  return response.data
+}
+
+export async function unfavoriteCurationItems(items) {
+  const response = await api.post('/images/curation/unfavorite', {
+    items: items.map(image => ({
+      image_id: image.id,
+      directory_id: image.directory_id,
+      library_id: image.library_id || null,
+    })),
+  })
+  return response.data
+}
+
+export async function updateRating(imageId, rating, directoryId, libraryId) {
+  const params = new URLSearchParams({ rating })
+  if (directoryId) params.append('directory_id', directoryId)
+  if (libraryId) params.append('library_id', libraryId)
+  const response = await api.patch(`/images/${imageId}/rating?${params}`)
   return response.data
 }
 
 // Alias for Lightbox compatibility
 export const changeRating = updateRating
 
-export async function deleteImage(imageId, deleteFile = false) {
-  const response = await api.delete(`/images/${imageId}?delete_file=${deleteFile}`)
+export async function deleteImage(imageId, deleteFile = false, directoryId = null, libraryId = null) {
+  let url = `/images/${imageId}?delete_file=${deleteFile}`
+  if (directoryId) {
+    url += `&directory_id=${directoryId}`
+  }
+  if (libraryId) {
+    url += `&library_id=${encodeURIComponent(libraryId)}`
+  }
+  const response = await api.delete(url)
+  return response.data
+}
+
+export async function uploadImage(file, directoryId = null) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const params = {}
+  if (directoryId) params.directory_id = directoryId
+  const response = await api.post('/images/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    params
+  })
   return response.data
 }
 
@@ -210,8 +427,18 @@ export async function batchMoveImages(imageIds, targetDirectoryId) {
   return response.data
 }
 
-export async function applyImageAdjustments(imageId, { brightness, contrast, gamma }) {
-  const response = await api.post(`/images/${imageId}/adjust`, {
+export async function applyImageAdjustments(locator, { brightness, contrast, gamma }, expectedFileHash) {
+  const response = await api.post(`/images/${locator.imageId}/adjust?${adjustmentQuery(locator)}`, {
+    brightness,
+    contrast,
+    gamma,
+    expected_file_hash: expectedFileHash
+  })
+  return response.data
+}
+
+export async function previewImageAdjustments(locator, { brightness, contrast, gamma }) {
+  const response = await api.post(`/images/${locator.imageId}/preview-adjust?${adjustmentQuery(locator)}`, {
     brightness,
     contrast,
     gamma
@@ -219,35 +446,69 @@ export async function applyImageAdjustments(imageId, { brightness, contrast, gam
   return response.data
 }
 
-export async function previewImageAdjustments(imageId, { brightness, contrast, gamma }) {
-  const response = await api.post(`/images/${imageId}/preview-adjust`, {
-    brightness,
-    contrast,
-    gamma
-  })
+export async function discardImagePreview(locator, preview) {
+  const response = await api.delete(`/images/${locator.imageId}/preview?${adjustmentQuery(locator, preview)}`)
   return response.data
 }
 
-export async function discardImagePreview(imageId) {
-  const response = await api.delete(`/images/${imageId}/preview`)
-  return response.data
+// Video preview frames API with rate limiting
+// Limit concurrent requests to prevent exhausting DB connection pool
+const previewFrameQueue = {
+  maxConcurrent: 3,
+  running: 0,
+  queue: [],
+
+  async enqueue(fn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ fn, resolve, reject })
+      this.process()
+    })
+  },
+
+  async process() {
+    if (this.running >= this.maxConcurrent || this.queue.length === 0) return
+
+    const { fn, resolve, reject } = this.queue.shift()
+    this.running++
+
+    try {
+      const result = await fn()
+      resolve(result)
+    } catch (err) {
+      reject(err)
+    } finally {
+      this.running--
+      this.process()
+    }
+  }
+}
+
+export async function fetchPreviewFrames(imageId, directoryId = null) {
+  return previewFrameQueue.enqueue(async () => {
+    const params = directoryId ? `?directory_id=${directoryId}` : ''
+    const response = await api.get(`/images/${imageId}/preview-frames${params}`)
+    return response.data
+  })
 }
 
 // Tags API
-export async function fetchTags({ q, category, page = 1, per_page = 50, sort = 'count' } = {}) {
+export async function fetchTags({ q, category, page = 1, per_page = 50, sort = 'count', library_id } = {}) {
   const params = new URLSearchParams()
   if (q) params.append('q', q)
   if (category) params.append('category', category)
   params.append('page', page)
   params.append('per_page', per_page)
   params.append('sort', sort)
+  if (library_id) params.append('library_id', library_id)
 
   const response = await api.get(`/tags?${params}`)
   return response.data
 }
 
-export async function searchTags(query, limit = 10) {
-  const response = await api.get(`/tags/autocomplete?q=${encodeURIComponent(query)}&limit=${limit}`)
+export async function searchTags(query, limit = 10, libraryId = null) {
+  let url = `/tags/autocomplete?q=${encodeURIComponent(query)}&limit=${limit}`
+  if (libraryId) url += `&library_id=${libraryId}`
+  const response = await api.get(url)
   return response.data
 }
 
@@ -256,10 +517,29 @@ export async function getTagStats() {
   return response.data
 }
 
-// Directories API
-export async function fetchDirectories() {
-  const response = await api.get('/directories')
+// Directories API (with caching to avoid redundant calls)
+let directoriesCache = null
+let directoriesCacheTime = 0
+const DIRECTORIES_CACHE_TTL = 5000 // 5 seconds
+
+export async function fetchDirectories(forceRefresh = false, libraryId = null) {
+  const now = Date.now()
+  if (!forceRefresh && !libraryId && directoriesCache && (now - directoriesCacheTime) < DIRECTORIES_CACHE_TTL) {
+    return directoriesCache
+  }
+  let url = '/directories'
+  if (libraryId) url += `?library_id=${libraryId}`
+  const response = await api.get(url)
+  if (!libraryId) {
+    directoriesCache = response.data
+    directoriesCacheTime = now
+  }
   return response.data
+}
+
+export function invalidateDirectoriesCache() {
+  directoriesCache = null
+  directoriesCacheTime = 0
 }
 
 export async function addDirectory(path, options = {}) {
@@ -267,8 +547,10 @@ export async function addDirectory(path, options = {}) {
     path,
     name: options.name,
     recursive: options.recursive ?? true,
-    auto_tag: options.auto_tag ?? true
+    auto_tag: options.auto_tag ?? true,
+    library_id: options.library_id
   })
+  invalidateDirectoriesCache()
   return response.data
 }
 
@@ -276,30 +558,72 @@ export async function addParentDirectory(path, options = {}) {
   const response = await api.post('/directories/add-parent', {
     path,
     recursive: options.recursive ?? true,
-    auto_tag: options.auto_tag ?? true
+    auto_tag: options.auto_tag ?? true,
+    library_id: options.library_id
   })
+  invalidateDirectoriesCache()
   return response.data
 }
 
-export async function updateDirectory(id, updates) {
-  const response = await api.patch(`/directories/${id}`, updates)
+export async function listParentDirectories(libraryId) {
+  const params = libraryId ? { library_id: libraryId } : {}
+  const response = await api.get('/directories/parents', { params })
   return response.data
 }
 
-export async function removeDirectory(id, keepImages = false) {
-  const response = await api.delete(`/directories/${id}?keep_images=${keepImages}`)
+export async function removeParentDirectory(path, { removeChildren = false, libraryId } = {}) {
+  const response = await api.delete('/directories/parents', {
+    data: { path, remove_children: removeChildren, library_id: libraryId }
+  })
+  invalidateDirectoriesCache()
   return response.data
 }
 
-export async function scanDirectory(id) {
-  const response = await api.post(`/directories/${id}/scan`)
+export async function updateDirectory(id, updates, libraryId) {
+  const params = libraryId ? { library_id: libraryId } : {}
+  const response = await api.patch(`/directories/${id}`, updates, { params })
+  invalidateDirectoriesCache()
   return response.data
 }
 
-export async function pruneDirectory(id, dumpsterPath = null) {
+export async function updateDirectoryPath(id, newPath, libraryId) {
+  const params = libraryId ? { library_id: libraryId } : {}
+  const response = await api.patch(`/directories/${id}/path`, { new_path: newPath }, { params })
+  invalidateDirectoriesCache()
+  return response.data
+}
+
+export async function removeDirectory(id, keepImages = false, libraryId) {
+  const params = { keep_images: keepImages }
+  if (libraryId) params.library_id = libraryId
+  const response = await api.delete(`/directories/${id}`, { params })
+  invalidateDirectoriesCache()
+  return response.data
+}
+
+export async function bulkDeleteDirectories(directoryIds, keepImages = false, libraryId) {
+  // Long timeout for bulk operations with many images
+  const body = { directory_ids: directoryIds, keep_images: keepImages }
+  if (libraryId) body.library_id = libraryId
+  const response = await api.post('/directories/bulk-delete',
+    body,
+    { timeout: 600000 }  // 10 minute timeout for large deletions
+  )
+  invalidateDirectoriesCache()
+  return response.data
+}
+
+export async function scanDirectory(id, libraryId) {
+  const q = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : ''
+  const response = await api.post(`/directories/${id}/scan${q}`)
+  return response.data
+}
+
+export async function pruneDirectory(id, dumpsterPath = null, libraryId) {
+  const params = libraryId ? { library_id: libraryId } : {}
   const response = await api.post(`/directories/${id}/prune`, {
     dumpster_path: dumpsterPath
-  })
+  }, { params })
   return response.data
 }
 
@@ -324,8 +648,14 @@ export async function verifyFiles() {
   return response.data
 }
 
-export async function tagUntagged() {
-  const response = await api.post('/library/tag-untagged')
+export async function tagUntagged(directoryId = null) {
+  const params = directoryId ? { directory_id: directoryId } : {}
+  const response = await api.post('/library/tag-untagged', null, { params })
+  return response.data
+}
+
+export async function clearDirectoryTagQueue(directoryId) {
+  const response = await api.delete(`/library/queue/pending/directory/${directoryId}`)
   return response.data
 }
 
@@ -351,6 +681,98 @@ export async function resumeQueue() {
 
 export async function cleanMissingFiles() {
   const response = await api.post('/library/clean-missing')
+  return response.data
+}
+
+export async function getQueueTasks(status = null, taskType = null, limit = 50, offset = 0) {
+  const params = new URLSearchParams()
+  if (status) params.append('status', status)
+  if (taskType) params.append('task_type', taskType)
+  params.append('limit', limit)
+  params.append('offset', offset)
+  const response = await api.get(`/library/queue/tasks?${params}`)
+  return response.data
+}
+
+export async function cancelTask(taskId) {
+  const response = await api.post(`/library/queue/tasks/${taskId}/cancel`)
+  return response.data
+}
+
+export async function clearCompletedTasks(olderThanHours = 24) {
+  const response = await api.delete(`/library/queue/completed?older_than_hours=${olderThanHours}`)
+  return response.data
+}
+
+export async function resetQueue() {
+  const response = await api.post('/library/queue/reset')
+  return response.data
+}
+
+// Libraries API
+export async function fetchLibraries() {
+  const response = await api.get('/libraries')
+  return response.data
+}
+
+export async function addLibrary(path, name, autoMount = true, createNew = false) {
+  const response = await api.post('/libraries', {
+    path,
+    name,
+    auto_mount: autoMount,
+    create_new: createNew
+  })
+  return response.data
+}
+
+export async function getLibrary(uuid) {
+  const response = await api.get(`/libraries/${uuid}`)
+  return response.data
+}
+
+export async function mountLibrary(uuid) {
+  const response = await api.post(`/libraries/${uuid}/mount`)
+  return response.data
+}
+
+export async function unmountLibrary(uuid) {
+  const response = await api.post(`/libraries/${uuid}/unmount`)
+  return response.data
+}
+
+export async function updateLibrary(uuid, updates) {
+  const response = await api.patch(`/libraries/${uuid}`, updates)
+  return response.data
+}
+
+export async function removeLibrary(uuid) {
+  const response = await api.delete(`/libraries/${uuid}`)
+  return response.data
+}
+
+export async function verifyDirectoryFiles(directoryId, libraryId) {
+  const q = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : ''
+  const response = await api.post(`/directories/${directoryId}/verify${q}`)
+  return response.data
+}
+
+export async function repairDirectoryPaths(directoryId, libraryId) {
+  const q = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : ''
+  const response = await api.post(`/directories/${directoryId}/repair${q}`)
+  return response.data
+}
+
+export async function bulkVerifyDirectories(directoryIds, libraryId) {
+  const body = { directory_ids: directoryIds }
+  if (libraryId) body.library_id = libraryId
+  const response = await api.post('/directories/bulk-verify', body)
+  return response.data
+}
+
+export async function bulkRepairDirectories(directoryIds, libraryId) {
+  const body = { directory_ids: directoryIds }
+  if (libraryId) body.library_id = libraryId
+  const response = await api.post('/directories/bulk-repair', body)
   return response.data
 }
 
@@ -380,6 +802,29 @@ export async function installAgeDetection() {
   return response.data
 }
 
+// Family Mode API
+export async function getFamilyModeStatus() {
+  const response = await api.get('/settings/family-mode')
+  return response.data
+}
+
+export async function configureFamilyMode(config) {
+  const response = await api.post('/settings/family-mode', config)
+  return response.data
+}
+
+export async function unlockFamilyMode(pin) {
+  const response = await api.post('/settings/family-mode/unlock', { pin })
+  invalidateDirectoriesCache()
+  return response.data
+}
+
+export async function lockFamilyMode() {
+  const response = await api.post('/settings/family-mode/lock')
+  invalidateDirectoriesCache()
+  return response.data
+}
+
 // Network API
 export async function getNetworkConfig() {
   const response = await api.get('/network')
@@ -388,6 +833,11 @@ export async function getNetworkConfig() {
 
 export async function getQRData() {
   const response = await api.get('/network/qr-data')
+  return response.data
+}
+
+export async function verifyHandshake(serverUrl, nonce) {
+  const response = await axios.post(`${serverUrl}/api/network/verify-handshake`, { nonce })
   return response.data
 }
 
@@ -446,26 +896,89 @@ export async function deleteUser(id) {
   return response.data
 }
 
+// Check if using the local embedded server (not a remote server)
+export function isUsingLocalServer() {
+  return !currentServerUrl
+}
+
+// Get an asset protocol URL for a local file (Tauri mobile only).
+// Bypasses WRY's HTTP request interception which buffers large responses,
+// serving the file directly from disk through Tauri's asset protocol.
+export function getAssetUrl(filePath) {
+  if (!filePath) return null
+  if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__?.convertFileSrc) {
+    return window.__TAURI_INTERNALS__.convertFileSrc(filePath, 'asset')
+  }
+  return null
+}
+
+// Mint/refresh a short-lived, read-only media token from the remote server. Used
+// only on the non-Tauri mobile (browser) path, where media src URLs must carry a
+// token in the query string — we put this restricted token there instead of the
+// 30-day session JWT. Fire-and-forget; on failure we keep the previous value and
+// getMediaUrl falls back to the session token transiently.
+async function fetchMediaToken() {
+  if (!currentServerUrl || !currentServerToken) return
+  try {
+    const res = await fetch(`${currentServerUrl}/api/users/media-token`, {
+      headers: { Authorization: `Bearer ${currentServerToken}` },
+    })
+    if (!res.ok) return
+    const data = await res.json()
+    if (data && data.token) {
+      currentMediaToken = data.token
+      mediaTokenExpiry = Date.now() + ((data.expires_in || 86400) * 1000)
+    }
+  } catch (e) {
+    /* keep existing token; getMediaUrl handles the fallback */
+  }
+}
+
 // Utility functions
 export function getMediaUrl(path) {
   if (!path) return ''
   if (path.startsWith('http')) return path
 
-  // On mobile, prepend server URL for relative paths
+  // On mobile with remote server — route through local proxy (auth handled by proxy)
   if (isMobileApp() && currentServerUrl) {
-    // Remove leading slash if present to avoid double slashes
     const cleanPath = path.startsWith('/') ? path : `/${path}`
-    return `${currentServerUrl}${cleanPath}`
+    if (isTauriApp()) {
+      // Proxy handles auth via set_remote_proxy token
+      return `${getLocalServerBase()}/remote${cleanPath}`
+    }
+    // Non-Tauri mobile (browser) — direct URL with token. Prefer the short-lived,
+    // read-only media token over the 30-day session JWT (H1); refresh it in the
+    // background as it nears expiry. Fall back to the session token only in the
+    // brief window before the first media token has been minted.
+    const url = `${currentServerUrl}${cleanPath}`
+    if (currentServerToken && (!currentMediaToken || Date.now() > mediaTokenExpiry - 60000)) {
+      void fetchMediaToken()
+    }
+    const tok = currentMediaToken || currentServerToken
+    if (tok) {
+      const sep = url.includes('?') ? '&' : '?'
+      return `${url}${sep}token=${tok}`
+    }
+    return url
   }
 
-  // On web, relative URLs work fine
+  // Dev mode and packaged Tauri apps serve media from the embedded backend.
+  // Their frontend origin is Vite or the Tauri asset protocol, so relative media
+  // paths do not reach the HTTP server.
+  const isDevServer = ['5173', '5174', '5175', '5210'].includes(window.location.port)
+  if (isDevServer || isTauriApp()) {
+    const cleanPath = path.startsWith('/') ? path : `/${path}`
+    return `http://127.0.0.1:8790${cleanPath}`
+  }
+
+  // The browser frontend is served by the backend, so same-origin paths work.
   return path
 }
 
 export function isVideo(filename) {
   if (!filename) return false
   const ext = filename.split('.').pop()?.toLowerCase()
-  return ['mp4', 'webm', 'mov', 'avi'].includes(ext)
+  return ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)
 }
 
 export function isAnimated(filename) {
@@ -475,7 +988,7 @@ export function isAnimated(filename) {
 }
 
 // Subscribe to library events via Server-Sent Events
-export function subscribeToLibraryEvents(onEvent) {
+export function subscribeToLibraryEvents(onEvent, onError) {
   const apiUrl = getApiUrl()
   // apiUrl already includes /api, so just append the path
   const eventSource = new EventSource(`${apiUrl}/library/events`)
@@ -491,6 +1004,7 @@ export function subscribeToLibraryEvents(onEvent) {
 
   eventSource.onerror = (error) => {
     console.error('[SSE] Connection error:', error)
+    if (onError) onError(error)
   }
 
   // Return cleanup function
@@ -505,13 +1019,26 @@ export async function getMigrationInfo() {
   return response.data
 }
 
-export async function validateMigration(mode) {
-  const response = await api.post('/settings/migration/validate', { mode })
+export async function getMigrationDirectories(mode) {
+  const response = await api.get('/settings/migration/directories', { params: { mode } })
   return response.data
 }
 
-export async function startMigration(mode) {
-  const response = await api.post('/settings/migration/start', { mode })
+export async function validateMigration(mode, directoryIds = null) {
+  const payload = { mode }
+  if (directoryIds && directoryIds.length > 0) {
+    payload.directory_ids = directoryIds
+  }
+  const response = await api.post('/settings/migration/validate', payload)
+  return response.data
+}
+
+export async function startMigration(mode, directoryIds = null) {
+  const payload = { mode }
+  if (directoryIds && directoryIds.length > 0) {
+    payload.directory_ids = directoryIds
+  }
+  const response = await api.post('/settings/migration/start', payload)
   return response.data
 }
 
@@ -532,6 +1059,23 @@ export async function deleteSourceData(mode) {
 
 export async function verifyMigration(mode) {
   const response = await api.post('/settings/migration/verify', { mode })
+  return response.data
+}
+
+// Import API (add directories to existing database)
+export async function validateImport(mode, directoryIds) {
+  const response = await api.post('/settings/migration/import/validate', {
+    mode,
+    directory_ids: directoryIds
+  })
+  return response.data
+}
+
+export async function startImport(mode, directoryIds) {
+  const response = await api.post('/settings/migration/import/start', {
+    mode,
+    directory_ids: directoryIds
+  })
   return response.data
 }
 
@@ -556,4 +1100,548 @@ export function subscribeToMigrationEvents(onEvent) {
   return () => {
     eventSource.close()
   }
+}
+
+// Collections API
+export async function fetchCollections() {
+  const response = await api.get('/collections')
+  return response.data
+}
+
+export async function createCollection(name, description = null) {
+  const response = await api.post('/collections', { name, description })
+  return response.data
+}
+
+export async function fetchCollection(id, page = 1, perPage = 50) {
+  const response = await api.get(`/collections/${id}?page=${page}&per_page=${perPage}`)
+  return response.data
+}
+
+export async function updateCollection(id, updates) {
+  const response = await api.patch(`/collections/${id}`, updates)
+  return response.data
+}
+
+export async function deleteCollection(id) {
+  const response = await api.delete(`/collections/${id}`)
+  return response.data
+}
+
+export async function addToCollection(collectionId, imageIds) {
+  const response = await api.post(`/collections/${collectionId}/items`, { image_ids: imageIds })
+  return response.data
+}
+
+export async function removeFromCollection(collectionId, imageIds) {
+  const response = await api.delete(`/collections/${collectionId}/items`, { data: { image_ids: imageIds } })
+  return response.data
+}
+
+export async function reorderCollection(collectionId, imageIds) {
+  const response = await api.patch(`/collections/${collectionId}/items/reorder`, { image_ids: imageIds })
+  return response.data
+}
+
+// Saved Searches API
+export async function getSavedSearches() {
+  const response = await api.get('/settings/saved-searches')
+  return response.data
+}
+
+export async function createSavedSearch(name, filters) {
+  const response = await api.post('/settings/saved-searches', { name, filters })
+  return response.data
+}
+
+export async function deleteSavedSearch(searchId) {
+  const response = await api.delete(`/settings/saved-searches/${searchId}`)
+  return response.data
+}
+
+// Watch History API
+export async function savePlaybackPosition(imageId, position, duration, directoryId = null) {
+  const body = { position, duration }
+  if (directoryId) body.directory_id = directoryId
+  const response = await api.post(`/watch-history/${imageId}`, body)
+  return response.data
+}
+
+export async function getContinueWatching() {
+  const response = await api.get('/watch-history/continue-watching')
+  return response.data
+}
+
+export async function getPlaybackPosition(imageId) {
+  const response = await api.get(`/watch-history/${imageId}`)
+  return response.data
+}
+
+export async function clearWatchHistory(imageId = null) {
+  if (imageId) {
+    const response = await api.delete(`/watch-history/${imageId}`)
+    return response.data
+  }
+  const response = await api.delete('/watch-history')
+  return response.data
+}
+
+// Video Playback Config API (auto-advance, etc.)
+export async function getVideoPlaybackConfig() {
+  const response = await api.get('/settings/video-playback')
+  return response.data
+}
+
+export async function updateVideoPlaybackConfig(config) {
+  const response = await api.post('/settings/video-playback', config)
+  return response.data
+}
+
+// Optical Flow Interpolation API
+export async function getOpticalFlowConfig() {
+  const response = await api.get('/settings/optical-flow')
+  return response.data
+}
+
+export async function updateOpticalFlowConfig(config) {
+  const response = await api.post('/settings/optical-flow', config)
+  return response.data
+}
+
+export async function playVideoInterpolated(filePath, startPosition = 0, qualityPreset = null) {
+  // Longer timeout since buffering can take time
+  const response = await api.post('/settings/optical-flow/play', {
+    file_path: filePath,
+    start_position: startPosition,
+    quality_preset: qualityPreset
+  }, {
+    timeout: 60000  // 60 second timeout for initial buffering
+  })
+  return response.data
+}
+
+export async function stopInterpolatedStream() {
+  // FFmpeg interpolation is retired. Keep the cleanup call harmless while older
+  // Lightbox stream-state paths are retained for compatibility.
+  return { success: true }
+}
+
+// SVP (SmoothVideo Project) Interpolation API
+export async function getSVPConfig() {
+  const response = await api.get('/settings/svp')
+  return response.data
+}
+
+export async function updateSVPConfig(config) {
+  const response = await api.post('/settings/svp', config)
+  return response.data
+}
+
+export async function playVideoSVP(filePath, startPosition = 0, qualityPreset = null, signal = undefined, transitionId = undefined) {
+  // Longer timeout since SVP processing can take time
+  const response = await api.post('/settings/svp/play', {
+    file_path: filePath,
+    start_position: startPosition,
+    target_resolution: qualityPreset && qualityPreset !== 'original' ? qualityPreset : null,
+    client_transition_id: transitionId
+  }, {
+    timeout: 60000,  // 60 second timeout for initial buffering
+    signal
+  })
+  return response.data
+}
+
+export async function stopSVPStream(transitionId = undefined) {
+  const response = await api.post('/settings/svp/stop', {
+    client_transition_id: transitionId
+  })
+  return response.data
+}
+
+export async function openSVPProcessingSession(filePath, startPosition, generation, limits = {}) {
+  const response = await api.post('/settings/svp/sessions', {
+    protocol_version: 1,
+    generation,
+    file_path: filePath,
+    start_position: startPosition,
+    max_buffer_bytes: limits.maxBytes ?? 128 * 1024 * 1024,
+    max_buffer_duration: limits.maxDuration ?? 30
+  }, { timeout: 60000 })
+  return response.data
+}
+
+export async function getSVPProcessingEvents(sessionId, after = -1, limit = 128) {
+  const response = await api.get(`/settings/svp/sessions/${sessionId}/events`, {
+    params: { after, limit }
+  })
+  return response.data
+}
+
+export async function fetchSVPProcessingSegment(sessionId, generation, filename, signal = undefined) {
+  const response = await api.get(
+    `/settings/svp/sessions/${sessionId}/segments/${generation}/${encodeURIComponent(filename)}`,
+    { responseType: 'arraybuffer', signal }
+  )
+  return response.data
+}
+
+export async function acknowledgeSVPInitSegment(sessionId, generation) {
+  const response = await api.delete(`/settings/svp/sessions/${sessionId}/segments/init`, {
+    data: { protocol_version: 1, generation }
+  })
+  return response.data
+}
+
+export async function acknowledgeSVPMediaSegment(sessionId, generation, sequence) {
+  const response = await api.delete(`/settings/svp/sessions/${sessionId}/segments`, {
+    data: { protocol_version: 1, generation, sequence }
+  })
+  return response.data
+}
+
+export async function pauseSVPProcessingSession(sessionId, generation) {
+  const response = await api.post(`/settings/svp/sessions/${sessionId}/pause`, {
+    protocol_version: 1,
+    generation
+  })
+  return response.data
+}
+
+export async function resumeSVPProcessingSession(sessionId, generation) {
+  const response = await api.post(`/settings/svp/sessions/${sessionId}/resume`, {
+    protocol_version: 1,
+    generation
+  })
+  return response.data
+}
+
+export async function seekSVPProcessingSession(sessionId, expectedGeneration, generation, position) {
+  const response = await api.post(`/settings/svp/sessions/${sessionId}/seek`, {
+    protocol_version: 1,
+    expected_generation: expectedGeneration,
+    generation,
+    position
+  })
+  return response.data
+}
+
+export async function stopSVPProcessingSession(sessionId, generation) {
+  const response = await api.delete(`/settings/svp/sessions/${sessionId}`, {
+    params: { expected_generation: generation, protocol_version: 1 }
+  })
+  return response.data
+}
+
+// Simple FFmpeg-based transcoding (fallback when SVP/OpticalFlow not available)
+export async function playVideoTranscode(filePath, startPosition = 0, qualityPreset = null, signal = undefined) {
+  const response = await api.post('/settings/transcode/play', {
+    file_path: filePath,
+    start_position: startPosition,
+    quality_preset: qualityPreset
+  }, {
+    timeout: 60000,  // 60 second timeout for buffering
+    signal
+  })
+  return response.data
+}
+
+export async function stopTranscodeStream() {
+  const response = await api.post('/settings/transcode/stop')
+  return response.data
+}
+
+// Get video info including VFR detection
+export async function getVideoInfo(filePath) {
+  const response = await api.post('/settings/video-info', {
+    file_path: filePath
+  })
+  return response.data
+}
+
+export async function getAudioGain(filePath) {
+  const response = await api.post('/settings/audio-gain', {
+    file_path: filePath
+  })
+  return response.data
+}
+
+// Whisper Subtitle API
+export async function getWhisperConfig() {
+  const response = await api.get('/settings/whisper')
+  return response.data
+}
+
+export async function updateWhisperConfig(config) {
+  const response = await api.post('/settings/whisper', config)
+  return response.data
+}
+
+export async function installWhisper() {
+  const response = await api.post('/settings/whisper/install')
+  return response.data
+}
+
+export async function generateSubtitles(filePath, language = null, task = null, startPosition = 0) {
+  const response = await api.post('/settings/whisper/generate', {
+    file_path: filePath,
+    language,
+    task,
+    start_position: startPosition
+  })
+  return response.data
+}
+
+export async function stopSubtitles() {
+  const response = await api.post('/settings/whisper/stop')
+  return response.data
+}
+
+export function subscribeToSubtitleEvents(streamId, onEvent) {
+  const apiUrl = getApiUrl()
+  const eventSource = new EventSource(`${apiUrl}/settings/whisper/events/${streamId}`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      onEvent(data)
+    } catch (e) {
+      console.error('[Subtitle SSE] Failed to parse event:', e)
+    }
+  }
+
+  eventSource.onerror = (error) => {
+    console.error('[Subtitle SSE] Connection error:', error)
+  }
+
+  return () => {
+    eventSource.close()
+  }
+}
+
+// Share Stream API
+export async function createShareSession(imageId, directoryId = null) {
+  const response = await api.post('/share/create', { image_id: imageId, directory_id: directoryId })
+  return response.data
+}
+
+export async function stopShareSession(token) {
+  const response = await api.delete(`/share/${token}`)
+  return response.data
+}
+
+export async function syncShareState(token, state) {
+  const response = await api.post(`/share/${token}/sync`, state)
+  return response.data
+}
+
+export async function getShareInfo(token) {
+  const response = await api.get(`/share/${token}/info`)
+  return response.data
+}
+
+export async function getShareNetworkInfo() {
+  const response = await api.get('/share/network-info')
+  return response.data
+}
+
+export function subscribeToShareEvents(token, onEvent) {
+  // Use page origin for absolute URL (viewer may be on different machine)
+  const eventSource = new EventSource(`${window.location.origin}/api/share/${token}/events`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      onEvent(data)
+    } catch (e) {
+      console.error('[Share SSE] Failed to parse event:', e)
+    }
+  }
+
+  eventSource.onerror = (error) => {
+    console.error('[Share SSE] Connection error:', error)
+  }
+
+  return () => {
+    eventSource.close()
+  }
+}
+
+export function getShareHlsUrl(token) {
+  // Use page origin for absolute URL (viewer may be on different machine)
+  return `${window.location.origin}/api/share/${token}/hls/playlist.m3u8`
+}
+
+// Cast API (Chromecast & DLNA)
+export async function getCastConfig() {
+  const response = await api.get('/settings/cast')
+  return response.data
+}
+
+export async function updateCastConfig(config) {
+  const response = await api.post('/settings/cast', config)
+  return response.data
+}
+
+export async function installCastDeps() {
+  const response = await api.post('/settings/cast/install')
+  return response.data
+}
+
+export async function getCastDevices() {
+  const response = await api.get('/cast/devices')
+  return response.data
+}
+
+export async function refreshCastDevices() {
+  const response = await api.post('/cast/devices/refresh')
+  return response.data
+}
+
+export async function castPlay(deviceId, filePath, imageId = null, directoryId = null) {
+  const response = await api.post('/cast/play', {
+    device_id: deviceId,
+    file_path: filePath,
+    image_id: imageId,
+    directory_id: directoryId,
+  })
+  return response.data
+}
+
+export async function castControl(action, value = null) {
+  const response = await api.post('/cast/control', { action, value })
+  return response.data
+}
+
+export async function castStop() {
+  const response = await api.post('/cast/stop')
+  return response.data
+}
+
+export function subscribeToCastEvents(onEvent) {
+  const apiUrl = getApiUrl()
+  const eventSource = new EventSource(`${apiUrl}/cast/status`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      onEvent(data)
+    } catch (e) {
+      console.error('[Cast SSE] Failed to parse event:', e)
+    }
+  }
+
+  eventSource.onerror = (error) => {
+    console.error('[Cast SSE] Connection error:', error)
+  }
+
+  return () => {
+    eventSource.close()
+  }
+}
+
+// Addons API
+export async function getAddons() {
+  const response = await api.get('/addons')
+  return response.data
+}
+
+export async function getAddon(id) {
+  const response = await api.get(`/addons/${id}`)
+  return response.data
+}
+
+export async function installAddon(id) {
+  const response = await api.post(`/addons/${id}/install`)
+  return response.data
+}
+
+export async function uninstallAddon(id) {
+  const response = await api.post(`/addons/${id}/uninstall`)
+  return response.data
+}
+
+export async function startAddon(id) {
+  const response = await api.post(`/addons/${id}/start`)
+  return response.data
+}
+
+export async function stopAddon(id) {
+  const response = await api.post(`/addons/${id}/stop`)
+  return response.data
+}
+
+export async function updateAddon(id) {
+  const response = await api.post(`/addons/${id}/update`)
+  return response.data
+}
+
+export async function probeAddon(id) {
+  const response = await api.post(`/addons/${id}/probe`, undefined, { timeout: 135000 })
+  return response.data
+}
+
+export async function getAddonHealth(id) {
+  const response = await api.get(`/addons/${id}/api/health`)
+  return response.data
+}
+
+export async function getAutoTaggerConfig() {
+  const response = await api.get('/settings/auto-tagger')
+  return response.data
+}
+
+export async function updateAutoTaggerConfig(config) {
+  const response = await api.post('/settings/auto-tagger', config)
+  return response.data
+}
+
+export async function getModels() {
+  const response = await api.get('/settings/models')
+  return response.data
+}
+
+export async function downloadModel(modelName) {
+  const response = await api.post('/settings/models/download', { model_name: modelName })
+  return response.data
+}
+
+// Health check (used for Tauri startup readiness polling)
+export async function healthCheck() {
+  // Remote server — use /api/directories (requires auth) to validate JWT is still valid.
+  // /health and /api are exempt from auth so they can't detect expired tokens.
+  // Timeout is generous enough for the proxy's primary→fallback retry to complete
+  // (1.5s connect timeout per attempt, plus request overhead).
+  if (isMobileApp() && currentServerUrl && isTauriApp()) {
+    const response = await api.get(`${getLocalServerBase()}/remote/api/directories`, { baseURL: '', timeout: 20000 })
+    return response.data
+  }
+  if (isMobileApp() && currentServerUrl) {
+    const response = await api.get(`${currentServerUrl}/api/directories`, { baseURL: '', timeout: 20000 })
+    return response.data
+  }
+  // Local Tauri server — use IPC (most reliable, no network dependency)
+  if (isTauriApp()) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const healthy = await invoke('backend_health_check')
+    if (!healthy) throw new Error('Backend not ready')
+    return { status: 'healthy' }
+  }
+  // Non-Tauri (browser dev mode)
+  const response = await api.get('/health', { baseURL: '', timeout: 2000 })
+  return response.data
+}
+
+// Utility endpoints
+export async function getFileDimensions(filePath) {
+  const response = await api.get('/settings/util/dimensions', {
+    params: { file_path: filePath }
+  })
+  return response.data
+}
+
+export async function getFileInfo(filePath) {
+  const response = await api.get('/images/media/file-info', {
+    params: { path: filePath }
+  })
+  return response.data
 }

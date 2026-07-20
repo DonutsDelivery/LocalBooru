@@ -1,0 +1,36 @@
+{
+  "name": "LocalBooru",
+  "subtitle": "Local image library with automatic tagging",
+  "description": "Official AltStore source for LocalBooru — a local image library manager with optional AI-powered tagging.",
+  "iconURL": "https://raw.githubusercontent.com/DonutsDelivery/LocalBooru/v2/assets/icon.png",
+  "website": "https://github.com/DonutsDelivery/LocalBooru",
+  "apps": [
+    {
+      "name": "LocalBooru",
+      "bundleIdentifier": "com.localbooru.app",
+      "developerName": "DonutsDelivery",
+      "subtitle": "Local image library with automatic tagging",
+      "localizedDescription": "LocalBooru is a local image library manager. Browse, search, and organize your image collection with tag-based filtering. Connect to a desktop server for full library access, or use standalone on your device.\n\nFeatures:\n- Tag-based search and filtering\n- QR code pairing with desktop server\n- Collection management\n- Watch history tracking\n- Favorites and ratings",
+      "iconURL": "https://raw.githubusercontent.com/DonutsDelivery/LocalBooru/v2/assets/icon.png",
+      "category": "photo-video",
+      "versions": [
+        {
+          "version": "2.0.0",
+          "buildVersion": "2.0.0",
+          "date": "2026-02-28T00:00:00-00:00",
+          "localizedDescription": "Initial v2 release with Rust backend.",
+          "downloadURL": "https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru.ipa",
+          "size": 0,
+          "minOSVersion": "16.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSCameraUsageDescription": "Scan QR codes for server pairing",
+          "NSLocalNetworkUsageDescription": "Connect to servers on your local network"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# Rust Workspace for LocalBooru
+# This workspace contains the Tauri application and future Rust modules
+
+[workspace]
+members = ["src-tauri"]
+resolver = "2"
+
+[workspace.package]
+version = "2.0.3"
+authors = ["DonutsDelivery <donutsdelivery@users.noreply.github.com>"]
+license = "MIT"
+repository = "https://github.com/DonutsDelivery/LocalBooru"
+edition = "2021"
+
+[patch.crates-io]
+# Released 0.31.10 source with upstream's dependency-only fixes for
+# RUSTSEC-2026-0194 and RUSTSEC-2026-0195.
+wayland-scanner = { path = "vendor/wayland-scanner" }
+
+[profile.release]
+# Optimize for size while maintaining good performance
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

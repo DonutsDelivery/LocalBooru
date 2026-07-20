@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APPDIR="${APPDIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+RUNTIME="$APPDIR/usr/lib/localbooru/native-svp"
+
+prepend_path() {
+  local name="$1" value="$2" current="${!1:-}"
+  if [[ -n "$current" ]]; then
+    export "$name=$value:$current"
+  else
+    export "$name=$value"
+  fi
+}
+
+prepend_path LD_LIBRARY_PATH "$RUNTIME/lib"
+prepend_path LD_LIBRARY_PATH "$RUNTIME/python-home/lib"
+prepend_path PYTHONPATH "$RUNTIME/python-home/lib/python3.12/site-packages"
+prepend_path GST_PLUGIN_PATH "$RUNTIME/gstreamer"
+export PYTHONHOME="$RUNTIME/python-home"
+export LOCALBOORU_GSTREAMER_SVP_DIR="$RUNTIME/gstreamer"
+export LOCALBOORU_WEB_PROCESS_PATH="$RUNTIME/bin/mpv"
+export LOCALBOORU_ENABLE_NATIVE_SVP="${LOCALBOORU_ENABLE_NATIVE_SVP:-1}"
+
+exec "$APPDIR/AppRun.tauri" "$@"

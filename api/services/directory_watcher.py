@@ -7,18 +7,43 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Set
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
+from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent, FileDeletedEvent
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import WatchDirectory
-from ..database import AsyncSessionLocal
+from ..models import WatchDirectory, TaskType
+from ..database import AsyncSessionLocal, directory_db_manager
 
 
 # Supported image extensions
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif'}
-VIDEO_EXTENSIONS = {'.mp4', '.webm', '.mov'}
+VIDEO_EXTENSIONS = {'.mp4', '.webm', '.mov', '.avi', '.mkv'}
 SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+
+
+def is_video_thumbnail(name: str) -> bool:
+    """Check if file is a video thumbnail (e.g., video.mp4.png, clip.webm.jpg).
+
+    These are auto-generated thumbnail files that shouldn't be imported.
+    Detects files with 2+ dots that end with an image extension.
+    """
+    name = name.lower()
+
+    # Get the extension
+    if '.' not in name:
+        return False
+
+    ext = '.' + name.rsplit('.', 1)[-1]
+
+    # Must end with an image extension
+    if ext not in IMAGE_EXTENSIONS:
+        return False
+
+    # Check if filename has 2+ dots (e.g., "video.mp4.png", "file.something.jpg")
+    if name.count('.') >= 2:
+        return True
+
+    return False
 
 
 class DirectoryEventHandler(FileSystemEventHandler):
@@ -33,9 +58,15 @@ class DirectoryEventHandler(FileSystemEventHandler):
         self._debounce_delay = 1.0  # Wait 1 second for file to finish writing
 
     def _is_supported_file(self, path: str) -> bool:
-        """Check if file has a supported extension"""
-        ext = Path(path).suffix.lower()
-        return ext in SUPPORTED_EXTENSIONS
+        """Check if file has a supported extension and is not a video thumbnail"""
+        p = Path(path)
+        ext = p.suffix.lower()
+        if ext not in SUPPORTED_EXTENSIONS:
+            return False
+        # Filter out video thumbnails (e.g., video.mp4.png)
+        if is_video_thumbnail(p.name):
+            return False
+        return True
 
     def _schedule_import(self, file_path: str):
         """Schedule file import with debouncing"""
@@ -78,23 +109,33 @@ class DirectoryEventHandler(FileSystemEventHandler):
             self._pending_files.discard(file_path)
 
     async def _import_file(self, file_path: str):
-        """Import a file into the library"""
+        """Import a file into the library with retry for database locks"""
         from .importer import import_image
 
-        async with AsyncSessionLocal() as db:
-            try:
-                result = await import_image(
-                    file_path,
-                    db,
-                    watch_directory_id=self.directory_id,
-                    auto_tag=self.auto_tag
-                )
-                if result['status'] == 'imported':
-                    print(f"[Watcher] Imported: {Path(file_path).name}")
-                elif result['status'] == 'duplicate':
-                    print(f"[Watcher] Duplicate: {Path(file_path).name}")
-            except Exception as e:
-                print(f"[Watcher] Failed to import {file_path}: {e}")
+        for attempt in range(3):
+            async with AsyncSessionLocal() as db:
+                try:
+                    result = await import_image(
+                        file_path,
+                        db,
+                        watch_directory_id=self.directory_id,
+                        auto_tag=self.auto_tag
+                    )
+                    if result['status'] == 'imported':
+                        print(f"[Watcher] Imported: {Path(file_path).name}")
+                    elif result['status'] == 'duplicate':
+                        pass  # Silently skip duplicates
+                    elif result['status'] == 'error' and 'busy' in result.get('message', '').lower():
+                        if attempt < 2:
+                            await asyncio.sleep(1.0 * (attempt + 1))
+                            continue
+                    return
+                except Exception as e:
+                    if "database is locked" in str(e) and attempt < 2:
+                        await asyncio.sleep(1.0 * (attempt + 1))
+                        continue
+                    print(f"[Watcher] Failed to import {file_path}: {e}")
+                    return
 
     def on_created(self, event):
         """Handle file creation events"""
@@ -102,6 +143,27 @@ class DirectoryEventHandler(FileSystemEventHandler):
             return
         if self._is_supported_file(event.src_path):
             self._schedule_import(event.src_path)
+
+    def on_deleted(self, event):
+        """Handle file deletion events"""
+        if event.is_directory:
+            return
+        if self._is_supported_file(event.src_path):
+            asyncio.run_coroutine_threadsafe(
+                self._handle_deletion(event.src_path),
+                self.loop
+            )
+
+    async def _handle_deletion(self, file_path: str):
+        """Remove DB records for a deleted file"""
+        from .file_tracker import mark_file_missing
+
+        try:
+            async with AsyncSessionLocal() as db:
+                await mark_file_missing(file_path, db, directory_id=self.directory_id)
+                print(f"[Watcher] Removed: {Path(file_path).name}")
+        except Exception as e:
+            print(f"[Watcher] Failed to remove {file_path}: {e}")
 
     def on_moved(self, event):
         """Handle file move/rename events (file moved INTO directory)"""
@@ -111,6 +173,107 @@ class DirectoryEventHandler(FileSystemEventHandler):
             self._schedule_import(event.dest_path)
 
 
+class ParentDirectoryEventHandler(FileSystemEventHandler):
+    """Watch a parent directory for new subdirectory creation and auto-add them"""
+
+    def __init__(self, parent_path: str, loop: asyncio.AbstractEventLoop):
+        super().__init__()
+        self.parent_path = parent_path
+        self.loop = loop
+        self._pending_dirs: Set[str] = set()
+        self._debounce_delay = 2.0  # Wait 2 seconds for directory to settle
+
+    def on_created(self, event):
+        """Handle new subdirectory creation"""
+        if not event.is_directory:
+            return
+        # Only handle immediate children of the parent
+        created_path = Path(event.src_path)
+        if str(created_path.parent) != self.parent_path:
+            return
+        self._schedule_auto_add(event.src_path)
+
+    def _schedule_auto_add(self, dir_path: str):
+        """Schedule auto-add with debouncing"""
+        if dir_path in self._pending_dirs:
+            return
+        self._pending_dirs.add(dir_path)
+        asyncio.run_coroutine_threadsafe(
+            self._debounced_auto_add(dir_path),
+            self.loop
+        )
+
+    async def _debounced_auto_add(self, dir_path: str):
+        """Wait for directory to settle, then auto-add"""
+        await asyncio.sleep(self._debounce_delay)
+        try:
+            if not os.path.isdir(dir_path):
+                return
+            await self._auto_add_directory(dir_path)
+        except Exception as e:
+            print(f"[Watcher] Error auto-adding directory {dir_path}: {e}")
+        finally:
+            self._pending_dirs.discard(dir_path)
+
+    async def _auto_add_directory(self, dir_path: str):
+        """Auto-add a new subdirectory as a WatchDirectory"""
+        from .task_queue import enqueue_task
+
+        async with AsyncSessionLocal() as db:
+            path = Path(dir_path).resolve()
+
+            # Check for duplicates
+            existing = await db.execute(
+                select(WatchDirectory).where(WatchDirectory.path == str(path))
+            )
+            if existing.scalar_one_or_none():
+                return  # Already added
+
+            # Find a sibling directory to copy settings from
+            sibling_result = await db.execute(
+                select(WatchDirectory).where(
+                    WatchDirectory.parent_path == self.parent_path,
+                    WatchDirectory.enabled == True
+                ).limit(1)
+            )
+            sibling = sibling_result.scalar_one_or_none()
+            if not sibling:
+                return  # No siblings found — parent was fully removed
+
+            # Create the new WatchDirectory with sibling's settings
+            directory = WatchDirectory(
+                path=str(path),
+                name=path.name,
+                recursive=sibling.recursive,
+                auto_tag=sibling.auto_tag,
+                auto_age_detect=sibling.auto_age_detect,
+                parent_path=self.parent_path,
+                enabled=True
+            )
+            db.add(directory)
+            await db.commit()
+            await db.refresh(directory)
+
+            # Create per-directory database
+            await directory_db_manager.create_directory_db(directory.id)
+
+            # Queue initial scan
+            await enqueue_task(
+                TaskType.scan_directory,
+                {
+                    'directory_id': directory.id,
+                    'directory_path': str(path)
+                },
+                priority=2,
+                db=db
+            )
+
+            # Start file watcher for the new directory
+            await directory_watcher.add_directory(directory)
+
+            print(f"[Watcher] Auto-added new directory: {path.name}")
+
+
 class DirectoryWatcher:
     """Manages filesystem watchers for all watch directories"""
 
@@ -118,6 +281,8 @@ class DirectoryWatcher:
         self.observer: Observer = None
         self.watches: Dict[int, object] = {}  # directory_id -> watch handle
         self.handlers: Dict[int, DirectoryEventHandler] = {}
+        self.parent_watches: Dict[str, object] = {}  # parent_path -> watch handle
+        self.parent_handlers: Dict[str, ParentDirectoryEventHandler] = {}
         self.loop: asyncio.AbstractEventLoop = None
         self._running = False
 
@@ -143,6 +308,8 @@ class DirectoryWatcher:
             self.observer.join(timeout=5)
         self.watches.clear()
         self.handlers.clear()
+        self.parent_watches.clear()
+        self.parent_handlers.clear()
         print("[Watcher] Directory watcher stopped")
 
     async def _refresh_watches(self):
@@ -165,9 +332,26 @@ class DirectoryWatcher:
                 if directory.id not in self.watches:
                     self._add_watch(directory)
 
+            # Sync parent directory watches
+            active_parents = {d.parent_path for d in directories if d.parent_path}
+            current_parents = set(self.parent_watches.keys())
+
+            # Remove stale parent watches
+            for parent_path in current_parents - active_parents:
+                self._remove_parent_watch(parent_path)
+
+            # Add new parent watches
+            for parent_path in active_parents - current_parents:
+                self._add_parent_watch(parent_path)
+
     async def _startup_scan(self):
-        """Scan watched directories for files added while app was closed"""
+        """Scan watched directories for files added while app was closed.
+
+        Skips directories that already have a scan task queued or processing
+        to avoid concurrent imports that cause SQLite lock contention.
+        """
         from .importer import import_image
+        from ..models import TaskQueue, TaskType, TaskStatus
 
         print("[Watcher] Starting startup scan for new files...")
 
@@ -178,10 +362,31 @@ class DirectoryWatcher:
                 )
                 directories = result.scalars().all()
 
+                # Check which directories already have a scan task queued/running
+                scan_tasks = await db.execute(
+                    select(TaskQueue.payload).where(
+                        TaskQueue.task_type == TaskType.scan_directory,
+                        TaskQueue.status.in_([TaskStatus.pending, TaskStatus.processing])
+                    )
+                )
+                import json as json_module
+                scanning_dir_ids = set()
+                for (payload_str,) in scan_tasks:
+                    try:
+                        payload = json_module.loads(payload_str)
+                        scanning_dir_ids.add(payload.get('directory_id'))
+                    except Exception:
+                        pass
+
                 total_imported = 0
                 total_duplicates = 0
 
                 for directory in directories:
+                    # Skip directories with a scan task already queued/running
+                    if directory.id in scanning_dir_ids:
+                        print(f"[Watcher] Skipping {directory.name or directory.path} — scan task already queued")
+                        continue
+
                     path = Path(directory.path)
                     if not path.exists():
                         print(f"[Watcher] Skipping non-existent path: {directory.path}")
@@ -218,22 +423,39 @@ class DirectoryWatcher:
                     if files_to_check:
                         print(f"[Watcher] Found {len(files_to_check)} new files in {directory.name or directory.path}")
 
-                        for file_path in files_to_check:
-                            # Use a separate session for each import to avoid cascade failures
-                            try:
-                                async with AsyncSessionLocal() as import_db:
-                                    import_result = await import_image(
-                                        str(file_path),
-                                        import_db,
-                                        watch_directory_id=directory.id,
-                                        auto_tag=directory.auto_tag
-                                    )
-                                    if import_result['status'] == 'imported':
-                                        total_imported += 1
-                                    elif import_result['status'] == 'duplicate':
-                                        total_duplicates += 1
-                            except Exception as e:
-                                print(f"[Watcher] Error importing {file_path.name}: {e}")
+                        # Process files with limited concurrency to prevent SQLite lock contention
+                        SCAN_CONCURRENCY = 2
+                        semaphore = asyncio.Semaphore(SCAN_CONCURRENCY)
+
+                        async def import_one(file_path: Path) -> str:
+                            async with semaphore:
+                                try:
+                                    async with AsyncSessionLocal() as import_db:
+                                        import_result = await import_image(
+                                            str(file_path),
+                                            import_db,
+                                            watch_directory_id=directory.id,
+                                            auto_tag=directory.auto_tag
+                                        )
+                                        return import_result['status']
+                                except Exception as e:
+                                    print(f"[Watcher] Error importing {file_path.name}: {e}")
+                                    return 'error'
+
+                        # Process in batches of 100 for progress reporting
+                        BATCH_SIZE = 100
+                        for i in range(0, len(files_to_check), BATCH_SIZE):
+                            batch = files_to_check[i:i + BATCH_SIZE]
+                            results = await asyncio.gather(*[import_one(f) for f in batch])
+
+                            for status in results:
+                                if status == 'imported':
+                                    total_imported += 1
+                                elif status == 'duplicate':
+                                    total_duplicates += 1
+
+                            if len(files_to_check) > 100:
+                                print(f"[Watcher] Progress: {min(i + BATCH_SIZE, len(files_to_check))}/{len(files_to_check)} files")
 
                     # Update last_scanned_at
                     directory.last_scanned_at = datetime.now(timezone.utc)
@@ -285,6 +507,41 @@ class DirectoryWatcher:
             del self.watches[directory_id]
             del self.handlers[directory_id]
             print(f"[Watcher] Stopped watching directory {directory_id}")
+
+    def _add_parent_watch(self, parent_path: str):
+        """Add a watch for a parent directory to detect new subdirectories"""
+        path = Path(parent_path)
+        if not path.exists():
+            print(f"[Watcher] Skipping non-existent parent path: {parent_path}")
+            return
+
+        handler = ParentDirectoryEventHandler(
+            parent_path=parent_path,
+            loop=self.loop
+        )
+
+        try:
+            watch = self.observer.schedule(
+                handler,
+                parent_path,
+                recursive=False  # Only watch immediate children
+            )
+            self.parent_watches[parent_path] = watch
+            self.parent_handlers[parent_path] = handler
+            print(f"[Watcher] Watching parent: {parent_path}")
+        except Exception as e:
+            print(f"[Watcher] Failed to watch parent {parent_path}: {e}")
+
+    def _remove_parent_watch(self, parent_path: str):
+        """Remove a parent directory watch"""
+        if parent_path in self.parent_watches:
+            try:
+                self.observer.unschedule(self.parent_watches[parent_path])
+            except Exception:
+                pass
+            del self.parent_watches[parent_path]
+            del self.parent_handlers[parent_path]
+            print(f"[Watcher] Stopped watching parent: {parent_path}")
 
     async def add_directory(self, directory: WatchDirectory):
         """Add a new directory to watch"""

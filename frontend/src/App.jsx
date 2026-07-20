@@ -2,274 +2,256 @@
  * LocalBooru - Local image library with auto-tagging
  * Simplified single-user version
  */
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { BrowserRouter, Routes, Route, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { BrowserRouter, Routes, Route, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+
+import { isMobileApp, LOCAL_SERVER } from './serverManager'
 import MasonryGrid from './components/MasonryGrid'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
 import TitleBar from './components/TitleBar'
+import { createDirectFileItem } from './directFilePlayback'
+import ToastContainer, { toast } from './components/Toast'
 import ComfyUIConfigModal from './components/ComfyUIConfigModal'
 import NetworkSettings from './components/NetworkSettings'
 import ServerSettings from './components/ServerSettings'
+import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
+
+import AddonManager from './components/AddonManager'
+import AddonSettings from './components/AddonSettings'
+import TaskManager from './components/TaskManager'
 import QRConnect from './components/QRConnect'
-import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents, updateDirectory, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from './api'
+import ContinueWatching from './components/ContinueWatching'
+import { fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, healthCheck } from './api'
+import DirectoriesPage from './pages/DirectoriesPage'
+import CollectionsPage from './pages/CollectionsPage'
+import CollectionDetailPage from './pages/CollectionDetailPage'
+import WatchPage from './pages/WatchPage'
+import { getColumnCount, tileWidths } from './utils/gridLayout'
+import { isUnexpectedEmptyPage, mergeFirstPage } from './utils/galleryState'
+import { classifySidebarSwipe } from './utils/sidebarGestures'
+import { getCurationRecoveryMode } from './utils/curationState'
+import { adjustmentLocator, imageIdentityKey, imageMatchesLocator, reorderImagesForSort, updateImagesByLocator } from './utils/imageAdjustments.js'
+import { useAllAddonStatuses } from './hooks/useAddonStatus'
+import { useCurationGame } from './hooks/useCurationGame'
+import { useMobileDrawer } from './hooks/useMobileDrawer'
 import './App.css'
 
+// Calculate how many items to load based on viewport and tile size
+function calculatePerPage(tileSize) {
+  const width = window.innerWidth
+  const height = window.innerHeight
+  const columns = getColumnCount(width, tileSize)
+  const tileWidth = tileWidths[tileSize] || 300
+  // Assume average aspect ratio of 1.33 (4:3), so tile height ≈ tileWidth * 0.75
+  // Add some for captions/padding
+  const avgTileHeight = tileWidth * 0.75 + 40
+  const rows = Math.ceil(height / avgTileHeight)
+  // Load enough for 2x viewport to ensure smooth scrolling
+  const needed = columns * rows * 2
+  // Minimum 50, maximum 400 (enough for 4K with small tiles)
+  return Math.min(400, Math.max(50, needed))
+}
 
-// Directory management page
-function DirectoriesPage() {
-  const [directories, setDirectories] = useState([])
+// Autostart toggle for Tauri desktop builds
+function AutostartToggle() {
+  const [enabled, setEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [scanning, setScanning] = useState({})
-  const [pruning, setPruning] = useState({})
-  const [comfyuiConfigDir, setComfyuiConfigDir] = useState(null)
-  const [stats, setStats] = useState(null)
-
-  const refreshDirectories = async () => {
-    const { fetchDirectories } = await import('./api')
-    const data = await fetchDirectories()
-    setDirectories(data.directories || [])
-  }
 
   useEffect(() => {
-    refreshDirectories()
-      .catch(console.error)
-      .finally(() => setLoading(false))
-    getLibraryStats().then(setStats).catch(console.error)
+    if (!window.__TAURI_INTERNALS__) return
+    import('@tauri-apps/plugin-autostart').then(({ isEnabled }) => {
+      isEnabled().then(val => { setEnabled(val); setLoading(false) })
+        .catch(() => setLoading(false))
+    })
   }, [])
 
-  const handleAddDirectory = async () => {
-    if (window.electronAPI) {
-      const path = await window.electronAPI.addDirectory()
-      if (path) {
-        const { addDirectory } = await import('./api')
-        await addDirectory(path)
-        await refreshDirectories()
-      }
+  const toggle = async () => {
+    const { enable, disable } = await import('@tauri-apps/plugin-autostart')
+    if (enabled) {
+      await disable()
+      setEnabled(false)
     } else {
-      alert('Directory picker only available in Electron app')
+      await enable()
+      setEnabled(true)
     }
   }
 
-  const handleAddParentDirectory = async () => {
-    if (window.electronAPI) {
-      const path = await window.electronAPI.addDirectory()
-      if (path) {
-        const { addParentDirectory } = await import('./api')
-        const result = await addParentDirectory(path)
-        alert(result.message)
-        await refreshDirectories()
-      }
-    } else {
-      alert('Directory picker only available in Electron app')
-    }
-  }
-
-  const handleRescan = async (dirId) => {
-    setScanning(prev => ({ ...prev, [dirId]: true }))
-    try {
-      const { scanDirectory } = await import('./api')
-      await scanDirectory(dirId)
-      await refreshDirectories()
-    } catch (error) {
-      console.error('Scan failed:', error)
-      alert('Scan failed: ' + error.message)
-    } finally {
-      setScanning(prev => ({ ...prev, [dirId]: false }))
-    }
-  }
-
-  const handleRemove = async (dirId, dirName) => {
-    if (!confirm(`Remove "${dirName}" from watch list?\n\nImages will be removed from library.\nActual files on disk will NOT be deleted.`)) {
-      return
-    }
-    try {
-      const { removeDirectory } = await import('./api')
-      await removeDirectory(dirId, false)
-      await refreshDirectories()
-    } catch (error) {
-      console.error('Remove failed:', error)
-      alert('Remove failed: ' + error.message)
-    }
-  }
-
-  const handlePrune = async (dirId, dirName, favoritedCount) => {
-    const nonFavorited = directories.find(d => d.id === dirId)?.image_count - favoritedCount
-    const savedDumpsterPath = localStorage.getItem('localbooru_dumpster_path') || null
-    const dumpsterInfo = savedDumpsterPath ? `\nDumpster: ${savedDumpsterPath}` : ''
-    if (!confirm(`Prune "${dirName}"?\n\nThis will move ${nonFavorited} non-favorited images to the dumpster folder.\nFavorited images (${favoritedCount}) will be kept.${dumpsterInfo}`)) {
-      return
-    }
-    setPruning(prev => ({ ...prev, [dirId]: true }))
-    try {
-      const { pruneDirectory } = await import('./api')
-      const result = await pruneDirectory(dirId, savedDumpsterPath)
-      alert(`Pruned ${result.pruned} images to:\n${result.dumpster_path}`)
-      await refreshDirectories()
-      getLibraryStats().then(setStats).catch(console.error)
-    } catch (error) {
-      console.error('Prune failed:', error)
-      alert('Prune failed: ' + error.message)
-    } finally {
-      setPruning(prev => ({ ...prev, [dirId]: false }))
-    }
-  }
+  if (loading) return null
 
   return (
-    <div className="app">
-      <div className="main-container">
-        <Sidebar stats={stats} />
-        <main className="content with-sidebar">
-          <div className="page directories-page">
-            <h1>Watch Directories</h1>
-            <p>Add folders to automatically import and tag images.</p>
+    <div className="toggle-setting" style={{ marginBottom: '12px' }}>
+      <label>
+        <input type="checkbox" checked={enabled} onChange={toggle} />
+        Start on system login
+      </label>
+    </div>
+  )
+}
 
-            <div className="directory-buttons">
-              <button onClick={handleAddDirectory} className="add-directory-btn">
-                + Add Directory
-              </button>
-              <button onClick={handleAddParentDirectory} className="add-directory-btn">
-                + Add Parent Directory
+// Video playback settings component (auto-advance)
+function VideoPlaybackSettings() {
+  const [config, setConfig] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    import('./api').then(({ getVideoPlaybackConfig }) => {
+      getVideoPlaybackConfig().then(setConfig).catch(console.error)
+    })
+  }, [])
+
+  const handleToggle = async (key, value) => {
+    setSaving(true)
+    try {
+      const { updateVideoPlaybackConfig } = await import('./api')
+      const updated = await updateVideoPlaybackConfig({ [key]: value })
+      setConfig(updated)
+    } catch (e) {
+      console.error('Failed to save video playback config:', e)
+    }
+    setSaving(false)
+  }
+
+  if (!config) return null
+
+  return (
+    <section className="optical-flow-settings">
+      <h2>Video Playback</h2>
+      <div className="toggle-setting">
+        <label>
+          <input
+            type="checkbox"
+            checked={config.auto_advance_enabled}
+            onChange={(e) => handleToggle('auto_advance_enabled', e.target.checked)}
+            disabled={saving}
+          />
+          Auto-advance to next video when current one ends
+        </label>
+      </div>
+      {config.auto_advance_enabled && (
+        <div className="optical-flow-field">
+          <label>
+            Countdown delay (seconds)
+            <input
+              type="number"
+              min="1"
+              max="30"
+              value={config.auto_advance_delay}
+              onChange={(e) => handleToggle('auto_advance_delay', parseInt(e.target.value) || 5)}
+              disabled={saving}
+              style={{ width: '60px', marginLeft: '8px' }}
+            />
+          </label>
+        </div>
+      )}
+    </section>
+  )
+}
+
+// Family mode settings component
+function FamilyModeSettings() {
+  const [config, setConfig] = useState(null)
+  const [pin, setPin] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    import('./api').then(({ getFamilyModeStatus }) => {
+      getFamilyModeStatus().then(setConfig).catch(console.error)
+    })
+  }, [])
+
+  const handleSave = async (updates) => {
+    setSaving(true)
+    try {
+      const { configureFamilyMode } = await import('./api')
+      const result = await configureFamilyMode(updates)
+      setConfig(result)
+    } catch (e) {
+      console.error('Failed to save family mode config:', e)
+      toast.error('Failed to save: ' + (e.response?.data?.detail || e.message))
+    }
+    setSaving(false)
+  }
+
+  if (!config) return null
+
+  return (
+    <section>
+      <h2>Family Mode</h2>
+      <p className="setting-description">
+        Hide non-family-safe directories when locked. Auto-locks on app restart.
+      </p>
+      <div className="toggle-setting">
+        <label>
+          <input
+            type="checkbox"
+            checked={config.enabled}
+            onChange={(e) => handleSave({ enabled: e.target.checked })}
+            disabled={saving}
+          />
+          Enable family mode
+        </label>
+      </div>
+      {config.enabled && (
+        <>
+          <div className="toggle-setting">
+            <label>
+              <input
+                type="checkbox"
+                checked={config.auto_lock_on_start}
+                onChange={(e) => handleSave({ auto_lock_on_start: e.target.checked })}
+                disabled={saving}
+              />
+              Auto-lock on app start
+            </label>
+          </div>
+          <div style={{ marginTop: '12px' }}>
+            <label style={{ display: 'block', marginBottom: '4px' }}>
+              {config.has_pin ? 'Change PIN' : 'Set PIN'}
+            </label>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                type="password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                placeholder={config.has_pin ? 'New PIN (min 4 chars)' : 'Set PIN (min 4 chars)'}
+                className="setting-input"
+                style={{ width: '200px' }}
+                minLength={4}
+              />
+              <button
+                onClick={() => {
+                  if (pin.length < 4) {
+                    toast.warning('PIN must be at least 4 characters')
+                    return
+                  }
+                  handleSave({ pin })
+                  setPin('')
+                }}
+                disabled={saving || pin.length < 4}
+              >
+                {config.has_pin ? 'Update' : 'Set'}
               </button>
             </div>
-
-            {loading ? (
-              <p>Loading...</p>
-            ) : directories.length === 0 ? (
-              <p className="empty-state">No directories added yet. Add a folder to get started!</p>
-            ) : (
-              <ul className="directory-list">
-                {directories.map(dir => (
-                  <li key={dir.id} className={`directory-item ${dir.enabled ? '' : 'disabled'}`}>
-                    <div className="directory-info">
-                      <strong>{dir.name}</strong>
-                      <span className="directory-path">{dir.path}</span>
-                      <span className="directory-stats">{dir.image_count} images</span>
-                      <div className="directory-diagnostics">
-                        <span className="diagnostic" title="Images with age detection">
-                          Age: {dir.age_detected_pct}%
-                        </span>
-                        <span className="diagnostic" title="Images with booru tags">
-                          Tagged: {dir.tagged_pct}%
-                        </span>
-                        <span className="diagnostic" title="Favorited images">
-                          Favorites: {dir.favorited_count}
-                        </span>
-                        <button
-                          className="diagnostic toggle-btn"
-                          onClick={() => {
-                            const newValue = !dir.auto_age_detect
-                            setDirectories(dirs => dirs.map(d =>
-                              d.id === dir.id ? {...d, auto_age_detect: newValue} : d
-                            ))
-                            updateDirectory(dir.id, { auto_age_detect: newValue })
-                              .catch(err => {
-                                console.error('Failed to update:', err)
-                                refreshDirectories()
-                              })
-                          }}
-                        >
-                          {dir.auto_age_detect ? '☑' : '☐'} Age Detect
-                        </button>
-                        <button
-                          className="diagnostic toggle-btn public-toggle"
-                          onClick={() => {
-                            const newValue = !dir.public_access
-                            setDirectories(dirs => dirs.map(d =>
-                              d.id === dir.id ? {...d, public_access: newValue} : d
-                            ))
-                            updateDirectory(dir.id, { public_access: newValue })
-                              .catch(err => {
-                                console.error('Failed to update:', err)
-                                refreshDirectories()
-                              })
-                          }}
-                          title="Allow public network access to this directory"
-                        >
-                          {dir.public_access ? '☑' : '☐'} Public
-                        </button>
-                      </div>
-                    </div>
-                    <div className="directory-actions">
-                      <button
-                        className="rescan-btn"
-                        onClick={() => handleRescan(dir.id)}
-                        disabled={scanning[dir.id]}
-                      >
-                        {scanning[dir.id] ? 'Scanning...' : 'Rescan'}
-                      </button>
-                      <button
-                        className="prune-btn"
-                        onClick={() => handlePrune(dir.id, dir.name || dir.path, dir.favorited_count)}
-                        disabled={pruning[dir.id] || dir.image_count === 0}
-                        title="Move non-favorited images to dumpster"
-                      >
-                        {pruning[dir.id] ? 'Pruning...' : 'Prune'}
-                      </button>
-                      <button
-                        className="comfyui-btn"
-                        onClick={() => setComfyuiConfigDir(dir)}
-                        title="Configure ComfyUI metadata extraction"
-                      >
-                        ComfyUI
-                      </button>
-                      <button
-                        className="remove-btn"
-                        onClick={() => handleRemove(dir.id, dir.name || dir.path)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <div className="directory-status">
-                      {!dir.path_exists && <span className="warning">Path not found</span>}
-                      {dir.enabled ? '✓ Active' : 'Disabled'}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
-        </main>
-      </div>
-
-      {/* ComfyUI Configuration Modal */}
-      {comfyuiConfigDir && (
-        <ComfyUIConfigModal
-          directoryId={comfyuiConfigDir.id}
-          directoryName={comfyuiConfigDir.name || comfyuiConfigDir.path}
-          onClose={() => setComfyuiConfigDir(null)}
-          onSave={refreshDirectories}
-        />
+        </>
       )}
-    </div>
+    </section>
   )
 }
 
 // Settings page with tabs
 function SettingsPage() {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('general')
+  const [showContinueWatching, setShowContinueWatching] = useState(() => {
+    return localStorage.getItem('localbooru_continueWatching') !== 'false'
+  })
   const [queueStatus, setQueueStatus] = useState(null)
   const [queuePaused, setQueuePaused] = useState(false)
   const [stats, setStats] = useState(null)
   const [dumpsterPath, setDumpsterPath] = useState('')
-  const [ageDetection, setAgeDetection] = useState({
-    enabled: false,
-    installed: false,
-    installing: false,
-    progress: '',
-    dependencies: {}
-  })
-
-  const refreshAgeDetectionStatus = async () => {
-    try {
-      const { getAgeDetectionStatus } = await import('./api')
-      const status = await getAgeDetectionStatus()
-      setAgeDetection(status)
-    } catch (e) {
-      console.error('Failed to get age detection status:', e)
-    }
-  }
 
   useEffect(() => {
     import('./api').then(({ getQueueStatus, getQueuePaused }) => {
@@ -277,7 +259,6 @@ function SettingsPage() {
       getQueuePaused().then(data => setQueuePaused(data.paused)).catch(console.error)
     })
     getLibraryStats().then(setStats).catch(console.error)
-    refreshAgeDetectionStatus()
     // Load saved dumpster path
     const saved = localStorage.getItem('localbooru_dumpster_path')
     if (saved) setDumpsterPath(saved)
@@ -297,13 +278,6 @@ function SettingsPage() {
     }
   }, [queueStatus?.by_status?.pending, queueStatus?.by_status?.processing])
 
-  // Poll for installation progress
-  useEffect(() => {
-    if (ageDetection.installing) {
-      const interval = setInterval(refreshAgeDetectionStatus, 2000)
-      return () => clearInterval(interval)
-    }
-  }, [ageDetection.installing])
 
   const handleDumpsterPathChange = (e) => {
     const path = e.target.value
@@ -315,157 +289,98 @@ function SettingsPage() {
     }
   }
 
+  const settingsDrawer = useMobileDrawer()
+
   return (
     <div className="app">
       <div className="main-container">
-        <Sidebar stats={stats} />
+        {settingsDrawer.isOpen && (
+          <div
+            className="sidebar-backdrop"
+            onClick={settingsDrawer.close}
+          />
+        )}
+        <Sidebar
+          stats={stats}
+          settingsTab={activeTab}
+          onSettingsTabChange={setActiveTab}
+          mobileOpen={settingsDrawer.isOpen}
+          onClose={settingsDrawer.close}
+        />
+        {!settingsDrawer.isOpen && <div className="swipe-hint" onClick={settingsDrawer.open} />}
         <main className="content with-sidebar">
           <div className="page settings-page">
-            <h1>Settings</h1>
-
-            {/* Settings Tabs */}
-            <div className="settings-tabs">
-              <button
-                className={`settings-tab ${activeTab === 'general' ? 'active' : ''}`}
-                onClick={() => setActiveTab('general')}
-              >
-                General
+            <div className="page-header">
+              <button className="back-btn mobile-only" onClick={() => navigate('/')} aria-label="Back to gallery">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
               </button>
-              <button
-                className={`settings-tab ${activeTab === 'network' ? 'active' : ''}`}
-                onClick={() => setActiveTab('network')}
-              >
-                Network
+              <button className="menu-btn mobile-only" onClick={settingsDrawer.open} aria-label="Open menu">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
               </button>
-              <button
-                className={`settings-tab ${activeTab === 'servers' ? 'active' : ''}`}
-                onClick={() => setActiveTab('servers')}
-              >
-                Servers
-              </button>
-              <button
-                className={`settings-tab ${activeTab === 'mobile' ? 'active' : ''}`}
-                onClick={() => setActiveTab('mobile')}
-              >
-                Mobile
-              </button>
-              <button
-                className={`settings-tab ${activeTab === 'data' ? 'active' : ''}`}
-                onClick={() => setActiveTab('data')}
-              >
-                Data
-              </button>
+              <h1>Settings</h1>
             </div>
 
-            {/* Network Tab Content */}
-            {activeTab === 'network' && <NetworkSettings />}
+            {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
+            <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
+              <VideoPlaybackSettings />
 
-            {/* Data/Migration Tab Content */}
-            {activeTab === 'data' && <MigrationSettings />}
+            </div>
 
-            {/* Servers Tab Content (for mobile app) */}
-            {activeTab === 'servers' && <ServerSettings />}
+            <div className={`settings-tab-content ${activeTab === 'network' ? 'active' : ''}`}>
+              <NetworkSettings />
+            </div>
 
-            {/* Mobile App QR Code */}
-            {activeTab === 'mobile' && <QRConnect />}
+            <div className={`settings-tab-content ${activeTab === 'data' ? 'active' : ''}`}>
+              <MigrationSettings />
+            </div>
 
-            {/* General Tab Content */}
-            {activeTab === 'general' && (
-            <>
+            <div className={`settings-tab-content ${activeTab === 'servers' ? 'active' : ''}`}>
+              <ServerSettings />
+            </div>
+
+            <div className={`settings-tab-content ${activeTab === 'mobile' ? 'active' : ''}`}>
+              <QRConnect />
+            </div>
+
+            <div className={`settings-tab-content ${activeTab === 'addons' ? 'active' : ''}`}>
+              <AddonManager />
+            </div>
+
+            <div className={`settings-tab-content ${activeTab === 'addon-settings' ? 'active' : ''}`}>
+              <AddonSettings />
+            </div>
+
+            <div className={`settings-tab-content ${activeTab === 'tasks' ? 'active' : ''}`}>
+              <TaskManager />
+            </div>
+
+            <div className={`settings-tab-content ${activeTab === 'general' ? 'active' : ''}`}>
             <section>
-              <h2>Age Detection (Optional)</h2>
-              <p className="setting-description">
-                Detect faces and estimate ages in images. Requires ~2GB of additional dependencies (PyTorch, etc).
-              </p>
-
-              <div className="age-detection-status">
-                <div className="deps-status">
-                  <strong>Dependencies:</strong>
-                  {Object.entries(ageDetection.dependencies || {}).filter(([dep]) => !dep.endsWith('_error')).map(([dep, installed]) => (
-                    <span key={dep} className={`dep-badge ${installed ? 'installed' : 'missing'}`}>
-                      {dep}: {installed ? '✓' : '✗'}
-                    </span>
-                  ))}
-                </div>
-                {ageDetection.dependencies?.torch_error && (
-                  <p className="error-message" style={{color: '#ff6b6b', marginTop: '8px', fontSize: '0.9em'}}>
-                    {ageDetection.dependencies.torch_error}
-                  </p>
-                )}
-
-                {!ageDetection.installed && !ageDetection.installing && (
-                  <button
-                    onClick={async () => {
-                      if (!confirm('Install age detection dependencies?\n\nThis will download ~2GB of data and may take several minutes.')) return
-                      try {
-                        const { installAgeDetection } = await import('./api')
-                        const result = await installAgeDetection()
-                        console.log('Install result:', result)
-                        if (!result.success) {
-                          alert(result.error || 'Failed to start installation')
-                        }
-                        refreshAgeDetectionStatus()
-                      } catch (e) {
-                        console.error('Install error:', e)
-                        alert('Failed to start installation: ' + e.message)
-                      }
+              <h2>Interface</h2>
+              <div className="toggle-setting">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showContinueWatching}
+                    onChange={(e) => {
+                      setShowContinueWatching(e.target.checked)
+                      localStorage.setItem('localbooru_continueWatching', e.target.checked)
+                      window.dispatchEvent(new Event('localbooru-settings-changed'))
                     }}
-                    className="install-btn"
-                  >
-                    Install Dependencies (~2GB)
-                  </button>
-                )}
-
-                {ageDetection.installing && (
-                  <div className="install-progress">
-                    <span className="spinner"></span>
-                    <span>{ageDetection.progress || 'Installing...'}</span>
-                  </div>
-                )}
-
-                {ageDetection.installed && (
-                  <div className="toggle-setting">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={ageDetection.enabled}
-                        onChange={async (e) => {
-                          const newValue = e.target.checked
-                          const { toggleAgeDetection } = await import('./api')
-                          const result = await toggleAgeDetection(newValue)
-                          if (result.success) {
-                            setAgeDetection(prev => ({ ...prev, enabled: newValue }))
-                          } else {
-                            alert(result.error || 'Failed to toggle')
-                          }
-                        }}
-                      />
-                      Enable age detection on new images
-                    </label>
-                    {ageDetection.enabled && (
-                      <button
-                        onClick={async () => {
-                          try {
-                            const { detectAgesRetrospective } = await import('./api')
-                            const result = await detectAgesRetrospective()
-                            alert(result.message || `Queued ${result.queued} images for age detection`)
-                          } catch (e) {
-                            alert('Failed: ' + e.message)
-                          }
-                        }}
-                        style={{ marginLeft: '1rem' }}
-                      >
-                        Run on existing images
-                      </button>
-                    )}
-                  </div>
-                )}
+                  />
+                  Show "Continue Watching" panel
+                </label>
               </div>
             </section>
+            <FamilyModeSettings />
 
             <section>
               <h2>Dumpster Location</h2>
-              <p className="setting-description">Where pruned (non-favorited) images are moved to. Leave empty to use default (~/.localbooru/dumpster)</p>
+              <p className="setting-description">Where pruned or discarded media is moved. Leave empty to use each watched directory’s dumpster subfolder.</p>
               <input
                 type="text"
                 value={dumpsterPath}
@@ -519,19 +434,21 @@ function SettingsPage() {
               </section>
             )}
 
-            {window.electronAPI?.isElectron && (
+            {window.__TAURI_INTERNALS__ && (
               <section>
                 <h2>Application</h2>
-                <button onClick={() => {
+                <AutostartToggle />
+                <button onClick={async () => {
                   if (!confirm('Quit LocalBooru completely?\n\nThis will stop the background server and close the application.')) return
-                  window.electronAPI.quitApp()
+                  const { getDesktopAPI } = await import('./tauriAPI')
+                  const api = getDesktopAPI()
+                  if (api?.quitApp) api.quitApp()
                 }} className="danger-btn">
                   Quit Application
                 </button>
               </section>
             )}
-            </>
-            )}
+            </div>
           </div>
         </main>
       </div>
@@ -539,7 +456,97 @@ function SettingsPage() {
   )
 }
 
+let startupMediaRequestPromise = null
+
+function readStartupMediaRequest() {
+  if (!startupMediaRequestPromise) {
+    startupMediaRequestPromise = import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke('take_startup_media_file'))
+  }
+  return startupMediaRequestPromise
+}
+
+function DirectFilePlayer() {
+  const [item, setItem] = useState(null)
+
+  useEffect(() => {
+    const token = item?.direct_file_token
+    if (!token) return undefined
+    return () => {
+      import('@tauri-apps/api/core')
+        .then(({ invoke }) => invoke('release_direct_media_file', { token }))
+        .catch(() => {})
+    }
+  }, [item?.direct_file_token])
+
+  const openRequest = useCallback((request) => {
+    setItem(createDirectFileItem({
+      ...request,
+      url: request.url,
+    }))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    let unlistenOpenRequest
+    const openPicker = async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const request = await invoke('pick_direct_media_file')
+        if (!cancelled && request) openRequest(request)
+      } catch (error) {
+        console.error('Failed to open direct media file:', error)
+        toast.error(`Could not open media: ${error}`)
+      }
+    }
+    const handleOpenFile = () => { openPicker() }
+    const handleKeyDown = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'o') {
+        event.preventDefault()
+        openPicker()
+      }
+    }
+    window.addEventListener('localbooru-open-file', handleOpenFile)
+    window.addEventListener('keydown', handleKeyDown)
+    import('@tauri-apps/api/event')
+      .then(({ listen }) => listen('direct-file-open-requested', (event) => {
+        if (!cancelled && event.payload) openRequest(event.payload)
+      }))
+      .then((unlisten) => {
+        if (cancelled) unlisten()
+        else unlistenOpenRequest = unlisten
+      })
+      .catch((error) => console.error('Failed to listen for direct media files:', error))
+    readStartupMediaRequest()
+      .then((request) => {
+        if (!cancelled && request) openRequest(request)
+      })
+      .catch((error) => console.error('Failed to read startup media file:', error))
+    return () => {
+      cancelled = true
+      unlistenOpenRequest?.()
+      window.removeEventListener('localbooru-open-file', handleOpenFile)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [openRequest])
+
+  if (!item) return null
+  return <Lightbox
+    images={[item]}
+    currentIndex={0}
+    total={1}
+    onClose={() => setItem(null)}
+    onNav={() => {}}
+    onTagClick={() => {}}
+    onImageUpdate={() => {}}
+    onSidebarHover={() => {}}
+    sidebarOpen={false}
+    onDelete={() => setItem(null)}
+  />
+}
+
 function Gallery() {
+  const { isInstalled: isAddonInstalled } = useAllAddonStatuses()
   const [searchParams, setSearchParams] = useSearchParams()
   const [images, setImages] = useState([])
   const [tags, setTags] = useState([])
@@ -547,17 +554,50 @@ function Gallery() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [total, setTotal] = useState(0)
+  const [filtersInitialized, setFiltersInitialized] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
+
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
   const [stats, setStats] = useState(null)
   const statsUpdateTimeout = useRef(null)
   const lightboxIndexRef = useRef(null)
+  const loadingMoreRef = useRef(false)
+  const pageRef = useRef(page)
+  const imagesRef = useRef(images)
 
   // Keep ref in sync with state (for use in timeouts)
   useEffect(() => {
     lightboxIndexRef.current = lightboxIndex
   }, [lightboxIndex])
+
+  useEffect(() => {
+    pageRef.current = page
+  }, [page])
+
+  useEffect(() => {
+    imagesRef.current = images
+  }, [images])
+
+  // Handle browser back button for lightbox (works on mobile and desktop)
+  useEffect(() => {
+    const handlePopState = (e) => {
+      // If lightbox is open and we're going back, close it
+      if (lightboxIndexRef.current !== null && !e.state?.lightbox) {
+        setLightboxIndex(null)
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // Keep hasMore in sync with actual images count (fixes stale closure bugs)
+  useEffect(() => {
+    if (total > 0) {
+      setHasMore(images.length < total)
+    }
+  }, [images.length, total])
 
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false)
@@ -569,19 +609,94 @@ function Gallery() {
   const [moveDirectories, setMoveDirectories] = useState([])
   const [selectedMoveDir, setSelectedMoveDir] = useState(null)
 
+  // Continue watching panel toggle
+  const [showContinueWatching, setShowContinueWatching] = useState(() => {
+    const saved = localStorage.getItem('localbooru_continueWatching')
+    return saved !== 'false'
+  })
+
+  useEffect(() => {
+    const handler = () => {
+      setShowContinueWatching(localStorage.getItem('localbooru_continueWatching') !== 'false')
+    }
+    window.addEventListener('localbooru-settings-changed', handler)
+    return () => window.removeEventListener('localbooru-settings-changed', handler)
+  }, [])
+
+  // Tile size state (1 = smallest/most columns, 5 = largest/fewest columns)
+  const [tileSize, setTileSize] = useState(() => {
+    const saved = localStorage.getItem('localbooru_tileSize')
+    return saved ? parseInt(saved, 10) : 3
+  })
+
+  // Navigation jump state
+  const [jumpInput, setJumpInput] = useState('')
+  const [isJumping, setIsJumping] = useState(false)
+
+  // Save tile size to localStorage
+  useEffect(() => {
+    localStorage.setItem('localbooru_tileSize', tileSize.toString())
+  }, [tileSize])
+
   const currentTags = searchParams.get('tags') || ''
   const currentRating = searchParams.get('rating') || 'pg,pg13,r,x,xxx'
   const favoritesOnly = searchParams.get('favorites') === 'true'
   const currentSort = searchParams.get('sort') || 'newest'
   const currentDirectoryId = searchParams.get('directory') ? parseInt(searchParams.get('directory')) : null
+  const currentLibraryId = searchParams.get('library') || null
   const currentMinAge = searchParams.get('min_age') ? parseInt(searchParams.get('min_age')) : null
   const currentMaxAge = searchParams.get('max_age') ? parseInt(searchParams.get('max_age')) : null
   const currentTimeframe = searchParams.get('timeframe') || null
+  const currentFilename = searchParams.get('filename') || ''
+  const currentOrientation = searchParams.get('orientation') || null
+  // Resolution is stored as "widthxheight" in URL, e.g., "1920x1080"
+  const resolutionParam = searchParams.get('resolution')
+  const currentResolution = useMemo(() => {
+    if (!resolutionParam) return null
+    const [width, height] = resolutionParam.split('x').map(Number)
+    if (width && height) return { width, height }
+    return null
+  }, [resolutionParam])
+  // Duration is stored as "min-max" in URL, e.g., "60-300" for 1-5 minutes
+  const durationParam = searchParams.get('duration')
+  const currentDuration = useMemo(() => {
+    if (!durationParam) return null
+    const [min, max] = durationParam.split('-').map(v => v === 'null' ? null : Number(v))
+    return { min: min ?? null, max: max ?? null }
+  }, [durationParam])
 
-  // Load saved filters from localStorage on mount
+  // Folder grouping URL params
+  const groupByFolders = searchParams.get('group') === 'folders'
+  const currentFolder = searchParams.get('folder') || null
+
+  const galleryQuery = useMemo(() => ({
+    tags: currentTags,
+    rating: currentRating,
+    favorites_only: favoritesOnly,
+    directory_id: currentDirectoryId,
+    library_id: currentLibraryId,
+    min_age: currentMinAge,
+    max_age: currentMaxAge,
+    timeframe: currentTimeframe,
+    filename: currentFilename,
+    min_width: currentResolution?.width,
+    min_height: currentResolution?.height,
+    orientation: currentOrientation,
+    min_duration: currentDuration?.min,
+    max_duration: currentDuration?.max,
+    import_source: currentFolder,
+    sort: currentSort,
+  }), [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort])
+
+  // Track if we're waiting for localStorage params to be applied to URL
+  const [pendingParamsFromStorage, setPendingParamsFromStorage] = useState(false)
+
+  // Load saved filters from localStorage on mount (intentionally runs once)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const saved = localStorage.getItem('localbooru_filters')
-    if (saved && !window.location.search) {
+    const hasUrlParams = searchParams.toString().length > 0
+    if (saved && !hasUrlParams) {
       try {
         const filters = JSON.parse(saved)
         const params = {}
@@ -590,55 +705,107 @@ function Gallery() {
         if (filters.favorites) params.favorites = 'true'
         if (filters.sort && filters.sort !== 'newest') params.sort = filters.sort
         if (filters.directory) params.directory = filters.directory
+        if (filters.library) params.library = filters.library
         if (filters.min_age !== null && filters.min_age !== undefined) params.min_age = filters.min_age
         if (filters.max_age !== null && filters.max_age !== undefined) params.max_age = filters.max_age
+        if (filters.resolution) params.resolution = `${filters.resolution.width}x${filters.resolution.height}`
+        if (filters.orientation) params.orientation = filters.orientation
+        if (filters.duration) params.duration = `${filters.duration.min ?? 'null'}-${filters.duration.max ?? 'null'}`
+        if (filters.groupByFolders) params.group = 'folders'
         if (Object.keys(params).length > 0) {
+          setPendingParamsFromStorage(true)
           setSearchParams(params)
+          return // Don't initialize yet - wait for params to be applied
         }
       } catch (e) {
         console.error('Failed to load saved filters:', e)
       }
     }
+    setFiltersInitialized(true)
   }, [])
 
-  // Save filters to localStorage when they change
+  // Initialize filters once localStorage params have been applied to URL
   useEffect(() => {
+    if (pendingParamsFromStorage && searchParams.toString()) {
+      setPendingParamsFromStorage(false)
+      setFiltersInitialized(true)
+    }
+  }, [pendingParamsFromStorage, searchParams])
+
+  // Save filters to localStorage when they change (only after initial load to avoid overwriting)
+  useEffect(() => {
+    if (!filtersInitialized) return
     const filters = {
       tags: currentTags || null,
       rating: currentRating,
       favorites: favoritesOnly,
       sort: currentSort,
       directory: currentDirectoryId,
+      library: currentLibraryId,
       min_age: currentMinAge,
-      max_age: currentMaxAge
+      max_age: currentMaxAge,
+      resolution: currentResolution,
+      orientation: currentOrientation,
+      duration: currentDuration,
+      groupByFolders: groupByFolders
     }
     localStorage.setItem('localbooru_filters', JSON.stringify(filters))
-  }, [currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentMinAge, currentMaxAge])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentResolution, currentOrientation, currentDuration, groupByFolders])
 
   // Touch handling for mobile sidebar
   const touchStartX = useRef(null)
+  const touchStartY = useRef(null)
 
   const handleTouchStart = useCallback((e) => {
-    touchStartX.current = e.touches[0].clientX
-  }, [])
-
-  const handleTouchEnd = useCallback((e) => {
-    if (touchStartX.current === null || window.innerWidth > 1024) return
-    // Don't control gallery sidebar when lightbox is open - it has its own touch handling
-    if (lightboxIndex !== null) {
+    const interactiveTarget = e.target.closest('button, input, select, textarea, [role="slider"]')
+    const sidebarOpener = e.target.closest('.gallery-menu-btn, .swipe-hint')
+    if (interactiveTarget && !sidebarOpener) {
       touchStartX.current = null
+      touchStartY.current = null
       return
     }
-    const deltaX = e.changedTouches[0].clientX - touchStartX.current
-    if (Math.abs(deltaX) > 50) {
-      if (deltaX > 0 && !sidebarOpen) setSidebarOpen(true)
-      if (deltaX < 0 && sidebarOpen) setSidebarOpen(false)
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }, [])
+
+  // Load folders for folder grouping view
+  const loadFolders = useCallback(async () => {
+    setLoading(true)
+    try {
+      const result = await fetchFolders({
+        directory_id: currentDirectoryId,
+        library_id: currentLibraryId,
+        rating: currentRating,
+        favorites_only: favoritesOnly,
+        tags: currentTags,
+      })
+      const folderItems = result.folders.map(f => ({
+        ...f,
+        _isFolder: true,
+        // Use thumbnail dimensions for masonry column balancing
+        id: `folder-${f.path}`,
+      }))
+      setImages(folderItems)
+      setTotal(result.total)
+      setHasMore(false)
+      setPage(1)
+    } catch (error) {
+      console.error('Failed to load folders:', error)
     }
-    touchStartX.current = null
-  }, [sidebarOpen, lightboxIndex])
+    setLoading(false)
+  }, [currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags])
 
   // Load images
   const loadImages = useCallback(async (pageNum = 1, append = false) => {
+    // If folder grouping is active and no specific folder selected, load folders instead
+    if (groupByFolders && !currentFolder) {
+      if (pageNum === 1 && !append) {
+        await loadFolders()
+        return true
+      }
+      return true
+    }
+
     setLoading(true)
     try {
       const result = await fetchImages({
@@ -646,56 +813,113 @@ function Gallery() {
         rating: currentRating,
         favorites_only: favoritesOnly,
         directory_id: currentDirectoryId,
+        library_id: currentLibraryId,
         min_age: currentMinAge,
         max_age: currentMaxAge,
         timeframe: currentTimeframe,
+        filename: currentFilename,
+        min_width: currentResolution?.width,
+        min_height: currentResolution?.height,
+        orientation: currentOrientation,
+        min_duration: currentDuration?.min,
+        max_duration: currentDuration?.max,
+        import_source: currentFolder,
         sort: currentSort,
         page: pageNum,
-        per_page: 50
+        per_page: calculatePerPage(tileSize)
       })
+
+      // A transiently unhealthy backend can return an empty middle page while
+      // still reporting more rows. Do not advance past that gap permanently;
+      // the infinite-scroll recovery path will request the same page again.
+      if (isUnexpectedEmptyPage({
+        append,
+        pageLength: result.images.length,
+        total: result.total,
+        loaded: imagesRef.current.length
+      })) {
+        throw new Error(`Empty page ${pageNum} while ${result.total - imagesRef.current.length} images remain`)
+      }
 
       if (append) {
         // Deduplicate when appending to avoid showing same image twice
         setImages(prev => {
-          const existingIds = new Set(prev.map(img => img.id))
-          const newImages = result.images.filter(img => !existingIds.has(img.id))
+          const existingKeys = new Set(prev.map(imageIdentityKey))
+          const newImages = result.images.filter(img => !existingKeys.has(imageIdentityKey(img)))
           return [...prev, ...newImages]
         })
       } else {
         setImages(result.images)
       }
       setTotal(result.total)
-      const loadedCount = append ? images.length + result.images.length : result.images.length
-      setHasMore(loadedCount < result.total)
+      // Note: hasMore is computed by useEffect based on actual images.length
       setPage(pageNum)
+      return true
     } catch (error) {
       console.error('Failed to load images:', error)
+      return false
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders])
 
-  // Update a single image in the images array
-  const handleImageUpdate = useCallback((imageId, updates) => {
-    setImages(prev => prev.map(img =>
-      img.id === imageId ? { ...img, ...updates } : img
+  const curation = useCurationGame({
+    loadedImages: images,
+    filters: galleryQuery,
+    onGalleryRefresh: () => loadImages(1, false),
+  })
+
+  const { updateImage: updateCurationImage } = curation
+
+  // Update one composite image identity in both gallery and curation state.
+  const handleImageUpdate = useCallback((imageLocator, updates) => {
+    if (!imageLocator || typeof imageLocator !== 'object') return
+    setImages(previous => reorderImagesForSort(
+      updateImagesByLocator(previous, imageLocator, updates),
+      currentSort
     ))
-  }, [])
+    updateCurationImage(imageLocator, updates)
+  }, [updateCurationImage, currentSort])
+
+  const curationRecoveryMode = getCurationRecoveryMode({
+    active: curation.active,
+    complete: curation.complete,
+    current: curation.current,
+    loading: curation.loading,
+    refillError: curation.refillError,
+  })
+
+  const handleTouchEnd = useCallback((e) => {
+    if (touchStartX.current === null || window.innerWidth > 1024) return
+    // Don't control gallery sidebar when either lightbox mode is open.
+    if (lightboxIndex !== null || curation.active) {
+      touchStartX.current = null
+      touchStartY.current = null
+      return
+    }
+    const endTouch = e.changedTouches[0]
+    const action = classifySidebarSwipe({
+      startX: touchStartX.current,
+      deltaX: endTouch.clientX - touchStartX.current,
+      deltaY: endTouch.clientY - touchStartY.current,
+      isOpen: sidebarOpen
+    })
+    if (action === 'open') setSidebarOpen(true)
+    if (action === 'close') setSidebarOpen(false)
+    touchStartX.current = null
+    touchStartY.current = null
+  }, [sidebarOpen, lightboxIndex, curation.active])
 
   // Handle image deletion from lightbox
-  const handleImageDelete = useCallback((imageId) => {
+  const handleImageDelete = useCallback((locator) => {
     setImages(prev => {
-      const newImages = prev.filter(img => img.id !== imageId)
+      const deletedIndex = prev.findIndex(image => imageMatchesLocator(image, locator))
+      const newImages = prev.filter(image => !imageMatchesLocator(image, locator))
 
-      // Find the current index of the deleted image
-      const deletedIndex = prev.findIndex(img => img.id === imageId)
-
-      // If there are remaining images, navigate to the next one
       if (newImages.length > 0) {
-        // If we deleted the last image, go to the previous one
         const nextIndex = deletedIndex >= newImages.length ? newImages.length - 1 : deletedIndex
-        setLightboxIndex(newImages[nextIndex]?.id ?? null)
+        setLightboxIndex(adjustmentLocator(newImages[nextIndex]))
       } else {
-        // No images left, close lightbox
         setLightboxIndex(null)
       }
 
@@ -714,8 +938,9 @@ function Gallery() {
   }, [])
 
   useEffect(() => {
+    if (!filtersInitialized) return
     loadImages(1, false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, loadImages])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, groupByFolders, currentFolder, loadImages])
 
   useEffect(() => {
     loadTags()
@@ -725,30 +950,76 @@ function Gallery() {
     getLibraryStats().then(setStats).catch(console.error)
   }, [])
 
-  // Subscribe to real-time library events (debounced refresh)
-  // Waits 2s after last event, then refreshes once
-  // Only refreshes images when: sorted by newest, scrolled to top, and not in lightbox
-  const triggerDebouncedRefresh = useCallback(() => {
-    if (statsUpdateTimeout.current) {
-      clearTimeout(statsUpdateTimeout.current)
+  const refreshNewImages = useCallback(async () => {
+    // Folder summary cards have their own aggregation and should not be replaced
+    // while the user is browsing them.
+    if (groupByFolders && !currentFolder) return true
+
+    const preserveAnchor = window.scrollY >= 200 || lightboxIndexRef.current !== null
+    const anchor = preserveAnchor
+      ? Array.from(document.querySelectorAll('[data-image-id]'))
+          .map(element => ({ element, rect: element.getBoundingClientRect() }))
+          .filter(({ rect }) => rect.bottom > 0)
+          .sort((a, b) => a.rect.top - b.rect.top)[0]
+      : null
+
+    try {
+      const result = await fetchImages({
+        tags: currentTags,
+        rating: currentRating,
+        favorites_only: favoritesOnly,
+        directory_id: currentDirectoryId,
+        library_id: currentLibraryId,
+        min_age: currentMinAge,
+        max_age: currentMaxAge,
+        timeframe: currentTimeframe,
+        filename: currentFilename,
+        min_width: currentResolution?.width,
+        min_height: currentResolution?.height,
+        orientation: currentOrientation,
+        min_duration: currentDuration?.min,
+        max_duration: currentDuration?.max,
+        import_source: currentFolder,
+        sort: currentSort,
+        page: 1,
+        per_page: calculatePerPage(tileSize)
+      })
+
+      if (currentSort !== 'random') {
+        setImages(previous => mergeFirstPage(previous, result.images))
+      }
+      setTotal(result.total)
+
+      if (anchor) {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (!anchor.element.isConnected) return
+          const nextTop = anchor.element.getBoundingClientRect().top
+          window.scrollBy(0, nextTop - anchor.rect.top)
+        }))
+      }
+      return true
+    } catch (error) {
+      console.error('Failed to refresh newly indexed images:', error)
+      return false
     }
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders])
+
+  // Subscribe to real-time library events (debounced incremental refresh).
+  // Existing items, scroll position, selection, and lightbox identity stay intact.
+  const triggerDebouncedRefresh = useCallback(() => {
+    // Throttle rather than trailing-debounce: a long startup scan may emit
+    // continuously for minutes, and resetting the timer on every image would
+    // hide all new media until the scan completely finished.
+    if (statsUpdateTimeout.current) return
     statsUpdateTimeout.current = setTimeout(() => {
+      statsUpdateTimeout.current = null
       // Always update stats
       getLibraryStats().then(setStats).catch(console.error)
+      refreshNewImages()
+    }, 750)
+  }, [refreshNewImages])
 
-      // Only refresh images if sorted by newest, scrolled near top, and not in lightbox
-      // Use ref for lightbox check since timeout captures stale closure values
-      const isAtTop = window.scrollY < 200
-      const isNewest = currentSort === 'newest'
-      const isInLightbox = lightboxIndexRef.current !== null
-
-      if (isNewest && isAtTop && !isInLightbox) {
-        loadImages(1, false)
-      }
-    }, 2000)
-  }, [loadImages, currentSort])
-
-  // On visibility change, start debounce - backlog events will keep resetting it
+  // Catch up immediately after the app returns to the foreground.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -774,11 +1045,75 @@ function Gallery() {
     }
   }, [triggerDebouncedRefresh])
 
-  const handleLoadMore = () => {
-    if (!loading && hasMore) {
-      loadImages(page + 1, true)
+  const handleLoadMore = useCallback(async () => {
+    if (loading || !hasMore || loadingMoreRef.current) return true
+    loadingMoreRef.current = true
+    try {
+      return await loadImages(pageRef.current + 1, true)
+    } finally {
+      loadingMoreRef.current = false
     }
-  }
+  }, [loading, hasMore, loadImages])
+
+  // Jump to a specific image number in the results
+  const jumpToImage = useCallback(async (targetIndex) => {
+    if (targetIndex < 1 || targetIndex > total) return
+
+    setIsJumping(true)
+    const perPage = calculatePerPage(tileSize)
+    const targetPage = Math.ceil(targetIndex / perPage)
+
+    try {
+      const result = await fetchImages({
+        tags: currentTags,
+        rating: currentRating,
+        favorites_only: favoritesOnly,
+        directory_id: currentDirectoryId,
+        library_id: currentLibraryId,
+        min_age: currentMinAge,
+        max_age: currentMaxAge,
+        timeframe: currentTimeframe,
+        filename: currentFilename,
+        min_width: currentResolution?.width,
+        min_height: currentResolution?.height,
+        orientation: currentOrientation,
+        min_duration: currentDuration?.min,
+        max_duration: currentDuration?.max,
+        import_source: currentFolder,
+        sort: currentSort,
+        page: targetPage,
+        per_page: perPage
+      })
+
+      setImages(result.images)
+      setTotal(result.total)
+      setPage(targetPage)
+
+      // Scroll to top since we're showing a new set of images
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (error) {
+      console.error('Failed to jump to image:', error)
+    }
+    setIsJumping(false)
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, total, tileSize])
+
+  // Handle jump by offset (for +/- 100 buttons)
+  const handleJumpByOffset = useCallback((offset) => {
+    const perPage = calculatePerPage(tileSize)
+    const currentFirstImage = (page - 1) * perPage + 1
+    const targetIndex = Math.max(1, Math.min(total, currentFirstImage + offset))
+    jumpToImage(targetIndex)
+  }, [page, total, jumpToImage, tileSize])
+
+  // Handle direct jump from input
+  const handleJumpSubmit = useCallback((e) => {
+    e.preventDefault()
+    const targetIndex = parseInt(jumpInput, 10)
+    if (!isNaN(targetIndex) && targetIndex >= 1 && targetIndex <= total) {
+      jumpToImage(targetIndex)
+      setJumpInput('')
+    }
+  }, [jumpInput, total, jumpToImage])
 
   const handleTagClick = (tagName) => {
     const currentTagList = currentTags ? currentTags.split(',').map(t => t.trim()) : []
@@ -796,91 +1131,181 @@ function Gallery() {
     if (favoritesOnly) params.favorites = 'true'
     if (currentSort !== 'newest') params.sort = currentSort
     if (currentDirectoryId) params.directory = currentDirectoryId
+    if (currentLibraryId) params.library = currentLibraryId
     if (currentMinAge !== null) params.min_age = currentMinAge
     if (currentMaxAge !== null) params.max_age = currentMaxAge
+    if (groupByFolders) params.group = 'folders'
+    if (currentFolder) params.folder = currentFolder
     setSearchParams(params)
   }
 
-  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe) => {
+  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe, filename, resolution, orientation, duration, libraryId) => {
     const params = {}
     if (tags) params.tags = tags
     if (rating && rating !== 'pg,pg13,r,x,xxx') params.rating = rating
     if (favOnly) params.favorites = 'true'
     if (sort && sort !== 'newest') params.sort = sort
     if (directoryId) params.directory = directoryId
+    if (libraryId) params.library = libraryId
     if (minAge !== null && minAge !== undefined) params.min_age = minAge
     if (maxAge !== null && maxAge !== undefined) params.max_age = maxAge
     if (timeframe) params.timeframe = timeframe
+    if (filename) params.filename = filename
+    if (resolution) params.resolution = `${resolution.width}x${resolution.height}`
+    if (orientation) params.orientation = orientation
+    if (duration) params.duration = `${duration.min ?? 'null'}-${duration.max ?? 'null'}`
+    // Preserve folder grouping state across filter changes
+    if (groupByFolders) params.group = 'folders'
+    if (currentFolder) params.folder = currentFolder
     setSearchParams(params)
   }
 
-  const handleImageClick = (imageId) => {
-    setLightboxIndex(imageId)
+  // Track which folder was entered so we can scroll back to it on exit
+  const enteredFolderPathRef = useRef(null)
+
+  const handleFolderClick = useCallback((folderPath) => {
+    const urlValue = folderPath || '__unfiled__'
+    enteredFolderPathRef.current = urlValue
+    const params = Object.fromEntries(searchParams)
+    params.folder = urlValue
+    setSearchParams(params)
+    requestAnimationFrame(() => {
+      const el = document.querySelector('.content.with-sidebar > .masonry-container')
+      if (el) el.scrollTop = 0
+    })
+  }, [searchParams, setSearchParams])
+
+  const handleBackToFolders = useCallback(() => {
+    const targetPath = enteredFolderPathRef.current
+    const params = Object.fromEntries(searchParams)
+    delete params.folder
+    setSearchParams(params)
+    if (targetPath) {
+      // Wait for folder tiles to render, then scroll to the one we came from
+      const tryScroll = () => {
+        const el = document.querySelector(`[data-folder-path="${CSS.escape(targetPath)}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        } else {
+          // Tiles may not have rendered yet, retry
+          requestAnimationFrame(tryScroll)
+        }
+      }
+      requestAnimationFrame(tryScroll)
+    }
+  }, [searchParams, setSearchParams])
+
+  const handleToggleGroupByFolders = useCallback(() => {
+    const params = Object.fromEntries(searchParams)
+    if (params.group === 'folders') {
+      delete params.group
+      delete params.folder
+    } else {
+      params.group = 'folders'
+      delete params.folder
+    }
+    setSearchParams(params)
+  }, [searchParams, setSearchParams])
+
+  const handleImageClick = (image) => {
+    const locator = adjustmentLocator(image)
+    window.history.pushState({ lightbox: true, locator }, '')
+    setLightboxIndex(locator)
     // Keep sidebar visible to show image details
   }
 
-  const handleLightboxClose = () => {
+
+  const handleLightboxClose = useCallback(() => {
+    // Reset load-more guard in case it was left set by an aborted fetch
+    loadingMoreRef.current = false
     // Scroll to the image that was being viewed
-    const imageId = lightboxIndex
-    setLightboxIndex(null)
+    const imageKey = lightboxIndex ? imageIdentityKey(lightboxIndex) : null
+
+    // Go back in history to trigger popstate which closes the lightbox
+    // This ensures hardware back button and X button behave consistently
+    if (window.history.state?.lightbox) {
+      window.history.back()
+    } else {
+      // Fallback: close directly if no history state (shouldn't normally happen)
+      setLightboxIndex(null)
+    }
 
     // Use requestAnimationFrame to scroll after the lightbox closes and DOM updates
     requestAnimationFrame(() => {
-      const imageElement = document.querySelector(`[data-image-id="${imageId}"]`)
+      const imageElement = imageKey
+        ? document.querySelector(`[data-image-key="${imageKey}"]`)
+        : null
       if (imageElement) {
         imageElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
     })
-  }
+  }, [lightboxIndex])
 
   const handleLightboxNav = async (direction) => {
-    const currentIdx = images.findIndex(img => img.id === lightboxIndex)
+    const currentIdx = images.findIndex(image => imageMatchesLocator(image, lightboxIndex))
     if (currentIdx === -1) return
 
     let newIndex = currentIdx + direction
 
     // Navigating past the end - load more if available
-    if (newIndex >= images.length && hasMore && !loading) {
-      // Load more images
-      const nextPage = page + 1
+    // Use ref to prevent concurrent load-more (stale closure on images/page)
+    if (newIndex >= images.length && hasMore && !loading && !loadingMoreRef.current) {
+      loadingMoreRef.current = true
+      const nextPage = pageRef.current + 1
       try {
         const result = await fetchImages({
           tags: currentTags,
           rating: currentRating,
           favorites_only: favoritesOnly,
           directory_id: currentDirectoryId,
+          library_id: currentLibraryId,
           min_age: currentMinAge,
           max_age: currentMaxAge,
           timeframe: currentTimeframe,
+          filename: currentFilename,
+          min_width: currentResolution?.width,
+          min_height: currentResolution?.height,
+          orientation: currentOrientation,
+          min_duration: currentDuration?.min,
+          max_duration: currentDuration?.max,
+          import_source: currentFolder,
           sort: currentSort,
           page: nextPage,
-          per_page: 50
+          per_page: calculatePerPage(tileSize)
         })
 
         if (result.images.length > 0) {
-          // Deduplicate to avoid showing same image twice
-          const existingIds = new Set(images.map(img => img.id))
-          const newImages = result.images.filter(img => !existingIds.has(img.id))
-
-          if (newImages.length > 0) {
-            setImages(prev => [...prev, ...newImages])
-            const newLoadedCount = images.length + newImages.length
-            setHasMore(newLoadedCount < result.total)
+          // Deduplicate using functional updater to avoid stale closure on images
+          let navigated = false
+          setImages(prev => {
+            const existingKeys = new Set(prev.map(imageIdentityKey))
+            const newImages = result.images.filter(img => !existingKeys.has(imageIdentityKey(img)))
+            if (newImages.length > 0) {
+              navigated = true
+              setLightboxIndex(adjustmentLocator(newImages[0]))
+              return [...prev, ...newImages]
+            }
+            return prev
+          })
+          if (navigated) {
+            setTotal(result.total)
             setPage(nextPage)
-            // Navigate to the first new image
-            setLightboxIndex(newImages[0].id)
+            loadingMoreRef.current = false
             return
           }
         }
+        // Nothing new loaded — advance page anyway so next attempt tries further
+        setPage(nextPage)
       } catch (error) {
         console.error('Failed to load more images:', error)
       }
+      loadingMoreRef.current = false
     }
 
     // Stay at boundaries - don't wrap
     if (newIndex < 0) return
     if (newIndex >= images.length) return
-    setLightboxIndex(images[newIndex]?.id ?? lightboxIndex)
+    setLightboxIndex(images[newIndex] ? adjustmentLocator(images[newIndex]) : lightboxIndex)
   }
 
   // Selection mode handlers
@@ -936,10 +1361,11 @@ function Gallery() {
     try {
       const result = await batchRetag(Array.from(selectedImages))
       console.log('Batch retag result:', result)
-      alert(`Queued ${result.queued} images for retagging`)
+      toast.success(`Queued ${result.queued} images for retagging`)
       setSelectedImages(new Set())
     } catch (error) {
       console.error('Batch retag failed:', error)
+      toast.error(`Batch retag failed: ${error.message || 'Unknown error'}`)
     }
     setBatchActionLoading(false)
   }
@@ -950,10 +1376,11 @@ function Gallery() {
     try {
       const result = await batchAgeDetect(Array.from(selectedImages))
       console.log('Batch age detect result:', result)
-      alert(`Queued ${result.queued} images for age detection`)
+      toast.success(`Queued ${result.queued} images for age detection`)
       setSelectedImages(new Set())
     } catch (error) {
       console.error('Batch age detect failed:', error)
+      toast.error(`Batch age detection failed: ${error.message || 'Unknown error'}`)
     }
     setBatchActionLoading(false)
   }
@@ -975,7 +1402,7 @@ function Gallery() {
     try {
       const result = await batchMoveImages(Array.from(selectedImages), selectedMoveDir)
       console.log('Batch move result:', result)
-      alert(`Moved ${result.moved} images`)
+      toast.success(`Moved ${result.moved} images`)
       // Refresh the gallery
       await loadImages(1, false)
       setSelectedImages(new Set())
@@ -1027,37 +1454,70 @@ function Gallery() {
             setSidebarOpen(false)
           }}
           mobileOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
+          onClose={() => {
+            setSidebarOpen(false)
+            setLightboxSidebarHover(false)
+          }}
           currentTags={currentTags}
-          selectedImage={lightboxIndex !== null ? images.find(img => img.id === lightboxIndex) : null}
+          selectedImage={curation.active ? curation.current : (lightboxIndex !== null ? images.find(image => imageMatchesLocator(image, lightboxIndex)) : null)}
           onSearch={handleSearch}
           initialTags={currentTags}
           initialRating={currentRating}
           initialFavoritesOnly={favoritesOnly}
           initialDirectoryId={currentDirectoryId}
+          initialLibraryId={currentLibraryId}
           initialMinAge={currentMinAge}
           initialMaxAge={currentMaxAge}
           initialSort={currentSort}
           initialTimeframe={currentTimeframe}
+          initialFilename={currentFilename}
+          initialResolution={currentResolution}
+          initialOrientation={currentOrientation}
+          initialDuration={currentDuration}
+          initialGroupByFolders={groupByFolders}
+          onToggleGroupByFolders={handleToggleGroupByFolders}
           total={total}
           stats={stats}
-          lightboxMode={lightboxIndex !== null}
+          lightboxMode={lightboxIndex !== null || curation.active}
           lightboxHover={lightboxSidebarHover}
           onMouseLeave={() => setLightboxSidebarHover(false)}
+          onFamilyModeChange={() => { loadImages(1, false); loadTags() }}
         />
 
-        {!sidebarOpen && <div className="swipe-hint" />}
+        {!sidebarOpen && lightboxIndex === null && !curation.active && (
+          <button className="gallery-menu-btn mobile-only" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12h18M3 6h18M3 18h18"/>
+            </svg>
+          </button>
+        )}
 
         <main className="content with-sidebar">
+          {currentFolder && (
+            <div className="folder-breadcrumb">
+              <button className="folder-back-btn" onClick={handleBackToFolders}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Folders
+              </button>
+              <span className="folder-breadcrumb-separator">/</span>
+              <span className="folder-breadcrumb-name">{currentFolder === '__unfiled__' ? 'Unfiled' : currentFolder.split('/').pop()}</span>
+            </div>
+          )}
+          {/* Continue Watching row */}
+          {showContinueWatching && <ContinueWatching onImageClick={handleImageClick} />}
+
           {!loading && images.length === 0 ? (
             <div className="no-results">
-              <h2>No images found</h2>
+              <h2>{groupByFolders && !currentFolder ? 'No folders found' : 'No images found'}</h2>
               <p>Try adjusting your search filters or add some directories to watch.</p>
             </div>
           ) : (
             <MasonryGrid
               images={images}
               onImageClick={handleImageClick}
+              onFolderClick={handleFolderClick}
               onLoadMore={handleLoadMore}
               loading={loading}
               hasMore={hasMore}
@@ -1065,21 +1525,101 @@ function Gallery() {
               isSelectable={selectionMode}
               selectedImages={selectedImages}
               onSelectImage={handleSelectImage}
+              tileSize={tileSize}
             />
           )}
 
-          {/* Floating select button */}
-          <button
-            className={`floating-select-btn ${selectionMode ? 'active' : ''}`}
-            onClick={toggleSelectionMode}
-            title={selectionMode ? 'Exit selection mode' : 'Enter selection mode'}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-              {selectionMode && <path d="M9 12l2 2 4-4"/>}
-            </svg>
-            {selectionMode ? 'Done' : 'Select'}
-          </button>
+          {/* Floating controls: tile size slider, navigation, and select button */}
+          <div className="floating-controls">
+            <div className="tile-size-control" title="Adjust tile size">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="tile-size-icon">
+                <rect x="3" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/>
+                <rect x="14" y="14" width="7" height="7" rx="1"/>
+              </svg>
+              <input
+                type="range"
+                min="1"
+                max="5"
+                value={tileSize}
+                onChange={(e) => setTileSize(parseInt(e.target.value, 10))}
+                className="tile-size-slider"
+              />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="tile-size-icon">
+                <rect x="4" y="4" width="16" height="16" rx="2"/>
+              </svg>
+            </div>
+
+            {/* Navigation controls */}
+            {total > 50 && (
+              <div className="nav-jump-control">
+                <button
+                  className="nav-jump-btn"
+                  onClick={() => handleJumpByOffset(-100)}
+                  disabled={isJumping || page === 1}
+                  title="Jump back 100 images"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="18 15 12 9 6 15"/>
+                  </svg>
+                </button>
+                <form onSubmit={handleJumpSubmit} className="nav-jump-form">
+                  <span className="nav-position">
+                    {((page - 1) * 50 + 1).toLocaleString()}-{Math.min(page * 50, total).toLocaleString()}
+                  </span>
+                  <span className="nav-separator">/</span>
+                  <input
+                    type="number"
+                    className="nav-jump-input"
+                    placeholder={total.toLocaleString()}
+                    value={jumpInput}
+                    onChange={(e) => setJumpInput(e.target.value)}
+                    min="1"
+                    max={total}
+                    title="Type a number and press Enter to jump"
+                  />
+                </form>
+                <button
+                  className="nav-jump-btn"
+                  onClick={() => handleJumpByOffset(100)}
+                  disabled={isJumping || page * 50 >= total}
+                  title="Jump forward 100 images"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {isAddonInstalled('curation-game') && (
+              <button
+                className="floating-select-btn curation-launch-btn"
+                onClick={() => curation.start()}
+                disabled={curation.loading || curation.busy}
+                title="Review matching media with Keep and Discard"
+                aria-label="Open Curation Game"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 3l3 6 6 3-6 3-3 6-3-6-6-3 6-3 3-6z"/>
+                </svg>
+                <span className="curation-launch-label">Curation Game</span>
+              </button>
+            )}
+
+            <button
+              className={`floating-select-btn ${selectionMode ? 'active' : ''}`}
+              onClick={toggleSelectionMode}
+              title={selectionMode ? 'Exit selection mode' : 'Enter selection mode'}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                {selectionMode && <path d="M9 12l2 2 4-4"/>}
+              </svg>
+              {selectionMode ? 'Done' : 'Select'}
+            </button>
+          </div>
         </main>
 
         {/* Batch action bar - shown when images are selected */}
@@ -1089,6 +1629,7 @@ function Gallery() {
               {selectedImages.size} selected
             </div>
             <div className="batch-action-buttons">
+              {isAddonInstalled('auto-tagger') && (
               <button
                 className="batch-btn"
                 onClick={handleBatchRetag}
@@ -1101,6 +1642,8 @@ function Gallery() {
                 </svg>
                 Retag
               </button>
+              )}
+              {isAddonInstalled('age-detector') && (
               <button
                 className="batch-btn"
                 onClick={handleBatchAgeDetect}
@@ -1113,6 +1656,7 @@ function Gallery() {
                 </svg>
                 Age Detect
               </button>
+              )}
               <button
                 className="batch-btn"
                 onClick={openMoveModal}
@@ -1229,45 +1773,210 @@ function Gallery() {
         )}
       </div>
 
-      {lightboxIndex !== null && (
+      {curationRecoveryMode && (
+        <div className="modal-overlay curation-complete-overlay">
+          <div className="modal-content curation-complete-dialog">
+            {curationRecoveryMode === 'loading' ? (
+              <>
+                <h2>Loading the next item…</h2>
+                <p>{curation.lastAction ? 'Your last decision has been saved.' : 'Finding the first item…'}</p>
+              </>
+            ) : (
+              <>
+                <h2>Could not load the next item</h2>
+                <p>{curation.refillError}</p>
+                <p>{curation.lastAction ? 'Your last decision has been saved and will not be repeated.' : 'No curation decision was changed.'}</p>
+                <div className="modal-actions">
+                  <button className="primary-btn" onClick={curation.retryRefill} disabled={curation.busy}>Retry</button>
+                  <button onClick={curation.exit} disabled={curation.busy}>Exit</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {curation.complete && (
+        <div className="modal-overlay curation-complete-overlay">
+          <div className="modal-content curation-complete-dialog">
+            <h2>No more media left to curate</h2>
+            <p>You’ve reviewed every non-favorited image and video in this view.</p>
+            {curation.matchingFavoriteCount > 0 && (
+              <p>Unfavorite all {curation.matchingFavoriteCount.toLocaleString()} matching items and start another curation run?</p>
+            )}
+            <div className="modal-actions">
+              {curation.lastAction && <button onClick={curation.undo} disabled={curation.busy}>Undo Last</button>}
+              <button onClick={curation.exit} disabled={curation.busy}>Done</button>
+              {curation.matchingFavoriteCount > 0 && (
+                <button className="primary-btn" onClick={curation.unfavoriteAllAndRestart} disabled={curation.busy}>
+                  {curation.busy ? 'Resetting…' : 'Unfavorite & Run Again'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(lightboxIndex !== null || (curation.active && curation.current)) && !curation.complete && (
         <Lightbox
-          images={images}
-          currentIndex={images.findIndex(img => img.id === lightboxIndex)}
-          total={total}
-          onClose={handleLightboxClose}
-          onNav={handleLightboxNav}
+          images={curation.active ? curation.queue : images}
+          currentIndex={curation.active ? 0 : images.findIndex(image => imageMatchesLocator(image, lightboxIndex))}
+          total={curation.active ? curation.queue.length : total}
+          onClose={curation.active ? curation.exit : handleLightboxClose}
+          onNav={curation.active ? (() => {}) : handleLightboxNav}
           onTagClick={handleTagClick}
           onImageUpdate={handleImageUpdate}
           onSidebarHover={setLightboxSidebarHover}
           sidebarOpen={lightboxSidebarHover}
           onDelete={handleImageDelete}
+          curationMode={curation.active ? {
+            busy: curation.busy,
+            processed: curation.processed,
+            remaining: curation.queue.length,
+            lastAction: curation.lastAction,
+            goal: curation.goal,
+            progress: curation.progress,
+            onKeep: curation.keep,
+            onDiscard: curation.discard,
+            onUndo: curation.undo,
+          } : null}
         />
       )}
     </div>
   )
 }
 
-function App() {
+function AppShell() {
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
+  const [backendReady, setBackendReady] = useState(!isTauri)
   const [mobileReady, setMobileReady] = useState(false)
   const [showServerSetup, setShowServerSetup] = useState(false)
+  const [servers, setServers] = useState([])
+  const [serverStatuses, setServerStatuses] = useState({})
+  const [connectionError, setConnectionError] = useState(null)
+  const [startupLogs, setStartupLogs] = useState([])
+
+  const addLog = useCallback((msg) => {
+    console.log('[Startup]', msg)
+    setStartupLogs(prev => [...prev.slice(-19), `${new Date().toLocaleTimeString()}: ${msg}`])
+  }, [])
+
+  // Poll backend health until ready (Tauri only — backend starts async)
+  useEffect(() => {
+    if (!isTauri || backendReady) return
+    let cancelled = false
+    let attempts = 0
+    addLog('Waiting for backend...')
+    const poll = async () => {
+      while (!cancelled) {
+        attempts++
+        try {
+          addLog(`Health check attempt #${attempts}...`)
+          await healthCheck()
+          addLog('Backend ready!')
+          if (!cancelled) setBackendReady(true)
+          return
+        } catch (err) {
+          addLog(`Attempt #${attempts} failed: ${err.message || err}`)
+          await new Promise(r => setTimeout(r, 500))
+        }
+      }
+    }
+    poll()
+    return () => { cancelled = true }
+  }, [isTauri, backendReady, addLog])
+
+  // Re-validate backend health when window regains focus (Tauri only)
+  // Catches backend crashes that happened while window was hidden in tray
+  useEffect(() => {
+    if (!isTauri || !backendReady) return
+    let unlisten
+    const setup = async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window')
+        const appWindow = getCurrentWindow()
+        unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
+          if (focused) {
+            healthCheck().catch(() => setBackendReady(false))
+          }
+        })
+      } catch { /* not in Tauri context */ }
+    }
+    setup()
+    return () => { if (unlisten) unlisten() }
+  }, [isTauri, backendReady])
 
   // Initialize server configuration for mobile app
   useEffect(() => {
     async function initMobile() {
-      const { isMobileApp, getActiveServer } = await import('./serverManager')
-      const { updateServerConfig } = await import('./api')
+      const { isMobileApp, getServers, getActiveServer, setActiveServerId, pingAllServers, LOCAL_SERVER } = await import('./serverManager')
+      const { updateServerConfig, healthCheck: apiHealthCheck } = await import('./api')
+
+      addLog(`isMobileApp=${isMobileApp()}, isTauri=${isTauri}`)
 
       if (isMobileApp()) {
-        await updateServerConfig()
-        const server = await getActiveServer()
-        if (!server) {
+        const serverList = await getServers()
+        addLog(`Found ${serverList.length} saved servers`)
+
+        if (serverList.length === 0) {
+          // First launch — show server picker with "This Device" option
+          addLog('No servers — showing server selector')
+          setServers([])
           setShowServerSetup(true)
+        } else {
+          // Has remote servers — ping them and show picker (local server is always first option)
+          const statuses = await pingAllServers(serverList)
+          const onlineServers = serverList.filter(s => statuses[s.id] === 'online')
+
+          // Only auto-connect to servers that have auth credentials (token or username/password)
+          const autoConnectable = onlineServers.filter(s => s.token || (s.username && s.password))
+
+          if (autoConnectable.length === 1) {
+            // Exactly 1 online with auth — try auto-connect
+            await setActiveServerId(autoConnectable[0].id)
+            await updateServerConfig()
+
+            // Validate the connection actually works (token might be expired)
+            try {
+              await apiHealthCheck()
+              // Success — proceed to library
+            } catch {
+              // Auth failed or server unreachable — bounce back to server picker
+              setServers(serverList)
+              setServerStatuses({ ...statuses, [autoConnectable[0].id]: 'auth_failed' })
+              setShowServerSetup(true)
+              setConnectionError(`Failed to connect to ${autoConnectable[0].name}. Server may be busy or token invalid — try again or re-pair.`)
+            }
+          } else {
+            // 0, 2+, or no auth — show selection with status
+            setServers(serverList)
+            setServerStatuses(statuses)
+            setShowServerSetup(true)
+          }
         }
       }
+      addLog('Mobile init complete')
       setMobileReady(true)
     }
-    initMobile()
-  }, [])
+    initMobile().catch(err => addLog(`initMobile error: ${err.message || err}`))
+  }, [addLog])
+
+  // Show loading while backend starts (Tauri)
+  if (!backendReady) {
+    return (
+      <div className="app loading-screen">
+        <div className="loading-content">
+          <h1>LocalBooru</h1>
+          <p>Starting backend...</p>
+          {startupLogs.length > 0 && (
+            <pre style={{ fontSize: '10px', textAlign: 'left', maxHeight: '200px', overflow: 'auto', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '4px', marginTop: '12px', maxWidth: '90vw', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
+              {startupLogs.join('\n')}
+            </pre>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   // Show loading while initializing mobile
   if (!mobileReady) {
@@ -1276,42 +1985,93 @@ function App() {
         <div className="loading-content">
           <h1>LocalBooru</h1>
           <p>Loading...</p>
+          {startupLogs.length > 0 && (
+            <pre style={{ fontSize: '10px', textAlign: 'left', maxHeight: '200px', overflow: 'auto', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '4px', marginTop: '12px', maxWidth: '90vw', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
+              {startupLogs.join('\n')}
+            </pre>
+          )}
         </div>
       </div>
     )
   }
 
-  // Show server setup for mobile when no server configured
+  // Handle disconnect/switch server
+  const handleDisconnect = () => {
+    setShowServerSetup(true)
+    // Re-fetch servers and their statuses
+    import('./serverManager').then(async ({ getServers, pingAllServers }) => {
+      const serverList = await getServers()
+      setServers(serverList)
+      if (serverList.length > 0) {
+        const statuses = await pingAllServers(serverList)
+        setServerStatuses(statuses)
+      }
+    })
+  }
+
+  // Show server setup/selection for mobile
   if (showServerSetup) {
     return (
-      <div className="app server-setup-screen">
-        <div className="server-setup-content">
-          <h1>LocalBooru</h1>
-          <p>Connect to a LocalBooru server to get started.</p>
-          <ServerSettings onServerChange={() => {
-            import('./serverManager').then(({ getActiveServer }) => {
-              getActiveServer().then(server => {
-                if (server) setShowServerSetup(false)
-              })
-            })
-          }} />
-        </div>
-      </div>
+      <ServerSelectScreen
+        servers={servers}
+        serverStatuses={serverStatuses}
+        error={connectionError}
+        onConnect={() => { setShowServerSetup(false); setConnectionError(null) }}
+      />
     )
   }
 
   return (
     <>
-      <TitleBar />
+      <TitleBar
+        onSwitchServer={handleDisconnect}
+        onOpenFile={() => window.dispatchEvent(new CustomEvent('localbooru-open-file'))}
+      />
+      <ToastContainer />
       <BrowserRouter>
+        <BackButtonHandler />
         <Routes>
           <Route path="/" element={<Gallery />} />
           <Route path="/directories" element={<DirectoriesPage />} />
+          <Route path="/collections" element={<CollectionsPage />} />
+          <Route path="/collections/:id" element={<CollectionDetailPage />} />
+          <Route path="/watch/:token" element={<WatchPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </BrowserRouter>
     </>
   )
+}
+
+// Handle hardware back button on mobile
+// Tauri Android WebView handles back button → history.back() automatically.
+// This handler covers the edge case where we're on the root page with no history.
+function BackButtonHandler() {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (!isMobileApp()) return
+
+    const handlePopState = () => {
+      // If we're at the root with no more history, do nothing (Android will minimize)
+      if (location.pathname === '/' && window.history.length <= 1) {
+        return
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [navigate, location.pathname])
+
+  return null
+}
+
+function App() {
+  return <>
+    <DirectFilePlayer />
+    <AppShell />
+  </>
 }
 
 export default App

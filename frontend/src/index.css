@@ -1,5 +1,6 @@
 :root {
   /* Dark grey theme (ComfyUI style) */
+  color-scheme: dark;
   --bg-primary: #141414;
   --bg-secondary: #1e1e1e;
   --bg-tertiary: #282828;
@@ -34,6 +35,17 @@
   /* Window chrome */
   --window-radius: 12px;
   --title-bar-height: 0px;
+  --app-height: 100vh;
+  --touch-target: 44px;
+
+  /* System safe areas. On Android the native layer injects --android-inset-*
+     live on every insets change (rotation, immersive mode) because
+     env(safe-area-inset-*) is unreliable in the WebView. Elsewhere we fall
+     back to env(). */
+  --safe-top: var(--android-inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--android-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --safe-left: var(--android-inset-left, env(safe-area-inset-left, 0px));
+  --safe-right: var(--android-inset-right, env(safe-area-inset-right, 0px));
 
   /* Rating colors */
   --rating-safe: #00FFA3;
@@ -61,23 +73,44 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
+@supports (height: 100dvh) {
+  :root {
+    --app-height: 100dvh;
+  }
+}
+
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
 html, body {
-  min-height: 100vh;
-  overflow-x: hidden;
+  box-sizing: content-box !important;
+  height: var(--app-height);
+  overflow: hidden;
   background: var(--bg-primary);
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
 }
 
 #root {
-  min-height: 100vh;
+  height: var(--app-height);
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* Desktop app: transparent window with rounded corners */
+html.desktop-app,
+html.desktop-app body {
+  background: transparent !important;
+}
+
+html.desktop-app #root {
+  border-radius: var(--window-radius);
   overflow: hidden;
 }
 
@@ -104,6 +137,19 @@ input, select {
   font-size: inherit;
 }
 
+select {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+select option {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 12px;
@@ -111,7 +157,7 @@ input, select {
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--bg-primary);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -121,6 +167,10 @@ input, select {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-light);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--bg-primary);
 }
 
 /* Selection */

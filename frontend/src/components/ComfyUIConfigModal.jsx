@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { toast } from './Toast'
 import './ComfyUIConfigModal.css'
 
 function ComfyUIConfigModal({ directoryId, directoryName, onClose, onSave }) {
@@ -17,7 +18,7 @@ function ComfyUIConfigModal({ directoryId, directoryName, onClose, onSave }) {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(`/directories/${directoryId}/comfyui-nodes`)
+      const response = await fetch(`/api/directories/${directoryId}/comfyui-nodes`)
       if (!response.ok) throw new Error('Failed to load nodes')
       const data = await response.json()
       setNodes(data.nodes || [])
@@ -60,7 +61,7 @@ function ComfyUIConfigModal({ directoryId, directoryName, onClose, onSave }) {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const response = await fetch(`/directories/${directoryId}/comfyui-config`, {
+      const response = await fetch(`/api/directories/${directoryId}/comfyui-config`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -76,12 +77,12 @@ function ComfyUIConfigModal({ directoryId, directoryName, onClose, onSave }) {
       // Ask if user wants to re-extract metadata for existing images
       if (selectedPromptNodes.length > 0 || selectedNegativeNodes.length > 0) {
         if (confirm('Configuration saved! Do you want to re-extract metadata for all existing images in this directory?')) {
-          const reextractResponse = await fetch(`/directories/${directoryId}/reextract-metadata`, {
+          const reextractResponse = await fetch(`/api/directories/${directoryId}/reextract-metadata`, {
             method: 'POST'
           })
           if (reextractResponse.ok) {
             const result = await reextractResponse.json()
-            alert(`Queued metadata extraction for ${result.queued} images.`)
+            toast.success(`Queued metadata extraction for ${result.queued} images.`)
           }
         }
       }

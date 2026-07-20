@@ -1,16 +1,36 @@
 /**
  * Server Manager - handles multi-server support for mobile app
- * Uses Capacitor Preferences on mobile, localStorage on web
+ * Uses localStorage on all platforms (works in Tauri WebView)
  */
-
-import { Preferences } from '@capacitor/preferences'
 
 const SERVERS_KEY = 'localbooru_servers'
 const ACTIVE_SERVER_KEY = 'localbooru_active_server'
 
-// Check if running in Capacitor native app (not web)
+// Local embedded server constant (always available on Tauri mobile)
+export const LOCAL_SERVER = {
+  id: '__local__',
+  name: 'This Device',
+  url: null, // uses relative /api URLs, same as desktop
+  isLocal: true,
+}
+
+// Check if running as a Tauri mobile app
 export function isMobileApp() {
-  return window.Capacitor?.isNativePlatform?.() === true
+  return window.__TAURI_INTERNALS__ !== undefined &&
+         /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
+
+// Check if running in any Tauri context (desktop or mobile)
+export function isTauriApp() {
+  return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
+}
+
+export function isLinuxDesktopApp() {
+  return isTauriApp() && !isMobileApp() && /Linux/i.test(navigator.userAgent)
+}
+
+export function isWindowsOrMacDesktopApp() {
+  return isTauriApp() && !isMobileApp() && /Windows|Macintosh|Mac OS X/i.test(navigator.userAgent)
 }
 
 // Default server structure
@@ -19,27 +39,22 @@ function createServer(data) {
     id: data.id || crypto.randomUUID(),
     name: data.name || 'LocalBooru Server',
     url: data.url,
+    fallbackUrl: data.fallbackUrl || null,  // Optional secondary URL (e.g. Tailscale) used when primary fails
     username: data.username || null,
     password: data.password || null,
+    token: data.token || null,  // JWT token from QR pairing
+    certFingerprint: data.certFingerprint || null,  // TLS certificate fingerprint for pinning
     lastConnected: data.lastConnected || null,
   }
 }
 
-// Storage helpers that work on both web and mobile
+// Storage helpers — always use localStorage (works in Tauri WebView, persistent across sessions)
 async function getStorageItem(key) {
-  if (isMobileApp()) {
-    const { value } = await Preferences.get({ key })
-    return value
-  }
   return localStorage.getItem(key)
 }
 
 async function setStorageItem(key, value) {
-  if (isMobileApp()) {
-    await Preferences.set({ key, value })
-  } else {
-    localStorage.setItem(key, value)
-  }
+  localStorage.setItem(key, value)
 }
 
 // Get all saved servers
@@ -66,6 +81,33 @@ export async function addServer(serverData) {
   await saveServers(servers)
 
   // If this is the first server, make it active
+  if (servers.length === 1) {
+    await setActiveServerId(server.id)
+  }
+
+  return server
+}
+
+// Add a server or update existing one if URL matches
+export async function addOrUpdateServer(serverData) {
+  const servers = await getServers()
+  const normalizeUrl = (url) => url?.replace(/\/+$/, '')
+  const existing = servers.find(s => normalizeUrl(s.url) === normalizeUrl(serverData.url))
+
+  if (existing) {
+    // Update the existing server entry with new token/name
+    const updated = { ...existing, ...serverData, id: existing.id }
+    const index = servers.indexOf(existing)
+    servers[index] = updated
+    await saveServers(servers)
+    return updated
+  }
+
+  // No match — add as new
+  const server = createServer(serverData)
+  servers.push(server)
+  await saveServers(servers)
+
   if (servers.length === 1) {
     await setActiveServerId(server.id)
   }
@@ -110,11 +152,7 @@ export async function setActiveServerId(id) {
   if (id) {
     await setStorageItem(ACTIVE_SERVER_KEY, id)
   } else {
-    if (isMobileApp()) {
-      await Preferences.remove({ key: ACTIVE_SERVER_KEY })
-    } else {
-      localStorage.removeItem(ACTIVE_SERVER_KEY)
-    }
+    localStorage.removeItem(ACTIVE_SERVER_KEY)
   }
 }
 
@@ -123,11 +161,17 @@ export async function getActiveServer() {
   const id = await getActiveServerId()
   if (!id) return null
 
+  // Return the local server sentinel if selected
+  if (id === LOCAL_SERVER.id) return LOCAL_SERVER
+
   const servers = await getServers()
   return servers.find(s => s.id === id) || null
 }
 
-// Test connection to a server
+// Test connection to a single URL. Returns:
+//   { success: true } on HTTP success
+//   { success: false, error, networkFailure: true } on network/timeout/refused
+//   { success: false, error, networkFailure: false } on HTTP error response (server reachable)
 export async function testServerConnection(url, username = null, password = null) {
   try {
     const headers = {}
@@ -135,44 +179,84 @@ export async function testServerConnection(url, username = null, password = null
       headers['Authorization'] = 'Basic ' + btoa(`${username}:${password}`)
     }
 
-    const response = await fetch(`${url}/api`, {
+    // Patch legacy saves that omitted the scheme.
+    const target = /^https?:\/\//i.test(url) ? url : `http://${url}`
+    const response = await fetch(`${target}/api`, {
       method: 'GET',
       headers,
       signal: AbortSignal.timeout(5000),
     })
 
     if (response.status === 401) {
-      return { success: false, error: 'Authentication required' }
+      return { success: false, error: 'Authentication required', networkFailure: false }
     }
 
     if (!response.ok) {
-      return { success: false, error: `Server returned ${response.status}` }
+      return { success: false, error: `Server returned ${response.status}`, networkFailure: false }
     }
 
     return { success: true }
   } catch (e) {
     if (e.name === 'AbortError' || e.name === 'TimeoutError') {
-      return { success: false, error: 'Connection timeout' }
+      return { success: false, error: 'Connection timeout', networkFailure: true }
     }
-    return { success: false, error: e.message || 'Connection failed' }
+    return { success: false, error: e.message || 'Connection failed', networkFailure: true }
   }
+}
+
+// Probe a server's primary URL, then fall back to its secondary URL on network failure.
+// Returns the working URL on success, plus the underlying probe result.
+export async function probeServer(server) {
+  if (!server || !server.url) return { success: false, error: 'No URL configured' }
+  const primary = await testServerConnection(server.url, server.username, server.password)
+  if (primary.success) {
+    return { success: true, url: server.url, usedFallback: false }
+  }
+  // Only fall back on network-level failure; HTTP error means server is reachable.
+  if (server.fallbackUrl && primary.networkFailure) {
+    const fb = await testServerConnection(server.fallbackUrl, server.username, server.password)
+    if (fb.success) {
+      return { success: true, url: server.fallbackUrl, usedFallback: true }
+    }
+    // Both failed — return the fallback's error (most recent attempt)
+    return { success: false, error: fb.error, networkFailure: fb.networkFailure }
+  }
+  return primary
 }
 
 // Get the API base URL
 export async function getApiBaseUrl() {
-  // If not a mobile app, use relative URL (served from backend)
   if (!isMobileApp()) {
+    // Desktop: always use embedded server
     const isDevServer = window.location.port === '5173' || window.location.port === '5174'
     return isDevServer ? 'http://127.0.0.1:8790/api' : '/api'
   }
 
-  // Mobile app - use configured server
+  // Mobile: check if using local or remote server
   const server = await getActiveServer()
-  if (!server) {
-    return null
+  if (!server || server.id === LOCAL_SERVER.id) {
+    // Local embedded server — use relative URL like desktop
+    return '/api'
   }
 
   return `${server.url}/api`
+}
+
+// Ping all servers in parallel and return status map.
+// Stashes the URL that responded onto the server entry as `_lastReachableUrl`
+// so callers (auto-connect, updateServerConfig) can pick the right primary
+// without paying for a second probe.
+export async function pingAllServers(servers) {
+  const results = await Promise.all(
+    servers.map(async (server) => {
+      const result = await probeServer(server)
+      if (result.success && result.url) {
+        try { await updateServer(server.id, { _lastReachableUrl: result.url }) } catch (e) { /* ignore */ }
+      }
+      return { id: server.id, online: result.success }
+    })
+  )
+  return Object.fromEntries(results.map(r => [r.id, r.online ? 'online' : 'offline']))
 }
 
 // Get auth headers for the active server
@@ -182,11 +266,16 @@ export async function getAuthHeaders() {
   }
 
   const server = await getActiveServer()
-  if (!server || !server.username || !server.password) {
-    return {}
+  if (!server || server.isLocal) return {}
+
+  // Prefer JWT token (from QR pairing) over Basic auth
+  if (server.token) {
+    return { 'Authorization': 'Bearer ' + server.token }
   }
 
-  return {
-    'Authorization': 'Basic ' + btoa(`${server.username}:${server.password}`)
+  if (server.username && server.password) {
+    return { 'Authorization': 'Basic ' + btoa(`${server.username}:${server.password}`) }
   }
+
+  return {}
 }

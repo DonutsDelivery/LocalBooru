@@ -1,0 +1,104 @@
+[package]
+name = "localbooru"
+version = "2.0.3"
+description = "Local image library with automatic tagging"
+authors = ["DonutsDelivery <donutsdelivery@users.noreply.github.com>"]
+license = "MIT"
+repository = "https://github.com/DonutsDelivery/LocalBooru"
+edition = "2021"
+rust-version = "1.77.2"
+default-run = "localbooru"
+
+[lib]
+name = "localbooru_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2.6.0"
+tauri-plugin-clipboard-manager = "2.3.2"
+
+# Async runtime (full features for axum server)
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+
+# HTTP server
+axum = { version = "0.8", features = ["multipart"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "fs", "compression-gzip", "trace", "set-header"] }
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
+
+# Image processing
+image = "0.25"
+image_hasher = "3"
+
+# Hashing (xxhash for quick file hash, compatible with Python impl)
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
+sha2 = "0.10"
+
+# File watching
+notify = "7"
+notify-debouncer-mini = "0.5"
+
+# HTTP client (for addon proxy, updates)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+
+# Async streams (for SSE)
+async-stream = "0.3"
+futures-core = "0.3"
+
+# UPnP / IGD
+igd-next = { version = "0.15", features = ["aio_tokio"] }
+
+# Utilities
+uuid = { version = "1.0", features = ["v4"] }
+regex = "1"
+chrono = { version = "0.4", features = ["serde"] }
+dashmap = "6"
+walkdir = "2"
+mime_guess = "2"
+dirs = "5"
+
+# Auth
+jsonwebtoken = "9"
+argon2 = "0.5"
+rand = "0.8"
+tauri-plugin-http = "2.5.7"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", features = ["v3_24"] }
+gdk = { version = "0.18", features = ["v3_24"] }
+gdk-pixbuf = "0.18"
+webkit2gtk = "2.0"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Pipes"] }
+
+# Desktop-only plugins (excluded on Android/iOS automatically)
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies.tauri]
+version = "2"
+features = ["tray-icon", "image-png"]
+
+[features]
+# This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!
+custom-protocol = ["tauri/custom-protocol"]

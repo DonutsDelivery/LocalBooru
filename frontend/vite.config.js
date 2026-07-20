@@ -6,6 +6,17 @@ export default defineConfig({
   plugins: [react()],
   base: './', // Use relative paths for Electron
   server: {
-    port: 5174, // Avoid conflict with other dev servers on 5173
+    port: 5210, // LocalBooru dev port (avoid OpenDAW on 5173-5199)
+    strictPort: true,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8790',
+        changeOrigin: true,
+      },
+      '/thumbnails': {
+        target: 'http://127.0.0.1:8790',
+        changeOrigin: true,
+      },
+    },
   },
 })

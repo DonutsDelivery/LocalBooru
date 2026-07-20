@@ -1,275 +1,194 @@
-name: Build
+name: Release build fallback
 
+# Linux uses the same Docker wrapper as local releases. Windows and macOS are
+# built natively so their platform toolchains and bundle formats are verified.
+# This workflow uploads CI artifacts only; it never publishes a release.
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build
+        required: true
+        default: windows
+        type: choice
+        options:
+          - windows
+          - macos
+          - linux
+          - all
+      bundles:
+        description: Linux bundle set (ignored for macOS)
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - appimage
+          - deb
+          - rpm
+
+permissions:
+  contents: read
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
+  windows-release:
+    if: ${{ inputs.platform == 'windows' || inputs.platform == 'all' }}
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      CARGO_TERM_COLOR: always
     steps:
-      - name: Checkout
+      - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Set up Windows Rust target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
 
-      - name: Install frontend dependencies
-        run: cd frontend && npm ci
+      - name: Cache Rust build inputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> src-tauri/target
+          shared-key: localbooru-windows-x64
 
-      - name: Build frontend
-        run: npm run build:frontend
+      - name: Cache pinned Tauri CLI
+        id: cache-tauri-cli-windows
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri.exe
+          key: tauri-cli-2.9.4-${{ runner.os }}-${{ runner.arch }}
 
-      - name: Build Linux packages
-        run: npx electron-builder --linux --publish never
+      - name: Install pinned Tauri CLI
+        if: steps.cache-tauri-cli-windows.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version 2.9.4 --locked
 
-      - name: Upload Linux artifacts
+      - name: Build and verify Windows x64 artifacts
+        shell: pwsh
+        run: ./scripts/build-windows-ci.ps1
+
+      - name: Audit Windows base release boundary
+        shell: bash
+        run: |
+          node scripts/list-release-inventory.js "${{ runner.temp }}/LocalBooru-Windows-verify" \
+            | PYTHONPATH=addons/lada/src python -m localbooru_lada audit-base --inventory -
+
+      - name: Upload verified Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-builds
-          path: |
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.rpm
-            dist/*.zip
-          if-no-files-found: warn
+          name: LocalBooru-Windows-x64
+          path: dist-windows/
+          if-no-files-found: error
+          retention-days: 14
 
-  build-mac:
-    runs-on: macos-latest
+  linux-release:
+    if: ${{ inputs.platform == 'linux' || inputs.platform == 'all' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
     steps:
-      - name: Checkout
+      - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install frontend dependencies
-        run: cd frontend && npm ci
-
-      - name: Build frontend
-        run: npm run build:frontend
-
-      - name: Build macOS packages
-        run: npx electron-builder --mac --publish never
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac-builds
-          path: |
-            dist/*.dmg
-            dist/*.zip
-          if-no-files-found: warn
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install frontend dependencies
-        run: cd frontend && npm ci
-
-      - name: Build frontend
-        run: npm run build:frontend
-
-      - name: Verify frontend build
-        shell: pwsh
+      - name: Reclaim runner disk space
         run: |
-          Write-Host "Frontend build contents:"
-          Get-ChildItem -Path "frontend/dist" -Recurse | Select-Object FullName
-          Write-Host ""
-          Write-Host "Index.html content (first 50 lines):"
-          Get-Content "frontend/dist/index.html" | Select-Object -First 50
-          Write-Host ""
-          Write-Host "Checking for /api in JS bundle:"
-          $jsFile = Get-ChildItem "frontend/dist/assets/*.js" | Select-Object -First 1
-          if ($jsFile) {
-            $content = Get-Content $jsFile.FullName -Raw
-            if ($content -match "return.*/api") {
-              Write-Host "SUCCESS: Found /api return in JS bundle"
-            } else {
-              Write-Host "ERROR: /api return NOT found in JS bundle!"
-              exit 1
-            }
-          }
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          docker system prune -af
 
-      - name: Prepare Python bundle
-        shell: pwsh
-        run: |
-          $PYTHON_VERSION = "3.11.9"
-          $BUNDLE_DIR = "python-embed"
-
-          Write-Host "Creating Python bundle directory..."
-          New-Item -ItemType Directory -Force -Path $BUNDLE_DIR
-
-          Write-Host "Downloading Python embeddable..."
-          $pythonUrl = "https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-embed-amd64.zip"
-          Invoke-WebRequest -Uri $pythonUrl -OutFile "$BUNDLE_DIR\python.zip"
-
-          Write-Host "Extracting Python..."
-          Expand-Archive -Path "$BUNDLE_DIR\python.zip" -DestinationPath $BUNDLE_DIR -Force
-          Remove-Item "$BUNDLE_DIR\python.zip"
-
-          Write-Host "Enabling pip..."
-          $pthFile = "$BUNDLE_DIR\python311._pth"
-          $content = Get-Content $pthFile -Raw
-          $content = $content -replace '#import site', 'import site'
-          $content += "`nLib\site-packages`n"
-          Set-Content -Path $pthFile -Value $content
-
-          Write-Host "Installing pip..."
-          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$BUNDLE_DIR\get-pip.py"
-          & "$BUNDLE_DIR\python.exe" "$BUNDLE_DIR\get-pip.py"
-          Remove-Item "$BUNDLE_DIR\get-pip.py"
-
-          Write-Host "Downloading Visual C++ Runtime DLLs..."
-          # Download VC++ runtime DLLs needed by onnxruntime
-          $vcRuntimeUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-          Invoke-WebRequest -Uri $vcRuntimeUrl -OutFile "$BUNDLE_DIR\vc_redist.x64.exe"
-          # Extract DLLs using 7z or just copy from system after silent install
-          Start-Process -FilePath "$BUNDLE_DIR\vc_redist.x64.exe" -ArgumentList "/install", "/quiet", "/norestart" -Wait -NoNewWindow
-          Remove-Item "$BUNDLE_DIR\vc_redist.x64.exe" -ErrorAction SilentlyContinue
-
-          # Copy VC++ runtime DLLs to python-embed folder
-          $systemDlls = @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140_1.dll", "msvcp140_2.dll")
-          foreach ($dll in $systemDlls) {
-            $sourcePath = "C:\Windows\System32\$dll"
-            if (Test-Path $sourcePath) {
-              Copy-Item $sourcePath "$BUNDLE_DIR\" -Force
-              Write-Host "Copied $dll"
-            }
-          }
-
-          Write-Host "Installing dependencies..."
-          # Install most dependencies (skip insightface which requires C++ build tools)
-          & "$BUNDLE_DIR\python.exe" -m pip install fastapi uvicorn[standard] sqlalchemy aiosqlite pillow imagehash onnxruntime opencv-python-headless numpy pydantic pydantic-settings python-multipart httpx watchdog xxhash --no-warn-script-location
-
-          # Try to install insightface (may fail on some systems, that's OK)
-          Write-Host "Attempting to install insightface..."
-          try {
-            & "$BUNDLE_DIR\python.exe" -m pip install insightface --no-warn-script-location 2>&1 | Out-Null
-          } catch {
-            Write-Host "Note: insightface installation skipped (face detection will be unavailable)"
-          }
-          # Reset error state
-          $LASTEXITCODE = 0
-
-          # Copy VC++ DLLs to onnxruntime capi folder (where the native DLL is)
-          Write-Host "Copying VC++ DLLs to onnxruntime..."
-          $onnxCapi = "$BUNDLE_DIR\Lib\site-packages\onnxruntime\capi"
-          if (Test-Path $onnxCapi) {
-            foreach ($dll in $systemDlls) {
-              $sourcePath = "C:\Windows\System32\$dll"
-              if (Test-Path $sourcePath) {
-                Copy-Item $sourcePath "$onnxCapi\" -Force
-                Write-Host "Copied $dll to onnxruntime/capi"
-              }
-            }
-          }
-
-          Write-Host "Cleaning up..."
-          Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-          Get-ChildItem -Path "$BUNDLE_DIR\Lib\site-packages" -Recurse -File -Filter "*.pyc" | Remove-Item -Force -ErrorAction SilentlyContinue
-
-          Write-Host "Python bundle ready!"
-          $size = (Get-ChildItem -Path $BUNDLE_DIR -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
-          Write-Host "Bundle size: $([math]::Round($size, 2)) MB"
-
-      # ML models are now downloaded on-demand by the app
-      - name: Create empty model directories
-        shell: pwsh
-        run: |
-          # Create empty tagger directory (models downloaded on first use)
-          if (Test-Path "tagger") { Remove-Item -Recurse -Force "tagger" }
-          New-Item -ItemType Directory -Force -Path "tagger"
-
-          # Create a readme explaining the on-demand download
-          @"
-          # ML Models
-
-          Models are downloaded automatically on first use.
-          This keeps the installer small and fast.
-
-          Supported models:
-          - tagger/vit-v3 (default, ~180MB)
-          - tagger/eva02-large-v3 (~400MB)
-          - tagger/swinv2-v3 (~180MB)
-          - yolov8n (~6MB)
-
-          Models are stored in:
-          - Windows: %APPDATA%\.localbooru\models\
-          - Linux/Mac: ~/.localbooru/models/
-          "@ | Out-File -FilePath "tagger\README.txt" -Encoding UTF8
-
-          Write-Host "ML models will be downloaded on-demand (saves ~186MB in installer)"
-
-      - name: Build Windows packages
-        run: npx electron-builder --win --publish never
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-builds
-          path: |
-            dist/*.exe
-            dist/*.zip
-            dist/*.appx
-            dist/*.blockmap
-            dist/latest.yml
-          if-no-files-found: warn
-
-  release:
-    needs: [build-linux, build-mac, build-windows]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: List artifacts
-        run: find artifacts -type f | head -50
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            artifacts/linux-builds/*
-            artifacts/mac-builds/*
-            artifacts/windows-builds/*
-          draft: false
-          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
-          generate_release_notes: true
+      - name: Build release artifacts through the project Docker wrapper
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOCALBOORU_BUILD_JOBS: "2"
+          LOCALBOORU_CCACHE_SIZE: 8G
+        run: |
+          case "${{ inputs.bundles }}" in
+            all) ./scripts/build-linux-local.sh --jobs 2 ;;
+            appimage) ./scripts/build-linux-local.sh --appimage --jobs 2 ;;
+            deb) ./scripts/build-linux-local.sh --deb --jobs 2 ;;
+            rpm) ./scripts/build-linux-local.sh --rpm --jobs 2 ;;
+          esac
+
+      - name: Audit Linux base release boundary
+        run: |
+          roots=()
+          for root in \
+            build-linux-docker/AppDir \
+            build-linux-docker/package-deb/usr \
+            build-linux-docker/package-rpm/usr
+          do
+            if [[ -d "$root" ]]; then
+              roots+=("$root")
+            fi
+          done
+          node scripts/list-release-inventory.js "${roots[@]}" \
+            | PYTHONPATH=addons/lada/src python3 -m localbooru_lada audit-base --inventory -
+
+      - name: Upload verified artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocalBooru-Linux
+          path: dist-linux-local/
+          if-no-files-found: error
+          retention-days: 14
+
+  macos-release:
+    if: ${{ inputs.platform == 'macos' || inputs.platform == 'all' }}
+    runs-on: macos-14
+    timeout-minutes: 120
+    env:
+      CARGO_TERM_COLOR: always
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up universal Rust targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust build inputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> src-tauri/target
+          shared-key: localbooru-macos-universal
+
+      - name: Cache pinned Tauri CLI
+        id: cache-tauri-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: tauri-cli-2.9.4-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install pinned Tauri CLI
+        if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version 2.9.4 --locked
+
+      - name: Build and verify universal macOS artifacts
+        run: ./scripts/build-macos-ci.sh
+
+      - name: Audit macOS base release boundary
+        run: |
+          node scripts/list-release-inventory.js \
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/LocalBooru.app \
+            | PYTHONPATH=addons/lada/src python3 -m localbooru_lada audit-base --inventory -
+
+      - name: Upload verified macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocalBooru-macOS-universal
+          path: dist-macos/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LocalBooru",
+  "version": "2.0.3",
+  "identifier": "com.localbooru.app",
+  "build": {
+    "frontendDist": "../frontend/dist",
+    "devUrl": "http://localhost:5210",
+    "beforeDevCommand": { "script": "npm run dev", "cwd": "../frontend" },
+    "beforeBuildCommand": { "script": "npm run build:frontend", "cwd": ".." }
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "LocalBooru",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost data: blob: http: https:; media-src 'self' asset: https://asset.localhost blob: http: https:; connect-src 'self' http: https: ws: wss:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "rpm", "appimage"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Graphics and Design",
+    "shortDescription": "Local image library with automatic tagging",
+    "longDescription": "LocalBooru is a local image library manager with optional AI-powered tagging via addons. Lightweight Rust backend with no Python required for core functionality.",
+    "homepage": "https://github.com/DonutsDelivery/LocalBooru",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "publisher": "DonutsDelivery",
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true,
+        "files": {}
+      },
+      "deb": {
+        "depends": [
+          "libc6",
+          "libgtk-3-0",
+          "libwebkit2gtk-4.1-0",
+          "libjavascriptcoregtk-4.1-0",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-plugins-bad"
+        ],
+        "recommends": [
+          "ffmpeg"
+        ],
+        "section": "graphics",
+        "priority": "optional",
+        "files": {}
+      },
+      "rpm": {
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "gstreamer1-plugins-base",
+          "gstreamer1-plugins-good",
+          "gstreamer1-plugins-bad-free"
+        ],
+        "release": "1",
+        "epoch": 0,
+        "files": {}
+      }
+    }
+  }
+}

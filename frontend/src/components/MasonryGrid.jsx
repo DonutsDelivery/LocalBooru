@@ -1,29 +1,72 @@
-import { useEffect, useRef, useCallback } from 'react'
-import Masonry from 'react-masonry-css'
+import { useEffect, useRef, useMemo, useState } from 'react'
 import MediaItem from './MediaItem'
+import FolderItem from './FolderItem'
+import { getColumnCount } from '../utils/gridLayout'
+import { imageIdentityKey } from '../utils/imageAdjustments.js'
+import { nextLoadRetryDelay } from '../utils/galleryState'
 import './MasonryGrid.css'
 
-const defaultBreakpoints = {
-  default: 8,
-  2400: 7,
-  1800: 6,
-  1400: 5,
-  1200: 4,
-  900: 3,
-  600: 2
+// Distribute images into columns based on aspect ratio to balance heights
+// Returns both items and normalized heights for each column
+function distributeToColumns(images, columnCount) {
+  const columns = Array.from({ length: columnCount }, () => ({ items: [], height: 0 }))
+
+  // Debug: count how many images have dimensions
+  let withDimensions = 0
+  let withoutDimensions = 0
+
+  for (const image of images) {
+    // Find the shortest column
+    let shortestIdx = 0
+    let shortestHeight = columns[0].height
+
+    for (let i = 1; i < columns.length; i++) {
+      if (columns[i].height < shortestHeight) {
+        shortestHeight = columns[i].height
+        shortestIdx = i
+      }
+    }
+
+    // Calculate estimated height based on aspect ratio
+    // Use a default aspect ratio of 4:3 (landscape) if dimensions unavailable
+    const hasDimensions = image.width && image.height && image.width > 0 && image.height > 0
+    if (hasDimensions) {
+      withDimensions++
+    } else {
+      withoutDimensions++
+    }
+
+    const aspectRatio = hasDimensions
+      ? image.width / image.height
+      : 4/3  // Default to landscape if unknown
+
+    // Normalized height (assuming column width of 1)
+    const itemHeight = 1 / aspectRatio
+
+    columns[shortestIdx].items.push(image)
+    columns[shortestIdx].height += itemHeight
+  }
+
+  return columns
 }
 
-const largeBreakpoints = {
-  default: 5,
-  1800: 4,
-  1400: 3,
-  900: 2,
-  600: 1
+// Calculate how many skeleton placeholders each column needs to match the tallest
+function getSkeletonCounts(columns) {
+  if (columns.length === 0) return []
+
+  const maxHeight = Math.max(...columns.map(col => col.height))
+  const avgItemHeight = 1 // Assume square-ish skeleton items
+
+  return columns.map(col => {
+    const gap = maxHeight - col.height
+    return Math.ceil(gap / avgItemHeight)
+  })
 }
 
 function MasonryGrid({
   images,
   onImageClick,
+  onFolderClick,
   onLoadMore,
   loading,
   hasMore,
@@ -33,24 +76,82 @@ function MasonryGrid({
   largeImages = false,
   isSelectable = false,
   selectedImages = new Set(),
-  onSelectImage
+  onSelectImage,
+  tileSize = 3
 }) {
-  const breakpointColumns = largeImages ? largeBreakpoints : defaultBreakpoints
+  const [columnCount, setColumnCount] = useState(() => getColumnCount(window.innerWidth, tileSize))
   const observerRef = useRef()
   const loadMoreRef = useRef()
 
-  // Infinite scroll observer
-  const handleObserver = useCallback((entries) => {
-    const [entry] = entries
-    if (entry.isIntersecting && hasMore && !loading) {
-      onLoadMore()
-    }
-  }, [hasMore, loading, onLoadMore])
+  // Use refs for observer callback values to avoid recreating the observer
+  const hasMoreRef = useRef(hasMore)
+  const loadingRef = useRef(loading)
+  const onLoadMoreRef = useRef(onLoadMore)
+  const loadingTimeoutRef = useRef(null)
+  const retryDelayRef = useRef(50)
+
+  // Keep refs in sync
+  useEffect(() => {
+    hasMoreRef.current = hasMore
+  }, [hasMore])
 
   useEffect(() => {
+    loadingRef.current = loading
+  }, [loading])
+
+  useEffect(() => {
+    onLoadMoreRef.current = onLoadMore
+  }, [onLoadMore])
+
+  // Update column count on resize
+  useEffect(() => {
+    const handleResize = () => {
+      setColumnCount(getColumnCount(window.innerWidth, tileSize))
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [tileSize])
+
+  // Update column count when tileSize changes
+  useEffect(() => {
+    setColumnCount(getColumnCount(window.innerWidth, tileSize))
+  }, [tileSize])
+
+  // Distribute images across columns based on aspect ratios
+  const columnData = useMemo(
+    () => distributeToColumns(images, columnCount),
+    [images, columnCount]
+  )
+
+  // Calculate skeleton counts to fill shorter columns when loading
+  const skeletonCounts = useMemo(
+    () => (loading && hasMore) ? getSkeletonCounts(columnData) : columnData.map(() => 0),
+    [columnData, loading, hasMore]
+  )
+
+  // Infinite scroll observer - uses refs to avoid recreating observer on state changes
+  useEffect(() => {
+    const handleObserver = (entries) => {
+      const [entry] = entries
+      if (entry.isIntersecting && hasMoreRef.current && !loadingRef.current) {
+        // Debounce to prevent rapid re-triggering during layout shifts
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current)
+        }
+        loadingTimeoutRef.current = setTimeout(async () => {
+          // Double-check state hasn't changed during debounce
+          if (hasMoreRef.current && !loadingRef.current) {
+            const succeeded = await onLoadMoreRef.current()
+            retryDelayRef.current = nextLoadRetryDelay(retryDelayRef.current, succeeded !== false)
+          }
+        }, retryDelayRef.current)
+      }
+    }
+
     const option = {
       root: null,
-      rootMargin: '400px',
+      rootMargin: '1500px', // Load well ahead to hide column height differences
       threshold: 0
     }
     observerRef.current = new IntersectionObserver(handleObserver, option)
@@ -63,8 +164,21 @@ function MasonryGrid({
       if (observerRef.current) {
         observerRef.current.disconnect()
       }
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+      }
     }
-  }, [handleObserver])
+  }, []) // Empty deps - observer created once, uses refs for current values
+
+  // IntersectionObserver only reports threshold crossings. If a request fails
+  // while the sentinel stays visible, loading=false alone does not trigger it
+  // again. Re-observe after every settled load so transient backend failures
+  // recover with bounded exponential backoff instead of locking at one page.
+  useEffect(() => {
+    if (loading || !hasMore || !observerRef.current || !loadMoreRef.current) return
+    observerRef.current.unobserve(loadMoreRef.current)
+    observerRef.current.observe(loadMoreRef.current)
+  }, [loading, hasMore, images.length])
 
   if (!images.length && !loading) {
     return (
@@ -74,28 +188,50 @@ function MasonryGrid({
     )
   }
 
+  // Calculate max column width based on tile size
+  const maxColumnWidth = useMemo(() => {
+    const widths = {
+      1: 200,   // smallest tiles
+      2: 250,
+      3: 300,   // default
+      4: 450,
+      5: 600    // largest tiles
+    }
+    return widths[tileSize] || 300
+  }, [tileSize])
+
   return (
-    <div className="masonry-container">
-      <Masonry
-        breakpointCols={breakpointColumns}
-        className="masonry-grid"
-        columnClassName="masonry-column"
-      >
-        {images.map((image) => (
-          <MediaItem
-            key={`${image.id}-${image.is_favorite}`}
-            image={image}
-            onClick={() => onImageClick(image.id)}
-            user={user}
-            onRatingChange={onImageUpdate}
-            onReject={onImageUpdate}
-            showStatus={showStatus}
-            isSelectable={isSelectable}
-            isSelected={selectedImages.has(image.id)}
-            onSelect={onSelectImage}
-          />
+    <div className="masonry-container" style={{ '--max-column-width': `${maxColumnWidth}px` }}>
+      <div className="masonry-grid">
+        {columnData.map((column, colIdx) => (
+          <div key={colIdx} className="masonry-column">
+            {column.items.map((image) => (
+              <div key={image._isFolder ? `folder-${image.path}` : `${imageIdentityKey(image)}-${image.is_favorite}`}>
+                {image._isFolder ? (
+                  <FolderItem folder={image} onClick={() => onFolderClick(image.path)} />
+                ) : (
+                  <MediaItem
+                    image={image}
+                    onClick={() => onImageClick(image)}
+                    user={user}
+                    onRatingChange={onImageUpdate}
+                    onReject={onImageUpdate}
+                    onImageUpdate={onImageUpdate}
+                    showStatus={showStatus}
+                    isSelectable={isSelectable}
+                    isSelected={selectedImages.has(image.id)}
+                    onSelect={onSelectImage}
+                  />
+                )}
+              </div>
+            ))}
+            {/* Skeleton placeholders to fill shorter columns while loading */}
+            {skeletonCounts[colIdx] > 0 && Array.from({ length: skeletonCounts[colIdx] }).map((_, i) => (
+              <div key={`skeleton-${i}`} className="masonry-skeleton" />
+            ))}
+          </div>
         ))}
-      </Masonry>
+      </div>
 
       <div ref={loadMoreRef} className="load-more-trigger">
         {loading && <div className="loading-spinner" />}

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   getServers,
   addServer,
+  addOrUpdateServer,
   updateServer,
   removeServer,
   getActiveServerId,
@@ -11,14 +12,6 @@ import {
 } from '../serverManager'
 import { updateServerConfig } from '../api'
 import './ServerSettings.css'
-
-// Dynamic import for barcode scanner (only on mobile)
-let BarcodeScanner = null
-if (isMobileApp()) {
-  import('@capacitor-mlkit/barcode-scanning').then(module => {
-    BarcodeScanner = module.BarcodeScanner
-  })
-}
 
 export default function ServerSettings({ onServerChange }) {
   const [servers, setServers] = useState([])
@@ -79,98 +72,102 @@ export default function ServerSettings({ onServerChange }) {
   }
 
   async function handleScanQR() {
-    if (!BarcodeScanner) {
-      setScanError('QR scanner not available')
-      return
-    }
-
     try {
       setScanError(null)
       setScanning(true)
 
-      // Check camera permission
-      const { camera } = await BarcodeScanner.checkPermissions()
-      if (camera !== 'granted') {
-        const { camera: newPerm } = await BarcodeScanner.requestPermissions()
-        if (newPerm !== 'granted') {
-          setScanError('Camera permission required to scan QR codes')
-          setScanning(false)
-          return
-        }
-      }
+      // Dynamic import html5-qrcode
+      const { Html5Qrcode } = await import('html5-qrcode')
 
-      // Start scanning
-      document.body.classList.add('barcode-scanner-active')
-      const result = await BarcodeScanner.scan()
-      document.body.classList.remove('barcode-scanner-active')
+      // Create scanner container
+      const scannerId = 'qr-scanner-settings-' + Date.now()
+      const container = document.createElement('div')
+      container.id = scannerId
+      container.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:#000;'
+      document.body.appendChild(container)
 
-      if (!result.barcodes.length) {
-        setScanError('No QR code found')
+      // Add close button
+      const closeBtn = document.createElement('button')
+      closeBtn.textContent = 'Cancel'
+      closeBtn.style.cssText = 'position:fixed;bottom:40px;left:50%;transform:translateX(-50%);z-index:10001;padding:12px 32px;font-size:16px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;'
+      document.body.appendChild(closeBtn)
+
+      const scanner = new Html5Qrcode(scannerId)
+
+      const cleanup = () => {
+        scanner.stop().catch(() => {})
+        container.remove()
+        closeBtn.remove()
         setScanning(false)
-        return
       }
 
-      // Parse QR data
-      const rawValue = result.barcodes[0].rawValue
-      let qrData
-      try {
-        qrData = JSON.parse(rawValue)
-      } catch {
-        setScanError('Invalid QR code format')
-        setScanning(false)
-        return
-      }
+      closeBtn.onclick = cleanup
 
-      // Validate QR data
-      if (qrData.type !== 'localbooru') {
-        setScanError('Not a LocalBooru QR code')
-        setScanning(false)
-        return
-      }
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        async (decodedText) => {
+          cleanup()
 
-      // Try connecting - local first, then public
-      let workingUrl = null
-      let urls = []
-      if (qrData.local) urls.push(qrData.local)
-      if (qrData.public) urls.push(qrData.public)
+          // Parse QR data
+          let qrData
+          try {
+            qrData = JSON.parse(decodedText)
+          } catch {
+            setScanError('Invalid QR code format')
+            return
+          }
 
-      for (const url of urls) {
-        const result = await testServerConnection(url)
-        if (result.success) {
-          workingUrl = url
-          break
-        }
-      }
+          // Validate QR data
+          if (qrData.type !== 'localbooru') {
+            setScanError('Not a LocalBooru QR code')
+            return
+          }
 
-      if (!workingUrl) {
-        setScanError('Could not connect to server. Make sure you are on the same network.')
-        setScanning(false)
-        return
-      }
+          // Try connecting - local first, then public
+          let workingUrl = null
+          let urls = []
+          if (qrData.local) urls.push(qrData.local)
+          if (qrData.public) urls.push(qrData.public)
 
-      // Add the server
-      await addServer({
-        name: qrData.name || 'LocalBooru Server',
-        url: workingUrl,
-        username: null,
-        password: null,
-        lastConnected: new Date().toISOString()
-      })
+          for (const url of urls) {
+            const result = await testServerConnection(url)
+            if (result.success) {
+              workingUrl = url
+              break
+            }
+          }
 
-      await loadServers()
-      await updateServerConfig()
-      onServerChange?.()
+          if (!workingUrl) {
+            setScanError('Could not connect to server. Make sure you are on the same network.')
+            return
+          }
 
+          // Add or update existing server (avoids duplicates on re-pair)
+          await addOrUpdateServer({
+            name: qrData.name || 'LocalBooru Server',
+            url: workingUrl,
+            username: null,
+            password: null,
+            certFingerprint: qrData.cert_fingerprint || null,
+            lastConnected: new Date().toISOString()
+          })
+
+          await loadServers()
+          await updateServerConfig()
+          onServerChange?.()
+        },
+        () => {} // ignore scan errors (expected while scanning)
+      )
     } catch (err) {
       console.error('Scan error:', err)
-      setScanError(err.message || 'Failed to scan QR code')
-      document.body.classList.remove('barcode-scanner-active')
+      setScanError(err.message || 'Failed to start QR scanner. Check camera permissions.')
     } finally {
       setScanning(false)
     }
   }
 
-  // Don't show on web (non-Capacitor)
+  // Don't show on web (non-mobile)
   if (!isMobileApp()) {
     return (
       <div className="server-settings">
@@ -297,10 +294,20 @@ function ServerCard({ server, isActive, onSetActive, onEdit, onDelete }) {
 function AddServerModal({ server, onSave, onClose }) {
   const [name, setName] = useState(server?.name || '')
   const [url, setUrl] = useState(server?.url || '')
+  const [fallbackUrl, setFallbackUrl] = useState(server?.fallbackUrl || '')
   const [username, setUsername] = useState(server?.username || '')
   const [password, setPassword] = useState(server?.password || '')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
+
+  function normalizeUrl(value) {
+    let v = value.trim()
+    if (!v) return ''
+    if (!v.startsWith('http://') && !v.startsWith('https://')) {
+      v = 'http://' + v
+    }
+    return v.replace(/\/$/, '')
+  }
 
   async function handleTest() {
     if (!url) return
@@ -308,29 +315,42 @@ function AddServerModal({ server, onSave, onClose }) {
     setTesting(true)
     setTestResult(null)
 
-    // Normalize URL
-    let normalizedUrl = url.trim()
-    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
-      normalizedUrl = 'http://' + normalizedUrl
-    }
-    // Remove trailing slash
-    normalizedUrl = normalizedUrl.replace(/\/$/, '')
-
+    const normalizedUrl = normalizeUrl(url)
+    const normalizedFallback = fallbackUrl ? normalizeUrl(fallbackUrl) : ''
     setUrl(normalizedUrl)
+    if (normalizedFallback) setFallbackUrl(normalizedFallback)
 
-    const result = await testServerConnection(normalizedUrl, username, password)
-    setTestResult(result)
+    const primary = await testServerConnection(normalizedUrl, username, password)
+    if (primary.success) {
+      setTestResult({ ...primary, usedFallback: false })
+      setTesting(false)
+      return
+    }
+    if (normalizedFallback && primary.networkFailure) {
+      const fb = await testServerConnection(normalizedFallback, username, password)
+      if (fb.success) {
+        setTestResult({ success: true, usedFallback: true })
+        setTesting(false)
+        return
+      }
+    }
+    setTestResult(primary)
     setTesting(false)
   }
 
   function handleSave() {
     if (!url || !testResult?.success) return
 
+    // Normalize so URLs always have a scheme — without it, reqwest in the proxy
+    // produces "builder error" because the URL parser rejects scheme-less inputs.
+    const finalUrl = normalizeUrl(url)
+    const finalFallback = fallbackUrl ? normalizeUrl(fallbackUrl) : null
+
     // Extract hostname for default name
     let defaultName = name
     if (!defaultName) {
       try {
-        const urlObj = new URL(url)
+        const urlObj = new URL(finalUrl)
         defaultName = urlObj.hostname
       } catch {
         defaultName = 'LocalBooru Server'
@@ -339,7 +359,8 @@ function AddServerModal({ server, onSave, onClose }) {
 
     onSave({
       name: defaultName,
-      url: url.replace(/\/$/, ''),
+      url: finalUrl,
+      fallbackUrl: finalFallback,
       username: username || null,
       password: password || null,
       lastConnected: new Date().toISOString()
@@ -360,6 +381,17 @@ function AddServerModal({ server, onSave, onClose }) {
             onChange={e => setUrl(e.target.value)}
           />
           <small>IP address or hostname with port</small>
+        </div>
+
+        <div className="form-group">
+          <label>Fallback URL (optional)</label>
+          <input
+            type="text"
+            placeholder="100.x.x.x:8790 (Tailscale)"
+            value={fallbackUrl}
+            onChange={e => setFallbackUrl(e.target.value)}
+          />
+          <small>Used when the primary URL is unreachable (e.g. away from LAN)</small>
         </div>
 
         <div className="form-group">
@@ -394,7 +426,9 @@ function AddServerModal({ server, onSave, onClose }) {
 
         {testResult && (
           <div className={`test-result ${testResult.success ? 'success' : 'error'}`}>
-            {testResult.success ? 'Connection successful!' : `Error: ${testResult.error}`}
+            {testResult.success
+              ? (testResult.usedFallback ? 'Connection successful (via fallback URL)!' : 'Connection successful!')
+              : `Error: ${testResult.error}`}
           </div>
         )}
 

@@ -1,24 +1,174 @@
-import { useState, useRef, useEffect } from 'react'
-import { getMediaUrl } from '../api'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { getMediaUrl, fetchPreviewFrames, uploadImage } from '../api'
+import { imageIdentityKey } from '../utils/imageAdjustments.js'
+import { getDesktopAPI } from '../tauriAPI'
+import { toast } from './Toast'
+import ContextMenu from './ContextMenu'
 import './MediaItem.css'
 
 // Check if filename is a video
 const isVideo = (filename) => {
   if (!filename) return false
   const ext = filename.toLowerCase().split('.').pop()
-  return ['webm', 'mp4', 'mov'].includes(ext)
+  return ['webm', 'mp4', 'mov', 'avi', 'mkv'].includes(ext)
 }
 
-function MediaItem({ image, onClick, isSelectable = false, isSelected = false, onSelect }) {
+function MediaItem({ image, onClick, isSelectable = false, isSelected = false, onSelect, onImageUpdate }) {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
-  const [localRating, setLocalRating] = useState(image?.rating)
-  const [isShortVideo, setIsShortVideo] = useState(image?.duration != null ? image.duration <= 10 : false)
+  const [localRating] = useState(image?.rating)
+  const [contextMenu, setContextMenu] = useState(null)
 
-  const videoRef = useRef()
+  // Preview frames state
+  const [previewFrames, setPreviewFrames] = useState([])
+  const [currentFrame, setCurrentFrame] = useState(-1) // -1 means show thumbnail
+  const [previewLoaded, setPreviewLoaded] = useState(false)
+  const frameIntervalRef = useRef(null)
+  const previewFetchedRef = useRef(false)
+  const isHoveringRef = useRef(false) // Track hover state for late-loading frames
+  const previewFramesRef = useRef([]) // Ref for closure-safe access in intervals
+
+  // Compute derived values (safe before hooks)
+  const thumbnailUrl = image?.thumbnail_url ? getMediaUrl(image.thumbnail_url) : ''
+  const isVideoFile = isVideo(image?.original_filename)
+  const fileStatus = image?.file_status || 'available'
+
+  // Determine if we should use preview frames for hover animation
+  const usePreviewFrames = isVideoFile && previewLoaded && previewFrames.length > 0
+
+  // Fetch preview frames for videos - only when needed (on hover)
+  const fetchFramesIfNeeded = useCallback(async () => {
+    if (!image || !isVideo(image.original_filename) || previewFetchedRef.current) return
+    previewFetchedRef.current = true
+
+    try {
+      const data = await fetchPreviewFrames(image.id, image.directory_id)
+      if (data.frames && data.frames.length > 0) {
+        const frameUrls = data.frames.map(url => getMediaUrl(url))
+
+        // Preload frames and only keep ones that successfully load
+        const loadResults = await Promise.all(frameUrls.map(url => {
+          return new Promise((resolve) => {
+            const img = new Image()
+            img.onload = () => resolve(url)
+            img.onerror = () => resolve(null) // Return null for failed loads
+            img.src = url
+          })
+        }))
+
+        // Filter out failed frames
+        const validFrames = loadResults.filter(url => url !== null)
+
+        // Only enable slideshow if we have valid frames
+        if (validFrames.length > 0) {
+          previewFramesRef.current = validFrames
+          setPreviewFrames(validFrames)
+          setPreviewLoaded(true)
+        }
+      }
+    } catch (err) {
+      // Silently fail - preview frames are optional
+    }
+  }, [image])
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (frameIntervalRef.current) {
+        clearInterval(frameIntervalRef.current)
+      }
+    }
+  }, [])
+
+  const handleMouseEnter = useCallback(() => {
+    isHoveringRef.current = true
+
+    // If frames already loaded from previous hover, start slideshow
+    const frames = previewFramesRef.current
+    if (previewLoaded && frames.length > 0 && !frameIntervalRef.current) {
+      setCurrentFrame(0)
+      frameIntervalRef.current = setInterval(() => {
+        setCurrentFrame(prev => (prev + 1) % previewFramesRef.current.length)
+      }, 600)
+    }
+    // If not yet fetched, start fetching in background (slideshow will work on next hover)
+    else if (isVideoFile && !previewFetchedRef.current && thumbnailUrl && loaded && !error) {
+      fetchFramesIfNeeded()
+    }
+  }, [previewLoaded, isVideoFile, fetchFramesIfNeeded, thumbnailUrl, loaded, error])
+
+  const handleMouseLeave = useCallback(() => {
+    isHoveringRef.current = false
+    // Stop frame slideshow and reset
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current)
+      frameIntervalRef.current = null
+    }
+    setCurrentFrame(-1) // Back to thumbnail
+  }, [])
+
+  // Note: Slideshow only starts on subsequent hovers after frames are loaded
+  // This prevents flickering issues during initial frame fetch
+
+  const handleCopyImage = useCallback(async () => {
+    if (!image) return
+
+    const desktopAPI = getDesktopAPI()
+    if (desktopAPI?.copyImageToClipboard) {
+      const result = await desktopAPI.copyImageToClipboard(getMediaUrl(image.url))
+      if (result.success) {
+        toast.success('Copied to clipboard!')
+      } else {
+        toast.error('Cannot copy this file')
+      }
+    } else {
+      try {
+        const response = await fetch(getMediaUrl(image.url))
+        const blob = await response.blob()
+        await navigator.clipboard.write([
+          new ClipboardItem({ [blob.type]: blob })
+        ])
+        toast.success('Copied to clipboard!')
+      } catch {
+        toast.error('Cannot copy this file')
+      }
+    }
+  }, [image])
+
+  const handlePasteImage = useCallback(async () => {
+    try {
+      const items = await navigator.clipboard.read()
+      let imageBlob = null
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          imageBlob = await item.getType(imageType)
+          break
+        }
+      }
+      if (!imageBlob) {
+        toast.error('No image found in clipboard')
+        return
+      }
+      const ext = imageBlob.type.split('/')[1] || 'png'
+      const file = new File([imageBlob], `pasted-image.${ext}`, { type: imageBlob.type })
+      await uploadImage(file, image.directory_id)
+      toast.success('Image pasted!')
+      onImageUpdate?.()
+    } catch (err) {
+      toast.error('Failed to paste image: ' + err.message)
+    }
+  }, [image, onImageUpdate])
+
+  const handleContextMenu = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }, [])
 
   // Handle click - either select or open lightbox
   const handleClick = (e) => {
+    setContextMenu(null)
     if (isSelectable) {
       e.preventDefault()
       e.stopPropagation()
@@ -35,53 +185,19 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     onSelect?.(image.id)
   }
 
-  // Guard against missing image data
-  if (!image || !image.thumbnail_url) {
-    return (
-      <div className="media-item media-error">
-        <div className="error-placeholder">Image unavailable</div>
-      </div>
-    )
-  }
-
-  const thumbnailUrl = getMediaUrl(image.thumbnail_url)
-  const isVideoFile = isVideo(image.filename)
-  const fileStatus = image.file_status || 'available'
-
-  // Handle video duration check for autoplay
-  const handleVideoLoaded = () => {
-    setLoaded(true)
-    if (videoRef.current) {
-      const duration = image?.duration != null ? image.duration : videoRef.current.duration
-      if (duration <= 10) {
-        setIsShortVideo(true)
-        videoRef.current.play().catch(() => {})
-      }
-    }
-  }
-
-  // Auto-start short videos if duration is known from API
-  useEffect(() => {
-    if (isShortVideo && videoRef.current && loaded) {
-      videoRef.current.play().catch(() => {})
-    }
-  }, [isShortVideo, loaded])
-
-  const handleMouseEnter = () => {
-    if (videoRef.current && !isShortVideo) {
-      videoRef.current.play().catch(() => {})
-    }
-  }
-
-  const handleMouseLeave = () => {
-    if (videoRef.current && !isShortVideo) {
-      videoRef.current.pause()
-      videoRef.current.currentTime = 0
-    }
-  }
-
   const handleLoadError = () => {
     setError(true)
+    // Always mark as loaded so we show the appropriate placeholder
+    setLoaded(true)
+  }
+
+  // Get the current display image
+  const getCurrentDisplaySrc = () => {
+    const frames = previewFramesRef.current
+    if (currentFrame >= 0 && frames[currentFrame]) {
+      return frames[currentFrame]
+    }
+    return thumbnailUrl
   }
 
   // Render file status overlay
@@ -113,7 +229,17 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     return null
   }
 
-  if (error && fileStatus === 'available') {
+  // Guard against missing image data - AFTER all hooks
+  if (!image || !image.thumbnail_url) {
+    return (
+      <div className="media-item media-error">
+        <div className="error-placeholder">Image unavailable</div>
+      </div>
+    )
+  }
+
+  // Only show error for truly broken items, not just missing thumbnails
+  if (error && fileStatus !== 'available') {
     return (
       <div className="media-item media-error" onClick={handleClick}>
         <div className="error-placeholder">Failed to load</div>
@@ -125,7 +251,9 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     <div
       className={`media-item ${loaded ? 'loaded' : 'loading'} ${fileStatus !== 'available' ? 'unavailable' : ''} ${isSelectable ? 'selectable' : ''} ${isSelected ? 'selected' : ''}`}
       data-image-id={image.id}
+      data-image-key={imageIdentityKey(image)}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -144,38 +272,35 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
         </div>
       )}
 
-      {isVideoFile ? (
-        <>
-          <video
-            ref={videoRef}
-            src={getMediaUrl(image.url)}
-            poster={thumbnailUrl}
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            onLoadedMetadata={handleVideoLoaded}
-            onError={handleLoadError}
-          />
-          {!isShortVideo && (
-            <div className="video-indicator">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z"/>
-              </svg>
-            </div>
-          )}
-        </>
-      ) : (
-        <img
-          src={thumbnailUrl}
-          alt=""
-          loading="lazy"
-          onLoad={() => setLoaded(true)}
-          onError={handleLoadError}
-        />
+      {/* Always use thumbnail images in grid - never load actual videos */}
+      <img
+        src={getCurrentDisplaySrc()}
+        alt=""
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        onError={handleLoadError}
+      />
+      {/* Video indicator overlay */}
+      {isVideoFile && (
+        <div className="video-indicator">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </div>
       )}
 
       {!loaded && <div className="loading-placeholder" />}
+
+      {/* Show placeholder icon when thumbnail is still generating (loaded but src failed) */}
+      {loaded && error && fileStatus === 'available' && (
+        <div className="thumbnail-generating">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21,15 16,10 5,21"/>
+          </svg>
+        </div>
+      )}
 
       {/* Rating badge */}
       <span className={`rating-badge rating-${localRating}`}>
@@ -193,6 +318,24 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
 
       {/* File status overlay */}
       {renderStatusOverlay()}
+
+      {contextMenu && (
+        <ContextMenu
+          position={contextMenu}
+          onClose={() => setContextMenu(null)}
+          items={[
+            {
+              label: 'Copy Image',
+              onClick: handleCopyImage
+            },
+            {
+              label: 'Paste Image',
+              onClick: handlePasteImage,
+              disabled: !image?.directory_id
+            }
+          ]}
+        />
+      )}
     </div>
   )
 }

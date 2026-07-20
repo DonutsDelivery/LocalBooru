@@ -1,0 +1,108 @@
+eventbox {
+  background-color: #050505;
+}
+
+#native-video-hud {
+  background: linear-gradient(to bottom, rgba(8, 8, 10, 0.15), rgba(8, 8, 10, 0.92));
+  padding: 14px 18px 12px;
+  border-radius: 10px;
+}
+
+#native-video-hud button {
+  color: #f6f6f7;
+  background: transparent;
+  border: 0;
+  border-radius: 19px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 2px 7px;
+  box-shadow: none;
+}
+
+#native-video-hud button:hover,
+#native-video-hud button:focus {
+  background: rgba(255, 255, 255, 0.16);
+  outline: 2px solid rgba(69, 163, 255, 0.92);
+  outline-offset: -2px;
+}
+
+#native-video-hud button:active,
+#native-video-hud button:checked {
+  background: rgba(69, 163, 255, 0.28);
+}
+
+#native-video-hud scale trough {
+  min-height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+#native-video-hud scale highlight {
+  min-height: 4px;
+  border-radius: 2px;
+  background: #45a3ff;
+}
+
+#native-video-hud scale slider {
+  min-width: 12px;
+  min-height: 12px;
+  border-radius: 6px;
+  background: #f6f6f7;
+  border: 0;
+}
+
+#native-video-hud combobox button,
+#native-video-hud spinbutton {
+  color: #f6f6f7;
+  background: rgba(28, 28, 32, 0.78);
+  border-radius: 6px;
+}
+
+#native-video-hud label {
+  color: #f6f6f7;
+}
+
+#native-video-speed-badge,
+#native-video-quality-badge {
+  color: #f6f6f7;
+  background: rgba(28, 28, 32, 0.84);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-weight: 600;
+}
+
+#native-video-diagnostics {
+  color: rgba(246, 246, 247, 0.72);
+  font-size: 11px;
+}
+
+#native-video-status {
+  color: #f6f6f7;
+  background: rgba(28, 28, 32, 0.84);
+  border-radius: 5px;
+  padding: 3px 7px;
+}
+
+#native-video-seek-indicator {
+  color: #ffffff;
+  background: rgba(8, 8, 10, 0.82);
+  border-radius: 24px;
+  padding: 10px 16px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+#native-video-error {
+  color: #ffd9d9;
+  background: rgba(150, 28, 40, 0.88);
+  border-radius: 5px;
+  padding: 3px 7px;
+}
+
+#native-video-subtitle {
+  color: #ffffff;
+  background-color: rgba(0, 0, 0, 0.72);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 18px;
+}

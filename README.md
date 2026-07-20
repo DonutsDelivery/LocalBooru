@@ -4,25 +4,30 @@ A local image library with automatic AI tagging, designed for organizing and bro
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/ZhvPhXrdZ4) - Help, feature requests, and discussions
 
-![LocalBooru mockup](https://donutsdelivery.online/assets/mockups/thumbs/localbooru-mockup-4.svg)
+🌐 **[Visit Website](https://donutsdelivery.online/#localbooru)**
+
+![Gallery View](https://donutsdelivery.online/assets/mockups/thumbs/localbooru-mockup-1.svg)
 
 ## Download
 
 | Platform | Download |
 |----------|----------|
-| **Windows** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Windows.zip) &#124; [Installer](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Setup.exe) |
-| **Linux** | [AppImage](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.AppImage) |
-| **macOS** | [Apple Silicon](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-arm64.dmg) &#124; [Intel](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-macOS-x64.dmg) |
+| **Windows (legacy 0.3.33)** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-Windows.zip) &#124; [Portable (EXE)](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-Portable.exe) &#124; [Installer](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-Setup.exe) |
+| **Linux** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.zip) &#124; [AppImage](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.AppImage) &#124; [.deb](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.deb) &#124; [.rpm](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.rpm) |
+| **macOS (legacy 0.3.33)** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-macOS-arm64.zip) &#124; [DMG (Apple Silicon)](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-macOS-arm64.dmg) |
 
 ### USB Portable Mode
 
-The **Portable (ZIP)** version automatically stores all data next to the app - no setup needed:
+The **Portable** versions automatically store all data next to the app - no setup needed:
 
 1. Download and extract to your USB drive or any folder
 2. Run the app - a `data` folder is created automatically
 3. Copy the entire folder to any computer and your library comes with you
 
-The installer version uses AppData instead (shared across updates).
+**Windows**: Fully self-contained with bundled Python.
+**Linux/macOS**: Requires system Python 3.10+ with pip installed.
+
+The installer versions use AppData/home directory instead (shared across updates).
 
 ## Features
 
@@ -128,10 +133,30 @@ npm run build:win
 ## Tech Stack
 
 - **Frontend**: React + Vite
-- **Desktop**: Electron
+- **Desktop**: Tauri (Rust) / Electron (legacy)
 - **Backend**: Python FastAPI
 - **Database**: SQLite
-- **AI/ML**: PyTorch, Transformers, YOLO
+- **AI/ML**: ONNX Runtime, InsightFace
+- **Video**: GStreamer
+
+## Building from Source
+
+### Tauri (Recommended)
+
+```bash
+# Build all verified Linux release artifacts with Docker/Podman
+npm run release:linux
+
+# Or build specific formats
+npm run tauri:build:linux:appimage
+npm run tauri:build:linux:deb
+npm run tauri:build:linux:rpm
+```
+
+See [docs/LINUX_PACKAGING.md](docs/LINUX_PACKAGING.md) and the
+[release infrastructure guide](docs/agents/release-and-infrastructure.md) for
+artifact names, persistent cache configuration, and verification gates. The
+retired Electron workflow must not be used for current releases.
 
 ## License
 

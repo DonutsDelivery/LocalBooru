@@ -1,0 +1,45 @@
+diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -3571,6 +3571,25 @@ void MediaPlayerPrivateGStreamer::createGSTPlayBin(const URL& url)
+         if (auto* scale = makeGStreamerElement("scaletempo"_s))
+             g_object_set(m_pipeline.get(), "audio-filter", scale, nullptr);
+     }
++
++    const char* videoFilterName = g_getenv("WEBKIT_GST_VIDEO_FILTER");
++    GUniquePtr<char> videoFilterNameFromFile;
++    if ((!videoFilterName || !*videoFilterName)) {
++        if (const char* videoFilterFile = g_getenv("WEBKIT_GST_VIDEO_FILTER_FILE")) {
++            char* contents = nullptr;
++            if (g_file_get_contents(videoFilterFile, &contents, nullptr, nullptr)) {
++                videoFilterNameFromFile.reset(contents);
++                videoFilterName = g_strstrip(videoFilterNameFromFile.get());
++            }
++        }
++    }
++    if (videoFilterName && *videoFilterName) {
++        if (auto* videoFilter = makeGStreamerElement(CStringView::unsafeFromUTF8(videoFilterName))) {
++            GST_INFO_OBJECT(pipeline(), "Using application video filter: %s", videoFilterName);
++            g_object_set(m_pipeline.get(), "video-filter", videoFilter, nullptr);
++        } else
++            GST_WARNING_OBJECT(pipeline(), "Unable to create application video filter: %s", videoFilterName);
++    }
+ #if ENABLE(MEDIA_TELEMETRY)
+     MediaTelemetryReport::singleton().reportDrmInfo(getDrm());
+     MediaTelemetryReport::singleton().reportPlaybackState(MediaTelemetryReport::AVPipelineState::Create);
+
+diff --git a/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp b/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
+--- a/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
++++ b/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
+@@ -66,5 +66,10 @@ String findWebKitProcess(const char* processName)
+ String executablePathOfWebProcess()
+ {
++    if (const char* localBooruProcessPath = g_getenv("LOCALBOORU_WEB_PROCESS_PATH")) {
++        String processPath = FileSystem::stringFromFileSystemRepresentation(localBooruProcessPath);
++        if (FileSystem::fileExists(processPath))
++            return processPath;
++    }
+ #if PLATFORM(WPE)
+     return findWebKitProcess("WPEWebProcess");
+ #else
