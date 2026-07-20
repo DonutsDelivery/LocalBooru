@@ -40,3 +40,11 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T18:46:57.990Z
+  - _ulid: 01KY0DV2D4NAXED3XJ17YD2RA1
+    content: "Post-review hardening in ae722434: the same one-worker dev override now bounds nested
+      thumbnail generation fan-out, preventing reconciliation from silently spawning up to eight
+      thumbnail threads. Pure helper coverage passed with one cargo build job; no application
+      process was launched."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T18:50:30.180Z
