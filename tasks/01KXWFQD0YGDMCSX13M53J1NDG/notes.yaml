@@ -105,3 +105,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T12:57:09.853Z
+  - _ulid: 01KXZSMFJD838RKKZ5AG5PNHFW
+    content: "Fix cycle 1 approach: remove curation swipe ownership so horizontal swipes use the
+      ordinary Lightbox path and cannot call Keep or Discard. Preserve explicit buttons and keyboard
+      decisions, and update the existing gesture behavioral test before production code. No queue
+      cursor or navigation model is added because ordinary Lightbox swipes currently control sidebar
+      behavior rather than previous/next media."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T12:57:22.765Z
