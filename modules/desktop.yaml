@@ -943,4 +943,20 @@ requirements:
     tags: []
     created: 2026-07-20T08:04:35.064Z
     notes: []
+  - _ulid: 01KY0D88DAD65C7KHV2DQ84YZE
+    slugs:
+      - safe-development-startup
+    title: Safe development startup
+    type: requirement
+    description: Development startup prevents duplicate resource-intensive sessions and uses
+      conservative queue concurrency while preserving normal reconciliation behavior.
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    priority: high
+    tags: []
+    created: 2026-07-20T18:40:13.738Z
+    notes: []
 notes: []
