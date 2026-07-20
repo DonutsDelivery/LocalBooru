@@ -1,0 +1,25 @@
+notes:
+  - _ulid: 01KXZ8WPWCPAG53RDVPRSQTF52
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Local container release builds immediately report whether they are blocked, failed before
+      launch, or have entered a real build stage.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given a local container release build has not reached a container build or
+      artifact-build stage, when validation, source resolution, runtime discovery, or another
+      preflight step fails, then the request reports an early failure and never reports that the
+      build started
+
+      - ac-2: Given the shared lock is acquired and all required preflight checks pass, when the
+      container image build or artifact-build process is invoked for the resolved source revision,
+      then the request reports that the build started with its platform and immutable source
+      revision
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T08:04:46.604Z

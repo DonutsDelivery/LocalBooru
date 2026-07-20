@@ -1,0 +1,16 @@
+_ulid: 01KXZ8WPWCAQ4F63PZV97X0E1Z
+slugs:
+  - task-truthful-container-build-startup
+title: "Implement: Truthful Container Build Startup"
+type: task
+spec_ref: "@truthful-container-build-startup"
+derivation: auto
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-07-20T08:04:46.604Z
+todos: []
