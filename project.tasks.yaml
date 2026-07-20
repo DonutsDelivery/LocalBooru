@@ -1046,8 +1046,14 @@ tasks:
     type: task
     spec_ref: "@lada-bounded-frame-transport"
     plan_ref: "@plan-managed-lada-gstreamer-add-on"
-    status: pending
-    blocked_by: []
+    status: blocked
+    blocked_by:
+      - The shared plan branch currently targets main, which does not contain
+        src-tauri/native-video. The required Rust/add-on/GStreamer baseline exists only on active
+        dispatch/task/implement-gsd-integration-retirement/01kxyrga, checked out in the original
+        workspace. Per isolation requirements this session will not alter, merge, or detach that
+        workspace; coordinator work must wait until its retirement task integrates the baseline into
+        the plan target.
     depends_on:
       - "@package-lada-sidecar"
     priority: 1
