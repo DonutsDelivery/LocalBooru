@@ -734,6 +734,22 @@ features:
           - apply_adjust updates file_hash, width, height, file_size in DB
           - Thumbnail regenerated immediately from adjusted image
           - Thumbnail URL cache-busted or Cache-Control prevents stale versions
+      - _ulid: 01KXZ8WW7AR4M75X9M87B5KTED
+        slugs:
+          - identity-safe-image-adjustments
+        title: Identity-Safe Image Adjustments
+        type: requirement
+        description: Image adjustment previews and permanent changes remain owned by the exact library image
+          selected by the user.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        priority: high
+        tags: []
+        created: 2026-07-20T08:04:52.074Z
+        notes: []
     created: 2026-03-08T08:30:15.248Z
     notes: []
   - _ulid: 01KK6931WF3WQDWZKF37G4Q7VN
