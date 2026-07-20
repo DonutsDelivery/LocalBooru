@@ -32,3 +32,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T08:05:47.851Z
+  - _ulid: 01KXZ95C1XY8A5ZNQBQSYA89XK
+    content: Implemented immediate nonblocking LOCKED reporting with holder metadata, early FAILED
+      reporting, and STARTED only at real container image/artifact invocation. Both Windows and
+      Linux forward the resolved immutable SHA. Behavioral shell tests cover all three ACs and pass;
+      commit 4da6187e.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T08:09:30.429Z
