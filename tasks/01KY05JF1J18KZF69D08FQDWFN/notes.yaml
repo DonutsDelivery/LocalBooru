@@ -60,3 +60,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T17:37:26.622Z
+  - _ulid: 01KY0BSX7R21RANQ6P3ACFSQG6
+    content: "Late fix cycle verification: uncached duplicate thumbnails now skip stale eligible paths
+      and regenerate from a later live reference; one shared gallery request owner prevents stale
+      image/folder responses from publishing across view changes. Full Rust library suite passed
+      (161 tests), frontend suite passed (83 tests), and production frontend build passed."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T18:14:54.968Z
