@@ -987,12 +987,12 @@ tasks:
     title: "Implement: Identity-Safe Image Adjustments"
     type: task
     spec_ref: "@identity-safe-image-adjustments"
-    status: pending_review
+    status: needs_work
     blocked_by: []
     depends_on: []
     priority: 1
     tags: []
-    notes_count: 6
+    notes_count: 7
     todos_count: 0
     created_at: 2026-07-20T08:04:58.018Z
     started_at: 2026-07-20T08:24:28.932Z

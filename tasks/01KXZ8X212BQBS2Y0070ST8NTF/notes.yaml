@@ -79,3 +79,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T10:09:33.057Z
+  - _ulid: 01KXZRRBZWM94BDZMN0K1YAS6C
+    content: "[FIX_CYCLE: 1] Review findings: Windows tester reproduced preview generation failing with
+      ERROR_ACCESS_DENIED when flushing a read-only file handle; new ac-windows-preview requires
+      fix-cycle coverage."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T12:42:01.597Z
