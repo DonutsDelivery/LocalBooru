@@ -54,6 +54,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KXZGBBF7NGEHYA5E3MMQ9W55
         timestamp: 2026-07-20T10:15:06.476Z
+      - _ulid: 01KXZGC1XD1R81Q8BGWX63HS6M
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KXZGC1X5VHMQXXM1VARCJ207
+        timestamp: 2026-07-20T10:15:29.453Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -154,7 +161,25 @@ reviews:
               model regression test."
             created_at: 2026-07-20T10:15:06.471Z
         kind: blocker
+      - _ulid: 01KXZGC1X5VHMQXXM1VARCJ207
+        anchor:
+          type: code
+          commit: f64c423a6acff7b5005f82d2361ab3adb324210f
+          line_end: 18
+          line_start: 9
+          path: addons/lada/tests/test_release.py
+          side: head
+        entries:
+          - _ulid: 01KXZGC1X5K9HFRFHVBAXE5Z2K
+            author: "@claude"
+            body: "MUST-FIX: this annotation claims the Add-on Manager disclosure AC, but the test only loads a
+              JSON metadata function and never renders or exercises Add-on Manager. Do not count
+              this as full UI behavior coverage. Move the annotation to the later behavioral UI
+              test, or refine the spec/task split so this test targets a package-metadata AC while
+              retaining an explicit UI disclosure AC."
+            created_at: 2026-07-20T10:15:29.445Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-20T10:11:36.170Z
-    updated_at: 2026-07-20T10:15:06.471Z
+    updated_at: 2026-07-20T10:15:29.445Z
     notes: []
