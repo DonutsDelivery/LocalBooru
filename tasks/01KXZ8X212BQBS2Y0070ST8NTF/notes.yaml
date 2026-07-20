@@ -126,3 +126,11 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T16:42:14.635Z
+  - _ulid: 01KY0703M3NGNW2FB4AYFTB9BX
+    content: Integrated fix-cycle commit 0cc5904a. Source-owned errors, immediate preview release before
+      committed URL publication, nonblocking exact cleanup, Clear Preview label, and PNG/JPEG
+      apply-to-serve/decode coverage all pass in the combined tree. Integrated frontend 80/80, Rust
+      153/153, production build, cargo check/fmt/diff gates passed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T16:50:55.236Z
