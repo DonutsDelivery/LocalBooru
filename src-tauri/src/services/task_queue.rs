@@ -58,6 +58,12 @@ fn parse_worker_count_override(value: Option<&str>) -> Option<usize> {
     value?.parse::<usize>().ok().map(|workers| workers.max(1))
 }
 
+fn bounded_parallelism(available: usize, worker_override: Option<&str>, maximum: usize) -> usize {
+    parse_worker_count_override(worker_override)
+        .unwrap_or_else(|| available.max(1))
+        .min(maximum.max(1))
+}
+
 // ─── BackgroundTaskQueue ─────────────────────────────────────────────────────
 
 /// Background task queue that processes pending tasks from the database.
@@ -737,10 +743,11 @@ fn complete_directory_imports(
 
         let next_idx = AtomicUsize::new(0);
         let generated = AtomicUsize::new(0);
-        let parallelism = std::thread::available_parallelism()
+        let available = std::thread::available_parallelism()
             .map(|n| n.get())
-            .unwrap_or(4)
-            .min(8);
+            .unwrap_or(4);
+        let environment_value = std::env::var(ENV_WORKERS_KEY).ok();
+        let parallelism = bounded_parallelism(available, environment_value.as_deref(), 8);
 
         std::thread::scope(|s| {
             for _ in 0..parallelism {
@@ -1895,6 +1902,10 @@ mod tests {
         assert_eq!(parse_worker_count_override(Some("0")), Some(1));
         assert_eq!(parse_worker_count_override(Some("1")), Some(1));
         assert_eq!(parse_worker_count_override(Some("3")), Some(3));
+        assert_eq!(bounded_parallelism(32, Some("1"), 8), 1);
+        assert_eq!(bounded_parallelism(32, Some("3"), 8), 3);
+        assert_eq!(bounded_parallelism(32, None, 8), 8);
+        assert_eq!(bounded_parallelism(0, None, 8), 1);
     }
 
     #[test]
