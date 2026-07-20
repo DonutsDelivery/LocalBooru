@@ -100,3 +100,15 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T08:05:00.585Z
+  - _ulid: 01KXZB1RQ4PAY77966H2N29GJH
+    content: "Fix-cycle evidence: exact EVA artifact 9e768793... (1,260,435,999 bytes) completed locally
+      on RTX 4070 with ORT 1.21.1 at CUDA 1,360 / CPU 560 events (388.710 ms), and in a clean ORT
+      1.23.2 CUDA/cuDNN environment at the same CUDA 1,360 / CPU 560 split (285.128 ms). Therefore
+      the model and ORT 1.23.2 graph optimizer are not globally CPU-only; the reported failure is
+      Windows/machine/runtime-path-specific. Added and deployed an improved structured probe with
+      model input type, NVIDIA driver/GPU info, complete NVIDIA package versions, verbose logging,
+      and JSON errors. Commit a28fbaf4. A later gated rerun was blocked by unrelated ComfyUI GPU
+      allocation, not a code failure."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T08:42:29.476Z
