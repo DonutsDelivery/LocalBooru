@@ -561,4 +561,21 @@ features:
         notes: []
     created: 2026-07-16T23:26:05.987Z
     notes: []
+requirements:
+  - _ulid: 01KXZ8WBKRATXEJJGTV9QSQ2MS
+    slugs:
+      - truthful-container-build-startup
+    title: Truthful Container Build Startup
+    type: requirement
+    description: Local container release builds immediately report whether they are blocked, failed
+      before launch, or have entered a real build stage.
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    priority: high
+    tags: []
+    created: 2026-07-20T08:04:35.064Z
+    notes: []
 notes: []
