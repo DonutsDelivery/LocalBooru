@@ -35,3 +35,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T16:26:16.921Z
+  - _ulid: 01KY06YQX88MB1RRRSWH28DG3F
+    content: "Integrated a1717951: exact encoded library/directory/image/hash representative URLs,
+      route-level colliding-ID/cached-duplicate/stale-hash coverage, and throttled grouped-summary
+      refresh on image/scan completion. Integrated full frontend 80/80, Rust 153/153, production
+      build, cargo check/fmt/diff gates passed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T16:50:10.472Z
