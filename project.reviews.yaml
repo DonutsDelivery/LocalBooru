@@ -1016,7 +1016,19 @@ reviews:
     slugs: []
     title: Review LADA runtime readiness
     author: "@claude"
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba56e1d0
+          head_commit: 1fedaaf2
+        evidence: 170/170 full Rust library tests passed; focused add-on suite 44/44 passed after final
+          fixes.
+        name: Rust library and add-on suites
+        required: true
+        runner: cargo-test
+        created_at: 2026-07-20T15:59:48.514Z
+        completed_at: 2026-07-20T15:59:48.514Z
     events:
       - _ulid: 01KY041Z18C35STAHH3T4RBWSM
         actor: "@claude"
@@ -1031,6 +1043,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-07-20T15:59:46.973Z
+      - _ulid: 01KY042GSZS3CP0XW59CG6MES3
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: Rust library and add-on suites
+        timestamp: 2026-07-20T15:59:48.544Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1045,5 +1064,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T15:59:30.345Z
-    updated_at: 2026-07-20T15:59:46.964Z
+    updated_at: 2026-07-20T15:59:48.514Z
     notes: []
