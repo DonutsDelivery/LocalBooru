@@ -808,6 +808,11 @@ features:
             id: ac-source-owned-error
             then: it cannot replace the current image with an error state
             when: the stale media error arrives
+          - given: a supported PNG or JPEG image is writable on Windows
+            id: ac-apply-decode
+            then: the exact returned media URL is immediately servable, decodable, and remains adjusted after
+              reopening
+            when: adjustments are applied successfully
         priority: high
         tags: []
         created: 2026-07-20T08:04:52.074Z
