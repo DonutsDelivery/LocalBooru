@@ -829,6 +829,12 @@ reviews:
         payload:
           thread_ulid: 01KXZJWW151PFSXN2ETGEWX484
         timestamp: 2026-07-20T11:04:47.726Z
+      - _ulid: 01KXZK6C36HTM4WR3KV3X9Q66S
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KXZJWW151PFSXN2ETGEWX484
+        timestamp: 2026-07-20T11:04:48.998Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -869,6 +875,8 @@ reviews:
               exactly reconstructs its complete runtime."
             created_at: 2026-07-20T11:04:47.707Z
         kind: blocker
+        resolved_at: 2026-07-20T11:04:48.979Z
+        resolved_by: "@claude"
     verdicts:
       - applies_to_version:
           type: entity_version
@@ -878,5 +886,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-20T10:59:38.927Z
     created_at: 2026-07-20T10:54:00.401Z
-    updated_at: 2026-07-20T11:04:47.707Z
+    updated_at: 2026-07-20T11:04:48.979Z
     notes: []
