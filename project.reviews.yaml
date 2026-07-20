@@ -892,7 +892,18 @@ reviews:
     slugs: []
     title: Review managed LADA sidecar package (cycle 4)
     author: "@claude"
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: 22 behavioral tests passed, including metadata-aware common split and exact overlay
+          reconstruction
+        name: pytest
+        required: true
+        runner: pytest
+        created_at: 2026-07-20T11:05:28.256Z
+        completed_at: 2026-07-20T11:05:28.256Z
     events:
       - _ulid: 01KXZK6P6PE5ESQZEZJYE45CAF
         actor: "@claude"
@@ -907,6 +918,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-07-20T11:05:06.277Z
+      - _ulid: 01KXZK7JEBNQNDJ6QA6ETE2DPX
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: pytest
+        timestamp: 2026-07-20T11:05:28.267Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -919,5 +937,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T11:04:59.351Z
-    updated_at: 2026-07-20T11:05:06.261Z
+    updated_at: 2026-07-20T11:05:28.256Z
     notes: []
