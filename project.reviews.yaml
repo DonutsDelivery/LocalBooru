@@ -1242,9 +1242,26 @@ reviews:
           status: pass
           name: Static checks
         timestamp: 2026-07-20T18:47:38.700Z
+      - _ulid: 01KY0DNW2VRSKHNC5VR3H5TJJK
+        actor: claude
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: main
+            head_commit: f714eb1
+          decision: approve
+        timestamp: 2026-07-20T18:47:39.867Z
+      - _ulid: 01KY0DNW2V9DV2F736A9NG1238
+        actor: claude
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-07-20T18:47:39.867Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@task-safe-development-startup"
     subject:
@@ -1254,7 +1271,15 @@ reviews:
       head_branch: fix/safe-development-startup
       head_commit: f714eb1
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: main
+          head_commit: f714eb1
+        decision: approve
+        reviewer: claude
+        role: reviewer
+        created_at: 2026-07-20T18:47:39.867Z
     created_at: 2026-07-20T18:47:23.382Z
-    updated_at: 2026-07-20T18:47:38.680Z
+    updated_at: 2026-07-20T18:47:39.867Z
     notes: []
