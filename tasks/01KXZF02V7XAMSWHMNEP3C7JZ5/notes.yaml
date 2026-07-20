@@ -1,1 +1,12 @@
-notes: []
+notes:
+  - _ulid: 01KXZKHJF0PYYX6YFK7H0PMR52
+    content: "Approach: implement the sidecar half now by hashing exact model roles, proving the
+      selected CUDA/XPU device, loading the pinned YOLO and BasicVSR++ weights through LADA
+      load_models, and executing bounded-size detection/restoration inference with measured
+      evidence. Tests inject fake model loaders to prove readiness is impossible without model-path
+      success. The Rust hardware/driver selection, hard process timeout, persisted evidence, and
+      actionable Add-on Manager states remain blocked until the active native-video retirement
+      branch integrates src-tauri into the shared plan target."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T11:10:55.968Z
