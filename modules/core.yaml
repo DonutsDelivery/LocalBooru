@@ -73,6 +73,10 @@ features:
             then: the catalog refreshes its folder summaries and replaces stale preview URLs without leaving
               grouped view
             when: the scan changes representative image identities and completes
+          - given: a representative image has multiple original file references and a valid cached thumbnail
+            id: ac-cached-duplicate
+            then: the cached thumbnail is served without choosing an ambiguous original file
+            when: the folder catalog requests that thumbnail
         tags: []
         created: 2026-07-20T16:25:54.725Z
         notes: []
