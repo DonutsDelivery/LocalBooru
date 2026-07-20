@@ -133,3 +133,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T10:09:33.790Z
+  - _ulid: 01KXZHAGJCJQ75TAF1D90WX58D
+    content: Published immutable Windows tester candidate 3f87937b to
+      /downloads/localbooru/2.0.3-test-3f87937b after explicit user authorization. Public installer
+      and portable URLs return HTTP 200; streamed public SHA-256 values match 443a3c14... and
+      d413d601.... Existing /downloads/localbooru/2.0.3 artifacts were not overwritten.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T10:32:07.500Z
