@@ -114,11 +114,13 @@ pub async fn preview_adjust(
     );
     let cache_dir = resolved.library.data_dir.join("preview_cache");
     let source_path = resolved.path;
+    let expected_source_file_hash = source_file_hash.clone();
     let brightness = adjustments.brightness;
     let contrast = adjustments.contrast;
     let gamma = adjustments.gamma;
 
     tokio::task::spawn_blocking(move || {
+        ensure_path_hash(&source_path, &expected_source_file_hash)?;
         std::fs::create_dir_all(&cache_dir)?;
         let destination = cache_dir.join(filename);
         let mut temporary = TempPath::new(cache_dir.join(format!(
@@ -343,6 +345,17 @@ fn ensure_expected_hash(resolved: &ResolvedImage, expected: &str) -> Result<(), 
             "Image changed since the adjustment operation started".into(),
         ));
     }
+    ensure_path_hash(&resolved.path, expected)
+}
+
+fn ensure_path_hash(path: &Path, expected: &str) -> Result<(), AppError> {
+    let actual = importer::calculate_quick_hash(&path.to_string_lossy())
+        .map_err(|error| AppError::Internal(format!("Hash error: {}", error)))?;
+    if actual != expected {
+        return Err(AppError::BadRequest(
+            "Image changed since the adjustment operation started".into(),
+        ));
+    }
     Ok(())
 }
 
@@ -538,6 +551,7 @@ fn apply_to_resolved_image(
     std::fs::copy(&resolved.path, &backup.path)?;
     std::fs::set_permissions(&backup.path, original_metadata.permissions())?;
     sync_file_contents(&backup.path)?;
+    ensure_path_hash(&backup.path, expected_file_hash)?;
 
     replace_file(&adjusted_temp.path, &resolved.path).map_err(|error| {
         AppError::Internal(format!("Failed to atomically replace image: {}", error))
@@ -1013,6 +1027,104 @@ mod tests {
                 .file_name()
                 .to_string_lossy()
                 .contains("localbooru-adjust")));
+        drop(state);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-1
+    // AC: @identity-safe-image-adjustments ac-3
+    #[test]
+    fn apply_rejects_externally_changed_source_when_database_hash_is_stale() {
+        let root = test_root("external-apply-change");
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.resolve_library(None).unwrap();
+        let path = root.join("source.png");
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([80, 90, 100])))
+            .save(&path)
+            .unwrap();
+        let old_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+        insert_image(&library, 4, 12, &path, &old_hash);
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([10, 20, 30])))
+            .save(&path)
+            .unwrap();
+        let external_bytes = std::fs::read(&path).unwrap();
+        assert_ne!(
+            importer::calculate_quick_hash(&path.to_string_lossy()).unwrap(),
+            old_hash
+        );
+        let locator = ImageLocatorQuery {
+            library_id: library.uuid.clone(),
+            directory_id: 4,
+        };
+
+        let result = apply_to_resolved_image(
+            resolve_image(&state, &locator, 12).unwrap(),
+            &locator,
+            12,
+            &ImageAdjustmentRequest {
+                brightness: 20,
+                contrast: 0,
+                gamma: 0,
+            },
+            &old_hash,
+            false,
+        );
+
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+        assert_eq!(std::fs::read(&path).unwrap(), external_bytes);
+        let stored: String = library
+            .directory_db
+            .get_pool(4)
+            .unwrap()
+            .get()
+            .unwrap()
+            .query_row("SELECT file_hash FROM images WHERE id = 12", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(stored, old_hash);
+        drop(state);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-1
+    #[tokio::test]
+    async fn preview_rejects_externally_changed_source_when_database_hash_is_stale() {
+        let root = test_root("external-preview-change");
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.resolve_library(None).unwrap();
+        let path = root.join("source.png");
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([80, 90, 100])))
+            .save(&path)
+            .unwrap();
+        let old_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+        insert_image(&library, 4, 12, &path, &old_hash);
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([10, 20, 30])))
+            .save(&path)
+            .unwrap();
+        assert_ne!(
+            importer::calculate_quick_hash(&path.to_string_lossy()).unwrap(),
+            old_hash
+        );
+        let locator = ImageLocatorQuery {
+            library_id: library.uuid.clone(),
+            directory_id: 4,
+        };
+
+        let result = preview_adjust(
+            State(state.clone()),
+            AxumPath(12),
+            Query(locator),
+            Json(ImageAdjustmentRequest {
+                brightness: 20,
+                contrast: 0,
+                gamma: 0,
+            }),
+        )
+        .await;
+
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+        assert!(!library.data_dir.join("preview_cache").exists());
         drop(state);
         let _ = std::fs::remove_dir_all(root);
     }
