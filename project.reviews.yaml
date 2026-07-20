@@ -1169,7 +1169,20 @@ reviews:
     slugs: []
     title: Review safe development startup
     author: "@claude"
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: main
+          head_commit: f714eb1
+        evidence: Fake npm and fake ss harness proved duplicate lock rejection, stale port rejection, lock
+          release, default one-worker concurrency, explicit override preservation, and argument
+          forwarding without starting LocalBooru.
+        name: Isolated launcher behavior
+        required: true
+        runner: bash
+        created_at: 2026-07-20T18:47:36.389Z
+        completed_at: 2026-07-20T18:47:36.389Z
     events:
       - _ulid: 01KY0DNBZNWBEPVYNNZ258B366
         actor: "@claude"
@@ -1184,6 +1197,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-07-20T18:47:35.291Z
+      - _ulid: 01KY0DNRPG4QWGC48245YFWY4H
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: Isolated launcher behavior
+        timestamp: 2026-07-20T18:47:36.400Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1198,5 +1218,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T18:47:23.382Z
-    updated_at: 2026-07-20T18:47:35.272Z
+    updated_at: 2026-07-20T18:47:36.389Z
     notes: []
