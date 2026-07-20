@@ -35,3 +35,14 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T10:16:11.660Z
+  - _ulid: 01KXZGMFBR1K2XSDP82XERKAH5
+    content: "Fix cycle 1 approach: allocate and announce a new SHM pool for every generation while
+      closing only the producer's old handles; enforce nonce/protocol hello before commands; surface
+      LADA Exception/ErrorMarker values; stage Corresponding Source from tracked git archives;
+      narrow base-artifact detection to exact LADA payloads. Tests will reproduce old-FD
+      immutability, unauthenticated open rejection, ErrorMarker conversion, clean source staging,
+      and unrelated model allowance. The Add-on Manager disclosure AC annotation moves to the later
+      behavioral frontend test rather than claiming metadata loading proves UI behavior."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T10:20:05.368Z
