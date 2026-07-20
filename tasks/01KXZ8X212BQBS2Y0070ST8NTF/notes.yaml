@@ -151,3 +151,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T17:37:25.679Z
+  - _ulid: 01KY0BSWA94JSKJA05531CJV42
+    content: "Late fix cycle verification: preview now decodes the same byte snapshot it hash-validates;
+      final Linux/Windows replacement captures and validates the destination atomically and restores
+      concurrent external writes. Full Rust library suite passed (161 tests), cargo check and
+      rustfmt check passed, frontend suite passed (83 tests), production frontend build passed."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T18:14:54.026Z
