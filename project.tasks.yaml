@@ -1182,7 +1182,7 @@ tasks:
     title: "Implement: Grouped Folder Thumbnail Identity"
     type: task
     spec_ref: "@folder-thumbnail-route-identity"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -1191,3 +1191,4 @@ tasks:
     todos_count: 0
     created_at: 2026-07-20T16:25:59.601Z
     started_at: 2026-07-20T16:26:13.666Z
+    submitted_at: 2026-07-20T16:50:11.382Z
