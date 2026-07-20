@@ -91,3 +91,12 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T08:04:59.163Z
+  - _ulid: 01KXZ8X4H8P54J9Y5T3NC3PJAF
+    content: "Fix cycle: reproduce exact eva02-large-v3 artifact
+      9e768793060c7939b277ccb382783e8670e8a042d29d77aa736be0c8cc898bfc under ORT 1.23.2 across
+      optimization/fallback modes and compare the historically working runtime before changing
+      policy. The release remains blocked until a completed real-model prediction records nonzero
+      CUDA execution."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T08:05:00.585Z
