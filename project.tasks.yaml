@@ -955,7 +955,7 @@ tasks:
     title: "Implement: Truthful Container Build Startup"
     type: task
     spec_ref: "@truthful-container-build-startup"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -964,6 +964,7 @@ tasks:
     todos_count: 0
     created_at: 2026-07-20T08:04:46.604Z
     started_at: 2026-07-20T08:05:47.134Z
+    submitted_at: 2026-07-20T08:09:41.755Z
   - _ulid: 01KXZ8WVHHJG521A22QDM7ZHP3
     slugs:
       - task-windows-copy-image
