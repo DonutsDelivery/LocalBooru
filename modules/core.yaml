@@ -746,6 +746,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: different directories or libraries contain images with the same local numeric identifier
+            id: ac-1
+            then: only the selected library and directory image is read, previewed, or modified
+            when: the user previews or applies adjustments to one image
         priority: high
         tags: []
         created: 2026-07-20T08:04:52.074Z
