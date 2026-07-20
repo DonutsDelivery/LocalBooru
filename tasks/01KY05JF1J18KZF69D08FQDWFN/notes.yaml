@@ -43,3 +43,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T16:50:10.472Z
+  - _ulid: 01KY08XCV982JYXGNR9BGVHS84
+    content: "Post-review hardening integrated in 322519b8 and a94c06b7: cached exact thumbnails now
+      require an eligible existing file reference, uncached duplicate-reference thumbnails
+      regenerate from an eligible path without weakening original-media ambiguity, representatives
+      are globally newest with deterministic tie-breaking, and stale background folder responses
+      cannot overwrite a newer gallery view. Focused list/single tests 5/5 and full Rust 158/158
+      passed; frontend 83/83 + build passed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T17:24:23.529Z
