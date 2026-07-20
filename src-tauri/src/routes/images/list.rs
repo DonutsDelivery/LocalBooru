@@ -294,9 +294,9 @@ mod tests {
         image::DynamicImage::new_rgb8(4, 3)
             .save(&first_path)
             .unwrap();
-        image::DynamicImage::new_rgb8(5, 3)
-            .save(&second_path)
-            .unwrap();
+        std::fs::copy(&first_path, &second_path).unwrap();
+        let file_hash =
+            crate::services::importer::calculate_quick_hash(&first_path.to_string_lossy()).unwrap();
 
         let state = AppState::new(&root, 0).unwrap();
         let library = state.library_manager().primary().clone();
@@ -306,7 +306,7 @@ mod tests {
             &library,
             11,
             7,
-            "uncached-duplicate-hash",
+            &file_hash,
             "/folder",
             "2026-07-20 12:00:00",
             &[first.as_ref(), second.as_ref()],
@@ -319,9 +319,10 @@ mod tests {
             )
             .with_state(state);
         let response = app
-            .oneshot(request(
-                "/api/images/7/thumbnail?directory_id=11&library_id=primary&file_hash=uncached-duplicate-hash",
-            ))
+            .oneshot(request(&format!(
+                "/api/images/7/thumbnail?directory_id=11&library_id=primary&file_hash={}",
+                file_hash
+            )))
             .await
             .unwrap();
 

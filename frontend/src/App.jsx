@@ -566,9 +566,12 @@ function Gallery() {
   const loadingMoreRef = useRef(false)
   const pageRef = useRef(page)
   const imagesRef = useRef(images)
-  const folderRequestOwnerRef = useRef(null)
-  if (!folderRequestOwnerRef.current) {
-    folderRequestOwnerRef.current = createViewRequestOwner()
+  const galleryRequestOwnerRef = useRef(null)
+  const galleryForegroundBusyRef = useRef(false)
+  const publishedGalleryViewRef = useRef(null)
+  const lightboxPaginationGenerationRef = useRef(0)
+  if (!galleryRequestOwnerRef.current) {
+    galleryRequestOwnerRef.current = createViewRequestOwner()
   }
 
   // Keep ref in sync with state (for use in timeouts)
@@ -589,6 +592,8 @@ function Gallery() {
     const handlePopState = (e) => {
       // If lightbox is open and we're going back, close it
       if (lightboxIndexRef.current !== null && !e.state?.lightbox) {
+        loadingMoreRef.current = false
+        lightboxPaginationGenerationRef.current += 1
         setLightboxIndex(null)
       }
     }
@@ -673,8 +678,15 @@ function Gallery() {
   // Folder grouping URL params
   const groupByFolders = searchParams.get('group') === 'folders'
   const currentFolder = searchParams.get('folder') || null
-  const galleryViewKey = searchParams.toString()
-  folderRequestOwnerRef.current.activate(galleryViewKey)
+  const galleryViewKey = `${searchParams.toString()}|tile=${tileSize}`
+  galleryRequestOwnerRef.current.activate(galleryViewKey)
+
+  useEffect(() => {
+    galleryForegroundBusyRef.current = false
+    loadingMoreRef.current = false
+    lightboxPaginationGenerationRef.current += 1
+    setIsJumping(false)
+  }, [galleryViewKey])
 
   const galleryQuery = useMemo(() => ({
     tags: currentTags,
@@ -777,8 +789,9 @@ function Gallery() {
 
   // Load folders for folder grouping view
   const loadFolders = useCallback(async () => {
-    const request = folderRequestOwnerRef.current.begin(galleryViewKey)
-    if (!folderRequestOwnerRef.current.owns(request)) return false
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return false
+    galleryForegroundBusyRef.current = true
 
     setLoading(true)
     try {
@@ -789,7 +802,7 @@ function Gallery() {
         favorites_only: favoritesOnly,
         tags: currentTags,
       })
-      if (!folderRequestOwnerRef.current.owns(request)) return false
+      if (!galleryRequestOwnerRef.current.owns(request)) return false
 
       const folderItems = result.folders.map(f => ({
         ...f,
@@ -801,14 +814,18 @@ function Gallery() {
       setTotal(result.total)
       setHasMore(false)
       setPage(1)
+      publishedGalleryViewRef.current = galleryViewKey
       return true
     } catch (error) {
-      if (folderRequestOwnerRef.current.owns(request)) {
+      if (galleryRequestOwnerRef.current.owns(request)) {
         console.error('Failed to load folders:', error)
       }
       return false
     } finally {
-      if (folderRequestOwnerRef.current.owns(request)) setLoading(false)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        galleryForegroundBusyRef.current = false
+        setLoading(false)
+      }
     }
   }, [currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags, galleryViewKey])
 
@@ -822,6 +839,10 @@ function Gallery() {
       }
       return true
     }
+
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return false
+    galleryForegroundBusyRef.current = true
 
     setLoading(true)
     try {
@@ -845,6 +866,7 @@ function Gallery() {
         page: pageNum,
         per_page: calculatePerPage(tileSize)
       })
+      if (!galleryRequestOwnerRef.current.owns(request)) return false
 
       // A transiently unhealthy backend can return an empty middle page while
       // still reporting more rows. Do not advance past that gap permanently;
@@ -871,14 +893,20 @@ function Gallery() {
       setTotal(result.total)
       // Note: hasMore is computed by useEffect based on actual images.length
       setPage(pageNum)
+      if (!append) publishedGalleryViewRef.current = galleryViewKey
       return true
     } catch (error) {
-      console.error('Failed to load images:', error)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to load images:', error)
+      }
       return false
     } finally {
-      setLoading(false)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        galleryForegroundBusyRef.current = false
+        setLoading(false)
+      }
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders, galleryViewKey])
 
   const curation = useCurationGame({
     loadedImages: images,
@@ -973,6 +1001,12 @@ function Gallery() {
     if (await refreshGroupedFolderCatalog({ groupByFolders, currentFolder, loadFolders })) {
       return true
     }
+    if (galleryForegroundBusyRef.current || loadingMoreRef.current) return false
+    const replaceView = publishedGalleryViewRef.current !== galleryViewKey
+    if (!replaceView && pageRef.current !== 1) return false
+
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return false
 
     const preserveAnchor = window.scrollY >= 200 || lightboxIndexRef.current !== null
     const anchor = preserveAnchor
@@ -1003,8 +1037,13 @@ function Gallery() {
         page: 1,
         per_page: calculatePerPage(tileSize)
       })
+      if (!galleryRequestOwnerRef.current.owns(request)) return false
 
-      if (currentSort !== 'random') {
+      if (replaceView) {
+        setImages(result.images)
+        setPage(1)
+        publishedGalleryViewRef.current = galleryViewKey
+      } else if (currentSort !== 'random') {
         setImages(previous => mergeFirstPage(previous, result.images))
       }
       setTotal(result.total)
@@ -1018,10 +1057,12 @@ function Gallery() {
       }
       return true
     } catch (error) {
-      console.error('Failed to refresh newly indexed images:', error)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to refresh newly indexed images:', error)
+      }
       return false
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders, loadFolders])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey])
 
   // Subscribe to real-time library events (debounced incremental refresh).
   // Existing items, scroll position, selection, and lightbox identity stay intact.
@@ -1078,6 +1119,10 @@ function Gallery() {
   const jumpToImage = useCallback(async (targetIndex) => {
     if (targetIndex < 1 || targetIndex > total) return
 
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return
+    galleryForegroundBusyRef.current = true
+
     setIsJumping(true)
     const perPage = calculatePerPage(tileSize)
     const targetPage = Math.ceil(targetIndex / perPage)
@@ -1103,18 +1148,26 @@ function Gallery() {
         page: targetPage,
         per_page: perPage
       })
+      if (!galleryRequestOwnerRef.current.owns(request)) return
 
       setImages(result.images)
       setTotal(result.total)
       setPage(targetPage)
+      publishedGalleryViewRef.current = galleryViewKey
 
       // Scroll to top since we're showing a new set of images
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (error) {
-      console.error('Failed to jump to image:', error)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to jump to image:', error)
+      }
+    } finally {
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        galleryForegroundBusyRef.current = false
+        setIsJumping(false)
+      }
     }
-    setIsJumping(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, total, tileSize])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, total, tileSize, galleryViewKey])
 
   // Handle jump by offset (for +/- 100 buttons)
   const handleJumpByOffset = useCallback((offset) => {
@@ -1237,6 +1290,7 @@ function Gallery() {
   const handleLightboxClose = useCallback(() => {
     // Reset load-more guard in case it was left set by an aborted fetch
     loadingMoreRef.current = false
+    lightboxPaginationGenerationRef.current += 1
     // Scroll to the image that was being viewed
     const imageKey = lightboxIndex ? imageIdentityKey(lightboxIndex) : null
 
@@ -1270,7 +1324,13 @@ function Gallery() {
     // Use ref to prevent concurrent load-more (stale closure on images/page)
     if (newIndex >= images.length && hasMore && !loading && !loadingMoreRef.current) {
       loadingMoreRef.current = true
+      const paginationGeneration = lightboxPaginationGenerationRef.current
       const nextPage = pageRef.current + 1
+      const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+      if (!galleryRequestOwnerRef.current.owns(request)) {
+        loadingMoreRef.current = false
+        return
+      }
       try {
         const result = await fetchImages({
           tags: currentTags,
@@ -1292,6 +1352,14 @@ function Gallery() {
           page: nextPage,
           per_page: calculatePerPage(tileSize)
         })
+        if (
+          !galleryRequestOwnerRef.current.owns(request)
+          || paginationGeneration !== lightboxPaginationGenerationRef.current
+          || lightboxIndexRef.current === null
+        ) {
+          loadingMoreRef.current = false
+          return
+        }
 
         if (result.images.length > 0) {
           // Deduplicate using functional updater to avoid stale closure on images
@@ -1316,7 +1384,9 @@ function Gallery() {
         // Nothing new loaded — advance page anyway so next attempt tries further
         setPage(nextPage)
       } catch (error) {
-        console.error('Failed to load more images:', error)
+        if (galleryRequestOwnerRef.current.owns(request)) {
+          console.error('Failed to load more images:', error)
+        }
       }
       loadingMoreRef.current = false
     }

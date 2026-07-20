@@ -75,18 +75,85 @@ fn resolve_thumbnail_media(
     library: &crate::db::library::LibraryContext,
     directory_id: i64,
     image_id: i64,
-) -> Result<(PathBuf, String), AppError> {
+) -> Result<(Vec<PathBuf>, String), AppError> {
     let hash = resolve_thumbnail_media_hash(library, directory_id, image_id)?;
     let pool = library.directory_db.get_pool(directory_id)?;
     let connection = pool.get()?;
-    let path = connection.query_row(
+    let mut statement = connection.prepare(
         "SELECT original_path FROM image_files
          WHERE image_id = ?1 AND file_exists = 1 AND curation_discarded_at IS NULL
-         ORDER BY id LIMIT 1",
-        params![image_id],
-        |row| row.get::<_, String>(0),
+         ORDER BY id",
     )?;
-    Ok((PathBuf::from(path), hash))
+    let paths = statement
+        .query_map(params![image_id], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    if paths.is_empty() {
+        return Err(AppError::NotFound("Image file not found".into()));
+    }
+    Ok((paths, hash))
+}
+
+fn generate_thumbnail_from_candidates(
+    candidates: Vec<PathBuf>,
+    expected_hash: &str,
+    output: &Path,
+) -> bool {
+    for candidate in candidates {
+        if !candidate.is_file() {
+            continue;
+        }
+        let extension = candidate
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("media");
+        let suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+        let source_snapshot = output.with_file_name(format!(
+            ".thumbnail-source-{}-{}.{}",
+            std::process::id(),
+            suffix,
+            extension
+        ));
+        let attempt_output = output.with_file_name(format!(
+            ".thumbnail-output-{}-{}.tmp.webp",
+            std::process::id(),
+            suffix
+        ));
+        if std::fs::copy(&candidate, &source_snapshot).is_err() {
+            continue;
+        }
+        let snapshot = source_snapshot.to_string_lossy();
+        let matches_hash = importer::calculate_quick_hash(&snapshot)
+            .is_ok_and(|hash| hash == expected_hash)
+            || importer::calculate_file_hash(&snapshot).is_ok_and(|hash| hash == expected_hash);
+        if !matches_hash {
+            let _ = std::fs::remove_file(&source_snapshot);
+            continue;
+        }
+
+        let generated = if importer::is_video_file(&candidate.to_string_lossy()) {
+            importer::generate_video_thumbnail(
+                &snapshot,
+                attempt_output.to_str().unwrap_or(""),
+                300,
+            )
+        } else {
+            importer::generate_thumbnail(&snapshot, attempt_output.to_str().unwrap_or(""), 300)
+        };
+        let _ = std::fs::remove_file(&source_snapshot);
+        if !generated {
+            let _ = std::fs::remove_file(&attempt_output);
+            continue;
+        }
+        if std::fs::rename(&attempt_output, output).is_ok() || output.is_file() {
+            let _ = std::fs::remove_file(&attempt_output);
+            return true;
+        }
+        let _ = std::fs::remove_file(&attempt_output);
+    }
+    false
 }
 
 fn resolve_exact_media(
@@ -521,35 +588,26 @@ pub async fn get_image_thumbnail(
         let state_clone = state.clone();
         let library_id_clone = library_id.clone();
         let expected_current_hash = file_hash.clone();
-        let original_path = tokio::task::spawn_blocking(move || {
+        let original_paths = tokio::task::spawn_blocking(move || {
             let lib = state_clone.resolve_library(Some(&library_id_clone))?;
-            let (path, current_hash) = resolve_thumbnail_media(&lib, directory_id, image_id)?;
+            let (paths, current_hash) = resolve_thumbnail_media(&lib, directory_id, image_id)?;
             if current_hash != expected_current_hash {
                 return Err(AppError::NotFound(
                     "Thumbnail version is no longer current".into(),
                 ));
             }
-            Ok(path)
+            Ok(paths)
         })
         .await??;
         let thumb_dir = library.thumbnails_dir();
         let hash = file_hash.clone();
         let regenerated = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
-            let path = original_path.to_string_lossy();
             let output = thumb_dir.join(format!("{}.webp", &hash[..16.min(hash.len())]));
-            Ok(if crate::services::importer::is_video_file(&path) {
-                crate::services::importer::generate_video_thumbnail(
-                    &path,
-                    output.to_str().unwrap_or(""),
-                    300,
-                )
-            } else {
-                crate::services::importer::generate_thumbnail(
-                    &path,
-                    output.to_str().unwrap_or(""),
-                    300,
-                )
-            })
+            Ok(generate_thumbnail_from_candidates(
+                original_paths,
+                &hash,
+                &output,
+            ))
         })
         .await??;
 
@@ -1111,6 +1169,11 @@ async fn serve_cached_file(path: &Path, content_type: &str) -> Result<Response, 
 
 #[cfg(test)]
 mod tests {
+    use axum::body::{to_bytes, Body};
+    use axum::http::Request;
+    use axum::routing::get;
+    use axum::Router;
+
     use super::*;
 
     // AC: @identity-safe-image-adjustments ac-1
@@ -1160,6 +1223,68 @@ mod tests {
         ));
 
         drop(library);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @folder-thumbnail-route-identity ac-cached-duplicate
+    #[tokio::test]
+    async fn uncached_thumbnail_skips_stale_duplicate_path_for_later_live_path() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-live-duplicate-thumbnail-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let live_path = root.join("live.png");
+        image::DynamicImage::new_rgb8(4, 3)
+            .save(&live_path)
+            .unwrap();
+        let live_hash = importer::calculate_file_hash(&live_path.to_string_lossy()).unwrap();
+        let drifted_path = root.join("drifted.png");
+        image::DynamicImage::new_rgb8(8, 7)
+            .save(&drifted_path)
+            .unwrap();
+
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.library_manager().primary().clone();
+        let pool = library.directory_db.get_pool(11).unwrap();
+        let connection = pool.get().unwrap();
+        connection
+            .execute(
+                "INSERT INTO images (id, filename, file_hash) VALUES (7, 'image.png', ?1)",
+                params![&live_hash],
+            )
+            .unwrap();
+        for path in [root.join("stale.png"), drifted_path, live_path] {
+            connection
+                .execute(
+                    "INSERT INTO image_files (image_id, original_path, file_extension) VALUES (7, ?1, 'png')",
+                    params![path.to_string_lossy()],
+                )
+                .unwrap();
+        }
+        drop(connection);
+
+        let app = Router::new()
+            .route("/api/images/{image_id}/thumbnail", get(get_image_thumbnail))
+            .with_state(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/api/images/7/thumbnail?directory_id=11&library_id=primary&file_hash={}",
+                        live_hash
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let thumbnail = image::load_from_memory(&body).unwrap();
+        assert_eq!((thumbnail.width(), thumbnail.height()), (300, 225));
         let _ = std::fs::remove_dir_all(root);
     }
 }

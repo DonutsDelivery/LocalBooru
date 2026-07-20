@@ -41,23 +41,20 @@ test('an empty middle page is retried instead of advancing the pagination cursor
 })
 
 // AC: @folder-thumbnail-route-identity ac-rescan-refresh
-test('background folder results cannot overwrite a newer gallery view', async () => {
+test('new gallery publications supersede older work in the same complete view', () => {
   const owner = createViewRequestOwner()
-  owner.activate('group=folders&library=old')
-  const oldRequest = owner.begin('group=folders&library=old')
-  let visibleGallery = 'new gallery'
+  owner.activate('library=old|tile=3')
+  const oldLoad = owner.begin('library=old|tile=3')
+  const jump = owner.begin('library=old|tile=3')
 
-  const oldResult = Promise.resolve('old folders').then(result => {
-    if (owner.owns(oldRequest)) visibleGallery = result
-  })
+  assert.equal(owner.owns(oldLoad), false)
+  assert.equal(owner.owns(jump), true)
 
-  owner.activate('library=new')
-  await oldResult
+  owner.activate('library=old|tile=4')
+  const resizedLoad = owner.begin('library=old|tile=4')
 
-  assert.equal(visibleGallery, 'new gallery')
-  const newRequest = owner.begin('library=new')
-  assert.equal(owner.owns(oldRequest), false)
-  assert.equal(owner.owns(newRequest), true)
+  assert.equal(owner.owns(jump), false)
+  assert.equal(owner.owns(resizedLoad), true)
 })
 
 // AC: @folder-thumbnail-route-identity ac-rescan-refresh
