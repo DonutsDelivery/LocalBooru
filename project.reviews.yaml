@@ -35,6 +35,16 @@ reviews:
         runner: uv
         created_at: 2026-07-20T10:15:45.105Z
         completed_at: 2026-07-20T10:15:45.105Z
+      - status: skipped
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Repository-wide kspec validate remains blocked by 130 pre-existing Android/Core schema
+          errors; new LADA specs previously passed schema/reference alignment validation
+        name: kspec-validation
+        required: false
+        created_at: 2026-07-20T10:15:46.257Z
+        completed_at: 2026-07-20T10:15:46.257Z
     events:
       - _ulid: 01KXZG4Y39AN3R9MB352SD4BP8
         actor: "@claude"
@@ -112,6 +122,13 @@ reviews:
           status: pass
           name: package-build
         timestamp: 2026-07-20T10:15:45.111Z
+      - _ulid: 01KXZGCJAQ4N2ERDQ3FQANCXKD
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: skipped
+          name: kspec-validation
+        timestamp: 2026-07-20T10:15:46.263Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -232,5 +249,5 @@ reviews:
         kind: blocker
     verdicts: []
     created_at: 2026-07-20T10:11:36.170Z
-    updated_at: 2026-07-20T10:15:45.105Z
+    updated_at: 2026-07-20T10:15:46.257Z
     notes: []
