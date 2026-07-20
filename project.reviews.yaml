@@ -565,6 +565,12 @@ reviews:
         payload:
           thread_ulid: 01KXZHFPW2VDZVYDQNVH2RF5RD
         timestamp: 2026-07-20T10:53:03.379Z
+      - _ulid: 01KXZJGW9R2FNRY5TYT41K66WR
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KXZHFR0V75WR6WGR6HVKR2MD
+        timestamp: 2026-07-20T10:53:04.696Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -677,6 +683,15 @@ reviews:
               Wire the audit into the base release verification path and place AC coverage on a
               behavioral artifact/playback gate rather than this unit test."
             created_at: 2026-07-20T10:34:58.972Z
+          - _ulid: 01KXZJGW9GCSTPCWKVD7YQTS4S
+            author: "@claude"
+            body: "Fixed in 90cf135: removed the false full-AC annotation, added actual unpacked-tree/ASAR
+              inventory enumeration, exposed the audit as a CLI release gate, and wired it after
+              Linux/macOS/Windows electron-builder runs before upload. A behavioral regression
+              enumerates a real tree and rejects an injected LADA payload. The combined
+              ordinary-playback AC annotation is durably assigned to @certify-lada-integration,
+              where playback against the audited base artifact can be exercised truthfully."
+            created_at: 2026-07-20T10:53:04.688Z
         kind: blocker
     verdicts:
       - applies_to_version:
@@ -687,5 +702,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-20T10:35:00.112Z
     created_at: 2026-07-20T10:28:50.891Z
-    updated_at: 2026-07-20T10:53:03.371Z
+    updated_at: 2026-07-20T10:53:04.688Z
     notes: []
