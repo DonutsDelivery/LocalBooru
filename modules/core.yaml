@@ -751,6 +751,11 @@ features:
             id: ac-1
             then: only the selected library and directory image is read, previewed, or modified
             when: the user previews or applies adjustments to one image
+          - given: an older preview request completes after the user changes adjustments or navigates to another
+              image
+            id: ac-2
+            then: it cannot replace the current image or current adjustment preview
+            when: the older response arrives
         priority: high
         tags: []
         created: 2026-07-20T08:04:52.074Z
