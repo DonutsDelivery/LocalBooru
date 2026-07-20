@@ -28,3 +28,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T08:04:58.017Z
+  - _ulid: 01KXZA0T6ZANHV7EE73BTMZKK3
+    content: "Approach: test colliding library/directory image IDs first, then require full locators
+      through frontend/backend; namespace exact previews, guard stale responses, preserve URL
+      locators, and atomically replace files before refreshing exact metadata/thumbnails. Reuse
+      library resolution and importer/hash utilities. Edge cases: duplicate IDs, navigation during
+      preview, failed encoding/replacement, alpha-bearing images, and stale thumbnails."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T08:24:29.664Z
