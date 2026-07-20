@@ -131,7 +131,7 @@ pub async fn preview_adjust(
         apply_adjustments_to_image(&image, &adjustments)
             .save_with_format(&temporary.path, image::ImageFormat::WebP)
             .map_err(|error| AppError::Internal(format!("Failed to save preview: {}", error)))?;
-        std::fs::File::open(&temporary.path)?.sync_all()?;
+        sync_file_contents(&temporary.path)?;
         replace_file(&temporary.path, &destination)
             .map_err(|error| AppError::Internal(format!("Failed to publish preview: {}", error)))?;
         temporary.disarm();
@@ -458,7 +458,7 @@ fn apply_to_resolved_image(
         .save_with_format(&adjusted_temp.path, format)
         .map_err(|error| AppError::Internal(format!("Failed to save adjusted image: {}", error)))?;
     std::fs::set_permissions(&adjusted_temp.path, original_metadata.permissions())?;
-    std::fs::File::open(&adjusted_temp.path)?.sync_all()?;
+    sync_file_contents(&adjusted_temp.path)?;
 
     let temporary_string = adjusted_temp.path.to_string_lossy();
     let new_hash = importer::calculate_quick_hash(&temporary_string)
@@ -537,7 +537,7 @@ fn apply_to_resolved_image(
     let mut backup = TempPath::new(adjustment_backup_path(&resolved.path));
     std::fs::copy(&resolved.path, &backup.path)?;
     std::fs::set_permissions(&backup.path, original_metadata.permissions())?;
-    std::fs::File::open(&backup.path)?.sync_all()?;
+    sync_file_contents(&backup.path)?;
 
     replace_file(&adjusted_temp.path, &resolved.path).map_err(|error| {
         AppError::Internal(format!("Failed to atomically replace image: {}", error))
@@ -621,7 +621,7 @@ fn restore_original(backup: &mut TempPath, destination: &Path) -> Result<(), App
                     rename_error, copy_error
                 ))
             })?;
-            std::fs::File::open(destination)?.sync_all()?;
+            sync_file_contents(destination)?;
             Ok(())
         }
     }
@@ -702,6 +702,13 @@ fn modified_at_rfc3339(metadata: &std::fs::Metadata) -> Option<String> {
     let duration = modified.duration_since(UNIX_EPOCH).ok()?;
     chrono::DateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
         .map(|value| value.to_rfc3339())
+}
+
+fn sync_file_contents(path: &Path) -> std::io::Result<()> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)?
+        .sync_all()
 }
 
 #[cfg(unix)]
@@ -913,6 +920,20 @@ mod tests {
             Err(AppError::BadRequest(_))
         ));
         drop(state);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-windows-preview
+    #[test]
+    fn durability_flush_uses_a_writable_file_handle() {
+        let root = test_root("writable-flush");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("preview.webp");
+        std::fs::write(&path, b"preview").unwrap();
+
+        sync_file_contents(&path).unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), b"preview");
         let _ = std::fs::remove_dir_all(root);
     }
 
