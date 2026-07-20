@@ -737,6 +737,17 @@ reviews:
         runner: ruff
         created_at: 2026-07-20T10:54:36.474Z
         completed_at: 2026-07-20T10:54:36.474Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: All bundle/source helper shell scripts, Node inventory script, and hosted build workflow
+          YAML parsed successfully
+        name: packaging-syntax
+        required: true
+        runner: shell
+        created_at: 2026-07-20T10:54:37.615Z
+        completed_at: 2026-07-20T10:54:37.615Z
     events:
       - _ulid: 01KXZJJJPHS6ZP5ASJWDYNYABN
         actor: "@claude"
@@ -765,6 +776,13 @@ reviews:
           status: pass
           name: ruff
         timestamp: 2026-07-20T10:54:36.489Z
+      - _ulid: 01KXZJKQ1RZ7SZ97AJAXF1HYNP
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: packaging-syntax
+        timestamp: 2026-07-20T10:54:37.625Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -777,5 +795,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T10:54:00.401Z
-    updated_at: 2026-07-20T10:54:36.474Z
+    updated_at: 2026-07-20T10:54:37.615Z
     notes: []
