@@ -971,6 +971,11 @@ requirements:
         then: Task queue concurrency defaults to one worker while an explicit valid override remains
           authoritative
         when: The backend receives its development environment
+      - given: Enabled watch directories require startup reconciliation
+        id: ac-reconciliation-preserved
+        then: Each directory still queues its normal fast reconciliation work and the queue processes that
+          work at bounded concurrency
+        when: The bounded development task queue starts
     priority: high
     tags: []
     created: 2026-07-20T18:40:13.738Z
