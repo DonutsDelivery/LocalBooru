@@ -60,3 +60,15 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T10:35:00.222Z
+  - _ulid: 01KXZHMZ37RDN3GSZG9QSKRC9B
+    content: "Fix cycle 2 approach: (1) quiesce and join the old producer before creating a seek
+      generation, and gate EOS/errors on active generation; (2) stage tracked add-on/upstream source
+      before dependency installation and build/install the adapter and LADA only from that snapshot;
+      (3) build one common runtime plus deterministic CUDA/XPU delta layers and emit one manifest
+      with exactly the declared common, CUDA, XPU, and model keys; (4) wire actual unpacked/ASAR
+      inventory auditing into hosted release builds, remove synthetic AC credit, and defer the
+      combined no-LADA plus ordinary-playback AC annotation to certification. Existing provenance
+      and managed-install ACs already cover these corrections; no spec text change is required."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T10:37:50.056Z
