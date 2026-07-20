@@ -712,3 +712,29 @@ reviews:
     created_at: 2026-07-20T10:28:50.891Z
     updated_at: 2026-07-20T10:53:05.832Z
     notes: []
+  - _ulid: 01KXZJJJPHD3KZQEWJH48XF5MF
+    slugs: []
+    title: Review managed LADA sidecar package (cycle 3)
+    author: "@claude"
+    checks: []
+    events:
+      - _ulid: 01KXZJJJPHS6ZP5ASJWDYNYABN
+        actor: "@claude"
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-07-20T10:54:00.401Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs: []
+    subject:
+      type: task
+      content_hash: ""
+      ref: "@package-lada-sidecar"
+      shadow_commit: ""
+    threads: []
+    verdicts: []
+    created_at: 2026-07-20T10:54:00.401Z
+    updated_at: null
+    notes: []
