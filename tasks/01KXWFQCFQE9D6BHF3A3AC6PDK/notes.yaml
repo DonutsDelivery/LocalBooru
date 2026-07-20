@@ -124,3 +124,12 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T08:52:52.625Z
+  - _ulid: 01KXZG16JYQ1EP5C3DAEJNSQKG
+    content: Windows candidate source 3f87937b4dd2eab674d64ea4dc93a90008278c16 built and
+      checksum-verified. It includes clean removal/reinstallation of both ONNX Runtime
+      distributions, deployment revision bump, conflicting-distribution rejection, and enhanced
+      exact-model runtime probe. AC-1 still requires tester RTX execution evidence before task
+      submission.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T10:09:33.790Z
