@@ -123,3 +123,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T12:59:30.265Z
+  - _ulid: 01KXZYYMG8W2WKYK3V9B7N3F5S
+    content: Non-destructive Curation swipes are included in immutable Windows candidate
+      bb1ad4a95d8a779968f5e85439e0407d1aab6d06; VPS and public artifact hashes verified.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T14:30:18.376Z
