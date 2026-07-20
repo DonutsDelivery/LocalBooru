@@ -335,7 +335,7 @@ plans:
       into LADA commits.
     status: approved
     approved_at: null
-    branch: null
+    branch: plan/plan-managed-lada-gstreamer-add-on/01kxzesa
     derived_specs: []
     derived_tasks: []
     module_ref: "@desktop"
