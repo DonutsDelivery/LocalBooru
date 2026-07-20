@@ -26,6 +26,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KXZGB6EVXM1FS9TD2ACYPD0Y
         timestamp: 2026-07-20T10:15:01.342Z
+      - _ulid: 01KXZGB7YA7N5QM8H16E3QKYCP
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KXZGB7Y3Q0WS1HKB6GC93FRX
+        timestamp: 2026-07-20T10:15:02.858Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -54,7 +61,24 @@ reviews:
               old mappings remain unchanged."
             created_at: 2026-07-20T10:15:01.339Z
         kind: blocker
+      - _ulid: 01KXZGB7Y3Q0WS1HKB6GC93FRX
+        anchor:
+          type: code
+          commit: f64c423a6acff7b5005f82d2361ab3adb324210f
+          line_end: 175
+          line_start: 155
+          path: addons/lada/src/localbooru_lada/server.py
+          side: head
+        entries:
+          - _ulid: 01KXZGB7Y4HPRX6VN22F7H864F
+            author: "@claude"
+            body: "MUST-FIX: control messages are accepted before the nonce-bearing hello handshake. A client
+              with access to the inherited socket can issue `open` directly, bypassing the protocol
+              authentication the design promises. Track authenticated state and reject every
+              non-hello command until a valid nonce/protocol hello succeeds; add a behavioral test."
+            created_at: 2026-07-20T10:15:02.852Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-20T10:11:36.170Z
-    updated_at: 2026-07-20T10:15:01.339Z
+    updated_at: 2026-07-20T10:15:02.852Z
     notes: []
