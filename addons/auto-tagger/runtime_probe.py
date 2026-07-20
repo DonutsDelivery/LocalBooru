@@ -125,6 +125,15 @@ def needs_strict_stage(execution):
     return counts.get("CUDAExecutionProvider", 0) == 0
 
 
+def strict_stage_succeeded(stage):
+    execution = stage.get("execution") or {}
+    counts = execution.get("provider_node_counts") or {}
+    return (
+        execution.get("error") is None
+        and counts.get("CUDAExecutionProvider", 0) > 0
+    )
+
+
 def runtime_details(providers, preload, args, debug_output, debug_error):
     return {
         "python": sys.version.split()[0],
@@ -170,7 +179,10 @@ def execute_stage(model_path, args, providers, *, disable_cpu_fallback=False):
     model_input_details = None
     try:
         session = ort.InferenceSession(
-            str(model_path), sess_options=options, providers=providers
+            str(model_path),
+            sess_options=options,
+            providers=providers,
+            enable_fallback=0 if args.disable_wrapper_fallback else 1,
         )
         if args.disable_wrapper_fallback:
             session.disable_fallback()
@@ -307,7 +319,7 @@ def main():
     print(json.dumps(report, indent=2, sort_keys=True))
     if execution["error"] is not None:
         return 1
-    if strict_stage and strict_stage["execution"]["error"] is not None:
+    if strict_stage and not strict_stage_succeeded(strict_stage):
         return 1
     return 0
 

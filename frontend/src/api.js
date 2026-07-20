@@ -5,6 +5,7 @@ import axios from 'axios'
 import { isMobileApp, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 import { adjustmentQuery } from './utils/imageAdjustments.js'
+import { runtimeDiagnosticTimeoutMs } from './components/autoTaggerRuntime.js'
 
 // Current server config (cached for synchronous access)
 let currentServerUrl = null
@@ -1581,7 +1582,9 @@ export async function getAddonHealth(id) {
 }
 
 export async function runAutoTaggerRuntimeDiagnostic() {
-  const response = await api.post('/addons/auto-tagger/api/runtime-diagnostic')
+  const response = await api.post('/addons/auto-tagger/api/runtime-diagnostic', null, {
+    timeout: runtimeDiagnosticTimeoutMs(),
+  })
   return response.data
 }
 

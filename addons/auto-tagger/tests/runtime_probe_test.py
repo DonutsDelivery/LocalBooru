@@ -108,8 +108,14 @@ def test_probe_disables_wrapper_fallback_before_running_inference(monkeypatch, t
             return str(profile)
 
     options = Options()
+    constructor_kwargs = {}
+
+    def create_session(*args, **kwargs):
+        constructor_kwargs.update(kwargs)
+        return Session()
+
     monkeypatch.setattr(probe.ort, "SessionOptions", lambda: options)
-    monkeypatch.setattr(probe.ort, "InferenceSession", lambda *args, **kwargs: Session())
+    monkeypatch.setattr(probe.ort, "InferenceSession", create_session)
     args = SimpleNamespace(
         optimization="all",
         verbose=False,
@@ -123,6 +129,7 @@ def test_probe_disables_wrapper_fallback_before_running_inference(monkeypatch, t
     )
 
     assert events == ["disable_fallback", "run"]
+    assert constructor_kwargs["enable_fallback"] == 0
     assert stage["provider_options"]["CUDAExecutionProvider"]["device_id"] == "0"
     assert stage["execution"]["provider_node_counts"] == {"CUDAExecutionProvider": 1}
 
@@ -135,6 +142,21 @@ def test_probe_disables_wrapper_fallback_before_running_inference(monkeypatch, t
     assert options.config["session.disable_cpu_ep_fallback"] == "1"
     assert strict["cpu_ep_fallback_disabled"] is True
 
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+@pytest.mark.parametrize(
+    ("stage", "expected"),
+    [
+        ({"execution": {"error": None, "provider_node_counts": {"CUDAExecutionProvider": 1}}}, True),
+        ({"execution": {"error": None, "provider_node_counts": {"CPUExecutionProvider": 12}}}, False),
+        ({"execution": {"error": "CUDA DLL missing", "provider_node_counts": {}}}, False),
+    ],
+)
+def test_strict_stage_succeeds_only_with_observed_cuda(stage, expected):
+    probe = load_probe()
+
+    assert probe.strict_stage_succeeded(stage) is expected
 
 
 # AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic

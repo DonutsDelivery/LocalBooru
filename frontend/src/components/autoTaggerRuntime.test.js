@@ -10,6 +10,7 @@ import {
   formatProviderList,
   formatProviderMetric,
   formatTimings,
+  runtimeDiagnosticTimeoutMs,
 } from './autoTaggerRuntime.js'
 
 // AC: @auto-tagger-execution-verification ac-6
@@ -70,6 +71,12 @@ test('formats deployment packages and native preload evidence', () => {
   assert.equal(formatPreload({ attempted: false }), 'Not attempted')
   assert.equal(formatPreload(undefined), 'Not available')
   assert.equal(formatPreload({ attempted: true, succeeded: null }), 'Unknown')
+})
+
+// AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+test('keeps the client diagnostic deadline beyond the backend probe deadline', () => {
+  assert.equal(runtimeDiagnosticTimeoutMs(300), 310_000)
+  assert.ok(runtimeDiagnosticTimeoutMs(300) > 300_000)
 })
 
 // AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic

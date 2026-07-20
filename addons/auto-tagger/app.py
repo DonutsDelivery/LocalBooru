@@ -248,6 +248,7 @@ def _create_ort_session(ort, model_path, providers):
             str(model_path),
             sess_options=options,
             providers=providers,
+            enable_fallback=0,
         )
     except Exception:
         _remove_profile_prefix(options.profile_file_prefix)
@@ -932,6 +933,20 @@ def _bounded_output(value):
     return value[-RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT:]
 
 
+def _parse_probe_report(stdout):
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(stdout or ""):
+        if character != "{":
+            continue
+        try:
+            report, end = decoder.raw_decode(stdout, index)
+        except json.JSONDecodeError:
+            continue
+        if stdout[end:].strip() == "" and isinstance(report, dict):
+            return report
+    raise json.JSONDecodeError("No trailing JSON report found", stdout or "", 0)
+
+
 @app.post("/runtime-diagnostic")
 def strict_cuda_diagnostic():
     if _model_path is None or not Path(_model_path).is_file():
@@ -974,7 +989,7 @@ def strict_cuda_diagnostic():
         stdout = _bounded_output(completed.stdout)
         stderr = _bounded_output(completed.stderr)
         try:
-            report = json.loads(completed.stdout)
+            report = _parse_probe_report(completed.stdout)
         except (TypeError, json.JSONDecodeError) as exc:
             return JSONResponse(
                 status_code=502,

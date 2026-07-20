@@ -60,6 +60,10 @@ export function formatPackageVersions(packages) {
     : 'Not available'
 }
 
+export function runtimeDiagnosticTimeoutMs(backendTimeoutSeconds = 300) {
+  return (backendTimeoutSeconds + 10) * 1000
+}
+
 export function formatCudaDiagnostic(report) {
   return report ? JSON.stringify(report, null, 2) : 'No diagnostic report available'
 }

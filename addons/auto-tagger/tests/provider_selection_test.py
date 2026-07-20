@@ -93,13 +93,19 @@ class FakeOrt:
         self.events.append(("available",))
         return self.available
 
-    def InferenceSession(self, _model_path, *, sess_options, providers):
+    def InferenceSession(self, _model_path, *, sess_options, providers, **kwargs):
         normalized_providers = [
             provider[0] if isinstance(provider, tuple) else provider
             for provider in providers
         ]
         self.events.append(
-            ("session", tuple(providers), dict(sess_options.config), sess_options.enable_profiling)
+            (
+                "session",
+                tuple(providers),
+                dict(sess_options.config),
+                sess_options.enable_profiling,
+                kwargs,
+            )
         )
         if normalized_providers[0] == "CUDAExecutionProvider":
             if self.fail_cuda:
@@ -158,6 +164,7 @@ def test_cuda_session_uses_device_zero_verifies_options_and_disables_wrapper_fal
     cuda_event = next(event for event in ort.events if event[0] == "session")
     assert cuda_event[1][0] == ("CUDAExecutionProvider", {"device_id": 0})
     assert created is session
+    assert cuda_event[4] == {"enable_fallback": 0}
     assert created.fallback_disabled is True
     assert warning is None
 
@@ -559,6 +566,35 @@ def test_health_remains_responsive_while_prediction_is_running(tmp_path, monkeyp
     assert status["status"] == "ok"
     assert elapsed < 0.1
     assert not prediction.is_alive()
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+def test_strict_cuda_diagnostic_recovers_report_after_native_stdout(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "eva02-large-v3" / "model.onnx"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    report = {
+        "model": {"path": str(model), "sha256": "abc"},
+        "execution": {"provider_node_counts": {}},
+        "strict_stage": {
+            "execution": {"error": "CUDA DLL could not be loaded"},
+        },
+    }
+    stdout = "EP Error: CUDA DLL missing\n" + json.dumps(report, indent=2)
+
+    monkeypatch.setattr(
+        tagger.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, stdout, ""),
+    )
+
+    result = tagger.strict_cuda_diagnostic()
+
+    assert result["status"] == "failed"
+    assert result["probe"] == report
+    assert "EP Error" in result["stdout"]
 
 
 # AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
