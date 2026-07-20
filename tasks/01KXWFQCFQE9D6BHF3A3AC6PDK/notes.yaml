@@ -172,3 +172,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T17:24:21.124Z
+  - _ulid: 01KY09N7KKYT8RY20YP99B31VC
+    content: Immutable Windows candidate a7a4760 built after truthful STARTED handshake and published to
+      /downloads/localbooru/2.0.3-test-a7a4760. Docker frontend tests/build, Windows cargo
+      check/test compilation, release bundle, ZIP/NSIS validation, local checksums, public HTTP 200,
+      and streamed public SHA-256 all passed. Installer 3bd361e6...; portable f58c5765.... CUDA task
+      remains in progress until this exact candidate records nonzero CUDA nodes on the tester's EVA
+      model.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T17:37:24.595Z
