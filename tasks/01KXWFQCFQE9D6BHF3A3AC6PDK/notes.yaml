@@ -85,3 +85,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T07:53:40.161Z
+  - _ulid: 01KXZ8X34V9ZHR461PNSJTFVP3
+    content: "[FIX_CYCLE: 1] Review findings: Windows 2.0.3 acceptance disproved AC-1: EVA02 registered
+      CUDA but completed with 1,920 CPU events and zero CUDA events."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T08:04:59.163Z
