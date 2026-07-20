@@ -422,6 +422,17 @@ reviews:
         runner: ruff
         created_at: 2026-07-20T10:29:44.614Z
         completed_at: 2026-07-20T10:29:44.614Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: compileall and shell syntax passed; uv built sdist/wheel; wheel audit found server
+          implementation and AGPL license
+        name: package-build
+        required: true
+        runner: uv
+        created_at: 2026-07-20T10:29:45.798Z
+        completed_at: 2026-07-20T10:29:45.798Z
     events:
       - _ulid: 01KXZH4GJAREQF9NCCC3N56Q0Z
         actor: "@claude"
@@ -450,6 +461,13 @@ reviews:
           status: pass
           name: ruff
         timestamp: 2026-07-20T10:29:44.624Z
+      - _ulid: 01KXZH666EVP5ZHY9ZM93FA9S0
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: package-build
+        timestamp: 2026-07-20T10:29:45.807Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -462,5 +480,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T10:28:50.891Z
-    updated_at: 2026-07-20T10:29:44.614Z
+    updated_at: 2026-07-20T10:29:45.798Z
     notes: []
