@@ -145,6 +145,12 @@ reviews:
           from: open
           to: closed
         timestamp: 2026-07-20T10:16:11.522Z
+      - _ulid: 01KXZH2QC5S6RPV8C5Z8Q6NFM1
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KXZGB6EVXM1FS9TD2ACYPD0Y
+        timestamp: 2026-07-20T10:27:52.325Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -172,6 +178,13 @@ reviews:
               announce a fresh pool per generation, retire the old pool without reuse, and test that
               old mappings remain unchanged."
             created_at: 2026-07-20T10:15:01.339Z
+          - _ulid: 01KXZH2QBWEXADX6PJDXREVF9F
+            author: "@claude"
+            body: "Fixed in 8370255: each generation allocates and announces a new FramePool; seek retires the
+              producer's old mappings/FDs without reusing their backing storage. The socket-level
+              regression keeps the old consumer mapping open through generation 2 and verifies its
+              bytes remain unchanged."
+            created_at: 2026-07-20T10:27:52.316Z
         kind: blocker
       - _ulid: 01KXZGB7Y3Q0WS1HKB6GC93FRX
         anchor:
@@ -272,5 +285,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-20T10:16:11.521Z
     created_at: 2026-07-20T10:11:36.170Z
-    updated_at: 2026-07-20T10:16:11.522Z
+    updated_at: 2026-07-20T10:27:52.316Z
     notes: []
