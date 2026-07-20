@@ -1313,15 +1313,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
   }
 
-  // Handle touch end with curation precedence over the ordinary sidebar gesture
+  // Handle touch end while preserving ordinary Lightbox swipes during curation
   const handleTouchEndWithSidebar = useCallback((e) => {
-    const onCurationSwipe = curationMode
-      ? (direction) => {
-          const action = curationActionForSwipe(direction)
-          if (action === 'keep') curationMode.onKeep()
-          else if (action === 'discard') curationMode.onDiscard()
-        }
-      : null
+    const onCurationSwipe = curationMode ? curationActionForSwipe : null
     zoomPan.handleTouchEnd(e, onSidebarHover, sidebarOpen, onCurationSwipe)
   }, [zoomPan, onSidebarHover, sidebarOpen, curationMode])
 

@@ -168,7 +168,7 @@ export function useZoomPan(mediaRef, containerRef, resetHideTimer, image, gestur
     }
   }, [])
 
-  // Touch end handler (curation decisions take precedence over sidebar toggles)
+  // Touch end handler (an optional mode-specific callback may claim a swipe)
   const handleTouchEnd = useCallback((e, onSidebarHover, sidebarOpen, onCurationSwipe = null) => {
     if (touchStartX.current === null) return
     if (!isGestureCandidateCurrent(touchImageToken.current, imageToken)) {
@@ -201,12 +201,11 @@ export function useZoomPan(mediaRef, containerRef, resetHideTimer, image, gestur
     })
 
     if (direction) {
+      const modeHandled = onCurationSwipe?.(direction) === true
       touchHandled.current = true
-      if (onCurationSwipe) {
-        onCurationSwipe(direction)
-      } else if (direction === 'right' && !sidebarOpen) {
+      if (!modeHandled && direction === 'right' && !sidebarOpen) {
         onSidebarHover && onSidebarHover(true)
-      } else if (direction === 'left' && sidebarOpen) {
+      } else if (!modeHandled && direction === 'left' && sidebarOpen) {
         onSidebarHover && onSidebarHover(false)
       }
     }
