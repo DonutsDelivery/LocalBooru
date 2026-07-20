@@ -144,3 +144,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T17:24:22.301Z
+  - _ulid: 01KY09N8NEENGQ3DGBP4297TG0
+    content: Windows candidate a7a4760 containing final source/CAS/control/filename fixes built and
+      published at immutable tester path 2.0.3-test-a7a4760; installer/portable archive and public
+      checksums verified.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T17:37:25.679Z
