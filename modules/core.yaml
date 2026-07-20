@@ -760,6 +760,10 @@ features:
             id: ac-3
             then: the original file remains intact and the failure is reported
             when: the operation fails
+          - given: an image adjustment is applied successfully
+            id: ac-4
+            then: the adjusted file, refreshed metadata, and refreshed thumbnail are shown for the same image
+            when: the image is reopened or displayed in the gallery
         priority: high
         tags: []
         created: 2026-07-20T08:04:52.074Z
