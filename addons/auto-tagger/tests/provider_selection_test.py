@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -42,6 +43,10 @@ class FakeSession:
         self.run_error = run_error
         self.run_count = 0
         self.end_profile_count = 0
+        self.fallback_disabled = False
+
+    def disable_fallback(self):
+        self.fallback_disabled = True
 
     def get_providers(self):
         return self._providers
@@ -89,14 +94,18 @@ class FakeOrt:
         return self.available
 
     def InferenceSession(self, _model_path, *, sess_options, providers):
+        normalized_providers = [
+            provider[0] if isinstance(provider, tuple) else provider
+            for provider in providers
+        ]
         self.events.append(
             ("session", tuple(providers), dict(sess_options.config), sess_options.enable_profiling)
         )
-        if providers[0] == "CUDAExecutionProvider":
+        if normalized_providers[0] == "CUDAExecutionProvider":
             if self.fail_cuda:
                 raise RuntimeError("CUDA runtime unavailable")
-            return self.cuda_session or FakeSession(list(providers))
-        return self.cpu_session or FakeSession(list(providers))
+            return self.cuda_session or FakeSession(normalized_providers)
+        return self.cpu_session or FakeSession(normalized_providers)
 
 
 def write_profile(path, providers):
@@ -131,6 +140,56 @@ def test_cuda_registration_is_not_reported_as_execution_before_prediction():
     assert status["registered_providers"][0] == "CUDAExecutionProvider"
     assert status["execution_state"] == "not_run"
     assert status["active_provider"] is None
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-live-cuda-session
+def test_cuda_session_uses_device_zero_verifies_options_and_disables_wrapper_fallback():
+    tagger = load_tagger()
+    session = FakeSession(["CUDAExecutionProvider", "CPUExecutionProvider"])
+    ort = FakeOrt(
+        ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        cuda_session=session,
+    )
+
+    created, _available, warning = tagger._create_inference_session(
+        ort, "model.onnx", "cuda"
+    )
+
+    cuda_event = next(event for event in ort.events if event[0] == "session")
+    assert cuda_event[1][0] == ("CUDAExecutionProvider", {"device_id": 0})
+    assert created is session
+    assert created.fallback_disabled is True
+    assert warning is None
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-live-cuda-session
+# AC: @auto-tagger-runtime-acceleration-deployment ac-5
+def test_cuda_provider_option_verification_failure_preserves_evidence_and_uses_fresh_cpu():
+    tagger = load_tagger()
+
+    class MissingCudaOptionsSession(FakeSession):
+        def get_provider_options(self):
+            return {"CPUExecutionProvider": {}}
+
+    cuda_session = MissingCudaOptionsSession(
+        ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    )
+    cpu_session = FakeSession(["CPUExecutionProvider"])
+    ort = FakeOrt(
+        ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        cuda_session=cuda_session,
+        cpu_session=cpu_session,
+    )
+
+    session, _available, warning = tagger._create_inference_session(
+        ort, "model.onnx", "cuda"
+    )
+
+    assert session is cpu_session
+    assert "provider options" in warning.lower()
+    assert tagger._cuda_failure["stage"] == "session_verification"
+    assert tagger._cuda_failure["registered_providers"][0] == "CUDAExecutionProvider"
+    assert tagger._cuda_failure["provider_options"] == {"CPUExecutionProvider": {}}
 
 
 # AC: @auto-tagger-runtime-acceleration-deployment ac-2
@@ -293,12 +352,20 @@ def test_explicit_cuda_initialization_failure_uses_fresh_cpu_options():
 
     cuda_event = next(event for event in ort.events if event[0] == "session")
     cpu_event = ort.events[-1]
-    assert cuda_event[1] == ("CUDAExecutionProvider", "CPUExecutionProvider")
+    assert cuda_event[1] == (
+        ("CUDAExecutionProvider", {"device_id": 0}),
+        "CPUExecutionProvider",
+    )
     assert cuda_event[2] == {}
     assert cuda_event[3] is True
     assert cpu_event[1] == ("CPUExecutionProvider",)
     assert cpu_event[2] == {}
     assert session.get_providers() == ["CPUExecutionProvider"]
+    assert tagger._cuda_failure["stage"] == "session_creation"
+    assert tagger._cuda_failure["error"] == "CUDA runtime unavailable"
+    assert tagger._cuda_failure["requested_providers"][0] == (
+        "CUDAExecutionProvider", {"device_id": 0}
+    )
     assert "CUDA runtime unavailable" in warning
 
 
@@ -336,6 +403,9 @@ def test_cuda_first_run_failure_retries_once_on_cpu(tmp_path, requested_device):
     assert cpu_session.run_count == 1
     assert tagger._execution_state == "cpu"
     assert tagger._registered_providers == ["CPUExecutionProvider"]
+    assert tagger._cuda_failure["stage"] == "first_inference"
+    assert tagger._cuda_failure["error"] == "CUDA launch failed"
+    assert tagger._cuda_failure["registered_providers"][0] == "CUDAExecutionProvider"
     assert "CUDA launch failed" in tagger._provider_warning
 
 
@@ -348,6 +418,13 @@ def test_explicit_cuda_cpu_only_profile_is_reported_as_fallback(tmp_path):
     session = FakeSession(
         ["CUDAExecutionProvider", "CPUExecutionProvider"], profile_path=profile
     )
+    cpu_session = FakeSession(["CPUExecutionProvider"])
+    ort = FakeOrt(
+        ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        cuda_session=session,
+        cpu_session=cpu_session,
+    )
+    tagger._ort_module = ort
     tagger._set_loaded_session(
         session,
         ["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -359,6 +436,12 @@ def test_explicit_cuda_cpu_only_profile_is_reported_as_fallback(tmp_path):
 
     assert tagger._execution_state == "cpu"
     assert tagger._active_provider == "CPUExecutionProvider"
+    assert tagger._model is cpu_session
+    assert tagger._registered_providers == ["CPUExecutionProvider"]
+    assert tagger._cuda_failure["stage"] == "first_inference_verification"
+    assert tagger._cuda_failure["provider_node_counts"] == {
+        "CPUExecutionProvider": 1
+    }
     assert "CUDA was requested" in tagger._provider_warning
     assert "CPU only" in tagger._provider_warning
 
@@ -476,3 +559,69 @@ def test_health_remains_responsive_while_prediction_is_running(tmp_path, monkeyp
     assert status["status"] == "ok"
     assert elapsed < 0.1
     assert not prediction.is_alive()
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+def test_strict_cuda_diagnostic_invokes_deployed_probe_with_exact_runtime(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "eva02-large-v3" / "model.onnx"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    report = {
+        "model": {"path": str(model), "sha256": "abc"},
+        "runtime": {"registered_providers": ["CUDAExecutionProvider"]},
+        "execution": {"provider_node_counts": {"CUDAExecutionProvider": 1}},
+    }
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, json.dumps(report), "native log")
+
+    monkeypatch.setattr(tagger.subprocess, "run", fake_run)
+
+    result = tagger.strict_cuda_diagnostic()
+
+    command, kwargs = calls[0]
+    assert command[0] == tagger.sys.executable
+    assert command[1] == str(Path(tagger.__file__).with_name("runtime_probe.py"))
+    assert command[2] == str(model)
+    assert {"--verbose", "--debug-info", "--disable-wrapper-fallback", "--strict-on-zero-cuda"}.issubset(command)
+    assert kwargs["timeout"] == tagger.RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS
+    assert result["probe"] == report
+    assert result["stderr"] == "native log"
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+# AC: @auto-tagger-execution-verification ac-5
+def test_strict_diagnostic_is_single_flight_and_health_stays_responsive(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocked_run(command, **kwargs):
+        started.set()
+        assert release.wait(timeout=1)
+        return subprocess.CompletedProcess(command, 0, '{"ok": true}', "")
+
+    monkeypatch.setattr(tagger.subprocess, "run", blocked_run)
+    worker = threading.Thread(target=tagger.strict_cuda_diagnostic)
+    worker.start()
+    assert started.wait(timeout=1)
+
+    with pytest.raises(tagger.HTTPException) as busy:
+        tagger.strict_cuda_diagnostic()
+    before = time.perf_counter()
+    status = asyncio.run(tagger.health())
+    elapsed = time.perf_counter() - before
+    release.set()
+    worker.join(timeout=1)
+
+    assert busy.value.status_code == 409
+    assert status["status"] == "ok"
+    assert elapsed < 0.1
+    assert not worker.is_alive()
