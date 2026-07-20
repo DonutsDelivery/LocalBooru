@@ -168,6 +168,10 @@ features:
             then: the decoded image is written to the native clipboard and can be pasted into another
               application
             when: the user invokes Copy Image
+          - given: the image cannot be fetched or decoded, or the native clipboard rejects the write
+            id: ac-2
+            then: the app reports the actual failure and does not claim that the image was copied
+            when: the user invokes Copy Image
         priority: high
         tags: []
         created: 2026-07-20T08:04:47.882Z
