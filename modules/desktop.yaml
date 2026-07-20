@@ -691,6 +691,11 @@ features:
             then: a probed CPU deployment remains usable and diagnostics truthfully identify the fallback and
               repair guidance
             when: the add-on falls back
+          - given: a supported NVIDIA system requests CUDA for Auto Tagger
+            id: ac-live-cuda-session
+            then: the session exposes CUDA provider options, disables automatic execution-provider fallback, and
+              records nonzero CUDA execution before reporting GPU acceleration
+            when: the live model session is created and inference begins
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
