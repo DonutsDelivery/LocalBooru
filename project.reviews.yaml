@@ -924,6 +924,15 @@ reviews:
         runner: uv
         created_at: 2026-07-20T11:05:30.606Z
         completed_at: 2026-07-20T11:05:30.606Z
+      - status: skipped
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Multi-GB real accelerator bundle construction remains a hardware/release certification gate
+        name: accelerator-build
+        required: false
+        created_at: 2026-07-20T11:05:31.784Z
+        completed_at: 2026-07-20T11:05:31.784Z
     events:
       - _ulid: 01KXZK6P6PE5ESQZEZJYE45CAF
         actor: "@claude"
@@ -959,6 +968,13 @@ reviews:
           status: pass
           name: package-build
         timestamp: 2026-07-20T11:05:30.616Z
+      - _ulid: 01KXZK7NWHN2B12HQEBJREJNJN
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: skipped
+          name: accelerator-build
+        timestamp: 2026-07-20T11:05:31.793Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -971,5 +987,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T11:04:59.351Z
-    updated_at: 2026-07-20T11:05:30.606Z
+    updated_at: 2026-07-20T11:05:31.784Z
     notes: []
