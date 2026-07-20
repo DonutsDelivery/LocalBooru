@@ -89,3 +89,13 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T10:59:39.002Z
+  - _ulid: 01KXZJXAT1Z1Q05JCJDN7ABTX6
+    content: "Fix cycle 3 approach: build complete pinned CUDA and XPU environments from the same
+      relocatable Python template, derive the common runtime as the byte-identical intersection
+      after excluding files owned by backend-specific distributions, then derive each accelerator
+      delta against that common tree. This satisfies the existing common-runtime managed-install AC
+      without relying on an impossible no-extra Ultralytics resolution. Add deterministic
+      metadata/RECORD ownership and split reconstruction tests."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T10:59:52.770Z
