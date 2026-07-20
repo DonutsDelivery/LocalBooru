@@ -141,3 +141,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T10:32:07.500Z
+  - _ulid: 01KY05JXX47ZJGV699MZPZ917B
+    content: "Windows bb1ad4a exact EVA evidence: requested CUDA; available TensorRT/CUDA/CPU; live
+      session registered CUDA/CPU but provider_options contained CPU only; completed 1,920 CPU
+      nodes, zero CUDA, 6,616.61 ms inference. Clean desired=installed ORT GPU 1.23.2 v2 disproves
+      stale-wheel cause. Fix approach: explicit provider options, live-session verification, disable
+      ORT wrapper fallback, retain native failure before explicit CPU fallback, and expose strict
+      exact-model probe in Settings. Do not change dependency pins without failing/known-good
+      package comparison."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T16:26:14.820Z
