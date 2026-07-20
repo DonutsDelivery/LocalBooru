@@ -74,6 +74,12 @@ jobs:
         shell: pwsh
         run: ./scripts/build-windows-ci.ps1
 
+      - name: Audit Windows base release boundary
+        shell: bash
+        run: |
+          node scripts/list-release-inventory.js "${{ runner.temp }}/LocalBooru-Windows-verify" \
+            | PYTHONPATH=addons/lada/src python -m localbooru_lada audit-base --inventory -
+
       - name: Upload verified Windows artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -106,6 +112,21 @@ jobs:
             deb) ./scripts/build-linux-local.sh --deb --jobs 2 ;;
             rpm) ./scripts/build-linux-local.sh --rpm --jobs 2 ;;
           esac
+
+      - name: Audit Linux base release boundary
+        run: |
+          roots=()
+          for root in \
+            build-linux-docker/AppDir \
+            build-linux-docker/package-deb/usr \
+            build-linux-docker/package-rpm/usr
+          do
+            if [[ -d "$root" ]]; then
+              roots+=("$root")
+            fi
+          done
+          node scripts/list-release-inventory.js "${roots[@]}" \
+            | PYTHONPATH=addons/lada/src python3 -m localbooru_lada audit-base --inventory -
 
       - name: Upload verified artifacts
         uses: actions/upload-artifact@v4
@@ -157,6 +178,12 @@ jobs:
 
       - name: Build and verify universal macOS artifacts
         run: ./scripts/build-macos-ci.sh
+
+      - name: Audit macOS base release boundary
+        run: |
+          node scripts/list-release-inventory.js \
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/LocalBooru.app \
+            | PYTHONPATH=addons/lada/src python3 -m localbooru_lada audit-base --inventory -
 
       - name: Upload verified macOS artifacts
         uses: actions/upload-artifact@v4

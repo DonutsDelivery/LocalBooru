@@ -1,0 +1,31 @@
+{
+  "addon_id": "lada",
+  "version": "0.1.0",
+  "protocol_version": 1,
+  "license": "AGPL-3.0-only",
+  "source_url": "https://github.com/DonutsDelivery/localbooru-lada-addon/tree/v0.1.0",
+  "release_base_url": "https://github.com/DonutsDelivery/localbooru-lada-addon/releases/download/v0.1.0",
+  "upstream": {
+    "repository": "https://github.com/ladaapp/lada",
+    "revision": "20cb34a20a83c72c87a991d2c949032c70085b16",
+    "license": "AGPL-3.0-only"
+  },
+  "packages": {
+    "linux_x86_64_common": {
+      "download_size": null,
+      "installed_size": null
+    },
+    "linux_x86_64_cuda": {
+      "download_size": null,
+      "installed_size": null
+    },
+    "linux_x86_64_xpu": {
+      "download_size": null,
+      "installed_size": null
+    },
+    "model_bundle": {
+      "download_size": 174714035,
+      "installed_size": 174714035
+    }
+  }
+}
