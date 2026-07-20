@@ -950,6 +950,9 @@ requirements:
     type: requirement
     description: Development startup prevents duplicate resource-intensive sessions and uses
       conservative queue concurrency while preserving normal reconciliation behavior.
+    status:
+      maturity: draft
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
