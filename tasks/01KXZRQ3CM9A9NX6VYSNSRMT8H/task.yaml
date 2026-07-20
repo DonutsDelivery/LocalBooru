@@ -5,12 +5,24 @@ title: "Implement: Batch Move Dialog Stability"
 type: task
 spec_ref: "@batch-move-dialog-stability"
 derivation: auto
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-07-20T12:41:31.527Z
+        previous: null
+    command: task-start
+    timestamp: 2026-07-20T12:41:31.527Z
 created_at: 2026-07-20T12:41:20.020Z
+started_at: 2026-07-20T12:41:31.527Z
 todos: []
