@@ -159,3 +159,11 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T18:14:54.026Z
+  - _ulid: 01KY0EVSPTZC1C92YF36KFABCZ
+    content: "Late adversarial fix cycle: preview validation now uses a bounded private disk snapshot;
+      Linux/macOS use atomic swap and Windows uses ReplaceFileW backup capture; rollback preserves
+      concurrent external versions and revalidates installed bytes before metadata commit. Full
+      focused adjustment tests pass."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T19:08:22.618Z
