@@ -7,9 +7,14 @@ _FORBIDDEN_BASE_PARTS = (
     "/addons/lada/",
     "/site-packages/lada/",
     "/site-packages/torch/",
-    "/model_weights/",
+    "/model_weights/lada/",
 )
-_FORBIDDEN_BASE_SUFFIXES = (".pt", ".pth")
+_FORBIDDEN_LADA_MODELS = {
+    "lada_mosaic_detection_model_v2.pt",
+    "lada_mosaic_detection_model_v4_accurate.pt",
+    "lada_mosaic_detection_model_v4_fast.pt",
+    "lada_mosaic_restoration_model_generic_v1.2.pth",
+}
 
 
 def _read_json(path: Path) -> dict:
@@ -40,7 +45,7 @@ def audit_base_artifact(paths: Iterable[str]) -> None:
     for entry in paths:
         normalized = "/" + entry.replace("\\", "/").lstrip("/")
         lowered = normalized.lower()
-        if lowered.endswith(_FORBIDDEN_BASE_SUFFIXES) or any(
+        if Path(lowered).name in _FORBIDDEN_LADA_MODELS or any(
             part in lowered for part in _FORBIDDEN_BASE_PARTS
         ):
             raise ValueError(f"LADA payload must not be present in the LocalBooru base artifact: {entry}")

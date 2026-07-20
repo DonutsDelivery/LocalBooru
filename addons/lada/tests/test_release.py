@@ -1,4 +1,6 @@
 import json
+import subprocess
+import tarfile
 from pathlib import Path
 
 from localbooru_lada.release import audit_base_artifact, build_release_manifest, load_addon_metadata
@@ -6,7 +8,6 @@ from localbooru_lada.release import audit_base_artifact, build_release_manifest,
 ROOT = Path(__file__).parents[1]
 
 
-# AC: @lada-license-provenance ac-license-disclosure
 def test_addon_metadata_discloses_license_source_sizes_and_models():
     metadata = load_addon_metadata(ROOT)
 
@@ -24,6 +25,8 @@ def test_base_artifact_audit_rejects_lada_payloads_but_allows_bridge_files():
         "usr/bin/localbooru",
         "usr/lib/gstreamer-1.0/libgstlocalboorulada.so",
         "usr/share/licenses/localbooru/LADA-INTEGRATION-NOTICE.md",
+        "usr/share/unrelated-addon/model.pt",
+        "usr/share/unrelated-addon/checkpoint.pth",
     ])
 
     forbidden = [
@@ -37,6 +40,57 @@ def test_base_artifact_audit_rejects_lada_payloads_but_allows_bridge_files():
             assert path in str(error)
         else:
             raise AssertionError(f"expected {path} to be rejected")
+
+
+def test_corresponding_source_stages_only_tracked_addon_and_upstream_files(tmp_path):
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    (upstream / "upstream.py").write_text("PINNED = True\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=upstream, check=True)
+    subprocess.run(["git", "add", "upstream.py"], cwd=upstream, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=LADA Test",
+            "-c",
+            "user.email=lada-test@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        cwd=upstream,
+        check=True,
+    )
+
+    contaminations = [
+        ROOT / "build" / "review-contamination.bin",
+        ROOT / "dist" / "review-contamination.bin",
+    ]
+    for contamination in contaminations:
+        contamination.parent.mkdir(exist_ok=True)
+        contamination.write_bytes(b"must not ship")
+    stage = tmp_path / "source-stage"
+    try:
+        subprocess.run(
+            [ROOT / "packaging" / "stage-source.sh", ROOT, upstream, stage],
+            check=True,
+        )
+    finally:
+        for contamination in contaminations:
+            contamination.unlink()
+
+    archive = tmp_path / "source.tar"
+    with tarfile.open(archive, "w") as handle:
+        handle.add(stage / "localbooru-lada-addon", arcname="localbooru-lada-addon")
+        handle.add(stage / "lada", arcname="lada")
+    with tarfile.open(archive) as handle:
+        members = set(handle.getnames())
+
+    assert "localbooru-lada-addon/LICENSE" in members
+    assert "lada/upstream.py" in members
+    assert not any("build" in Path(member).parts for member in members)
+    assert not any("dist" in Path(member).parts for member in members)
 
 
 # AC: @lada-license-provenance ac-binary-source-match

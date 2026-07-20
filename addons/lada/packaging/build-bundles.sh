@@ -52,7 +52,9 @@ cp "$root/manifests/models.json" "$work/runtime/models.json"
 tar_args=(--sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -I 'zstd -19 -T0')
 tar "${tar_args[@]}" -cf "$out/linux-x86_64-$backend.tar.zst" -C "$work" runtime
 tar "${tar_args[@]}" -cf "$out/models.tar.zst" -C "$work" models
-tar "${tar_args[@]}" -cf "$out/source.tar.zst" -C "$(dirname "$root")" "$(basename "$root")" -C "$work" lada
+"$root/packaging/stage-source.sh" "$root" "$work/lada" "$work/corresponding-source"
+tar "${tar_args[@]}" -cf "$out/source.tar.zst" -C "$work/corresponding-source" \
+  localbooru-lada-addon lada
 
 PYTHONPATH="$root/src" "$work/runtime/bin/python" -m localbooru_lada build-manifest \
   --root "$root" \

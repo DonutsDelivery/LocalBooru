@@ -113,6 +113,8 @@ class FramePool:
             self._condition.notify()
 
     def _validate(self, buffer_id: int, sequence: int, generation: int) -> _Slot:
+        if self._closed:
+            raise RuntimeError("frame pool is closed")
         if generation != self._generation:
             raise StaleLease(f"generation {generation} is stale")
         try:
@@ -122,14 +124,6 @@ class FramePool:
         if slot.sequence != sequence or slot.generation != generation:
             raise StaleLease(f"buffer {buffer_id} lease is stale or already released")
         return slot
-
-    def reset(self, *, generation: int) -> None:
-        with self._condition:
-            self._generation = generation
-            for slot in self._slots:
-                slot.sequence = None
-                slot.generation = None
-            self._condition.notify_all()
 
     def close(self) -> None:
         with self._condition:

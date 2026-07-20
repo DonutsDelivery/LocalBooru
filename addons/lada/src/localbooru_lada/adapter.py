@@ -72,10 +72,10 @@ class LadaFrameSource:
         if self._restorer is None or self._metadata is None:
             raise RuntimeError("frame source has not started")
         value = next(self._restorer)
+        if isinstance(value, Exception):
+            detail = getattr(value, "stack_trace", None) or str(value)
+            raise RuntimeError(detail or type(value).__name__) from value
         if not isinstance(value, tuple) or len(value) != 2:
-            error = getattr(value, "error", None) or getattr(value, "exception", None)
-            if error:
-                raise RuntimeError(str(error))
             raise StopIteration
         frame, pts = value
         array = frame.detach().to("cpu").contiguous().numpy()

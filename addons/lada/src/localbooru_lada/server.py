@@ -33,8 +33,10 @@ class SidecarServer:
         self._connection = connection
         self._config = config
         self._send_lock = threading.Lock()
+        self._pool_lock = threading.Lock()
         self._pause = threading.Event()
         self._stop = threading.Event()
+        self._authenticated = False
         self._controller = SessionController(self._create_source)
         self._pool = None
         self._producer = None
@@ -62,9 +64,17 @@ class SidecarServer:
         self._producer = threading.Thread(target=self._produce, name="lada-frame-producer", daemon=True)
         self._producer.start()
 
+    def _retire_pool(self) -> None:
+        with self._pool_lock:
+            pool = self._pool
+            self._pool = None
+            if pool is not None:
+                pool.close()
+
     def _stop_producer(self) -> None:
         self._stop.set()
         self._controller.stop()
+        self._retire_pool()
         if self._producer is not None:
             self._producer.join(timeout=5)
             self._producer = None
@@ -75,7 +85,9 @@ class SidecarServer:
         source = self._controller.restorer
         try:
             first = next(source)
-            self._ensure_pool(first)
+            if self._stop.is_set() or generation != self._controller.generation:
+                return
+            pool = self._create_pool(first, generation)
             self._send(
                 {
                     "type": "ready",
@@ -89,7 +101,7 @@ class SidecarServer:
                     "upstream_revision": LADA_REVISION,
                 }
             )
-            self._publish(first, generation)
+            self._publish(first, generation, pool)
             for frame in source:
                 if self._stop.is_set() or generation != self._controller.generation:
                     return
@@ -97,7 +109,7 @@ class SidecarServer:
                     pass
                 if self._stop.is_set():
                     return
-                self._publish(frame, generation)
+                self._publish(frame, generation, pool)
             self._send({"type": "eos", "generation": generation})
         except StopIteration:
             self._send({"type": "eos", "generation": generation})
@@ -113,30 +125,32 @@ class SidecarServer:
                     }
                 )
 
-    def _ensure_pool(self, frame: RestoredFrame) -> None:
+    def _create_pool(self, frame: RestoredFrame, generation: int) -> FramePool:
         required = frame.stride * frame.height
-        if self._pool is None:
-            self._pool = FramePool(buffer_count=DEFAULT_BUFFER_COUNT, buffer_capacity=required)
+        with self._pool_lock:
+            if self._stop.is_set() or generation != self._controller.generation:
+                raise StaleLease(f"generation {generation} is stale")
+            if self._pool is not None:
+                raise RuntimeError("a shared frame pool is already active")
+            pool = FramePool(buffer_count=DEFAULT_BUFFER_COUNT, buffer_capacity=required)
+            self._pool = pool
             descriptors = [
                 {"buffer_id": item["buffer_id"], "capacity": item["capacity"]}
-                for item in self._pool.descriptors
+                for item in pool.descriptors
             ]
             self._send(
                 {
                     "type": "buffers",
-                    "generation": self._controller.generation,
+                    "generation": generation,
                     "buffers": descriptors,
                 },
-                [item["fd"] for item in self._pool.descriptors],
+                [item["fd"] for item in pool.descriptors],
             )
-        elif self._pool.descriptors[0]["capacity"] < required:
-            raise RuntimeError("restored frame dimensions exceed the negotiated shared buffers")
-        else:
-            self._pool.reset(generation=self._controller.generation)
+            return pool
 
-    def _publish(self, frame: RestoredFrame, generation: int) -> None:
-        lease = self._pool.acquire(generation=generation)
-        size = self._pool.write(lease, frame.data)
+    def _publish(self, frame: RestoredFrame, generation: int, pool: FramePool) -> None:
+        lease = pool.acquire(generation=generation)
+        size = pool.write(lease, frame.data)
         self._send(
             {
                 "type": "frame",
@@ -154,9 +168,18 @@ class SidecarServer:
 
     def _handle(self, message: dict) -> bool:
         kind = message["type"]
+        if kind != "hello" and not self._authenticated:
+            raise ProtocolError("hello authentication is required before commands")
         if kind == "hello":
+            if self._authenticated:
+                raise ProtocolError("session is already authenticated")
             if message.get("nonce") != self._config.nonce:
                 raise ProtocolError("session nonce does not match")
+            if message.get("protocol") != PROTOCOL_VERSION:
+                raise ProtocolError("protocol version does not match")
+            if message.get("role") != "coordinator":
+                raise ProtocolError("hello role must be coordinator")
+            self._authenticated = True
             self._send(
                 {
                     "type": "hello",
@@ -179,8 +202,7 @@ class SidecarServer:
                 start_ns=int(message["start_ns"]),
                 request_id=int(message["request_id"]),
             )
-            if self._pool is not None:
-                self._pool.reset(generation=started["generation"])
+            self._retire_pool()
             if self._producer is not None:
                 self._producer.join(timeout=5)
                 self._producer = None
@@ -233,6 +255,4 @@ class SidecarServer:
                     )
         finally:
             self._stop_producer()
-            if self._pool is not None:
-                self._pool.close()
             self._connection.close()

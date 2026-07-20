@@ -19,20 +19,20 @@ def test_pool_never_exceeds_three_in_flight_buffers():
         assert pool.in_flight == 3
 
 
-def test_seek_invalidates_old_generation_leases():
-    with FramePool(buffer_count=3, buffer_capacity=8) as pool:
-        lease = pool.acquire(generation=2)
-        pool.reset(generation=3)
+def test_seek_retires_old_pool_and_uses_fresh_generation_buffers():
+    old_pool = FramePool(buffer_count=3, buffer_capacity=8)
+    lease = old_pool.acquire(generation=2)
+    old_pool.close()
 
-        try:
-            pool.release(lease.buffer_id, lease.sequence, generation=2)
-        except StaleLease:
-            pass
-        else:
-            raise AssertionError("old-generation release must be rejected")
+    try:
+        old_pool.release(lease.buffer_id, lease.sequence, generation=2)
+    except RuntimeError as error:
+        assert "closed" in str(error)
+    else:
+        raise AssertionError("a retired pool must reject old-generation releases")
 
-        assert pool.in_flight == 0
-        assert pool.acquire(generation=3, block=False).generation == 3
+    with FramePool(buffer_count=3, buffer_capacity=8) as new_pool:
+        assert new_pool.acquire(generation=3, block=False).generation == 3
 
 
 def test_duplicate_release_is_rejected():
