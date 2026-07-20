@@ -21,7 +21,7 @@ import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
 import { curationActionForSwipe } from '../../utils/lightboxGestures.js'
 import { isVideoMediaElement, releaseVideoMedia } from '../../utils/lightboxMedia.js'
-import { adjustmentLocator, appendCacheBuster, createAdjustmentRequestOwner } from '../../utils/imageAdjustments.js'
+import { adjustmentLocator, appendCacheBuster, createAdjustmentOperationOwner, imageFileHash } from '../../utils/imageAdjustments.js'
 
 // Video diagnostics overlay — press I to toggle, B for bare mode (video only)
 function FPSMonitor({ videoRef, visible, onToggleBare }) {
@@ -104,6 +104,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [adjustments, setAdjustments] = useState({ brightness: 0, contrast: 0, gamma: 0 })
   const [applyingAdjustments, setApplyingAdjustments] = useState(false)
   const [previewUrl, setPreviewUrl] = useState(null)
+  const [previewIdentity, setPreviewIdentity] = useState(null)
   const [generatingPreview, setGeneratingPreview] = useState(false)
   const [imageLoadError, setImageLoadError] = useState(false)
   const [imageRetryKey, setImageRetryKey] = useState(0)
@@ -158,14 +159,20 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const activeImageKeyRef = useRef(null)
   const adjustmentRequestOwnerRef = useRef(null)
   if (!adjustmentRequestOwnerRef.current) {
-    adjustmentRequestOwnerRef.current = createAdjustmentRequestOwner()
+    adjustmentRequestOwnerRef.current = createAdjustmentOperationOwner()
   }
+  const mountedRef = useRef(true)
   const svpPathEnabledRef = useRef(false)
   const [svpPipelineGeneration, setSvpPipelineGeneration] = useState(0)
 
   const image = images[currentIndex]
   const currentImageKey = image?.url ?? image?.file_path ?? image?.id
   activeImageKeyRef.current = currentImageKey
+
+  useEffect(() => () => {
+    mountedRef.current = false
+    adjustmentRequestOwnerRef.current.invalidatePreview()
+  }, [])
   const isVideoFile = isVideo(image?.original_filename)
 
   // UI visibility and fullscreen hook
@@ -539,12 +546,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Reset adjustments, preview, zoom, video state, and interpolation when changing images
   // Note: streaming cleanup is handled internally by useVideoStreaming (coordinated with auto-start)
   useLayoutEffect(() => {
-    adjustmentRequestOwnerRef.current.invalidate()
+    adjustmentRequestOwnerRef.current.invalidatePreview()
     setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
     setShowAdjustments(false)
     setPreviewUrl(null)
+    setPreviewIdentity(null)
     setGeneratingPreview(false)
-    setApplyingAdjustments(false)
     zoomPan.resetZoom()
     playback.resetPlaybackState()
     subtitles.stopSubtitlesStream()
@@ -552,10 +559,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [image?.library_id, image?.directory_id, image?.id])
 
   useLayoutEffect(() => {
-    adjustmentRequestOwnerRef.current.invalidate()
+    adjustmentRequestOwnerRef.current.invalidatePreview()
     setPreviewUrl(null)
+    setPreviewIdentity(null)
     setGeneratingPreview(false)
-    setApplyingAdjustments(false)
   }, [adjustments.brightness, adjustments.contrast, adjustments.gamma])
 
   // Check for resume position when opening a video
@@ -631,12 +638,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setIsFavorited(!wasActive)
 
     try {
+      const locator = adjustmentLocator(image)
       const { toggleFavorite } = await import('../../api')
-      const result = await toggleFavorite(image.id, image.directory_id, image.library_id)
+      const result = await toggleFavorite(locator.imageId, locator.directoryId, locator.libraryId)
       setIsFavorited(result.is_favorite)
       // Update parent state so the change persists when navigating
       if (onImageUpdate) {
-        onImageUpdate(image.id, { is_favorite: result.is_favorite })
+        onImageUpdate(locator, { is_favorite: result.is_favorite })
       }
     } catch (err) {
       console.error('Failed to toggle favorite:', err)
@@ -652,13 +660,14 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setProcessing(true)
 
     try {
+      const locator = adjustmentLocator(image)
       const { deleteImage } = await import('../../api')
-      await deleteImage(image.id, true, image.directory_id, image.library_id) // delete from filesystem, pass directory context
+      await deleteImage(locator.imageId, true, locator.directoryId, locator.libraryId)
       setShowDeleteConfirm(false)
 
       // Notify parent to remove the image and navigate
       if (onDelete) {
-        onDelete(image.id)
+        onDelete(locator)
       }
     } catch (err) {
       console.error('Failed to delete image:', err)
@@ -897,10 +906,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Generate preview of adjustments
   const handleGeneratePreview = useCallback(async () => {
     if (!image || generatingPreview) return
-
-    if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) {
-      return
-    }
+    if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) return
 
     let locator
     try {
@@ -911,57 +917,53 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
 
     const requestedAdjustments = { ...adjustments }
-    const request = adjustmentRequestOwnerRef.current.begin(locator, requestedAdjustments)
+    const request = adjustmentRequestOwnerRef.current.beginPreview(locator, requestedAdjustments)
     setGeneratingPreview(true)
     try {
       const { previewImageAdjustments } = await import('../../api')
       const result = await previewImageAdjustments(locator, requestedAdjustments)
-      if (!adjustmentRequestOwnerRef.current.owns(request)) return
-
+      if (!adjustmentRequestOwnerRef.current.ownsPreview(request) || !mountedRef.current) return
+      setPreviewIdentity(result)
       setPreviewUrl(appendCacheBuster(result.preview_url))
     } catch (err) {
-      if (!adjustmentRequestOwnerRef.current.owns(request)) return
+      if (!adjustmentRequestOwnerRef.current.ownsPreview(request) || !mountedRef.current) return
       console.error('Failed to generate preview:', err)
       toast.error('Failed to generate preview: ' + err.message)
     } finally {
-      if (adjustmentRequestOwnerRef.current.owns(request)) {
+      if (adjustmentRequestOwnerRef.current.ownsPreview(request) && mountedRef.current) {
         setGeneratingPreview(false)
       }
     }
   }, [image, adjustments, generatingPreview])
 
-  // Discard preview and go back to CSS filter mode
+  // Discard one exact preview generation and go back to CSS filter mode
   const handleDiscardPreview = useCallback(async () => {
-    if (!image) return
-
+    if (!image || !previewIdentity) return
     let locator
     try {
       locator = adjustmentLocator(image)
     } catch {
       return
     }
-    const request = adjustmentRequestOwnerRef.current.begin(locator, adjustments)
-
+    const request = adjustmentRequestOwnerRef.current.beginPreview(locator, adjustments)
     try {
       const { discardImagePreview } = await import('../../api')
-      await discardImagePreview(locator)
+      await discardImagePreview(locator, previewIdentity)
     } catch (err) {
-      if (adjustmentRequestOwnerRef.current.owns(request)) {
+      if (adjustmentRequestOwnerRef.current.ownsPreview(request)) {
         console.error('Failed to discard preview:', err)
       }
     }
-    if (adjustmentRequestOwnerRef.current.owns(request)) {
+    if (adjustmentRequestOwnerRef.current.ownsPreview(request) && mountedRef.current) {
       setPreviewUrl(null)
+      setPreviewIdentity(null)
     }
-  }, [image, adjustments])
+  }, [image, adjustments, previewIdentity])
 
-  // Apply adjustments to file
+  // Apply adjustments to the captured file. Backend completion always updates that locator.
   const handleApplyAdjustments = useCallback(async () => {
-    if (!image || applyingAdjustments) return
-
-    if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) {
-      return
-    }
+    if (!image || adjustmentRequestOwnerRef.current.isApplyInFlight()) return
+    if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) return
 
     let locator
     try {
@@ -970,47 +972,60 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       toast.error(err.message)
       return
     }
+    const expectedFileHash = imageFileHash(image)
+    if (!expectedFileHash) {
+      toast.error('Image metadata is missing its file hash')
+      return
+    }
 
     const requestedAdjustments = { ...adjustments }
-    const request = adjustmentRequestOwnerRef.current.begin(locator, requestedAdjustments)
+    const capturedPreview = previewIdentity
+    const operation = adjustmentRequestOwnerRef.current.beginApply(
+      locator,
+      requestedAdjustments,
+      expectedFileHash
+    )
+    if (!operation) return
+    const uiRequest = adjustmentRequestOwnerRef.current.beginPreview(locator, requestedAdjustments)
     setApplyingAdjustments(true)
     try {
       const { applyImageAdjustments, discardImagePreview } = await import('../../api')
-      const result = await applyImageAdjustments(locator, requestedAdjustments)
-      if (!adjustmentRequestOwnerRef.current.owns(request)) return
-
-      try {
-        await discardImagePreview(locator)
-      } catch {
-        // Ignore cleanup errors
-      }
-      if (!adjustmentRequestOwnerRef.current.owns(request)) return
+      const result = await applyImageAdjustments(locator, requestedAdjustments, expectedFileHash)
 
       if (onImageUpdate) {
-        onImageUpdate(locator, {
-          url: appendCacheBuster(result.url),
-          thumbnail_url: appendCacheBuster(result.thumbnail_url),
-          file_hash: result.file_hash,
-          file_size: result.file_size,
-          width: result.width,
-          height: result.height,
-          file_modified_at: result.file_modified_at
-        })
+        const updates = {
+          url: result.url || appendCacheBuster(image.url),
+          thumbnail_url: result.thumbnail_url || appendCacheBuster(image.thumbnail_url)
+        }
+        for (const key of ['file_hash', 'file_size', 'width', 'height', 'file_modified_at']) {
+          if (result[key] != null) updates[key] = result[key]
+        }
+        onImageUpdate(locator, updates)
       }
+
+      if (capturedPreview) {
+        try {
+          await discardImagePreview(locator, capturedPreview)
+        } catch {
+          // Preview cleanup is best-effort and exact to the captured generation.
+        }
+      }
+      if (!adjustmentRequestOwnerRef.current.ownsPreview(uiRequest) || !mountedRef.current) return
 
       setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
       setPreviewUrl(null)
+      setPreviewIdentity(null)
       setShowAdjustments(false)
     } catch (err) {
-      if (!adjustmentRequestOwnerRef.current.owns(request)) return
-      console.error('Failed to apply adjustments:', err)
-      toast.error('Failed to apply adjustments: ' + err.message)
-    } finally {
-      if (adjustmentRequestOwnerRef.current.owns(request)) {
-        setApplyingAdjustments(false)
+      if (adjustmentRequestOwnerRef.current.ownsPreview(uiRequest) && mountedRef.current) {
+        console.error('Failed to apply adjustments:', err)
+        toast.error('Failed to apply adjustments: ' + err.message)
       }
+    } finally {
+      adjustmentRequestOwnerRef.current.finishApply(operation)
+      if (mountedRef.current) setApplyingAdjustments(false)
     }
-  }, [image, adjustments, applyingAdjustments, onImageUpdate])
+  }, [image, adjustments, previewIdentity, onImageUpdate])
 
   // Gamma exponent for SVG filter (computed outside getFilterStyle so JSX can use it)
   const gammaExponent = adjustments.gamma !== 0
@@ -1697,7 +1712,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     step="1"
                     value={adjustments.brightness}
                     onChange={e => {
-                      adjustmentRequestOwnerRef.current.invalidate()
+                      adjustmentRequestOwnerRef.current.invalidatePreview()
                       setAdjustments(prev => ({ ...prev, brightness: parseInt(e.target.value) }))
                       if (previewUrl) setPreviewUrl(null) // Clear stale preview
                     }}
@@ -1715,7 +1730,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     step="1"
                     value={adjustments.contrast}
                     onChange={e => {
-                      adjustmentRequestOwnerRef.current.invalidate()
+                      adjustmentRequestOwnerRef.current.invalidatePreview()
                       setAdjustments(prev => ({ ...prev, contrast: parseInt(e.target.value) }))
                       if (previewUrl) setPreviewUrl(null) // Clear stale preview
                     }}
@@ -1733,7 +1748,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     step="1"
                     value={adjustments.gamma}
                     onChange={e => {
-                      adjustmentRequestOwnerRef.current.invalidate()
+                      adjustmentRequestOwnerRef.current.invalidatePreview()
                       setAdjustments(prev => ({ ...prev, gamma: parseInt(e.target.value) }))
                       if (previewUrl) setPreviewUrl(null) // Clear stale preview
                     }}

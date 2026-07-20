@@ -3,13 +3,20 @@ import assert from 'node:assert/strict'
 
 import { isUnexpectedEmptyPage, mergeFirstPage, nextLoadRetryDelay } from './galleryState.js'
 
+// AC: @identity-safe-image-adjustments ac-3
 test('live page merge preserves loaded records while inserting and updating page-one records', () => {
-  const existing = [{ id: 2, filename: 'two' }, { id: 1, filename: 'one' }]
-  const incoming = [{ id: 3, filename: 'three' }, { id: 2, filename: 'duplicate' }]
+  const existing = [
+    { id: 2, directory_id: 1, library_id: 'primary', filename: 'two' },
+    { id: 1, directory_id: 1, library_id: 'primary', filename: 'one' },
+  ]
+  const incoming = [
+    { id: 3, directory_id: 1, library_id: 'primary', filename: 'three' },
+    { id: 2, directory_id: 1, library_id: 'primary', filename: 'duplicate' },
+    { id: 2, directory_id: 2, library_id: 'primary', filename: 'same-id-other-directory' },
+  ]
 
   assert.deepEqual(mergeFirstPage(existing, incoming), [
-    { id: 3, filename: 'three' },
-    { id: 2, filename: 'duplicate' },
+    ...incoming,
     existing[1]
   ])
 })

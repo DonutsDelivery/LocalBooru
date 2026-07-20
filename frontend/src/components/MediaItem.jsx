@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { getMediaUrl, fetchPreviewFrames, uploadImage } from '../api'
+import { imageIdentityKey } from '../utils/imageAdjustments.js'
 import { getDesktopAPI } from '../tauriAPI'
 import { toast } from './Toast'
 import ContextMenu from './ContextMenu'
@@ -250,6 +251,7 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     <div
       className={`media-item ${loaded ? 'loaded' : 'loading'} ${fileStatus !== 'available' ? 'unavailable' : ''} ${isSelectable ? 'selectable' : ''} ${isSelected ? 'selected' : ''}`}
       data-image-id={image.id}
+      data-image-key={imageIdentityKey(image)}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onMouseEnter={handleMouseEnter}

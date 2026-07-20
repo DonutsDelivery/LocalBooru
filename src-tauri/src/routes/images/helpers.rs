@@ -354,14 +354,14 @@ pub fn query_directory_images(
                 "rating": img.rating,
                 "is_favorite": img.is_favorite,
                 "thumbnail_url": if let Some(lib_id) = library_id {
-                    format!("/api/images/{}/thumbnail?directory_id={}&library_id={}", img.id, directory_id, lib_id)
+                    format!("/api/images/{}/thumbnail?directory_id={}&library_id={}&file_hash={}", img.id, directory_id, super::adjustments::encode_query_component(lib_id), img.file_hash)
                 } else {
-                    format!("/api/images/{}/thumbnail?directory_id={}", img.id, directory_id)
+                    format!("/api/images/{}/thumbnail?directory_id={}&library_id=primary&file_hash={}", img.id, directory_id, img.file_hash)
                 },
                 "url": if let Some(lib_id) = library_id {
-                    format!("/api/images/{}/file?directory_id={}&library_id={}", img.id, directory_id, lib_id)
+                    format!("/api/images/{}/file?directory_id={}&library_id={}&file_hash={}", img.id, directory_id, super::adjustments::encode_query_component(lib_id), img.file_hash)
                 } else {
-                    format!("/api/images/{}/file?directory_id={}", img.id, directory_id)
+                    format!("/api/images/{}/file?directory_id={}&library_id=primary&file_hash={}", img.id, directory_id, img.file_hash)
                 },
                 "file_status": file_status,
                 "tags": tags_list,

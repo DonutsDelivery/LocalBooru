@@ -162,6 +162,9 @@ async fn get_collection(
             .collect();
 
         // Hydrate image objects from directory DBs
+        let library_id = state_clone.library_manager().primary().uuid.clone();
+        let encoded_library_id =
+            crate::routes::images::adjustments::encode_query_component(&library_id);
         let mut images: Vec<Value> = Vec::new();
         for &img_id in &image_ids {
             let mut found = false;
@@ -195,7 +198,7 @@ async fn get_collection(
                         Ok(json!({
                             "id": row.get::<_, i64>(0)?,
                             "filename": row.get::<_, String>(1)?,
-                            "file_hash": hash,
+                            "file_hash": hash.clone(),
                             "width": row.get::<_, Option<i32>>(3)?,
                             "height": row.get::<_, Option<i32>>(4)?,
                             "file_size": row.get::<_, Option<i64>>(5)?,
@@ -203,8 +206,10 @@ async fn get_collection(
                             "rating": row.get::<_, String>(7)?,
                             "is_favorite": row.get::<_, bool>(8)?,
                             "view_count": row.get::<_, i32>(9)?,
-                            "thumbnail_url": format!("/api/images/{}/thumbnail?directory_id={}", img_id, dir_id),
-                            "url": format!("/api/images/{}/file?directory_id={}", img_id, dir_id),
+                            "library_id": library_id.clone(),
+                            "directory_id": dir_id,
+                            "thumbnail_url": format!("/api/images/{}/thumbnail?directory_id={}&library_id={}&file_hash={}", img_id, dir_id, encoded_library_id, hash),
+                            "url": format!("/api/images/{}/file?directory_id={}&library_id={}&file_hash={}", img_id, dir_id, encoded_library_id, hash),
                         }))
                     },
                 ) {

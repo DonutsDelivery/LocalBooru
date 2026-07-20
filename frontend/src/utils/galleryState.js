@@ -1,9 +1,11 @@
+import { imageIdentityKey } from './imageAdjustments.js'
+
 const MIN_RETRY_DELAY_MS = 250
 const MAX_RETRY_DELAY_MS = 30_000
 
 export function mergeFirstPage(existing, incoming) {
-  const incomingIds = new Set(incoming.map(image => image.id))
-  return [...incoming, ...existing.filter(image => !incomingIds.has(image.id))]
+  const incomingKeys = new Set(incoming.map(imageIdentityKey))
+  return [...incoming, ...existing.filter(image => !incomingKeys.has(imageIdentityKey(image)))]
 }
 
 export function nextLoadRetryDelay(currentDelay, succeeded) {

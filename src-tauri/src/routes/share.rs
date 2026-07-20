@@ -246,6 +246,9 @@ async fn session_info(
             return Ok(None);
         }
 
+        let library_id = state_clone.library_manager().primary().uuid.clone();
+        let encoded_library_id =
+            crate::routes::images::adjustments::encode_query_component(&library_id);
         let dir_pool = state_clone.directory_db().get_pool(dir_id)
             .map_err(|e| AppError::Internal(e.to_string()))?;
         let dir_conn = dir_pool.get()?;
@@ -256,11 +259,12 @@ async fn session_info(
              FROM images WHERE id = ?1",
             params![image_id],
             |row| {
+                let hash = row.get::<_, String>(3)?;
                 Ok(json!({
                     "id": row.get::<_, i64>(0)?,
                     "filename": row.get::<_, String>(1)?,
                     "original_filename": row.get::<_, Option<String>>(2)?,
-                    "file_hash": row.get::<_, String>(3)?,
+                    "file_hash": hash.clone(),
                     "width": row.get::<_, Option<i32>>(4)?,
                     "height": row.get::<_, Option<i32>>(5)?,
                     "file_size": row.get::<_, Option<i64>>(6)?,
@@ -268,9 +272,10 @@ async fn session_info(
                     "rating": row.get::<_, String>(8)?,
                     "is_favorite": row.get::<_, bool>(9)?,
                     "created_at": row.get::<_, Option<String>>(10)?,
+                    "library_id": library_id,
                     "directory_id": dir_id,
-                    "thumbnail_url": format!("/api/images/{}/thumbnail?directory_id={}", image_id, dir_id),
-                    "url": format!("/api/images/{}/file?directory_id={}", image_id, dir_id),
+                    "thumbnail_url": format!("/api/images/{}/thumbnail?directory_id={}&library_id={}&file_hash={}", image_id, dir_id, encoded_library_id, hash),
+                    "url": format!("/api/images/{}/file?directory_id={}&library_id={}&file_hash={}", image_id, dir_id, encoded_library_id, hash),
                 }))
             },
         );
@@ -446,7 +451,8 @@ async fn hls_media(
         AxumPath(session.image_id),
         Query(DirectoryQuery {
             directory_id: session.directory_id,
-            library_id: None,
+            library_id: Some("primary".into()),
+            file_hash: None,
         }),
         request,
     )

@@ -427,11 +427,12 @@ export async function batchMoveImages(imageIds, targetDirectoryId) {
   return response.data
 }
 
-export async function applyImageAdjustments(locator, { brightness, contrast, gamma }) {
+export async function applyImageAdjustments(locator, { brightness, contrast, gamma }, expectedFileHash) {
   const response = await api.post(`/images/${locator.imageId}/adjust?${adjustmentQuery(locator)}`, {
     brightness,
     contrast,
-    gamma
+    gamma,
+    expected_file_hash: expectedFileHash
   })
   return response.data
 }
@@ -445,8 +446,8 @@ export async function previewImageAdjustments(locator, { brightness, contrast, g
   return response.data
 }
 
-export async function discardImagePreview(locator) {
-  const response = await api.delete(`/images/${locator.imageId}/preview?${adjustmentQuery(locator)}`)
+export async function discardImagePreview(locator, preview) {
+  const response = await api.delete(`/images/${locator.imageId}/preview?${adjustmentQuery(locator, preview)}`)
   return response.data
 }
 

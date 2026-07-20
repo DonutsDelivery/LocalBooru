@@ -6,6 +6,7 @@ import {
   setFavorite,
   unfavoriteCurationItems,
 } from '../api'
+import { imageMatchesLocator, updateImagesByLocator } from '../utils/imageAdjustments.js'
 import { toast } from '../components/Toast'
 import {
   buildCurationQuery,
@@ -229,6 +230,21 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
     }
   }, [refill])
 
+  const updateImage = useCallback((locator, updates) => {
+    setState(previous => {
+      const lastAction = previous.lastAction && imageMatchesLocator(previous.lastAction.item, locator)
+        ? { ...previous.lastAction, item: { ...previous.lastAction.item, ...updates } }
+        : previous.lastAction
+      const next = {
+        ...previous,
+        queue: updateImagesByLocator(previous.queue, locator, updates),
+        lastAction,
+      }
+      stateRef.current = next
+      return next
+    })
+  }, [])
+
   const exit = useCallback(() => {
     if (stateRef.current.busy) return
     stateRef.current = initialState
@@ -248,6 +264,7 @@ export function useCurationGame({ loadedImages, filters, onGalleryRefresh }) {
     discard: () => applyAction('discard'),
     undo,
     retryRefill,
+    updateImage,
     exit,
     unfavoriteAllAndRestart,
   }

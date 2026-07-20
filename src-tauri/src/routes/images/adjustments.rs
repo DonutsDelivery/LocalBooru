@@ -6,7 +6,7 @@ use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::response::{Json, Response};
 use image::{DynamicImage, ImageBuffer, Rgb};
-use rusqlite::params;
+use rusqlite::{params, TransactionBehavior};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::fs::File;
@@ -27,6 +27,13 @@ pub struct ImageAdjustmentRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ApplyAdjustmentRequest {
+    #[serde(flatten)]
+    pub adjustments: ImageAdjustmentRequest,
+    pub expected_file_hash: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ImageLocatorQuery {
     pub library_id: String,
     pub directory_id: i64,
@@ -37,6 +44,8 @@ pub struct PreviewQuery {
     pub library_id: String,
     pub directory_id: i64,
     pub adjustment_hash: String,
+    pub preview_key: String,
+    pub source_file_hash: String,
 }
 
 struct ResolvedImage {
@@ -45,7 +54,30 @@ struct ResolvedImage {
     file_hash: String,
 }
 
-/// POST /api/images/:image_id/preview-adjust — Generate adjustment preview.
+struct TempPath {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl TempPath {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TempPath {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// POST /api/images/:image_id/preview-adjust — Generate an immutable preview generation.
 pub async fn preview_adjust(
     State(state): State<AppState>,
     AxumPath(image_id): AxumPath<i64>,
@@ -59,52 +91,70 @@ pub async fn preview_adjust(
     let resolved =
         tokio::task::spawn_blocking(move || resolve_image(&state_clone, &locator_clone, image_id))
             .await??;
-
     let canonical_locator = ImageLocatorQuery {
         library_id: resolved.library.uuid.clone(),
         directory_id: locator.directory_id,
     };
+    let source_file_hash = resolved.file_hash;
+    let adjustment_hash = adjustment_hash(&adjustments);
+    let preview_key = format!("{:032x}", unique_suffix());
+    let filename = preview_cache_filename(
+        &canonical_locator,
+        image_id,
+        &source_file_hash,
+        &adjustment_hash,
+        &preview_key,
+    );
+    let url = preview_url(
+        &canonical_locator,
+        image_id,
+        &source_file_hash,
+        &adjustment_hash,
+        &preview_key,
+    );
     let cache_dir = resolved.library.data_dir.join("preview_cache");
-    let file_path = resolved.path;
-    let hash = adjustment_hash(&adjustments);
-    let preview_filename = preview_cache_filename(&canonical_locator, image_id, &hash);
-    let preview_url = preview_url(&canonical_locator, image_id, &hash);
+    let source_path = resolved.path;
     let brightness = adjustments.brightness;
     let contrast = adjustments.contrast;
     let gamma = adjustments.gamma;
 
     tokio::task::spawn_blocking(move || {
         std::fs::create_dir_all(&cache_dir)?;
-        remove_locator_previews(&cache_dir, &canonical_locator, image_id)?;
-
-        let img = image::open(&file_path)
-            .map_err(|e| AppError::Internal(format!("Failed to open image: {}", e)))?;
-        let adjusted = apply_adjustments_to_image(&img, &adjustments);
-        adjusted
-            .save_with_format(cache_dir.join(preview_filename), image::ImageFormat::WebP)
-            .map_err(|e| AppError::Internal(format!("Failed to save preview: {}", e)))?;
+        let destination = cache_dir.join(filename);
+        let mut temporary = TempPath::new(cache_dir.join(format!(
+            ".preview-{}-{}.localbooru-previewing",
+            std::process::id(),
+            unique_suffix()
+        )));
+        let image = image::open(&source_path)
+            .map_err(|error| AppError::Internal(format!("Failed to open image: {}", error)))?;
+        apply_adjustments_to_image(&image, &adjustments)
+            .save_with_format(&temporary.path, image::ImageFormat::WebP)
+            .map_err(|error| AppError::Internal(format!("Failed to save preview: {}", error)))?;
+        std::fs::File::open(&temporary.path)?.sync_all()?;
+        replace_file(&temporary.path, &destination)
+            .map_err(|error| AppError::Internal(format!("Failed to publish preview: {}", error)))?;
+        temporary.disarm();
         Ok::<_, AppError>(())
     })
     .await??;
 
     Ok(Json(json!({
-        "preview_url": preview_url,
-        "adjustment_hash": hash,
-        "adjustments": {
-            "brightness": brightness,
-            "contrast": contrast,
-            "gamma": gamma
-        }
+        "preview_url": url,
+        "adjustment_hash": adjustment_hash,
+        "preview_key": preview_key,
+        "source_file_hash": source_file_hash,
+        "adjustments": { "brightness": brightness, "contrast": contrast, "gamma": gamma }
     })))
 }
 
-/// GET /api/images/:image_id/preview — Serve one exact cached preview.
+/// GET /api/images/:image_id/preview — Serve one exact immutable preview generation.
 pub async fn get_preview(
     State(state): State<AppState>,
     AxumPath(image_id): AxumPath<i64>,
     Query(query): Query<PreviewQuery>,
 ) -> Result<Response, AppError> {
-    validate_adjustment_hash(&query.adjustment_hash)?;
+    validate_preview_query(&query)?;
     let locator = ImageLocatorQuery {
         library_id: query.library_id,
         directory_id: query.directory_id,
@@ -114,7 +164,12 @@ pub async fn get_preview(
     let resolved =
         tokio::task::spawn_blocking(move || resolve_image(&state_clone, &locator_clone, image_id))
             .await??;
-    let canonical_locator = ImageLocatorQuery {
+    if resolved.file_hash != query.source_file_hash {
+        return Err(AppError::NotFound(
+            "Preview source is no longer current".into(),
+        ));
+    }
+    let canonical = ImageLocatorQuery {
         library_id: resolved.library.uuid.clone(),
         directory_id: locator.directory_id,
     };
@@ -123,20 +178,19 @@ pub async fn get_preview(
         .data_dir
         .join("preview_cache")
         .join(preview_cache_filename(
-            &canonical_locator,
+            &canonical,
             image_id,
+            &query.source_file_hash,
             &query.adjustment_hash,
+            &query.preview_key,
         ));
-
     if !path.is_file() {
         return Err(AppError::NotFound("No matching preview found".into()));
     }
 
     let file = File::open(&path).await?;
     let metadata = file.metadata().await?;
-    let stream = tokio_util::io::ReaderStream::new(file);
-    let body = axum::body::Body::from_stream(stream);
-
+    let body = axum::body::Body::from_stream(tokio_util::io::ReaderStream::new(file));
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "image/webp")
@@ -145,54 +199,75 @@ pub async fn get_preview(
         .unwrap())
 }
 
-/// DELETE /api/images/:image_id/preview — Discard previews for one exact locator.
+/// DELETE /api/images/:image_id/preview — Discard one exact preview generation.
 pub async fn discard_preview(
     State(state): State<AppState>,
     AxumPath(image_id): AxumPath<i64>,
-    Query(locator): Query<ImageLocatorQuery>,
+    Query(query): Query<PreviewQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    validate_preview_query(&query)?;
+    let locator = ImageLocatorQuery {
+        library_id: query.library_id,
+        directory_id: query.directory_id,
+    };
     let state_clone = state.clone();
     let locator_clone = locator.clone();
     let resolved =
         tokio::task::spawn_blocking(move || resolve_image(&state_clone, &locator_clone, image_id))
             .await??;
-    let canonical_locator = ImageLocatorQuery {
+    let canonical = ImageLocatorQuery {
         library_id: resolved.library.uuid.clone(),
         directory_id: locator.directory_id,
     };
-    let cache_dir = resolved.library.data_dir.join("preview_cache");
-    let deleted = tokio::task::spawn_blocking(move || {
-        remove_locator_previews(&cache_dir, &canonical_locator, image_id)
-    })
-    .await??;
-
+    let path = resolved
+        .library
+        .data_dir
+        .join("preview_cache")
+        .join(preview_cache_filename(
+            &canonical,
+            image_id,
+            &query.source_file_hash,
+            &query.adjustment_hash,
+            &query.preview_key,
+        ));
+    let deleted = match std::fs::remove_file(path) {
+        Ok(()) => 1,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+        Err(error) => return Err(error.into()),
+    };
     Ok(Json(json!({"deleted": deleted})))
 }
 
-/// POST /api/images/:image_id/adjust — Apply adjustments to the original file.
+/// POST /api/images/:image_id/adjust — Apply adjustments to one exact original file.
 pub async fn apply_adjust(
     State(state): State<AppState>,
     AxumPath(image_id): AxumPath<i64>,
     Query(locator): Query<ImageLocatorQuery>,
-    Json(adjustments): Json<ImageAdjustmentRequest>,
+    Json(request): Json<ApplyAdjustmentRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    validate_adjustments(&adjustments)?;
-
-    if adjustments.brightness == 0 && adjustments.contrast == 0 && adjustments.gamma == 0 {
-        return Ok(Json(json!({
-            "adjusted": false,
-            "message": "No adjustments needed"
-        })));
-    }
+    validate_adjustments(&request.adjustments)?;
 
     let state_clone = state.clone();
     let locator_clone = locator.clone();
     let result = tokio::task::spawn_blocking(move || {
         let resolved = resolve_image(&state_clone, &locator_clone, image_id)?;
-        apply_to_resolved_image(resolved, &locator_clone, image_id, &adjustments)
+        ensure_expected_hash(&resolved, &request.expected_file_hash)?;
+        if request.adjustments.brightness == 0
+            && request.adjustments.contrast == 0
+            && request.adjustments.gamma == 0
+        {
+            return Ok(json!({ "adjusted": false, "message": "No adjustments needed" }));
+        }
+        apply_to_resolved_image(
+            resolved,
+            &locator_clone,
+            image_id,
+            &request.adjustments,
+            &request.expected_file_hash,
+            false,
+        )
     })
     .await??;
-
     Ok(Json(result))
 }
 
@@ -208,39 +283,67 @@ fn resolve_image(
             locator.directory_id, library.uuid
         )));
     }
-
     let pool = library.directory_db.get_pool(locator.directory_id)?;
     let conn = pool.get()?;
-    let row = conn.query_row(
-        "SELECT f.original_path, i.file_hash
-         FROM images i
-         JOIN image_files f ON f.image_id = i.id
-         WHERE i.id = ?1 AND f.file_exists = 1
-         ORDER BY f.id LIMIT 1",
-        params![image_id],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-    );
-    let (path, file_hash) = match row {
-        Ok(value) => value,
-        Err(rusqlite::Error::QueryReturnedNoRows) => {
-            return Err(AppError::NotFound(format!(
+    let file_hash = conn
+        .query_row(
+            "SELECT file_hash FROM images WHERE id = ?1",
+            params![image_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => AppError::NotFound(format!(
                 "Image {} not found in library '{}' directory {}",
                 image_id, library.uuid, locator.directory_id
-            )))
-        }
-        Err(error) => return Err(error.into()),
-    };
-    let path = PathBuf::from(path);
-    if !path.is_file() {
+            )),
+            other => other.into(),
+        })?;
+    let mut statement = conn.prepare(
+        "SELECT original_path FROM image_files
+         WHERE image_id = ?1 AND file_exists = 1 ORDER BY id",
+    )?;
+    let paths: Vec<PathBuf> = statement
+        .query_map(params![image_id], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+    if paths.is_empty() {
+        return Err(AppError::NotFound("Image file not found".into()));
+    }
+    if paths.len() != 1 {
+        return Err(AppError::BadRequest(
+            "Image adjustment is ambiguous because multiple existing file paths share this image"
+                .into(),
+        ));
+    }
+    let path = paths.into_iter().next().unwrap();
+    let metadata = std::fs::symlink_metadata(&path)
+        .map_err(|_| AppError::NotFound("Image file not found on disk".into()))?;
+    if metadata.file_type().is_symlink() {
+        return Err(AppError::BadRequest(
+            "Image adjustments do not follow symbolic links".into(),
+        ));
+    }
+    if !metadata.is_file() {
         return Err(AppError::NotFound("Image file not found on disk".into()));
     }
-
+    drop(statement);
     drop(conn);
     Ok(ResolvedImage {
         library,
         path,
         file_hash,
     })
+}
+
+fn ensure_expected_hash(resolved: &ResolvedImage, expected: &str) -> Result<(), AppError> {
+    if resolved.file_hash != expected {
+        return Err(AppError::BadRequest(
+            "Image changed since the adjustment operation started".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn adjustment_hash(adjustments: &ImageAdjustmentRequest) -> String {
@@ -267,53 +370,66 @@ fn preview_cache_prefix(locator: &ImageLocatorQuery, image_id: i64) -> String {
 fn preview_cache_filename(
     locator: &ImageLocatorQuery,
     image_id: i64,
+    source_file_hash: &str,
     adjustment_hash: &str,
+    preview_key: &str,
 ) -> String {
     format!(
-        "{}{}.webp",
+        "{}{}_{}_{}.webp",
         preview_cache_prefix(locator, image_id),
-        adjustment_hash
+        source_file_hash,
+        adjustment_hash,
+        preview_key
     )
 }
 
-fn preview_url(locator: &ImageLocatorQuery, image_id: i64, adjustment_hash: &str) -> String {
+fn preview_url(
+    locator: &ImageLocatorQuery,
+    image_id: i64,
+    source_file_hash: &str,
+    adjustment_hash: &str,
+    preview_key: &str,
+) -> String {
     format!(
-        "/api/images/{}/preview?library_id={}&directory_id={}&adjustment_hash={}",
-        image_id, locator.library_id, locator.directory_id, adjustment_hash
+        "/api/images/{}/preview?library_id={}&directory_id={}&source_file_hash={}&adjustment_hash={}&preview_key={}",
+        image_id,
+        encode_query_component(&locator.library_id),
+        locator.directory_id,
+        encode_query_component(source_file_hash),
+        adjustment_hash,
+        preview_key
     )
 }
 
-fn validate_adjustment_hash(hash: &str) -> Result<(), AppError> {
-    if hash.len() != 16 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(AppError::BadRequest("Invalid adjustment hash".into()));
+pub(crate) fn encode_query_component(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            use std::fmt::Write;
+            let _ = write!(encoded, "%{:02X}", byte);
+        }
+    }
+    encoded
+}
+
+fn validate_preview_component(value: &str, name: &str) -> Result<(), AppError> {
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(AppError::BadRequest(format!("Invalid {}", name)));
     }
     Ok(())
 }
 
-fn remove_locator_previews(
-    cache_dir: &Path,
-    locator: &ImageLocatorQuery,
-    image_id: i64,
-) -> Result<usize, AppError> {
-    let prefix = preview_cache_prefix(locator, image_id);
-    let mut deleted = 0;
-    let entries = match std::fs::read_dir(cache_dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-        Err(error) => return Err(error.into()),
-    };
-
-    for entry in entries.flatten() {
-        if entry
-            .file_name()
-            .to_str()
-            .is_some_and(|name| name.starts_with(&prefix) && name.ends_with(".webp"))
-        {
-            std::fs::remove_file(entry.path())?;
-            deleted += 1;
-        }
-    }
-    Ok(deleted)
+fn validate_preview_query(query: &PreviewQuery) -> Result<(), AppError> {
+    validate_preview_component(&query.adjustment_hash, "adjustment hash")?;
+    validate_preview_component(&query.preview_key, "preview key")?;
+    validate_preview_component(&query.source_file_hash, "source file hash")
 }
 
 fn apply_to_resolved_image(
@@ -321,88 +437,62 @@ fn apply_to_resolved_image(
     locator: &ImageLocatorQuery,
     image_id: i64,
     adjustments: &ImageAdjustmentRequest,
+    expected_file_hash: &str,
+    force_commit_failure: bool,
 ) -> Result<serde_json::Value, AppError> {
-    let ext = resolved
+    ensure_expected_hash(&resolved, expected_file_hash)?;
+    let extension = resolved
         .path
         .extension()
-        .and_then(|extension| extension.to_str())
+        .and_then(|value| value.to_str())
         .unwrap_or("")
         .to_lowercase();
-    let editable = ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif"];
-    if !editable.contains(&ext.as_str()) {
-        return Err(AppError::BadRequest(format!(
-            "Cannot adjust .{} files",
-            ext
-        )));
-    }
-
-    let img = image::open(&resolved.path)
-        .map_err(|e| AppError::Internal(format!("Failed to open image: {}", e)))?;
-    let adjusted = apply_adjustments_to_image(&img, adjustments);
-    let temporary = adjustment_temp_path(&resolved.path, &ext);
+    let format = image_format(&extension)?;
+    let original_metadata = std::fs::symlink_metadata(&resolved.path)?;
+    let image = image::open(&resolved.path)
+        .map_err(|error| AppError::Internal(format!("Failed to open image: {}", error)))?;
+    let mut adjusted_temp = TempPath::new(adjustment_temp_path(&resolved.path));
+    let adjusted = apply_adjustments_to_image(&image, adjustments);
+    let (width, height) = (adjusted.width(), adjusted.height());
     adjusted
-        .save(&temporary)
-        .map_err(|e| AppError::Internal(format!("Failed to save adjusted image: {}", e)))?;
-    let original_permissions = std::fs::metadata(&resolved.path)?.permissions();
-    std::fs::set_permissions(&temporary, original_permissions)?;
+        .save_with_format(&adjusted_temp.path, format)
+        .map_err(|error| AppError::Internal(format!("Failed to save adjusted image: {}", error)))?;
+    std::fs::set_permissions(&adjusted_temp.path, original_metadata.permissions())?;
+    std::fs::File::open(&adjusted_temp.path)?.sync_all()?;
 
-    let temporary_string = temporary.to_string_lossy();
+    let temporary_string = adjusted_temp.path.to_string_lossy();
     let new_hash = importer::calculate_quick_hash(&temporary_string)
-        .map_err(|e| AppError::Internal(format!("Hash error: {}", e)))?;
-    let (width, height) = importer::get_image_dimensions(&temporary_string)
-        .ok_or_else(|| AppError::Internal("Failed to read adjusted image dimensions".into()))?;
+        .map_err(|error| AppError::Internal(format!("Hash error: {}", error)))?;
     let perceptual_hash = importer::calculate_perceptual_hash(&temporary_string);
-    let metadata = std::fs::metadata(&temporary)?;
+    let metadata = std::fs::metadata(&adjusted_temp.path)?;
     let file_size = metadata.len() as i64;
     let file_modified_at = modified_at_rfc3339(&metadata);
-    if let Ok(file) = std::fs::OpenOptions::new().write(true).open(&temporary) {
-        let _ = file.sync_all();
-    }
 
     let pool = resolved
         .library
         .directory_db
         .get_pool(locator.directory_id)?;
-    let mut conn = pool.get()?;
-    let duplicate: Option<i64> = conn
+    let mut connection = pool.get()?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    if transaction
         .query_row(
             "SELECT id FROM images WHERE file_hash = ?1 AND id != ?2",
             params![&new_hash, image_id],
-            |row| row.get(0),
+            |row| row.get::<_, i64>(0),
         )
-        .ok();
-    if duplicate.is_some() {
-        let _ = std::fs::remove_file(&temporary);
+        .is_ok()
+    {
         return Err(AppError::BadRequest(
             "Adjusted image duplicates another image in this directory".into(),
         ));
     }
-
-    let thumbnails_dir = resolved.library.thumbnails_dir();
-    std::fs::create_dir_all(&thumbnails_dir)?;
-    let thumbnail_path = thumbnails_dir.join(format!("{}.webp", &new_hash[..16]));
-    let thumbnail_temp = thumbnails_dir.join(format!(
-        ".{}.{}-{}.tmp.webp",
-        new_hash,
-        std::process::id(),
-        unique_suffix()
-    ));
-    if !importer::generate_thumbnail(&temporary_string, &thumbnail_temp.to_string_lossy(), 400) {
-        let _ = std::fs::remove_file(&temporary);
-        let _ = std::fs::remove_file(&thumbnail_temp);
-        return Err(AppError::Internal(
-            "Failed to generate adjusted image thumbnail".into(),
-        ));
-    }
-
-    let canonical_filename = format!("{}.{}", &new_hash[..16], ext);
-    let transaction = conn.transaction()?;
-    transaction.execute(
+    let canonical_filename = format!("{}.{}", &new_hash[..16.min(new_hash.len())], extension);
+    let updated = transaction.execute(
         "UPDATE images
          SET filename = ?1, file_hash = ?2, perceptual_hash = ?3,
              width = ?4, height = ?5, file_size = ?6,
              file_modified_at = ?7, updated_at = datetime('now')
-         WHERE id = ?8",
+         WHERE id = ?8 AND file_hash = ?9",
         params![
             canonical_filename,
             &new_hash,
@@ -411,21 +501,90 @@ fn apply_to_resolved_image(
             height as i32,
             file_size,
             file_modified_at,
-            image_id
+            image_id,
+            expected_file_hash
         ],
     )?;
-
-    if let Err(error) = commit_prepared_file(&thumbnail_temp, &thumbnail_path, replace_file) {
-        let _ = std::fs::remove_file(&temporary);
-        return Err(error);
+    if updated != 1 {
+        return Err(AppError::BadRequest(
+            "Image changed while adjustments were being prepared".into(),
+        ));
     }
-    if let Err(error) = commit_prepared_file(&temporary, &resolved.path, replace_file) {
-        let _ = std::fs::remove_file(&thumbnail_path);
-        return Err(error);
-    }
-    transaction.commit()?;
 
-    if resolved.file_hash != new_hash {
+    let thumbnails_dir = resolved.library.thumbnails_dir();
+    std::fs::create_dir_all(&thumbnails_dir)?;
+    let thumbnail_path = thumbnails_dir.join(format!("{}.webp", &new_hash[..16]));
+    let mut thumbnail_temp = if thumbnail_path.exists() {
+        None
+    } else {
+        let temporary = TempPath::new(thumbnails_dir.join(format!(
+            ".thumbnail-{}-{}.tmp.webp",
+            std::process::id(),
+            unique_suffix()
+        )));
+        if !importer::generate_thumbnail_from_image(
+            &adjusted,
+            &temporary.path.to_string_lossy(),
+            400,
+        ) {
+            return Err(AppError::Internal(
+                "Failed to generate adjusted image thumbnail".into(),
+            ));
+        }
+        Some(temporary)
+    };
+
+    let mut backup = TempPath::new(adjustment_backup_path(&resolved.path));
+    std::fs::copy(&resolved.path, &backup.path)?;
+    std::fs::set_permissions(&backup.path, original_metadata.permissions())?;
+    std::fs::File::open(&backup.path)?.sync_all()?;
+
+    replace_file(&adjusted_temp.path, &resolved.path).map_err(|error| {
+        AppError::Internal(format!("Failed to atomically replace image: {}", error))
+    })?;
+    adjusted_temp.disarm();
+
+    let mut created_thumbnail = false;
+    if let Some(temporary) = thumbnail_temp.as_mut() {
+        if let Err(error) = replace_file(&temporary.path, &thumbnail_path) {
+            restore_original(&mut backup, &resolved.path)?;
+            return Err(AppError::Internal(format!(
+                "Failed to publish adjusted thumbnail: {}",
+                error
+            )));
+        }
+        temporary.disarm();
+        created_thumbnail = true;
+    }
+
+    let commit_result = if force_commit_failure {
+        drop(transaction);
+        Err(rusqlite::Error::ExecuteReturnedResults)
+    } else {
+        transaction.commit()
+    };
+    if let Err(error) = commit_result {
+        restore_original(&mut backup, &resolved.path)?;
+        if created_thumbnail && !thumbnail_hash_in_use(&resolved.library, &new_hash, None, None)? {
+            let _ = std::fs::remove_file(&thumbnail_path);
+        }
+        return Err(AppError::Internal(format!(
+            "Failed to commit adjusted metadata: {}",
+            error
+        )));
+    }
+    if std::fs::remove_file(&backup.path).is_ok() {
+        backup.disarm();
+    }
+
+    if resolved.file_hash != new_hash
+        && !thumbnail_hash_in_use(
+            &resolved.library,
+            &resolved.file_hash,
+            Some(locator.directory_id),
+            Some(image_id),
+        )?
+    {
         let old_thumbnail = thumbnails_dir.join(format!(
             "{}.webp",
             &resolved.file_hash[..16.min(resolved.file_hash.len())]
@@ -433,7 +592,7 @@ fn apply_to_resolved_image(
         let _ = std::fs::remove_file(old_thumbnail);
     }
 
-    let library_id = &resolved.library.uuid;
+    let library_id = encode_query_component(&resolved.library.uuid);
     Ok(json!({
         "adjusted": true,
         "brightness": adjustments.brightness,
@@ -444,22 +603,90 @@ fn apply_to_resolved_image(
         "width": width,
         "height": height,
         "file_modified_at": file_modified_at,
-        "url": format!("/api/images/{}/file?directory_id={}&library_id={}", image_id, locator.directory_id, library_id),
-        "thumbnail_url": format!("/api/images/{}/thumbnail?directory_id={}&library_id={}", image_id, locator.directory_id, library_id)
+        "url": format!("/api/images/{}/file?directory_id={}&library_id={}&file_hash={}", image_id, locator.directory_id, library_id, new_hash),
+        "thumbnail_url": format!("/api/images/{}/thumbnail?directory_id={}&library_id={}&file_hash={}", image_id, locator.directory_id, library_id, new_hash)
     }))
 }
 
-fn adjustment_temp_path(path: &Path, extension: &str) -> PathBuf {
-    let name = path
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or("image");
+fn restore_original(backup: &mut TempPath, destination: &Path) -> Result<(), AppError> {
+    match replace_file(&backup.path, destination) {
+        Ok(()) => {
+            backup.disarm();
+            Ok(())
+        }
+        Err(rename_error) => {
+            std::fs::copy(&backup.path, destination).map_err(|copy_error| {
+                AppError::Internal(format!(
+                    "Failed to restore original image after {}: {}",
+                    rename_error, copy_error
+                ))
+            })?;
+            std::fs::File::open(destination)?.sync_all()?;
+            Ok(())
+        }
+    }
+}
+
+pub(crate) fn thumbnail_hash_in_use(
+    library: &LibraryContext,
+    hash: &str,
+    except_directory: Option<i64>,
+    except_image: Option<i64>,
+) -> Result<bool, AppError> {
+    for directory_id in library.directory_db.get_all_directory_ids() {
+        let pool = library.directory_db.get_pool(directory_id)?;
+        let connection = pool.get()?;
+        let found = if except_directory == Some(directory_id) {
+            connection
+                .query_row(
+                    "SELECT 1 FROM images WHERE file_hash = ?1 AND id != ?2 LIMIT 1",
+                    params![hash, except_image.unwrap_or(-1)],
+                    |_| Ok(()),
+                )
+                .is_ok()
+        } else {
+            connection
+                .query_row(
+                    "SELECT 1 FROM images WHERE file_hash = ?1 LIMIT 1",
+                    params![hash],
+                    |_| Ok(()),
+                )
+                .is_ok()
+        };
+        if found {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn image_format(extension: &str) -> Result<image::ImageFormat, AppError> {
+    match extension {
+        "jpg" | "jpeg" => Ok(image::ImageFormat::Jpeg),
+        "png" => Ok(image::ImageFormat::Png),
+        "webp" => Ok(image::ImageFormat::WebP),
+        "bmp" => Ok(image::ImageFormat::Bmp),
+        "tiff" | "tif" => Ok(image::ImageFormat::Tiff),
+        _ => Err(AppError::BadRequest(format!(
+            "Cannot adjust .{} files",
+            extension
+        ))),
+    }
+}
+
+fn adjustment_temp_path(path: &Path) -> PathBuf {
     path.with_file_name(format!(
-        ".{}.localbooru-adjust-{}-{}.{}",
-        name,
+        ".localbooru-adjust-{}-{}.localbooru-adjusting",
         std::process::id(),
-        unique_suffix(),
-        extension
+        unique_suffix()
+    ))
+}
+
+fn adjustment_backup_path(path: &Path) -> PathBuf {
+    path.with_file_name(format!(
+        ".localbooru-backup-{}-{}.localbooru-backup",
+        std::process::id(),
+        unique_suffix()
     ))
 }
 
@@ -477,20 +704,6 @@ fn modified_at_rfc3339(metadata: &std::fs::Metadata) -> Option<String> {
         .map(|value| value.to_rfc3339())
 }
 
-fn commit_prepared_file<F>(temporary: &Path, destination: &Path, replace: F) -> Result<(), AppError>
-where
-    F: FnOnce(&Path, &Path) -> std::io::Result<()>,
-{
-    if let Err(error) = replace(temporary, destination) {
-        let _ = std::fs::remove_file(temporary);
-        return Err(AppError::Internal(format!(
-            "Failed to atomically replace file: {}",
-            error
-        )));
-    }
-    Ok(())
-}
-
 #[cfg(unix)]
 fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
     std::fs::rename(source, destination)
@@ -502,7 +715,6 @@ fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
     use windows_sys::Win32::Storage::FileSystem::{
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
     };
-
     let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
     let destination: Vec<u16> = destination
         .as_os_str()
@@ -528,18 +740,18 @@ fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
     std::fs::rename(source, destination)
 }
 
-fn validate_adjustments(adj: &ImageAdjustmentRequest) -> Result<(), AppError> {
-    if !(-200..=200).contains(&adj.brightness) {
+fn validate_adjustments(adjustments: &ImageAdjustmentRequest) -> Result<(), AppError> {
+    if !(-200..=200).contains(&adjustments.brightness) {
         return Err(AppError::BadRequest(
             "Brightness must be between -200 and +200".into(),
         ));
     }
-    if !(-100..=100).contains(&adj.contrast) {
+    if !(-100..=100).contains(&adjustments.contrast) {
         return Err(AppError::BadRequest(
             "Contrast must be between -100 and +100".into(),
         ));
     }
-    if !(-100..=100).contains(&adj.gamma) {
+    if !(-100..=100).contains(&adjustments.gamma) {
         return Err(AppError::BadRequest(
             "Gamma must be between -100 and +100".into(),
         ));
@@ -547,55 +759,65 @@ fn validate_adjustments(adj: &ImageAdjustmentRequest) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Apply brightness, contrast, and gamma adjustments to an image.
-/// Ports the Python numpy/PIL implementation.
-fn apply_adjustments_to_image(img: &DynamicImage, adj: &ImageAdjustmentRequest) -> DynamicImage {
-    let rgb = img.to_rgb8();
-    let (width, height) = rgb.dimensions();
-    let mut buffer: Vec<f32> = rgb.as_raw().iter().map(|&v| v as f32).collect();
+fn apply_adjustments_to_image(
+    image: &DynamicImage,
+    adjustments: &ImageAdjustmentRequest,
+) -> DynamicImage {
+    let has_alpha = image.color().has_alpha();
+    let mut rgba = image.to_rgba8();
+    let mut channels: Vec<f32> = rgba
+        .pixels()
+        .flat_map(|pixel| pixel.0[..3].iter().map(|value| *value as f32))
+        .collect();
 
-    if adj.brightness != 0 {
-        let factor = (1.0 + adj.brightness as f32 / 100.0).max(0.0);
-        for v in &mut buffer {
-            *v *= factor;
+    if adjustments.brightness != 0 {
+        let factor = (1.0 + adjustments.brightness as f32 / 100.0).max(0.0);
+        for value in &mut channels {
+            *value *= factor;
+        }
+    }
+    if adjustments.contrast != 0 {
+        let factor = (adjustments.contrast as f32 + 100.0) / 100.0;
+        for value in &mut channels {
+            *value = ((*value - 127.0) * factor) + 127.0;
+        }
+    }
+    if adjustments.gamma != 0 {
+        let exponent = 3.0_f32.powf(-adjustments.gamma as f32 / 100.0);
+        for value in &mut channels {
+            *value = (value.clamp(0.0, 255.0) / 255.0).powf(exponent) * 255.0;
         }
     }
 
-    if adj.contrast != 0 {
-        let factor = (adj.contrast as f32 + 100.0) / 100.0;
-        for v in &mut buffer {
-            *v = ((*v - 127.0) * factor) + 127.0;
-        }
-    }
-
-    if adj.gamma != 0 {
-        let exponent = 3.0_f32.powf(-adj.gamma as f32 / 100.0);
-        for v in &mut buffer {
-            *v = v.clamp(0.0, 255.0);
-            *v = (*v / 255.0).powf(exponent) * 255.0;
-        }
-    }
-
-    let dither_strength = if adj.gamma != 0 {
-        0.5 + (adj.gamma.unsigned_abs() as f32 / 100.0) * 0.5
+    let dither_strength = if adjustments.gamma != 0 {
+        0.5 + (adjustments.gamma.unsigned_abs() as f32 / 100.0) * 0.5
     } else {
         0.5
     };
-
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    for (i, v) in buffer.iter_mut().enumerate() {
+    for (index, value) in channels.iter_mut().enumerate() {
         let mut hasher = DefaultHasher::new();
-        i.hash(&mut hasher);
-        let hash = hasher.finish();
-        let noise = ((hash % 1000) as f32 / 500.0 - 1.0) * dither_strength;
-        *v += noise;
+        index.hash(&mut hasher);
+        let noise = ((hasher.finish() % 1000) as f32 / 500.0 - 1.0) * dither_strength;
+        *value += noise;
     }
 
-    let pixels: Vec<u8> = buffer.iter().map(|v| v.clamp(0.0, 255.0) as u8).collect();
-    let img_buf: ImageBuffer<Rgb<u8>, Vec<u8>> =
-        ImageBuffer::from_raw(width, height, pixels).unwrap();
-    DynamicImage::ImageRgb8(img_buf)
+    for (pixel, adjusted) in rgba.pixels_mut().zip(channels.chunks_exact(3)) {
+        pixel.0[0] = adjusted[0].clamp(0.0, 255.0) as u8;
+        pixel.0[1] = adjusted[1].clamp(0.0, 255.0) as u8;
+        pixel.0[2] = adjusted[2].clamp(0.0, 255.0) as u8;
+    }
+    if has_alpha {
+        DynamicImage::ImageRgba8(rgba)
+    } else {
+        let (width, height) = rgba.dimensions();
+        let rgb: Vec<u8> = rgba
+            .pixels()
+            .flat_map(|pixel| pixel.0[..3].iter().copied())
+            .collect();
+        DynamicImage::ImageRgb8(ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb).unwrap())
+    }
 }
 
 #[cfg(test)]
@@ -611,110 +833,193 @@ mod tests {
         ))
     }
 
+    fn insert_image(
+        library: &LibraryContext,
+        directory_id: i64,
+        image_id: i64,
+        path: &Path,
+        hash: &str,
+    ) {
+        let pool = library.directory_db.get_pool(directory_id).unwrap();
+        let connection = pool.get().unwrap();
+        connection
+            .execute(
+                "INSERT INTO images (id, filename, file_hash) VALUES (?1, 'image.png', ?2)",
+                params![image_id, hash],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO image_files (image_id, original_path, file_extension) VALUES (?1, ?2, 'png')",
+                params![image_id, path.to_string_lossy()],
+            )
+            .unwrap();
+    }
+
     // AC: @identity-safe-image-adjustments ac-1
     #[test]
-    fn exact_locator_resolves_duplicate_image_id_from_requested_directory() {
+    fn exact_locator_resolves_duplicate_image_id_and_rejects_ambiguous_paths() {
         let root = test_root("locator");
         let state = AppState::new(&root, 0).unwrap();
         let library = state.resolve_library(None).unwrap();
-        let first_path = root.join("first.png");
-        let second_path = root.join("second.png");
-        DynamicImage::new_rgb8(2, 2).save(&first_path).unwrap();
-        DynamicImage::new_rgb8(3, 3).save(&second_path).unwrap();
-
-        for (directory_id, path, hash) in [
-            (1, &first_path, "first-hash"),
-            (2, &second_path, "second-hash"),
-        ] {
-            let pool = library.directory_db.get_pool(directory_id).unwrap();
-            let conn = pool.get().unwrap();
-            conn.execute(
-                "INSERT INTO images (id, filename, file_hash) VALUES (9, 'image.png', ?1)",
-                params![hash],
-            )
-            .unwrap();
-            conn.execute(
-                "INSERT INTO image_files (image_id, original_path, file_extension) VALUES (9, ?1, 'png')",
-                params![path.to_string_lossy()],
-            )
-            .unwrap();
-        }
-
+        let first = root.join("first.png");
+        let second = root.join("second.png");
+        DynamicImage::new_rgb8(2, 2).save(&first).unwrap();
+        DynamicImage::new_rgb8(3, 3).save(&second).unwrap();
+        insert_image(&library, 1, 9, &first, "first-hash");
+        insert_image(&library, 2, 9, &second, "second-hash");
         let locator = ImageLocatorQuery {
             library_id: library.uuid.clone(),
             directory_id: 2,
         };
-        let resolved = resolve_image(&state, &locator, 9).unwrap();
-        assert_eq!(resolved.path, second_path);
-        assert_eq!(resolved.file_hash, "second-hash");
+        assert_eq!(resolve_image(&state, &locator, 9).unwrap().path, second);
+        let extra = root.join("extra.png");
+        DynamicImage::new_rgb8(3, 3).save(&extra).unwrap();
+        let pool = library.directory_db.get_pool(2).unwrap();
+        pool.get()
+            .unwrap()
+            .execute(
+                "INSERT INTO image_files (image_id, original_path, file_extension) VALUES (9, ?1, 'png')",
+                params![extra.to_string_lossy()],
+            )
+            .unwrap();
+        assert!(matches!(
+            resolve_image(&state, &locator, 9),
+            Err(AppError::BadRequest(_))
+        ));
+        drop(state);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-1
+    #[cfg(unix)]
+    #[test]
+    fn exact_locator_rejects_symbolic_link_targets() {
+        use std::os::unix::fs::symlink;
+        let root = test_root("symlink");
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.resolve_library(None).unwrap();
+        let target = root.join("target.png");
+        let link = root.join("link.png");
+        DynamicImage::new_rgb8(2, 2).save(&target).unwrap();
+        symlink(&target, &link).unwrap();
+        insert_image(&library, 1, 1, &link, "hash");
+        let locator = ImageLocatorQuery {
+            library_id: library.uuid.clone(),
+            directory_id: 1,
+        };
+        assert!(matches!(
+            resolve_image(&state, &locator, 1),
+            Err(AppError::BadRequest(_))
+        ));
         drop(state);
         let _ = std::fs::remove_dir_all(root);
     }
 
     // AC: @identity-safe-image-adjustments ac-2
     #[test]
-    fn preview_cache_file_is_exact_for_locator_and_adjustments() {
-        let first = ImageLocatorQuery {
-            library_id: "library-a".into(),
+    fn concurrent_preview_generations_have_independent_exact_urls() {
+        let locator = ImageLocatorQuery {
+            library_id: "library&one".into(),
             directory_id: 1,
         };
-        let second = ImageLocatorQuery {
-            library_id: "library-a".into(),
-            directory_id: 2,
-        };
-        let low = ImageAdjustmentRequest {
-            brightness: 10,
-            contrast: 0,
-            gamma: 0,
-        };
-        let high = ImageAdjustmentRequest {
-            brightness: 20,
-            contrast: 0,
-            gamma: 0,
-        };
-
-        assert_ne!(
-            preview_cache_filename(&first, 9, &adjustment_hash(&low)),
-            preview_cache_filename(&second, 9, &adjustment_hash(&low))
-        );
-        assert_ne!(
-            preview_cache_filename(&first, 9, &adjustment_hash(&low)),
-            preview_cache_filename(&first, 9, &adjustment_hash(&high))
-        );
-        assert!(preview_url(&first, 9, &adjustment_hash(&low))
-            .contains("library_id=library-a&directory_id=1&adjustment_hash="));
+        let first = preview_cache_filename(&locator, 9, "source", "adjust", "generation-a");
+        let second = preview_cache_filename(&locator, 9, "source", "adjust", "generation-b");
+        assert_ne!(first, second);
+        let url = preview_url(&locator, 9, "source", "adjust", "generation-a");
+        assert!(url.contains("library_id=library%26one"));
+        assert!(url.contains("source_file_hash=source"));
+        assert!(url.contains("preview_key=generation-a"));
     }
 
     // AC: @identity-safe-image-adjustments ac-4
     #[test]
-    fn apply_refreshes_exact_database_metadata_hash_and_thumbnail() {
-        let root = test_root("metadata");
+    fn commit_failure_restores_original_bytes_and_database_hash() {
+        let root = test_root("rollback");
         let state = AppState::new(&root, 0).unwrap();
         let library = state.resolve_library(None).unwrap();
-        let image_path = root.join("source.png");
-        DynamicImage::new_rgb8(4, 6).save(&image_path).unwrap();
-        let old_hash = importer::calculate_quick_hash(&image_path.to_string_lossy()).unwrap();
-        let pool = library.directory_db.get_pool(4).unwrap();
-        let conn = pool.get().unwrap();
-        conn.execute(
-            "INSERT INTO images (id, filename, file_hash, width, height, file_size) VALUES (12, 'source.png', ?1, 1, 1, 1)",
-            params![old_hash],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO image_files (image_id, original_path, file_extension) VALUES (12, ?1, 'png')",
-            params![image_path.to_string_lossy()],
-        )
-        .unwrap();
-        drop(conn);
-
+        let path = root.join("source.png");
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([80, 90, 100])))
+            .save(&path)
+            .unwrap();
+        let original = std::fs::read(&path).unwrap();
+        let old_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+        insert_image(&library, 4, 12, &path, &old_hash);
         let locator = ImageLocatorQuery {
             library_id: library.uuid.clone(),
             directory_id: 4,
         };
+        let adjustments = ImageAdjustmentRequest {
+            brightness: 20,
+            contrast: 0,
+            gamma: 0,
+        };
+        let candidate = root.join("candidate.png");
+        apply_adjustments_to_image(&image::open(&path).unwrap(), &adjustments)
+            .save(&candidate)
+            .unwrap();
+        let candidate_hash = importer::calculate_quick_hash(&candidate.to_string_lossy()).unwrap();
+        let candidate_thumbnail = library
+            .thumbnails_dir()
+            .join(format!("{}.webp", candidate_hash));
+        std::fs::create_dir_all(library.thumbnails_dir()).unwrap();
+        std::fs::write(&candidate_thumbnail, b"shared-valid-thumbnail").unwrap();
+        std::fs::remove_file(candidate).unwrap();
+
         let resolved = resolve_image(&state, &locator, 12).unwrap();
+        assert!(
+            apply_to_resolved_image(resolved, &locator, 12, &adjustments, &old_hash, true,)
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        let pool = library.directory_db.get_pool(4).unwrap();
+        let stored: String = pool
+            .get()
+            .unwrap()
+            .query_row("SELECT file_hash FROM images WHERE id = 12", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(stored, old_hash);
+        assert_eq!(
+            std::fs::read(candidate_thumbnail).unwrap(),
+            b"shared-valid-thumbnail"
+        );
+        assert!(std::fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .all(|entry| !entry
+                .file_name()
+                .to_string_lossy()
+                .contains("localbooru-adjust")));
+        drop(state);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-4
+    #[test]
+    fn successful_apply_refreshes_metadata_and_stale_hash_cannot_apply_again() {
+        let root = test_root("metadata");
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.resolve_library(None).unwrap();
+        let path = root.join("source.png");
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([80, 90, 100])))
+            .save(&path)
+            .unwrap();
+        let old_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+        insert_image(&library, 4, 12, &path, &old_hash);
+        let shared_path = root.join("shared.png");
+        std::fs::copy(&path, &shared_path).unwrap();
+        insert_image(&library, 5, 99, &shared_path, &old_hash);
+        let shared_thumbnail = library.thumbnails_dir().join(format!("{}.webp", old_hash));
+        std::fs::create_dir_all(library.thumbnails_dir()).unwrap();
+        std::fs::write(&shared_thumbnail, b"shared-old-thumbnail").unwrap();
+        let locator = ImageLocatorQuery {
+            library_id: library.uuid.clone(),
+            directory_id: 4,
+        };
         let response = apply_to_resolved_image(
-            resolved,
+            resolve_image(&state, &locator, 12).unwrap(),
             &locator,
             12,
             &ImageAdjustmentRequest {
@@ -722,65 +1027,48 @@ mod tests {
                 contrast: 0,
                 gamma: 0,
             },
+            &old_hash,
+            false,
         )
         .unwrap();
-
-        let new_hash = importer::calculate_quick_hash(&image_path.to_string_lossy()).unwrap();
-        let conn = pool.get().unwrap();
-        let metadata: (String, i32, i32, i64, Option<String>) = conn
-            .query_row(
-                "SELECT file_hash, width, height, file_size, file_modified_at FROM images WHERE id = 12",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
-            )
-            .unwrap();
-        assert_eq!(metadata.0, new_hash);
-        assert_eq!((metadata.1, metadata.2), (4, 6));
-        assert_eq!(
-            metadata.3,
-            std::fs::metadata(&image_path).unwrap().len() as i64
-        );
-        assert!(metadata.4.is_some());
+        let new_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+        assert_eq!(response["file_hash"], new_hash);
+        assert!(response["thumbnail_url"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("file_hash={}", new_hash)));
+        let stale = resolve_image(&state, &locator, 12).unwrap();
+        assert!(ensure_expected_hash(&stale, &old_hash).is_err());
         assert!(library
             .thumbnails_dir()
             .join(format!("{}.webp", new_hash))
             .is_file());
         assert_eq!(
-            response["url"],
-            format!(
-                "/api/images/12/file?directory_id=4&library_id={}",
-                library.uuid
-            )
+            std::fs::read(shared_thumbnail).unwrap(),
+            b"shared-old-thumbnail"
         );
-        assert_eq!(
-            response["thumbnail_url"],
-            format!(
-                "/api/images/12/thumbnail?directory_id=4&library_id={}",
-                library.uuid
-            )
-        );
-        drop(conn);
         drop(state);
         let _ = std::fs::remove_dir_all(root);
     }
 
     // AC: @identity-safe-image-adjustments ac-4
     #[test]
-    fn failed_atomic_replace_preserves_original() {
-        let root = test_root("atomic");
-        std::fs::create_dir_all(&root).unwrap();
-        let original = root.join("image.png");
-        let temporary = root.join(".image.localbooru-adjust.png");
-        std::fs::write(&original, b"original").unwrap();
-        std::fs::write(&temporary, b"adjusted").unwrap();
-
-        let result = commit_prepared_file(&temporary, &original, |_, _| {
-            Err(std::io::Error::other("injected replacement failure"))
-        });
-
-        assert!(result.is_err());
-        assert_eq!(std::fs::read(&original).unwrap(), b"original");
-        assert!(!temporary.exists());
-        let _ = std::fs::remove_dir_all(root);
+    fn rgba_adjustments_preserve_alpha_channel() {
+        let image = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            2,
+            1,
+            image::Rgba([80, 90, 100, 37]),
+        ));
+        let adjusted = apply_adjustments_to_image(
+            &image,
+            &ImageAdjustmentRequest {
+                brightness: 20,
+                contrast: 0,
+                gamma: 0,
+            },
+        )
+        .to_rgba8();
+        assert_eq!(adjusted.get_pixel(0, 0).0[3], 37);
+        assert_eq!(adjusted.get_pixel(1, 0).0[3], 37);
     }
 }

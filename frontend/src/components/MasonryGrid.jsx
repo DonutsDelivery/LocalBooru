@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo, useState } from 'react'
 import MediaItem from './MediaItem'
 import FolderItem from './FolderItem'
 import { getColumnCount } from '../utils/gridLayout'
+import { imageIdentityKey } from '../utils/imageAdjustments.js'
 import { nextLoadRetryDelay } from '../utils/galleryState'
 import './MasonryGrid.css'
 
@@ -205,13 +206,13 @@ function MasonryGrid({
         {columnData.map((column, colIdx) => (
           <div key={colIdx} className="masonry-column">
             {column.items.map((image) => (
-              <div key={image._isFolder ? `folder-${image.path}` : `${image.id}-${image.is_favorite}`}>
+              <div key={image._isFolder ? `folder-${image.path}` : `${imageIdentityKey(image)}-${image.is_favorite}`}>
                 {image._isFolder ? (
                   <FolderItem folder={image} onClick={() => onFolderClick(image.path)} />
                 ) : (
                   <MediaItem
                     image={image}
-                    onClick={() => onImageClick(image.id)}
+                    onClick={() => onImageClick(image)}
                     user={user}
                     onRatingChange={onImageUpdate}
                     onReject={onImageUpdate}

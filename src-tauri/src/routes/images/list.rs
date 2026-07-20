@@ -187,7 +187,7 @@ pub async fn list_images(
                     &lib.main_pool,
                     dir_name.as_deref(),
                     &query_params,
-                    library_id.as_deref(),
+                    Some(&lib.uuid),
                 );
             }
         }

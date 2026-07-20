@@ -83,7 +83,7 @@ export default function ContinueWatching({ onImageClick }) {
           <div
             key={item.id}
             className="continue-watching-card"
-            onClick={() => onImageClick(item.id)}
+            onClick={() => onImageClick(item)}
           >
             <div className="continue-watching-thumb">
               <img src={getMediaUrl(item.thumbnail_url)} alt="" loading="lazy" />
