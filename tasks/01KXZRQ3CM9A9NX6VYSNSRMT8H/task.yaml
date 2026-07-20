@@ -5,13 +5,21 @@ title: "Implement: Batch Move Dialog Stability"
 type: task
 spec_ref: "@batch-move-dialog-stability"
 derivation: auto
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: dispatch/task/implement-gsd-integration-retirement/01kxyrga
+  captured_at: 2026-07-20T12:53:56.644Z
+  commit: 9680fbf5510bdb219f82630f4e032d4bd3af5bf5
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -23,6 +31,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-07-20T12:41:31.527Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: dispatch/task/implement-gsd-integration-retirement/01kxyrga
+          captured_at: 2026-07-20T12:53:56.644Z
+          commit: 9680fbf5510bdb219f82630f4e032d4bd3af5bf5
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-07-20T12:53:56.649Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-07-20T12:53:56.649Z
 created_at: 2026-07-20T12:41:20.020Z
 started_at: 2026-07-20T12:41:31.527Z
+submitted_at: 2026-07-20T12:53:56.649Z
 todos: []

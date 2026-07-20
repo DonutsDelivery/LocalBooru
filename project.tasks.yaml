@@ -1148,7 +1148,7 @@ tasks:
     title: "Implement: Batch Move Dialog Stability"
     type: task
     spec_ref: "@batch-move-dialog-stability"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -1157,3 +1157,4 @@ tasks:
     todos_count: 0
     created_at: 2026-07-20T12:41:20.020Z
     started_at: 2026-07-20T12:41:31.527Z
+    submitted_at: 2026-07-20T12:53:56.649Z
