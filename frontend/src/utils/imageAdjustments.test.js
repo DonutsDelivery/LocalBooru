@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   adjustmentLocator,
   adjustmentQuery,
+  adjustmentControlState,
   appendCacheBuster,
   commitAdjustmentSourceTransition,
   createAdjustmentOperationOwner,
@@ -15,6 +16,31 @@ import {
 
 const imageA = { id: 7, directory_id: 2, library_id: 'library-a' }
 const imageB = { id: 7, directory_id: 3, library_id: 'library-a' }
+
+// AC: @identity-safe-image-adjustments ac-2
+test('all adjustment-changing controls are locked for the lifetime of apply', () => {
+  assert.deepEqual(adjustmentControlState({
+    applying: true,
+    generatingPreview: false,
+    adjustments: { brightness: 10, contrast: 0, gamma: 0 },
+  }), {
+    inputsDisabled: true,
+    resetDisabled: true,
+    previewDisabled: true,
+    applyDisabled: true,
+  })
+
+  assert.deepEqual(adjustmentControlState({
+    applying: false,
+    generatingPreview: false,
+    adjustments: { brightness: 10, contrast: 0, gamma: 0 },
+  }), {
+    inputsDisabled: false,
+    resetDisabled: false,
+    previewDisabled: false,
+    applyDisabled: false,
+  })
+})
 
 // AC: @identity-safe-image-adjustments ac-apply-source-transition
 test('apply transition releases preview ownership before publishing and never waits for failed cleanup', async () => {

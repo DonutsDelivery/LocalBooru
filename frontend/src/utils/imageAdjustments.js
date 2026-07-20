@@ -44,6 +44,19 @@ export function adjustmentQuery(locator, preview = null) {
   return params.toString()
 }
 
+export function adjustmentControlState({ applying, generatingPreview, adjustments }) {
+  const hasAdjustments = adjustments.brightness !== 0
+    || adjustments.contrast !== 0
+    || adjustments.gamma !== 0
+
+  return {
+    inputsDisabled: applying,
+    resetDisabled: applying,
+    previewDisabled: applying || generatingPreview || !hasAdjustments,
+    applyDisabled: applying || !hasAdjustments,
+  }
+}
+
 export function appendCacheBuster(url, value = Date.now()) {
   if (!url) return url
   const separator = url.includes('?') ? '&' : '?'
