@@ -114,3 +114,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T12:57:22.765Z
+  - _ulid: 01KXZSRC2SQV86QW5XCGTYP5MG
+    content: "Fix cycle 1: Curation horizontal swipes now decline mode-specific handling and fall
+      through to the ordinary Lightbox swipe path, so they cannot call Keep or Discard. Explicit
+      buttons and keyboard shortcuts remain unchanged. Updated ac-1 first, demonstrated the old test
+      failed ('keep' versus null), then passed focused 7/7, full frontend 76/76, production build,
+      and diff checks."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T12:59:30.265Z
