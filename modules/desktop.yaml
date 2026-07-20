@@ -192,6 +192,9 @@ features:
               Preserve the AGPL-3.0 license and Corresponding Source boundary for the separately
               packaged LADA add-on while keeping the MIT LocalBooru base application independent of
               it.
+            status:
+              maturity: draft
+              implementation: in_progress
             depends_on: []
             implements: []
             relates_to: []
