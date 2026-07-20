@@ -591,6 +591,11 @@ features:
             id: ac-directory-envelope
             then: the destination list is rendered and the application remains usable
             when: the user opens Move for selected gallery items
+          - given: destination directories cannot be loaded
+            id: ac-fetch-failure
+            then: the failure is reported without opening a broken dialog or replacing the interface with a
+              black screen
+            when: the user opens Move
         tags: []
         created: 2026-07-20T12:40:56.788Z
         notes: []
