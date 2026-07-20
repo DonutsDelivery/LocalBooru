@@ -1183,6 +1183,18 @@ reviews:
         runner: bash
         created_at: 2026-07-20T18:47:36.389Z
         completed_at: 2026-07-20T18:47:36.389Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: main
+          head_commit: f714eb1
+        evidence: Worker override parser and startup reconciliation tests passed with CARGO_BUILD_JOBS=1 and
+          one test thread.
+        name: Focused Rust safety tests
+        required: true
+        runner: cargo-test
+        created_at: 2026-07-20T18:47:37.527Z
+        completed_at: 2026-07-20T18:47:37.527Z
     events:
       - _ulid: 01KY0DNBZNWBEPVYNNZ258B366
         actor: "@claude"
@@ -1204,6 +1216,13 @@ reviews:
           status: pass
           name: Isolated launcher behavior
         timestamp: 2026-07-20T18:47:36.400Z
+      - _ulid: 01KY0DNSTAZ64YWCWJ036RPNYF
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: Focused Rust safety tests
+        timestamp: 2026-07-20T18:47:37.546Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1218,5 +1237,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T18:47:23.382Z
-    updated_at: 2026-07-20T18:47:36.389Z
+    updated_at: 2026-07-20T18:47:37.527Z
     notes: []
