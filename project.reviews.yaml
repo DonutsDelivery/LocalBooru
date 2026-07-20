@@ -553,6 +553,12 @@ reviews:
         payload:
           thread_ulid: 01KXZHFNN9B5M8AKBXDZS2RNNT
         timestamp: 2026-07-20T10:53:00.786Z
+      - _ulid: 01KXZJGSV9SNQJSEAM3NHHYZW3
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KXZHFPW2VDZVYDQNVH2RF5RD
+        timestamp: 2026-07-20T10:53:02.185Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -637,6 +643,14 @@ reviews:
               revise the declared topology consistently, with a behavioral multi-backend packaging
               test."
             created_at: 2026-07-20T10:34:57.794Z
+          - _ulid: 01KXZJGSTZ2YP2K9FBRKPP8SHS
+            author: "@claude"
+            body: "Fixed in 90cf135: one invocation now builds a torch-free common runtime, deterministic CUDA
+              and XPU delta layers, model_bundle, source archive, and one manifest with exactly the
+              four addon.json package keys and installed sizes. Manifest construction rejects
+              partial/extra topologies, preventing per-backend overwrite. Layer and topology
+              regressions were added."
+            created_at: 2026-07-20T10:53:02.175Z
         kind: blocker
       - _ulid: 01KXZHFR0V75WR6WGR6HVKR2MD
         anchor:
@@ -665,5 +679,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-20T10:35:00.112Z
     created_at: 2026-07-20T10:28:50.891Z
-    updated_at: 2026-07-20T10:53:00.779Z
+    updated_at: 2026-07-20T10:53:02.175Z
     notes: []
