@@ -101,3 +101,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T14:30:16.799Z
+  - _ulid: 01KY05J862MBV5KD0SQWWSRDQQ
+    content: "[FIX_CYCLE: 2] Review findings: Windows candidate bb1ad4a reproduced a stale exact-preview
+      load error after successful Apply; fix cycle requires source-owned errors, immediate preview
+      release, and apply-to-serve decode coverage."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T16:25:52.578Z
