@@ -23,3 +23,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T08:04:46.604Z
+  - _ulid: 01KXZ8YJPBHC1JDXRJ75J396BR
+    content: "Approach: reuse the existing shared flock, add post-acquisition owner metadata and stable
+      STARTED/LOCKED/FAILED status output shared by Windows and Linux launchers. Edge cases: stale
+      metadata, early preflight failure, image rebuild versus artifact run, and explicit opt-in
+      waiting. Tests use temporary state roots and stub container commands to prove all three
+      outcomes and immutable source forwarding."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T08:05:47.851Z
