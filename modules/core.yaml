@@ -586,6 +586,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: the directory service returns its standard directory-list response
+            id: ac-directory-envelope
+            then: the destination list is rendered and the application remains usable
+            when: the user opens Move for selected gallery items
         tags: []
         created: 2026-07-20T12:40:56.788Z
         notes: []
