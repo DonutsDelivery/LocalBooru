@@ -756,6 +756,10 @@ features:
             id: ac-2
             then: it cannot replace the current image or current adjustment preview
             when: the older response arrives
+          - given: an image adjustment cannot be encoded or committed
+            id: ac-3
+            then: the original file remains intact and the failure is reported
+            when: the operation fails
         priority: high
         tags: []
         created: 2026-07-20T08:04:52.074Z
