@@ -33,6 +33,7 @@ import { isUnexpectedEmptyPage, mergeFirstPage } from './utils/galleryState'
 import { classifySidebarSwipe } from './utils/sidebarGestures'
 import { getCurationRecoveryMode } from './utils/curationState'
 import { adjustmentLocator, imageIdentityKey, imageMatchesLocator, reorderImagesForSort, updateImagesByLocator } from './utils/imageAdjustments.js'
+import { loadMoveDirectoryOptions } from './utils/batchMove.js'
 import { useAllAddonStatuses } from './hooks/useAddonStatus'
 import { useCurationGame } from './hooks/useCurationGame'
 import { useMobileDrawer } from './hooks/useMobileDrawer'
@@ -1387,12 +1388,13 @@ function Gallery() {
 
   const openMoveModal = async () => {
     try {
-      const dirs = await fetchDirectories()
+      const dirs = await loadMoveDirectoryOptions(fetchDirectories)
       setMoveDirectories(dirs)
       setSelectedMoveDir(null)
       setShowMoveModal(true)
     } catch (error) {
       console.error('Failed to fetch directories:', error)
+      toast.error(`Failed to load move destinations: ${error.message || 'Unknown error'}`)
     }
   }
 

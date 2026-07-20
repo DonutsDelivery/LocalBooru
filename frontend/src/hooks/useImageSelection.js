@@ -5,6 +5,7 @@
 import { useState, useCallback } from 'react'
 import { batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories } from '../api'
 import { toast } from '../components/Toast'
+import { loadMoveDirectoryOptions } from '../utils/batchMove.js'
 
 export function useImageSelection({ images, loadImages }) {
   // Selection mode state
@@ -94,12 +95,13 @@ export function useImageSelection({ images, loadImages }) {
 
   const openMoveModal = useCallback(async () => {
     try {
-      const dirs = await fetchDirectories()
+      const dirs = await loadMoveDirectoryOptions(fetchDirectories)
       setMoveDirectories(dirs)
       setSelectedMoveDir(null)
       setShowMoveModal(true)
     } catch (error) {
       console.error('Failed to fetch directories:', error)
+      toast.error(`Failed to load move destinations: ${error.message || 'Unknown error'}`)
     }
   }, [])
 
