@@ -1,4 +1,7 @@
-# Inbox - Quick Capture
-# Ideas and notes that haven't been triaged yet
-
-items: []
+inbox:
+  - _ulid: 01KXZSBD7CWQWHBH01ABVZ2YWS
+    text: Allow users to start Curation Game from the Lightbox so the feature is discoverable without
+      returning to the masonry grid.
+    tags: []
+    added_by: DonutsDelivery
+    created_at: 2026-07-20T12:52:25.452Z
