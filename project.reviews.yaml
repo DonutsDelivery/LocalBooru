@@ -823,6 +823,12 @@ reviews:
           from: open
           to: closed
         timestamp: 2026-07-20T10:59:38.927Z
+      - _ulid: 01KXZK6AVETY1049DY52DSR6D9
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KXZJWW151PFSXN2ETGEWX484
+        timestamp: 2026-07-20T11:04:47.726Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -852,6 +858,16 @@ reviews:
               backend-specific distributions in accelerator layers; verify with a deterministic
               split regression."
             created_at: 2026-07-20T10:59:37.638Z
+          - _ulid: 01KXZK6ATVVN61R5KQ8HJ1HVMK
+            author: "@claude"
+            body: "Fixed in 92e3efd: the builder no longer attempts an impossible no-extra common sync. It
+              builds complete pinned CUDA and XPU runtimes from one relocatable template, uses
+              installed METADATA/RECORD ownership plus byte identity to derive the non-accelerator
+              common intersection, then derives reconstructable backend deltas. The common guard
+              remains. A deterministic regression uses identical torch bytes with differing
+              installed versions to prove torch stays out of common and overlaying each delta
+              exactly reconstructs its complete runtime."
+            created_at: 2026-07-20T11:04:47.707Z
         kind: blocker
     verdicts:
       - applies_to_version:
@@ -862,5 +878,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-20T10:59:38.927Z
     created_at: 2026-07-20T10:54:00.401Z
-    updated_at: 2026-07-20T10:59:38.927Z
+    updated_at: 2026-07-20T11:04:47.707Z
     notes: []
