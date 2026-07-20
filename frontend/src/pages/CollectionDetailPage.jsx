@@ -4,6 +4,7 @@ import { fetchCollection, updateCollection, removeFromCollection, getMediaUrl } 
 import Sidebar from '../components/Sidebar'
 import MasonryGrid from '../components/MasonryGrid'
 import Lightbox from '../components/Lightbox'
+import { adjustmentLocator, imageMatchesLocator, updateImagesByLocator } from '../utils/imageAdjustments.js'
 import { useMobileDrawer } from '../hooks/useMobileDrawer'
 
 export default function CollectionDetailPage() {
@@ -46,9 +47,10 @@ export default function CollectionDetailPage() {
     loadCollection(nextPage, true)
   }, [hasMore, loading, page, loadCollection])
 
-  const handleImageClick = (imageId) => {
-    window.history.pushState({ lightbox: true, imageId }, '')
-    setLightboxIndex(imageId)
+  const handleImageClick = (image) => {
+    const locator = adjustmentLocator(image)
+    window.history.pushState({ lightbox: true, locator }, '')
+    setLightboxIndex(locator)
   }
 
   const handleLightboxClose = useCallback(() => {
@@ -91,8 +93,9 @@ export default function CollectionDetailPage() {
     }
   }, [id])
 
-  // Find lightbox index from imageId
-  const lightboxImageIndex = lightboxIndex !== null ? images.findIndex(img => img.id === lightboxIndex) : -1
+  const lightboxImageIndex = lightboxIndex !== null
+    ? images.findIndex(image => imageMatchesLocator(image, lightboxIndex))
+    : -1
 
   return (
     <div className="app">
@@ -162,11 +165,13 @@ export default function CollectionDetailPage() {
             onNav={(dir) => {
               const newIdx = lightboxImageIndex + dir
               if (newIdx >= 0 && newIdx < images.length) {
-                setLightboxIndex(images[newIdx].id)
+                setLightboxIndex(adjustmentLocator(images[newIdx]))
               }
             }}
             onTagClick={() => {}}
-            onImageUpdate={() => loadCollection()}
+            onImageUpdate={(locator, updates) => {
+              setImages(previous => updateImagesByLocator(previous, locator, updates))
+            }}
           />
         )}
         </main>

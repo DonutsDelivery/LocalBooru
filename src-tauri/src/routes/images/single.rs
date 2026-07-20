@@ -23,6 +23,47 @@ use super::helpers::{find_image_directory, get_image_tags_from_directory};
 pub struct DirectoryQuery {
     pub directory_id: Option<i64>,
     pub library_id: Option<String>,
+    pub file_hash: Option<String>,
+}
+
+fn resolve_exact_media(
+    library: &crate::db::library::LibraryContext,
+    directory_id: i64,
+    image_id: i64,
+) -> Result<(PathBuf, String), AppError> {
+    if !library.directory_db.db_exists(directory_id) {
+        return Err(AppError::NotFound("Directory not found".into()));
+    }
+    let pool = library.directory_db.get_pool(directory_id)?;
+    let connection = pool.get()?;
+    let hash = connection
+        .query_row(
+            "SELECT file_hash FROM images WHERE id = ?1",
+            params![image_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Image not found".into()),
+            other => other.into(),
+        })?;
+    let mut statement = connection.prepare(
+        "SELECT original_path FROM image_files
+         WHERE image_id = ?1 AND file_exists = 1 ORDER BY id",
+    )?;
+    let paths: Vec<PathBuf> = statement
+        .query_map(params![image_id], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+    match paths.as_slice() {
+        [path] => Ok((path.clone(), hash)),
+        [] => Err(AppError::NotFound("Image file not found".into())),
+        _ => Err(AppError::BadRequest(
+            "Media target is ambiguous because multiple existing file paths share this image"
+                .into(),
+        )),
+    }
 }
 
 /// GET /api/images/media/file-info — Get file size info.
@@ -86,6 +127,8 @@ pub async fn get_image(
 
     let result = tokio::task::spawn_blocking(move || {
         let lib = state_clone.resolve_library(library_id.as_deref())?;
+        let encoded_library_id =
+            super::adjustments::encode_query_component(&lib.uuid);
 
         // Try directory DB first
         if let Some(dir_id) = directory_id {
@@ -165,17 +208,28 @@ pub async fn get_image(
                     } else {
                         json!("unknown")
                     };
-                    data["thumbnail_url"] =
-                        json!(format!("/api/images/{}/thumbnail?directory_id={}", image_id, dir_id));
-                    data["url"] =
-                        json!(format!("/api/images/{}/file?directory_id={}", image_id, dir_id));
+                    data["library_id"] = json!(lib.uuid.clone());
+                    data["directory_id"] = json!(dir_id);
+                    let hash = data["file_hash"].as_str().unwrap_or_default().to_string();
+                    data["thumbnail_url"] = json!(format!(
+                        "/api/images/{}/thumbnail?directory_id={}&library_id={}&file_hash={}",
+                        image_id, dir_id, encoded_library_id, hash
+                    ));
+                    data["url"] = json!(format!(
+                        "/api/images/{}/file?directory_id={}&library_id={}&file_hash={}",
+                        image_id, dir_id, encoded_library_id, hash
+                    ));
 
                     return Ok(data);
                 }
             }
+            return Err(AppError::NotFound(format!(
+                "Image {} not found in directory {}",
+                image_id, dir_id
+            )));
         }
 
-        // Try to find in any directory DB
+        // Compatibility requests without a directory may still locate legacy records.
         if let Some(found_dir) = find_image_directory(&lib.directory_db, image_id, None) {
             let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
@@ -225,13 +279,16 @@ pub async fn get_image(
                     image_id,
                 )?;
                 data["tags"] = json!(tags);
+                data["library_id"] = json!(lib.uuid.clone());
+                data["directory_id"] = json!(found_dir);
+                let hash = data["file_hash"].as_str().unwrap_or_default().to_string();
                 data["thumbnail_url"] = json!(format!(
-                    "/api/images/{}/thumbnail?directory_id={}",
-                    image_id, found_dir
+                    "/api/images/{}/thumbnail?directory_id={}&library_id={}&file_hash={}",
+                    image_id, found_dir, encoded_library_id, hash
                 ));
                 data["url"] = json!(format!(
-                    "/api/images/{}/file?directory_id={}",
-                    image_id, found_dir
+                    "/api/images/{}/file?directory_id={}&library_id={}&file_hash={}",
+                    image_id, found_dir, encoded_library_id, hash
                 ));
 
                 let mut fstmt = dir_conn.prepare(
@@ -328,52 +385,27 @@ pub async fn get_image_file(
     request: Request,
 ) -> Result<Response, AppError> {
     let state_clone = state.clone();
-    let directory_id = q.directory_id;
-    let library_id = q.library_id.clone();
+    let directory_id = q
+        .directory_id
+        .ok_or_else(|| AppError::BadRequest("directory_id is required".into()))?;
+    let library_id = q
+        .library_id
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("library_id is required".into()))?;
+    let expected_hash = q.file_hash.clone();
 
-    // Find the file path
     let file_path: PathBuf = tokio::task::spawn_blocking(move || {
-        let lib = state_clone.resolve_library(library_id.as_deref())?;
-
-        // Try directory DB
-        if let Some(dir_id) = directory_id {
-            if lib.directory_db.db_exists(dir_id) {
-                let dir_pool = lib.directory_db.get_pool(dir_id)?;
-                let dir_conn = dir_pool.get()?;
-
-                if let Ok(path) = dir_conn.query_row(
-                    "SELECT original_path FROM image_files WHERE image_id = ?1 LIMIT 1",
-                    params![image_id],
-                    |row| row.get::<_, String>(0),
-                ) {
-                    return Ok(PathBuf::from(path));
-                }
-            }
+        let lib = state_clone.resolve_library(Some(&library_id))?;
+        let (path, hash) = resolve_exact_media(&lib, directory_id, image_id)?;
+        if expected_hash
+            .as_deref()
+            .is_some_and(|expected| expected != hash)
+        {
+            return Err(AppError::NotFound(
+                "Media version is no longer current".into(),
+            ));
         }
-
-        // Search all directory DBs
-        if let Some(found_dir) = find_image_directory(&lib.directory_db, image_id, None) {
-            let dir_pool = lib.directory_db.get_pool(found_dir)?;
-            let dir_conn = dir_pool.get()?;
-            if let Ok(path) = dir_conn.query_row(
-                "SELECT original_path FROM image_files WHERE image_id = ?1 LIMIT 1",
-                params![image_id],
-                |row| row.get::<_, String>(0),
-            ) {
-                return Ok(PathBuf::from(path));
-            }
-        }
-
-        // Legacy main DB
-        let main_conn = lib.main_pool.get()?;
-        match main_conn.query_row(
-            "SELECT original_path FROM image_files WHERE image_id = ?1 LIMIT 1",
-            params![image_id],
-            |row| row.get::<_, String>(0),
-        ) {
-            Ok(path) => Ok(PathBuf::from(path)),
-            Err(_) => Err(AppError::NotFound("Image file not found".into())),
-        }
+        Ok(path)
     })
     .await??;
 
@@ -403,115 +435,58 @@ pub async fn get_image_thumbnail(
     AxumPath(image_id): AxumPath<i64>,
     Query(q): Query<DirectoryQuery>,
 ) -> Result<Response, AppError> {
+    let directory_id = q
+        .directory_id
+        .ok_or_else(|| AppError::BadRequest("directory_id is required".into()))?;
+    let library_id = q
+        .library_id
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("library_id is required".into()))?;
+    let expected_hash = q.file_hash.clone();
+    let library = state.resolve_library(Some(&library_id))?;
     let state_clone = state.clone();
-    let directory_id = q.directory_id;
-    let library_id = q.library_id.clone();
-
-    // Find the file hash to locate thumbnail
     let library_id_clone = library_id.clone();
-    let file_hash: String = tokio::task::spawn_blocking(move || {
-        let lib = state_clone.resolve_library(library_id_clone.as_deref())?;
-
-        // Try directory DB
-        if let Some(dir_id) = directory_id {
-            if lib.directory_db.db_exists(dir_id) {
-                let dir_pool = lib.directory_db.get_pool(dir_id)?;
-                let dir_conn = dir_pool.get()?;
-                if let Ok(hash) = dir_conn.query_row(
-                    "SELECT file_hash FROM images WHERE id = ?1",
-                    params![image_id],
-                    |row| row.get::<_, String>(0),
-                ) {
-                    return Ok(hash);
-                }
-            }
+    let (original_path, file_hash) = tokio::task::spawn_blocking(move || {
+        let lib = state_clone.resolve_library(Some(&library_id_clone))?;
+        let exact = resolve_exact_media(&lib, directory_id, image_id)?;
+        if expected_hash
+            .as_deref()
+            .is_some_and(|expected| expected != exact.1)
+        {
+            return Err(AppError::NotFound(
+                "Thumbnail version is no longer current".into(),
+            ));
         }
-
-        // Search directory DBs
-        if let Some(found_dir) = find_image_directory(&lib.directory_db, image_id, None) {
-            let dir_pool = lib.directory_db.get_pool(found_dir)?;
-            let dir_conn = dir_pool.get()?;
-            if let Ok(hash) = dir_conn.query_row(
-                "SELECT file_hash FROM images WHERE id = ?1",
-                params![image_id],
-                |row| row.get::<_, String>(0),
-            ) {
-                return Ok(hash);
-            }
-        }
-
-        // Legacy main DB
-        let main_conn = lib.main_pool.get()?;
-        match main_conn.query_row(
-            "SELECT file_hash FROM images WHERE id = ?1",
-            params![image_id],
-            |row| row.get::<_, String>(0),
-        ) {
-            Ok(hash) => Ok(hash),
-            Err(_) => Err(AppError::NotFound("Image not found".into())),
-        }
+        Ok(exact)
     })
     .await??;
 
-    // Resolve library for thumbnail path
-    let lib_for_thumb = state.resolve_library(library_id.as_deref())?;
-
-    // Serve thumbnail file
     let thumbnail_name = format!("{}.webp", &file_hash[..16.min(file_hash.len())]);
-    let thumbnail_path = lib_for_thumb.thumbnails_dir().join(&thumbnail_name);
+    let thumbnail_path = library.thumbnails_dir().join(&thumbnail_name);
 
     if thumbnail_path.exists() {
         serve_cached_file(&thumbnail_path, "image/webp").await
     } else {
-        // Try to regenerate thumbnail from original file
-        let state_regen = state.clone();
-        let dir_id = directory_id;
-        let img_id = image_id;
-        let thumb_dir = lib_for_thumb.thumbnails_dir();
+        let thumb_dir = library.thumbnails_dir();
         let hash = file_hash.clone();
-        let library_id_regen = library_id.clone();
-
         let regenerated = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
-            let lib = state_regen.resolve_library(library_id_regen.as_deref())?;
-
-            // Find the original file path
-            let original_path: Option<String> = if let Some(did) = dir_id {
-                if lib.directory_db.db_exists(did) {
-                    let dir_pool = lib.directory_db.get_pool(did)?;
-                    let dir_conn = dir_pool.get()?;
-                    dir_conn.query_row(
-                        "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_status = 'available' LIMIT 1",
-                        params![img_id],
-                        |row| row.get(0),
-                    ).ok()
-                } else { None }
-            } else { None };
-
-            if let Some(ref path) = original_path {
-                if Path::new(path).exists() {
-                    let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
-                    let thumb_output = thumb_dir.join(&thumb_name);
-                    let thumb_ok = if crate::services::importer::is_video_file(path) {
-                        crate::services::importer::generate_video_thumbnail(
-                            path,
-                            thumb_output.to_str().unwrap_or(""),
-                            300,
-                        )
-                    } else {
-                        crate::services::importer::generate_thumbnail(
-                            path,
-                            thumb_output.to_str().unwrap_or(""),
-                            300,
-                        )
-                    };
-
-                    if thumb_ok {
-                        return Ok(true);
-                    }
-                }
-            }
-            Ok(false)
-        }).await??;
+            let path = original_path.to_string_lossy();
+            let output = thumb_dir.join(format!("{}.webp", &hash[..16.min(hash.len())]));
+            Ok(if crate::services::importer::is_video_file(&path) {
+                crate::services::importer::generate_video_thumbnail(
+                    &path,
+                    output.to_str().unwrap_or(""),
+                    300,
+                )
+            } else {
+                crate::services::importer::generate_thumbnail(
+                    &path,
+                    output.to_str().unwrap_or(""),
+                    300,
+                )
+            })
+        })
+        .await??;
 
         if regenerated {
             serve_cached_file(&thumbnail_path, "image/webp").await
@@ -528,66 +503,39 @@ pub async fn toggle_favorite(
     Query(q): Query<DirectoryQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state_clone = state.clone();
-    let directory_id = q.directory_id;
-    let library_id = q.library_id.clone();
+    let directory_id = q
+        .directory_id
+        .ok_or_else(|| AppError::BadRequest("directory_id is required".into()))?;
+    let library_id = q
+        .library_id
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("library_id is required".into()))?;
 
     let is_favorite = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
-        let lib = state_clone.resolve_library(library_id.as_deref())?;
-
-        // Try directory DB
-        if let Some(dir_id) = directory_id {
-            if lib.directory_db.db_exists(dir_id) {
-                let dir_pool = lib.directory_db.get_pool(dir_id)?;
-                let dir_conn = dir_pool.get()?;
-                if let Ok(current) = dir_conn.query_row(
-                    "SELECT is_favorite FROM images WHERE id = ?1",
-                    params![image_id],
-                    |row| row.get::<_, bool>(0),
-                ) {
-                    let new_val = !current;
-                    dir_conn.execute(
-                        "UPDATE images SET is_favorite = ?1 WHERE id = ?2",
-                        params![new_val, image_id],
-                    )?;
-                    return Ok(new_val);
-                }
-            }
+        let library = state_clone.resolve_library(Some(&library_id))?;
+        if !library.directory_db.db_exists(directory_id) {
+            return Err(AppError::NotFound("Directory not found".into()));
         }
-
-        // Search directory DBs
-        if let Some(found_dir) = find_image_directory(&lib.directory_db, image_id, None) {
-            let dir_pool = lib.directory_db.get_pool(found_dir)?;
-            let dir_conn = dir_pool.get()?;
-            if let Ok(current) = dir_conn.query_row(
-                "SELECT is_favorite FROM images WHERE id = ?1",
-                params![image_id],
-                |row| row.get::<_, bool>(0),
-            ) {
-                let new_val = !current;
-                dir_conn.execute(
-                    "UPDATE images SET is_favorite = ?1 WHERE id = ?2",
-                    params![new_val, image_id],
-                )?;
-                return Ok(new_val);
-            }
-        }
-
-        // Legacy main DB
-        let main_conn = lib.main_pool.get()?;
-        let current: bool = main_conn
+        let pool = library.directory_db.get_pool(directory_id)?;
+        let connection = pool.get()?;
+        let current = connection
             .query_row(
                 "SELECT is_favorite FROM images WHERE id = ?1",
                 params![image_id],
-                |row| row.get(0),
+                |row| row.get::<_, bool>(0),
             )
-            .map_err(|_| AppError::NotFound("Image not found".into()))?;
-
-        let new_val = !current;
-        main_conn.execute(
+            .map_err(|error| match error {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AppError::NotFound("Image not found".into())
+                }
+                other => other.into(),
+            })?;
+        let new_value = !current;
+        connection.execute(
             "UPDATE images SET is_favorite = ?1 WHERE id = ?2",
-            params![new_val, image_id],
+            params![new_value, image_id],
         )?;
-        Ok(new_val)
+        Ok(new_value)
     })
     .await??;
 
@@ -672,136 +620,65 @@ pub async fn delete_image(
     Query(q): Query<DeleteQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state_clone = state.clone();
-    let directory_id = q.directory_id;
+    let directory_id = q
+        .directory_id
+        .ok_or_else(|| AppError::BadRequest("directory_id is required".into()))?;
+    let library_id = q
+        .library_id
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("library_id is required".into()))?;
     let delete_file = q.delete_file;
-    let library_id = q.library_id.clone();
 
     tokio::task::spawn_blocking(move || {
-        let lib = state_clone.resolve_library(library_id.as_deref())?;
-        let mut file_hash: Option<String> = None;
-
-        // Try directory DB
-        if let Some(dir_id) = directory_id {
-            if lib.directory_db.db_exists(dir_id) {
-                let dir_pool = lib.directory_db.get_pool(dir_id)?;
-                let dir_conn = dir_pool.get()?;
-
-                // Get file hash and paths
-                if let Ok(hash) = dir_conn.query_row(
-                    "SELECT file_hash FROM images WHERE id = ?1",
-                    params![image_id],
-                    |row| row.get::<_, String>(0),
-                ) {
-                    file_hash = Some(hash);
-
-                    if delete_file {
-                        let mut stmt = dir_conn.prepare(
-                            "SELECT original_path FROM image_files WHERE image_id = ?1",
-                        )?;
-                        let paths: Vec<String> = stmt
-                            .query_map(params![image_id], |row| row.get(0))?
-                            .filter_map(|r| r.ok())
-                            .collect();
-                        for path in &paths {
-                            let _ = std::fs::remove_file(path);
-                        }
-                    }
-
-                    // Delete from directory DB (cascades to files, tags)
-                    dir_conn.execute("DELETE FROM image_tags WHERE image_id = ?1", params![image_id])?;
-                    dir_conn.execute("DELETE FROM image_files WHERE image_id = ?1", params![image_id])?;
-                    dir_conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
-
-                    // Decrement cached count for fast listing
-                    if let Ok(main_conn) = lib.main_pool.get() {
-                        let _ = main_conn.execute(
-                            "UPDATE watch_directories SET image_count = MAX(0, image_count - 1) WHERE id = ?1",
-                            params![dir_id],
-                        );
-                    }
-                }
-            }
+        let library = state_clone.resolve_library(Some(&library_id))?;
+        if !library.directory_db.db_exists(directory_id) {
+            return Err(AppError::NotFound("Directory not found".into()));
         }
-
-        // If not found in directory, try main DB
-        if file_hash.is_none() {
-            if let Some(found_dir) =
-                find_image_directory(&lib.directory_db, image_id, None)
-            {
-                let dir_pool = lib.directory_db.get_pool(found_dir)?;
-                let dir_conn = dir_pool.get()?;
-
-                if let Ok(hash) = dir_conn.query_row(
-                    "SELECT file_hash FROM images WHERE id = ?1",
-                    params![image_id],
-                    |row| row.get::<_, String>(0),
-                ) {
-                    file_hash = Some(hash);
-
-                    if delete_file {
-                        let mut stmt = dir_conn.prepare(
-                            "SELECT original_path FROM image_files WHERE image_id = ?1",
-                        )?;
-                        let paths: Vec<String> = stmt
-                            .query_map(params![image_id], |row| row.get(0))?
-                            .filter_map(|r| r.ok())
-                            .collect();
-                        for path in &paths {
-                            let _ = std::fs::remove_file(path);
-                        }
-                    }
-
-                    dir_conn.execute("DELETE FROM image_tags WHERE image_id = ?1", params![image_id])?;
-                    dir_conn.execute("DELETE FROM image_files WHERE image_id = ?1", params![image_id])?;
-                    dir_conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
-                }
-            }
-        }
-
-        if file_hash.is_none() {
-            // Try main/legacy DB
-            let main_conn = lib.main_pool.get()?;
-            match main_conn.query_row(
+        let pool = library.directory_db.get_pool(directory_id)?;
+        let connection = pool.get()?;
+        let file_hash = connection
+            .query_row(
                 "SELECT file_hash FROM images WHERE id = ?1",
                 params![image_id],
                 |row| row.get::<_, String>(0),
-            ) {
-                Ok(hash) => {
-                    file_hash = Some(hash);
-
-                    if delete_file {
-                        let mut stmt = main_conn.prepare(
-                            "SELECT original_path FROM image_files WHERE image_id = ?1",
-                        )?;
-                        let paths: Vec<String> = stmt
-                            .query_map(params![image_id], |row| row.get(0))?
-                            .filter_map(|r| r.ok())
-                            .collect();
-                        for path in &paths {
-                            let _ = std::fs::remove_file(path);
-                        }
-                    }
-
-                    main_conn.execute("DELETE FROM image_tags WHERE image_id = ?1", params![image_id])?;
-                    main_conn.execute("DELETE FROM image_files WHERE image_id = ?1", params![image_id])?;
-                    main_conn.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
+            )
+            .map_err(|error| match error {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AppError::NotFound("Image not found".into())
                 }
-                Err(_) => return Err(AppError::NotFound("Image not found".into())),
+                other => other.into(),
+            })?;
+        if delete_file {
+            let mut statement =
+                connection.prepare("SELECT original_path FROM image_files WHERE image_id = ?1")?;
+            let paths: Vec<String> = statement
+                .query_map(params![image_id], |row| row.get(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            for path in paths {
+                let _ = std::fs::remove_file(path);
             }
         }
-
-        // Delete thumbnail
-        if let Some(ref hash) = file_hash {
-            let thumb_name = format!("{}.webp", &hash[..16.min(hash.len())]);
-            let thumb_path = lib.thumbnails_dir().join(&thumb_name);
-            if thumb_path.exists() {
-                let _ = std::fs::remove_file(&thumb_path);
-            }
-
-            // Delete video preview frames
-            video_preview::delete_preview_frames(&lib.data_dir, hash);
+        connection.execute(
+            "DELETE FROM image_tags WHERE image_id = ?1",
+            params![image_id],
+        )?;
+        connection.execute(
+            "DELETE FROM image_files WHERE image_id = ?1",
+            params![image_id],
+        )?;
+        connection.execute("DELETE FROM images WHERE id = ?1", params![image_id])?;
+        if let Ok(main_connection) = library.main_pool.get() {
+            let _ = main_connection.execute(
+                "UPDATE watch_directories SET image_count = MAX(0, image_count - 1) WHERE id = ?1",
+                params![directory_id],
+            );
         }
 
+        if !super::adjustments::thumbnail_hash_in_use(&library, &file_hash, None, None)? {
+            let thumb_name = format!("{}.webp", &file_hash[..16.min(file_hash.len())]);
+            let _ = std::fs::remove_file(library.thumbnails_dir().join(thumb_name));
+            video_preview::delete_preview_frames(&library.data_dir, &file_hash);
+        }
         Ok(())
     })
     .await??;
@@ -1165,4 +1042,45 @@ async fn serve_cached_file(path: &Path, content_type: &str) -> Result<Response, 
         .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
         .body(body)
         .unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // AC: @identity-safe-image-adjustments ac-1
+    #[test]
+    fn exact_media_resolution_never_falls_back_to_same_id_in_another_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-exact-media-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let library = crate::db::library::LibraryContext::open(&root, "test").unwrap();
+        for (directory_id, hash) in [(1, "one"), (2, "two")] {
+            let path = root.join(format!("{}.png", directory_id));
+            image::DynamicImage::new_rgb8(2, 2).save(&path).unwrap();
+            let pool = library.directory_db.get_pool(directory_id).unwrap();
+            let connection = pool.get().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO images (id, filename, file_hash) VALUES (7, 'image.png', ?1)",
+                    params![hash],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO image_files (image_id, original_path, file_extension) VALUES (7, ?1, 'png')",
+                    params![path.to_string_lossy()],
+                )
+                .unwrap();
+        }
+
+        let exact = resolve_exact_media(&library, 2, 7).unwrap();
+        assert_eq!(exact.1, "two");
+        assert!(resolve_exact_media(&library, 3, 7).is_err());
+        drop(library);
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

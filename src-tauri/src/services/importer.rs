@@ -247,27 +247,29 @@ fn composite_on_white(img: &image::DynamicImage) -> image::RgbImage {
 /// Handles RGBA/palette images by compositing onto a white background.
 /// Saves as lossless WebP (the image crate's WebP encoder is lossless-only;
 /// for thumbnails this produces good quality at reasonable sizes).
+pub fn generate_thumbnail_from_image(
+    img: &image::DynamicImage,
+    output_path: &str,
+    size: u32,
+) -> bool {
+    let thumb = img.thumbnail(size, size);
+    let rgb = if thumb.color().has_alpha() {
+        composite_on_white(&thumb)
+    } else {
+        thumb.to_rgb8()
+    };
+    match rgb.save_with_format(output_path, image::ImageFormat::WebP) {
+        Ok(()) => true,
+        Err(error) => {
+            log::error!("Failed to save thumbnail: {}", error);
+            false
+        }
+    }
+}
+
 pub fn generate_thumbnail(file_path: &str, output_path: &str, size: u32) -> bool {
     match image::open(file_path) {
-        Ok(img) => {
-            let thumb = img.thumbnail(size, size);
-
-            // Composite RGBA/palette images onto white background
-            let rgb = if thumb.color().has_alpha() {
-                composite_on_white(&thumb)
-            } else {
-                thumb.to_rgb8()
-            };
-
-            // Save as WebP (lossless via image crate — good quality for thumbnails)
-            match rgb.save_with_format(output_path, image::ImageFormat::WebP) {
-                Ok(()) => true,
-                Err(e) => {
-                    log::error!("Failed to save thumbnail: {}", e);
-                    false
-                }
-            }
-        }
+        Ok(img) => generate_thumbnail_from_image(&img, output_path, size),
         Err(e) => {
             log::error!("Failed to open image for thumbnail: {}", e);
             false

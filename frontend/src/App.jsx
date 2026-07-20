@@ -32,7 +32,7 @@ import { getColumnCount, tileWidths } from './utils/gridLayout'
 import { isUnexpectedEmptyPage, mergeFirstPage } from './utils/galleryState'
 import { classifySidebarSwipe } from './utils/sidebarGestures'
 import { getCurationRecoveryMode } from './utils/curationState'
-import { imageMatchesLocator } from './utils/imageAdjustments.js'
+import { adjustmentLocator, imageIdentityKey, imageMatchesLocator, reorderImagesForSort, updateImagesByLocator } from './utils/imageAdjustments.js'
 import { useAllAddonStatuses } from './hooks/useAddonStatus'
 import { useCurationGame } from './hooks/useCurationGame'
 import { useMobileDrawer } from './hooks/useMobileDrawer'
@@ -844,8 +844,8 @@ function Gallery() {
       if (append) {
         // Deduplicate when appending to avoid showing same image twice
         setImages(prev => {
-          const existingIds = new Set(prev.map(img => img.id))
-          const newImages = result.images.filter(img => !existingIds.has(img.id))
+          const existingKeys = new Set(prev.map(imageIdentityKey))
+          const newImages = result.images.filter(img => !existingKeys.has(imageIdentityKey(img)))
           return [...prev, ...newImages]
         })
       } else {
@@ -863,21 +863,23 @@ function Gallery() {
     }
   }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders])
 
-  // Update a single image in the images array
-  const handleImageUpdate = useCallback((imageLocator, updates) => {
-    setImages(prev => prev.map(img => {
-      const matches = typeof imageLocator === 'object'
-        ? imageMatchesLocator(img, imageLocator)
-        : img.id === imageLocator
-      return matches ? { ...img, ...updates } : img
-    }))
-  }, [])
-
   const curation = useCurationGame({
     loadedImages: images,
     filters: galleryQuery,
     onGalleryRefresh: () => loadImages(1, false),
   })
+
+  const { updateImage: updateCurationImage } = curation
+
+  // Update one composite image identity in both gallery and curation state.
+  const handleImageUpdate = useCallback((imageLocator, updates) => {
+    if (!imageLocator || typeof imageLocator !== 'object') return
+    setImages(previous => reorderImagesForSort(
+      updateImagesByLocator(previous, imageLocator, updates),
+      currentSort
+    ))
+    updateCurationImage(imageLocator, updates)
+  }, [updateCurationImage, currentSort])
 
   const curationRecoveryMode = getCurationRecoveryMode({
     active: curation.active,
@@ -909,20 +911,15 @@ function Gallery() {
   }, [sidebarOpen, lightboxIndex, curation.active])
 
   // Handle image deletion from lightbox
-  const handleImageDelete = useCallback((imageId) => {
+  const handleImageDelete = useCallback((locator) => {
     setImages(prev => {
-      const newImages = prev.filter(img => img.id !== imageId)
+      const deletedIndex = prev.findIndex(image => imageMatchesLocator(image, locator))
+      const newImages = prev.filter(image => !imageMatchesLocator(image, locator))
 
-      // Find the current index of the deleted image
-      const deletedIndex = prev.findIndex(img => img.id === imageId)
-
-      // If there are remaining images, navigate to the next one
       if (newImages.length > 0) {
-        // If we deleted the last image, go to the previous one
         const nextIndex = deletedIndex >= newImages.length ? newImages.length - 1 : deletedIndex
-        setLightboxIndex(newImages[nextIndex]?.id ?? null)
+        setLightboxIndex(adjustmentLocator(newImages[nextIndex]))
       } else {
-        // No images left, close lightbox
         setLightboxIndex(null)
       }
 
@@ -1210,10 +1207,10 @@ function Gallery() {
     setSearchParams(params)
   }, [searchParams, setSearchParams])
 
-  const handleImageClick = (imageId) => {
-    // Push history state so back button closes lightbox
-    window.history.pushState({ lightbox: true, imageId }, '')
-    setLightboxIndex(imageId)
+  const handleImageClick = (image) => {
+    const locator = adjustmentLocator(image)
+    window.history.pushState({ lightbox: true, locator }, '')
+    setLightboxIndex(locator)
     // Keep sidebar visible to show image details
   }
 
@@ -1222,7 +1219,7 @@ function Gallery() {
     // Reset load-more guard in case it was left set by an aborted fetch
     loadingMoreRef.current = false
     // Scroll to the image that was being viewed
-    const imageId = lightboxIndex
+    const imageKey = lightboxIndex ? imageIdentityKey(lightboxIndex) : null
 
     // Go back in history to trigger popstate which closes the lightbox
     // This ensures hardware back button and X button behave consistently
@@ -1235,7 +1232,9 @@ function Gallery() {
 
     // Use requestAnimationFrame to scroll after the lightbox closes and DOM updates
     requestAnimationFrame(() => {
-      const imageElement = document.querySelector(`[data-image-id="${imageId}"]`)
+      const imageElement = imageKey
+        ? document.querySelector(`[data-image-key="${imageKey}"]`)
+        : null
       if (imageElement) {
         imageElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
@@ -1243,7 +1242,7 @@ function Gallery() {
   }, [lightboxIndex])
 
   const handleLightboxNav = async (direction) => {
-    const currentIdx = images.findIndex(img => img.id === lightboxIndex)
+    const currentIdx = images.findIndex(image => imageMatchesLocator(image, lightboxIndex))
     if (currentIdx === -1) return
 
     let newIndex = currentIdx + direction
@@ -1279,11 +1278,11 @@ function Gallery() {
           // Deduplicate using functional updater to avoid stale closure on images
           let navigated = false
           setImages(prev => {
-            const existingIds = new Set(prev.map(img => img.id))
-            const newImages = result.images.filter(img => !existingIds.has(img.id))
+            const existingKeys = new Set(prev.map(imageIdentityKey))
+            const newImages = result.images.filter(img => !existingKeys.has(imageIdentityKey(img)))
             if (newImages.length > 0) {
               navigated = true
-              setLightboxIndex(newImages[0].id)
+              setLightboxIndex(adjustmentLocator(newImages[0]))
               return [...prev, ...newImages]
             }
             return prev
@@ -1306,7 +1305,7 @@ function Gallery() {
     // Stay at boundaries - don't wrap
     if (newIndex < 0) return
     if (newIndex >= images.length) return
-    setLightboxIndex(images[newIndex]?.id ?? lightboxIndex)
+    setLightboxIndex(images[newIndex] ? adjustmentLocator(images[newIndex]) : lightboxIndex)
   }
 
   // Selection mode handlers
@@ -1460,7 +1459,7 @@ function Gallery() {
             setLightboxSidebarHover(false)
           }}
           currentTags={currentTags}
-          selectedImage={curation.active ? curation.current : (lightboxIndex !== null ? images.find(img => img.id === lightboxIndex) : null)}
+          selectedImage={curation.active ? curation.current : (lightboxIndex !== null ? images.find(image => imageMatchesLocator(image, lightboxIndex)) : null)}
           onSearch={handleSearch}
           initialTags={currentTags}
           initialRating={currentRating}
@@ -1821,7 +1820,7 @@ function Gallery() {
       {(lightboxIndex !== null || (curation.active && curation.current)) && !curation.complete && (
         <Lightbox
           images={curation.active ? curation.queue : images}
-          currentIndex={curation.active ? 0 : images.findIndex(img => img.id === lightboxIndex)}
+          currentIndex={curation.active ? 0 : images.findIndex(image => imageMatchesLocator(image, lightboxIndex))}
           total={curation.active ? curation.queue.length : total}
           onClose={curation.active ? curation.exit : handleLightboxClose}
           onNav={curation.active ? (() => {}) : handleLightboxNav}
