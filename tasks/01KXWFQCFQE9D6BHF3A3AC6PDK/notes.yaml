@@ -162,3 +162,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T16:50:09.665Z
+  - _ulid: 01KY08XAG4K4C4AXSYN0KPARCM
+    content: "Review fix integrated in 7a3b0e52: session construction now disables ONNX Runtime wrapper
+      fallback before CUDA EP initialization, strict stages require observed nonzero CUDA nodes,
+      native stdout contamination no longer hides structured failure reports, and the client
+      deadline exceeds the 300-second backend probe. Final local gates: Python 31 passed/1 GPU-gated
+      skip, frontend 83/83 + production build, Rust 158/158 + cargo check/fmt. Live Windows
+      exact-EVA nonzero-CUDA evidence is still required; task remains in progress."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T17:24:21.124Z
