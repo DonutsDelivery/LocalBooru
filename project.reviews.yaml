@@ -169,6 +169,12 @@ reviews:
         payload:
           thread_ulid: 01KXZGB7Y3Q0WS1HKB6GC93FRX
         timestamp: 2026-07-20T10:27:55.816Z
+      - _ulid: 01KXZH2VXV0V53AP313ZVTTP78
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KXZGB925VK9C7B68TG3BMWF5
+        timestamp: 2026-07-20T10:27:56.987Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -248,6 +254,12 @@ reviews:
               explicitly and add a test that a worker error becomes `restoration_failed` rather than
               EOS."
             created_at: 2026-07-20T10:15:04.006Z
+          - _ulid: 01KXZH2VX96ZCA9JTJH5WCYNBN
+            author: "@claude"
+            body: "Fixed in 8370255: adapter output that is an Exception/ErrorMarker now raises RuntimeError
+              using its stack_trace, so the server emits restoration_failed rather than EOS. A
+              focused fake ErrorMarker regression covers the upstream object shape."
+            created_at: 2026-07-20T10:27:56.969Z
         kind: blocker
       - _ulid: 01KXZGBA9P2PP6FKDZF9Z1QY7K
         anchor:
@@ -313,5 +325,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-20T10:16:11.521Z
     created_at: 2026-07-20T10:11:36.170Z
-    updated_at: 2026-07-20T10:27:55.809Z
+    updated_at: 2026-07-20T10:27:56.969Z
     notes: []
