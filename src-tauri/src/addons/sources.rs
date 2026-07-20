@@ -8,7 +8,13 @@ pub type AddonSource = (&'static str, &'static str);
 /// Get the embedded Python sources for an addon, if available.
 pub fn get_addon_sources(id: &str) -> Option<&'static [AddonSource]> {
     match id {
-        "auto-tagger" => Some(&[("app.py", include_str!("../../../addons/auto-tagger/app.py"))]),
+        "auto-tagger" => Some(&[
+            ("app.py", include_str!("../../../addons/auto-tagger/app.py")),
+            (
+                "runtime_probe.py",
+                include_str!("../../../addons/auto-tagger/runtime_probe.py"),
+            ),
+        ]),
         "age-detector" => Some(&[(
             "app.py",
             include_str!("../../../addons/age-detector/app.py"),
@@ -46,5 +52,21 @@ pub fn get_addon_sources(id: &str) -> Option<&'static [AddonSource]> {
             ),
         ]),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_addon_sources;
+
+    #[test]
+    fn auto_tagger_deploys_the_real_model_runtime_probe() {
+        // AC: @auto-tagger-runtime-acceleration-deployment ac-1
+        let source_names: Vec<_> = get_addon_sources("auto-tagger")
+            .unwrap()
+            .iter()
+            .map(|(name, _)| *name)
+            .collect();
+        assert_eq!(source_names, ["app.py", "runtime_probe.py"]);
     }
 }
