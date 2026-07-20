@@ -134,3 +134,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T16:50:55.236Z
+  - _ulid: 01KY08XBMX19G626P06Z2P54TD
+    content: "Post-review hardening integrated in a94c06b7, a25cf37b, and a7a4760: Apply locks every
+      preview-changing control for the full mutation lifetime, successful stale UI responses still
+      refresh their captured exact locator, current on-disk source bytes are checked before
+      preview/apply and again from the backup before replacement, grouped view ownership cannot
+      overwrite navigation, and Apply returns/publishes the canonical filename. Final gates:
+      frontend 83/83 + build; Rust 158/158; focused adjustment 10/10; cargo check/fmt/diff passed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T17:24:22.301Z
