@@ -1,0 +1,16 @@
+_ulid: 01KXZT06H7R64B1BR6KQ6ZARZT
+slugs:
+  - task-grouped-folder-catalog-thumbnails
+title: "Implement: Grouped Folder Catalog Thumbnails"
+type: task
+spec_ref: "@grouped-folder-catalog-thumbnails"
+derivation: auto
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-07-20T13:03:46.727Z
+todos: []

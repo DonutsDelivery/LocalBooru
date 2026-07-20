@@ -1,0 +1,23 @@
+notes:
+  - _ulid: 01KXZT06H66W5H3Q8N0JF4M3S0
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Folder catalogs display representative media previews while browsing one directory or all
+      directories together.
+
+
+
+      Acceptance Criteria:
+
+      - ac-all-directories: Given the gallery includes media from multiple directories and the
+      directory filter is set to All directories, when the user enables Group by folders, then each
+      nonempty folder catalog displays its representative preview thumbnail
+
+      - ac-directory-identity: Given different directories contain media with overlapping local
+      identifiers, when folder catalogs are rendered across all directories, then each preview
+      resolves from the same library and directory as its represented media
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T13:03:46.727Z
