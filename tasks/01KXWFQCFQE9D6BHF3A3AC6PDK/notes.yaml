@@ -112,3 +112,15 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T08:42:29.476Z
+  - _ulid: 01KXZBMS8H29YBXG4DS0BVCA48
+    content: "Root-cause correction: the managed upgrade path removed only the CPU distribution, then
+      used ordinary pip --upgrade. If onnxruntime-gpu 1.23.2 metadata already existed from an
+      earlier mixed install, pip could treat it as satisfied instead of replacing the shared ONNX
+      Runtime files. This matches the observed split: the clean disposable 1.23.2 environment
+      accelerates the exact EVA graph while the reconciled Windows environment does not.
+      Reconciliation now removes both CPU and GPU distributions before reinstalling the desired GPU
+      wheel, rejects any post-install CPU/GPU distribution conflict, and bumps the deployment
+      revision so existing markers cannot skip the clean replacement."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T08:52:52.625Z
