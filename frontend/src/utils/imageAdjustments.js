@@ -102,6 +102,37 @@ export function reorderImagesForSort(images, sort) {
   })
 }
 
+export function createImageSourceOwner() {
+  let activeSource = null
+
+  return {
+    activate(source) {
+      activeSource = { source }
+      return activeSource
+    },
+    owns(source) {
+      return source === activeSource
+    },
+  }
+}
+
+export function commitAdjustmentSourceTransition({
+  operationOwner,
+  sourceOwner,
+  committedSource,
+  clearPreview,
+  publishCommittedSource,
+  cleanupPreview,
+}) {
+  operationOwner.invalidatePreview()
+  sourceOwner.activate(committedSource)
+  clearPreview()
+  publishCommittedSource()
+  if (cleanupPreview) {
+    Promise.resolve().then(cleanupPreview).catch(() => {})
+  }
+}
+
 export function createAdjustmentOperationOwner() {
   let previewGeneration = 0
   let applyOperation = null

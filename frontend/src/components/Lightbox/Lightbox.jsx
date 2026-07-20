@@ -21,7 +21,7 @@ import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
 import { curationActionForSwipe } from '../../utils/lightboxGestures.js'
 import { isVideoMediaElement, releaseVideoMedia } from '../../utils/lightboxMedia.js'
-import { adjustmentLocator, appendCacheBuster, createAdjustmentOperationOwner, imageFileHash } from '../../utils/imageAdjustments.js'
+import { adjustmentLocator, appendCacheBuster, commitAdjustmentSourceTransition, createAdjustmentOperationOwner, createImageSourceOwner, imageFileHash } from '../../utils/imageAdjustments.js'
 
 // Video diagnostics overlay — press I to toggle, B for bare mode (video only)
 function FPSMonitor({ videoRef, visible, onToggleBare }) {
@@ -161,6 +161,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   if (!adjustmentRequestOwnerRef.current) {
     adjustmentRequestOwnerRef.current = createAdjustmentOperationOwner()
   }
+  const imageSourceOwnerRef = useRef(null)
+  if (!imageSourceOwnerRef.current) {
+    imageSourceOwnerRef.current = createImageSourceOwner()
+  }
   const mountedRef = useRef(true)
   const svpPathEnabledRef = useRef(false)
   const [svpPipelineGeneration, setSvpPipelineGeneration] = useState(0)
@@ -168,6 +172,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const image = images[currentIndex]
   const currentImageKey = image?.url ?? image?.file_path ?? image?.id
   activeImageKeyRef.current = currentImageKey
+  const renderedImageUrl = isVideo(image?.original_filename)
+    ? null
+    : getMediaUrl(previewUrl || image?.url)
+  const renderedImageSource = useMemo(
+    () => imageSourceOwnerRef.current.activate(renderedImageUrl),
+    [currentImageKey, renderedImageUrl, imageRetryKey]
+  )
 
   useEffect(() => () => {
     mountedRef.current = false
@@ -991,31 +1002,36 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     try {
       const { applyImageAdjustments, discardImagePreview } = await import('../../api')
       const result = await applyImageAdjustments(locator, requestedAdjustments, expectedFileHash)
-
-      if (onImageUpdate) {
-        const updates = {
-          url: result.url || appendCacheBuster(image.url),
-          thumbnail_url: result.thumbnail_url || appendCacheBuster(image.thumbnail_url)
-        }
-        for (const key of ['file_hash', 'file_size', 'width', 'height', 'file_modified_at']) {
-          if (result[key] != null) updates[key] = result[key]
-        }
-        onImageUpdate(locator, updates)
+      const updates = {
+        url: result.url || appendCacheBuster(image.url),
+        thumbnail_url: result.thumbnail_url || appendCacheBuster(image.thumbnail_url)
       }
-
-      if (capturedPreview) {
-        try {
-          await discardImagePreview(locator, capturedPreview)
-        } catch {
-          // Preview cleanup is best-effort and exact to the captured generation.
-        }
+      for (const key of ['file_hash', 'file_size', 'width', 'height', 'file_modified_at']) {
+        if (result[key] != null) updates[key] = result[key]
       }
-      if (!adjustmentRequestOwnerRef.current.ownsPreview(uiRequest) || !mountedRef.current) return
+      const publishCommittedSource = () => onImageUpdate?.(locator, updates)
+      const cleanupPreview = capturedPreview
+        ? () => discardImagePreview(locator, capturedPreview)
+        : null
 
-      setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
-      setPreviewUrl(null)
-      setPreviewIdentity(null)
-      setShowAdjustments(false)
+      if (adjustmentRequestOwnerRef.current.ownsPreview(uiRequest) && mountedRef.current) {
+        commitAdjustmentSourceTransition({
+          operationOwner: adjustmentRequestOwnerRef.current,
+          sourceOwner: imageSourceOwnerRef.current,
+          committedSource: getMediaUrl(updates.url),
+          clearPreview: () => {
+            setPreviewUrl(null)
+            setPreviewIdentity(null)
+            setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
+            setShowAdjustments(false)
+          },
+          publishCommittedSource,
+          cleanupPreview,
+        })
+      } else {
+        publishCommittedSource()
+        if (cleanupPreview) Promise.resolve().then(cleanupPreview).catch(() => {})
+      }
     } catch (err) {
       if (adjustmentRequestOwnerRef.current.ownsPreview(uiRequest) && mountedRef.current) {
         console.error('Failed to apply adjustments:', err)
@@ -1763,7 +1779,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     onClick={previewUrl ? handleDiscardPreview : handleGeneratePreview}
                     disabled={generatingPreview || (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0)}
                   >
-                    {generatingPreview ? 'Loading...' : previewUrl ? 'CSS' : 'Preview'}
+                    {generatingPreview ? 'Loading...' : previewUrl ? 'Clear Preview' : 'Preview'}
                   </button>
                   <button
                     className="adjustment-apply"
@@ -2390,12 +2406,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           <img
             key={`${previewUrl ? `${image.id}-preview` : image.id}-${imageRetryKey}`}
             ref={mediaRef}
-            src={getMediaUrl(previewUrl || image.url)}
+            src={renderedImageUrl}
             alt=""
             className="lightbox-media"
             style={{ ...(previewUrl ? {} : getFilterStyle()), ...zoomPan.getZoomTransform() }}
             onContextMenu={handleImageContextMenu}
-            onError={() => setImageLoadError(true)}
+            onError={() => {
+              if (imageSourceOwnerRef.current.owns(renderedImageSource)) {
+                setImageLoadError(true)
+              }
+            }}
           />
         )}
       </div>
