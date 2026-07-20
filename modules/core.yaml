@@ -581,6 +581,9 @@ features:
         type: requirement
         description: Selected gallery items can choose a destination and start a batch move without crashing
           the interface.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
