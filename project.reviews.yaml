@@ -4,7 +4,17 @@ reviews:
     slugs: []
     title: Review managed LADA sidecar package
     author: "@claude"
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: 12 behavioral sidecar/package tests passed independently in 0.02s
+        name: pytest
+        required: true
+        runner: pytest
+        created_at: 2026-07-20T10:15:42.579Z
+        completed_at: 2026-07-20T10:15:42.579Z
     events:
       - _ulid: 01KXZG4Y39AN3R9MB352SD4BP8
         actor: "@claude"
@@ -61,6 +71,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KXZGC1X5VHMQXXM1VARCJ207
         timestamp: 2026-07-20T10:15:29.453Z
+      - _ulid: 01KXZGCEQTAYRJB0VMCJ8NX2M7
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: pytest
+        timestamp: 2026-07-20T10:15:42.586Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -181,5 +198,5 @@ reviews:
         kind: blocker
     verdicts: []
     created_at: 2026-07-20T10:11:36.170Z
-    updated_at: 2026-07-20T10:15:29.445Z
+    updated_at: 2026-07-20T10:15:42.579Z
     notes: []
