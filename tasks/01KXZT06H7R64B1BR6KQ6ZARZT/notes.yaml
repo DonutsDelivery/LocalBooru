@@ -21,3 +21,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T13:03:46.727Z
+  - _ulid: 01KXZT0ETQR5R7H6RZ9C3B3AKS
+    content: "Approach: trace grouped catalog construction from mixed-directory image payloads through
+      representative thumbnail URL rendering, reproduce the All directories case in a focused
+      behavioral test, preserve full library/directory identity, then verify single-directory
+      behavior remains unchanged."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T13:03:55.223Z
