@@ -29,3 +29,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T13:03:55.223Z
+  - _ulid: 01KXZTR41455XY923RY8G2T5ZB
+    content: "Root cause: grouped folder aggregation manually emitted thumbnail URLs with only
+      directory_id, while the exact thumbnail route now requires library_id and directory_id. All
+      such requests returned 400, and All directories additionally risks colliding numeric IDs.
+      Representative folder queries now carry file_hash and generate encoded library_id,
+      directory_id, image_id, and file_hash URLs. Test-first failure was undefined identity-safe
+      builder; focused test passed and full Rust suite passed 152/152 with fmt/diff checks."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T13:16:50.597Z
