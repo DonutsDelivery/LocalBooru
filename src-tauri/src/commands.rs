@@ -153,13 +153,25 @@ pub struct CopyImageResult {
     pub error: Option<String>,
 }
 
+#[cfg(any(test, target_os = "windows"))]
+fn decode_clipboard_image(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
+    let image = image::load_from_memory(bytes)
+        .map_err(|error| format!("Failed to decode image for clipboard: {error}"))?;
+    let rgba = image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Ok((rgba.into_raw(), width, height))
+}
+
 /// Copy image to clipboard
 #[tauri::command]
-pub async fn copy_image_to_clipboard(image_url: String) -> Result<CopyImageResult, String> {
+pub async fn copy_image_to_clipboard(
+    app: AppHandle,
+    image_url: String,
+) -> Result<CopyImageResult, String> {
     // Mobile: not supported yet (could use Android/iOS share sheet in the future)
     #[cfg(mobile)]
     {
-        let _ = image_url;
+        let _ = (app, image_url);
         return Ok(CopyImageResult {
             success: false,
             error: Some("Clipboard copy not supported on mobile yet".to_string()),
@@ -168,6 +180,9 @@ pub async fn copy_image_to_clipboard(image_url: String) -> Result<CopyImageResul
 
     #[cfg(desktop)]
     {
+        #[cfg(not(target_os = "windows"))]
+        let _ = &app;
+
         let response = reqwest::get(&image_url)
             .await
             .map_err(|e| format!("Failed to fetch image: {}", e))?;
@@ -256,10 +271,28 @@ pub async fn copy_image_to_clipboard(image_url: String) -> Result<CopyImageResul
 
         #[cfg(target_os = "windows")]
         {
-            return Ok(CopyImageResult {
-                success: false,
-                error: Some("Windows clipboard not yet implemented".to_string()),
-            });
+            use tauri_plugin_clipboard_manager::ClipboardExt;
+
+            let (rgba, width, height) = match decode_clipboard_image(&bytes) {
+                Ok(image) => image,
+                Err(error) => {
+                    return Ok(CopyImageResult {
+                        success: false,
+                        error: Some(error),
+                    });
+                }
+            };
+            let image = tauri::image::Image::new_owned(rgba, width, height);
+            return match app.clipboard().write_image(&image) {
+                Ok(()) => Ok(CopyImageResult {
+                    success: true,
+                    error: None,
+                }),
+                Err(error) => Ok(CopyImageResult {
+                    success: false,
+                    error: Some(format!("Failed to write image to clipboard: {error}")),
+                }),
+            };
         }
 
         #[allow(unreachable_code)]
@@ -417,4 +450,49 @@ pub struct ImageContextMenuOptions {
 pub async fn show_image_context_menu(_options: ImageContextMenuOptions) -> Result<(), String> {
     log::info!("Context menu requested - frontend should handle this");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_clipboard_image;
+    use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
+    use std::io::Cursor;
+
+    fn encoded_test_image(format: ImageFormat) -> Vec<u8> {
+        let pixels = ImageBuffer::from_fn(3, 2, |x, y| {
+            Rgba([
+                (x * 40) as u8,
+                (y * 80) as u8,
+                160,
+                if x == 0 && y == 0 { 64 } else { 255 },
+            ])
+        });
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(pixels)
+            .write_to(&mut encoded, format)
+            .unwrap();
+        encoded.into_inner()
+    }
+
+    #[test]
+    fn clipboard_payload_decodes_supported_image_formats() {
+        // AC: @windows-copy-image ac-1
+        // AC: @windows-copy-image ac-3
+        for format in [ImageFormat::Png, ImageFormat::Jpeg, ImageFormat::WebP] {
+            let encoded = encoded_test_image(format);
+            let (rgba, width, height) = decode_clipboard_image(&encoded).unwrap();
+            assert_eq!((width, height), (3, 2));
+            assert_eq!(rgba.len(), 3 * 2 * 4);
+            if format != ImageFormat::Jpeg {
+                assert_eq!(rgba[3], 64);
+            }
+        }
+    }
+
+    #[test]
+    fn clipboard_payload_reports_decode_failure() {
+        // AC: @windows-copy-image ac-2
+        let error = decode_clipboard_image(b"not an image").unwrap_err();
+        assert!(error.contains("Failed to decode image for clipboard"));
+    }
 }
