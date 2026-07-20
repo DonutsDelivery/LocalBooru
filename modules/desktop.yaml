@@ -579,6 +579,11 @@ requirements:
         id: ac-1
         then: the request reports an early failure and never reports that the build started
         when: validation, source resolution, runtime discovery, or another preflight step fails
+      - given: the shared lock is acquired and all required preflight checks pass
+        id: ac-2
+        then: the request reports that the build started with its platform and immutable source revision
+        when: the container image build or artifact-build process is invoked for the resolved source
+          revision
     priority: high
     tags: []
     created: 2026-07-20T08:04:35.064Z
