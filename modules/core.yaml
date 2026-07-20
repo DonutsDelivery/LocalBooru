@@ -767,6 +767,10 @@ features:
             id: ac-4
             then: the adjusted file, refreshed metadata, and refreshed thumbnail are shown for the same image
             when: the image is reopened or displayed in the gallery
+          - given: a Windows library and its application data directory are writable
+            id: ac-windows-preview
+            then: the preview is published and served without a file-handle permission error
+            when: the user generates an image adjustment preview
         priority: high
         tags: []
         created: 2026-07-20T08:04:52.074Z
