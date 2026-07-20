@@ -57,6 +57,9 @@ features:
         type: requirement
         description: Grouped folder catalogs retain exact representative media identity and refresh their
           previews after library rescans.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
