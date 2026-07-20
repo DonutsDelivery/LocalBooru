@@ -68,3 +68,12 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T18:14:54.968Z
+  - _ulid: 01KY0EVTHDMXJ3G8HHFDEFY076
+    content: "Late adversarial fix cycle: gallery state publishers now share one latest-wins owner with
+      foreground guards, tile-size identity, failed-load recovery, and Lightbox close invalidation.
+      Uncached thumbnail regeneration snapshots each candidate, supports legacy full and current
+      quick hashes, skips drifted/missing candidates, and publishes atomically. Frontend 83 tests
+      and focused thumbnail tests pass."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T19:08:23.469Z
