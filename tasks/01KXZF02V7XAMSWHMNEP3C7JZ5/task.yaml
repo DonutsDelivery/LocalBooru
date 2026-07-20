@@ -10,7 +10,7 @@ description: Implement hardware and driver detection, package compatibility sele
 spec_ref: "@lada-runtime-readiness"
 meta_ref: null
 plan_ref: "@plan-managed-lada-gstreamer-add-on"
-status: pending
+status: in_progress
 blocked_by: []
 depends_on:
   - "@package-lada-sidecar"
@@ -21,5 +21,17 @@ tags:
   - video
   - rust
 vcs_refs: []
+history:
+  - author: "@claude"
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-07-20T11:10:53.596Z
+        previous: null
+    command: task-start
+    timestamp: 2026-07-20T11:10:53.597Z
 created_at: 2026-07-20T09:51:28.615Z
+started_at: 2026-07-20T11:10:53.596Z
 todos: []
