@@ -52,6 +52,11 @@ fn default_workers() -> usize {
 
 /// Settings key for configuring worker concurrency.
 const SETTINGS_WORKERS_KEY: &str = "task_queue_workers";
+const ENV_WORKERS_KEY: &str = "LOCALBOORU_TASK_QUEUE_WORKERS";
+
+fn parse_worker_count_override(value: Option<&str>) -> Option<usize> {
+    value?.parse::<usize>().ok().map(|workers| workers.max(1))
+}
 
 // ─── BackgroundTaskQueue ─────────────────────────────────────────────────────
 
@@ -242,6 +247,11 @@ impl Default for BackgroundTaskQueue {
 /// Read the configured worker count from the settings DB table.
 /// Falls back to DEFAULT_WORKERS if not set or invalid.
 fn read_worker_count(state: &AppState) -> usize {
+    let environment_value = std::env::var(ENV_WORKERS_KEY).ok();
+    if let Some(workers) = parse_worker_count_override(environment_value.as_deref()) {
+        return workers;
+    }
+
     let conn = match state.main_db().get() {
         Ok(c) => c,
         Err(_) => return default_workers(),
@@ -1873,6 +1883,18 @@ mod tests {
 
     fn temp_test_dir(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("localbooru-task-{}-{}", name, uuid::Uuid::new_v4()))
+    }
+
+    // AC: @safe-development-startup ac-bounded-workers
+    #[test]
+    fn worker_override_parser_is_bounded_and_failure_safe() {
+        assert_eq!(parse_worker_count_override(None), None);
+        assert_eq!(parse_worker_count_override(Some("")), None);
+        assert_eq!(parse_worker_count_override(Some("invalid")), None);
+        assert_eq!(parse_worker_count_override(Some("-1")), None);
+        assert_eq!(parse_worker_count_override(Some("0")), Some(1));
+        assert_eq!(parse_worker_count_override(Some("1")), Some(1));
+        assert_eq!(parse_worker_count_override(Some("3")), Some(3));
     }
 
     #[test]

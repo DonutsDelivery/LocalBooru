@@ -17,6 +17,23 @@ if [[ ! "$LOCK_TIMEOUT" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     exit 2
 fi
 mkdir -p "$STATE_DIR"
+exec 7>"$STATE_DIR/dev-instance.lock"
+if ! flock -n 7; then
+    echo "A LocalBooru development session is already running." >&2
+    echo "Stop that session before starting another dev build." >&2
+    exit 1
+fi
+
+if command -v ss >/dev/null 2>&1; then
+    for port in 5210 8790; do
+        if ss -H -ltn "sport = :$port" 2>/dev/null | grep -q .; then
+            echo "Cannot start LocalBooru dev: port $port is already in use." >&2
+            echo "Stop the existing LocalBooru/Vite process and try again." >&2
+            exit 1
+        fi
+    done
+fi
+
 exec 8>"$STATE_DIR/build-cache.lock"
 if ! flock -w "$LOCK_TIMEOUT" 8; then
     echo "Timed out waiting for another LocalBooru build or cleanup" >&2
@@ -35,4 +52,7 @@ if [ "${LOCALBOORU_ENABLE_NATIVE_SVP:-1}" = "1" ] && [ -d "$PATCHED_WEBKIT_LIB" 
 else
     export LOCALBOORU_ENABLE_NATIVE_SVP=0
 fi
-exec npm run tauri:dev -- -- -- "$@" >> /tmp/localbooru-dev.log 2>&1
+export LOCALBOORU_TASK_QUEUE_WORKERS="${LOCALBOORU_TASK_QUEUE_WORKERS:-1}"
+DEV_LOG="${LOCALBOORU_DEV_LOG:-/tmp/localbooru-dev.log}"
+echo "LocalBooru dev output: $DEV_LOG"
+exec npm run tauri:dev -- -- -- "$@" > >(tee -a "$DEV_LOG") 2>&1
