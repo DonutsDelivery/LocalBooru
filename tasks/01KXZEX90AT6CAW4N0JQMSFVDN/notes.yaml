@@ -72,3 +72,15 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T10:37:50.056Z
+  - _ulid: 01KXZJHDTS0FRTRBS455GQGDAG
+    content: "Fix cycle 2 completed in 90cf135. Fixed stale terminal messages and concurrent seek
+      producers; made binary builds consume the exact staged Corresponding Source; replaced
+      per-backend monolith/manifest overwrite with one common+CUDA+XPU+model topology; and wired
+      unpacked/ASAR base audits into all hosted desktop release jobs while deferring full
+      ordinary-playback AC credit to certification. Verification: 21 pytest tests, Ruff, compileall,
+      three shell syntax checks, Node syntax, workflow YAML parse, audit CLI smoke, sdist/wheel
+      build, and diff checks passed. Real multi-GB CUDA/XPU bundle construction remains a later
+      hardware/release certification gate."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T10:53:22.650Z
