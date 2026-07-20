@@ -116,3 +116,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T16:26:15.764Z
+  - _ulid: 01KY06G77BRFBRQY6HYY3KBJCH
+    content: "Fix cycle 2 implementation: source-token ownership now ignores stale preview media errors;
+      successful Apply invalidates and clears preview state before publishing committed URLs; exact
+      captured cleanup runs asynchronously with swallowed failure; active preview control says Clear
+      Preview. Added transition ordering/cleanup-failure tests and native PNG/JPEG
+      apply-to-returned-route serve/decode/reopen plus old-hash rejection coverage. No backend
+      persistence change was needed."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T16:42:14.635Z
