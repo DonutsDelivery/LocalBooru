@@ -62,6 +62,12 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: the All directories gallery groups media from multiple libraries and directories
+            id: ac-exact-thumbnail
+            then: each representative preview URL identifies its exact library, directory, image, and content
+              version and loads the intended thumbnail
+            when: folder catalogs are loaded
         tags: []
         created: 2026-07-20T16:25:54.725Z
         notes: []
