@@ -804,6 +804,10 @@ features:
             then: the committed source replaces preview ownership before preview cleanup and cleanup cannot
               delay or reverse the successful transition
             when: the backend commits the adjusted source
+          - given: an obsolete preview request fails after the committed image becomes current
+            id: ac-source-owned-error
+            then: it cannot replace the current image with an error state
+            when: the stale media error arrives
         priority: high
         tags: []
         created: 2026-07-20T08:04:52.074Z
