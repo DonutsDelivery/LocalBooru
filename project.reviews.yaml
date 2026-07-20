@@ -748,6 +748,16 @@ reviews:
         runner: shell
         created_at: 2026-07-20T10:54:37.615Z
         completed_at: 2026-07-20T10:54:37.615Z
+      - status: skipped
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Real multi-GB CUDA/XPU bundle construction requires release hardware/network and remains
+          assigned to certification
+        name: accelerator-build
+        required: false
+        created_at: 2026-07-20T10:54:38.705Z
+        completed_at: 2026-07-20T10:54:38.705Z
     events:
       - _ulid: 01KXZJJJPHS6ZP5ASJWDYNYABN
         actor: "@claude"
@@ -783,6 +793,13 @@ reviews:
           status: pass
           name: packaging-syntax
         timestamp: 2026-07-20T10:54:37.625Z
+      - _ulid: 01KXZJKR3RX2H5BTJYAXW8D9TG
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: skipped
+          name: accelerator-build
+        timestamp: 2026-07-20T10:54:38.712Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -795,5 +812,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T10:54:00.401Z
-    updated_at: 2026-07-20T10:54:37.615Z
+    updated_at: 2026-07-20T10:54:38.705Z
     notes: []
