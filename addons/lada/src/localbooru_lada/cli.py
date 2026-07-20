@@ -19,6 +19,10 @@ def _probe(args) -> int:
         expected_upstream_revision=LADA_REVISION,
         models=value["models"],
         requested_backend=value.get("requested_backend", "auto"),
+        fp16=value.get("fp16", True),
+        model_probe_size=value.get("model_probe_size", 64),
+        model_probe_frames=value.get("model_probe_frames", 2),
+        max_probe_seconds=value.get("max_probe_seconds", 120.0),
     )
     result = probe_runtime(config)
     print(json.dumps(result, sort_keys=True))
