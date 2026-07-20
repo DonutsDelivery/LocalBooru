@@ -50,6 +50,19 @@ features:
         acceptance_criteria:
           - After image deletion, subsequent loadMore does not skip images
           - Total count stays accurate after single and batch deletes
+      - _ulid: 01KXZT01H8MKJT95R05J04KVMK
+        slugs:
+          - grouped-folder-catalog-thumbnails
+        title: Grouped Folder Catalog Thumbnails
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-20T13:03:41.608Z
+        notes: []
     created: 2026-03-08T08:28:23.993Z
     notes: []
   - _ulid: 01KK692XK9SMJRHRRD784A002E
