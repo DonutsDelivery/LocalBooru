@@ -152,3 +152,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T16:26:14.820Z
+  - _ulid: 01KY06YQ41DC7NDCAWP8QJVTDH
+    content: "Integrated e81457d0: explicit CUDA provider options and live provider/options
+      verification, ORT wrapper fallback disabled, original CUDA failure preserved before fresh CPU
+      fallback, complete NVIDIA package inventory, and a single-flight strict exact-model diagnostic
+      available in Settings. Integrated verification: Python 27 passed/1 GPU-gated skip; frontend
+      diagnostics 6/6; full frontend 80/80 and build; Rust 153/153 and cargo check. Live Windows
+      nonzero-CUDA evidence remains required."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T16:50:09.665Z
