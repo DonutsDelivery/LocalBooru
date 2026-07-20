@@ -55,6 +55,8 @@ features:
           - folder-thumbnail-route-identity
         title: Grouped Folder Thumbnail Identity
         type: requirement
+        description: Grouped folder catalogs retain exact representative media identity and refresh their
+          previews after library rescans.
         depends_on: []
         implements: []
         relates_to: []
