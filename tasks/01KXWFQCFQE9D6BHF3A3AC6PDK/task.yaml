@@ -5,7 +5,7 @@ title: Fix Auto Tagger CUDA execution and managed deployment
 type: task
 spec_ref: "@auto-tagger-runtime-acceleration-deployment"
 derivation: auto
-status: needs_work
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
@@ -61,7 +61,17 @@ history:
         previous: null
     command: task-needs-work
     timestamp: 2026-07-20T08:04:59.164Z
+  - author: "@claude"
+    changes:
+      status:
+        new: in_progress
+        previous: needs_work
+      started_at:
+        new: 2026-07-20T08:24:56.119Z
+        previous: 2026-07-19T06:06:52.160Z
+    command: task-start
+    timestamp: 2026-07-20T08:24:56.119Z
 created_at: 2026-07-19T06:06:28.855Z
-started_at: 2026-07-19T06:06:52.160Z
+started_at: 2026-07-20T08:24:56.119Z
 submitted_at: 2026-07-19T07:52:33.747Z
 todos: []
