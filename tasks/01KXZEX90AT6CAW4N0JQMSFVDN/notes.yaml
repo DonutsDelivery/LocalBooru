@@ -99,3 +99,12 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T10:59:52.770Z
+  - _ulid: 01KXZK6DAWDSY4Z20GNT4RVBT5
+    content: "Fix cycle 3 completed in 92e3efd. Replaced the impossible no-extra Ultralytics common
+      install with metadata-aware intersection splitting of full CUDA/XPU environments.
+      Verification: 22 tests passed, including exact common+layer reconstruction and backend-owned
+      identical torch exclusion; Ruff, compileall, shell syntax, wheel/sdist build, and diff checks
+      passed."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T11:04:50.268Z
