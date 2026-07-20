@@ -21,7 +21,7 @@ import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
 import { curationActionForSwipe } from '../../utils/lightboxGestures.js'
 import { isVideoMediaElement, releaseVideoMedia } from '../../utils/lightboxMedia.js'
-import { adjustmentLocator, appendCacheBuster, commitAdjustmentSourceTransition, createAdjustmentOperationOwner, createImageSourceOwner, imageFileHash } from '../../utils/imageAdjustments.js'
+import { adjustmentControlState, adjustmentLocator, appendCacheBuster, commitAdjustmentSourceTransition, createAdjustmentOperationOwner, createImageSourceOwner, imageFileHash } from '../../utils/imageAdjustments.js'
 
 // Video diagnostics overlay — press I to toggle, B for bare mode (video only)
 function FPSMonitor({ videoRef, visible, onToggleBare }) {
@@ -1044,6 +1044,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [image, adjustments, previewIdentity, onImageUpdate])
 
   // Gamma exponent for SVG filter (computed outside getFilterStyle so JSX can use it)
+  const adjustmentControls = adjustmentControlState({
+    applying: applyingAdjustments,
+    generatingPreview,
+    adjustments,
+  })
+
   const gammaExponent = adjustments.gamma !== 0
     ? Math.pow(3.0, -adjustments.gamma / 100)
     : 1
@@ -1721,6 +1727,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     max="200"
                     step="1"
                     value={adjustments.brightness}
+                    disabled={adjustmentControls.inputsDisabled}
                     onChange={e => {
                       adjustmentRequestOwnerRef.current.invalidatePreview()
                       setAdjustments(prev => ({ ...prev, brightness: parseInt(e.target.value) }))
@@ -1739,6 +1746,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     max="100"
                     step="1"
                     value={adjustments.contrast}
+                    disabled={adjustmentControls.inputsDisabled}
                     onChange={e => {
                       adjustmentRequestOwnerRef.current.invalidatePreview()
                       setAdjustments(prev => ({ ...prev, contrast: parseInt(e.target.value) }))
@@ -1757,6 +1765,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     max="100"
                     step="1"
                     value={adjustments.gamma}
+                    disabled={adjustmentControls.inputsDisabled}
                     onChange={e => {
                       adjustmentRequestOwnerRef.current.invalidatePreview()
                       setAdjustments(prev => ({ ...prev, gamma: parseInt(e.target.value) }))
@@ -1767,6 +1776,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 <div className="adjustment-actions">
                   <button
                     className="adjustment-reset"
+                    disabled={adjustmentControls.resetDisabled}
                     onClick={() => {
                       setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
                       if (previewUrl) handleDiscardPreview()
@@ -1777,14 +1787,14 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   <button
                     className="adjustment-preview"
                     onClick={previewUrl ? handleDiscardPreview : handleGeneratePreview}
-                    disabled={generatingPreview || (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0)}
+                    disabled={adjustmentControls.previewDisabled}
                   >
                     {generatingPreview ? 'Loading...' : previewUrl ? 'Clear Preview' : 'Preview'}
                   </button>
                   <button
                     className="adjustment-apply"
                     onClick={handleApplyAdjustments}
-                    disabled={applyingAdjustments || (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0)}
+                    disabled={adjustmentControls.applyDisabled}
                   >
                     {applyingAdjustments ? 'Saving...' : 'Apply'}
                   </button>

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  createViewRequestOwner,
   isUnexpectedEmptyPage,
   mergeFirstPage,
   nextLoadRetryDelay,
@@ -37,6 +38,26 @@ test('an empty middle page is retried instead of advancing the pagination cursor
   assert.equal(isUnexpectedEmptyPage({ append: true, pageLength: 0, total: 120, loaded: 50 }), true)
   assert.equal(isUnexpectedEmptyPage({ append: true, pageLength: 0, total: 50, loaded: 50 }), false)
   assert.equal(isUnexpectedEmptyPage({ append: false, pageLength: 0, total: 120, loaded: 50 }), false)
+})
+
+// AC: @folder-thumbnail-route-identity ac-rescan-refresh
+test('background folder results cannot overwrite a newer gallery view', async () => {
+  const owner = createViewRequestOwner()
+  owner.activate('group=folders&library=old')
+  const oldRequest = owner.begin('group=folders&library=old')
+  let visibleGallery = 'new gallery'
+
+  const oldResult = Promise.resolve('old folders').then(result => {
+    if (owner.owns(oldRequest)) visibleGallery = result
+  })
+
+  owner.activate('library=new')
+  await oldResult
+
+  assert.equal(visibleGallery, 'new gallery')
+  const newRequest = owner.begin('library=new')
+  assert.equal(owner.owns(oldRequest), false)
+  assert.equal(owner.owns(newRequest), true)
 })
 
 // AC: @folder-thumbnail-route-identity ac-rescan-refresh

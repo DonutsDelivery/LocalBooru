@@ -29,7 +29,7 @@ import CollectionsPage from './pages/CollectionsPage'
 import CollectionDetailPage from './pages/CollectionDetailPage'
 import WatchPage from './pages/WatchPage'
 import { getColumnCount, tileWidths } from './utils/gridLayout'
-import { isUnexpectedEmptyPage, mergeFirstPage, refreshGroupedFolderCatalog, shouldRefreshForLibraryEvent } from './utils/galleryState'
+import { createViewRequestOwner, isUnexpectedEmptyPage, mergeFirstPage, refreshGroupedFolderCatalog, shouldRefreshForLibraryEvent } from './utils/galleryState'
 import { classifySidebarSwipe } from './utils/sidebarGestures'
 import { getCurationRecoveryMode } from './utils/curationState'
 import { adjustmentLocator, imageIdentityKey, imageMatchesLocator, reorderImagesForSort, updateImagesByLocator } from './utils/imageAdjustments.js'
@@ -566,6 +566,10 @@ function Gallery() {
   const loadingMoreRef = useRef(false)
   const pageRef = useRef(page)
   const imagesRef = useRef(images)
+  const folderRequestOwnerRef = useRef(null)
+  if (!folderRequestOwnerRef.current) {
+    folderRequestOwnerRef.current = createViewRequestOwner()
+  }
 
   // Keep ref in sync with state (for use in timeouts)
   useEffect(() => {
@@ -669,6 +673,8 @@ function Gallery() {
   // Folder grouping URL params
   const groupByFolders = searchParams.get('group') === 'folders'
   const currentFolder = searchParams.get('folder') || null
+  const galleryViewKey = searchParams.toString()
+  folderRequestOwnerRef.current.activate(galleryViewKey)
 
   const galleryQuery = useMemo(() => ({
     tags: currentTags,
@@ -771,6 +777,9 @@ function Gallery() {
 
   // Load folders for folder grouping view
   const loadFolders = useCallback(async () => {
+    const request = folderRequestOwnerRef.current.begin(galleryViewKey)
+    if (!folderRequestOwnerRef.current.owns(request)) return false
+
     setLoading(true)
     try {
       const result = await fetchFolders({
@@ -780,6 +789,8 @@ function Gallery() {
         favorites_only: favoritesOnly,
         tags: currentTags,
       })
+      if (!folderRequestOwnerRef.current.owns(request)) return false
+
       const folderItems = result.folders.map(f => ({
         ...f,
         _isFolder: true,
@@ -790,11 +801,16 @@ function Gallery() {
       setTotal(result.total)
       setHasMore(false)
       setPage(1)
+      return true
     } catch (error) {
-      console.error('Failed to load folders:', error)
+      if (folderRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to load folders:', error)
+      }
+      return false
+    } finally {
+      if (folderRequestOwnerRef.current.owns(request)) setLoading(false)
     }
-    setLoading(false)
-  }, [currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags])
+  }, [currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags, galleryViewKey])
 
   // Load images
   const loadImages = useCallback(async (pageNum = 1, append = false) => {
