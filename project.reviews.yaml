@@ -19,6 +19,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-07-20T10:11:43.481Z
+      - _ulid: 01KXZGB6EYV129DBBTYEX5DG7F
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KXZGB6EVXM1FS9TD2ACYPD0Y
+        timestamp: 2026-07-20T10:15:01.342Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -28,8 +35,26 @@ reviews:
       content_hash: ""
       ref: "@package-lada-sidecar"
       shadow_commit: ""
-    threads: []
+    threads:
+      - _ulid: 01KXZGB6EVXM1FS9TD2ACYPD0Y
+        anchor:
+          type: code
+          commit: f64c423a6acff7b5005f82d2361ab3adb324210f
+          line_end: 189
+          line_start: 176
+          path: addons/lada/src/localbooru_lada/server.py
+          side: head
+        entries:
+          - _ulid: 01KXZGB6EVPACK9AW144KKVFGD
+            author: "@claude"
+            body: "MUST-FIX: seek reuses the same memfd slots after reset. A consumer that still maps an
+              old-generation buffer immediately observes bytes written for the new generation
+              (confirmed with a mapped-FD reproduction: old consumer read `new!`). Allocate and
+              announce a fresh pool per generation, retire the old pool without reuse, and test that
+              old mappings remain unchanged."
+            created_at: 2026-07-20T10:15:01.339Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-20T10:11:36.170Z
-    updated_at: 2026-07-20T10:11:43.477Z
+    updated_at: 2026-07-20T10:15:01.339Z
     notes: []
