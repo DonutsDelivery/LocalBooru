@@ -507,7 +507,7 @@ fn apply_to_resolved_image(
              file_modified_at = ?7, updated_at = datetime('now')
          WHERE id = ?8 AND file_hash = ?9",
         params![
-            canonical_filename,
+            &canonical_filename,
             &new_hash,
             perceptual_hash,
             width as i32,
@@ -613,6 +613,7 @@ fn apply_to_resolved_image(
         "contrast": adjustments.contrast,
         "gamma": adjustments.gamma,
         "file_hash": new_hash,
+        "filename": canonical_filename,
         "file_size": file_size,
         "width": width,
         "height": height,
@@ -1170,6 +1171,10 @@ mod tests {
             let new_hash = response["file_hash"].as_str().unwrap();
             let returned_url = response["url"].as_str().unwrap();
             assert_ne!(new_hash, old_hash);
+            assert_eq!(
+                response["filename"],
+                format!("{}.{}", &new_hash[..16], extension)
+            );
             assert!(returned_url.contains(&format!("file_hash={new_hash}")));
 
             let route_url = returned_url.strip_prefix("/api/images").unwrap();

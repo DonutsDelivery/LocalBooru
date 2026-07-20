@@ -1006,7 +1006,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         url: result.url || appendCacheBuster(image.url),
         thumbnail_url: result.thumbnail_url || appendCacheBuster(image.thumbnail_url)
       }
-      for (const key of ['file_hash', 'file_size', 'width', 'height', 'file_modified_at']) {
+      for (const key of ['file_hash', 'filename', 'file_size', 'width', 'height', 'file_modified_at']) {
         if (result[key] != null) updates[key] = result[key]
       }
       const publishCommittedSource = () => onImageUpdate?.(locator, updates)
