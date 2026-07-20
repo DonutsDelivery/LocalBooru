@@ -157,6 +157,9 @@ features:
         type: requirement
         description: Windows users can copy supported library images to the native clipboard and paste them
           into other applications.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
