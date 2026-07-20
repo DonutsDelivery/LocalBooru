@@ -57,6 +57,9 @@ features:
         type: requirement
         description: Folder catalogs display representative media previews while browsing one directory or
           all directories together.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
