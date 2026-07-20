@@ -108,3 +108,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T16:25:52.578Z
+  - _ulid: 01KY05JYTM5FS0Y38NKQT7NXRX
+    content: "Fix cycle 2 approach: test the stale-preview Apply transition first, make media errors
+      source-owned, release preview state before publishing committed URLs, make cleanup
+      nonblocking, use an explicit preview label, and prove PNG/JPEG apply results serve and decode
+      through native routes."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T16:26:15.764Z
