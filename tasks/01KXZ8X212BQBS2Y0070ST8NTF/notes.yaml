@@ -69,3 +69,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T09:59:06.868Z
+  - _ulid: 01KXZG15W1Y66K852B9YVCNSTV
+    content: "Windows build completed successfully from immutable source
+      3f87937b4dd2eab674d64ea4dc93a90008278c16 after STARTED handshake. Docker ran committed
+      frontend tests 61/61, production build, MSVC cargo check/build/package, and final artifact
+      checks. Local artifacts: installer SHA-256
+      443a3c14f83eebccca6fedf63e05b19cf16206dce098b97febbc7123c759fe7b; portable SHA-256
+      d413d6015aba673a55c4ccbbedab16e89037ed24537875b10ecd4c4e5ba3fc37."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T10:09:33.057Z
