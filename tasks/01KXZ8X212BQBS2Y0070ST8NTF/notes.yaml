@@ -1,0 +1,30 @@
+notes:
+  - _ulid: 01KXZ8X211SQV5VW1AEC5D3991
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Image adjustment previews and permanent changes remain owned by the exact library image
+      selected by the user.
+
+
+
+      Acceptance Criteria:
+
+      - ac-1: Given different directories or libraries contain images with the same local numeric
+      identifier, when the user previews or applies adjustments to one image, then only the selected
+      library and directory image is read, previewed, or modified
+
+      - ac-2: Given an older preview request completes after the user changes adjustments or
+      navigates to another image, when the older response arrives, then it cannot replace the
+      current image or current adjustment preview
+
+      - ac-3: Given an image adjustment cannot be encoded or committed, when the operation fails,
+      then the original file remains intact and the failure is reported
+
+      - ac-4: Given an image adjustment is applied successfully, when the image is reopened or
+      displayed in the gallery, then the adjusted file, refreshed metadata, and refreshed thumbnail
+      are shown for the same image
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T08:04:58.017Z
