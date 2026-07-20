@@ -741,6 +741,9 @@ features:
         type: requirement
         description: Image adjustment previews and permanent changes remain owned by the exact library image
           selected by the user.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
