@@ -5,8 +5,10 @@ title: "Implement: Grouped Folder Catalog Thumbnails"
 type: task
 spec_ref: "@grouped-folder-catalog-thumbnails"
 derivation: auto
-status: pending_review
+status: cancelled
 blocked_by: []
+closed_reason: Windows retest after clean reinstall and complete directory rescan restored grouped
+  thumbnails; the report was transient incomplete-scan state, not a reproducible product defect.
 depends_on: []
 context: []
 priority: 1
@@ -51,6 +53,17 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-07-20T13:17:05.531Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: cancelled
+        previous: pending_review
+      closed_reason:
+        new: Windows retest after clean reinstall and complete directory rescan restored grouped thumbnails;
+          the report was transient incomplete-scan state, not a reproducible product defect.
+        previous: null
+    command: task-cancel
+    timestamp: 2026-07-20T14:00:34.612Z
 created_at: 2026-07-20T13:03:46.727Z
 started_at: 2026-07-20T13:03:54.140Z
 submitted_at: 2026-07-20T13:17:05.530Z
