@@ -513,9 +513,25 @@ reviews:
           kind: blocker
           thread_ulid: 01KXZHFR0V75WR6WGR6HVKR2MD
         timestamp: 2026-07-20T10:34:58.982Z
+      - _ulid: 01KXZHFS4HZJ1SYRQQ9M8N3KQD
+        actor: claude
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: request_changes
+        timestamp: 2026-07-20T10:35:00.113Z
+      - _ulid: 01KXZHFS4H8FWRTPS2QT7R23YR
+        actor: claude
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-07-20T10:35:00.113Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs: []
     subject:
       type: task
@@ -597,7 +613,14 @@ reviews:
               behavioral artifact/playback gate rather than this unit test."
             created_at: 2026-07-20T10:34:58.972Z
         kind: blocker
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: request_changes
+        reviewer: claude
+        role: reviewer
+        created_at: 2026-07-20T10:35:00.112Z
     created_at: 2026-07-20T10:28:50.891Z
-    updated_at: 2026-07-20T10:34:58.972Z
+    updated_at: 2026-07-20T10:35:00.113Z
     notes: []
