@@ -1012,3 +1012,31 @@ reviews:
     created_at: 2026-07-20T11:04:59.351Z
     updated_at: 2026-07-20T11:07:28.459Z
     notes: []
+  - _ulid: 01KY041Z196XRV890QADB91DDZ
+    slugs: []
+    title: Review LADA runtime readiness
+    author: "@claude"
+    checks: []
+    events:
+      - _ulid: 01KY041Z18C35STAHH3T4RBWSM
+        actor: "@claude"
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-07-20T15:59:30.344Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@implement-lada-runtime-probes"
+    subject:
+      type: code
+      base_branch: plan/plan-managed-lada-gstreamer-add-on/01kxzesa
+      base_commit: ba56e1d0
+      head_branch: dispatch/task/implement-lada-runtime-probes/01kxzf02
+      head_commit: 1fedaaf2
+    threads: []
+    verdicts: []
+    created_at: 2026-07-20T15:59:30.345Z
+    updated_at: null
+    notes: []
