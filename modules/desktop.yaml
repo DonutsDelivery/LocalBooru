@@ -600,6 +600,9 @@ requirements:
     type: requirement
     description: Local container release builds immediately report whether they are blocked, failed
       before launch, or have entered a real build stage.
+    status:
+      maturity: draft
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
