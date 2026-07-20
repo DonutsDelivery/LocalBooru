@@ -1096,8 +1096,8 @@ features:
         acceptance_criteria:
           - given: Curation Game is active at default zoom with one touch on the media surface
             id: ac-1
-            then: a right swipe commits Keep and a left swipe commits Discard without invoking lightbox
-              navigation or sidebar gestures
+            then: the ordinary Lightbox horizontal-swipe behavior is used and no Keep or Discard decision is
+              committed
             when: a horizontally dominant swipe exceeds 50 pixels
           - given: Curation Game is active
             id: ac-2
