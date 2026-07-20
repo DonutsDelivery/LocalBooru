@@ -953,7 +953,7 @@ mod tests {
         assert!(url.contains("preview_key=generation-a"));
     }
 
-    // AC: @identity-safe-image-adjustments ac-4
+    // AC: @identity-safe-image-adjustments ac-3
     #[test]
     fn commit_failure_restores_original_bytes_and_database_hash() {
         let root = test_root("rollback");
@@ -1015,6 +1015,86 @@ mod tests {
                 .contains("localbooru-adjust")));
         drop(state);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-apply-decode
+    // AC: @identity-safe-image-adjustments ac-4
+    #[tokio::test]
+    async fn png_and_jpeg_apply_urls_serve_decode_immediately_and_reject_old_hashes() {
+        use axum::body::{to_bytes, Body};
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        for (extension, format) in [
+            ("png", image::ImageFormat::Png),
+            ("jpg", image::ImageFormat::Jpeg),
+        ] {
+            let root = test_root(&format!("apply-decode-{extension}"));
+            let state = AppState::new(&root, 0).unwrap();
+            let library = state.resolve_library(None).unwrap();
+            let path = root.join(format!("source.{extension}"));
+            DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([40, 50, 60])))
+                .save_with_format(&path, format)
+                .unwrap();
+            let old_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+            insert_image(&library, 4, 12, &path, &old_hash);
+            let locator = ImageLocatorQuery {
+                library_id: library.uuid.clone(),
+                directory_id: 4,
+            };
+            let response = apply_to_resolved_image(
+                resolve_image(&state, &locator, 12).unwrap(),
+                &locator,
+                12,
+                &ImageAdjustmentRequest {
+                    brightness: 50,
+                    contrast: 0,
+                    gamma: 0,
+                },
+                &old_hash,
+                false,
+            )
+            .unwrap();
+            let new_hash = response["file_hash"].as_str().unwrap();
+            let returned_url = response["url"].as_str().unwrap();
+            assert_ne!(new_hash, old_hash);
+            assert!(returned_url.contains(&format!("file_hash={new_hash}")));
+
+            let route_url = returned_url.strip_prefix("/api/images").unwrap();
+            for _ in 0..2 {
+                let served = crate::routes::images::router()
+                    .with_state(state.clone())
+                    .oneshot(
+                        Request::builder()
+                            .uri(route_url)
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(served.status(), StatusCode::OK);
+                let bytes = to_bytes(served.into_body(), usize::MAX).await.unwrap();
+                let decoded = image::load_from_memory(&bytes).unwrap();
+                assert_eq!((decoded.width(), decoded.height()), (4, 6));
+                assert!(decoded.to_rgb8().get_pixel(0, 0).0[0] > 40);
+            }
+
+            let stale_url = route_url.replace(new_hash, &old_hash);
+            let stale = crate::routes::images::router()
+                .with_state(state.clone())
+                .oneshot(
+                    Request::builder()
+                        .uri(stale_url)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(stale.status(), StatusCode::NOT_FOUND);
+
+            drop(state);
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     // AC: @identity-safe-image-adjustments ac-4
