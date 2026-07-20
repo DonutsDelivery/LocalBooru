@@ -1,0 +1,345 @@
+kynetic_plans: "1.0"
+plans:
+  - _ulid: 01KXZESASY6SWFE4XQEZVKCN4F
+    slugs:
+      - plan-managed-lada-gstreamer-add-on
+    title: Managed LADA GStreamer Add-on
+    content: >
+      # Managed LADA GStreamer Add-on
+
+
+      ## Specs
+
+
+      ```yaml
+
+      - title: Managed LADA Video Restoration
+        slug: desktop-lada-video
+        type: feature
+        parent: "@desktop-native"
+        description: |
+          Provide optional mosaic restoration for local Linux desktop videos through a managed LADA sidecar and the existing WebKit/GStreamer player. Installation and enablement are the only user actions; ordinary playback remains available without the add-on.
+        acceptance_criteria:
+          - id: ac-one-click-use
+            given: |
+              a supported Linux desktop has a compatible accelerator and no LADA runtime installed
+            when: |
+              the user installs LADA from Add-on Manager and enables restoration in the video player
+            then: |
+              LocalBooru obtains and validates the required add-on components and begins restored playback without terminal commands, system Python setup, model selection, executable paths, or a separate manager
+          - id: ac-disabled-default
+            given: |
+              LocalBooru is newly installed or the LADA add-on is not ready
+            when: |
+              the user opens a video
+            then: |
+              the original playback path is used and LADA restoration remains disabled
+        implementation_notes: |
+          Pin the integration to audited upstream LADA revision 20cb34a20a83c72c87a991d2c949032c70085b16. Implement Linux x86_64 first and attach restored video through a source-style GStreamer appsrc bridge rather than a one-buffer transform.
+
+      - title: Transactional LADA Add-on Installation
+        slug: lada-managed-install
+        type: requirement
+        parent: "@desktop-lada-video"
+        description: |
+          Install, repair, update, and remove hardware-specific LADA deployments through Add-on Manager without corrupting a working deployment.
+        acceptance_criteria:
+          - id: ac-verified-activation
+            given: |
+              the user accepts the displayed license and starts installation on supported hardware
+            when: |
+              the common runtime, selected accelerator package, and model package finish downloading
+            then: |
+              LocalBooru verifies trusted metadata and package hashes, validates the model files, performs a real bounded accelerator and model probe, and marks the add-on ready only after every check succeeds
+          - id: ac-atomic-rollback
+            given: |
+              a working LADA deployment exists
+            when: |
+              installation, repair, update, cancellation, or validation of a replacement fails
+            then: |
+              the previous working deployment remains active and the incomplete staging deployment cannot be launched
+          - id: ac-clean-uninstall
+            given: |
+              LADA is installed in the managed add-on directory
+            when: |
+              the user uninstalls it
+            then: |
+              its managed runtime, models, deployment record, and stale staging data are removed without changing LocalBooru media, databases, or unrelated settings
+        implementation_notes: |
+          Extend AddonManifest with an installation strategy independent of AddonRuntime. Persist exact package, protocol, upstream, model, backend, license, hash, and probe evidence. Use immutable Linux x86_64 common, CUDA, XPU, and model bundles.
+
+      - title: LADA License and Source Provenance
+        slug: lada-license-provenance
+        type: constraint
+        parent: "@desktop-lada-video"
+        description: |
+          Preserve the AGPL-3.0 license and Corresponding Source boundary for the separately packaged LADA add-on while keeping the MIT LocalBooru base application independent of it.
+        acceptance_criteria:
+          - id: ac-license-disclosure
+            given: |
+              a user is about to install or inspect the LADA add-on
+            when: |
+              Add-on Manager displays its package details
+            then: |
+              it shows the AGPL-3.0 license, exact add-on and upstream revisions, download and disk sizes, model provenance, and a matching Corresponding Source link before installation begins
+          - id: ac-base-artifact-boundary
+            given: |
+              a LocalBooru base release artifact is inspected
+            when: |
+              its packaged files and dependency inventory are enumerated
+            then: |
+              it contains no LADA source, model weights, PyTorch runtime, CUDA runtime, XPU runtime, or extracted LADA environment and still supports ordinary video playback
+          - id: ac-binary-source-match
+            given: |
+              a downloadable LADA binary package is offered by Add-on Manager
+            when: |
+              its release metadata is audited
+            then: |
+              the exact matching source, license notices, dependency locks, model notices, build scripts, and package hashes are available
+        implementation_notes: |
+          Keep adapter/package source separately licensed AGPL-3.0-only. Treat publication of downloadable artifacts as a release gate requiring explicit outward-facing approval.
+
+      - title: Truthful LADA Runtime Readiness
+        slug: lada-runtime-readiness
+        type: requirement
+        parent: "@desktop-lada-video"
+        description: |
+          Distinguish platform support, installation state, accelerator compatibility, configured preference, and proven active runtime capability.
+        acceptance_criteria:
+          - id: ac-ready-only-after-proof
+            given: |
+              LADA packages and weights are present
+            when: |
+              LocalBooru evaluates add-on readiness
+            then: |
+              it reports ready only when the protocol and pinned revisions match and a supported CUDA or XPU backend completes the required model-path probe
+          - id: ac-actionable-status
+            given: |
+              LADA cannot be installed or started
+            when: |
+              the user views Add-on Manager or video restoration status
+            then: |
+              the app distinguishes unsupported platform, unavailable accelerator, incompatible driver, download, installation, probe, repair, update, and runtime failure states with an actionable reason
+          - id: ac-active-backend-evidence
+            given: |
+              a LADA playback session is requested
+            when: |
+              the sidecar becomes ready
+            then: |
+              the UI identifies the backend proven by that session and does not present a configured preference as an active accelerator
+        implementation_notes: |
+          CPU-only execution is not ready for interactive playback. Prefer CUDA when both supported backends are available, while allowing a reinstall for XPU.
+
+      - title: Bounded LADA Frame Transport
+        slug: lada-bounded-frame-transport
+        type: requirement
+        parent: "@desktop-lada-video"
+        description: |
+          Deliver restored frames from the sidecar to GStreamer with bounded resources, source timestamps, and generation-safe seeking.
+        acceptance_criteria:
+          - id: ac-bounded-backpressure
+            given: |
+              LADA playback is active, paused, or consumed slower than frames are restored
+            when: |
+              all shared frame buffers are leased to LocalBooru
+            then: |
+              the sidecar stops advancing output until a buffer is released and no more than three LocalBooru frame buffers are in flight
+          - id: ac-source-timestamps
+            given: |
+              the sidecar produces restored frames for a local video
+            when: |
+              GStreamer presents those frames
+            then: |
+              each frame uses its source presentation timestamp and duration against the original audio and pipeline clock without fabricated wall-clock timing
+          - id: ac-seek-generation
+            given: |
+              restored playback has pending or leased frames
+            when: |
+              one or more seeks occur
+            then: |
+              only frames from the final accepted seek generation can become visible and earlier frames, end markers, and errors cannot reclaim playback
+        implementation_notes: |
+          Use a private authenticated Unix SOCK_SEQPACKET session and three shared-memory BGR buffers passed with SCM_RIGHTS. Version hello/open/ready/buffer/frame/release/seek/generation/pause/resume/eos/error/stop messages. Rust alone resolves canonical source paths.
+
+      - title: LADA GStreamer Playback Ownership
+        slug: lada-playback-ownership
+        type: requirement
+        parent: "@desktop-lada-video"
+        description: |
+          Present restored video through the standard WebKit/GStreamer player while retaining exactly one visible and audible playback owner across preparation, navigation, failure, and shutdown.
+        acceptance_criteria:
+          - id: ac-first-frame-handoff
+            given: |
+              original local video playback has position and play or pause intent and LADA is ready
+            when: |
+              restoration is enabled
+            then: |
+              LocalBooru preserves the playback intent, stops competing producers, keeps original video available during preparation, and switches to restored output only after the matching generation presents its first valid frame
+          - id: ac-original-audio-clock
+            given: |
+              LADA restored video is selected
+            when: |
+              playback, pause, rate, track selection, or seeking changes
+            then: |
+              the original GStreamer audio branch and pipeline clock remain authoritative and the restored video does not create duplicate audio or change media duration
+          - id: ac-fail-open
+            given: |
+              LADA startup is cancelled, times out, crashes, rejects a seek, or fails during playback
+            when: |
+              recovery completes
+            then: |
+              exactly one original video and audio owner continues at the preserved safe position and the user sees the restoration fallback reason
+          - id: ac-clean-close
+            given: |
+              LADA is preparing or playing
+            when: |
+              the user disables it, navigates, casts, closes the player, uninstalls the add-on, or quits LocalBooru
+            then: |
+              the active generation is invalidated and no LADA process, child worker, socket, shared mapping, or unreleased frame lease remains
+        implementation_notes: |
+          Add a localboorulada GstBin behind the patched-WebKit video-filter selector. Internally select between transparent original video and BGR appsrc output; release shared-memory leases from GstBuffer finalizers. Do not modify gstlocalbooruvs and do not use fMP4/MSE.
+
+      - title: LADA Platform and Receiver Boundary
+        slug: lada-platform-boundary
+        type: constraint
+        parent: "@desktop-lada-video"
+        description: |
+          Limit the experimental restoration path to supported local Linux desktop playback without changing other players or receivers.
+        acceptance_criteria:
+          - id: ac-supported-route
+            given: |
+              LADA is installed, enabled, and ready on a supported local Linux desktop
+            when: |
+              the user opens a local compatible video
+            then: |
+              the effective playback owner is the WebKit/GStreamer LADA path even when another desktop player is preferred, while the saved preference remains unchanged for later non-LADA playback
+          - id: ac-unchanged-routes
+            given: |
+              playback occurs in a browser, mobile client, remote client, cast receiver, Windows build, macOS build, unsupported Linux machine, or without a canonical local path
+            when: |
+              a video is opened
+            then: |
+              existing direct, streamed, cast, SVP, or native-video routing remains unchanged and LADA capability is not advertised as ready
+        implementation_notes: |
+          Linux x86_64 is the first supported release target. Treat compile and package checks separately from accelerated playback acceptance.
+      ```
+
+
+      ## Tasks
+
+
+      derive_from_specs: true
+
+
+      ```yaml
+
+      - title: Package the managed AGPL LADA sidecar
+        slug: package-lada-sidecar
+        description: |
+          Build the separately licensed adapter project around pinned LADA FrameRestorer, the versioned local protocol, bounded shared-memory producer, probe command, model manifests, CUDA/XPU locks, package metadata, notices, and automated tests. Produce local test bundles and a release manifest; do not publish externally without a separate confirmation.
+        priority: 1
+        tags:
+          - addons
+          - video
+          - linux
+          - packaging
+        spec_ref: "@lada-managed-install"
+        depends_on:
+          - "@lada-license-provenance"
+
+      - title: Implement managed LADA bundle installation
+        slug: implement-lada-bundle-install
+        description: |
+          Extend the Rust Add-on Manager and routes with managed release-bundle installation, license acceptance, progress/cancellation, hardware package selection, hash validation, staging, model/backend probe, atomic activation/rollback, repair/update, deployment evidence, and uninstall cleanup. Reuse existing sidecar lifecycle and diagnostics patterns.
+        priority: 1
+        tags:
+          - addons
+          - rust
+          - security
+        spec_ref: "@lada-managed-install"
+        depends_on:
+          - "package-lada-sidecar"
+
+      - title: Implement the trusted LADA session coordinator
+        slug: implement-lada-coordinator
+        description: |
+          Add versioned Rust protocol types and a single-session coordinator with canonical media resolution, authenticated private sockets, generation ownership, three-buffer lease accounting, seek invalidation, bounded diagnostics, process groups, timeouts, and explicit-exit cleanup. Test all state transitions with a mock sidecar.
+        priority: 1
+        tags:
+          - video
+          - rust
+          - ipc
+        spec_ref: "@lada-bounded-frame-transport"
+        depends_on:
+          - "package-lada-sidecar"
+
+      - title: Implement the localboorulada GStreamer bridge
+        slug: implement-localboorulada-bridge
+        description: |
+          Add and register a GstBin that transparently selects between original decoded video and sidecar BGR appsrc frames, maps shared-memory leases into GstMemory, preserves PTS, follows seek generations, retains the original audio clock, and fails open. Add gst-check coverage and Linux build/package integration.
+        priority: 1
+        tags:
+          - video
+          - gstreamer
+          - linux
+        spec_ref: "@lada-playback-ownership"
+        depends_on:
+          - "implement-lada-coordinator"
+
+      - title: Integrate LADA installation and playback UI
+        slug: integrate-lada-player-ui
+        description: |
+          Add the Add-on Manager install/status experience, AGPL/source disclosure, player restoration toggle, preparation/cancel state, effective-owner routing, intent preservation, stale transition rejection, diagnostics, and direct-playback fallback. Keep unsupported clients and existing SVP/native behavior unchanged.
+        priority: 1
+        tags:
+          - frontend
+          - addons
+          - video
+        spec_ref: "@desktop-lada-video"
+        depends_on:
+          - "implement-lada-bundle-install"
+          - "implement-localboorulada-bridge"
+
+      - title: Certify LADA playback and release boundaries
+        slug: certify-lada-integration
+        description: |
+          Run deterministic Rust, sidecar, GStreamer, and frontend suites plus clean-install, CUDA/XPU, long temporal-scene, A/V drift, seek, crash, cancellation, navigation, cleanup, soak, package inventory, and Corresponding Source checks. Record hardware-dependent evidence and keep external publication gated on explicit approval.
+        priority: 1
+        tags:
+          - testing
+          - release
+          - licensing
+        spec_ref: "@desktop-lada-video"
+        depends_on:
+          - "integrate-lada-player-ui"
+      ```
+
+
+      ## Implementation Notes
+
+
+      The LocalBooru base application remains MIT and contains the installer, protocol client,
+      coordinator, GStreamer bridge, UI, trusted metadata, and license/source links. The
+      downloadable add-on is a separately packaged AGPL-3.0 component containing the adapter, pinned
+      LADA dependency closure, model packages, notices, and Corresponding Source metadata.
+
+
+      LADA is not a conventional GStreamer transform. The sidecar opens the trusted local path,
+      restores temporal clips, and emits BGR frames with source PTS. `localboorulada` is a
+      source-style appsrc branch inside a pass-through GstBin, leaving the original decoded video
+      available for fail-open and the original audio branch authoritative.
+
+
+      The current checkout contains unrelated native-video work in the original workspace.
+      Implementation occurs only in the approved dedicated worktree and must never sweep those files
+      into LADA commits.
+    status: approved
+    approved_at: null
+    branch: null
+    derived_specs: []
+    derived_tasks: []
+    module_ref: "@desktop"
+    source_path: /tmp/localbooru-lada-kspec-plan.md
+    created_at: 2026-07-20T09:47:47.390Z
+    completed_at: null
+    notes: []
