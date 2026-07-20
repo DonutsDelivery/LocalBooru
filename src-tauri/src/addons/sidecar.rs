@@ -271,6 +271,9 @@ print(json.dumps({'onnxruntime': ort.__version__, 'available_providers': ort.get
         return Err("ONNX Runtime CPU probe found a conflicting GPU distribution".to_string());
     }
     if expected_distribution == "onnxruntime-gpu" {
+        if packages.contains_key("onnxruntime") {
+            return Err("ONNX Runtime GPU probe found a conflicting CPU distribution".to_string());
+        }
         let preload_failed = probe
             .get("preload")
             .and_then(serde_json::Value::as_object)
@@ -565,6 +568,34 @@ echo '{"onnxruntime":"1.23.2","available_providers":["CPUExecutionProvider"],"pa
         let error = probe_onnxruntime(&root, "onnxruntime-gpu", "1.23.2").unwrap_err();
 
         assert!(error.contains("could not load CUDAExecutionProvider"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @auto-tagger-runtime-acceleration-deployment ac-4
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn gpu_probe_rejects_conflicting_cpu_distribution() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-addon-conflicting-ort-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let bin = root.join("bin");
+        let python = bin.join("python");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(
+            &python,
+            r#"#!/bin/sh
+echo '{"onnxruntime":"1.23.2","available_providers":["CUDAExecutionProvider","CPUExecutionProvider"],"packages":{"onnxruntime":"1.23.2","onnxruntime-gpu":"1.23.2","nvidia-cublas-cu12":"12.9","nvidia-cuda-runtime-cu12":"12.9","nvidia-cudnn-cu12":"9.24"}}'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let error = probe_onnxruntime(&root, "onnxruntime-gpu", "1.23.2").unwrap_err();
+
+        assert!(error.contains("conflicting CPU distribution"));
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -20,7 +20,7 @@ use crate::routes::settings::get_config_section;
 const ONNXRUNTIME_CPU: &str = "onnxruntime==1.23.2";
 const ONNXRUNTIME_GPU: &str = "onnxruntime-gpu[cuda,cudnn]==1.23.2";
 const ONNXRUNTIME_VERSION: &str = "1.23.2";
-const AUTO_TAGGER_SOURCE_REVISION: &str = "2026-07-19-runtime-diagnostics-v1";
+const AUTO_TAGGER_SOURCE_REVISION: &str = "2026-07-20-clean-ort-reinstall-v2";
 const AUTO_TAGGER_DEPLOYMENT_FILE: &str = "dependency-deployment.json";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -157,7 +157,7 @@ fn install_dependency_list(id: &str, dependencies: &[&str], venv_dir: &Path) -> 
         return sidecar::install_deps(venv_dir, dependencies);
     }
 
-    sidecar::uninstall_deps(venv_dir, &["onnxruntime"])?;
+    sidecar::uninstall_deps(venv_dir, &["onnxruntime", "onnxruntime-gpu"])?;
     if let Err(install_error) = sidecar::install_deps(venv_dir, dependencies) {
         log::warn!(
             "[Addon:{}] GPU runtime installation failed; restoring CPU runtime",
@@ -1481,7 +1481,10 @@ mod tests {
 
         let invocations = std::fs::read_to_string(invocations).unwrap();
         let commands: Vec<_> = invocations.lines().collect();
-        assert_eq!(commands[0], "-m pip uninstall -y onnxruntime");
+        assert_eq!(
+            commands[0],
+            "-m pip uninstall -y onnxruntime onnxruntime-gpu"
+        );
         assert!(commands[1].starts_with("-m pip install --upgrade "));
         assert!(commands[1].contains(ONNXRUNTIME_GPU));
         assert!(!commands[1]
@@ -1559,7 +1562,10 @@ mod tests {
             .contains("restored the CPU inference runtime"));
         let commands = std::fs::read_to_string(invocations).unwrap();
         let commands: Vec<_> = commands.lines().collect();
-        assert_eq!(commands[0], "-m pip uninstall -y onnxruntime");
+        assert_eq!(
+            commands[0],
+            "-m pip uninstall -y onnxruntime onnxruntime-gpu"
+        );
         assert!(commands[1].contains(ONNXRUNTIME_GPU));
         assert_eq!(commands[2], "-m pip uninstall -y onnxruntime-gpu");
         assert!(commands[3].starts_with("-m pip install --upgrade "));
