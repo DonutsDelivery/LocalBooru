@@ -1,0 +1,18 @@
+_ulid: 01KXZEX8YHG59VC8RHB4HK9FQH
+slugs:
+  - implement-bounded-lada-frame-transport
+title: Implement Bounded LADA Frame Transport
+type: task
+spec_ref: "@lada-bounded-frame-transport"
+derivation: auto
+plan_ref: "@plan-managed-lada-gstreamer-add-on"
+origin: derived
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-07-20T09:49:56.561Z
+todos: []

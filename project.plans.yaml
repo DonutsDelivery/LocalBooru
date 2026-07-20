@@ -333,13 +333,53 @@ plans:
       The current checkout contains unrelated native-video work in the original workspace.
       Implementation occurs only in the approved dedicated worktree and must never sweep those files
       into LADA commits.
-    status: approved
+    status: active
     approved_at: null
     branch: plan/plan-managed-lada-gstreamer-add-on/01kxzesa
-    derived_specs: []
-    derived_tasks: []
+    derived_specs:
+      - "@desktop-lada-video"
+      - "@lada-managed-install"
+      - "@lada-license-provenance"
+      - "@lada-runtime-readiness"
+      - "@lada-bounded-frame-transport"
+      - "@lada-playback-ownership"
+      - "@lada-platform-boundary"
+    derived_tasks:
+      - "@implement-managed-lada-video-restoration"
+      - "@implement-transactional-lada-add-on-installation"
+      - "@implement-lada-license-and-source-provenance"
+      - "@implement-truthful-lada-runtime-readiness"
+      - "@implement-bounded-lada-frame-transport"
+      - "@implement-lada-gstreamer-playback-ownership"
+      - "@implement-lada-platform-and-receiver-boundary"
+      - "@package-lada-sidecar"
+      - "@implement-lada-bundle-install"
+      - "@implement-lada-coordinator"
+      - "@implement-localboorulada-bridge"
+      - "@integrate-lada-player-ui"
+      - "@certify-lada-integration"
     module_ref: "@desktop"
     source_path: /tmp/localbooru-lada-kspec-plan.md
     created_at: 2026-07-20T09:47:47.390Z
     completed_at: null
-    notes: []
+    notes:
+      - _ulid: 01KXZEX945EGHZDVVBDWR0ZAWQ
+        content: >-
+          The LocalBooru base application remains MIT and contains the installer, protocol client,
+          coordinator, GStreamer bridge, UI, trusted metadata, and license/source links. The
+          downloadable add-on is a separately packaged AGPL-3.0 component containing the adapter,
+          pinned LADA dependency closure, model packages, notices, and Corresponding Source
+          metadata.
+
+
+          LADA is not a conventional GStreamer transform. The sidecar opens the trusted local path,
+          restores temporal clips, and emits BGR frames with source PTS. `localboorulada` is a
+          source-style appsrc branch inside a pass-through GstBin, leaving the original decoded
+          video available for fail-open and the original audio branch authoritative.
+
+
+          The current checkout contains unrelated native-video work in the original workspace.
+          Implementation occurs only in the approved dedicated worktree and must never sweep those
+          files into LADA commits.
+        author: "@claude"
+        created_at: 2026-07-20T09:49:56.741Z

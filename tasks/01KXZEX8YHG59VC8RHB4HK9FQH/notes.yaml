@@ -1,0 +1,9 @@
+notes:
+  - _ulid: 01KXZEX8VZCRJ49F8PJ440TP6S
+    content: >
+      Use a private authenticated Unix SOCK_SEQPACKET session and three shared-memory BGR buffers
+      passed with SCM_RIGHTS. Version
+      hello/open/ready/buffer/frame/release/seek/generation/pause/resume/eos/error/stop messages.
+      Rust alone resolves canonical source paths.
+    author: "@claude"
+    created_at: 2026-07-20T09:49:56.479Z
