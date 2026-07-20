@@ -5,6 +5,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 
+from localbooru_lada.constants import MODEL_REVISION, PINNED_MODEL_HASHES
 from localbooru_lada.release import (
     audit_base_artifact,
     build_common_runtime,
@@ -25,6 +26,16 @@ def test_addon_metadata_discloses_license_source_sizes_and_models():
     assert metadata["packages"]["model_bundle"]["download_size"] == 174_714_035
     assert {model["role"] for model in metadata["models"]} == {"detection", "restoration"}
     assert all(model["sha256"] and model["source_url"] for model in metadata["models"])
+
+
+def test_probe_identity_pins_match_packaged_model_manifest():
+    manifest = json.loads((ROOT / "manifests/models.json").read_text())
+
+    assert manifest["revision"] == MODEL_REVISION
+    for role, hashes in PINNED_MODEL_HASHES.items():
+        assert hashes == {
+            model["sha256"] for model in manifest["models"] if model["role"] == role
+        }
 
 
 def test_base_artifact_audit_rejects_lada_payloads_but_allows_bridge_files():
@@ -319,6 +330,19 @@ def test_release_manifest_binds_complete_bundle_topology_to_exact_source_and_has
     assert package["installed_size"] > 0
     assert manifest["corresponding_source"]["sha256"] == "2a5399dfeffd5d8b6e57d3e6ce35b26abf63f06972b5a8f34412a45b74223587"
     assert manifest["corresponding_source"]["url"].endswith("/releases/download/v0.1.0/source.tar.zst")
+    assert manifest["backend_compatibility"]["cuda"] == {
+        "package": "linux_x86_64_cuda",
+        "variant": "cu128",
+        "minimum_driver_major": 570,
+    }
+    legacy = build_release_manifest(
+        ROOT,
+        bundles,
+        source_archive=source,
+        cuda_variant="cuda-legacy",
+    )
+    assert legacy["backend_compatibility"]["cuda"]["variant"] == "cu126"
+    assert legacy["backend_compatibility"]["cuda"]["minimum_driver_major"] == 560
     json.dumps(manifest)
 
 

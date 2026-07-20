@@ -18,11 +18,12 @@ def _probe(args) -> int:
         upstream_revision=value.get("upstream_revision", LADA_REVISION),
         expected_upstream_revision=LADA_REVISION,
         models=value["models"],
-        requested_backend=value.get("requested_backend", "auto"),
+        model_revision=value.get("model_revision", ""),
+        requested_backend=args.backend or value.get("requested_backend", "auto"),
         fp16=value.get("fp16", True),
         model_probe_size=value.get("model_probe_size", 64),
         model_probe_frames=value.get("model_probe_frames", 2),
-        max_probe_seconds=value.get("max_probe_seconds", 120.0),
+        max_probe_seconds=value.get("max_probe_seconds", 90.0),
     )
     result = probe_runtime(config)
     print(json.dumps(result, sort_keys=True))
@@ -51,6 +52,7 @@ def _manifest(args) -> int:
         bundles,
         source_archive=Path(args.source_archive),
         installed_sizes=installed_sizes,
+        cuda_variant=args.cuda_variant,
     )
     output = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     if args.output:
@@ -86,6 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     probe = subparsers.add_parser("probe", help="verify models and an accelerated backend")
     probe.add_argument("--config", required=True)
+    probe.add_argument("--backend", choices=("auto", "cuda", "xpu"))
     probe.set_defaults(run=_probe)
 
     serve = subparsers.add_parser("serve", help="serve one inherited LocalBooru session")
@@ -98,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     manifest.add_argument("--source-archive", required=True)
     manifest.add_argument("--bundle", action="append", default=[])
     manifest.add_argument("--installed-size", action="append", default=[])
+    manifest.add_argument("--cuda-variant", choices=("cuda", "cuda-legacy"), default="cuda")
     manifest.add_argument("--output")
     manifest.set_defaults(run=_manifest)
 

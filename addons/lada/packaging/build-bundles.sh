@@ -106,6 +106,7 @@ PYTHONPATH="$staged_addon/src" "$template_runtime/bin/python" -m localbooru_lada
   --installed-size "linux_x86_64_cuda=$(size_of "$work/layer-cuda/runtime")" \
   --installed-size "linux_x86_64_xpu=$(size_of "$work/layer-xpu/runtime")" \
   --installed-size "model_bundle=$(size_of "$work/model-bundle/models")" \
+  --cuda-variant "$cuda_variant" \
   --output "$out/release-manifest.json"
 
 printf '%s\n' "$out/release-manifest.json"

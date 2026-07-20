@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::extract::{Path as AxumPath, State};
 use axum::response::Json;
 use axum::routing::{any, get, post};
@@ -18,6 +20,7 @@ pub fn router() -> Router<AppState> {
         .route("/{addon_id}/uninstall", post(uninstall_addon))
         .route("/{addon_id}/start", post(start_addon))
         .route("/{addon_id}/stop", post(stop_addon))
+        .route("/{addon_id}/probe", post(probe_addon))
         // Wildcard proxy: forward everything under /{addon_id}/api/* to the sidecar
         .route("/{addon_id}/api/{*rest}", any(proxy_to_addon))
 }
@@ -46,6 +49,23 @@ async fn get_addon(
         "addon": addon,
         "status": status,
     })))
+}
+
+async fn probe_addon(
+    State(state): State<AppState>,
+    AxumPath(addon_id): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if addon_id != "lada" {
+        return Err(AppError::BadRequest(format!(
+            "Addon '{}' does not expose a managed runtime probe",
+            addon_id
+        )));
+    }
+    let readiness = state
+        .addon_manager()
+        .probe_lada_runtime(Duration::from_secs(120))
+        .await;
+    Ok(Json(json!({ "readiness": readiness })))
 }
 
 /// POST /api/addons/{addon_id}/install — Install an addon (create venv, install deps).
@@ -177,6 +197,11 @@ async fn uninstall_addon(
     State(state): State<AppState>,
     AxumPath(addon_id): AxumPath<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let _lada_operation = if addon_id == "lada" {
+        Some(state.addon_manager().lock_lada_operation().await)
+    } else {
+        None
+    };
     let requires_stop = state
         .addon_manager()
         .get_addon(&addon_id)
@@ -251,4 +276,44 @@ async fn stop_addon(
         "status": "stopped",
         "addon_id": addon_id,
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Method, Request, StatusCode};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn probe_route_rejects_non_managed_addons() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "localbooru-addon-probe-route-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let state = AppState::new(&data_dir, 0).unwrap();
+
+        let response = router()
+            .with_state(state)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/auto-tagger/probe")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            json["detail"],
+            "Addon 'auto-tagger' does not expose a managed runtime probe"
+        );
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
 }

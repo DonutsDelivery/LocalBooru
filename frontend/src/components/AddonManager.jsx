@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
-import { getAddons, installAddon, uninstallAddon, startAddon, stopAddon, updateAddon } from '../api'
+import {
+  getAddons,
+  installAddon,
+  probeAddon,
+  startAddon,
+  stopAddon,
+  uninstallAddon,
+  updateAddon,
+} from '../api'
 import { invalidateAddonCache } from '../hooks/useAddonStatus'
+import { formatBackend, formatLadaReadiness, normalizeAddonStatus } from './ladaRuntimeStatus'
 import './AddonManager.css'
 
 export default function AddonManager() {
@@ -27,14 +36,19 @@ export default function AddonManager() {
 
   // Poll while any addon is in a transitional state
   useEffect(() => {
-    const hasTransitional = addons.some(a => a.status === 'starting') || Object.keys(actionInProgress).length > 0
+    const isTransitional = (addon) => {
+      const lifecycle = normalizeAddonStatus(addon.status).key
+      return lifecycle === 'starting' || lifecycle === 'stopping' || lifecycle === 'repairing' ||
+        formatLadaReadiness(addon.readiness)?.transitional === true
+    }
+    const hasTransitional = addons.some(isTransitional) || Object.keys(actionInProgress).length > 0
     if (hasTransitional && !pollRef.current) {
       pollRef.current = setInterval(async () => {
         try {
           const data = await getAddons()
           setAddons(data.addons || [])
           // Stop polling if nothing is transitional anymore
-          const stillTransitional = (data.addons || []).some(a => a.status === 'starting')
+          const stillTransitional = (data.addons || []).some(isTransitional)
           if (!stillTransitional && Object.keys(actionInProgress).length === 0) {
             clearInterval(pollRef.current)
             pollRef.current = null
@@ -58,6 +72,7 @@ export default function AddonManager() {
       else if (action === 'start') await startAddon(addonId)
       else if (action === 'stop') await stopAddon(addonId)
       else if (action === 'repair') await updateAddon(addonId)
+      else if (action === 'probe') await probeAddon(addonId)
       // Refresh after action
       const data = await getAddons()
       setAddons(data.addons || [])
@@ -84,11 +99,16 @@ export default function AddonManager() {
     }
   }
 
+  function getReadinessBadgeClass(readiness) {
+    return readiness ? `addon-status ${readiness.badge}` : null
+  }
+
   function getStatusLabel(status) {
     switch (status) {
       case 'not_installed': return 'Not Installed'
       case 'installed': return 'Installed'
       case 'starting': return 'Starting...'
+      case 'repairing': return 'Changing...'
       case 'running': return 'Running'
       case 'stopped': return 'Stopped'
       case 'error': return 'Error'
@@ -115,20 +135,78 @@ export default function AddonManager() {
       <div className="addon-grid">
         {addons.map(addon => {
           const busy = actionInProgress[addon.id]
+          const lifecycle = normalizeAddonStatus(addon.status)
+          const status = lifecycle.key
+          const readiness = formatLadaReadiness(addon.readiness)
+          const managedBundle = addon.installation === 'managed_bundle'
+          const showReadiness = readiness && !['error', 'repairing', 'stopping'].includes(status)
+          const statusClass = getReadinessBadgeClass(showReadiness) || getStatusBadgeClass(status)
+          const statusLabel = showReadiness?.status || getStatusLabel(status)
           return (
             <div key={addon.id} className="addon-card">
               <div className="addon-card-header">
                 <h3>{addon.name}</h3>
-                <span className={getStatusBadgeClass(addon.status)}>
-                  {getStatusLabel(addon.status)}
+                <span className={statusClass}>
+                  {statusLabel}
                 </span>
               </div>
               <p className="addon-description">{addon.description}</p>
+              {showReadiness && (
+                <div className="addon-meta lada-readiness">
+                  {showReadiness.activeBackend ? (
+                    <span>Active backend: {formatBackend(showReadiness.activeBackend)}</span>
+                  ) : (
+                    <span>Preferred backend: {formatBackend(showReadiness.configuredBackend)}</span>
+                  )}
+                  {showReadiness.reason && <span>{showReadiness.reason}</span>}
+                </div>
+              )}
+              {!showReadiness && lifecycle.reason && (
+                <div className="addon-meta"><span>{lifecycle.reason}</span></div>
+              )}
               {addon.port != null && <div className="addon-meta">
                 <span className="addon-port">Port {addon.port}</span>
               </div>}
               <div className="addon-actions">
-                {addon.status === 'not_installed' && (
+                {managedBundle && addon.installed && (
+                  <>
+                    <button
+                      onClick={() => handleAction(addon.id, 'probe')}
+                      disabled={!!busy || readiness?.transitional}
+                      className="addon-btn start"
+                    >
+                      {busy === 'probe' || readiness?.transitional ? 'Verifying...' : 'Verify runtime'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!confirm(`Uninstall ${addon.name}?`)) return
+                        handleAction(addon.id, 'uninstall')
+                      }}
+                      disabled={!!busy}
+                      className="addon-btn uninstall"
+                    >
+                      {busy === 'uninstall' ? 'Removing...' : 'Uninstall'}
+                    </button>
+                  </>
+                )}
+                {managedBundle && !addon.installed && readiness?.key === 'not_installed' && (
+                  <button disabled className="addon-btn install" title="Use the managed LADA installer">
+                    Managed install required
+                  </button>
+                )}
+                {managedBundle && !addon.installed && readiness?.key !== 'not_installed' && (
+                  <button
+                    onClick={() => {
+                      if (!confirm(`Remove the incomplete ${addon.name} installation?`)) return
+                      handleAction(addon.id, 'uninstall')
+                    }}
+                    disabled={!!busy || readiness?.transitional}
+                    className="addon-btn uninstall"
+                  >
+                    {busy === 'uninstall' ? 'Removing...' : 'Remove incomplete install'}
+                  </button>
+                )}
+                {!managedBundle && status === 'not_installed' && (
                   <button
                     onClick={() => handleAction(addon.id, 'install')}
                     disabled={!!busy}
@@ -137,7 +215,7 @@ export default function AddonManager() {
                     {busy === 'install' ? 'Installing...' : 'Install'}
                   </button>
                 )}
-                {(addon.status === 'installed' || addon.status === 'stopped') && addon.requires_start && (
+                {!managedBundle && (status === 'installed' || status === 'stopped') && addon.requires_start && (
                   <>
                     <button
                       onClick={() => handleAction(addon.id, 'start')}
@@ -165,7 +243,7 @@ export default function AddonManager() {
                     </button>
                   </>
                 )}
-                {(addon.status === 'installed' || addon.status === 'stopped') && !addon.requires_start && (
+                {!managedBundle && (status === 'installed' || status === 'stopped') && !addon.requires_start && (
                   <button
                     onClick={() => handleAction(addon.id, 'uninstall')}
                     disabled={!!busy}
@@ -174,7 +252,7 @@ export default function AddonManager() {
                     {busy === 'uninstall' ? 'Removing...' : 'Uninstall'}
                   </button>
                 )}
-                {addon.status === 'running' && (
+                {!managedBundle && status === 'running' && (
                   <button
                     onClick={() => handleAction(addon.id, 'stop')}
                     disabled={!!busy}
@@ -183,13 +261,13 @@ export default function AddonManager() {
                     {busy === 'stop' ? 'Stopping...' : 'Stop'}
                   </button>
                 )}
-                {addon.status === 'starting' && (
+                {!managedBundle && status === 'starting' && (
                   <button disabled className="addon-btn starting">
                     <span className="spinner-small"></span>
                     Starting...
                   </button>
                 )}
-                {addon.status === 'error' && (
+                {!managedBundle && status === 'error' && (
                   <>
                     <button
                       onClick={() => handleAction(addon.id, 'start')}

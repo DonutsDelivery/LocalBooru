@@ -3,6 +3,7 @@
 //! Low-level utilities for Python virtual environment creation,
 //! dependency installation, process spawning, and health checking.
 
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -464,6 +465,194 @@ pub async fn spawn_sidecar(
     Ok(child)
 }
 
+#[derive(Debug)]
+pub struct ManagedCommandOutput {
+    pub success: bool,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ManagedCommandError {
+    Spawn(String),
+    TimedOut(Duration),
+    Wait(String),
+}
+
+struct ManagedProcessGuard {
+    pid: Option<u32>,
+    armed: bool,
+}
+
+impl Drop for ManagedProcessGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            if let Some(pid) = self.pid {
+                kill_process(pid);
+            }
+        }
+    }
+}
+
+impl fmt::Display for ManagedCommandError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Spawn(error) => write!(formatter, "failed to spawn managed command: {}", error),
+            Self::TimedOut(timeout) => {
+                write!(
+                    formatter,
+                    "managed command timed out after {:.1} seconds",
+                    timeout.as_secs_f64()
+                )
+            }
+            Self::Wait(error) => write!(formatter, "failed to wait for managed command: {}", error),
+        }
+    }
+}
+
+async fn read_bounded_output<R>(mut reader: R, maximum: usize) -> std::io::Result<String>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut output = Vec::with_capacity(maximum.min(8 * 1024));
+    let mut chunk = [0_u8; 8 * 1024];
+    loop {
+        let count = reader.read(&mut chunk).await?;
+        if count == 0 {
+            break;
+        }
+        let remaining = maximum.saturating_sub(output.len());
+        output.extend_from_slice(&chunk[..count.min(remaining)]);
+    }
+    Ok(String::from_utf8_lossy(&output).into_owned())
+}
+
+fn abort_managed_output(
+    stdout: &mut Option<tokio::task::JoinHandle<std::io::Result<String>>>,
+    stderr: &mut Option<tokio::task::JoinHandle<std::io::Result<String>>>,
+) {
+    for task in [stdout, stderr].into_iter().flatten() {
+        task.abort();
+    }
+}
+
+async fn terminate_managed_child(
+    child: &mut tokio::process::Child,
+    pid: Option<u32>,
+    stdout: &mut Option<tokio::task::JoinHandle<std::io::Result<String>>>,
+    stderr: &mut Option<tokio::task::JoinHandle<std::io::Result<String>>>,
+) {
+    if let Some(pid) = pid {
+        let _ = tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio::task::spawn_blocking(move || kill_process(pid)),
+        )
+        .await;
+    }
+    let _ = child.start_kill();
+    let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+    abort_managed_output(stdout, stderr);
+}
+
+/// Run a managed child under a hard parent-owned deadline.
+///
+/// Output is drained concurrently and capped so a noisy or malformed probe cannot
+/// deadlock or consume unbounded memory. A timeout kills the process group/tree and
+/// waits for the direct child to be reaped before returning.
+pub async fn run_managed_command(
+    executable: &Path,
+    args: &[String],
+    working_directory: &Path,
+    timeout: Duration,
+    maximum_output_bytes: usize,
+) -> Result<ManagedCommandOutput, ManagedCommandError> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    let mut command = TokioCommand::new(executable);
+    command
+        .args(args)
+        .current_dir(working_directory)
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    #[cfg(unix)]
+    command.process_group(0);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| ManagedCommandError::Spawn(error.to_string()))?;
+    let pid = child.id();
+    let mut process_guard = ManagedProcessGuard { pid, armed: true };
+    let mut stdout = child
+        .stdout
+        .take()
+        .map(|reader| tokio::spawn(read_bounded_output(reader, maximum_output_bytes)));
+    let mut stderr = child
+        .stderr
+        .take()
+        .map(|reader| tokio::spawn(read_bounded_output(reader, maximum_output_bytes)));
+
+    let status = match tokio::time::timeout_at(deadline, child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(error)) => {
+            terminate_managed_child(&mut child, pid, &mut stdout, &mut stderr).await;
+            process_guard.armed = false;
+            return Err(ManagedCommandError::Wait(error.to_string()));
+        }
+        Err(_) => {
+            terminate_managed_child(&mut child, pid, &mut stdout, &mut stderr).await;
+            process_guard.armed = false;
+            return Err(ManagedCommandError::TimedOut(timeout));
+        }
+    };
+    if let Some(pid) = pid {
+        kill_process(pid);
+    }
+    process_guard.armed = false;
+
+    async fn collect(
+        task: &mut Option<tokio::task::JoinHandle<std::io::Result<String>>>,
+    ) -> Result<String, ManagedCommandError> {
+        match task {
+            None => Ok(String::new()),
+            Some(task) => (&mut *task)
+                .await
+                .map_err(|error| ManagedCommandError::Wait(error.to_string()))?
+                .map_err(|error| ManagedCommandError::Wait(error.to_string())),
+        }
+    }
+
+    let collected = tokio::time::timeout_at(deadline, async {
+        tokio::try_join!(collect(&mut stdout), collect(&mut stderr))
+    })
+    .await;
+    let (stdout_value, stderr_value) = match collected {
+        Ok(Ok(output)) => output,
+        Ok(Err(error)) => {
+            abort_managed_output(&mut stdout, &mut stderr);
+            return Err(error);
+        }
+        Err(_) => {
+            abort_managed_output(&mut stdout, &mut stderr);
+            return Err(ManagedCommandError::TimedOut(timeout));
+        }
+    };
+
+    Ok(ManagedCommandOutput {
+        success: status.success(),
+        exit_code: status.code(),
+        stdout: stdout_value,
+        stderr: stderr_value,
+    })
+}
+
 /// Perform a single health check against an addon's `/health` endpoint.
 ///
 /// Returns `true` if the server responds with HTTP 200, `false` otherwise.
@@ -512,12 +701,11 @@ pub async fn wait_for_healthy(port: u16, timeout: Duration) -> bool {
 pub fn kill_process(pid: u32) {
     #[cfg(unix)]
     {
-        // Kill the entire process group (negative PID)
-        let _ = Command::new("kill")
-            .args(["-9", &format!("-{}", pid)])
-            .output();
-        // Also kill the specific PID in case it was not in a group
-        let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+        // SAFETY: kill accepts process-group IDs as negative PIDs. The child was
+        // spawned into a fresh group whose ID is its PID.
+        unsafe {
+            libc::kill(-(pid as i32), libc::SIGKILL);
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -596,6 +784,128 @@ echo '{"onnxruntime":"1.23.2","available_providers":["CUDAExecutionProvider","CP
         let error = probe_onnxruntime(&root, "onnxruntime-gpu", "1.23.2").unwrap_err();
 
         assert!(error.contains("conflicting CPU distribution"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_command_closes_inherited_output_pipes_after_parent_exit() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-managed-command-timeout-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("probe");
+        std::fs::write(
+            &script,
+            r#"#!/bin/sh
+sleep 30 &
+exit 0
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let started = std::time::Instant::now();
+
+        let result =
+            run_managed_command(&script, &[], &root, Duration::from_millis(100), 1024).await;
+
+        assert!(result.unwrap().success);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_command_kills_background_descendants_after_success() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-managed-command-descendant-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("probe");
+        std::fs::write(
+            &script,
+            r#"#!/bin/sh
+sleep 30 >/dev/null 2>&1 &
+printf '%s' "$!" > descendant.pid
+printf '%s\n' '{"ready":true}'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let result = run_managed_command(&script, &[], &root, Duration::from_secs(2), 1024)
+            .await
+            .unwrap();
+        let descendant: i32 = std::fs::read_to_string(root.join("descendant.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        for _ in 0..20 {
+            // SAFETY: signal zero only tests whether the recorded child PID still exists.
+            if unsafe { libc::kill(descendant, 0) } != 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+
+        assert!(result.success);
+        // SAFETY: signal zero does not modify the process.
+        assert_ne!(unsafe { libc::kill(descendant, 0) }, 0);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_command_cancellation_kills_process_group() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-managed-command-cancel-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("probe");
+        std::fs::write(
+            &script,
+            r#"#!/bin/sh
+printf '%s' "$$" > process.pid
+sleep 30
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let task_root = root.clone();
+        let task_script = script.clone();
+        let task = tokio::spawn(async move {
+            run_managed_command(&task_script, &[], &task_root, Duration::from_secs(30), 1024).await
+        });
+        let pid_path = root.join("process.pid");
+        for _ in 0..40 {
+            if pid_path.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        let pid: i32 = std::fs::read_to_string(&pid_path).unwrap().parse().unwrap();
+
+        task.abort();
+        let _ = task.await;
+        for _ in 0..20 {
+            // SAFETY: signal zero only tests whether the recorded PID still exists.
+            if unsafe { libc::kill(pid, 0) } != 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+
+        // SAFETY: signal zero does not modify the process.
+        assert_ne!(unsafe { libc::kill(pid, 0) }, 0);
         let _ = std::fs::remove_dir_all(root);
     }
 

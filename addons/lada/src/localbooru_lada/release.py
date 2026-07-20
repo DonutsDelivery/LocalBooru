@@ -171,7 +171,10 @@ def build_release_manifest(
     *,
     source_archive: Path,
     installed_sizes: dict[str, int] | None = None,
+    cuda_variant: str = "cuda",
 ) -> dict:
+    if cuda_variant not in {"cuda", "cuda-legacy"}:
+        raise ValueError(f"unsupported CUDA bundle variant: {cuda_variant}")
     package_names = set(bundles)
     if package_names != _EXPECTED_RELEASE_PACKAGES:
         missing = sorted(_EXPECTED_RELEASE_PACKAGES - package_names)
@@ -190,6 +193,18 @@ def build_release_manifest(
         "upstream": metadata["upstream"],
         "model_repository": metadata["model_repository"],
         "models": metadata["models"],
+        "backend_compatibility": {
+            "cuda": {
+                "package": "linux_x86_64_cuda",
+                "variant": "cu128" if cuda_variant == "cuda" else "cu126",
+                "minimum_driver_major": 570 if cuda_variant == "cuda" else 560,
+            },
+            "xpu": {
+                "package": "linux_x86_64_xpu",
+                "kernel_drivers": ["i915", "xe"],
+                "requires_render_node": True,
+            },
+        },
         "packages": {
             name: _artifact(base_url, path, installed_sizes.get(name))
             for name, path in sorted(bundles.items())

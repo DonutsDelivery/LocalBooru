@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .constants import PROTOCOL_VERSION
+from .constants import ADDON_VERSION, MODEL_REVISION, PINNED_MODEL_HASHES, PROTOCOL_VERSION
 
 
 @dataclass(frozen=True)
@@ -13,11 +13,12 @@ class ProbeConfig:
     upstream_revision: str
     expected_upstream_revision: str
     models: list[dict]
+    model_revision: str = MODEL_REVISION
     requested_backend: str = "auto"
     fp16: bool = True
     model_probe_size: int = 64
     model_probe_frames: int = 2
-    max_probe_seconds: float = 120.0
+    max_probe_seconds: float = 90.0
 
 
 def _hash_matches(model: dict) -> bool:
@@ -31,22 +32,51 @@ def _hash_matches(model: dict) -> bool:
     return digest.hexdigest() == model["sha256"]
 
 
+def _model_is_pinned(model: dict) -> bool:
+    role = model.get("role")
+    return role in PINNED_MODEL_HASHES and model.get("sha256") in PINNED_MODEL_HASHES[role]
+
+
 def _model_path(models: list[dict], role: str) -> str:
-    matches = [model["path"] for model in models if model.get("role") == role]
-    if len(matches) != 1:
-        raise RuntimeError(f"probe requires exactly one {role} model, found {len(matches)}")
-    return matches[0]
+    matches = [model for model in models if model.get("role") == role]
+    defaults = [model for model in matches if model.get("default") is True]
+    selected = defaults if defaults else matches
+    if len(selected) != 1:
+        raise RuntimeError(
+            f"probe requires exactly one selected {role} model, found {len(selected)}"
+        )
+    return selected[0]["path"]
+
+
+def _weights_are_ready(models: list[dict], identity_probe: Callable[[dict], bool]) -> bool:
+    try:
+        if not models or not all(identity_probe(model) and _hash_matches(model) for model in models):
+            return False
+        for role in ("detection", "restoration"):
+            _model_path(models, role)
+    except (KeyError, OSError, TypeError, ValueError, RuntimeError):
+        return False
+    return True
 
 
 def torch_backend_probe(requested: str) -> dict:
     import torch
 
     available = []
-    if torch.cuda.is_available():
-        available.append("cuda")
-    xpu = getattr(torch, "xpu", None)
-    if xpu is not None and xpu.is_available():
-        available.append("xpu")
+    errors = {}
+    if requested in {"auto", "cuda"}:
+        try:
+            if torch.cuda.is_available():
+                available.append("cuda")
+        except Exception as error:
+            errors["cuda"] = str(error)
+    if requested in {"auto", "xpu"}:
+        try:
+            xpu = getattr(torch, "xpu", None)
+            if xpu is not None and xpu.is_available():
+                available.append("xpu")
+        except Exception as error:
+            errors["xpu"] = str(error)
 
     if requested == "auto":
         active = "cuda" if "cuda" in available else "xpu" if "xpu" in available else None
@@ -59,6 +89,7 @@ def torch_backend_probe(requested: str) -> dict:
             "tensor_operation": False,
             "device": None,
             "torch_version": torch.__version__,
+            "error": errors.get(requested) if requested != "auto" else next(iter(errors.values()), None),
         }
 
     device = torch.device(active)
@@ -93,7 +124,7 @@ def lada_model_path_probe(
     model_loader=None,
     torch_module=None,
 ) -> dict:
-    if probe_size < 32 or frame_count < 1 or max_seconds <= 0:
+    if not 32 <= probe_size <= 512 or not 1 <= frame_count <= 8 or not 0 < max_seconds <= 90:
         raise ValueError("model probe bounds are invalid")
     if torch_module is None:
         import torch as torch_module
@@ -145,6 +176,7 @@ def probe_runtime(
     *,
     backend_probe: Callable[[str], dict] = torch_backend_probe,
     model_probe: Callable[..., dict] = lada_model_path_probe,
+    model_identity_probe: Callable[[dict], bool] = _model_is_pinned,
 ) -> dict:
     issues = []
     protocol_compatible = config.protocol_version == PROTOCOL_VERSION
@@ -155,7 +187,11 @@ def probe_runtime(
     if not revision_compatible:
         issues.append("incompatible_revision")
 
-    weights_ready = bool(config.models) and all(_hash_matches(model) for model in config.models)
+    model_revision_compatible = config.model_revision == MODEL_REVISION
+    if not model_revision_compatible:
+        issues.append("incompatible_model_revision")
+
+    weights_ready = _weights_are_ready(config.models, model_identity_probe)
     if not weights_ready:
         issues.append("weights_invalid")
 
@@ -176,7 +212,13 @@ def probe_runtime(
 
     model_evidence = None
     model_error = None
-    prerequisites_ready = protocol_compatible and revision_compatible and weights_ready and accelerator_ready
+    prerequisites_ready = (
+        protocol_compatible
+        and revision_compatible
+        and model_revision_compatible
+        and weights_ready
+        and accelerator_ready
+    )
     if prerequisites_ready:
         try:
             model_evidence = model_probe(
@@ -195,10 +237,13 @@ def probe_runtime(
     model_path_ready = bool(model_evidence and model_evidence.get("model_path_operation") is True)
     proven_backend = active if accelerator_ready and model_path_ready else None
     return {
+        "addon_version": ADDON_VERSION,
         "protocol_version": PROTOCOL_VERSION,
         "protocol_compatible": protocol_compatible,
         "upstream_revision": config.upstream_revision,
         "revision_compatible": revision_compatible,
+        "model_revision": config.model_revision,
+        "model_revision_compatible": model_revision_compatible,
         "weights_ready": weights_ready,
         "requested_backend": config.requested_backend,
         "available_backends": backend.get("available", []),

@@ -2,7 +2,10 @@ import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
-from localbooru_lada.probe import ProbeConfig, lada_model_path_probe, probe_runtime
+import pytest
+
+from localbooru_lada.cli import build_parser
+from localbooru_lada.probe import ProbeConfig, _model_path, lada_model_path_probe, probe_runtime
 
 
 def _model(path: Path, contents: bytes, role: str) -> dict:
@@ -12,6 +15,11 @@ def _model(path: Path, contents: bytes, role: str) -> dict:
         "sha256": hashlib.sha256(contents).hexdigest(),
         "role": role,
     }
+
+
+def test_probe_cli_accepts_parent_selected_backend():
+    args = build_parser().parse_args(["probe", "--config", "probe.json", "--backend", "xpu"])
+    assert args.backend == "xpu"
 
 
 def test_probe_reports_verified_cuda_runtime_only_after_model_path_success(tmp_path):
@@ -45,6 +53,7 @@ def test_probe_reports_verified_cuda_runtime_only_after_model_path_success(tmp_p
             "torch_version": "2.8.0+cu128",
         },
         model_probe=model_probe,
+        model_identity_probe=lambda model: True,
     )
 
     assert result["ready"] is True
@@ -78,6 +87,7 @@ def test_probe_rejects_hardware_only_success_without_model_inference(tmp_path):
             "device": "NVIDIA Test GPU",
         },
         model_probe=lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("model inference failed")),
+        model_identity_probe=lambda model: True,
     )
 
     assert result["ready"] is False
@@ -125,6 +135,100 @@ def test_probe_rejects_cpu_only_and_hash_mismatch_without_loading_models(tmp_pat
     }
 
 
+def test_probe_rejects_self_consistent_but_unpinned_model_hashes(tmp_path):
+    models = [
+        _model(tmp_path / "detect.pt", b"untrusted detector", "detection"),
+        _model(tmp_path / "restore.pth", b"untrusted restorer", "restoration"),
+    ]
+    config = ProbeConfig(
+        protocol_version=1,
+        upstream_revision="20cb34a20a83c72c87a991d2c949032c70085b16",
+        expected_upstream_revision="20cb34a20a83c72c87a991d2c949032c70085b16",
+        models=models,
+        requested_backend="cuda",
+    )
+    model_probe_called = False
+
+    def model_probe(*args, **kwargs):
+        nonlocal model_probe_called
+        model_probe_called = True
+
+    result = probe_runtime(
+        config,
+        backend_probe=lambda requested: {
+            "available": ["cuda"],
+            "active": "cuda",
+            "tensor_operation": True,
+            "device": "NVIDIA Test GPU",
+        },
+        model_probe=model_probe,
+    )
+
+    assert result["ready"] is False
+    assert result["weights_ready"] is False
+    assert "weights_invalid" in result["issues"]
+    assert model_probe_called is False
+
+
+def test_probe_selects_default_model_when_bundle_has_multiple_detectors(tmp_path):
+    models = [
+        {**_model(tmp_path / "detect-old.pt", b"old", "detection"), "default": False},
+        {**_model(tmp_path / "detect.pt", b"default", "detection"), "default": True},
+        {**_model(tmp_path / "restore.pth", b"restorer", "restoration"), "default": True},
+    ]
+    selected = []
+    config = ProbeConfig(
+        protocol_version=1,
+        upstream_revision="expected",
+        expected_upstream_revision="expected",
+        models=models,
+        requested_backend="cuda",
+    )
+
+    result = probe_runtime(
+        config,
+        backend_probe=lambda requested: {
+            "available": ["cuda"],
+            "active": "cuda",
+            "tensor_operation": True,
+            "device": "GPU",
+        },
+        model_probe=lambda backend, configured_models, **bounds: selected.extend(
+            [_model_path(configured_models, "detection"), _model_path(configured_models, "restoration")]
+        ) or {"model_path_operation": True},
+        model_identity_probe=lambda model: True,
+    )
+
+    assert result["ready"] is True
+    assert selected == [str(tmp_path / "detect.pt"), str(tmp_path / "restore.pth")]
+
+
+def test_probe_classifies_missing_required_model_role_as_invalid_weights(tmp_path):
+    models = [_model(tmp_path / "detect.pt", b"detector", "detection")]
+    config = ProbeConfig(
+        protocol_version=1,
+        upstream_revision="expected",
+        expected_upstream_revision="expected",
+        models=models,
+        requested_backend="cuda",
+    )
+
+    result = probe_runtime(
+        config,
+        backend_probe=lambda requested: {
+            "available": ["cuda"],
+            "active": "cuda",
+            "tensor_operation": True,
+            "device": "GPU",
+        },
+        model_identity_probe=lambda model: True,
+    )
+
+    assert result["weights_ready"] is False
+    assert "weights_invalid" in result["issues"]
+    assert "model_probe_failed" not in result["issues"]
+
+
 class FakeTensor:
     def __init__(self, shape):
         self.shape = shape
@@ -148,6 +252,25 @@ class FakeRestoration:
     def restore(self, frames, max_frames):
         assert len(frames) == max_frames == 2
         return [FakeTensor(frame.shape) for frame in frames]
+
+
+@pytest.mark.parametrize(
+    ("probe_size", "frame_count", "max_seconds"),
+    [(513, 2, 5), (64, 9, 5), (64, 2, 91)],
+)
+def test_model_path_probe_rejects_resource_bounds_before_allocation(
+    probe_size, frame_count, max_seconds
+):
+    with pytest.raises(ValueError, match="bounds are invalid"):
+        lada_model_path_probe(
+            "cuda",
+            [],
+            fp16=True,
+            probe_size=probe_size,
+            frame_count=frame_count,
+            max_seconds=max_seconds,
+            torch_module=object(),
+        )
 
 
 def test_model_path_probe_loads_both_weights_and_runs_detection_and_restoration(tmp_path):

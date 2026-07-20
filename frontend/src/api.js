@@ -1575,6 +1575,11 @@ export async function updateAddon(id) {
   return response.data
 }
 
+export async function probeAddon(id) {
+  const response = await api.post(`/addons/${id}/probe`, undefined, { timeout: 135000 })
+  return response.data
+}
+
 export async function getAddonHealth(id) {
   const response = await api.get(`/addons/${id}/api/health`)
   return response.data

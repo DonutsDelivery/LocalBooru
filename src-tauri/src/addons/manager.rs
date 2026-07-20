@@ -13,7 +13,8 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
 
-use super::manifest::{get_addon_manifest, get_addon_registry, AddonRuntime};
+use super::lada::{self, LadaBackendPreference, LadaReadiness};
+use super::manifest::{get_addon_manifest, get_addon_registry, AddonInstallation, AddonRuntime};
 use super::sidecar;
 use crate::routes::settings::get_config_section;
 
@@ -22,6 +23,17 @@ const ONNXRUNTIME_GPU: &str = "onnxruntime-gpu[cuda,cudnn]==1.23.2";
 const ONNXRUNTIME_VERSION: &str = "1.23.2";
 const AUTO_TAGGER_SOURCE_REVISION: &str = "2026-07-20-clean-ort-reinstall-v2";
 const AUTO_TAGGER_DEPLOYMENT_FILE: &str = "dependency-deployment.json";
+
+fn configured_lada_backend(data_dir: &Path) -> LadaBackendPreference {
+    match get_config_section(data_dir, "lada")
+        .get("backend")
+        .and_then(|value| value.as_str())
+    {
+        Some("cuda") => LadaBackendPreference::Cuda,
+        Some("xpu") => LadaBackendPreference::Xpu,
+        _ => LadaBackendPreference::Auto,
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct AddonDependencyDeployment {
@@ -279,6 +291,7 @@ fn reconcile_auto_tagger_dependencies(
 /// Runtime state for a single addon, including its process handle when running.
 struct AddonState {
     status: AddonStatus,
+    readiness: Option<LadaReadiness>,
     /// The child process handle, present only while the addon is running.
     process: Option<Arc<TokioMutex<tokio::process::Child>>>,
 }
@@ -290,10 +303,13 @@ pub struct AddonInfo {
     pub name: String,
     pub description: String,
     pub runtime: AddonRuntime,
+    pub installation: AddonInstallation,
     pub port: Option<u16>,
     pub requires_start: bool,
     pub status: AddonStatus,
     pub installed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readiness: Option<LadaReadiness>,
 }
 
 /// The lifecycle status of an addon.
@@ -321,6 +337,7 @@ pub struct AddonManager {
     addons: DashMap<String, AddonState>,
     data_dir: PathBuf,
     lifecycle: TokioRwLock<()>,
+    lada_operation: TokioMutex<()>,
     shutting_down: AtomicBool,
 }
 
@@ -333,10 +350,23 @@ impl AddonManager {
         // Initialize state for every known addon
         for manifest in get_addon_registry() {
             let addon_dir = addons_base.join(manifest.id);
-            let installed = match manifest.runtime {
-                AddonRuntime::Sidecar => addon_dir.join("venv").exists(),
-                AddonRuntime::Builtin => addon_dir.join("installed.json").exists(),
+            let installed = match manifest.installation {
+                AddonInstallation::PythonVenv => addon_dir.join("venv").exists(),
+                AddonInstallation::ManagedBundle => lada::LadaDeployment::load(&addon_dir).is_ok(),
+                AddonInstallation::Builtin => addon_dir.join("installed.json").exists(),
             };
+            let readiness = (manifest.id == "lada").then(|| {
+                let preference = configured_lada_backend(data_dir);
+                if installed {
+                    LadaReadiness::new(
+                        lada::LadaReadinessStatus::Probing,
+                        preference,
+                        "Scheduling LADA verification for this app session",
+                    )
+                } else {
+                    lada::current_readiness(&addon_dir, preference)
+                }
+            });
 
             let status = if installed {
                 AddonStatus::Installed
@@ -348,6 +378,7 @@ impl AddonManager {
                 manifest.id.to_string(),
                 AddonState {
                     status,
+                    readiness,
                     process: None,
                 },
             );
@@ -363,6 +394,7 @@ impl AddonManager {
             addons,
             data_dir: data_dir.to_path_buf(),
             lifecycle: TokioRwLock::new(()),
+            lada_operation: TokioMutex::new(()),
             shutting_down: AtomicBool::new(false),
         }
     }
@@ -387,10 +419,17 @@ impl AddonManager {
     }
 
     fn is_installed(&self, manifest: &super::manifest::AddonManifest) -> bool {
-        match manifest.runtime {
-            AddonRuntime::Sidecar => self.venv_dir(manifest.id).exists(),
-            AddonRuntime::Builtin => self.install_marker(manifest.id).exists(),
+        match manifest.installation {
+            AddonInstallation::PythonVenv => self.venv_dir(manifest.id).exists(),
+            AddonInstallation::ManagedBundle => {
+                lada::LadaDeployment::load(&self.addon_dir(manifest.id)).is_ok()
+            }
+            AddonInstallation::Builtin => self.install_marker(manifest.id).exists(),
         }
+    }
+
+    fn lada_backend_preference(&self) -> LadaBackendPreference {
+        configured_lada_backend(&self.data_dir)
     }
 
     fn dependency_list(
@@ -532,7 +571,7 @@ impl AddonManager {
 
         let mut resumed = 0u32;
         for manifest in get_addon_registry() {
-            if manifest.runtime == AddonRuntime::Builtin {
+            if manifest.installation != AddonInstallation::PythonVenv {
                 continue;
             }
             let id = manifest.id;
@@ -555,60 +594,91 @@ impl AddonManager {
             }
         }
 
+        if get_addon_manifest("lada").is_some_and(|manifest| self.is_installed(manifest)) {
+            let readiness = self.probe_lada_runtime(Duration::from_secs(120)).await;
+            log::info!(
+                "[AddonManager] LADA startup verification finished with {:?}",
+                readiness.status
+            );
+        }
+
         log::info!(
             "[AddonManager] Addon resume complete ({} addon(s) started)",
             resumed
         );
     }
 
+    pub async fn lock_lada_operation(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.lada_operation.lock().await
+    }
+
+    pub async fn probe_lada_runtime(&self, timeout: Duration) -> LadaReadiness {
+        let preference = self.lada_backend_preference();
+        let Ok(_operation) = self.lada_operation.try_lock() else {
+            return LadaReadiness::new(
+                lada::LadaReadinessStatus::Probing,
+                preference,
+                "Another LADA operation is already in progress",
+            );
+        };
+        let addon_dir = self.addon_dir("lada");
+        let deployment = match lada::LadaDeployment::load(&addon_dir) {
+            Ok(deployment) => deployment,
+            Err(_) => {
+                let readiness = lada::current_readiness(&addon_dir, preference);
+                if let Some(mut state) = self.addons.get_mut("lada") {
+                    state.readiness = Some(readiness.clone());
+                }
+                return readiness;
+            }
+        };
+        if let Some(mut state) = self.addons.get_mut("lada") {
+            state.readiness = Some(LadaReadiness::new(
+                lada::LadaReadinessStatus::Probing,
+                preference,
+                "Verifying the selected accelerator with the LADA models",
+            ));
+        }
+        let readiness = lada::probe_and_persist(&addon_dir, &deployment, preference, timeout).await;
+        if let Some(mut state) = self.addons.get_mut("lada") {
+            state.readiness = Some(readiness.clone());
+        }
+        readiness
+    }
+
+    fn addon_info(&self, manifest: &super::manifest::AddonManifest) -> AddonInfo {
+        let state = self.addons.get(manifest.id);
+        let status = state
+            .as_ref()
+            .map(|state| state.status.clone())
+            .unwrap_or(AddonStatus::NotInstalled);
+        let readiness = state.as_ref().and_then(|state| state.readiness.clone());
+        AddonInfo {
+            id: manifest.id.to_string(),
+            name: manifest.name.to_string(),
+            description: manifest.description.to_string(),
+            runtime: manifest.runtime,
+            installation: manifest.installation,
+            port: manifest.port,
+            requires_start: manifest.runtime == AddonRuntime::Sidecar
+                && manifest.installation == AddonInstallation::PythonVenv,
+            status,
+            installed: self.is_installed(manifest),
+            readiness,
+        }
+    }
+
     /// List all addons with their current status and installation state.
     pub fn list_addons(&self) -> Vec<AddonInfo> {
         get_addon_registry()
             .iter()
-            .map(|manifest| {
-                let status = self
-                    .addons
-                    .get(manifest.id)
-                    .map(|s| s.status.clone())
-                    .unwrap_or(AddonStatus::NotInstalled);
-
-                let installed = self.is_installed(manifest);
-
-                AddonInfo {
-                    id: manifest.id.to_string(),
-                    name: manifest.name.to_string(),
-                    description: manifest.description.to_string(),
-                    runtime: manifest.runtime,
-                    port: manifest.port,
-                    requires_start: manifest.runtime == AddonRuntime::Sidecar,
-                    status,
-                    installed,
-                }
-            })
+            .map(|manifest| self.addon_info(manifest))
             .collect()
     }
 
     /// Get information about a single addon.
     pub fn get_addon(&self, id: &str) -> Option<AddonInfo> {
-        let manifest = get_addon_manifest(id)?;
-        let status = self
-            .addons
-            .get(id)
-            .map(|s| s.status.clone())
-            .unwrap_or(AddonStatus::NotInstalled);
-
-        let installed = self.is_installed(manifest);
-
-        Some(AddonInfo {
-            id: manifest.id.to_string(),
-            name: manifest.name.to_string(),
-            description: manifest.description.to_string(),
-            runtime: manifest.runtime,
-            port: manifest.port,
-            requires_start: manifest.runtime == AddonRuntime::Sidecar,
-            status,
-            installed,
-        })
+        get_addon_manifest(id).map(|manifest| self.addon_info(manifest))
     }
 
     /// Quick status check for a single addon.
@@ -649,6 +719,12 @@ impl AddonManager {
     /// from a context where blocking is acceptable (e.g. `tokio::task::spawn_blocking`).
     pub fn install_addon(&self, id: &str) -> Result<(), String> {
         let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        if manifest.installation == AddonInstallation::ManagedBundle {
+            return Err(format!(
+                "Addon '{}' requires its verified managed-bundle installer",
+                id
+            ));
+        }
 
         let addon_dir = self.addon_dir(id);
         let venv_dir = self.venv_dir(id);
@@ -737,6 +813,12 @@ impl AddonManager {
     /// Reinstall an existing addon's dependencies and redeploy its embedded source.
     pub fn repair_addon(&self, id: &str) -> Result<(), String> {
         let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        if manifest.installation == AddonInstallation::ManagedBundle {
+            return Err(format!(
+                "Addon '{}' must be repaired by its verified managed-bundle installer",
+                id
+            ));
+        }
         if manifest.runtime == AddonRuntime::Builtin {
             return Err(format!("Addon '{}' does not require a sidecar", id));
         }
@@ -810,7 +892,16 @@ impl AddonManager {
                 .map_err(|e| format!("Failed to remove addon directory: {}", e))?;
         }
 
-        self.set_status(id, AddonStatus::NotInstalled);
+        if let Some(mut state) = self.addons.get_mut(id) {
+            state.status = AddonStatus::NotInstalled;
+            if id == "lada" {
+                state.readiness = Some(LadaReadiness::new(
+                    lada::LadaReadinessStatus::NotInstalled,
+                    self.lada_backend_preference(),
+                    "Install the LADA add-on to enable video restoration",
+                ));
+            }
+        }
         log::info!("[AddonManager] Addon '{}' uninstalled", id);
         Ok(())
     }
@@ -826,6 +917,12 @@ impl AddonManager {
         }
 
         let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        if manifest.installation == AddonInstallation::ManagedBundle {
+            return Err(format!(
+                "Addon '{}' is started only for an owned playback session",
+                id
+            ));
+        }
         if manifest.runtime == AddonRuntime::Builtin {
             return Err(format!("Addon '{}' does not require a sidecar", id));
         }
@@ -1038,6 +1135,12 @@ impl AddonManager {
     async fn stop_addon_inner(&self, id: &str, repairing_operation: bool) -> Result<(), String> {
         let _lifecycle = self.lifecycle.read().await;
         let manifest = get_addon_manifest(id).ok_or_else(|| format!("Unknown addon: {}", id))?;
+        if manifest.installation == AddonInstallation::ManagedBundle {
+            return Err(format!(
+                "Addon '{}' is stopped with its owned playback session",
+                id
+            ));
+        }
         if manifest.runtime == AddonRuntime::Builtin {
             return Err(format!("Addon '{}' does not require a sidecar", id));
         }
@@ -1169,6 +1272,104 @@ impl AddonManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // AC: @lada-runtime-readiness ac-actionable-status
+    // AC: @lada-runtime-readiness ac-active-backend-evidence
+    #[test]
+    fn addon_info_exposes_lada_readiness_separately_from_lifecycle() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-lada-addon-info-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let manager = AddonManager::new(&root);
+
+        let info = manager.get_addon("lada").unwrap();
+
+        assert_eq!(info.installation, AddonInstallation::ManagedBundle);
+        assert!(!info.installed);
+        let readiness = info.readiness.unwrap();
+        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            assert_eq!(readiness.status, lada::LadaReadinessStatus::NotInstalled);
+        } else {
+            assert_eq!(
+                readiness.status,
+                lada::LadaReadinessStatus::UnsupportedPlatform
+            );
+        }
+        assert_eq!(readiness.active_backend, None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    async fn probe_lada_runtime_reaches_ready_and_updates_manager_state() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-lada-manager-probe-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let addon_dir = root.join("addons/lada");
+        std::fs::create_dir_all(&addon_dir).unwrap();
+        let executable = addon_dir.join("probe");
+        let probe_config = addon_dir.join("probe.json");
+        let deployment = lada::LadaDeployment {
+            addon_version: lada::LADA_ADDON_VERSION.into(),
+            protocol_version: lada::LADA_PROTOCOL_VERSION,
+            upstream_revision: lada::LADA_UPSTREAM_REVISION.into(),
+            model_revision: lada::LADA_MODEL_REVISION.into(),
+            backend_compatibility: lada::LadaBackendCompatibility::default(),
+            selected_backend: lada::LadaBackend::Cuda,
+            selected_package: "linux_x86_64_cuda".into(),
+            executable: executable.clone(),
+            probe_config: probe_config.clone(),
+        };
+        std::fs::write(
+            addon_dir.join(lada::LADA_DEPLOYMENT_FILE),
+            serde_json::to_vec(&deployment).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(&probe_config, "{}").unwrap();
+        std::fs::write(
+            &executable,
+            r#"#!/bin/sh
+printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision":"20cb34a20a83c72c87a991d2c949032c70085b16","revision_compatible":true,"model_revision":"bcf461d46d9a98981fc64b815df5178f42215cdf","model_revision_compatible":true,"weights_ready":true,"requested_backend":"auto","active_backend":"cuda","ready":true,"reason":null,"issues":[],"backend_evidence":{"active":"cuda","tensor_operation":true},"model_evidence":{"model_path_operation":true},"model_error":null}'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let manager = AddonManager::new(&root);
+
+        let result = manager.probe_lada_runtime(Duration::from_secs(2)).await;
+
+        assert_eq!(result.status, lada::LadaReadinessStatus::Ready);
+        assert_eq!(result.active_backend, Some(lada::LadaBackend::Cuda));
+        assert!(result.probe_evidence.is_some());
+        let info = manager.get_addon("lada").unwrap();
+        assert!(info.installed);
+        assert_eq!(info.readiness, Some(result.clone()));
+        assert_eq!(lada::load_readiness(&addon_dir), Some(result));
+        let restarted = AddonManager::new(&root);
+        assert_eq!(
+            restarted
+                .get_addon("lada")
+                .unwrap()
+                .readiness
+                .unwrap()
+                .status,
+            lada::LadaReadinessStatus::Probing
+        );
+
+        manager.uninstall_addon("lada").unwrap();
+        let uninstalled = manager.get_addon("lada").unwrap();
+        assert!(!uninstalled.installed);
+        assert_eq!(uninstalled.status, AddonStatus::NotInstalled);
+        assert_eq!(
+            uninstalled.readiness.unwrap().status,
+            lada::LadaReadinessStatus::NotInstalled
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     // AC: @addon-platform-dependencies ac-1
     #[test]
@@ -1600,6 +1801,7 @@ mod tests {
             "auto-tagger".to_string(),
             AddonState {
                 status: AddonStatus::Running,
+                readiness: None,
                 process: Some(process.clone()),
             },
         );
