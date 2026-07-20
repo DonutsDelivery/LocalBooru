@@ -99,3 +99,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-19T07:53:40.654Z
+  - _ulid: 01KXZSM2YWX5GZ9XPQWPQJ0AFA
+    content: "[FIX_CYCLE: 1] Review findings: User changed Curation Game swipes to ordinary
+      non-destructive Lightbox behavior; Keep and Discard must require explicit controls."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T12:57:09.853Z
