@@ -162,6 +162,12 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: a supported image is open in the Windows desktop app
+            id: ac-1
+            then: the decoded image is written to the native clipboard and can be pasted into another
+              application
+            when: the user invokes Copy Image
         priority: high
         tags: []
         created: 2026-07-20T08:04:47.882Z
