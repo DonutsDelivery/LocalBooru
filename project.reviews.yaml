@@ -1051,6 +1051,18 @@ reviews:
         runner: node-test
         created_at: 2026-07-20T15:59:51.593Z
         completed_at: 2026-07-20T15:59:51.593Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba56e1d0
+          head_commit: 1fedaaf2
+        evidence: git diff --check passed; repeated adversarial review found no surviving correctness,
+          lifecycle, trust-boundary, or test-quality findings.
+        name: Patch integrity
+        required: true
+        runner: git
+        created_at: 2026-07-20T15:59:52.957Z
+        completed_at: 2026-07-20T15:59:52.957Z
     events:
       - _ulid: 01KY041Z18C35STAHH3T4RBWSM
         actor: "@claude"
@@ -1086,6 +1098,13 @@ reviews:
           status: pass
           name: Frontend suite
         timestamp: 2026-07-20T15:59:51.606Z
+      - _ulid: 01KY042N4EYWMM05071SMWQJCA
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: Patch integrity
+        timestamp: 2026-07-20T15:59:52.974Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1100,5 +1119,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T15:59:30.345Z
-    updated_at: 2026-07-20T15:59:51.593Z
+    updated_at: 2026-07-20T15:59:52.957Z
     notes: []
