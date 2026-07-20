@@ -914,6 +914,16 @@ reviews:
         runner: ruff
         created_at: 2026-07-20T11:05:29.502Z
         completed_at: 2026-07-20T11:05:29.502Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: compileall, shell syntax, sdist and wheel builds passed after runtime split change
+        name: package-build
+        required: true
+        runner: uv
+        created_at: 2026-07-20T11:05:30.606Z
+        completed_at: 2026-07-20T11:05:30.606Z
     events:
       - _ulid: 01KXZK6P6PE5ESQZEZJYE45CAF
         actor: "@claude"
@@ -942,6 +952,13 @@ reviews:
           status: pass
           name: ruff
         timestamp: 2026-07-20T11:05:29.511Z
+      - _ulid: 01KXZK7MQQK5ZMSKXFW0NHBWZ6
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: package-build
+        timestamp: 2026-07-20T11:05:30.616Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -954,5 +971,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-20T11:04:59.351Z
-    updated_at: 2026-07-20T11:05:29.502Z
+    updated_at: 2026-07-20T11:05:30.606Z
     notes: []
