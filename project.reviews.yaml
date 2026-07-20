@@ -571,6 +571,12 @@ reviews:
         payload:
           thread_ulid: 01KXZHFR0V75WR6WGR6HVKR2MD
         timestamp: 2026-07-20T10:53:04.696Z
+      - _ulid: 01KXZJGXDGK8NS0W54QWSB31V6
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KXZHFR0V75WR6WGR6HVKR2MD
+        timestamp: 2026-07-20T10:53:05.841Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -693,6 +699,8 @@ reviews:
               where playback against the audited base artifact can be exercised truthfully."
             created_at: 2026-07-20T10:53:04.688Z
         kind: blocker
+        resolved_at: 2026-07-20T10:53:05.832Z
+        resolved_by: "@claude"
     verdicts:
       - applies_to_version:
           type: entity_version
@@ -702,5 +710,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-20T10:35:00.112Z
     created_at: 2026-07-20T10:28:50.891Z
-    updated_at: 2026-07-20T10:53:04.688Z
+    updated_at: 2026-07-20T10:53:05.832Z
     notes: []
