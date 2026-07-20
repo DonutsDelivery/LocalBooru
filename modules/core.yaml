@@ -68,6 +68,11 @@ features:
             then: each representative preview URL identifies its exact library, directory, image, and content
               version and loads the intended thumbnail
             when: folder catalogs are loaded
+          - given: a grouped folder catalog remains open while a directory is rescanned
+            id: ac-rescan-refresh
+            then: the catalog refreshes its folder summaries and replaces stale preview URLs without leaving
+              grouped view
+            when: the scan changes representative image identities and completes
         tags: []
         created: 2026-07-20T16:25:54.725Z
         notes: []
