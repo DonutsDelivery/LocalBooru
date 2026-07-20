@@ -485,6 +485,13 @@ reviews:
           status: skipped
           name: kspec-validation
         timestamp: 2026-07-20T10:29:46.918Z
+      - _ulid: 01KXZHFMGHD6SA7N2XRA02HKX8
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KXZHFMFZ9JXPM2K67QJ7QAK8
+        timestamp: 2026-07-20T10:34:55.377Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -494,8 +501,27 @@ reviews:
       content_hash: ""
       ref: "@package-lada-sidecar"
       shadow_commit: ""
-    threads: []
+    threads:
+      - _ulid: 01KXZHFMFZ9JXPM2K67QJ7QAK8
+        anchor:
+          type: code
+          commit: "83702557"
+          line_end: 115
+          line_start: 105
+          path: addons/lada/src/localbooru_lada/server.py
+          side: head
+        entries:
+          - _ulid: 01KXZHFMFZ9T6ARHR4K32EM92Y
+            author: "@claude"
+            body: "MUST-FIX: after the five-second seek join timeout, the stop flag is cleared and a replacement
+              producer starts even if the old producer remains alive. Its StopIteration/normal
+              exhaustion paths send EOS without rechecking stop state or active generation; a
+              blocking-source reproduction emitted a late generation-1 EOS after generation-2
+              output. Prevent concurrent stale producers and gate all terminal messages by
+              generation."
+            created_at: 2026-07-20T10:34:55.359Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-20T10:28:50.891Z
-    updated_at: 2026-07-20T10:29:46.911Z
+    updated_at: 2026-07-20T10:34:55.359Z
     notes: []
