@@ -27,3 +27,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T16:25:59.601Z
+  - _ulid: 01KY05JZYSGEVW5E7FNE27J4EZ
+    content: "Approach: route-level tests first for exact library/directory/image/hash folder URLs and
+      cached duplicate-reference thumbnails; restore backend representative identity, keep
+      original-media ambiguity strict, and refresh grouped summaries after rescan completion. Defer
+      global representative ordering and cross-library grouping semantics."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T16:26:16.921Z
