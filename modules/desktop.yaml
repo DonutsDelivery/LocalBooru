@@ -149,6 +149,23 @@ features:
     tests: []
     traits: []
     tags: []
+    requirements:
+      - _ulid: 01KXZ8WR4AKJ71E06W4S6QKKEV
+        slugs:
+          - windows-copy-image
+        title: Windows Copy Image
+        type: requirement
+        description: Windows users can copy supported library images to the native clipboard and paste them
+          into other applications.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        priority: high
+        tags: []
+        created: 2026-07-20T08:04:47.882Z
+        notes: []
     created: 2026-03-08T08:30:40.529Z
     notes: []
   - _ulid: 01KK693TJFKWMVYMZJYHQV6AZ3
