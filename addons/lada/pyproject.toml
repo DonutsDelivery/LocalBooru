@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "localbooru-lada-sidecar"
+version = "0.1.0"
+description = "Managed LADA restoration sidecar for LocalBooru"
+requires-python = ">=3.12"
+license = { text = "AGPL-3.0-only" }
+dependencies = []
+
+[project.scripts]
+localbooru-lada-sidecar = "localbooru_lada.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/localbooru_lada"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

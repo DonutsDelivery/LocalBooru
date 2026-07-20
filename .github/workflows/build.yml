@@ -30,6 +30,11 @@ jobs:
       - name: Build Linux packages
         run: npx electron-builder --linux --publish never
 
+      - name: Audit Linux base release boundary
+        run: |
+          node scripts/list-release-inventory.js dist/linux-unpacked \
+            | PYTHONPATH=addons/lada/src python3 -m localbooru_lada audit-base --inventory -
+
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -64,6 +69,11 @@ jobs:
 
       - name: Build macOS packages
         run: npx electron-builder --mac --publish never
+
+      - name: Audit macOS base release boundary
+        run: |
+          node scripts/list-release-inventory.js dist/mac*/LocalBooru.app \
+            | PYTHONPATH=addons/lada/src python3 -m localbooru_lada audit-base --inventory -
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -233,6 +243,12 @@ jobs:
 
       - name: Build Windows packages
         run: npx electron-builder --win --publish never
+
+      - name: Audit Windows base release boundary
+        shell: bash
+        run: |
+          node scripts/list-release-inventory.js dist/win-unpacked \
+            | PYTHONPATH=addons/lada/src python -m localbooru_lada audit-base --inventory -
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
