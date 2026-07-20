@@ -5,7 +5,7 @@ title: Fix curation swipe decisions and refill recovery
 type: task
 spec_ref: "@curation-gesture-decisions-recovery"
 derivation: auto
-status: needs_work
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
@@ -61,7 +61,17 @@ history:
         previous: null
     command: task-needs-work
     timestamp: 2026-07-20T12:57:09.853Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: needs_work
+      started_at:
+        new: 2026-07-20T12:57:21.738Z
+        previous: 2026-07-19T06:06:52.653Z
+    command: task-start
+    timestamp: 2026-07-20T12:57:21.738Z
 created_at: 2026-07-19T06:06:29.406Z
-started_at: 2026-07-19T06:06:52.653Z
+started_at: 2026-07-20T12:57:21.738Z
 submitted_at: 2026-07-19T07:52:34.734Z
 todos: []
