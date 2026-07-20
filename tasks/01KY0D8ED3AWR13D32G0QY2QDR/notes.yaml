@@ -30,3 +30,13 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-20T18:40:19.874Z
+  - _ulid: 01KY0DMK66Z999DGQXR9EN3JTG
+    content: "Implemented a global nonblocking dev-instance lock, explicit checks for stale Vite/backend
+      ports, a one-worker development default with Rust environment override support, and visible
+      mirrored dev logs. Verification is intentionally non-launching: isolated fake-npm launcher
+      tests pass, focused Rust worker/reconciliation tests pass with one build job, shell
+      syntax/cargo fmt/git diff checks pass. No GUI, backend, watcher, add-on, or live-library
+      process was started."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-20T18:46:57.990Z
