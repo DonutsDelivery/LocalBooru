@@ -50,6 +50,19 @@ features:
         acceptance_criteria:
           - After image deletion, subsequent loadMore does not skip images
           - Total count stays accurate after single and batch deletes
+      - _ulid: 01KY05JA95S9FS6WFNZQTMRZ31
+        slugs:
+          - folder-thumbnail-route-identity
+        title: Grouped Folder Thumbnail Identity
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-20T16:25:54.725Z
+        notes: []
     created: 2026-03-08T08:28:23.993Z
     notes: []
   - _ulid: 01KK692XK9SMJRHRRD784A002E
