@@ -529,6 +529,12 @@ reviews:
           from: open
           to: closed
         timestamp: 2026-07-20T10:35:00.113Z
+      - _ulid: 01KXZJGN3YC5QEJZNVA0C01XKA
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KXZHFMFZ9JXPM2K67QJ7QAK8
+        timestamp: 2026-07-20T10:52:57.342Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -557,6 +563,14 @@ reviews:
               output. Prevent concurrent stale producers and gate all terminal messages by
               generation."
             created_at: 2026-07-20T10:34:55.359Z
+          - _ulid: 01KXZJGN3P1MH5Y695KCRQRTVJ
+            author: "@claude"
+            body: "Fixed in 90cf135: seek now validates the active generation, signals/stops the old source,
+              retires its pool, and requires its producer thread to join before changing generation
+              or starting a replacement. Timeout leaves the old generation stopped and emits no EOS;
+              all EOS/error terminal sends are active-generation gated. A blocking-source regression
+              proves no late stale EOS and no concurrent generation."
+            created_at: 2026-07-20T10:52:57.334Z
         kind: blocker
       - _ulid: 01KXZHFNN9B5M8AKBXDZS2RNNT
         anchor:
@@ -622,5 +636,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-20T10:35:00.112Z
     created_at: 2026-07-20T10:28:50.891Z
-    updated_at: 2026-07-20T10:35:00.113Z
+    updated_at: 2026-07-20T10:52:57.334Z
     notes: []
