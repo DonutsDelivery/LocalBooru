@@ -961,6 +961,11 @@ requirements:
         then: The second launch exits immediately with actionable guidance before starting npm, compilation,
           the backend, or library work
         when: Another development launch is attempted
+      - given: No LocalBooru development session is active
+        id: ac-single-launch
+        then: The launcher proceeds normally and releases its single-instance ownership when the session
+          exits
+        when: Development startup is requested
     priority: high
     tags: []
     created: 2026-07-20T18:40:13.738Z
