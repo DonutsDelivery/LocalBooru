@@ -23,24 +23,16 @@ adapter_wheel="$("$root/packaging/build-adapter-wheel.sh" "$staged_addon" "$work
 
 export UV_PYTHON_INSTALL_DIR="$work/python"
 uv python install 3.12
-common_parent="$work/common"
-common_runtime="$common_parent/runtime"
-uv venv --python 3.12 --relocatable "$common_runtime"
-VIRTUAL_ENV="$common_runtime" uv sync \
-  --project "$staged_lada" --active --frozen --no-install-project
-VIRTUAL_ENV="$common_runtime" uv pip install \
-  --python "$common_runtime/bin/python" --no-deps "$staged_lada"
-VIRTUAL_ENV="$common_runtime" uv pip install \
-  --python "$common_runtime/bin/python" --no-deps "$adapter_wheel"
+template_parent="$work/template"
+template_runtime="$template_parent/runtime"
+uv venv --python 3.12 --relocatable "$template_runtime"
 
-cp "$staged_addon/LICENSE" "$common_runtime/AGPL-3.0-only.txt"
-cp "$staged_addon/THIRD_PARTY_NOTICES.md" "$common_runtime/THIRD_PARTY_NOTICES.md"
-cp "$staged_addon/manifests/addon.json" "$common_runtime/addon.json"
-cp "$staged_addon/manifests/models.json" "$common_runtime/models.json"
-if find "$common_runtime" -type d -path '*/site-packages/torch' -print -quit | grep -q .; then
-  printf 'common runtime unexpectedly contains PyTorch\n' >&2
-  exit 1
-fi
+cuda_variant="${LADA_CUDA_VARIANT:-cuda}"
+case "$cuda_variant" in
+  cuda) cuda_extra=nvidia ;;
+  cuda-legacy) cuda_extra=nvidia-legacy ;;
+  *) printf 'unsupported LADA_CUDA_VARIANT: %s\n' "$cuda_variant" >&2; exit 2 ;;
+esac
 
 mkdir -p "$work/model-bundle/models"
 python - "$staged_addon/manifests/models.json" "$work/model-bundle/models" <<'PY'
@@ -55,27 +47,40 @@ for model in manifest["models"]:
         raise SystemExit(f"model verification failed: {model['name']}")
 PY
 
-cuda_variant="${LADA_CUDA_VARIANT:-cuda}"
-case "$cuda_variant" in
-  cuda) cuda_extra=nvidia ;;
-  cuda-legacy) cuda_extra=nvidia-legacy ;;
-  *) printf 'unsupported LADA_CUDA_VARIANT: %s\n' "$cuda_variant" >&2; exit 2 ;;
-esac
-
 declare -A extras=( [cuda]="$cuda_extra" [xpu]=intel )
 for backend in cuda xpu; do
   full_parent="$work/full-$backend"
   full_runtime="$full_parent/runtime"
-  cp -a "$common_parent" "$full_parent"
+  cp -a "$template_parent" "$full_parent"
   VIRTUAL_ENV="$full_runtime" uv sync \
     --project "$staged_lada" --active --frozen --extra "${extras[$backend]}" \
     --no-install-project --inexact
+  VIRTUAL_ENV="$full_runtime" uv pip install \
+    --python "$full_runtime/bin/python" --no-deps "$staged_lada"
+  VIRTUAL_ENV="$full_runtime" uv pip install \
+    --python "$full_runtime/bin/python" --no-deps "$adapter_wheel"
+  cp "$staged_addon/LICENSE" "$full_runtime/AGPL-3.0-only.txt"
+  cp "$staged_addon/THIRD_PARTY_NOTICES.md" "$full_runtime/THIRD_PARTY_NOTICES.md"
+  cp "$staged_addon/manifests/addon.json" "$full_runtime/addon.json"
+  cp "$staged_addon/manifests/models.json" "$full_runtime/models.json"
   "$full_runtime/bin/python" -c 'import torch, torchvision'
+done
 
+common_parent="$work/common"
+common_runtime="$common_parent/runtime"
+PYTHONPATH="$staged_addon/src" "$template_runtime/bin/python" -m localbooru_lada build-common \
+  --cuda "$work/full-cuda/runtime" \
+  --xpu "$work/full-xpu/runtime" \
+  --output "$common_runtime"
+if find "$common_runtime" -type d -path '*/site-packages/torch' -print -quit | grep -q .; then
+  printf 'common runtime unexpectedly contains PyTorch\n' >&2
+  exit 1
+fi
+for backend in cuda xpu; do
   layer_parent="$work/layer-$backend"
-  PYTHONPATH="$staged_addon/src" "$common_runtime/bin/python" -m localbooru_lada build-layer \
+  PYTHONPATH="$staged_addon/src" "$template_runtime/bin/python" -m localbooru_lada build-layer \
     --base "$common_runtime" \
-    --complete "$full_runtime" \
+    --complete "$work/full-$backend/runtime" \
     --output "$layer_parent/runtime"
 done
 
@@ -90,7 +95,7 @@ tar "${tar_args[@]}" -cf "$out/source.tar.zst" -C "$work/corresponding-source" \
 size_of() {
   du -sb "$1" | cut -f1
 }
-PYTHONPATH="$staged_addon/src" "$common_runtime/bin/python" -m localbooru_lada build-manifest \
+PYTHONPATH="$staged_addon/src" "$template_runtime/bin/python" -m localbooru_lada build-manifest \
   --root "$staged_addon" \
   --source-archive "$out/source.tar.zst" \
   --bundle "linux_x86_64_common=$out/linux-x86_64-common.tar.zst" \

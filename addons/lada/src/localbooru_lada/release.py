@@ -1,7 +1,10 @@
+import csv
 import hashlib
 import json
 import os
+import re
 import shutil
+from email.parser import Parser
 from pathlib import Path
 from typing import Iterable
 
@@ -70,6 +73,71 @@ def _same_file(left: Path, right: Path) -> bool:
     )
 
 
+def _copy_entry(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_symlink():
+        destination.symlink_to(os.readlink(source))
+    else:
+        shutil.copy2(source, destination)
+
+
+def _canonical_package_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _distribution_inventory(runtime: Path) -> dict[str, tuple[str, set[Path]]]:
+    inventory = {}
+    for site_packages in runtime.glob("lib/python*/site-packages"):
+        for dist_info in site_packages.glob("*.dist-info"):
+            metadata_path = dist_info / "METADATA"
+            record_path = dist_info / "RECORD"
+            if not metadata_path.is_file() or not record_path.is_file():
+                continue
+            metadata = Parser().parsestr(metadata_path.read_text(encoding="utf-8"))
+            name = _canonical_package_name(metadata["Name"])
+            version = metadata["Version"]
+            owned = set()
+            with record_path.open(newline="", encoding="utf-8") as handle:
+                for row in csv.reader(handle):
+                    if not row:
+                        continue
+                    absolute = Path(os.path.normpath(site_packages / row[0]))
+                    try:
+                        owned.add(absolute.relative_to(runtime))
+                    except ValueError as error:
+                        raise ValueError(f"distribution file escapes runtime: {row[0]}") from error
+            inventory[name] = (version, owned)
+    return inventory
+
+
+def build_common_runtime(cuda: Path, xpu: Path, output: Path) -> None:
+    cuda_distributions = _distribution_inventory(cuda)
+    xpu_distributions = _distribution_inventory(xpu)
+    backend_owned = set()
+    for name in set(cuda_distributions) | set(xpu_distributions):
+        cuda_entry = cuda_distributions.get(name)
+        xpu_entry = xpu_distributions.get(name)
+        if cuda_entry is None or xpu_entry is None or cuda_entry[0] != xpu_entry[0]:
+            if cuda_entry is not None:
+                backend_owned.update(cuda_entry[1])
+            if xpu_entry is not None:
+                backend_owned.update(xpu_entry[1])
+
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir(parents=True)
+    for source in sorted(cuda.rglob("*")):
+        relative = source.relative_to(cuda)
+        counterpart = xpu / relative
+        if relative in backend_owned:
+            continue
+        if source.is_symlink():
+            if counterpart.is_symlink() and os.readlink(source) == os.readlink(counterpart):
+                _copy_entry(source, output / relative)
+        elif source.is_file() and _same_file(source, counterpart):
+            _copy_entry(source, output / relative)
+
+
 def build_runtime_layer(base: Path, complete: Path, output: Path) -> None:
     if output.exists():
         shutil.rmtree(output)
@@ -81,11 +149,9 @@ def build_runtime_layer(base: Path, complete: Path, output: Path) -> None:
         if source.is_symlink():
             if baseline.is_symlink() and os.readlink(source) == os.readlink(baseline):
                 continue
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.symlink_to(os.readlink(source))
+            _copy_entry(source, destination)
         elif source.is_file() and not _same_file(source, baseline):
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
+            _copy_entry(source, destination)
 
 
 def _artifact(base_url: str, path: Path, installed_size: int | None = None) -> dict:

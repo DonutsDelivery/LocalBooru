@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .constants import LADA_REVISION, PROTOCOL_VERSION
 from .probe import ProbeConfig, probe_runtime
-from .release import audit_base_artifact, build_release_manifest, build_runtime_layer
+from .release import audit_base_artifact, build_common_runtime, build_release_manifest, build_runtime_layer
 from .server import ServerConfig, SidecarServer
 
 
@@ -56,6 +56,11 @@ def _manifest(args) -> int:
     return 0
 
 
+def _build_common(args) -> int:
+    build_common_runtime(Path(args.cuda), Path(args.xpu), Path(args.output))
+    return 0
+
+
 def _build_layer(args) -> int:
     build_runtime_layer(Path(args.base), Path(args.complete), Path(args.output))
     return 0
@@ -91,6 +96,12 @@ def build_parser() -> argparse.ArgumentParser:
     manifest.add_argument("--installed-size", action="append", default=[])
     manifest.add_argument("--output")
     manifest.set_defaults(run=_manifest)
+
+    common = subparsers.add_parser("build-common", help="derive common files from CUDA and XPU runtimes")
+    common.add_argument("--cuda", required=True)
+    common.add_argument("--xpu", required=True)
+    common.add_argument("--output", required=True)
+    common.set_defaults(run=_build_common)
 
     layer = subparsers.add_parser("build-layer", help="create a runtime delta from a complete tree")
     layer.add_argument("--base", required=True)

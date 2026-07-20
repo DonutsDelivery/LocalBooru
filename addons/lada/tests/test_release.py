@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 import tarfile
 import zipfile
@@ -6,6 +7,7 @@ from pathlib import Path
 
 from localbooru_lada.release import (
     audit_base_artifact,
+    build_common_runtime,
     build_release_manifest,
     build_runtime_layer,
     load_addon_metadata,
@@ -77,6 +79,68 @@ def test_release_inventory_gate_enumerates_actual_unpacked_tree(tmp_path):
         assert "runtime.py" in str(error)
     else:
         raise AssertionError("actual unpacked LADA payload must fail the release gate")
+
+
+def _write_distribution(runtime, name, version, files):
+    site_packages = runtime / "lib" / "python3.12" / "site-packages"
+    dist_info = site_packages / f"{name}-{version}.dist-info"
+    dist_info.mkdir(parents=True)
+    records = []
+    for relative, content in files.items():
+        target = site_packages / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        records.append(relative)
+    (dist_info / "METADATA").write_text(
+        f"Name: {name}\nVersion: {version}\n",
+        encoding="utf-8",
+    )
+    records.extend([
+        f"{dist_info.name}/METADATA",
+        f"{dist_info.name}/RECORD",
+    ])
+    (dist_info / "RECORD").write_text(
+        "".join(f"{record},,\n" for record in records),
+        encoding="utf-8",
+    )
+
+
+def _file_snapshot(root):
+    return {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def test_common_runtime_excludes_files_owned_by_backend_specific_distributions(tmp_path):
+    cuda = tmp_path / "cuda"
+    xpu = tmp_path / "xpu"
+    for runtime in (cuda, xpu):
+        (runtime / "bin").mkdir(parents=True)
+        (runtime / "bin" / "python").write_text("shared interpreter\n", encoding="utf-8")
+        _write_distribution(runtime, "shared-dependency", "1.0", {"shared/__init__.py": "common\n"})
+    _write_distribution(cuda, "torch", "2.8.0", {"torch/__init__.py": "identical shim\n"})
+    _write_distribution(xpu, "torch", "2.9.1", {"torch/__init__.py": "identical shim\n"})
+    _write_distribution(cuda, "nvidia-cuda-runtime", "12.8", {"nvidia/runtime.so": "cuda\n"})
+    _write_distribution(xpu, "pytorch-triton-xpu", "3.5", {"triton/runtime.so": "xpu\n"})
+
+    common = tmp_path / "common"
+    cuda_layer = tmp_path / "cuda-layer"
+    xpu_layer = tmp_path / "xpu-layer"
+    build_common_runtime(cuda, xpu, common)
+    build_runtime_layer(common, cuda, cuda_layer)
+    build_runtime_layer(common, xpu, xpu_layer)
+
+    assert (common / "bin" / "python").is_file()
+    assert (common / "lib" / "python3.12" / "site-packages" / "shared" / "__init__.py").is_file()
+    assert not (common / "lib" / "python3.12" / "site-packages" / "torch").exists()
+
+    for complete, layer in ((cuda, cuda_layer), (xpu, xpu_layer)):
+        reconstructed = tmp_path / f"reconstructed-{complete.name}"
+        shutil.copytree(common, reconstructed)
+        shutil.copytree(layer, reconstructed, dirs_exist_ok=True)
+        assert _file_snapshot(reconstructed) == _file_snapshot(complete)
 
 
 def test_runtime_layer_contains_only_new_and_changed_backend_files(tmp_path):
