@@ -1198,7 +1198,7 @@ tasks:
     title: "Implement: Safe development startup"
     type: task
     spec_ref: "@safe-development-startup"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -1207,3 +1207,4 @@ tasks:
     todos_count: 0
     created_at: 2026-07-20T18:40:19.875Z
     started_at: 2026-07-20T18:40:35.944Z
+    submitted_at: 2026-07-20T18:47:16.455Z
