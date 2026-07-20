@@ -1580,6 +1580,11 @@ export async function getAddonHealth(id) {
   return response.data
 }
 
+export async function runAutoTaggerRuntimeDiagnostic() {
+  const response = await api.post('/addons/auto-tagger/api/runtime-diagnostic')
+  return response.data
+}
+
 export async function getAutoTaggerConfig() {
   const response = await api.get('/settings/auto-tagger')
   return response.data

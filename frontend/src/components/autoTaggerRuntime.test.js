@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   formatExecutionState,
+  formatCudaDiagnostic,
   formatPackageVersions,
   formatPreload,
   formatProvider,
@@ -69,4 +70,27 @@ test('formats deployment packages and native preload evidence', () => {
   assert.equal(formatPreload({ attempted: false }), 'Not attempted')
   assert.equal(formatPreload(undefined), 'Not available')
   assert.equal(formatPreload({ attempted: true, succeeded: null }), 'Unknown')
+})
+
+// AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+test('formats strict CUDA report with native output and preserved failure evidence', () => {
+  const formatted = formatCudaDiagnostic({
+    status: 'failed',
+    exit_code: 1,
+    probe: {
+      model: { name: 'eva02-large-v3', sha256: '9e768793' },
+      runtime: {
+        provider_options: { CUDAExecutionProvider: { device_id: '0' } },
+        packages: { 'nvidia-cusparse-cu12': '12.5' },
+      },
+      execution: { error: 'CUDA launch failed', provider_node_counts: { CPUExecutionProvider: 1920 } },
+      strict_stage: { execution: { error: 'node assignment failed' } },
+    },
+    stderr: 'native ORT log',
+  })
+
+  assert.match(formatted, /eva02-large-v3/)
+  assert.match(formatted, /CUDA launch failed/)
+  assert.match(formatted, /native ORT log/)
+  assert.match(formatted, /nvidia-cusparse-cu12/)
 })

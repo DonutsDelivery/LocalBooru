@@ -60,6 +60,10 @@ export function formatPackageVersions(packages) {
     : 'Not available'
 }
 
+export function formatCudaDiagnostic(report) {
+  return report ? JSON.stringify(report, null, 2) : 'No diagnostic report available'
+}
+
 export function formatPreload(preload) {
   if (!preload) return 'Not available'
   if (preload.attempted === false) return 'Not attempted'

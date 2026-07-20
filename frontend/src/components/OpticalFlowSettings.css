@@ -158,6 +158,20 @@
   line-height: 1.4;
 }
 
+.optical-flow-settings .runtime-diagnostic-report {
+  max-height: 360px;
+  margin: 12px 0 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font: 0.75rem/1.5 monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* FPS slider */
 .optical-flow-settings .fps-row {
   margin-top: 12px;

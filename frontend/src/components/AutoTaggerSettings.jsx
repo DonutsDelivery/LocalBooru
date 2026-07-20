@@ -4,10 +4,12 @@ import {
   getAddonHealth,
   getAutoTaggerConfig,
   getModels,
+  runAutoTaggerRuntimeDiagnostic,
   updateAutoTaggerConfig,
 } from '../api'
 import {
   formatExecutionState,
+  formatCudaDiagnostic,
   formatPackageVersions,
   formatPreload,
   formatProviderList,
@@ -26,6 +28,9 @@ export default function AutoTaggerSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [refreshingHealth, setRefreshingHealth] = useState(false)
+  const [runningDiagnostic, setRunningDiagnostic] = useState(false)
+  const [diagnosticReport, setDiagnosticReport] = useState(null)
+  const [diagnosticError, setDiagnosticError] = useState(null)
   const [downloading, setDownloading] = useState(null)
 
   const load = async () => {
@@ -78,6 +83,19 @@ export default function AutoTaggerSettings() {
       setHealthError(error.message || 'Runtime status is unavailable')
     } finally {
       setRefreshingHealth(false)
+    }
+  }
+
+  const runDiagnostic = async () => {
+    setRunningDiagnostic(true)
+    setDiagnosticError(null)
+    try {
+      setDiagnosticReport(await runAutoTaggerRuntimeDiagnostic())
+    } catch (error) {
+      console.error('Failed to run strict Auto Tagger CUDA diagnostic:', error)
+      setDiagnosticError(error.message || 'CUDA diagnostic failed')
+    } finally {
+      setRunningDiagnostic(false)
     }
   }
 
@@ -195,9 +213,20 @@ export default function AutoTaggerSettings() {
         {diagnostics?.ort_debug_error && <p className="optical-flow-status warning">ORT diagnostics: {diagnostics.ort_debug_error}</p>}
         {health?.provider_warning && <p className="optical-flow-status warning">{health.provider_warning}</p>}
         {health?.profile_warning && <p className="optical-flow-status warning">{health.profile_warning}</p>}
-        <button onClick={refreshHealth} disabled={refreshingHealth}>
-          {refreshingHealth ? 'Refreshing...' : 'Refresh Runtime Status'}
-        </button>
+        {diagnosticError && <p className="optical-flow-status warning">Strict CUDA diagnostic: {diagnosticError}</p>}
+        <div className="setting-row">
+          <button onClick={refreshHealth} disabled={refreshingHealth}>
+            {refreshingHealth ? 'Refreshing...' : 'Refresh Runtime Status'}
+          </button>
+          <button onClick={runDiagnostic} disabled={runningDiagnostic || !health?.model_loaded}>
+            {runningDiagnostic ? 'Running strict diagnostic...' : 'Run Strict CUDA Diagnostic'}
+          </button>
+        </div>
+        {diagnosticReport && (
+          <pre className="runtime-diagnostic-report" aria-label="Strict CUDA diagnostic report">
+            {formatCudaDiagnostic(diagnosticReport)}
+          </pre>
+        )}
       </section>
 
       <button onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save Auto Tagger settings'}</button>
