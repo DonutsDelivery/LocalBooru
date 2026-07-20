@@ -615,6 +615,11 @@ requirements:
         then: the request reports that the build started with its platform and immutable source revision
         when: the container image build or artifact-build process is invoked for the resolved source
           revision
+      - given: another LocalBooru build or cleanup owns the shared build lock
+        id: ac-locked
+        then: the request immediately reports that it is locked, identifies the active owner when known, and
+          exits without claiming that a build started
+        when: a local container release build is requested without an explicit wait
     priority: high
     tags: []
     created: 2026-07-20T08:04:35.064Z
