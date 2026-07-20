@@ -1081,8 +1081,9 @@ features:
           - curation-gesture-decisions-recovery
         title: Curation Gesture Decisions and Recovery
         type: requirement
-        description: Curation fullscreen gestures commit at most one decision and keep candidate discovery
-          recoverable when refilling fails.
+        description: Curation fullscreen input commits at most one explicit decision, leaves ordinary
+          Lightbox swipes non-destructive, and keeps candidate discovery recoverable when refilling
+          fails.
         status:
           maturity: draft
           implementation: in_progress
