@@ -172,6 +172,10 @@ features:
             id: ac-2
             then: the app reports the actual failure and does not claim that the image was copied
             when: the user invokes Copy Image
+          - given: a PNG, JPEG, or WebP image is copied
+            id: ac-3
+            then: the copied pixels have the source image dimensions and supported transparency
+            when: the clipboard contents are inspected by a native consumer
         priority: high
         tags: []
         created: 2026-07-20T08:04:47.882Z
