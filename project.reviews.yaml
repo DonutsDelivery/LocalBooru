@@ -975,9 +975,25 @@ reviews:
           status: skipped
           name: accelerator-build
         timestamp: 2026-07-20T11:05:31.793Z
+      - _ulid: 01KXZKB7TAFAM1HPMW012YAT1B
+        actor: claude
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: approve
+        timestamp: 2026-07-20T11:07:28.459Z
+      - _ulid: 01KXZKB7TBH87VDY028B03WAPY
+        actor: claude
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-07-20T11:07:28.459Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs: []
     subject:
       type: task
@@ -985,7 +1001,14 @@ reviews:
       ref: "@package-lada-sidecar"
       shadow_commit: ""
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: approve
+        reviewer: claude
+        role: reviewer
+        created_at: 2026-07-20T11:07:28.458Z
     created_at: 2026-07-20T11:04:59.351Z
-    updated_at: 2026-07-20T11:05:31.784Z
+    updated_at: 2026-07-20T11:07:28.459Z
     notes: []
