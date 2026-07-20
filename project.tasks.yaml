@@ -996,21 +996,6 @@ tasks:
     todos_count: 0
     created_at: 2026-07-20T08:04:58.018Z
     started_at: 2026-07-20T08:24:28.932Z
-  - _ulid: 01KXZEX8WTZSZH021TKC7JVPRK
-    slugs:
-      - implement-transactional-lada-add-on-installation
-    title: Implement Transactional LADA Add-on Installation
-    type: task
-    spec_ref: "@lada-managed-install"
-    plan_ref: "@plan-managed-lada-gstreamer-add-on"
-    status: pending
-    blocked_by: []
-    depends_on: []
-    priority: 3
-    tags: []
-    notes_count: 1
-    todos_count: 0
-    created_at: 2026-07-20T09:49:56.506Z
   - _ulid: 01KXZEX8XCM3P4C84FHPWVZX52
     slugs:
       - implement-lada-license-and-source-provenance
