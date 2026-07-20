@@ -5,13 +5,21 @@ title: "Implement: Windows Copy Image"
 type: task
 spec_ref: "@windows-copy-image"
 derivation: auto
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: dispatch/task/implement-gsd-integration-retirement/01kxyrga
+  captured_at: 2026-07-20T08:23:52.213Z
+  commit: 2d756a8178404ad56fdb7bff7b34639ef528e7e8
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -23,6 +31,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-07-20T08:10:36.153Z
+  - author: "@claude"
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: dispatch/task/implement-gsd-integration-retirement/01kxyrga
+          captured_at: 2026-07-20T08:23:52.213Z
+          commit: 2d756a8178404ad56fdb7bff7b34639ef528e7e8
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-07-20T08:23:52.214Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-07-20T08:23:52.214Z
 created_at: 2026-07-20T08:04:51.377Z
 started_at: 2026-07-20T08:10:36.153Z
+submitted_at: 2026-07-20T08:23:52.214Z
 todos: []
