@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { getMediaUrl, getAssetUrl, isUsingLocalServer, getSVPConfig, updateSVPConfig, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo, uploadImage, getFileDimensions } from '../../api'
 import { isMobileApp } from '../../serverManager'
 import { getDesktopAPI } from '../../tauriAPI'
@@ -21,6 +21,7 @@ import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
 import { curationActionForSwipe } from '../../utils/lightboxGestures.js'
 import { isVideoMediaElement, releaseVideoMedia } from '../../utils/lightboxMedia.js'
+import { adjustmentLocator, appendCacheBuster, createAdjustmentRequestOwner } from '../../utils/imageAdjustments.js'
 
 // Video diagnostics overlay — press I to toggle, B for bare mode (video only)
 function FPSMonitor({ videoRef, visible, onToggleBare }) {
@@ -155,6 +156,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const svpDesiredEnabledRef = useRef(null)
   const svpToggleWriteRef = useRef(Promise.resolve())
   const activeImageKeyRef = useRef(null)
+  const adjustmentRequestOwnerRef = useRef(null)
+  if (!adjustmentRequestOwnerRef.current) {
+    adjustmentRequestOwnerRef.current = createAdjustmentRequestOwner()
+  }
   const svpPathEnabledRef = useRef(false)
   const [svpPipelineGeneration, setSvpPipelineGeneration] = useState(0)
 
@@ -533,15 +538,25 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Reset adjustments, preview, zoom, video state, and interpolation when changing images
   // Note: streaming cleanup is handled internally by useVideoStreaming (coordinated with auto-start)
-  useEffect(() => {
+  useLayoutEffect(() => {
+    adjustmentRequestOwnerRef.current.invalidate()
     setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
     setShowAdjustments(false)
     setPreviewUrl(null)
+    setGeneratingPreview(false)
+    setApplyingAdjustments(false)
     zoomPan.resetZoom()
     playback.resetPlaybackState()
     subtitles.stopSubtitlesStream()
     setShowSubtitleMenu(false)
-  }, [image?.id])
+  }, [image?.library_id, image?.directory_id, image?.id])
+
+  useLayoutEffect(() => {
+    adjustmentRequestOwnerRef.current.invalidate()
+    setPreviewUrl(null)
+    setGeneratingPreview(false)
+    setApplyingAdjustments(false)
+  }, [adjustments.brightness, adjustments.contrast, adjustments.gamma])
 
   // Check for resume position when opening a video
   useEffect(() => {
@@ -883,84 +898,118 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const handleGeneratePreview = useCallback(async () => {
     if (!image || generatingPreview) return
 
-    // Check if any adjustments were made
     if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) {
       return
     }
 
+    let locator
+    try {
+      locator = adjustmentLocator(image)
+    } catch (err) {
+      toast.error(err.message)
+      return
+    }
+
+    const requestedAdjustments = { ...adjustments }
+    const request = adjustmentRequestOwnerRef.current.begin(locator, requestedAdjustments)
     setGeneratingPreview(true)
     try {
       const { previewImageAdjustments } = await import('../../api')
-      const result = await previewImageAdjustments(image.id, {
-        brightness: adjustments.brightness,
-        contrast: adjustments.contrast,
-        gamma: adjustments.gamma
-      })
+      const result = await previewImageAdjustments(locator, requestedAdjustments)
+      if (!adjustmentRequestOwnerRef.current.owns(request)) return
 
-      // Add cache buster to prevent browser caching
-      setPreviewUrl(`${result.preview_url}?t=${Date.now()}`)
+      setPreviewUrl(appendCacheBuster(result.preview_url))
     } catch (err) {
+      if (!adjustmentRequestOwnerRef.current.owns(request)) return
       console.error('Failed to generate preview:', err)
       toast.error('Failed to generate preview: ' + err.message)
+    } finally {
+      if (adjustmentRequestOwnerRef.current.owns(request)) {
+        setGeneratingPreview(false)
+      }
     }
-    setGeneratingPreview(false)
   }, [image, adjustments, generatingPreview])
 
   // Discard preview and go back to CSS filter mode
   const handleDiscardPreview = useCallback(async () => {
     if (!image) return
 
+    let locator
+    try {
+      locator = adjustmentLocator(image)
+    } catch {
+      return
+    }
+    const request = adjustmentRequestOwnerRef.current.begin(locator, adjustments)
+
     try {
       const { discardImagePreview } = await import('../../api')
-      await discardImagePreview(image.id)
+      await discardImagePreview(locator)
     } catch (err) {
-      console.error('Failed to discard preview:', err)
+      if (adjustmentRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to discard preview:', err)
+      }
     }
-    setPreviewUrl(null)
-  }, [image])
+    if (adjustmentRequestOwnerRef.current.owns(request)) {
+      setPreviewUrl(null)
+    }
+  }, [image, adjustments])
 
   // Apply adjustments to file
   const handleApplyAdjustments = useCallback(async () => {
     if (!image || applyingAdjustments) return
 
-    // Check if any adjustments were made
     if (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0) {
       return
     }
 
+    let locator
+    try {
+      locator = adjustmentLocator(image)
+    } catch (err) {
+      toast.error(err.message)
+      return
+    }
+
+    const requestedAdjustments = { ...adjustments }
+    const request = adjustmentRequestOwnerRef.current.begin(locator, requestedAdjustments)
     setApplyingAdjustments(true)
     try {
       const { applyImageAdjustments, discardImagePreview } = await import('../../api')
-      const result = await applyImageAdjustments(image.id, {
-        brightness: adjustments.brightness,
-        contrast: adjustments.contrast,
-        gamma: adjustments.gamma
-      })
+      const result = await applyImageAdjustments(locator, requestedAdjustments)
+      if (!adjustmentRequestOwnerRef.current.owns(request)) return
 
-      // Clean up preview cache
       try {
-        await discardImagePreview(image.id)
-      } catch (e) {
+        await discardImagePreview(locator)
+      } catch {
         // Ignore cleanup errors
       }
+      if (!adjustmentRequestOwnerRef.current.owns(request)) return
 
-      // Force reload the image by updating the URL with a cache buster
       if (onImageUpdate) {
-        onImageUpdate(image.id, {
-          url: `${image.url.split('?')[0]}?t=${Date.now()}`,
-          thumbnail_url: `${image.thumbnail_url.split('?')[0]}?t=${Date.now()}`
+        onImageUpdate(locator, {
+          url: appendCacheBuster(result.url),
+          thumbnail_url: appendCacheBuster(result.thumbnail_url),
+          file_hash: result.file_hash,
+          file_size: result.file_size,
+          width: result.width,
+          height: result.height,
+          file_modified_at: result.file_modified_at
         })
       }
 
-      // Reset adjustments and preview after applying
       setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
       setPreviewUrl(null)
       setShowAdjustments(false)
     } catch (err) {
+      if (!adjustmentRequestOwnerRef.current.owns(request)) return
       console.error('Failed to apply adjustments:', err)
       toast.error('Failed to apply adjustments: ' + err.message)
+    } finally {
+      if (adjustmentRequestOwnerRef.current.owns(request)) {
+        setApplyingAdjustments(false)
+      }
     }
-    setApplyingAdjustments(false)
   }, [image, adjustments, applyingAdjustments, onImageUpdate])
 
   // Gamma exponent for SVG filter (computed outside getFilterStyle so JSX can use it)
@@ -1648,6 +1697,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     step="1"
                     value={adjustments.brightness}
                     onChange={e => {
+                      adjustmentRequestOwnerRef.current.invalidate()
                       setAdjustments(prev => ({ ...prev, brightness: parseInt(e.target.value) }))
                       if (previewUrl) setPreviewUrl(null) // Clear stale preview
                     }}
@@ -1665,6 +1715,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     step="1"
                     value={adjustments.contrast}
                     onChange={e => {
+                      adjustmentRequestOwnerRef.current.invalidate()
                       setAdjustments(prev => ({ ...prev, contrast: parseInt(e.target.value) }))
                       if (previewUrl) setPreviewUrl(null) // Clear stale preview
                     }}
@@ -1682,6 +1733,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     step="1"
                     value={adjustments.gamma}
                     onChange={e => {
+                      adjustmentRequestOwnerRef.current.invalidate()
                       setAdjustments(prev => ({ ...prev, gamma: parseInt(e.target.value) }))
                       if (previewUrl) setPreviewUrl(null) // Clear stale preview
                     }}

@@ -32,6 +32,7 @@ import { getColumnCount, tileWidths } from './utils/gridLayout'
 import { isUnexpectedEmptyPage, mergeFirstPage } from './utils/galleryState'
 import { classifySidebarSwipe } from './utils/sidebarGestures'
 import { getCurationRecoveryMode } from './utils/curationState'
+import { imageMatchesLocator } from './utils/imageAdjustments.js'
 import { useAllAddonStatuses } from './hooks/useAddonStatus'
 import { useCurationGame } from './hooks/useCurationGame'
 import { useMobileDrawer } from './hooks/useMobileDrawer'
@@ -863,10 +864,13 @@ function Gallery() {
   }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders])
 
   // Update a single image in the images array
-  const handleImageUpdate = useCallback((imageId, updates) => {
-    setImages(prev => prev.map(img =>
-      img.id === imageId ? { ...img, ...updates } : img
-    ))
+  const handleImageUpdate = useCallback((imageLocator, updates) => {
+    setImages(prev => prev.map(img => {
+      const matches = typeof imageLocator === 'object'
+        ? imageMatchesLocator(img, imageLocator)
+        : img.id === imageLocator
+      return matches ? { ...img, ...updates } : img
+    }))
   }, [])
 
   const curation = useCurationGame({

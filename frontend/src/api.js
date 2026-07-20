@@ -4,6 +4,7 @@
 import axios from 'axios'
 import { isMobileApp, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
+import { adjustmentQuery } from './utils/imageAdjustments.js'
 
 // Current server config (cached for synchronous access)
 let currentServerUrl = null
@@ -426,8 +427,8 @@ export async function batchMoveImages(imageIds, targetDirectoryId) {
   return response.data
 }
 
-export async function applyImageAdjustments(imageId, { brightness, contrast, gamma }) {
-  const response = await api.post(`/images/${imageId}/adjust`, {
+export async function applyImageAdjustments(locator, { brightness, contrast, gamma }) {
+  const response = await api.post(`/images/${locator.imageId}/adjust?${adjustmentQuery(locator)}`, {
     brightness,
     contrast,
     gamma
@@ -435,8 +436,8 @@ export async function applyImageAdjustments(imageId, { brightness, contrast, gam
   return response.data
 }
 
-export async function previewImageAdjustments(imageId, { brightness, contrast, gamma }) {
-  const response = await api.post(`/images/${imageId}/preview-adjust`, {
+export async function previewImageAdjustments(locator, { brightness, contrast, gamma }) {
+  const response = await api.post(`/images/${locator.imageId}/preview-adjust?${adjustmentQuery(locator)}`, {
     brightness,
     contrast,
     gamma
@@ -444,8 +445,8 @@ export async function previewImageAdjustments(imageId, { brightness, contrast, g
   return response.data
 }
 
-export async function discardImagePreview(imageId) {
-  const response = await api.delete(`/images/${imageId}/preview`)
+export async function discardImagePreview(locator) {
+  const response = await api.delete(`/images/${locator.imageId}/preview?${adjustmentQuery(locator)}`)
   return response.data
 }
 
