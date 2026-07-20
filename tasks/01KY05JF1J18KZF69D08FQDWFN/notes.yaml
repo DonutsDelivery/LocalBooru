@@ -53,3 +53,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T17:24:23.529Z
+  - _ulid: 01KY09N9JYJ3X8DDPZ7SPHB4B6
+    content: Windows candidate a7a4760 containing final exact-cache eligibility, duplicate regeneration,
+      global representative ordering, and stale-view ownership fixes built and published at
+      immutable tester path 2.0.3-test-a7a4760; artifacts and public checksums verified.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-20T17:37:26.622Z
