@@ -1097,7 +1097,7 @@ tasks:
       - certify-lada-integration
     title: Certify LADA playback and release boundaries
     type: task
-    spec_ref: "@desktop-lada-video"
+    spec_ref: "@lada-platform-boundary"
     plan_ref: "@plan-managed-lada-gstreamer-add-on"
     status: pending
     blocked_by: []
