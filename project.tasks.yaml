@@ -1025,7 +1025,7 @@ tasks:
     status: pending
     blocked_by: []
     depends_on:
-      - "@package-lada-sidecar"
+      - "@implement-lada-runtime-probes"
     priority: 1
     tags:
       - addons
