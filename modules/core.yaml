@@ -194,6 +194,12 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: Libraries or directories contain colliding numeric media identifiers
+            id: ac-exact-preview-identity
+            then: Only the exact library, directory, media, and content version is used, including that
+              library's preview storage
+            when: Timeline preview frames are requested or served
         tags: []
         created: 2026-07-21T12:02:12.691Z
         notes: []
