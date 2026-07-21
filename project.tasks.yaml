@@ -1279,21 +1279,6 @@ tasks:
     started_at: 2026-07-21T17:19:02.253Z
     submitted_at: 2026-07-21T17:21:58.592Z
     automation: eligible
-  - _ulid: 01KY2Z9A6X9BBG2256Q334J3YT
-    slugs:
-      - implement-wd14-sidecar-exchange-contract
-    title: Implement WD14 Sidecar Exchange Contract
-    type: task
-    spec_ref: "@wd14-sidecar-exchange-contract"
-    plan_ref: "@plan-wd14-text-sidecar-add-on"
-    status: pending
-    blocked_by: []
-    depends_on: []
-    priority: 3
-    tags: []
-    notes_count: 1
-    todos_count: 0
-    created_at: 2026-07-21T18:33:51.581Z
   - _ulid: 01KY2Z9A7EHGT4EE7NT6Q02D8A
     slugs:
       - implement-wd14-managed-filesystem-safety

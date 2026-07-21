@@ -1,9 +1,0 @@
-notes:
-  - _ulid: 01KY2Z9A6A4GYNVDJ14E6K1P5Q
-    content: >
-      Implement parsing, serialization, grouping, DB work, and atomic writes in
-      `src-tauri/src/services/wd14_sidecar.rs`. Reuse or extract the additive insertion semantics
-      from `services/task_queue.rs::execute_tag_task`. Do not write ambiguous legacy main-DB image
-      associations.
-    author: DonutsDelivery
-    created_at: 2026-07-21T18:33:51.562Z
