@@ -167,3 +167,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-20T19:08:22.618Z
+  - _ulid: 01KY1T83D92559AA55E2VGXX2V
+    content: "Fix cycle 3 evidence: tester opened stale image 12 after scan and exact Preview/Apply
+      correctly returned 404 for its claimed library/directory. Approach: authoritative
+      scan-complete gallery reconciliation, close removed Lightbox locators, and canonicalize
+      auxiliary Continue Watching identity without weakening backend exact resolution."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T07:46:34.537Z
