@@ -1,1 +1,11 @@
-notes: []
+notes:
+  - _ulid: 01KY2V0B72HGCP6YP0YW1V8ERQ
+    content: "Regression evidence: build cleanup removed owner metadata but did not explicitly unlock
+      descriptor 8. A surviving LocalBooru development child retained the kernel flock after the
+      wrapper exited, violating ac-build-lock-independence and producing owner=unknown until the app
+      closed. Approach: add a behavioral shell regression that leaves a child alive after cleanup,
+      then explicitly unlock and close the descriptor during cleanup. Verify the child remains alive
+      while a subsequent lock acquisition succeeds."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T17:19:03.394Z
