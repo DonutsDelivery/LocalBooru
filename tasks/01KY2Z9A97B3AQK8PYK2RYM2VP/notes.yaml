@@ -67,3 +67,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T19:02:37.133Z
+  - _ulid: 01KY30YXZBCXZCM226NCFZXZVD
+    content: "Fix cycle 1 approach: secure sidecar reads through one no-follow handle with MAX+1 bounded
+      reads and captured identity; absorb deletes only when pathname identity still matches. Stream
+      candidate discovery with limit+1. Preserve native PathBuf grouping keys. Replace cross-WAL
+      attached transactions/incremental counters with idempotent main-tag creation, directory
+      association insertion, and authoritative post_count/tagged_count reconciliation. Batch
+      tag-name lookup. Validate export representability/limits. Replace helper-only AC tests with
+      run_operation tests over real AppState databases and files."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T19:03:08.523Z
