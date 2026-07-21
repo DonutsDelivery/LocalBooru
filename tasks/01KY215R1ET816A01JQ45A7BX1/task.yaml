@@ -1,0 +1,20 @@
+_ulid: 01KY215R1ET816A01JQ45A7BX1
+slugs:
+  - separate-development-build-locks
+title: Separate development and build lock ownership
+type: bug
+description: Correct the development launcher so an active runtime cannot retain shared build
+  ownership, while duplicate development launches and concurrent builds remain independently
+  protected.
+spec_ref: "@safe-development-startup"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-07-21T09:47:37.390Z
+todos: []
