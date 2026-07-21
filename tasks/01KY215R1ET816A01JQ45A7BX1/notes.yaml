@@ -16,3 +16,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T09:51:38.588Z
+  - _ulid: 01KY21EQ7MT6T9WQYQN0B4B5HK
+    content: Implemented and committed as 3f43d5f4. run-dev.sh now owns dev-instance.lock only;
+      build-cache.lock remains exclusive to build/cleanup operations. Focused and existing
+      lock/launcher tests pass.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T09:52:31.476Z
