@@ -1590,6 +1590,12 @@ reviews:
         payload:
           thread_ulid: 01KY30WBVBSM51YGJ9M5R36D97
         timestamp: 2026-07-21T19:24:19.560Z
+      - _ulid: 01KY325RGZCP0XQ0NHV4DJ2GE0
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY30WD6JJSVMJS57EMGF12ZG
+        timestamp: 2026-07-21T19:24:20.895Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1665,6 +1671,11 @@ reviews:
               Iterate with a remaining limit or query LIMIT remaining+1 and abort before
               accumulation exceeds the bound.
             created_at: 2026-07-21T19:01:45.811Z
+          - _ulid: 01KY325RGGFPAJN4JHEFP5DF27
+            author: "@claude"
+            body: "Fixed in b1e9417: each directory query uses the remaining candidate budget plus one and
+              rejects overflow before accumulating an unbounded result."
+            created_at: 2026-07-21T19:24:20.880Z
         kind: blocker
       - _ulid: 01KY30WEJNMZYBB1V701R3SKYF
         anchor:
@@ -1794,5 +1805,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:19.535Z
+    updated_at: 2026-07-21T19:24:20.880Z
     notes: []
