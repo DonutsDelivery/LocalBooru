@@ -275,7 +275,7 @@ features:
               Manager without corrupting a working deployment.
             status:
               maturity: draft
-              implementation: in_progress
+              implementation: implemented
             depends_on: []
             implements: []
             relates_to: []
