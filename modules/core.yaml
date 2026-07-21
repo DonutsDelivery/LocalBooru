@@ -182,6 +182,19 @@ features:
         tags: []
         created: 2026-07-19T06:38:13.576Z
         notes: []
+      - _ulid: 01KY28W62K5TJVMABHK2ZK0ZJ7
+        slugs:
+          - identity-safe-timeline-previews
+        title: Identity-Safe Timeline Previews
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-21T12:02:12.691Z
+        notes: []
     created: 2026-03-08T08:30:11.050Z
     notes: []
   - _ulid: 01KK692XSZDQQ8QMADEPVFH0EE
