@@ -32,3 +32,8 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T18:43:45.560Z
+  - _ulid: 01KY2ZVPYEKKA29B5N20T7N58E
+    content: "[AGENT-FAIL] Invocation failed: Authentication required"
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:43:54.446Z
