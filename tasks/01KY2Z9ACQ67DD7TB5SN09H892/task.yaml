@@ -23,7 +23,7 @@ tags:
   - verification
   - integration
 vcs_refs: []
-review_ref: "@01KY37KCA87AKN02FVECGK4N86"
+review_ref: "@01KY3AB5ZMQ99MVH2DPFDP2MCV"
 submission_linkage:
   review_url: null
   branch: dispatch/task/verify-wd14-sidecar-integration/01ky2z9a
@@ -124,6 +124,13 @@ history:
         previous: 2026-07-21T20:40:16.727Z
     command: task-submit
     timestamp: 2026-07-21T21:46:53.843Z
+  - author: "@claude"
+    changes:
+      review_ref:
+        new: "@01KY3AB5ZMQ99MVH2DPFDP2MCV"
+        previous: "@01KY37KCA87AKN02FVECGK4N86"
+    command: review-link
+    timestamp: 2026-07-21T21:47:07.308Z
 created_at: 2026-07-21T18:33:51.767Z
 started_at: 2026-07-21T21:46:52.552Z
 submitted_at: 2026-07-21T21:46:53.843Z
