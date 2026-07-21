@@ -1233,7 +1233,7 @@ tasks:
     title: Separate development and build lock ownership
     type: bug
     spec_ref: "@safe-development-startup"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -1242,3 +1242,4 @@ tasks:
     todos_count: 0
     created_at: 2026-07-21T09:47:37.390Z
     started_at: 2026-07-21T09:48:08.554Z
+    submitted_at: 2026-07-21T09:52:32.435Z
