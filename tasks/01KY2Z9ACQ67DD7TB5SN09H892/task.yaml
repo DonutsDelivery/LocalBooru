@@ -11,8 +11,9 @@ description: >
 spec_ref: "@wd14-managed-filesystem-safety"
 plan_ref: "@plan-wd14-text-sidecar-add-on"
 origin: derived
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Approved in review @01KY3AB5 after full verification; integrated as plan head 312952a2
 depends_on:
   - "@implement-native-wd14-sidecar-service"
   - "@register-expose-wd14-builtin-addon"
@@ -131,8 +132,22 @@ history:
         previous: "@01KY37KCA87AKN02FVECGK4N86"
     command: review-link
     timestamp: 2026-07-21T21:47:07.308Z
+  - author: "@claude"
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Approved in review @01KY3AB5 after full verification; integrated as plan head 312952a2
+        previous: null
+      completed_at:
+        new: 2026-07-21T21:48:37.983Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-07-21T21:48:37.997Z
 created_at: 2026-07-21T18:33:51.767Z
 started_at: 2026-07-21T21:46:52.552Z
 submitted_at: 2026-07-21T21:46:53.843Z
+completed_at: 2026-07-21T21:48:37.983Z
 todos: []
 automation: eligible
