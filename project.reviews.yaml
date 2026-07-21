@@ -2039,9 +2039,25 @@ reviews:
           status: pass
           name: rust-library-tests
         timestamp: 2026-07-21T19:31:41.855Z
+      - _ulid: 01KY32K8DY12YQ81NHWM3PYFQM
+        actor: claude-cycle2-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: request_changes
+        timestamp: 2026-07-21T19:31:43.166Z
+      - _ulid: 01KY32K8DY2PM5KBT2FMFMRDYB
+        actor: claude-cycle2-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-07-21T19:31:43.167Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs: []
     subject:
       type: task
@@ -2165,7 +2181,14 @@ reviews:
               tests with the missing AC annotations.
             created_at: 2026-07-21T19:31:40.676Z
         kind: blocker
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: request_changes
+        reviewer: claude-cycle2-review
+        role: reviewer
+        created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:31:41.834Z
+    updated_at: 2026-07-21T19:31:43.166Z
     notes: []
