@@ -2055,6 +2055,12 @@ reviews:
           from: open
           to: closed
         timestamp: 2026-07-21T19:31:43.167Z
+      - _ulid: 01KY344PRH9ZN3CCB9XT1T40SH
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY32JH0AQJFH87N3VS1NPSAR
+        timestamp: 2026-07-21T19:58:43.473Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2081,6 +2087,12 @@ reviews:
               after each target, defeating bounded batch work. Reconcile once per batch under a
               library-scoped coordinator or use another concurrency-safe bounded design.
             created_at: 2026-07-21T19:31:19.178Z
+          - _ulid: 01KY344PQXXJ1AJ65H1ZA90KZ2
+            author: "@claude"
+            body: "Fixed through a8bb41e: reconciliation work is preflighted before mutation, sized to accepted
+              request bounds, serialized for WD14, and holds main plus every directory DB under
+              BEGIN IMMEDIATE through authoritative count publication."
+            created_at: 2026-07-21T19:58:43.450Z
         kind: blocker
       - _ulid: 01KY32JJ7KAECM4WPC6AKM9EC4
         anchor:
@@ -2190,5 +2202,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:31:43.166Z
+    updated_at: 2026-07-21T19:58:43.450Z
     notes: []
