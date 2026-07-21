@@ -2582,9 +2582,26 @@ reviews:
           status: pass
           name: frontend-build
         timestamp: 2026-07-21T20:36:55.648Z
+      - _ulid: 01KY36APDXYB55XRT61M70Z7AR
+        actor: claude
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: d6fd34718bac5c853a5c7f50e15203347f3efb84
+            head_commit: 8086d749565a334f6efe34f73fe6120ed8a891b2
+          decision: approve
+        timestamp: 2026-07-21T20:36:56.893Z
+      - _ulid: 01KY36APDX1FFSTMTFQ8M6Y0JA
+        actor: claude
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-07-21T20:36:56.893Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@build-wd14-addon-settings-panel"
     subject:
@@ -2594,7 +2611,15 @@ reviews:
       head_branch: dispatch/task/build-wd14-addon-settings-panel/01ky2z9a
       head_commit: 8086d749565a334f6efe34f73fe6120ed8a891b2
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: d6fd34718bac5c853a5c7f50e15203347f3efb84
+          head_commit: 8086d749565a334f6efe34f73fe6120ed8a891b2
+        decision: approve
+        reviewer: claude
+        role: reviewer
+        created_at: 2026-07-21T20:36:56.892Z
     created_at: 2026-07-21T20:36:41.935Z
-    updated_at: 2026-07-21T20:36:55.614Z
+    updated_at: 2026-07-21T20:36:56.893Z
     notes: []
