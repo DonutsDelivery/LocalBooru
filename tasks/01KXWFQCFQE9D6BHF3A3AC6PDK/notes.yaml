@@ -207,3 +207,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T09:04:26.662Z
+  - _ulid: 01KY21ZJEM0MM7QVE8GSTXC1QB
+    content: Immutable Windows tester candidate 966e510d published at
+      https://donutsdelivery.online/downloads/localbooru/2.0.3-test-966e510d/. Local and public
+      hashes match (installer b3185949..., portable 343f334c...). CUDA acceptance remains open until
+      the tester's exact EVA model records nonzero CUDA model nodes.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T10:01:43.636Z
