@@ -93,3 +93,12 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-21T19:31:43.328Z
+  - _ulid: 01KY345PXFREPAKX2SVR97TYY5
+    content: Fix cycle 2 completed through a8bb41e. Added cross-database write-lock coordination for
+      authoritative counts, preflighted accepted work before mutations, bounded/chunked export
+      lookup, atomic restore/export operations, exact native result paths, and behavioral
+      compound/mixed-batch coverage. Independent adversarial re-review approved. Focused 12/12;
+      independent full library run 194 passed, 1 ignored.
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T19:59:16.400Z
