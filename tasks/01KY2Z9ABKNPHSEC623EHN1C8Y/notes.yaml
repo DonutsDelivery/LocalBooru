@@ -1,1 +1,21 @@
-notes: []
+notes:
+  - _ulid: 01KY2ZBAWKVR4JJ6R9ND4V5DMG
+    content: >-
+      Execution context:
+
+      - Background: provide the installed-only desktop surface required by @wd14-addon-settings.
+
+      - Scope: frontend API calls, compound mounted-directory selection, Import/Absorb/Export
+      controls, confirmations, overwrite opt-in, busy state, and structured results; do not add
+      arbitrary folder picking.
+
+      - Files: frontend/src/api.js, frontend/src/components/WD14SidecarSettings.jsx and local CSS,
+      AddonSettings.jsx, addonSettingsCatalog.js, and focused tests.
+
+      - Reuse: MigrationSettings directory selection conventions and existing add-on panel/catalog
+      patterns.
+
+      - Verification: npm test, npm run lint, npm run build in frontend/.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:34:57.812Z
