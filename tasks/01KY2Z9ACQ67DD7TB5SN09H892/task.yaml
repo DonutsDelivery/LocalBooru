@@ -11,7 +11,7 @@ description: >
 spec_ref: "@wd14-managed-filesystem-safety"
 plan_ref: "@plan-wd14-text-sidecar-add-on"
 origin: derived
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on:
   - "@implement-native-wd14-sidecar-service"
@@ -27,8 +27,8 @@ review_ref: "@01KY37KCA87AKN02FVECGK4N86"
 submission_linkage:
   review_url: null
   branch: dispatch/task/verify-wd14-sidecar-integration/01ky2z9a
-  captured_at: 2026-07-21T20:40:16.723Z
-  commit: e1e521c115c10a7716ee524da4f85175940eaac1
+  captured_at: 2026-07-21T21:46:53.837Z
+  commit: 312952a276830f29ef8255010036ec1c7bad9f79
   remote: null
   remote_url: null
   upstream_ref: null
@@ -97,8 +97,35 @@ history:
         previous: 2026-07-21T20:37:20.304Z
     command: task-start
     timestamp: 2026-07-21T21:46:52.552Z
+  - author: "@claude"
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: dispatch/task/verify-wd14-sidecar-integration/01ky2z9a
+          captured_at: 2026-07-21T21:46:53.837Z
+          commit: 312952a276830f29ef8255010036ec1c7bad9f79
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous:
+          review_url: null
+          branch: dispatch/task/verify-wd14-sidecar-integration/01ky2z9a
+          captured_at: 2026-07-21T20:40:16.723Z
+          commit: e1e521c115c10a7716ee524da4f85175940eaac1
+          remote: null
+          remote_url: null
+          upstream_ref: null
+      submitted_at:
+        new: 2026-07-21T21:46:53.843Z
+        previous: 2026-07-21T20:40:16.727Z
+    command: task-submit
+    timestamp: 2026-07-21T21:46:53.843Z
 created_at: 2026-07-21T18:33:51.767Z
 started_at: 2026-07-21T21:46:52.552Z
-submitted_at: 2026-07-21T20:40:16.727Z
+submitted_at: 2026-07-21T21:46:53.843Z
 todos: []
 automation: eligible
