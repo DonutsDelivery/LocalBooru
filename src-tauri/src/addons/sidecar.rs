@@ -572,6 +572,10 @@ pub async fn run_managed_command(
     command
         .args(args)
         .current_dir(working_directory)
+        .env("OMP_NUM_THREADS", "1")
+        .env("MKL_NUM_THREADS", "1")
+        .env("OPENBLAS_NUM_THREADS", "1")
+        .env("NUMEXPR_NUM_THREADS", "1")
         .kill_on_drop(true)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());

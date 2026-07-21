@@ -4,6 +4,7 @@ use axum::extract::{Path as AxumPath, State};
 use axum::response::Json;
 use axum::routing::{any, get, post};
 use axum::Router;
+use serde::Deserialize;
 use serde_json::json;
 
 use crate::addons::proxy::proxy_to_addon;
@@ -16,6 +17,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_addons))
         .route("/{addon_id}", get(get_addon))
         .route("/{addon_id}/install", post(install_addon))
+        .route("/{addon_id}/install/cancel", post(cancel_install))
         .route("/{addon_id}/update", post(repair_addon))
         .route("/{addon_id}/uninstall", post(uninstall_addon))
         .route("/{addon_id}/start", post(start_addon))
@@ -68,13 +70,66 @@ async fn probe_addon(
     Ok(Json(json!({ "readiness": readiness })))
 }
 
+#[derive(Default, Deserialize)]
+struct InstallRequest {
+    #[serde(default)]
+    accepted_license: bool,
+}
+
+async fn cancel_install(
+    State(state): State<AppState>,
+    AxumPath(addon_id): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if addon_id != "lada" {
+        return Err(AppError::BadRequest(format!(
+            "Addon '{}' does not expose a cancellable managed installer",
+            addon_id
+        )));
+    }
+    state
+        .addon_manager()
+        .cancel_lada_install()
+        .map_err(AppError::BadRequest)?;
+    Ok(Json(
+        json!({ "status": "cancelling", "addon_id": addon_id }),
+    ))
+}
+
 /// POST /api/addons/{addon_id}/install — Install an addon (create venv, install deps).
 ///
 /// This is a blocking operation (runs pip install) so we use spawn_blocking.
 async fn install_addon(
     State(state): State<AppState>,
     AxumPath(addon_id): AxumPath<String>,
+    request: Option<Json<InstallRequest>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    if addon_id == "lada" {
+        let accepted_license = request
+            .as_ref()
+            .is_some_and(|request| request.accepted_license);
+        if !accepted_license {
+            return Err(AppError::BadRequest(
+                "You must accept AGPL-3.0-only before installing LADA".into(),
+            ));
+        }
+        let install_state = state.clone();
+        let readiness = tokio::spawn(async move {
+            install_state
+                .addon_manager()
+                .install_lada(accepted_license, Duration::from_secs(120))
+                .await
+        })
+        .await?
+        .map_err(|error| {
+            AppError::Internal(format!("Failed to install addon 'lada': {}", error))
+        })?;
+        return Ok(Json(json!({
+            "status": "installed",
+            "addon_id": addon_id,
+            "readiness": readiness,
+        })));
+    }
+
     let requires_stop = state
         .addon_manager()
         .get_addon(&addon_id)
@@ -141,7 +196,33 @@ async fn install_addon(
 async fn repair_addon(
     State(state): State<AppState>,
     AxumPath(addon_id): AxumPath<String>,
+    request: Option<Json<InstallRequest>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    if addon_id == "lada" {
+        let accepted_license = request
+            .as_ref()
+            .is_some_and(|request| request.accepted_license);
+        if !accepted_license {
+            return Err(AppError::BadRequest(
+                "You must accept AGPL-3.0-only before installing LADA".into(),
+            ));
+        }
+        let repair_state = state.clone();
+        let readiness = tokio::spawn(async move {
+            repair_state
+                .addon_manager()
+                .install_lada(accepted_license, Duration::from_secs(120))
+                .await
+        })
+        .await?
+        .map_err(|error| AppError::Internal(format!("Failed to repair addon 'lada': {}", error)))?;
+        return Ok(Json(json!({
+            "status": "updated",
+            "addon_id": addon_id,
+            "readiness": readiness,
+        })));
+    }
+
     let was_running = state
         .addon_manager()
         .begin_repair(&addon_id)
@@ -284,6 +365,37 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Method, Request, StatusCode};
     use tower::ServiceExt;
+
+    // AC: @lada-managed-install ac-verified-activation
+    #[tokio::test]
+    async fn managed_install_requires_explicit_license_acceptance() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "localbooru-addon-install-license-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let state = AppState::new(&data_dir, 0).unwrap();
+
+        let response = router()
+            .with_state(state)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/lada/install")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["detail"].as_str().unwrap().contains("AGPL-3.0-only"));
+        assert!(!data_dir.join("addons/lada").exists());
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
 
     #[tokio::test]
     async fn probe_route_rejects_non_managed_addons() {

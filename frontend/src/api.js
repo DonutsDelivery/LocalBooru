@@ -104,7 +104,7 @@ export async function updateServerConfig(workingUrl = null) {
         try {
           const probe = await probeServer(server)
           if (probe.success && probe.url) resolved = probe.url
-        } catch (e) { /* probe failed; fall through to default */ }
+        } catch { /* probe failed; fall through to default */ }
       }
       if (resolved) {
         primaryUrl = resolved
@@ -929,7 +929,7 @@ async function fetchMediaToken() {
       currentMediaToken = data.token
       mediaTokenExpiry = Date.now() + ((data.expires_in || 86400) * 1000)
     }
-  } catch (e) {
+  } catch {
     /* keep existing token; getMediaUrl handles the fallback */
   }
 }
@@ -1550,8 +1550,13 @@ export async function getAddon(id) {
   return response.data
 }
 
-export async function installAddon(id) {
-  const response = await api.post(`/addons/${id}/install`)
+export async function installAddon(id, options) {
+  const response = await api.post(`/addons/${id}/install`, options, { timeout: 0 })
+  return response.data
+}
+
+export async function cancelAddonInstall(id) {
+  const response = await api.post(`/addons/${id}/install/cancel`)
   return response.data
 }
 
@@ -1570,8 +1575,8 @@ export async function stopAddon(id) {
   return response.data
 }
 
-export async function updateAddon(id) {
-  const response = await api.post(`/addons/${id}/update`)
+export async function updateAddon(id, options) {
+  const response = await api.post(`/addons/${id}/update`, options, { timeout: 0 })
   return response.data
 }
 

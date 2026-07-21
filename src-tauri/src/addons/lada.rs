@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -376,6 +377,8 @@ pub struct LadaDeployment {
     pub backend_compatibility: LadaBackendCompatibility,
     pub selected_backend: LadaBackend,
     pub selected_package: String,
+    #[serde(default)]
+    pub artifact_sha256: BTreeMap<String, String>,
     pub executable: PathBuf,
     pub probe_config: PathBuf,
 }
@@ -423,6 +426,22 @@ impl LadaDeployment {
                 LadaReadinessStatus::RepairRequired,
                 "The installed LADA backend package does not match its release manifest; repair the add-on"
                     .into(),
+            ));
+        }
+        let expected_artifacts = BTreeMap::from([
+            ("linux_x86_64_common".to_string(), ()),
+            (self.selected_package.clone(), ()),
+            ("model_bundle".to_string(), ()),
+        ]);
+        if self.artifact_sha256.keys().collect::<Vec<_>>()
+            != expected_artifacts.keys().collect::<Vec<_>>()
+            || self.artifact_sha256.values().any(|sha256| {
+                sha256.len() != 64 || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
+        {
+            return Some((
+                LadaReadinessStatus::RepairRequired,
+                "The installed LADA artifact record is incomplete; repair the add-on".into(),
             ));
         }
         None
@@ -900,6 +919,11 @@ mod tests {
             backend_compatibility: LadaBackendCompatibility::default(),
             selected_backend: LadaBackend::Cuda,
             selected_package: "linux_x86_64_cuda".into(),
+            artifact_sha256: BTreeMap::from([
+                ("linux_x86_64_common".into(), "0".repeat(64)),
+                ("linux_x86_64_cuda".into(), "1".repeat(64)),
+                ("model_bundle".into(), "2".repeat(64)),
+            ]),
             executable: root.join("probe"),
             probe_config: root.join("probe.json"),
         }
