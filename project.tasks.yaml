@@ -1243,3 +1243,17 @@ tasks:
     created_at: 2026-07-21T09:47:37.390Z
     started_at: 2026-07-21T09:48:08.554Z
     submitted_at: 2026-07-21T09:52:32.435Z
+  - _ulid: 01KY28XPJMW13Q799YWPPVAWQB
+    slugs:
+      - task-identity-safe-timeline-previews
+    title: Implement identity-safe timeline previews
+    type: bug
+    spec_ref: "@identity-safe-timeline-previews"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-21T12:03:02.356Z

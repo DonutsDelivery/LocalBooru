@@ -1,0 +1,19 @@
+_ulid: 01KY28XPJMW13Q799YWPPVAWQB
+slugs:
+  - task-identity-safe-timeline-previews
+title: Implement identity-safe timeline previews
+type: bug
+description: Make optional timeline previews video-only, fully versioned, cancellation-owned, and
+  exact across libraries.
+spec_ref: "@identity-safe-timeline-previews"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-07-21T12:03:02.356Z
+todos: []
