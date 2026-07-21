@@ -1972,6 +1972,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-07-21T19:31:17.860Z
+      - _ulid: 01KY32JH0TZJ8X6CNQ5A7EWH42
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY32JH0AQJFH87N3VS1NPSAR
+        timestamp: 2026-07-21T19:31:19.194Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1981,8 +1988,25 @@ reviews:
       content_hash: ""
       ref: "@implement-native-wd14-sidecar-service"
       shadow_commit: ""
-    threads: []
+    threads:
+      - _ulid: 01KY32JH0AQJFH87N3VS1NPSAR
+        anchor:
+          type: code
+          commit: b1e9417
+          line_end: 530
+          line_start: 481
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY32JH0AQ18NBMRRNP1MPVCE
+            author: "@claude"
+            body: Authoritative post_count reconciliation uses independent directory snapshots and can write a
+              stale aggregate after a concurrent import; it also rescans every directory database
+              after each target, defeating bounded batch work. Reconcile once per batch under a
+              library-scoped coordinator or use another concurrency-safe bounded design.
+            created_at: 2026-07-21T19:31:19.178Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:31:17.845Z
+    updated_at: 2026-07-21T19:31:19.178Z
     notes: []
