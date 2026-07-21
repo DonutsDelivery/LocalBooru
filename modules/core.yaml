@@ -187,6 +187,8 @@ features:
           - identity-safe-timeline-previews
         title: Identity-Safe Timeline Previews
         type: requirement
+        description: Optional video timeline previews remain attached to the exact media version and never
+          interfere with image editing or navigation.
         depends_on: []
         implements: []
         relates_to: []
