@@ -83,6 +83,19 @@ features:
         tags: []
         created: 2026-07-20T16:25:54.725Z
         notes: []
+      - _ulid: 01KY1T62RWAWXKS5W7W0H1F98R
+        slugs:
+          - grouped-folder-scope-navigation
+        title: Grouped Folder Scope Navigation
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-21T07:45:28.348Z
+        notes: []
     created: 2026-03-08T08:28:23.993Z
     notes: []
   - _ulid: 01KK692XK9SMJRHRRD784A002E
