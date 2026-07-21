@@ -28,3 +28,14 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-21T20:37:22.712Z
+  - _ulid: 01KY36GRB57HESSC79DGWSFSR3
+    content: "Verification results: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+      passed (198 passed, 1 ignored); frontend npm test passed (79 Node + 5 rendered component
+      tests); production Vite build passed; WD14 changed-file ESLint passed; all WD14 ACs have
+      behavioral annotations. Environment/repository gates: full frontend lint remains failing only
+      in unrelated pre-existing App/Lightbox/etc files; kspec validate reports 130 pre-existing
+      malformed legacy schema records; kspec validate --alignment otherwise passes schema/references
+      for loaded items but exits on 5 unrelated alignment warnings."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T20:40:15.461Z
