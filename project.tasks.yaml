@@ -1268,7 +1268,7 @@ tasks:
     title: Prevent escaped children retaining build ownership
     type: bug
     spec_ref: "@safe-development-startup"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -1277,4 +1277,5 @@ tasks:
     todos_count: 0
     created_at: 2026-07-21T17:18:16.807Z
     started_at: 2026-07-21T17:19:02.253Z
+    submitted_at: 2026-07-21T17:21:58.592Z
     automation: eligible

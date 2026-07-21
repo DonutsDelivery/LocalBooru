@@ -6,13 +6,21 @@ type: bug
 spec_ref: "@safe-development-startup"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: dispatch/task/implement-gsd-integration-retirement/01kxyrga
+  captured_at: 2026-07-21T17:21:58.575Z
+  commit: 57031ec5c115404b786b8d551ff4e1cb20296af5
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -24,7 +32,28 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-07-21T17:19:02.254Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: dispatch/task/implement-gsd-integration-retirement/01kxyrga
+          captured_at: 2026-07-21T17:21:58.575Z
+          commit: 57031ec5c115404b786b8d551ff4e1cb20296af5
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-07-21T17:21:58.592Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-07-21T17:21:58.592Z
 created_at: 2026-07-21T17:18:16.807Z
 started_at: 2026-07-21T17:19:02.253Z
+submitted_at: 2026-07-21T17:21:58.592Z
 todos: []
 automation: eligible
