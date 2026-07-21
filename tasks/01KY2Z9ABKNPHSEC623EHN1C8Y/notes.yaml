@@ -19,3 +19,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T18:34:57.812Z
+  - _ulid: 01KY2ZT9MFNAD8W5QW2TK3X24Z
+    content: "Automation status set to eligible: Desktop spec has four testable UI ACs and the task note
+      defines components, selection identity, controls, and checks."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T18:43:08.048Z
