@@ -101,6 +101,10 @@ features:
             then: the old folder path is cleared, grouped mode remains active, and the selected scope's folder
               catalog is shown
             when: the user selects a different directory, a different library, or All directories
+          - given: grouped folder mode is open inside a folder
+            id: ac-same-scope
+            then: the current folder path remains selected
+            when: the user changes a filter without changing library or directory scope
         tags: []
         created: 2026-07-21T07:45:28.348Z
         notes: []
