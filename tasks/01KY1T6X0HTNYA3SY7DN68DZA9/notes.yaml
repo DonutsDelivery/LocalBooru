@@ -40,3 +40,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T09:04:28.273Z
+  - _ulid: 01KY21ZM3PH3E2XH37RTKVRH2B
+    content: Candidate 966e510d is published at
+      https://donutsdelivery.online/downloads/localbooru/2.0.3-test-966e510d/ for grouped-folder
+      scope-switch retesting.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T10:01:45.334Z
