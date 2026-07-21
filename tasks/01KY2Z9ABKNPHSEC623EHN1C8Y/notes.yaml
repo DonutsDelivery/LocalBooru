@@ -25,3 +25,13 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-21T18:43:08.048Z
+  - _ulid: 01KY355YYJP3YFWXJG31NBYF6E
+    content: "Approach: reuse AddonSettings catalog visibility and MigrationSettings mounted-directory
+      loading, add compound library/directory helpers and a dedicated WD14 panel, then exercise
+      rendered behavior and request payloads with Vitest. Edge cases: colliding numeric directory
+      IDs, no selection, confirmation cancellation, active-request locking, overwrite confirmation,
+      and mixed failures. Test plan: behavioral tests for all four @wd14-addon-settings ACs plus API
+      helper requests."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T20:16:53.203Z
