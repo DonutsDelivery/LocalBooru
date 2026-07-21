@@ -1638,6 +1638,12 @@ reviews:
         payload:
           thread_ulid: 01KY30WHDGZD58W4Z5YR33PNKY
         timestamp: 2026-07-21T19:24:43.602Z
+      - _ulid: 01KY326FTTEGYSR6HYK9EK9EZJ
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY30WK6SDKEGMJ1YSGYGE9H3
+        timestamp: 2026-07-21T19:24:44.763Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1811,6 +1817,11 @@ reviews:
               reuse/extract the existing directory tag helper) before this can safely serve as a
               batch operation.
             created_at: 2026-07-21T19:01:51.961Z
+          - _ulid: 01KY326FSXRPG5C5Q4FT6B3358
+            author: "@claude"
+            body: "Fixed in b1e9417: export collects directory tag IDs and resolves names with one batched
+              main-database IN query rather than one query per tag."
+            created_at: 2026-07-21T19:24:44.732Z
         kind: blocker
       - _ulid: 01KY30XPQQVYXN5V00AQJTZNJA
         anchor:
@@ -1872,5 +1883,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:43.584Z
+    updated_at: 2026-07-21T19:24:44.732Z
     notes: []
