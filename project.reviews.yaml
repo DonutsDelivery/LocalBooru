@@ -2786,6 +2786,16 @@ reviews:
         runner: cargo
         created_at: 2026-07-21T21:47:21.836Z
         completed_at: 2026-07-21T21:47:21.836Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "npm --prefix frontend test: 79 Node tests and 5 rendered component tests passed"
+        name: frontend-tests
+        required: true
+        runner: npm
+        created_at: 2026-07-21T21:47:23.112Z
+        completed_at: 2026-07-21T21:47:23.112Z
     events:
       - _ulid: 01KY3AB5ZMNYP5T71PZDBFPSA4
         actor: "@claude"
@@ -2807,6 +2817,13 @@ reviews:
           status: pass
           name: rust-library-tests
         timestamp: 2026-07-21T21:47:21.873Z
+      - _ulid: 01KY3ABNMEQGP4F86ATCF8FVR7
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-tests
+        timestamp: 2026-07-21T21:47:23.150Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -2819,5 +2836,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-21T21:47:07.124Z
-    updated_at: 2026-07-21T21:47:21.836Z
+    updated_at: 2026-07-21T21:47:23.112Z
     notes: []
