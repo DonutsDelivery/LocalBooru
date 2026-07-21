@@ -1287,7 +1287,18 @@ reviews:
     slugs: []
     title: Review managed LADA bundle installer
     author: "@claude"
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: RTX 4070 local bundle harness passed install, real model probe, atomic activation,
+          activated re-probe, clean uninstall; 392.58s under 12G/1-CPU cgroup.
+        name: real-cuda-managed-install
+        required: true
+        runner: cargo
+        created_at: 2026-07-21T12:57:14.456Z
+        completed_at: 2026-07-21T12:57:14.456Z
     events:
       - _ulid: 01KY2C04KAGMSD3QB3PPNPHATX
         actor: "@claude"
@@ -1302,6 +1313,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-07-21T12:57:13.287Z
+      - _ulid: 01KY2C0YFHDBPHCDADSSN51XWH
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: real-cuda-managed-install
+        timestamp: 2026-07-21T12:57:14.482Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1314,5 +1332,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-21T12:56:47.979Z
-    updated_at: 2026-07-21T12:57:13.264Z
+    updated_at: 2026-07-21T12:57:14.456Z
     notes: []
