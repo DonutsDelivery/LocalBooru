@@ -1262,3 +1262,18 @@ tasks:
     created_at: 2026-07-21T12:03:02.356Z
     started_at: 2026-07-21T12:03:21.864Z
     submitted_at: 2026-07-21T13:04:35.758Z
+  - _ulid: 01KY2TYXQ78EANSAGYS8ENKMAB
+    slugs:
+      - prevent-inherited-build-lock
+    title: Prevent escaped children retaining build ownership
+    type: bug
+    spec_ref: "@safe-development-startup"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-21T17:18:16.807Z
+    automation: eligible
