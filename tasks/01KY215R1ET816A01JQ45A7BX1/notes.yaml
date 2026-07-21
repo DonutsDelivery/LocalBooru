@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01KY216QGVNRAPWCRVZF875GF0
+    content: "Root cause: run-dev.sh opens build-cache.lock on fd 8 and execs npm, so the descriptor is
+      inherited by Cargo and the running app. Approach: dev sessions retain a distinct nonblocking
+      dev-instance.lock; actual build and cleanup scripts remain the only owners of
+      build-cache.lock. Tests use fake npm and isolated state to prove both domains remain exclusive
+      but independent."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T09:48:09.627Z
