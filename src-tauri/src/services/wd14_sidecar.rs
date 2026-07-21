@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use rusqlite::params;
+use rusqlite::{params, params_from_iter};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
@@ -105,6 +105,26 @@ struct SidecarGroup {
     targets: Vec<PreparedTarget>,
 }
 
+#[derive(Debug)]
+struct OpenedSidecar {
+    bytes: Vec<u8>,
+    identity: FileIdentity,
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FileIdentity {
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(not(unix))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FileIdentity {
+    len: u64,
+    modified_nanos: u128,
+}
+
 pub fn run_operation(
     state: &AppState,
     operation: Wd14Operation,
@@ -167,7 +187,7 @@ pub fn run_operation(
 fn prepare_groups(
     state: &AppState,
     selections: &[DirectorySelection],
-) -> Result<(BTreeMap<String, SidecarGroup>, Vec<SidecarResult>, usize), AppError> {
+) -> Result<(BTreeMap<Vec<u8>, SidecarGroup>, Vec<SidecarResult>, usize), AppError> {
     let mut candidates = Vec::new();
     for selection in selections {
         let library = state.resolve_library(Some(&selection.library_id))?;
@@ -200,29 +220,29 @@ fn prepare_groups(
             )));
         }
 
+        let remaining = MAX_MEDIA_CANDIDATES.saturating_sub(candidates.len());
         let pool = library.directory_db.get_pool(selection.directory_id)?;
         let connection = pool.get()?;
         let mut statement = connection.prepare(
             "SELECT image_id, original_path
              FROM image_files
              WHERE file_exists = 1 AND curation_discarded_at IS NULL
-             ORDER BY original_path, image_id",
+             ORDER BY original_path, image_id
+             LIMIT ?1",
         )?;
         let rows = statement
-            .query_map([], |row| {
+            .query_map(params![(remaining + 1) as i64], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
             })?
             .collect::<Result<Vec<_>, _>>()?;
+        if rows.len() > remaining {
+            return Err(AppError::BadRequest(format!(
+                "Operation exceeds the {MAX_MEDIA_CANDIDATES}-media candidate limit"
+            )));
+        }
         for (image_id, media_path) in rows {
             candidates.push((selection.clone(), root.clone(), image_id, media_path));
         }
-    }
-
-    if candidates.len() > MAX_MEDIA_CANDIDATES {
-        return Err(AppError::BadRequest(format!(
-            "Operation has {} media candidates; the limit is {MAX_MEDIA_CANDIDATES}",
-            candidates.len()
-        )));
     }
 
     let media_candidates = candidates.len();
@@ -274,35 +294,12 @@ fn prepare_groups(
 
 fn import_group(state: &AppState, group: &SidecarGroup, absorb: bool) -> SidecarResult {
     let targets = serialized_targets(group);
-    let metadata = match validate_existing_sidecar(group) {
-        Ok(Some(metadata)) => metadata,
+    let opened = match read_existing_sidecar(group) {
+        Ok(Some(opened)) => opened,
         Ok(None) => return result(group, SidecarStatus::SkippedMissing, 0, 0, None),
-        Err(error) => return result(group, SidecarStatus::FailedValidation, 0, 0, Some(error)),
+        Err(error) => return result(group, SidecarStatus::FailedRead, 0, 0, Some(error)),
     };
-    if metadata.len() > MAX_SIDECAR_BYTES {
-        return result(
-            group,
-            SidecarStatus::FailedRead,
-            0,
-            0,
-            Some(format!(
-                "Sidecar exceeds the {MAX_SIDECAR_BYTES}-byte limit"
-            )),
-        );
-    }
-    let bytes = match fs::read(&group.path) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            return result(
-                group,
-                SidecarStatus::FailedRead,
-                0,
-                0,
-                Some(error.to_string()),
-            )
-        }
-    };
-    let tags = match parse_tags(&bytes) {
+    let tags = match parse_tags(&opened.bytes) {
         Ok(tags) => tags,
         Err(error) => return result(group, SidecarStatus::FailedRead, 0, 0, Some(error)),
     };
@@ -343,24 +340,13 @@ fn import_group(state: &AppState, group: &SidecarGroup, absorb: bool) -> Sidecar
     }
 
     if absorb {
-        if let Err(error) = validate_existing_sidecar(group).and_then(|value| {
-            value.ok_or_else(|| "Sidecar disappeared before it could be removed".to_string())
-        }) {
+        if let Err(error) = remove_absorbed_sidecar(group, &opened) {
             return result(
                 group,
                 SidecarStatus::ImportedNotRemoved,
                 tags.len(),
                 added,
                 Some(error),
-            );
-        }
-        if let Err(error) = fs::remove_file(&group.path) {
-            return result(
-                group,
-                SidecarStatus::ImportedNotRemoved,
-                tags.len(),
-                added,
-                Some(error.to_string()),
             );
         }
         result(group, SidecarStatus::Absorbed, tags.len(), added, None)
@@ -414,6 +400,15 @@ fn export_group(state: &AppState, group: &SidecarGroup, overwrite: bool) -> Side
             Some("Media sharing this sidecar stem have different tag sets".into()),
         );
     };
+    if let Err(error) = validate_serializable_tags(tags) {
+        return result(
+            group,
+            SidecarStatus::FailedValidation,
+            tags.len(),
+            0,
+            Some(error),
+        );
+    }
     let bytes = serialize_tags(tags);
     match atomic_write_sidecar(&group.path, &bytes, overwrite) {
         Ok(WriteOutcome::Written) => result(group, SidecarStatus::Exported, tags.len(), 0, None),
@@ -436,61 +431,104 @@ fn apply_tags(
     image_id: i64,
     tags: &BTreeSet<String>,
 ) -> Result<usize, AppError> {
-    let pool = library.directory_db.get_pool(directory_id)?;
-    let mut connection = pool.get()?;
-    let _ = connection.execute("DETACH DATABASE wd14_main", []);
-    let main_path = library.data_dir.join("library.db");
-    connection.execute(
-        "ATTACH DATABASE ?1 AS wd14_main",
-        params![main_path.to_string_lossy()],
-    )?;
-
-    let outcome = (|| -> Result<usize, AppError> {
-        let transaction = connection.transaction()?;
-        let existed: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM image_tags WHERE image_id = ?1)",
-            params![image_id],
-            |row| row.get(0),
-        )?;
-        let mut added = 0usize;
-        for tag in tags {
-            transaction.execute(
-                "INSERT OR IGNORE INTO wd14_main.tags (name, category) VALUES (?1, 'general')",
-                params![tag],
-            )?;
-            let tag_id: i64 = transaction.query_row(
-                "SELECT id FROM wd14_main.tags WHERE name = ?1",
-                params![tag],
-                |row| row.get(0),
-            )?;
-            let inserted = transaction.execute(
-                "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
-                 VALUES (?1, ?2, NULL, 1)",
-                params![image_id, tag_id],
-            )?;
-            if inserted > 0 {
-                transaction.execute(
-                    "UPDATE wd14_main.tags SET post_count = post_count + 1 WHERE id = ?1",
-                    params![tag_id],
-                )?;
-                added += 1;
+    let tag_ids = {
+        let mut main = library.main_pool.get()?;
+        let transaction = main.transaction()?;
+        let mut tag_ids = Vec::with_capacity(tags.len());
+        {
+            let mut insert = transaction
+                .prepare("INSERT OR IGNORE INTO tags (name, category) VALUES (?1, 'general')")?;
+            let mut select = transaction.prepare("SELECT id FROM tags WHERE name = ?1")?;
+            for tag in tags {
+                insert.execute(params![tag])?;
+                tag_ids.push(select.query_row(params![tag], |row| row.get::<_, i64>(0))?);
             }
         }
-        if !existed && added > 0 {
-            transaction.execute(
-                "UPDATE wd14_main.watch_directories
-                 SET tagged_count = tagged_count + 1
-                 WHERE id = ?1",
-                params![directory_id],
-            )?;
-        }
         transaction.commit()?;
-        Ok(added)
-    })();
-    let detached = connection.execute("DETACH DATABASE wd14_main", []);
-    let added = outcome?;
-    detached?;
+        tag_ids
+    };
+
+    let pool = library.directory_db.get_pool(directory_id)?;
+    let mut connection = pool.get()?;
+    let transaction = connection.transaction()?;
+    let mut added = 0usize;
+    {
+        let mut insert = transaction.prepare(
+            "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
+             VALUES (?1, ?2, NULL, 1)",
+        )?;
+        for tag_id in &tag_ids {
+            added += insert.execute(params![image_id, tag_id])?;
+        }
+    }
+    transaction.commit()?;
+
+    reconcile_counts(library, directory_id, &tag_ids)?;
     Ok(added)
+}
+
+fn reconcile_counts(
+    library: &LibraryContext,
+    directory_id: i64,
+    tag_ids: &[i64],
+) -> Result<(), AppError> {
+    let unique_tag_ids: Vec<_> = tag_ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let mut post_counts: BTreeMap<i64, i64> = unique_tag_ids
+        .iter()
+        .copied()
+        .map(|tag_id| (tag_id, 0))
+        .collect();
+    if !unique_tag_ids.is_empty() {
+        let placeholders = std::iter::repeat("?")
+            .take(unique_tag_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let query = format!(
+            "SELECT tag_id, COUNT(*) FROM image_tags
+             WHERE tag_id IN ({placeholders}) GROUP BY tag_id"
+        );
+        for candidate_directory_id in library.directory_db.get_all_directory_ids() {
+            let pool = library.directory_db.get_pool(candidate_directory_id)?;
+            let connection = pool.get()?;
+            let mut statement = connection.prepare(&query)?;
+            let rows = statement.query_map(params_from_iter(unique_tag_ids.iter()), |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            })?;
+            for row in rows {
+                let (tag_id, count) = row?;
+                *post_counts.entry(tag_id).or_default() += count;
+            }
+        }
+    }
+
+    let directory_pool = library.directory_db.get_pool(directory_id)?;
+    let directory_connection = directory_pool.get()?;
+    let tagged_count: i64 = directory_connection.query_row(
+        "SELECT COUNT(DISTINCT image_id) FROM image_tags",
+        [],
+        |row| row.get(0),
+    )?;
+    drop(directory_connection);
+
+    let mut main = library.main_pool.get()?;
+    let transaction = main.transaction()?;
+    {
+        let mut update = transaction.prepare("UPDATE tags SET post_count = ?1 WHERE id = ?2")?;
+        for (tag_id, count) in post_counts {
+            update.execute(params![count, tag_id])?;
+        }
+    }
+    transaction.execute(
+        "UPDATE watch_directories SET tagged_count = ?1 WHERE id = ?2",
+        params![tagged_count, directory_id],
+    )?;
+    transaction.commit()?;
+    Ok(())
 }
 
 fn load_tag_set(
@@ -502,18 +540,32 @@ fn load_tag_set(
     let connection = pool.get()?;
     let mut statement =
         connection.prepare("SELECT tag_id FROM image_tags WHERE image_id = ?1 ORDER BY tag_id")?;
-    let tag_ids = statement
+    let tag_ids: BTreeSet<i64> = statement
         .query_map(params![image_id], |row| row.get::<_, i64>(0))?
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<_, _>>()?;
+    drop(statement);
+    drop(connection);
+    if tag_ids.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+
+    let placeholders = std::iter::repeat("?")
+        .take(tag_ids.len())
+        .collect::<Vec<_>>()
+        .join(",");
     let main = library.main_pool.get()?;
-    let mut tags = BTreeSet::new();
-    for tag_id in tag_ids {
-        let name: String = main.query_row(
-            "SELECT name FROM tags WHERE id = ?1",
-            params![tag_id],
-            |row| row.get(0),
-        )?;
-        tags.insert(name);
+    let mut statement = main.prepare(&format!(
+        "SELECT name FROM tags WHERE id IN ({placeholders}) ORDER BY name"
+    ))?;
+    let tags = statement
+        .query_map(params_from_iter(tag_ids.iter()), |row| {
+            row.get::<_, String>(0)
+        })?
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    if tags.len() != tag_ids.len() {
+        return Err(AppError::Internal(
+            "Image references a missing global tag definition".into(),
+        ));
     }
     Ok(tags)
 }
@@ -548,6 +600,34 @@ fn parse_tags(bytes: &[u8]) -> Result<BTreeSet<String>, String> {
     Ok(tags)
 }
 
+fn validate_serializable_tags(tags: &BTreeSet<String>) -> Result<(), String> {
+    if tags.len() > MAX_TAGS_PER_SIDECAR {
+        return Err(format!(
+            "Tag set exceeds the {MAX_TAGS_PER_SIDECAR}-tag export limit"
+        ));
+    }
+    for tag in tags {
+        if tag.is_empty()
+            || tag.trim() != tag
+            || tag.contains(',')
+            || tag.chars().any(char::is_control)
+        {
+            return Err(format!(
+                "Tag cannot be represented in WD14 text format: {tag:?}"
+            ));
+        }
+        if tag.len() > MAX_TAG_BYTES {
+            return Err(format!("Tag exceeds the {MAX_TAG_BYTES}-byte export limit"));
+        }
+    }
+    if serialize_tags(tags).len() as u64 > MAX_SIDECAR_BYTES {
+        return Err(format!(
+            "Serialized tags exceed the {MAX_SIDECAR_BYTES}-byte export limit"
+        ));
+    }
+    Ok(())
+}
+
 fn serialize_tags(tags: &BTreeSet<String>) -> Vec<u8> {
     if tags.is_empty() {
         Vec::new()
@@ -571,6 +651,140 @@ fn validate_media_path(path: &Path, root: &Path) -> Result<PathBuf, String> {
         return Err("Media path is not a regular file".into());
     }
     Ok(canonical)
+}
+
+fn same_sidecar(expected: &OpenedSidecar, current: &OpenedSidecar) -> bool {
+    expected.identity == current.identity && expected.bytes == current.bytes
+}
+
+fn remove_absorbed_sidecar(group: &SidecarGroup, expected: &OpenedSidecar) -> Result<(), String> {
+    let parent = group
+        .path
+        .parent()
+        .ok_or_else(|| "Sidecar path has no parent directory".to_string())?;
+    let file_name = group
+        .path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("sidecar.txt");
+    let quarantine = parent.join(format!(".{file_name}.{}.absorbing", uuid::Uuid::new_v4()));
+    fs::rename(&group.path, &quarantine)
+        .map_err(|error| format!("Could not claim sidecar for removal: {error}"))?;
+    let quarantined_group = SidecarGroup {
+        path: quarantine.clone(),
+        targets: group.targets.clone(),
+    };
+    let current = read_existing_sidecar(&quarantined_group);
+    let matches = matches!(&current, Ok(Some(current)) if same_sidecar(expected, current));
+    if matches {
+        return fs::remove_file(&quarantine)
+            .map_err(|error| format!("Could not remove imported sidecar: {error}"));
+    }
+
+    let restored =
+        fs::hard_link(&quarantine, &group.path).and_then(|()| fs::remove_file(&quarantine));
+    if let Err(error) = restored {
+        return Err(format!(
+            "Sidecar changed after import and was preserved at {}; restoring its original name failed: {error}",
+            quarantine.display()
+        ));
+    }
+    match current {
+        Ok(Some(_)) => Err("Sidecar changed after it was imported".into()),
+        Ok(None) => Err("Sidecar disappeared while it was being removed".into()),
+        Err(error) => Err(error),
+    }
+}
+
+fn read_existing_sidecar(group: &SidecarGroup) -> Result<Option<OpenedSidecar>, String> {
+    let mut file = match open_sidecar_nofollow(&group.path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("Could not open sidecar safely: {error}")),
+    };
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("Could not inspect opened sidecar: {error}"))?;
+    if !metadata.is_file() {
+        return Err("Sidecar must be a regular non-symlink file".into());
+    }
+    let path_metadata = fs::symlink_metadata(&group.path)
+        .map_err(|error| format!("Could not inspect sidecar path: {error}"))?;
+    if path_metadata.file_type().is_symlink()
+        || file_identity(&metadata) != file_identity(&path_metadata)
+    {
+        return Err("Sidecar changed or became a symlink while it was opened".into());
+    }
+    let canonical = fs::canonicalize(&group.path)
+        .map_err(|error| format!("Could not resolve sidecar: {error}"))?;
+    if group
+        .targets
+        .iter()
+        .any(|target| !canonical.starts_with(&target.root))
+    {
+        return Err("Sidecar path escapes a registered directory".into());
+    }
+
+    let mut bytes = Vec::with_capacity(metadata.len().min(MAX_SIDECAR_BYTES + 1) as usize);
+    Read::by_ref(&mut file)
+        .take(MAX_SIDECAR_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("Could not read sidecar: {error}"))?;
+    if bytes.len() as u64 > MAX_SIDECAR_BYTES {
+        return Err(format!(
+            "Sidecar exceeds the {MAX_SIDECAR_BYTES}-byte limit"
+        ));
+    }
+    Ok(Some(OpenedSidecar {
+        bytes,
+        identity: file_identity(&metadata),
+    }))
+}
+
+#[cfg(unix)]
+fn open_sidecar_nofollow(path: &Path) -> io::Result<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_sidecar_nofollow(path: &Path) -> io::Result<fs::File> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "sidecar is a symlink",
+        ));
+    }
+    fs::File::open(path)
+}
+
+#[cfg(unix)]
+fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
+    use std::os::unix::fs::MetadataExt;
+
+    FileIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    }
+}
+
+#[cfg(not(unix))]
+fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
+    let modified_nanos = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|value| value.as_nanos())
+        .unwrap_or_default();
+    FileIdentity {
+        len: metadata.len(),
+        modified_nanos,
+    }
 }
 
 fn validate_existing_sidecar(group: &SidecarGroup) -> Result<Option<fs::Metadata>, String> {
@@ -704,13 +918,38 @@ fn sidecar_path_for(media_path: &Path) -> PathBuf {
     media_path.with_extension("txt")
 }
 
-fn path_key(path: &Path) -> String {
-    let key = path.to_string_lossy().into_owned();
-    if cfg!(windows) {
-        key.to_lowercase()
+#[cfg(unix)]
+fn path_key(path: &Path) -> Vec<u8> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let bytes = path.as_os_str().as_bytes();
+    if cfg!(target_os = "macos") {
+        bytes.iter().map(u8::to_ascii_lowercase).collect()
     } else {
-        key
+        bytes.to_vec()
     }
+}
+
+#[cfg(target_os = "windows")]
+fn path_key(path: &Path) -> Vec<u8> {
+    use std::os::windows::ffi::OsStrExt;
+
+    path.as_os_str()
+        .encode_wide()
+        .flat_map(|unit| {
+            let folded = if (b'A' as u16..=b'Z' as u16).contains(&unit) {
+                unit + 32
+            } else {
+                unit
+            };
+            folded.to_le_bytes()
+        })
+        .collect()
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn path_key(path: &Path) -> Vec<u8> {
+    path.as_os_str().to_string_lossy().as_bytes().to_vec()
 }
 
 fn serialized_targets(group: &SidecarGroup) -> Vec<MediaTarget> {
@@ -794,144 +1033,199 @@ fn record_result(summary: &mut Wd14Summary, result: &SidecarResult) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::library::LibraryContext;
+
+    struct Fixture {
+        _temp: tempfile::TempDir,
+        state: AppState,
+        library_id: String,
+        media_root: PathBuf,
+    }
+
+    impl Fixture {
+        fn new(files: &[(i64, &str, &str)]) -> Self {
+            let temp = tempfile::tempdir().unwrap();
+            let data_dir = temp.path().join("data");
+            let media_root = temp.path().join("media");
+            fs::create_dir_all(&media_root).unwrap();
+            let state = AppState::new(&data_dir, 0).unwrap();
+            let library = state.resolve_library(None).unwrap();
+            let library_id = library.uuid.clone();
+            let main = library.main_pool.get().unwrap();
+            main.execute(
+                "INSERT INTO watch_directories (id, path) VALUES (1, ?1)",
+                params![media_root.to_string_lossy()],
+            )
+            .unwrap();
+            drop(main);
+
+            let pool = library.directory_db.get_pool(1).unwrap();
+            let connection = pool.get().unwrap();
+            for (image_id, filename, hash) in files {
+                let media_path = media_root.join(filename);
+                fs::write(&media_path, b"media").unwrap();
+                connection
+                    .execute(
+                        "INSERT INTO images (id, filename, file_hash) VALUES (?1, ?2, ?3)",
+                        params![image_id, filename, hash],
+                    )
+                    .unwrap();
+                connection
+                    .execute(
+                        "INSERT INTO image_files (image_id, original_path) VALUES (?1, ?2)",
+                        params![image_id, media_path.to_string_lossy()],
+                    )
+                    .unwrap();
+            }
+            drop(connection);
+            drop(library);
+            Self {
+                _temp: temp,
+                state,
+                library_id,
+                media_root,
+            }
+        }
+
+        fn request(&self, overwrite: bool) -> Wd14Request {
+            Wd14Request {
+                directories: vec![DirectorySelection {
+                    library_id: self.library_id.clone(),
+                    directory_id: 1,
+                }],
+                overwrite,
+            }
+        }
+
+        fn tags(&self, image_id: i64) -> BTreeSet<String> {
+            let library = self.state.resolve_library(Some(&self.library_id)).unwrap();
+            load_tag_set(&library, 1, image_id).unwrap()
+        }
+
+        fn add_tags(&self, image_id: i64, tags: &[&str]) {
+            let library = self.state.resolve_library(Some(&self.library_id)).unwrap();
+            apply_tags(
+                &library,
+                1,
+                image_id,
+                &tags.iter().map(|tag| (*tag).to_string()).collect(),
+            )
+            .unwrap();
+        }
+    }
 
     // AC: @wd14-sidecar-exchange-contract ac-text-contract
     #[test]
-    fn parser_normalizes_wd14_text_without_changing_tag_characters() {
-        let tags = parse_tags(b"  Silver_Hair, blue eyes, SILVER_HAIR, , tail\n").unwrap();
+    fn import_parses_normalizes_and_bounds_real_sidecars() {
+        let fixture = Fixture::new(&[(1, "sample.jpg", "one")]);
+        let sidecar = fixture.media_root.join("sample.txt");
+        fs::write(&sidecar, "  Silver_Hair, blue eyes, SILVER_HAIR, , tail\n").unwrap();
+        let response = run_operation(
+            &fixture.state,
+            Wd14Operation::Import,
+            fixture.request(false),
+        )
+        .unwrap();
+        assert_eq!(response.results[0].status, SidecarStatus::Imported);
         assert_eq!(
-            tags,
+            fixture.tags(1),
             BTreeSet::from([
                 "blue eyes".to_string(),
                 "silver_hair".to_string(),
                 "tail".to_string(),
             ])
         );
-        assert!(parse_tags(&[0xff]).is_err());
-        assert!(parse_tags(b"valid, bad\ntag").is_err());
-    }
 
-    // AC: @wd14-sidecar-exchange-contract ac-deterministic-export
-    #[test]
-    fn serializer_is_deterministic_and_noclobber_is_default() {
-        let directory = tempfile::tempdir().unwrap();
-        let target = directory.path().join("sample.txt");
-        let tags = BTreeSet::from(["z_tag".to_string(), "a tag".to_string()]);
-        let bytes = serialize_tags(&tags);
-        assert_eq!(bytes, b"a tag, z_tag\n");
-        assert_eq!(
-            atomic_write_sidecar(&target, &bytes, false).unwrap(),
-            WriteOutcome::Written
-        );
-        assert_eq!(
-            atomic_write_sidecar(&target, b"replacement", false).unwrap(),
-            WriteOutcome::SkippedExists
-        );
-        assert_eq!(fs::read(&target).unwrap(), bytes);
-        atomic_write_sidecar(&target, b"replacement\n", true).unwrap();
-        assert_eq!(fs::read(&target).unwrap(), b"replacement\n");
-    }
-
-    // AC: @wd14-sidecar-exchange-contract ac-shared-stem
-    #[test]
-    fn shared_stem_export_requires_identical_tag_sets() {
-        assert_eq!(
-            sidecar_path_for(Path::new("archive.photo.webp")),
-            PathBuf::from("archive.photo.txt")
-        );
-        let first = BTreeSet::from(["tag".to_string()]);
-        let same = first.clone();
-        let different = BTreeSet::from(["other".to_string()]);
-        assert_eq!(common_tag_set(&[first.clone(), same]), Some(&first));
-        assert_eq!(common_tag_set(&[first, different]), None);
-    }
-
-    // AC: @wd14-sidecar-exchange-contract ac-round-trip
-    #[test]
-    fn exported_tags_round_trip_through_the_parser() {
-        let tags = BTreeSet::from(["blue eyes".to_string(), "silver_hair".to_string()]);
-        assert_eq!(parse_tags(&serialize_tags(&tags)).unwrap(), tags);
+        fs::write(&sidecar, vec![b'x'; MAX_SIDECAR_BYTES as usize + 1]).unwrap();
+        let response = run_operation(
+            &fixture.state,
+            Wd14Operation::Import,
+            fixture.request(false),
+        )
+        .unwrap();
+        assert_eq!(response.results[0].status, SidecarStatus::FailedRead);
     }
 
     // AC: @wd14-sidecar-exchange-contract ac-additive-import
     // AC: @wd14-managed-filesystem-safety ac-idempotent-retry
     #[test]
-    fn database_import_is_additive_manual_and_idempotent() {
-        let directory = tempfile::tempdir().unwrap();
-        let library = LibraryContext::create(directory.path(), "test").unwrap();
+    fn import_is_additive_manual_and_idempotent_without_rewriting_existing_tags() {
+        let fixture = Fixture::new(&[(1, "sample.jpg", "one")]);
+        let library = fixture
+            .state
+            .resolve_library(Some(&fixture.library_id))
+            .unwrap();
         let main = library.main_pool.get().unwrap();
-        main.execute(
-            "INSERT INTO watch_directories (id, path, tagged_count) VALUES (1, ?1, 1)",
-            params![directory.path().to_string_lossy()],
-        )
-        .unwrap();
         main.execute(
             "INSERT INTO tags (id, name, category, post_count) VALUES (1, 'existing', 'artist', 1)",
             [],
         )
         .unwrap();
+        main.execute(
+            "INSERT INTO tags (id, name, category, post_count) VALUES (2, 'unrelated', 'meta', 1)",
+            [],
+        )
+        .unwrap();
+        main.execute(
+            "UPDATE watch_directories SET tagged_count = 1 WHERE id = 1",
+            [],
+        )
+        .unwrap();
         drop(main);
-
         let pool = library.directory_db.get_pool(1).unwrap();
         let connection = pool.get().unwrap();
         connection
             .execute(
-                "INSERT INTO images (id, filename, file_hash) VALUES (1, 'one.jpg', 'one')",
+                "INSERT INTO image_tags (image_id, tag_id, confidence, is_manual) VALUES (1, 1, 0.9, 0)",
                 [],
             )
             .unwrap();
         connection
             .execute(
-                "INSERT INTO images (id, filename, file_hash) VALUES (2, 'two.jpg', 'two')",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO image_tags (image_id, tag_id, confidence, is_manual)
-                 VALUES (1, 1, 0.9, 0)",
+                "INSERT INTO image_tags (image_id, tag_id, confidence, is_manual) VALUES (1, 2, NULL, 1)",
                 [],
             )
             .unwrap();
         drop(connection);
+        drop(library);
+        fs::write(fixture.media_root.join("sample.txt"), "existing, new_tag").unwrap();
 
-        let tags = BTreeSet::from(["existing".to_string(), "new_tag".to_string()]);
-        assert_eq!(apply_tags(&library, 1, 1, &tags).unwrap(), 1);
-        assert_eq!(apply_tags(&library, 1, 1, &tags).unwrap(), 0);
-        assert_eq!(
-            apply_tags(&library, 1, 2, &BTreeSet::from(["second".to_string()]),).unwrap(),
-            1
-        );
+        for _ in 0..2 {
+            run_operation(
+                &fixture.state,
+                Wd14Operation::Import,
+                fixture.request(false),
+            )
+            .unwrap();
+        }
 
-        let connection = pool.get().unwrap();
-        let existing: (Option<f64>, bool) = connection
+        let library = fixture
+            .state
+            .resolve_library(Some(&fixture.library_id))
+            .unwrap();
+        let main = library.main_pool.get().unwrap();
+        let existing: (String, i64) = main
             .query_row(
-                "SELECT confidence, is_manual FROM image_tags WHERE image_id = 1 AND tag_id = 1",
+                "SELECT category, post_count FROM tags WHERE name = 'existing'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap();
-        assert_eq!(existing, (Some(0.9), false));
-        drop(connection);
-
-        let main = library.main_pool.get().unwrap();
+        assert_eq!(existing, ("artist".into(), 1));
         let new_id: i64 = main
             .query_row("SELECT id FROM tags WHERE name = 'new_tag'", [], |row| {
                 row.get(0)
             })
             .unwrap();
-        let counts: (i64, i64) = main
+        let new_count: i64 = main
             .query_row(
-                "SELECT
-                    (SELECT post_count FROM tags WHERE id = ?1),
-                    (SELECT tagged_count FROM watch_directories WHERE id = 1)",
+                "SELECT post_count FROM tags WHERE id = ?1",
                 params![new_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(counts, (1, 2));
+        assert_eq!(new_count, 1);
         drop(main);
+        let pool = library.directory_db.get_pool(1).unwrap();
         let connection = pool.get().unwrap();
         let new_metadata: (Option<f64>, bool) = connection
             .query_row(
@@ -941,27 +1235,233 @@ mod tests {
             )
             .unwrap();
         assert_eq!(new_metadata, (None, true));
+        let unrelated_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM image_tags WHERE image_id = 1 AND tag_id = 2",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unrelated_count, 1);
     }
 
     // AC: @wd14-sidecar-exchange-contract ac-safe-absorb
     #[test]
-    fn absorb_removal_happens_only_after_success() {
-        let directory = tempfile::tempdir().unwrap();
-        let sidecar = directory.path().join("image.txt");
-        fs::write(&sidecar, "tag").unwrap();
-        let imported_all_targets = false;
-        if imported_all_targets {
-            fs::remove_file(&sidecar).unwrap();
-        }
+    fn absorb_retains_sidecar_until_every_shared_target_commits() {
+        let fixture = Fixture::new(&[(1, "shared.jpg", "one"), (2, "shared.png", "two")]);
+        let sidecar = fixture.media_root.join("shared.txt");
+        fs::write(&sidecar, "safe_tag").unwrap();
+        let library = fixture
+            .state
+            .resolve_library(Some(&fixture.library_id))
+            .unwrap();
+        let pool = library.directory_db.get_pool(1).unwrap();
+        let connection = pool.get().unwrap();
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = OFF;
+             DELETE FROM images WHERE id = 2;
+             PRAGMA foreign_keys = ON;",
+            )
+            .unwrap();
+        drop(connection);
+        drop(library);
+
+        let response = run_operation(
+            &fixture.state,
+            Wd14Operation::Absorb,
+            fixture.request(false),
+        )
+        .unwrap();
+        assert_eq!(response.results[0].status, SidecarStatus::FailedDatabase);
         assert!(sidecar.exists());
-        fs::remove_file(&sidecar).unwrap();
+        assert!(fixture.tags(1).contains("safe_tag"));
+
+        let library = fixture
+            .state
+            .resolve_library(Some(&fixture.library_id))
+            .unwrap();
+        let pool = library.directory_db.get_pool(1).unwrap();
+        let connection = pool.get().unwrap();
+        connection
+            .execute(
+                "INSERT INTO images (id, filename, file_hash) VALUES (2, 'shared.png', 'two-restored')",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+        drop(library);
+        let response = run_operation(
+            &fixture.state,
+            Wd14Operation::Absorb,
+            fixture.request(false),
+        )
+        .unwrap();
+        assert_eq!(response.results[0].status, SidecarStatus::Absorbed);
         assert!(!sidecar.exists());
+        assert!(fixture.tags(2).contains("safe_tag"));
+    }
+
+    // AC: @wd14-sidecar-exchange-contract ac-deterministic-export
+    #[test]
+    fn export_writes_complete_same_stem_tags_and_respects_overwrite_policy() {
+        let fixture = Fixture::new(&[(1, "archive.photo.webp", "one")]);
+        fixture.add_tags(1, &["z_tag", "a tag"]);
+        let sidecar = fixture.media_root.join("archive.photo.txt");
+
+        let response = run_operation(
+            &fixture.state,
+            Wd14Operation::Export,
+            fixture.request(false),
+        )
+        .unwrap();
+        assert_eq!(response.results[0].status, SidecarStatus::Exported);
+        assert_eq!(fs::read_to_string(&sidecar).unwrap(), "a tag, z_tag\n");
+
+        fs::write(&sidecar, "external").unwrap();
+        let response = run_operation(
+            &fixture.state,
+            Wd14Operation::Export,
+            fixture.request(false),
+        )
+        .unwrap();
+        assert_eq!(response.results[0].status, SidecarStatus::SkippedExists);
+        assert_eq!(fs::read_to_string(&sidecar).unwrap(), "external");
+        let response =
+            run_operation(&fixture.state, Wd14Operation::Export, fixture.request(true)).unwrap();
+        assert_eq!(response.results[0].status, SidecarStatus::Exported);
+        assert_eq!(fs::read_to_string(&sidecar).unwrap(), "a tag, z_tag\n");
+    }
+
+    // AC: @wd14-sidecar-exchange-contract ac-shared-stem
+    #[test]
+    fn shared_stem_import_fans_out_and_conflicting_export_changes_nothing() {
+        let fixture = Fixture::new(&[(1, "shared.jpg", "one"), (2, "shared.png", "two")]);
+        let sidecar = fixture.media_root.join("shared.txt");
+        fs::write(&sidecar, "shared_tag").unwrap();
+        let response = run_operation(
+            &fixture.state,
+            Wd14Operation::Import,
+            fixture.request(false),
+        )
+        .unwrap();
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].targets.len(), 2);
+        assert!(fixture.tags(1).contains("shared_tag"));
+        assert!(fixture.tags(2).contains("shared_tag"));
+
+        fixture.add_tags(2, &["different"]);
+        fs::write(&sidecar, "leave untouched").unwrap();
+        let response =
+            run_operation(&fixture.state, Wd14Operation::Export, fixture.request(true)).unwrap();
+        assert_eq!(
+            response.results[0].status,
+            SidecarStatus::ConflictingMediaStem
+        );
+        assert_eq!(fs::read_to_string(&sidecar).unwrap(), "leave untouched");
+    }
+
+    // AC: @wd14-sidecar-exchange-contract ac-round-trip
+    #[test]
+    fn exported_file_imports_into_an_untagged_database_record() {
+        let fixture = Fixture::new(&[(1, "source.jpg", "one"), (2, "destination.jpg", "two")]);
+        fixture.add_tags(1, &["blue eyes", "silver_hair"]);
+        run_operation(
+            &fixture.state,
+            Wd14Operation::Export,
+            fixture.request(false),
+        )
+        .unwrap();
+        fs::copy(
+            fixture.media_root.join("source.txt"),
+            fixture.media_root.join("destination.txt"),
+        )
+        .unwrap();
+        run_operation(
+            &fixture.state,
+            Wd14Operation::Import,
+            fixture.request(false),
+        )
+        .unwrap();
+        assert_eq!(fixture.tags(2), fixture.tags(1));
+    }
+
+    #[test]
+    fn export_rejects_unrepresentable_tags_without_touching_the_sidecar() {
+        let fixture = Fixture::new(&[(1, "sample.jpg", "one")]);
+        let library = fixture
+            .state
+            .resolve_library(Some(&fixture.library_id))
+            .unwrap();
+        let main = library.main_pool.get().unwrap();
+        main.execute(
+            "INSERT INTO tags (id, name, category) VALUES (1, 'bad,tag', 'general')",
+            [],
+        )
+        .unwrap();
+        drop(main);
+        let pool = library.directory_db.get_pool(1).unwrap();
+        let connection = pool.get().unwrap();
+        connection
+            .execute(
+                "INSERT INTO image_tags (image_id, tag_id) VALUES (1, 1)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+        drop(library);
+        let sidecar = fixture.media_root.join("sample.txt");
+        fs::write(&sidecar, "keep").unwrap();
+        let response =
+            run_operation(&fixture.state, Wd14Operation::Export, fixture.request(true)).unwrap();
+        assert_eq!(response.results[0].status, SidecarStatus::FailedValidation);
+        assert_eq!(fs::read_to_string(sidecar).unwrap(), "keep");
+    }
+
+    // AC: @wd14-sidecar-exchange-contract ac-safe-absorb
+    #[test]
+    fn absorb_identity_guard_detects_a_replaced_sidecar() {
+        let fixture = Fixture::new(&[(1, "sample.jpg", "one")]);
+        let sidecar = fixture.media_root.join("sample.txt");
+        fs::write(&sidecar, "original").unwrap();
+        let group = SidecarGroup {
+            path: sidecar.clone(),
+            targets: vec![PreparedTarget {
+                locator: MediaTarget {
+                    library_id: fixture.library_id.clone(),
+                    directory_id: 1,
+                    image_id: 1,
+                    media_path: fixture
+                        .media_root
+                        .join("sample.jpg")
+                        .to_string_lossy()
+                        .into_owned(),
+                },
+                root: fs::canonicalize(&fixture.media_root).unwrap(),
+            }],
+        };
+        let original = read_existing_sidecar(&group).unwrap().unwrap();
+        let replacement = fixture.media_root.join("replacement.tmp");
+        fs::write(&replacement, "replacement").unwrap();
+        fs::rename(replacement, &sidecar).unwrap();
+        assert!(remove_absorbed_sidecar(&group, &original).is_err());
+        assert_eq!(fs::read_to_string(sidecar).unwrap(), "replacement");
+        assert_eq!(
+            fs::read_dir(&fixture.media_root)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().contains(".absorbing"))
+                .count(),
+            0
+        );
     }
 
     // AC: @wd14-managed-filesystem-safety ac-managed-paths
     #[cfg(unix)]
     #[test]
-    fn validation_rejects_escaping_media_and_sidecar_symlinks() {
+    fn validation_rejects_escaping_media_sidecar_symlinks_and_lossy_key_collisions() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
         use std::os::unix::fs::symlink;
 
         let root = tempfile::tempdir().unwrap();
@@ -992,6 +1492,10 @@ mod tests {
             path: sidecar_link,
             targets: vec![target],
         };
-        assert!(validate_existing_sidecar(&group).is_err());
+        assert!(read_existing_sidecar(&group).is_err());
+
+        let first = PathBuf::from(OsString::from_vec(vec![b'x', 0xff]));
+        let second = PathBuf::from(OsString::from_vec(vec![b'x', 0xfe]));
+        assert_ne!(path_key(&first), path_key(&second));
     }
 }
