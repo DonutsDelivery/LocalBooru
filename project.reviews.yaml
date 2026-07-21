@@ -1602,6 +1602,12 @@ reviews:
         payload:
           thread_ulid: 01KY30WD6JJSVMJS57EMGF12ZG
         timestamp: 2026-07-21T19:24:22.234Z
+      - _ulid: 01KY325V4R6EF2C4C131NDB140
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY30WEJNMZYBB1V701R3SKYF
+        timestamp: 2026-07-21T19:24:23.576Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1700,6 +1706,11 @@ reviews:
               sidecar, applying tags across unrelated media or producing false export conflicts.
               Group by native PathBuf/OsString identity without lossy display conversion.
             created_at: 2026-07-21T19:01:47.222Z
+          - _ulid: 01KY325V3W0A4S47GXGYS1HEMQ
+            author: "@claude"
+            body: "Fixed in b1e9417: grouping keys now preserve native path representation instead of lossy
+              UTF-8 display strings; a non-UTF8 collision regression test was added."
+            created_at: 2026-07-21T19:24:23.547Z
         kind: blocker
       - _ulid: 01KY30WFYR6KGQD4GB4RJB1CGW
         anchor:
@@ -1813,5 +1824,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:22.194Z
+    updated_at: 2026-07-21T19:24:23.547Z
     notes: []
