@@ -459,6 +459,9 @@ features:
           An installable built-in add-on exchanges LocalBooru tags with same-stem UTF-8 text
           sidecars used by WD14-compatible dataset and media tools. It supports additive import,
           safe absorb, and deterministic export over registered media directories.
+        status:
+          maturity: draft
+          implementation: implemented
         depends_on: []
         implements: []
         relates_to: []
