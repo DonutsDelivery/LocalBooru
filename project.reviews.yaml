@@ -2014,6 +2014,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY32K4SBSGY0N2B9YTCGBVJK
         timestamp: 2026-07-21T19:31:39.455Z
+      - _ulid: 01KY32K60KX2S4DPT9QVKBDY6M
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY32K603A2CBBK4GTSJY615F
+        timestamp: 2026-07-21T19:31:40.691Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -2123,7 +2130,24 @@ reviews:
               cross-applying unrelated sidecars.
             created_at: 2026-07-21T19:31:39.436Z
         kind: blocker
+      - _ulid: 01KY32K603A2CBBK4GTSJY615F
+        anchor:
+          type: code
+          commit: b1e9417
+          line_end: 1500
+          line_start: 1459
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY32K604MJSW9N386NM88AXZ
+            author: "@claude"
+            body: No behavioral tests annotate or prove compound library/directory scope or structured mixed
+              batch results. The managed-path test exercises private helpers rather than
+              run_operation. Add real multi-library/duplicate-ID and mixed success/failure service
+              tests with the missing AC annotations.
+            created_at: 2026-07-21T19:31:40.676Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:31:39.436Z
+    updated_at: 2026-07-21T19:31:40.676Z
     notes: []
