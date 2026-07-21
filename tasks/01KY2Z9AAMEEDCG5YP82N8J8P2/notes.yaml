@@ -24,3 +24,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T18:43:06.557Z
+  - _ulid: 01KY348957ZH067HXKBCDMA2NJ
+    content: "Approach: register wd14-sidecar as AddonRuntime::Builtin with no port/dependencies; add
+      settings-prefixed installed-gated import/absorb/export handlers using spawn_blocking; wire
+      router and behaviorally test manifest shape, gate, request validation, and service dispatch.
+      Reuse AddonManager::get_addon and existing settings access controls."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T20:00:40.615Z
