@@ -21,6 +21,7 @@
     "clean:builds": "./scripts/clean-builds.sh",
     "release:linux": "./scripts/build-linux-local.sh",
     "release:windows": "./scripts/build-windows-local.sh",
+    "test:dev-startup": "./scripts/test-run-dev.sh",
     "test:launcher": "./scripts/test-run-launcher.sh"
   },
   "keywords": [
