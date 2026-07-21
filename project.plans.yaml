@@ -631,7 +631,7 @@ plans:
       dispatch branch.
     status: active
     approved_at: null
-    branch: plan/plan-wd14-text-sidecar-add-on/01ky2z86
+    branch: plan/wd14-sidecars-implementation
     derived_specs:
       - "@wd14-text-sidecars"
       - "@wd14-sidecar-exchange-contract"
