@@ -21,6 +21,7 @@ tags:
   - frontend
   - react
 vcs_refs: []
+review_ref: "@01KY36A7TF7PJ6CQHQYNXGV6PW"
 submission_linkage:
   review_url: null
   branch: dispatch/task/build-wd14-addon-settings-panel/01ky2z9a
@@ -67,6 +68,13 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-07-21T20:26:06.631Z
+  - author: "@claude"
+    changes:
+      review_ref:
+        new: "@01KY36A7TF7PJ6CQHQYNXGV6PW"
+        previous: null
+    command: review-link
+    timestamp: 2026-07-21T20:36:42.212Z
 created_at: 2026-07-21T18:33:51.731Z
 started_at: 2026-07-21T20:16:50.206Z
 submitted_at: 2026-07-21T20:26:06.630Z

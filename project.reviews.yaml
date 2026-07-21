@@ -2509,3 +2509,31 @@ reviews:
     created_at: 2026-07-21T20:13:58.164Z
     updated_at: 2026-07-21T20:14:11.302Z
     notes: []
+  - _ulid: 01KY36A7TF7PJ6CQHQYNXGV6PW
+    slugs: []
+    title: Review WD14 add-on settings panel
+    author: "@claude"
+    checks: []
+    events:
+      - _ulid: 01KY36A7TE26YV0AMWXJDX4A5F
+        actor: "@claude"
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-07-21T20:36:41.934Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@build-wd14-addon-settings-panel"
+    subject:
+      type: code
+      base_branch: plan/wd14-sidecars-implementation
+      base_commit: d6fd34718bac5c853a5c7f50e15203347f3efb84
+      head_branch: dispatch/task/build-wd14-addon-settings-panel/01ky2z9a
+      head_commit: 8086d749565a334f6efe34f73fe6120ed8a891b2
+    threads: []
+    verdicts: []
+    created_at: 2026-07-21T20:36:41.935Z
+    updated_at: null
+    notes: []
