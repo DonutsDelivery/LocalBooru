@@ -851,6 +851,10 @@ features:
             id: ac-scan-reconcile
             then: the stale identity is removed before it can be opened or adjusted
             when: the scan-complete refresh is published
+          - given: an image is opened from an auxiliary gallery surface such as playback history
+            id: ac-canonical-entry
+            then: the image carries its canonical library, directory, content version, and media URLs
+            when: the Lightbox receives the image
         priority: high
         tags: []
         created: 2026-07-20T08:04:52.074Z
