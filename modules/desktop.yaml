@@ -721,6 +721,12 @@ features:
             then: The report preserves native-library inventory and cuDNN frontend and backend evidence
               collected before model execution
             when: The user runs the strict CUDA diagnostic
+          - given: a managed Windows CUDA environment contains native runtime libraries in installed NVIDIA
+              package directories
+            id: ac-managed-native-library-search
+            then: each existing managed native-library directory is available ahead of inherited search
+              locations exactly once while inherited locations retain their order
+            when: the Auto Tagger sidecar starts
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
