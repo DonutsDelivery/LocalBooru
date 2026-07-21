@@ -224,3 +224,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T12:03:24.265Z
+  - _ulid: 01KY2A8PMRKG8VRJQEMPX0VWWN
+    content: Diagnostic hardening now runs a no-inference runtime inventory first, enables cuDNN
+      frontend/backend child logging, preserves inherited environment, returns primary native
+      crashes as structured HTTP 200 data, retains output head/tail plus highlights, and skips
+      strict inference when primary JSON is absent. CUDA dependency pins and production provider
+      policy remain unchanged; CUDA acceptance still requires nonzero exact-model CUDA nodes.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T12:26:31.449Z
