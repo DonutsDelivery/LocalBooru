@@ -20,3 +20,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T18:43:10.979Z
+  - _ulid: 01KY36BFMQ2A944CZPWQZ4ZST2
+    content: "Approach: verify all WD14 AC annotations against behavioral tests, run locked Rust library
+      tests, complete frontend Node/Vitest tests, changed-file lint plus repository lint, production
+      build, and kspec validation/alignment. Fill only WD14-specific gaps and record unrelated
+      pre-existing validation/lint blockers explicitly."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T20:37:22.712Z
