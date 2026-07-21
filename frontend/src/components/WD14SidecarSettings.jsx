@@ -11,6 +11,7 @@ import {
   buildWd14RequestDirectories,
   getWd14Failures,
   getWd14SummaryItems,
+  MAX_WD14_DIRECTORIES,
   wd14ConfirmationMessage,
   wd14StatusLabel,
 } from './wd14SidecarUi'
@@ -38,6 +39,7 @@ export default function WD14SidecarSettings() {
   const [busyOperation, setBusyOperation] = useState(null)
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
+  const [announcement, setAnnouncement] = useState('')
   const operationLock = useRef(false)
 
   useEffect(() => {
@@ -70,20 +72,30 @@ export default function WD14SidecarSettings() {
   function toggleDirectory(key) {
     setSelectedKeys(current => {
       const next = new Set(current)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      if (next.has(key)) {
+        next.delete(key)
+      } else if (next.size < MAX_WD14_DIRECTORIES) {
+        next.add(key)
+      }
       return next
     })
   }
 
   function selectAll() {
     setSelectedKeys(new Set(
-      directories.filter(directory => directory.accessible).map(directory => directory.key),
+      directories
+        .filter(directory => directory.accessible)
+        .slice(0, MAX_WD14_DIRECTORIES)
+        .map(directory => directory.key),
     ))
   }
 
   async function runOperation(operation) {
     if (operationLock.current || busyOperation || requestDirectories.length === 0) return
+    if (requestDirectories.length > MAX_WD14_DIRECTORIES) {
+      setError(`Select no more than ${MAX_WD14_DIRECTORIES} directories.`)
+      return
+    }
 
     const confirmation = wd14ConfirmationMessage(
       operation,
@@ -96,6 +108,7 @@ export default function WD14SidecarSettings() {
     setBusyOperation(operation)
     setError(null)
     setResult(null)
+    setAnnouncement(`${OPERATION_LABELS[operation]} started.`)
 
     try {
       let response
@@ -107,8 +120,13 @@ export default function WD14SidecarSettings() {
         response = await exportWd14Sidecars(requestDirectories, overwrite)
       }
       setResult(response)
+      setAnnouncement(
+        `${OPERATION_LABELS[operation]} complete. ${response.summary?.sidecars_succeeded || 0} succeeded, ${response.summary?.sidecars_skipped || 0} skipped, and ${response.summary?.sidecars_failed || 0} failed.`,
+      )
     } catch (operationError) {
-      setError(`${OPERATION_LABELS[operation]} failed: ${errorMessage(operationError)}`)
+      const message = `${OPERATION_LABELS[operation]} failed: ${errorMessage(operationError)}`
+      setError(message)
+      setAnnouncement(message)
     } finally {
       operationLock.current = false
       setBusyOperation(null)
@@ -127,13 +145,17 @@ export default function WD14SidecarSettings() {
         </p>
       </header>
 
+      <p className="wd14-live-status" role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
+
       {error && <div className="wd14-message error" role="alert">{error}</div>}
 
       <div className="wd14-directory-section">
         <div className="wd14-section-heading">
           <div>
             <h3>Directories</h3>
-            <span>{selectedKeys.size} of {directories.length} selected</span>
+            <span>{selectedKeys.size} of {directories.length} selected (maximum {MAX_WD14_DIRECTORIES})</span>
           </div>
           <div className="wd14-selection-actions">
             <button type="button" onClick={selectAll} disabled={loading || busyOperation !== null}>
@@ -163,7 +185,11 @@ export default function WD14SidecarSettings() {
                 <input
                   type="checkbox"
                   checked={selectedKeys.has(directory.key)}
-                  disabled={!directory.accessible || busyOperation !== null}
+                  disabled={
+                    !directory.accessible
+                    || busyOperation !== null
+                    || (selectedKeys.size >= MAX_WD14_DIRECTORIES && !selectedKeys.has(directory.key))
+                  }
                   onChange={() => toggleDirectory(directory.key)}
                 />
                 <span className="wd14-directory-details">
@@ -212,7 +238,7 @@ export default function WD14SidecarSettings() {
       </div>
 
       {result && (
-        <div className="wd14-results" aria-live="polite">
+        <div className="wd14-results">
           <h3>{OPERATION_LABELS[result.operation] || 'Operation'} results</h3>
           <div className="wd14-summary-grid">
             {getWd14SummaryItems(result.summary).map(([label, value]) => (

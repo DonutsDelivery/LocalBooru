@@ -1,4 +1,5 @@
 export const WD14_OPERATIONS = Object.freeze(['import', 'absorb', 'export'])
+export const MAX_WD14_DIRECTORIES = 100
 
 export function wd14DirectoryKey(libraryId, directoryId) {
   return `${libraryId}:${directoryId}`
