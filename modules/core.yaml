@@ -846,6 +846,11 @@ features:
             then: the exact returned media URL is immediately servable, decodable, and remains adjusted after
               reopening
             when: adjustments are applied successfully
+          - given: a completed library scan removes or reidentifies an image that is still present in the
+              current gallery
+            id: ac-scan-reconcile
+            then: the stale identity is removed before it can be opened or adjusted
+            when: the scan-complete refresh is published
         priority: high
         tags: []
         created: 2026-07-20T08:04:52.074Z
