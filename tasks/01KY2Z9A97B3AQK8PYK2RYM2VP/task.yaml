@@ -1,0 +1,25 @@
+_ulid: 01KY2Z9A97B3AQK8PYK2RYM2VP
+slugs:
+  - implement-native-wd14-sidecar-service
+title: Implement native WD14 sidecar service
+type: task
+description: >
+  Implement and test the bounded native parser, serializer, same-stem grouping, canonical
+  managed-path validation, additive per-directory tag association logic, safe absorb sequencing,
+  deterministic atomic export, collision handling, counts, and structured per-sidecar results. Keep
+  all work library/directory/image scoped and reuse existing tag semantics.
+spec_ref: "@wd14-sidecar-exchange-contract"
+plan_ref: "@plan-wd14-text-sidecar-add-on"
+origin: derived
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags:
+  - backend
+  - rust
+  - filesystem
+vcs_refs: []
+created_at: 2026-07-21T18:33:51.655Z
+todos: []

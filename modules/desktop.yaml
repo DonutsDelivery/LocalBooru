@@ -736,6 +736,56 @@ features:
         tags: []
         created: 2026-07-19T06:05:34.743Z
         notes: []
+      - _ulid: 01KY2Z9A5YJG99AJNP2Z6HA52H
+        slugs:
+          - wd14-addon-settings
+        title: WD14 Add-on Settings
+        type: requirement
+        description: >
+          Installed WD14 Text Sidecars provides a desktop settings panel for selecting managed
+          directories and running import, absorb, and export with clear destructive controls and
+          results.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        acceptance_criteria:
+          - given: |
+              the user opens Add-on Settings
+            id: ac-installed-visibility
+            then: |
+              its settings panel is shown only while installed
+            when: |
+              WD14 Text Sidecars is installed or uninstalled
+          - given: >
+              multiple mounted libraries contain registered directories, including colliding numeric
+              directory identifiers
+            id: ac-managed-selection
+            then: >
+              available directories are identified by both library and directory, support select-all
+              and clear, and no arbitrary filesystem path can be entered
+            when: |
+              the user selects operation scope
+          - given: |
+              at least one available directory is selected
+            id: ac-operation-controls
+            then: >
+              duplicate submissions are disabled while active, Absorb requires deletion
+              confirmation, and overwrite-enabled Export requires replacement confirmation
+            when: |
+              the user runs Import, Absorb, or Export
+          - given: |
+              a sidecar operation returns successes, skips, or failures
+            id: ac-visible-results
+            then: >
+              it presents the aggregate outcome and actionable per-sidecar failures without leaving
+              the settings screen unusable
+            when: |
+              the panel receives the result
+        tags: []
+        created: 2026-07-21T18:33:51.550Z
+        notes: []
     created: 2026-07-12T06:35:00.381Z
     notes: []
   - _ulid: 01KXPM0TN30TDXXDSAZFTJRX3K

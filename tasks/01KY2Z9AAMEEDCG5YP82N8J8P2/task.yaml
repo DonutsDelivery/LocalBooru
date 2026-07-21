@@ -1,0 +1,25 @@
+_ulid: 01KY2Z9AAMEEDCG5YP82N8J8P2
+slugs:
+  - register-expose-wd14-builtin-addon
+title: Register and expose the WD14 built-in add-on
+type: task
+description: >
+  Register the no-sidecar built-in manifest and add installed-gated native settings routes for
+  Import, Absorb, and Export. Validate compound directory selections before work, invoke the service
+  through `spawn_blocking`, preserve settings-prefix access control, and add route/manifest tests.
+spec_ref: "@wd14-text-sidecars"
+plan_ref: "@plan-wd14-text-sidecar-add-on"
+origin: derived
+status: pending
+blocked_by: []
+depends_on:
+  - "@implement-native-wd14-sidecar-service"
+context: []
+priority: 2
+tags:
+  - backend
+  - rust
+  - api
+vcs_refs: []
+created_at: 2026-07-21T18:33:51.700Z
+todos: []

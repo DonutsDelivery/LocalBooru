@@ -1,0 +1,27 @@
+_ulid: 01KY2Z9ACQ67DD7TB5SN09H892
+slugs:
+  - verify-wd14-sidecar-integration
+title: Verify WD14 sidecar integration
+type: task
+description: >
+  Verify acceptance-criterion annotations and end-to-end import, absorb, export, collision, failure,
+  and round-trip behavior across Rust and frontend. Run kspec validation/alignment, locked Rust
+  library tests, frontend tests, lint, and production build; record any environment-limited checks
+  rather than hiding them.
+spec_ref: "@wd14-managed-filesystem-safety"
+plan_ref: "@plan-wd14-text-sidecar-add-on"
+origin: derived
+status: pending
+blocked_by: []
+depends_on:
+  - "@implement-native-wd14-sidecar-service"
+  - "@register-expose-wd14-builtin-addon"
+  - "@build-wd14-addon-settings-panel"
+context: []
+priority: 2
+tags:
+  - verification
+  - integration
+vcs_refs: []
+created_at: 2026-07-21T18:33:51.767Z
+todos: []

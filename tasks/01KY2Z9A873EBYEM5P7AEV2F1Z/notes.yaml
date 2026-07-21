@@ -1,0 +1,9 @@
+notes:
+  - _ulid: 01KY2Z9A6A66H9SVERP0TW0TVC
+    content: >
+      Add API helpers in `frontend/src/api.js` and a `WD14SidecarSettings.jsx` panel. Reuse
+      registered-directory selection conventions from `MigrationSettings.jsx`, but key selection by
+      `library_id:directory_id`. Wire installed-only visibility through `AddonSettings.jsx` and
+      `addonSettingsCatalog.js`.
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:33:51.562Z

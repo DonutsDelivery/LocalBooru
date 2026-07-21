@@ -449,6 +449,163 @@ features:
     tests: []
     traits: []
     tags: []
+    features:
+      - _ulid: 01KY2Z9A427GKX4K4QC372SK6G
+        slugs:
+          - wd14-text-sidecars
+        title: WD14 Text Sidecars
+        type: feature
+        description: >
+          An installable built-in add-on exchanges LocalBooru tags with same-stem UTF-8 text
+          sidecars used by WD14-compatible dataset and media tools. It supports additive import,
+          safe absorb, and deterministic export over registered media directories.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        acceptance_criteria:
+          - given: |
+              WD14 Text Sidecars is not installed
+            id: ac-builtin-install
+            then: >
+              Import, Absorb, and Export become available without installing Python, creating a
+              virtual environment, opening a port, or starting a sidecar process
+            when: |
+              the user installs it from Addons
+          - given: |
+              WD14 Text Sidecars is not installed
+            id: ac-installed-gate
+            then: |
+              the operation is rejected without reading media sidecars or changing tags
+            when: |
+              a client requests a tag-sidecar operation
+        tags: []
+        requirements:
+          - _ulid: 01KY2Z9A4PCK8VF71TRZZ9ZQ3J
+            slugs:
+              - wd14-sidecar-exchange-contract
+            title: WD14 Sidecar Exchange Contract
+            type: requirement
+            description: >
+              Same-stem WD14 files have a stable parse, merge, absorb, and serialization contract
+              that preserves existing LocalBooru metadata and supports safe round trips.
+            depends_on: []
+            implements: []
+            relates_to: []
+            tests: []
+            traits: []
+            acceptance_criteria:
+              - given: >
+                  a media file has a same-stem lowercase `.txt` file containing UTF-8
+                  comma-separated tags
+                id: ac-text-contract
+                then: >
+                  surrounding whitespace and empty values are ignored, duplicate values are added at
+                  most once, underscores and spaces remain distinct, and imported tag names use
+                  LocalBooru's lowercase naming convention
+                when: |
+                  Import or Absorb reads the sidecar
+              - given: >
+                  an image already has LocalBooru tags and its sidecar contains existing and new tags
+                id: ac-additive-import
+                then: >
+                  only missing associations are added as manual general tags without inferred
+                  confidence, while existing associations, confidence values, categories, and tags
+                  remain unchanged
+                when: |
+                  Import processes the image
+              - given: |
+                  one sidecar maps to one or more media records
+                id: ac-safe-absorb
+                then: >
+                  the sidecar is removed only after every matching media record commits the additive
+                  import successfully, and a failed import leaves the sidecar available for retry
+                when: |
+                  Absorb processes the sidecar
+              - given: |
+                  a media record has a LocalBooru tag set and no conflicting same-stem media record
+                id: ac-deterministic-export
+                then: >
+                  it writes the complete tag set in deterministic comma-separated order to the
+                  same-stem `.txt` file, skips an existing file by default, and replaces it
+                  atomically only when overwrite was explicitly requested
+                when: |
+                  Export processes the record
+              - given: |
+                  multiple media files in a selected directory resolve to the same sidecar stem
+                id: ac-shared-stem
+                then: >
+                  Import applies one parsed sidecar to every matching record, Absorb removes it only
+                  after every target succeeds, and Export changes nothing unless every target has
+                  the same tag set
+                when: |
+                  a sidecar operation runs
+              - given: >
+                  an image's tag set is exported and the resulting sidecar is imported for an
+                  untagged image
+                id: ac-round-trip
+                then: |
+                  the imported image has the same normalized tag-name set as the exported image
+                when: |
+                  both operations complete successfully
+            tags: []
+            created: 2026-07-21T18:33:51.510Z
+            notes: []
+          - _ulid: 01KY2Z9A5D98XWSWKX7SJC8PHK
+            slugs:
+              - wd14-managed-filesystem-safety
+            title: WD14 Managed Filesystem Safety
+            type: requirement
+            description: >
+              Sidecar operations remain scoped to mounted LocalBooru libraries and registered watch
+              directories while reporting partial failures without corrupting files or cross-linking
+              database identities.
+            depends_on: []
+            implements: []
+            relates_to: []
+            tests: []
+            traits: []
+            acceptance_criteria:
+              - given: >
+                  mounted libraries or directories contain colliding numeric directory or image
+                  identifiers
+                id: ac-compound-scope
+                then: >
+                  each read and mutation applies only to the exact submitted library and registered
+                  directory identity
+                when: |
+                  a sidecar operation targets selected directories
+              - given: |
+                  a request selects registered directories
+                id: ac-managed-paths
+                then: >
+                  paths come from LocalBooru records, remain within canonical registered roots, and
+                  symlinked or non-regular sidecars and escaping paths are rejected without mutation
+                when: |
+                  media and sidecar paths are resolved
+              - given: >
+                  a bounded operation encounters missing sidecars, inaccessible media, invalid text,
+                  collisions, and successful files
+                id: ac-batch-results
+                then: >
+                  successful work remains committed and the response reports aggregate counts plus a
+                  specific outcome for each failed or skipped sidecar
+                when: |
+                  the operation completes
+              - given: |
+                  an Import or Absorb operation is retried after a partial failure
+                id: ac-idempotent-retry
+                then: >
+                  existing associations are not duplicated or replaced and remaining valid targets
+                  can complete safely
+                when: |
+                  previously committed targets are processed again
+            tags: []
+            created: 2026-07-21T18:33:51.533Z
+            notes: []
+        created: 2026-07-21T18:33:51.490Z
+        notes: []
     requirements:
       - _ulid: 01KXQG1PN6YD58XR73JATNRSSX
         slugs:

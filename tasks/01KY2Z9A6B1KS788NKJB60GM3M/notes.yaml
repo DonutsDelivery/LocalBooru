@@ -1,0 +1,8 @@
+notes:
+  - _ulid: 01KY2Z9A6AD1FMCAPZYT661SPC
+    content: >
+      Register `wd14-sidecar` as `AddonRuntime::Builtin` in `src-tauri/src/addons/manifest.rs`.
+      Expose native endpoints beneath `/api/settings/wd14-sidecar` and gate them through
+      `AddonManager::get_addon`.
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:33:51.562Z

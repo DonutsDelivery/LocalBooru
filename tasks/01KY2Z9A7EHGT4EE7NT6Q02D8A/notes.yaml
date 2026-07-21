@@ -1,0 +1,8 @@
+notes:
+  - _ulid: 01KY2Z9A6AAS9GV3ME7EM842QB
+    content: >
+      Resolve libraries with `AppState::resolve_library`, query registered roots by directory
+      identity, canonicalize before access, and run blocking work through `spawn_blocking`. The
+      client must never submit a filesystem path. Apply explicit batch bounds before mutation.
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:33:51.562Z

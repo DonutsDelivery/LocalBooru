@@ -1,0 +1,18 @@
+_ulid: 01KY2Z9A6X9BBG2256Q334J3YT
+slugs:
+  - implement-wd14-sidecar-exchange-contract
+title: Implement WD14 Sidecar Exchange Contract
+type: task
+spec_ref: "@wd14-sidecar-exchange-contract"
+derivation: auto
+plan_ref: "@plan-wd14-text-sidecar-add-on"
+origin: derived
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-07-21T18:33:51.581Z
+todos: []

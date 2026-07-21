@@ -629,13 +629,36 @@ plans:
       manual, general-category, and confidence-free. All implementation tasks must run through
       isolated kspec dispatch and stack on the plan branch rather than the current unrelated
       dispatch branch.
-    status: approved
+    status: active
     approved_at: null
     branch: plan/plan-wd14-text-sidecar-add-on/01ky2z86
-    derived_specs: []
-    derived_tasks: []
+    derived_specs:
+      - "@wd14-text-sidecars"
+      - "@wd14-sidecar-exchange-contract"
+      - "@wd14-managed-filesystem-safety"
+      - "@wd14-addon-settings"
+    derived_tasks:
+      - "@implement-wd14-text-sidecars"
+      - "@implement-wd14-sidecar-exchange-contract"
+      - "@implement-wd14-managed-filesystem-safety"
+      - "@implement-wd14-add-on-settings"
+      - "@implement-native-wd14-sidecar-service"
+      - "@register-expose-wd14-builtin-addon"
+      - "@build-wd14-addon-settings-panel"
+      - "@verify-wd14-sidecar-integration"
     module_ref: "@core"
     source_path: /tmp/wd14-text-sidecar-plan.md
     created_at: 2026-07-21T18:33:14.660Z
     completed_at: null
-    notes: []
+    notes:
+      - _ulid: 01KY2Z9ADZVVX3T4PSNGCPDD9E
+        content: Use the current Rust/Axum/Tauri v2 implementation; the legacy Python API is reference-only.
+          Keep authoritative filesystem and SQLite mutations in native Rust. The backend should use
+          a bounded synchronous operation for the MVP and return aggregate plus per-sidecar
+          outcomes; persisted task/SSE/cancellation support is intentionally deferred. Existing
+          `.txt` files are skipped unless overwrite is explicitly selected. Imported tags are
+          lowercased, additive, manual, general-category, and confidence-free. All implementation
+          tasks must run through isolated kspec dispatch and stack on the plan branch rather than
+          the current unrelated dispatch branch.
+        author: DonutsDelivery
+        created_at: 2026-07-21T18:33:51.807Z

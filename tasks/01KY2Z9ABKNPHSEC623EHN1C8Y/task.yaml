@@ -1,0 +1,25 @@
+_ulid: 01KY2Z9ABKNPHSEC623EHN1C8Y
+slugs:
+  - build-wd14-addon-settings-panel
+title: Build WD14 add-on settings panel
+type: task
+description: >
+  Add frontend API helpers and an installed-only Add-on Settings panel with mounted
+  compound-directory selection, Import/Absorb/Export controls, destructive confirmations, overwrite
+  opt-in, in-flight locking, and summary plus per-sidecar failure presentation. Add pure
+  helper/catalog tests.
+spec_ref: "@wd14-addon-settings"
+plan_ref: "@plan-wd14-text-sidecar-add-on"
+origin: derived
+status: pending
+blocked_by: []
+depends_on:
+  - "@register-expose-wd14-builtin-addon"
+context: []
+priority: 2
+tags:
+  - frontend
+  - react
+vcs_refs: []
+created_at: 2026-07-21T18:33:51.731Z
+todos: []

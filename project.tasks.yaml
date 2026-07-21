@@ -1279,3 +1279,138 @@ tasks:
     started_at: 2026-07-21T17:19:02.253Z
     submitted_at: 2026-07-21T17:21:58.592Z
     automation: eligible
+  - _ulid: 01KY2Z9A6B1KS788NKJB60GM3M
+    slugs:
+      - implement-wd14-text-sidecars
+    title: Implement WD14 Text Sidecars
+    type: task
+    spec_ref: "@wd14-text-sidecars"
+    plan_ref: "@plan-wd14-text-sidecar-add-on"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 3
+    tags: []
+    notes_count: 1
+    todos_count: 0
+    created_at: 2026-07-21T18:33:51.563Z
+  - _ulid: 01KY2Z9A6X9BBG2256Q334J3YT
+    slugs:
+      - implement-wd14-sidecar-exchange-contract
+    title: Implement WD14 Sidecar Exchange Contract
+    type: task
+    spec_ref: "@wd14-sidecar-exchange-contract"
+    plan_ref: "@plan-wd14-text-sidecar-add-on"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 3
+    tags: []
+    notes_count: 1
+    todos_count: 0
+    created_at: 2026-07-21T18:33:51.581Z
+  - _ulid: 01KY2Z9A7EHGT4EE7NT6Q02D8A
+    slugs:
+      - implement-wd14-managed-filesystem-safety
+    title: Implement WD14 Managed Filesystem Safety
+    type: task
+    spec_ref: "@wd14-managed-filesystem-safety"
+    plan_ref: "@plan-wd14-text-sidecar-add-on"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 3
+    tags: []
+    notes_count: 1
+    todos_count: 0
+    created_at: 2026-07-21T18:33:51.598Z
+  - _ulid: 01KY2Z9A873EBYEM5P7AEV2F1Z
+    slugs:
+      - implement-wd14-add-on-settings
+    title: Implement WD14 Add-on Settings
+    type: task
+    spec_ref: "@wd14-addon-settings"
+    plan_ref: "@plan-wd14-text-sidecar-add-on"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 3
+    tags: []
+    notes_count: 1
+    todos_count: 0
+    created_at: 2026-07-21T18:33:51.623Z
+  - _ulid: 01KY2Z9A97B3AQK8PYK2RYM2VP
+    slugs:
+      - implement-native-wd14-sidecar-service
+    title: Implement native WD14 sidecar service
+    type: task
+    spec_ref: "@wd14-sidecar-exchange-contract"
+    plan_ref: "@plan-wd14-text-sidecar-add-on"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 2
+    tags:
+      - backend
+      - rust
+      - filesystem
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-21T18:33:51.655Z
+  - _ulid: 01KY2Z9AAMEEDCG5YP82N8J8P2
+    slugs:
+      - register-expose-wd14-builtin-addon
+    title: Register and expose the WD14 built-in add-on
+    type: task
+    spec_ref: "@wd14-text-sidecars"
+    plan_ref: "@plan-wd14-text-sidecar-add-on"
+    status: pending
+    blocked_by: []
+    depends_on:
+      - "@implement-native-wd14-sidecar-service"
+    priority: 2
+    tags:
+      - backend
+      - rust
+      - api
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-21T18:33:51.700Z
+  - _ulid: 01KY2Z9ABKNPHSEC623EHN1C8Y
+    slugs:
+      - build-wd14-addon-settings-panel
+    title: Build WD14 add-on settings panel
+    type: task
+    spec_ref: "@wd14-addon-settings"
+    plan_ref: "@plan-wd14-text-sidecar-add-on"
+    status: pending
+    blocked_by: []
+    depends_on:
+      - "@register-expose-wd14-builtin-addon"
+    priority: 2
+    tags:
+      - frontend
+      - react
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-21T18:33:51.731Z
+  - _ulid: 01KY2Z9ACQ67DD7TB5SN09H892
+    slugs:
+      - verify-wd14-sidecar-integration
+    title: Verify WD14 sidecar integration
+    type: task
+    spec_ref: "@wd14-managed-filesystem-safety"
+    plan_ref: "@plan-wd14-text-sidecar-add-on"
+    status: pending
+    blocked_by: []
+    depends_on:
+      - "@implement-native-wd14-sidecar-service"
+      - "@register-expose-wd14-builtin-addon"
+      - "@build-wd14-addon-settings-panel"
+    priority: 2
+    tags:
+      - verification
+      - integration
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-07-21T18:33:51.767Z
