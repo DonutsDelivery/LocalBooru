@@ -1463,6 +1463,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-07-21T18:58:47.041Z
+      - _ulid: 01KY30W99B6X24AKXYJ95H6A6K
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY30W98DQD4XTYNN5ZR3ZT45
+        timestamp: 2026-07-21T19:01:41.803Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1472,8 +1479,25 @@ reviews:
       content_hash: ""
       ref: "@implement-native-wd14-sidecar-service"
       shadow_commit: ""
-    threads: []
+    threads:
+      - _ulid: 01KY30W98DQD4XTYNN5ZR3ZT45
+        anchor:
+          type: code
+          commit: f31d5a9686279429cb0fc9136491d2ff71c0dbf3
+          line_end: 293
+          line_start: 293
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY30W98EZMNHVBPVRWG0NM76
+            author: DonutsDelivery
+            body: The importer validates metadata and then reopens the sidecar by pathname. A replacement
+              between those operations can bypass the symlink/size checks, and fs::read allocates
+              the replacement file before the parser enforces its byte cap. Open once with no-follow
+              where supported, validate that handle, and bounded-read at most MAX+1 bytes.
+            created_at: 2026-07-21T19:01:41.774Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T18:58:47.007Z
+    updated_at: 2026-07-21T19:01:41.774Z
     notes: []
