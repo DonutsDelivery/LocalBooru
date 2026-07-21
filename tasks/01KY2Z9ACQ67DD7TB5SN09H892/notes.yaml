@@ -44,3 +44,13 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-21T20:59:29.393Z
+  - _ulid: 01KY3AABF7PZ54S6F8QGTVXYR9
+    content: "Fix cycle 1: resolved both cycle-1 blockers in commit 312952a2. Shared-stem groups now
+      include invalid indexed targets before validation; filesystem-aware entry grouping prevents
+      case aliases from splitting destructive operations and fails closed for unresolved Unicode
+      equivalence. Verified 15 focused WD14 tests, full Rust suite (201 passed, 1 ignored), frontend
+      tests (79 Node + 5 component), targeted WD14 ESLint, and Vite production build. Independent
+      adversarial re-review found no remaining release blocker."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T21:46:39.976Z
