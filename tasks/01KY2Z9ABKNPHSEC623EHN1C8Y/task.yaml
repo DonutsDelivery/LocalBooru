@@ -11,8 +11,9 @@ description: >
 spec_ref: "@wd14-addon-settings"
 plan_ref: "@plan-wd14-text-sidecar-add-on"
 origin: derived
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Approved in @01KY36A7 and merged into plan/wd14-sidecars-implementation at e1e521c1
 depends_on:
   - "@register-expose-wd14-builtin-addon"
 context: []
@@ -75,8 +76,22 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-07-21T20:36:42.212Z
+  - author: "@claude"
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Approved in @01KY36A7 and merged into plan/wd14-sidecars-implementation at e1e521c1
+        previous: null
+      completed_at:
+        new: 2026-07-21T20:37:11.754Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-07-21T20:37:11.765Z
 created_at: 2026-07-21T18:33:51.731Z
 started_at: 2026-07-21T20:16:50.206Z
 submitted_at: 2026-07-21T20:26:06.630Z
+completed_at: 2026-07-21T20:37:11.754Z
 todos: []
 automation: eligible
