@@ -1,0 +1,23 @@
+notes:
+  - _ulid: 01KY1T6X0HG5GDHKH09VBGZ701
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Grouped folder navigation follows the selected library and directory scope without retaining
+      an incompatible folder path.
+
+
+
+      Acceptance Criteria:
+
+      - ac-scope-change: Given grouped folder mode is open inside a folder, when the user selects a
+      different directory, a different library, or All directories, then the old folder path is
+      cleared, grouped mode remains active, and the selected scope's folder catalog is shown
+
+      - ac-same-scope: Given grouped folder mode is open inside a folder, when the user changes a
+      filter without changing library or directory scope, then the current folder path remains
+      selected
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T07:45:55.217Z
