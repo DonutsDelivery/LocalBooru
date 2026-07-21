@@ -44,3 +44,12 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-21T20:25:58.561Z
+  - _ulid: 01KY366AQFQASDT2JGXCZYKPHT
+    content: "Review fixes: capped selection at the backend's 100-directory limit, added persistent live
+      status announcements, and added jsdom/Vitest behavioral component coverage for installed-only
+      rendering, select-all/clear, duplicate locking, path-free dispatch, confirmations, aggregate
+      results, failures, and continued usability. Verification now passes 79 Node tests + 5
+      component tests, changed-file ESLint, and production build."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T20:34:33.840Z
