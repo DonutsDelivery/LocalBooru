@@ -252,3 +252,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T14:50:23.120Z
+  - _ulid: 01KY2M0JK0ZTZCZ9RV0D6DDE6R
+    content: "Committed d5dfd650: Windows sidecars now prepend every managed nvidia/*/bin directory
+      using lossless native PATH composition, allowing cuDNN's delayed tensor-IR DLL load while
+      preserving inherited PATH. Runtime probe teardown now ends profiling, releases session
+      ownership, and suppresses cleanup-only failures without masking the primary CUDA error.
+      Verification: Auto Tagger 41 passed/1 GPU-gated skip; Rust 170/170 plus all-target check/fmt;
+      frontend 94/94 plus production build; adversarial review clean after lossless semicolon-path
+      correction. CUDA remains unaccepted pending exact Windows EVA nonzero-node evidence."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T15:16:50.912Z
