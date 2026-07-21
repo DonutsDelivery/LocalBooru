@@ -2103,6 +2103,12 @@ reviews:
         payload:
           thread_ulid: 01KY32JMMZ54HFEGVHNMD07BXW
         timestamp: 2026-07-21T19:58:52.343Z
+      - _ulid: 01KY345FEPCPWXFY124PMAX0WJ
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY32K3FR85PXXN0P160DEZPH
+        timestamp: 2026-07-21T19:59:08.758Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2224,6 +2230,12 @@ reviews:
               registered root. Bind validation and write to a no-follow directory handle or
               revalidate stable directory identity immediately around handle-relative operations.
             created_at: 2026-07-21T19:31:38.105Z
+          - _ulid: 01KY345FE078CDQ4ETE0GVRZXR
+            author: "@claude"
+            body: "Fixed in 12b74d7: Unix export opens and identity-checks the parent directory with no-follow,
+              then creates, links/renames, and unlinks by directory handle; replacement-race
+              coverage was added."
+            created_at: 2026-07-21T19:59:08.735Z
         kind: blocker
       - _ulid: 01KY32K4SBSGY0N2B9YTCGBVJK
         anchor:
@@ -2267,5 +2279,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:58:52.322Z
+    updated_at: 2026-07-21T19:59:08.735Z
     notes: []
