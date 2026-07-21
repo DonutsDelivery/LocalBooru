@@ -4,6 +4,8 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use r2d2::PooledConnection;
+use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, params_from_iter, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 #[cfg(not(unix))]
@@ -18,7 +20,8 @@ const MAX_MEDIA_CANDIDATES: usize = 50_000;
 const MAX_SIDECAR_BYTES: u64 = 1024 * 1024;
 const MAX_TAGS_PER_SIDECAR: usize = 10_000;
 const MAX_TAG_BYTES: usize = 1024;
-const MAX_RECONCILIATION_QUERIES: usize = 10_000;
+const MAX_LIBRARY_DIRECTORIES: usize = 1_000;
+const MAX_RECONCILIATION_QUERIES: usize = MAX_MEDIA_CANDIDATES * MAX_LIBRARY_DIRECTORIES;
 const TAG_LOOKUP_CHUNK: usize = 500;
 
 static WD14_OPERATION_LOCK: Mutex<()> = Mutex::new(());
@@ -123,6 +126,48 @@ struct ApplyFailure {
     added: usize,
 }
 
+struct DirectoryWriteLocks {
+    connections: Vec<(i64, PooledConnection<SqliteConnectionManager>)>,
+}
+
+impl DirectoryWriteLocks {
+    fn acquire(library: &LibraryContext, directory_ids: &[i64]) -> Result<Self, AppError> {
+        let mut locks = Self {
+            connections: Vec::with_capacity(directory_ids.len()),
+        };
+        for directory_id in directory_ids {
+            let pool = library.directory_db.get_pool(*directory_id)?;
+            let connection = pool.get()?;
+            connection.execute_batch("BEGIN IMMEDIATE")?;
+            locks.connections.push((*directory_id, connection));
+        }
+        Ok(locks)
+    }
+
+    fn get(&self, directory_id: i64) -> Option<&rusqlite::Connection> {
+        self.connections
+            .iter()
+            .find(|(candidate, _)| *candidate == directory_id)
+            .map(|(_, connection)| &**connection)
+    }
+
+    fn commit(mut self) -> Result<(), AppError> {
+        for (_, connection) in &self.connections {
+            connection.execute_batch("COMMIT")?;
+        }
+        self.connections.clear();
+        Ok(())
+    }
+}
+
+impl Drop for DirectoryWriteLocks {
+    fn drop(&mut self) {
+        for (_, connection) in &self.connections {
+            let _ = connection.execute_batch("ROLLBACK");
+        }
+    }
+}
+
 #[cfg(unix)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FileIdentity {
@@ -207,6 +252,12 @@ fn prepare_groups(
     let mut candidates = Vec::new();
     for selection in selections {
         let library = state.resolve_library(Some(&selection.library_id))?;
+        if library.directory_db.get_all_directory_ids().len() > MAX_LIBRARY_DIRECTORIES {
+            return Err(AppError::BadRequest(format!(
+                "Library {} exceeds the {MAX_LIBRARY_DIRECTORIES}-directory WD14 limit",
+                selection.library_id
+            )));
+        }
         if !library.directory_db.db_exists(selection.directory_id) {
             return Err(AppError::NotFound(format!(
                 "Directory database not found for {}:{}",
@@ -275,7 +326,7 @@ fn prepare_groups(
                         library_id: selection.library_id,
                         directory_id: selection.directory_id,
                         image_id,
-                        media_path: media_path.to_string_lossy().into_owned(),
+                        media_path: display_path(&media_path),
                     },
                     root,
                 };
@@ -456,6 +507,17 @@ fn apply_tags(
     tags: &BTreeSet<String>,
     reconciliation_budget: &mut usize,
 ) -> Result<usize, ApplyFailure> {
+    let directory_ids = library.directory_db.get_all_directory_ids();
+    if directory_ids.len() > *reconciliation_budget {
+        return Err(ApplyFailure {
+            error: AppError::BadRequest(format!(
+                "WD14 count reconciliation exceeds the {MAX_RECONCILIATION_QUERIES}-query operation limit"
+            )),
+            added: 0,
+        });
+    }
+    *reconciliation_budget -= directory_ids.len();
+
     let write_associations = || -> Result<(usize, Vec<i64>), AppError> {
         let tag_ids = {
             let mut main = library.main_pool.get()?;
@@ -494,7 +556,7 @@ fn apply_tags(
 
     let (added, tag_ids) =
         write_associations().map_err(|error| ApplyFailure { error, added: 0 })?;
-    reconcile_counts(library, directory_id, &tag_ids, reconciliation_budget)
+    reconcile_counts(library, directory_id, &tag_ids, &directory_ids)
         .map_err(|error| ApplyFailure { error, added })?;
     Ok(added)
 }
@@ -503,18 +565,11 @@ fn reconcile_counts(
     library: &LibraryContext,
     directory_id: i64,
     tag_ids: &[i64],
-    reconciliation_budget: &mut usize,
+    directory_ids: &[i64],
 ) -> Result<(), AppError> {
-    let directory_ids = library.directory_db.get_all_directory_ids();
-    if directory_ids.len() > *reconciliation_budget {
-        return Err(AppError::BadRequest(format!(
-            "WD14 count reconciliation exceeds the {MAX_RECONCILIATION_QUERIES}-query operation limit"
-        )));
-    }
-    *reconciliation_budget -= directory_ids.len();
-
     let mut main = library.main_pool.get()?;
     let transaction = main.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let directory_locks = DirectoryWriteLocks::acquire(library, directory_ids)?;
     let unique_tag_ids: Vec<_> = tag_ids
         .iter()
         .copied()
@@ -536,8 +591,9 @@ fn reconcile_counts(
              WHERE tag_id IN ({placeholders}) GROUP BY tag_id"
         );
         for candidate_directory_id in directory_ids {
-            let pool = library.directory_db.get_pool(candidate_directory_id)?;
-            let connection = pool.get()?;
+            let connection = directory_locks
+                .get(*candidate_directory_id)
+                .ok_or_else(|| AppError::Internal("Missing locked directory database".into()))?;
             let mut statement = connection.prepare(&query)?;
             let rows = statement.query_map(params_from_iter(unique_tag_ids.iter()), |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
@@ -549,14 +605,14 @@ fn reconcile_counts(
         }
     }
 
-    let directory_pool = library.directory_db.get_pool(directory_id)?;
-    let directory_connection = directory_pool.get()?;
+    let directory_connection = directory_locks
+        .get(directory_id)
+        .ok_or_else(|| AppError::Internal("Missing selected directory lock".into()))?;
     let tagged_count: i64 = directory_connection.query_row(
         "SELECT COUNT(DISTINCT image_id) FROM image_tags",
         [],
         |row| row.get(0),
     )?;
-    drop(directory_connection);
 
     {
         let mut update = transaction.prepare("UPDATE tags SET post_count = ?1 WHERE id = ?2")?;
@@ -569,6 +625,7 @@ fn reconcile_counts(
         params![tagged_count, directory_id],
     )?;
     transaction.commit()?;
+    directory_locks.commit()?;
     Ok(())
 }
 
@@ -786,14 +843,17 @@ fn restore_quarantined_sidecar(
             "sidecar bytes are unavailable for safe restoration",
         )
     })?;
-    let mut restored = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(original)?;
-    restored.write_all(bytes)?;
-    restored.sync_all()?;
-    drop(restored);
-    fs::remove_file(quarantine)
+    let parent = original
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    let parent_identity = file_identity(&fs::metadata(parent)?);
+    match atomic_write_sidecar(original, bytes, false, parent_identity)? {
+        WriteOutcome::Written => fs::remove_file(quarantine),
+        WriteOutcome::SkippedExists => Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "same-stem sidecar already exists",
+        )),
+    }
 }
 
 fn read_existing_sidecar(group: &SidecarGroup) -> Result<Option<OpenedSidecar>, String> {
@@ -1737,9 +1797,11 @@ mod tests {
             (1, "good.jpg", "good"),
             (2, "invalid.jpg", "invalid"),
             (3, "missing.jpg", "missing"),
+            (4, "inaccessible.jpg", "inaccessible"),
         ]);
         fs::write(fixture.media_root.join("good.txt"), "one, two").unwrap();
         fs::write(fixture.media_root.join("invalid.txt"), [0xff]).unwrap();
+        fs::remove_file(fixture.media_root.join("inaccessible.jpg")).unwrap();
 
         let response = run_operation(
             &fixture.state,
@@ -1747,12 +1809,12 @@ mod tests {
             fixture.request(false),
         )
         .unwrap();
-        assert_eq!(response.summary.media_candidates, 3);
+        assert_eq!(response.summary.media_candidates, 4);
         assert_eq!(response.summary.sidecars_succeeded, 1);
-        assert_eq!(response.summary.sidecars_failed, 1);
+        assert_eq!(response.summary.sidecars_failed, 2);
         assert_eq!(response.summary.sidecars_skipped, 1);
         assert_eq!(response.summary.tags_added, 2);
-        assert_eq!(response.results.len(), 3);
+        assert_eq!(response.results.len(), 4);
         assert!(response
             .results
             .iter()
@@ -1768,8 +1830,28 @@ mod tests {
         assert!(response
             .results
             .iter()
+            .any(|result| result.status == SidecarStatus::FailedValidation));
+        assert!(response
+            .results
+            .iter()
             .all(|result| result.targets.len() == 1
                 && result.targets[0].library_id == fixture.library_id));
+
+        let collision = Fixture::new(&[(1, "same.jpg", "one"), (2, "same.png", "two")]);
+        collision.add_tags(1, &["first"]);
+        collision.add_tags(2, &["second"]);
+        let collision_response = run_operation(
+            &collision.state,
+            Wd14Operation::Export,
+            collision.request(false),
+        )
+        .unwrap();
+        assert_eq!(collision_response.summary.sidecars_failed, 1);
+        assert_eq!(
+            collision_response.results[0].status,
+            SidecarStatus::ConflictingMediaStem
+        );
+        assert!(!collision.media_root.join("same.txt").exists());
     }
 
     // AC: @wd14-managed-filesystem-safety ac-managed-paths
