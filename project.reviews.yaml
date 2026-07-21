@@ -1512,6 +1512,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY30WK6SDKEGMJ1YSGYGE9H3
         timestamp: 2026-07-21T19:01:51.998Z
+      - _ulid: 01KY30XPRGB3KP59ZV42RQHWPY
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY30XPQQVYXN5V00AQJTZNJA
+        timestamp: 2026-07-21T19:02:28.368Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1641,7 +1648,24 @@ reviews:
               batch operation.
             created_at: 2026-07-21T19:01:51.961Z
         kind: blocker
+      - _ulid: 01KY30XPQQVYXN5V00AQJTZNJA
+        anchor:
+          type: code
+          commit: f31d5a9686279429cb0fc9136491d2ff71c0dbf3
+          line_end: 556
+          line_start: 551
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY30XPQQH5B2JBSY30H76MX7
+            author: DonutsDelivery
+            body: Export serializes unrestricted database tag names by joining with commas/newlines. Existing
+              tags containing commas or controls cannot round-trip and can split into multiple tags
+              or be rejected; export also bypasses parser byte/tag limits. Validate representability
+              and limits before writing, with a failure that leaves the destination untouched.
+            created_at: 2026-07-21T19:02:28.343Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:01:51.961Z
+    updated_at: 2026-07-21T19:02:28.343Z
     notes: []
