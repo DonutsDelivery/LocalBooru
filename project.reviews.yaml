@@ -1283,3 +1283,29 @@ reviews:
     created_at: 2026-07-20T18:47:23.382Z
     updated_at: 2026-07-20T18:47:39.867Z
     notes: []
+  - _ulid: 01KY2C04KBTN29V4JXHDYN8NBF
+    slugs: []
+    title: Review managed LADA bundle installer
+    author: "@claude"
+    checks: []
+    events:
+      - _ulid: 01KY2C04KAGMSD3QB3PPNPHATX
+        actor: "@claude"
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-07-21T12:56:47.979Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs: []
+    subject:
+      type: task
+      content_hash: ""
+      ref: "@implement-lada-bundle-install"
+      shadow_commit: ""
+    threads: []
+    verdicts: []
+    created_at: 2026-07-21T12:56:47.979Z
+    updated_at: null
+    notes: []
