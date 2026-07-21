@@ -35,3 +35,12 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-21T20:16:53.203Z
+  - _ulid: 01KY35PKH0Z7KG052BHE1V83WH
+    content: "Implemented installed-only WD14 settings entry, mounted compound-directory selection,
+      path-free API payloads, destructive confirmations, synchronous request locking, overwrite
+      opt-in, aggregate summaries, and per-sidecar failures. Verification: 79 frontend tests pass;
+      changed-file ESLint passes; production build passes. Repository-wide lint remains blocked by
+      pre-existing errors in unrelated Lightbox/App files."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T20:25:58.561Z
