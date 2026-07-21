@@ -1,0 +1,79 @@
+kynetic_dispatch_workspaces: "1.0"
+workspaces:
+  - active_role: null
+    base_branch_point: 606c05c21dc6c253c7f973a942a3fdf69daa4492
+    bootstrap:
+      status: not_run
+      canonicalBranchHead: null
+      configHash: null
+      failureMessage: null
+      invalidationReasons: []
+      lastRole: null
+      lastRunAt: null
+      roleStates:
+        reviewer:
+          status: not_run
+          canonicalBranchHead: null
+          configHash: null
+          failureMessage: null
+          invalidationReasons: []
+          lastRunAt: null
+          steps: []
+        worker:
+          status: not_run
+          canonicalBranchHead: null
+          configHash: null
+          failureMessage: null
+          invalidationReasons: []
+          lastRunAt: null
+          steps: []
+      steps: []
+    branch_provenance:
+      adopted_at: null
+      adopted_from: null
+      ownership: dispatcher-managed
+      rehydrated: null
+      remote_ref: null
+      source: provisioned
+    canonical_branch: dispatch/task/implement-native-wd14-sidecar-service/01ky2z9a
+    canonical_branch_head: 606c05c21dc6c253c7f973a942a3fdf69daa4492
+    cleanup:
+      status: not_scheduled
+      detail: null
+      eligible: false
+      reason: null
+      updated_at: 2026-07-21T18:43:41.255Z
+    health:
+      status: healthy
+      issues: []
+      summary: Workspace record matches current git branch and worktree state.
+      updated_at: 2026-07-21T18:43:41.255Z
+    integration:
+      status: pending
+      detail: null
+      outcome: pull_request
+      publication_mode: pull_request
+      target_branch: plan/wd14-sidecars-implementation
+      target_commit: 606c05c21dc6c253c7f973a942a3fdf69daa4492
+      updated_at: 2026-07-21T18:43:41.255Z
+    lifecycle_state: ready
+    resolved_base_branch: plan/wd14-sidecars-implementation
+    task_ref: "@01KY2Z9A97B3AQK8PYK2RYM2VP"
+    task_slug: implement-native-wd14-sidecar-service
+    timestamps:
+      closed_at: null
+      last_active_at: null
+      last_reconciled_at: 2026-07-21T18:43:41.255Z
+      created_at: 2026-07-21T18:43:41.255Z
+      updated_at: 2026-07-21T18:43:41.255Z
+    workspace_id: dispatch-workspace-01KY2Z9A97B3AQK8PYK2RYM2VP
+    worktree_root: /home/user/Programs/Claude Projects/localbooru/.kspec-worktrees
+    worktrees:
+      reviewer: null
+      worker:
+        branch_mode: branch
+        branch_ref: dispatch/task/implement-native-wd14-sidecar-service/01ky2z9a
+        head: 606c05c21dc6c253c7f973a942a3fdf69daa4492
+        last_seen_at: 2026-07-21T18:43:41.255Z
+        path: /home/user/Programs/Claude
+          Projects/localbooru/.kspec-worktrees/implement-native-wd14-sidecar-service-01ky2z9a
