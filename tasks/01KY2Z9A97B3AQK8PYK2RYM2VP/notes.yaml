@@ -21,3 +21,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T18:34:55.195Z
+  - _ulid: 01KY2ZT700C0T1ZFZPWT077XQV
+    content: "Automation status set to eligible: Spec has six testable exchange ACs and the task note
+      defines native scope, files, reuse, and verification."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:43:05.344Z

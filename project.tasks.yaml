@@ -1294,9 +1294,10 @@ tasks:
       - backend
       - rust
       - filesystem
-    notes_count: 1
+    notes_count: 2
     todos_count: 0
     created_at: 2026-07-21T18:33:51.655Z
+    automation: eligible
   - _ulid: 01KY2Z9AAMEEDCG5YP82N8J8P2
     slugs:
       - register-expose-wd14-builtin-addon
