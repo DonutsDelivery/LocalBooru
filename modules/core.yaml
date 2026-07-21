@@ -88,6 +88,8 @@ features:
           - grouped-folder-scope-navigation
         title: Grouped Folder Scope Navigation
         type: requirement
+        description: Grouped folder navigation follows the selected library and directory scope without
+          retaining an incompatible folder path.
         depends_on: []
         implements: []
         relates_to: []
