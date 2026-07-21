@@ -208,6 +208,10 @@ features:
             id: ac-request-ownership
             then: Retries and late responses are cancelled and cannot publish into the new media
             when: The media identity changes or the viewer closes
+          - given: An optional timeline preview is unavailable for the current video version
+            id: ac-optional-failure
+            then: Playback and editing continue without a user-facing media-load error
+            when: The preview request returns not found
         tags: []
         created: 2026-07-21T12:02:12.691Z
         notes: []
