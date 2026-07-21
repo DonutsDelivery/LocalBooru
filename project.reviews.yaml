@@ -2079,6 +2079,12 @@ reviews:
         payload:
           thread_ulid: 01KY32JJ7KAECM4WPC6AKM9EC4
         timestamp: 2026-07-21T19:58:47.200Z
+      - _ulid: 01KY344VJV9EG5MWGMPJ8E0ZCT
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY32JKDYZDSKYT2ZTX04H3SB
+        timestamp: 2026-07-21T19:58:48.411Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2153,6 +2159,11 @@ reviews:
               committed mutation counts in mixed-result reporting or make count repair non-fatal and
               explicitly reported.
             created_at: 2026-07-21T19:31:21.663Z
+          - _ulid: 01KY344VJA18765QS7HBMWMYBW
+            author: "@claude"
+            body: "Fixed through a8bb41e: ApplyFailure retains and reports committed association counts if later
+              reconciliation fails."
+            created_at: 2026-07-21T19:58:48.394Z
         kind: blocker
       - _ulid: 01KY32JMMZ54HFEGVHNMD07BXW
         anchor:
@@ -2229,5 +2240,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:58:47.167Z
+    updated_at: 2026-07-21T19:58:48.394Z
     notes: []
