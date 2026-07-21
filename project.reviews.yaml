@@ -2061,6 +2061,12 @@ reviews:
         payload:
           thread_ulid: 01KY32JH0AQJFH87N3VS1NPSAR
         timestamp: 2026-07-21T19:58:43.473Z
+      - _ulid: 01KY344QXZ70GY317J3VS2VZ9F
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY32JH0AQJFH87N3VS1NPSAR
+        timestamp: 2026-07-21T19:58:44.672Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2094,6 +2100,8 @@ reviews:
               BEGIN IMMEDIATE through authoritative count publication."
             created_at: 2026-07-21T19:58:43.450Z
         kind: blocker
+        resolved_at: 2026-07-21T19:58:44.654Z
+        resolved_by: "@claude"
       - _ulid: 01KY32JJ7KAECM4WPC6AKM9EC4
         anchor:
           type: code
@@ -2202,5 +2210,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:58:43.450Z
+    updated_at: 2026-07-21T19:58:44.654Z
     notes: []
