@@ -2649,6 +2649,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY37KTWB73CDNNHQ4HMBXY3E
         timestamp: 2026-07-21T20:59:24.980Z
+      - _ulid: 01KY37KWEQSBFCM6T01BGAG65M
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY37KWCVJZJZ0HE2FX3Q2EX6
+        timestamp: 2026-07-21T20:59:26.551Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -2676,7 +2683,22 @@ reviews:
               omitted and Absorb can delete the sidecar after updating only valid targets.
             created_at: 2026-07-21T20:59:24.939Z
         kind: blocker
+      - _ulid: 01KY37KWCVJZJZ0HE2FX3Q2EX6
+        anchor:
+          type: code
+          commit: e1e521c1
+          line_end: 1197
+          line_start: 1178
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY37KWCWT4E8Y2QQKEEFBQB8
+            author: "@claude"
+            body: Raw case-sensitive path keys split sidecar aliases on case-insensitive filesystems, allowing
+              partial Absorb and bypassing Export collision detection.
+            created_at: 2026-07-21T20:59:26.492Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T20:59:10.024Z
-    updated_at: 2026-07-21T20:59:24.939Z
+    updated_at: 2026-07-21T20:59:26.492Z
     notes: []
