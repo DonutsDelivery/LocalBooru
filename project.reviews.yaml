@@ -1484,6 +1484,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY30WD6JJSVMJS57EMGF12ZG
         timestamp: 2026-07-21T19:01:45.832Z
+      - _ulid: 01KY30WEKY5RVYS6TW9GS1KD6J
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY30WEJNMZYBB1V701R3SKYF
+        timestamp: 2026-07-21T19:01:47.262Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1545,7 +1552,23 @@ reviews:
               accumulation exceeds the bound.
             created_at: 2026-07-21T19:01:45.811Z
         kind: blocker
+      - _ulid: 01KY30WEJNMZYBB1V701R3SKYF
+        anchor:
+          type: code
+          commit: f31d5a9686279429cb0fc9136491d2ff71c0dbf3
+          line_end: 715
+          line_start: 707
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY30WEJPNGFAC834RNW2M72Q
+            author: DonutsDelivery
+            body: Distinct non-UTF8 Unix paths collapse through to_string_lossy and can be grouped as one
+              sidecar, applying tags across unrelated media or producing false export conflicts.
+              Group by native PathBuf/OsString identity without lossy display conversion.
+            created_at: 2026-07-21T19:01:47.222Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:01:45.811Z
+    updated_at: 2026-07-21T19:01:47.222Z
     notes: []
