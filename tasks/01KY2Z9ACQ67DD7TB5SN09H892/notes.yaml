@@ -1,1 +1,16 @@
-notes: []
+notes:
+  - _ulid: 01KY2ZBC6P7KMSS8S44NB9Y8KX
+    content: >-
+      Execution context:
+
+      - Background: final acceptance and integration gate for all WD14 sidecar specs.
+
+      - Scope: inspect merged task output, fill only missing test/AC coverage, run complete checks,
+      and report environment-limited checks faithfully; avoid unrelated refactors.
+
+      - Verification: kspec validate, kspec validate --alignment, cargo test --locked
+      --manifest-path src-tauri/Cargo.toml --lib, frontend npm test, npm run lint, and npm run
+      build.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:34:59.158Z
