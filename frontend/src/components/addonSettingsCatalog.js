@@ -5,6 +5,7 @@ export const ADDON_SETTINGS_CATALOG = Object.freeze([
   { id: 'cast', label: 'Chromecast & DLNA' },
   { id: 'svp', label: 'SVP' },
   { id: 'curation-game', label: 'Curation Game' },
+  { id: 'wd14-sidecar', label: 'WD14 Text Sidecars' },
 ])
 
 export function getInstalledConfigurableAddons(addons) {
