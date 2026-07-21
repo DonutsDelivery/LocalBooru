@@ -1526,6 +1526,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY30XQTYEVC6GV50AANJHS5T
         timestamp: 2026-07-21T19:02:29.486Z
+      - _ulid: 01KY30XWXNVEFDBP3R0NMNZCXB
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY30XWWMRV13W35Q0JC7KNVS
+        timestamp: 2026-07-21T19:02:34.677Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1690,7 +1697,23 @@ reviews:
               conflicts.
             created_at: 2026-07-21T19:02:29.471Z
         kind: blocker
+      - _ulid: 01KY30XWWMRV13W35Q0JC7KNVS
+        anchor:
+          type: code
+          commit: f31d5a9686279429cb0fc9136491d2ff71c0dbf3
+          line_end: 945
+          line_start: 857
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY30XWWMC1PNPTRXR63VGCT2
+            author: DonutsDelivery
+            body: The additive import test verifies association metadata but never verifies the existing artist
+              category or unrelated tags remain unchanged. Add assertions for the existing tag
+              row/category and unrelated associations required by ac-additive-import.
+            created_at: 2026-07-21T19:02:34.645Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:02:29.471Z
+    updated_at: 2026-07-21T19:02:34.645Z
     notes: []
