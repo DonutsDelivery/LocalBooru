@@ -175,3 +175,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T07:46:34.537Z
+  - _ulid: 01KY1YEY3NR2QGJBE9HE8TC12N
+    content: "Fix cycle 3 implementation makes scan completion authoritative across all loaded
+      deterministic pages, verifies an omitted open locator exactly before closing, generations
+      overlapping scan completions, backs off failed retries, and preserves random-view current
+      media. Continue Watching now persists/hydrates full composite locators; playback save/resume
+      callers pass exact library/directory identity; migrated NULL-library rows are exposed/adopted
+      only when their own stored scope resolves uniquely and cannot alias another library. Local
+      verification: frontend 88/88 + production build; Rust full library 165/165."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T09:00:12.789Z
