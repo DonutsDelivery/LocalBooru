@@ -53,3 +53,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T18:46:58.229Z
+  - _ulid: 01KY30K459CAV1X0DMX3GY29Y4
+    content: "Implemented the native service with bounded UTF-8 WD14 parsing, deterministic
+      serialization, compound managed-directory discovery, canonical path/symlink validation,
+      additive attached-database transactions, safe absorb sequencing, same-stem conflict handling,
+      and atomic no-clobber/overwrite writes. Focused tests: 7/7 passed. Full Rust library suite:
+      189 passed, 1 ignored."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:56:41.642Z
