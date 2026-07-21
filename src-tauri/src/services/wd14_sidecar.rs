@@ -112,6 +112,7 @@ struct PreparedTarget {
 struct SidecarGroup {
     path: PathBuf,
     targets: Vec<PreparedTarget>,
+    preparation_errors: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -229,10 +230,24 @@ pub fn run_operation(
 
     let mut reconciliation_budget = MAX_RECONCILIATION_QUERIES;
     for group in groups.into_values() {
-        let result = match operation {
-            Wd14Operation::Import => import_group(state, &group, false, &mut reconciliation_budget),
-            Wd14Operation::Absorb => import_group(state, &group, true, &mut reconciliation_budget),
-            Wd14Operation::Export => export_group(state, &group, request.overwrite),
+        let result = if !group.preparation_errors.is_empty() {
+            result(
+                &group,
+                SidecarStatus::FailedValidation,
+                0,
+                0,
+                Some(group.preparation_errors.join("; ")),
+            )
+        } else {
+            match operation {
+                Wd14Operation::Import => {
+                    import_group(state, &group, false, &mut reconciliation_budget)
+                }
+                Wd14Operation::Absorb => {
+                    import_group(state, &group, true, &mut reconciliation_budget)
+                }
+                Wd14Operation::Export => export_group(state, &group, request.overwrite),
+            }
         };
         record_result(&mut response.summary, &result);
         response.results.push(result);
@@ -314,49 +329,99 @@ fn prepare_groups(
 
     let media_candidates = candidates.len();
     let mut groups = BTreeMap::new();
-    let mut failures = Vec::new();
+    let mut sensitivity_by_parent: BTreeMap<PathBuf, Result<bool, String>> = BTreeMap::new();
     for (selection, root, image_id, recorded_path) in candidates {
         let recorded_path = PathBuf::from(recorded_path);
-        match validate_media_path(&recorded_path, &root) {
-            Ok(media_path) => {
-                let sidecar_path = sidecar_path_for(&media_path);
-                let key = path_key(&sidecar_path);
-                let target = PreparedTarget {
-                    locator: MediaTarget {
-                        library_id: selection.library_id,
-                        directory_id: selection.directory_id,
-                        image_id,
-                        media_path: display_path(&media_path),
-                    },
-                    root,
-                };
-                groups
-                    .entry(key)
-                    .or_insert_with(|| SidecarGroup {
-                        path: sidecar_path,
-                        targets: Vec::new(),
+        let sidecar_path = sidecar_path_for(&recorded_path);
+        let grouping_parent = sidecar_path
+            .parent()
+            .and_then(|parent| fs::canonicalize(parent).ok());
+        let mut grouping_error = None;
+        let sidecar_metadata = fs::symlink_metadata(&sidecar_path).ok();
+        let is_regular_sidecar = sidecar_metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink());
+        let case_insensitive = match grouping_parent.as_ref() {
+            Some(parent) => {
+                match sensitivity_by_parent
+                    .entry(parent.clone())
+                    .or_insert_with(|| {
+                        case_insensitive_grouping(parent).map_err(|error| {
+                            format!(
+                                "Cannot determine filesystem case behavior for {}: {error}",
+                                parent.display()
+                            )
+                        })
                     })
-                    .targets
-                    .push(target);
+                    .clone()
+                {
+                    Ok(case_insensitive) => case_insensitive,
+                    Err(error) => {
+                        grouping_error = Some(error);
+                        false
+                    }
+                }
             }
-            Err(error) => failures.push(SidecarResult {
-                sidecar_path: sidecar_path_for(&recorded_path)
-                    .to_string_lossy()
-                    .into_owned(),
-                targets: vec![MediaTarget {
-                    library_id: selection.library_id,
-                    directory_id: selection.directory_id,
-                    image_id,
-                    media_path: display_path(&recorded_path),
-                }],
-                status: SidecarStatus::FailedValidation,
-                tags_parsed: 0,
-                tags_added: 0,
-                error: Some(error),
-            }),
+            None => {
+                grouping_error = Some(format!(
+                    "Cannot resolve sidecar parent for {}",
+                    sidecar_path.display()
+                ));
+                false
+            }
+        };
+        let grouping_path = if is_regular_sidecar {
+            match fs::canonicalize(&sidecar_path) {
+                Ok(canonical) => canonical,
+                Err(error) => {
+                    grouping_error = Some(format!(
+                        "Cannot resolve existing sidecar {}: {error}",
+                        sidecar_path.display()
+                    ));
+                    sidecar_path.clone()
+                }
+            }
+        } else {
+            grouping_parent
+                .as_ref()
+                .and_then(|parent| sidecar_path.file_name().map(|name| parent.join(name)))
+                .unwrap_or_else(|| sidecar_path.clone())
+        };
+        let key =
+            directory_entry_key(&grouping_path, case_insensitive).map_err(AppError::BadRequest)?;
+        let (media_path, preparation_error) = match validate_media_path(&recorded_path, &root) {
+            Ok(media_path) => (media_path, None),
+            Err(error) => (recorded_path.clone(), Some(error)),
+        };
+        let target = PreparedTarget {
+            locator: MediaTarget {
+                library_id: selection.library_id.clone(),
+                directory_id: selection.directory_id,
+                image_id,
+                media_path: display_path(&media_path),
+            },
+            root,
+        };
+        let group = groups.entry(key).or_insert_with(|| SidecarGroup {
+            path: sidecar_path.clone(),
+            targets: Vec::new(),
+            preparation_errors: Vec::new(),
+        });
+        if path_key(&sidecar_path, false) < path_key(&group.path, false) {
+            group.path = sidecar_path;
+        }
+        group.targets.push(target);
+        if let Some(error) = grouping_error {
+            group.preparation_errors.push(error);
+        }
+        if let Some(error) = preparation_error {
+            group.preparation_errors.push(format!(
+                "Media target {}:{}:{image_id} failed validation: {error}",
+                selection.library_id, selection.directory_id
+            ));
         }
     }
-    Ok((groups, failures, media_candidates))
+    Ok((groups, Vec::new(), media_candidates))
 }
 
 fn import_group(
@@ -788,6 +853,7 @@ fn remove_absorbed_sidecar(group: &SidecarGroup, expected: &OpenedSidecar) -> Re
     let quarantined_group = SidecarGroup {
         path: quarantine.clone(),
         targets: group.targets.clone(),
+        preparation_errors: Vec::new(),
     };
     let current = read_existing_sidecar(&quarantined_group);
     let matches = matches!(&current, Ok(Some(current)) if same_sidecar(expected, current));
@@ -1179,26 +1245,219 @@ fn sidecar_path_for(media_path: &Path) -> PathBuf {
     media_path.with_extension("txt")
 }
 
-#[cfg(unix)]
-fn path_key(path: &Path) -> Vec<u8> {
-    use std::os::unix::ffi::OsStrExt;
+#[cfg(target_os = "windows")]
+fn case_insensitive_grouping(root: &Path) -> io::Result<bool> {
+    use std::mem::{size_of, zeroed};
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FileCaseSensitiveInfo, GetFileInformationByHandleEx, FILE_CASE_SENSITIVE_INFO,
+        FILE_FLAG_BACKUP_SEMANTICS,
+    };
 
-    path.as_os_str().as_bytes().to_vec()
+    let directory = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(root)?;
+    let mut info: FILE_CASE_SENSITIVE_INFO = unsafe { zeroed() };
+    let result = unsafe {
+        GetFileInformationByHandleEx(
+            directory.as_raw_handle() as _,
+            FileCaseSensitiveInfo,
+            (&mut info as *mut FILE_CASE_SENSITIVE_INFO).cast(),
+            size_of::<FILE_CASE_SENSITIVE_INFO>() as u32,
+        )
+    };
+    if result == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    const FILE_CS_FLAG_CASE_SENSITIVE_DIR: u32 = 1;
+    Ok(info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR == 0)
 }
 
-#[cfg(target_os = "windows")]
-fn path_key(path: &Path) -> Vec<u8> {
-    use std::os::windows::ffi::OsStrExt;
+#[cfg(target_os = "macos")]
+fn case_insensitive_grouping(root: &Path) -> io::Result<bool> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
 
-    path.as_os_str()
-        .encode_wide()
-        .flat_map(u16::to_le_bytes)
-        .collect()
+    let path = CString::new(root.as_os_str().as_bytes())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    let result = unsafe { libc::pathconf(path.as_ptr(), libc::_PC_CASE_SENSITIVE) };
+    if result == -1 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(result == 0)
+    }
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn case_insensitive_grouping(root: &Path) -> io::Result<bool> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let directory = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_CLOEXEC)
+        .open(root)?;
+    let mut filesystem: libc::statfs = unsafe { std::mem::zeroed() };
+    let filesystem_type = (unsafe { libc::fstatfs(directory.as_raw_fd(), &mut filesystem) } == 0)
+        .then_some(filesystem.f_type as libc::c_long);
+    const EXFAT_SUPER_MAGIC: libc::c_long = 0x2011_bab0;
+    const NTFS_SB_MAGIC: libc::c_long = 0x5346_544e;
+    if filesystem_type.is_some_and(|filesystem_type| {
+        matches!(
+            filesystem_type,
+            libc::MSDOS_SUPER_MAGIC | EXFAT_SUPER_MAGIC | NTFS_SB_MAGIC
+        )
+    }) {
+        return Ok(true);
+    }
+
+    let mut flags: libc::c_long = 0;
+    let ioctl_result = unsafe {
+        libc::ioctl(
+            directory.as_raw_fd(),
+            libc::FS_IOC_GETFLAGS as _,
+            &mut flags,
+        )
+    };
+    const FS_CASEFOLD_FL: libc::c_long = 0x4000_0000;
+    if ioctl_result == 0
+        && filesystem_type.is_some_and(|filesystem_type| {
+            matches!(
+                filesystem_type,
+                libc::EXT4_SUPER_MAGIC | libc::F2FS_SUPER_MAGIC
+            )
+        })
+    {
+        return Ok(flags & FS_CASEFOLD_FL != 0);
+    }
+
+    let probe = tempfile::Builder::new()
+        .prefix(".LocalBooru-WD14-Case-Probe-")
+        .tempfile_in(root)?;
+    let probe_path = probe.path();
+    let alternate_name = probe_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|name| Some(name.as_str()) != probe_path.file_name().and_then(|name| name.to_str()))
+        .ok_or_else(|| io::Error::other("case probe name could not be transformed"))?;
+    let alternate_path = root.join(alternate_name);
+    match fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(alternate_path)
+    {
+        Ok(alternate) => Ok(
+            file_identity(&probe.as_file().metadata()?) == file_identity(&alternate.metadata()?)
+        ),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(not(any(unix, target_os = "windows")))]
-fn path_key(path: &Path) -> Vec<u8> {
-    path.as_os_str().to_string_lossy().as_bytes().to_vec()
+fn case_insensitive_grouping(_root: &Path) -> io::Result<bool> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "filesystem case behavior is not supported on this platform",
+    ))
+}
+
+#[cfg(unix)]
+fn directory_entry_key(path: &Path, case_insensitive: bool) -> Result<Vec<u8>, String> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Sidecar has no parent directory: {}", path.display()))?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| format!("Sidecar has no file name: {}", path.display()))?
+        .as_bytes();
+    if case_insensitive && !name.is_ascii() {
+        return Err(format!(
+            "Cannot safely group a non-ASCII sidecar name on this case-insensitive filesystem: {}",
+            path.display()
+        ));
+    }
+    let parent_metadata = fs::metadata(parent).map_err(|error| {
+        format!(
+            "Cannot identify sidecar parent directory {}: {error}",
+            parent.display()
+        )
+    })?;
+    let identity = file_identity(&parent_metadata);
+    let mut key = b"\0WD14-ENTRY\0".to_vec();
+    key.extend_from_slice(&identity.device.to_le_bytes());
+    key.extend_from_slice(&identity.inode.to_le_bytes());
+    if case_insensitive {
+        key.extend(name.iter().map(u8::to_ascii_lowercase));
+    } else {
+        key.extend_from_slice(name);
+    }
+    Ok(key)
+}
+
+#[cfg(not(unix))]
+fn directory_entry_key(path: &Path, case_insensitive: bool) -> Result<Vec<u8>, String> {
+    if case_insensitive && !path.to_string_lossy().is_ascii() {
+        return Err(format!(
+            "Cannot safely group a non-ASCII sidecar path on this case-insensitive filesystem: {}",
+            path.display()
+        ));
+    }
+    Ok(path_key(path, case_insensitive))
+}
+
+#[cfg(unix)]
+fn path_key(path: &Path, case_insensitive: bool) -> Vec<u8> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let bytes = path.as_os_str().as_bytes();
+    if !case_insensitive {
+        return bytes.to_vec();
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(path) => path.to_lowercase().into_bytes(),
+        Err(_) => bytes.iter().map(u8::to_ascii_lowercase).collect(),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn path_key(path: &Path, case_insensitive: bool) -> Vec<u8> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    let normalized: Vec<u16> = if case_insensitive {
+        match String::from_utf16(&wide) {
+            Ok(path) => path.to_lowercase().encode_utf16().collect(),
+            Err(_) => wide
+                .into_iter()
+                .map(|unit| {
+                    if (b'A' as u16..=b'Z' as u16).contains(&unit) {
+                        unit + (b'a' - b'A') as u16
+                    } else {
+                        unit
+                    }
+                })
+                .collect(),
+        }
+    } else {
+        wide
+    };
+    normalized.into_iter().flat_map(u16::to_le_bytes).collect()
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn path_key(path: &Path, case_insensitive: bool) -> Vec<u8> {
+    let path = path.as_os_str().to_string_lossy();
+    if case_insensitive {
+        path.to_lowercase().into_bytes()
+    } else {
+        path.as_bytes().to_vec()
+    }
 }
 
 fn serialized_targets(group: &SidecarGroup) -> Vec<MediaTarget> {
@@ -1630,6 +1889,50 @@ mod tests {
         assert_eq!(fs::read_to_string(&sidecar).unwrap(), "leave untouched");
     }
 
+    // AC: @wd14-sidecar-exchange-contract ac-safe-absorb
+    // AC: @wd14-sidecar-exchange-contract ac-shared-stem
+    // AC: @wd14-managed-filesystem-safety ac-idempotent-retry
+    #[test]
+    fn invalid_shared_target_preserves_one_sidecar_and_blocks_every_target() {
+        let fixture = Fixture::new(&[(1, "shared.jpg", "one"), (2, "shared.png", "two")]);
+        let sidecar = fixture.media_root.join("shared.txt");
+        fs::write(&sidecar, "shared_tag").unwrap();
+        fs::remove_file(fixture.media_root.join("shared.png")).unwrap();
+
+        let response = run_operation(
+            &fixture.state,
+            Wd14Operation::Absorb,
+            fixture.request(false),
+        )
+        .unwrap();
+
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].status, SidecarStatus::FailedValidation);
+        assert_eq!(response.results[0].targets.len(), 2);
+        assert_eq!(response.summary.sidecars_failed, 1);
+        assert!(sidecar.exists());
+        assert!(fixture.tags(1).is_empty());
+        assert!(fixture.tags(2).is_empty());
+    }
+
+    // AC: @wd14-sidecar-exchange-contract ac-shared-stem
+    #[test]
+    fn grouping_keys_fold_case_only_for_case_insensitive_filesystems() {
+        let lower = Path::new("dataset/foo.txt");
+        let upper = Path::new("dataset/FOO.txt");
+        assert_ne!(path_key(lower, false), path_key(upper, false));
+        assert_eq!(path_key(lower, true), path_key(upper, true));
+    }
+
+    // AC: @wd14-sidecar-exchange-contract ac-shared-stem
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn filesystem_case_probe_is_non_destructive_on_case_sensitive_directories() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(!case_insensitive_grouping(directory.path()).unwrap());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
     // AC: @wd14-sidecar-exchange-contract ac-round-trip
     #[test]
     fn exported_file_imports_into_an_untagged_database_record() {
@@ -1708,6 +2011,7 @@ mod tests {
                 },
                 root: fs::canonicalize(&fixture.media_root).unwrap(),
             }],
+            preparation_errors: Vec::new(),
         };
         let original = read_existing_sidecar(&group).unwrap().unwrap();
         let replacement = fixture.media_root.join("replacement.tmp");
@@ -1889,12 +2193,13 @@ mod tests {
         let group = SidecarGroup {
             path: sidecar_link,
             targets: vec![target],
+            preparation_errors: Vec::new(),
         };
         assert!(read_existing_sidecar(&group).is_err());
 
         let first = PathBuf::from(OsString::from_vec(vec![b'x', 0xff]));
         let second = PathBuf::from(OsString::from_vec(vec![b'x', 0xfe]));
-        assert_ne!(path_key(&first), path_key(&second));
+        assert_ne!(path_key(&first, false), path_key(&second, false));
         assert_ne!(display_path(&first), display_path(&second));
     }
 
