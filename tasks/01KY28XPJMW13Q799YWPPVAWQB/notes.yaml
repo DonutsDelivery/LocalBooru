@@ -15,3 +15,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T12:26:30.267Z
+  - _ulid: 01KY2CECCVJ247GPARAWZF99FP
+    content: Implemented exact library/directory/image/hash preview identity, video-only requests,
+      request-owned cancellation, restartable bounded polling, resolved-library caches, validated
+      source snapshots, and atomic single-flight publication. Verified 94 frontend tests, 168 Rust
+      tests, production build, and adversarial review.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T13:04:34.715Z
