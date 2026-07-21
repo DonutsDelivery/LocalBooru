@@ -629,7 +629,7 @@ plans:
       manual, general-category, and confidence-free. All implementation tasks must run through
       isolated kspec dispatch and stack on the plan branch rather than the current unrelated
       dispatch branch.
-    status: active
+    status: completed
     approved_at: null
     branch: plan/wd14-sidecars-implementation
     derived_specs:
