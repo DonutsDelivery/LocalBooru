@@ -2691,6 +2691,12 @@ reviews:
         payload:
           thread_ulid: 01KY37KWCVJZJZ0HE2FX3Q2EX6
         timestamp: 2026-07-21T21:46:22.367Z
+      - _ulid: 01KY3A9VJ77AVGSWNK52Q7QNY1
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY37KWCVJZJZ0HE2FX3Q2EX6
+        timestamp: 2026-07-21T21:46:23.687Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2751,6 +2757,8 @@ reviews:
               or Export collision checks."
             created_at: 2026-07-21T21:46:22.326Z
         kind: blocker
+        resolved_at: 2026-07-21T21:46:23.664Z
+        resolved_by: "@claude"
     verdicts:
       - applies_to_version:
           type: code_compare
@@ -2761,5 +2769,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T20:59:27.851Z
     created_at: 2026-07-21T20:59:10.024Z
-    updated_at: 2026-07-21T21:46:22.326Z
+    updated_at: 2026-07-21T21:46:23.664Z
     notes: []
