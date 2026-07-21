@@ -1286,8 +1286,9 @@ tasks:
     type: task
     spec_ref: "@wd14-sidecar-exchange-contract"
     plan_ref: "@plan-wd14-text-sidecar-add-on"
-    status: pending
-    blocked_by: []
+    status: blocked
+    blocked_by:
+      - "Agent task-worker failed 3 consecutive times: Authentication required"
     depends_on: []
     priority: 2
     tags:
