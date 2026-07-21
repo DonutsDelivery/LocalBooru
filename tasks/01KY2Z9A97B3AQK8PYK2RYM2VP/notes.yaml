@@ -1,1 +1,23 @@
-notes: []
+notes:
+  - _ulid: 01KY2ZB8AVQWXD0XDBBXBXDBCY
+    content: >-
+      Execution context:
+
+      - Background: implement the native core for @wd14-sidecar-exchange-contract and
+      @wd14-managed-filesystem-safety.
+
+      - Scope: parser/serializer, managed-path validation, compound identity, same-stem grouping,
+      additive DB writes, absorb sequencing, atomic export, limits, results, and Rust tests; no
+      routes or React UI.
+
+      - Files: src-tauri/src/services/wd14_sidecar.rs, src-tauri/src/services/mod.rs, shared tag
+      helper only if extraction is necessary, and focused Rust tests.
+
+      - Reuse: AppState::resolve_library, ImageLocator identity conventions, and execute_tag_task
+      additive semantics.
+
+      - Verification: focused wd14 Rust tests plus cargo test --locked --manifest-path
+      src-tauri/Cargo.toml --lib.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:34:55.195Z
