@@ -960,7 +960,16 @@ impl AddonManager {
         let sidecar_env = self.sidecar_env(id);
 
         // Spawn the sidecar
-        let child = match sidecar::spawn_sidecar(id, &python, &app_dir, port, &sidecar_env).await {
+        let child = match sidecar::spawn_sidecar(
+            id,
+            &python,
+            &venv_dir,
+            &app_dir,
+            port,
+            &sidecar_env,
+        )
+        .await
+        {
             Ok(c) => c,
             Err(e) => {
                 self.set_status(id, AddonStatus::Error(e.clone()));

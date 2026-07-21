@@ -225,6 +225,8 @@ def execute_stage(model_path, args, providers, *, disable_cpu_fallback=False):
         options.logid = "localbooru-runtime-probe"
 
     profile_path = None
+    profiling_ended = False
+    session = None
     registered_providers = []
     provider_options = {}
     model_input_details = None
@@ -253,6 +255,7 @@ def execute_stage(model_path, args, providers, *, disable_cpu_fallback=False):
         started = time.perf_counter()
         session.run(None, {model_input.name: array})
         inference_ms = round((time.perf_counter() - started) * 1000.0, 3)
+        profiling_ended = True
         profile_path = session.end_profiling()
         counts, durations = summarize_profile(profile_path)
         execution = {
@@ -271,11 +274,27 @@ def execute_stage(model_path, args, providers, *, disable_cpu_fallback=False):
             "error": str(error),
         }
     finally:
+        if session is not None and not profiling_ended:
+            profiling_ended = True
+            try:
+                profile_path = session.end_profiling()
+            except Exception:
+                pass
+        session = None
+
+        cleanup_paths = set()
         if profile_path:
-            Path(profile_path).unlink(missing_ok=True)
+            cleanup_paths.add(Path(profile_path))
         prefix = Path(options.profile_file_prefix)
-        for leftover in prefix.parent.glob(f"{prefix.name}*.json"):
-            leftover.unlink(missing_ok=True)
+        try:
+            cleanup_paths.update(prefix.parent.glob(f"{prefix.name}*.json"))
+        except OSError:
+            pass
+        for leftover in cleanup_paths:
+            try:
+                leftover.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     return {
         "requested_providers": providers,

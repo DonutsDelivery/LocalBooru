@@ -143,6 +143,105 @@ def test_probe_disables_wrapper_fallback_before_running_inference(monkeypatch, t
     assert strict["cpu_ep_fallback_disabled"] is True
 
 
+# AC: @auto-tagger-runtime-acceleration-deployment ac-profiler-error-preservation
+def test_probe_cleanup_does_not_mask_inference_error(monkeypatch, tmp_path):
+    probe = load_probe()
+    events = []
+    profile = tmp_path / "probe-profile_2026.json"
+    profile.write_text("[]", encoding="utf-8")
+
+    class Options:
+        def __init__(self):
+            self.profile_file_prefix = str(tmp_path / "probe-profile")
+            self.config = {}
+
+        def add_session_config_entry(self, key, value):
+            self.config[key] = value
+
+    class Session:
+        def disable_fallback(self):
+            pass
+
+        def get_providers(self):
+            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+        def get_provider_options(self):
+            return {"CUDAExecutionProvider": {"device_id": "0"}}
+
+        def get_inputs(self):
+            return [SimpleNamespace(name="input", shape=[1, 1], type="tensor(float)")]
+
+        def run(self, _outputs, _inputs):
+            events.append("run")
+            raise RuntimeError("CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED")
+
+        def end_profiling(self):
+            events.append("end_profiling")
+            return str(profile)
+
+        def __del__(self):
+            events.append("release_session")
+
+    def locked_unlink(self, missing_ok=False):
+        if self == profile:
+            events.append("unlink")
+            raise PermissionError(32, "profile is still locked", str(self))
+        return original_unlink(self, missing_ok=missing_ok)
+
+    original_unlink = Path.unlink
+    monkeypatch.setattr(probe.ort, "SessionOptions", Options)
+    monkeypatch.setattr(probe.ort, "InferenceSession", lambda *_args, **_kwargs: Session())
+    monkeypatch.setattr(Path, "unlink", locked_unlink)
+    args = SimpleNamespace(
+        optimization="all",
+        verbose=False,
+        disable_wrapper_fallback=True,
+    )
+
+    stage = probe.execute_stage(
+        tmp_path / "model.onnx",
+        args,
+        probe.provider_spec("cuda"),
+    )
+
+    assert stage["execution"]["error_type"] == "RuntimeError"
+    assert stage["execution"]["error"] == "CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED"
+    assert events == ["run", "end_profiling", "release_session", "unlink"]
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-profiler-error-preservation
+def test_probe_constructor_error_survives_cleanup(monkeypatch, tmp_path):
+    probe = load_probe()
+
+    class Options:
+        def __init__(self):
+            self.profile_file_prefix = str(tmp_path / "probe-profile")
+
+        def add_session_config_entry(self, _key, _value):
+            pass
+
+    monkeypatch.setattr(probe.ort, "SessionOptions", Options)
+    monkeypatch.setattr(
+        probe.ort,
+        "InferenceSession",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("CUDA DLL load failed")),
+    )
+    args = SimpleNamespace(
+        optimization="all",
+        verbose=False,
+        disable_wrapper_fallback=True,
+    )
+
+    stage = probe.execute_stage(
+        tmp_path / "model.onnx",
+        args,
+        probe.provider_spec("cuda"),
+    )
+
+    assert stage["execution"]["error_type"] == "OSError"
+    assert stage["execution"]["error"] == "CUDA DLL load failed"
+
+
 
 # AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
 @pytest.mark.parametrize(
