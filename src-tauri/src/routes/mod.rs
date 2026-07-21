@@ -15,3 +15,4 @@ pub mod svp_web;
 pub mod tags;
 pub mod users;
 pub mod watch_history;
+pub mod wd14_sidecar;

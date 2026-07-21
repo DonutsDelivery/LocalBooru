@@ -83,6 +83,10 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         )
         .nest("/api/settings/svp/web", crate::routes::svp_web::router())
         .nest("/api/settings/models", crate::routes::models::router())
+        .nest(
+            "/api/settings/wd14-sidecar",
+            crate::routes::wd14_sidecar::router(),
+        )
         .nest("/api/network", crate::routes::network::router())
         .nest("/api/watch-history", crate::routes::watch_history::router())
         .nest("/api/app-update", crate::routes::app_update::router())
