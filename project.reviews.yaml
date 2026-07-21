@@ -1953,3 +1953,29 @@ reviews:
     created_at: 2026-07-21T18:58:29.496Z
     updated_at: 2026-07-21T19:24:53.168Z
     notes: []
+  - _ulid: 01KY32HQ1RNQJVBKN1W3MTST0J
+    slugs: []
+    title: Review native WD14 sidecar service (cycle 2)
+    author: "@claude"
+    checks: []
+    events:
+      - _ulid: 01KY32HQ1RP13W1JGYZ863N204
+        actor: "@claude"
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-07-21T19:30:52.600Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs: []
+    subject:
+      type: task
+      content_hash: ""
+      ref: "@implement-native-wd14-sidecar-service"
+      shadow_commit: ""
+    threads: []
+    verdicts: []
+    created_at: 2026-07-21T19:30:52.600Z
+    updated_at: null
+    notes: []
