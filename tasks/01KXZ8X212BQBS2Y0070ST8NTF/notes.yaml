@@ -198,3 +198,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T10:01:44.614Z
+  - _ulid: 01KY28YD7475R679VK4NQGQTZY
+    content: "Tester validation on 966e510d: editing applies and saves successfully. Remaining
+      occasional preview-frames 404 banner is optional timeline-preview identity/lifecycle work
+      tracked separately, not an adjustment transaction failure."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T12:03:25.540Z
