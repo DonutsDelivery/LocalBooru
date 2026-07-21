@@ -710,12 +710,12 @@ features:
             then: Package versions and preload success are reported as evidence but compatibility is accepted
               only after the shipped model records nonzero CUDA execution
             when: Runtime compatibility is evaluated
-          - given: a strict CUDA diagnostic emits Windows native output or a later diagnostic stage terminates
-              unexpectedly
+          - given: The primary or strict CUDA diagnostic process emits Windows native output and terminates
+              before producing a structured model report
             id: ac-readable-native-diagnostic
-            then: the primary structured report and readable bounded native output remain available without an
-              opaque invalid-output failure
-            when: the diagnostic result is displayed
+            then: A structured failed diagnostic preserves its exit state and readable bounded native evidence
+              without returning an opaque transport error
+            when: The diagnostic result is displayed
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
