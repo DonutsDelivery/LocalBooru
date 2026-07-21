@@ -35,3 +35,8 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T09:00:13.544Z
+  - _ulid: 01KY1YPQKHS16GB5C1DPEJ1X7A
+    content: Committed grouped-folder scope fix as 966e510d.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T09:04:28.273Z
