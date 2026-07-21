@@ -2642,6 +2642,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-07-21T20:59:22.295Z
+      - _ulid: 01KY37KTXM826SYP3XRKS8TKXN
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY37KTWB73CDNNHQ4HMBXY3E
+        timestamp: 2026-07-21T20:59:24.980Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -2653,8 +2660,23 @@ reviews:
       base_commit: 606c05c2
       head_branch: plan/wd14-sidecars-implementation
       head_commit: e1e521c1
-    threads: []
+    threads:
+      - _ulid: 01KY37KTWB73CDNNHQ4HMBXY3E
+        anchor:
+          type: code
+          commit: e1e521c1
+          line_end: 357
+          line_start: 318
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY37KTWBRJ23WAXXSNVGX5VK
+            author: "@claude"
+            body: Media validation failures are emitted before grouping, so an invalid shared-stem target is
+              omitted and Absorb can delete the sidecar after updating only valid targets.
+            created_at: 2026-07-21T20:59:24.939Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T20:59:10.024Z
-    updated_at: 2026-07-21T20:59:22.268Z
+    updated_at: 2026-07-21T20:59:24.939Z
     notes: []
