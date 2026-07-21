@@ -1519,6 +1519,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY30XPQQVYXN5V00AQJTZNJA
         timestamp: 2026-07-21T19:02:28.368Z
+      - _ulid: 01KY30XQVE25JCBZ5QSD7PXF4S
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY30XQTYEVC6GV50AANJHS5T
+        timestamp: 2026-07-21T19:02:29.486Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1665,7 +1672,25 @@ reviews:
               and limits before writing, with a failure that leaves the destination untouched.
             created_at: 2026-07-21T19:02:28.343Z
         kind: blocker
+      - _ulid: 01KY30XQTYEVC6GV50AANJHS5T
+        anchor:
+          type: code
+          commit: f31d5a9686279429cb0fc9136491d2ff71c0dbf3
+          line_end: 855
+          line_start: 815
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY30XQTYM3Y5MJ1JEWTWNHE7
+            author: DonutsDelivery
+            body: The deterministic-export and round-trip annotations exercise only helper composition, not
+              run_operation/export_group/load_tag_set followed by import into an untagged database
+              record. Add end-to-end service tests that assert the same-stem file bytes,
+              no-clobber/overwrite behavior, destination DB associations, and unchanged output on
+              conflicts.
+            created_at: 2026-07-21T19:02:29.471Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:02:28.343Z
+    updated_at: 2026-07-21T19:02:29.471Z
     notes: []
