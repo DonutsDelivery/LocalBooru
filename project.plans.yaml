@@ -631,7 +631,7 @@ plans:
       dispatch branch.
     status: approved
     approved_at: null
-    branch: null
+    branch: plan/plan-wd14-text-sidecar-add-on/01ky2z86
     derived_specs: []
     derived_tasks: []
     module_ref: "@core"
