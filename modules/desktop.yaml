@@ -745,6 +745,9 @@ features:
           Installed WD14 Text Sidecars provides a desktop settings panel for selecting managed
           directories and running import, absorb, and export with clear destructive controls and
           results.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
