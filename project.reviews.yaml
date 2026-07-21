@@ -2073,6 +2073,12 @@ reviews:
         payload:
           thread_ulid: 01KY32JJ7KAECM4WPC6AKM9EC4
         timestamp: 2026-07-21T19:58:45.874Z
+      - _ulid: 01KY344TD04WFY1W5J59GGMMAZ
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY32JJ7KAECM4WPC6AKM9EC4
+        timestamp: 2026-07-21T19:58:47.200Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2129,6 +2135,8 @@ reviews:
               SQLite variables."
             created_at: 2026-07-21T19:58:45.853Z
         kind: blocker
+        resolved_at: 2026-07-21T19:58:47.167Z
+        resolved_by: "@claude"
       - _ulid: 01KY32JKDYZDSKYT2ZTX04H3SB
         anchor:
           type: code
@@ -2221,5 +2229,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:58:45.853Z
+    updated_at: 2026-07-21T19:58:47.167Z
     notes: []
