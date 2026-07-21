@@ -1448,7 +1448,17 @@ reviews:
     slugs: []
     title: Review native WD14 sidecar service
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "cargo test --locked --manifest-path src-tauri/Cargo.toml --lib: 189 passed, 1 ignored"
+        name: rust-library-tests
+        required: true
+        runner: cargo
+        created_at: 2026-07-21T19:02:35.889Z
+        completed_at: 2026-07-21T19:02:35.889Z
     events:
       - _ulid: 01KY30PDFR9J20TDNR6FYN7GK8
         actor: DonutsDelivery
@@ -1533,6 +1543,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY30XWWMRV13W35Q0JC7KNVS
         timestamp: 2026-07-21T19:02:34.677Z
+      - _ulid: 01KY30XY4P8GM1M7EF7XNC8Z4Q
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: rust-library-tests
+        timestamp: 2026-07-21T19:02:35.926Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1715,5 +1732,5 @@ reviews:
         kind: blocker
     verdicts: []
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:02:34.645Z
+    updated_at: 2026-07-21T19:02:35.889Z
     notes: []
