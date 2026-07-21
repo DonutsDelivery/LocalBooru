@@ -1,6 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { getMediaUrl, fetchPreviewFrames, uploadImage } from '../api'
 import { imageIdentityKey } from '../utils/imageAdjustments.js'
+import {
+  createTimelinePreviewOwner,
+  shouldRetryTimelinePreview,
+  timelinePreviewIdentityKey,
+  timelinePreviewLocator,
+} from './Lightbox/hooks/timelinePreviewLifecycle.js'
 import { getDesktopAPI } from '../tauriAPI'
 import { toast } from './Toast'
 import ContextMenu from './ContextMenu'
@@ -25,11 +31,15 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
   const [previewLoaded, setPreviewLoaded] = useState(false)
   const frameIntervalRef = useRef(null)
   const previewFetchedRef = useRef(false)
+  const previewOwnerRef = useRef(null)
+  if (previewOwnerRef.current === null) previewOwnerRef.current = createTimelinePreviewOwner()
   const isHoveringRef = useRef(false) // Track hover state for late-loading frames
   const previewFramesRef = useRef([]) // Ref for closure-safe access in intervals
 
   // Compute derived values (safe before hooks)
   const thumbnailUrl = image?.thumbnail_url ? getMediaUrl(image.thumbnail_url) : ''
+  const previewLocator = useMemo(() => timelinePreviewLocator(image), [image])
+  const previewIdentity = timelinePreviewIdentityKey(previewLocator)
   const isVideoFile = isVideo(image?.original_filename)
   const fileStatus = image?.file_status || 'available'
 
@@ -38,38 +48,72 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
 
   // Fetch preview frames for videos - only when needed (on hover)
   const fetchFramesIfNeeded = useCallback(async () => {
-    if (!image || !isVideo(image.original_filename) || previewFetchedRef.current) return
+    if (!previewLocator || previewFetchedRef.current) return
     previewFetchedRef.current = true
+    const owner = previewOwnerRef.current
+    const request = owner.begin(previewIdentity)
+    let retries = 0
 
-    try {
-      const data = await fetchPreviewFrames(image.id, image.directory_id)
-      if (data.frames && data.frames.length > 0) {
-        const frameUrls = data.frames.map(url => getMediaUrl(url))
+    const loadFrames = async () => {
+      try {
+        const data = await fetchPreviewFrames(previewLocator, request.signal)
+        if (!owner.isCurrent(request)) return
+        if (data.frames && data.frames.length > 0) {
+          const frameUrls = data.frames.map(url => getMediaUrl(url))
 
-        // Preload frames and only keep ones that successfully load
-        const loadResults = await Promise.all(frameUrls.map(url => {
-          return new Promise((resolve) => {
-            const img = new Image()
-            img.onload = () => resolve(url)
-            img.onerror = () => resolve(null) // Return null for failed loads
-            img.src = url
-          })
-        }))
+          // Preload frames and only keep ones that successfully load
+          const loadResults = await Promise.all(frameUrls.map(url => {
+            return new Promise((resolve) => {
+              const img = new Image()
+              img.onload = () => resolve(url)
+              img.onerror = () => resolve(null) // Return null for failed loads
+              img.src = url
+            })
+          }))
+          if (!owner.isCurrent(request)) return
 
-        // Filter out failed frames
-        const validFrames = loadResults.filter(url => url !== null)
+          // Filter out failed frames
+          const validFrames = loadResults.filter(url => url !== null)
 
-        // Only enable slideshow if we have valid frames
-        if (validFrames.length > 0) {
-          previewFramesRef.current = validFrames
-          setPreviewFrames(validFrames)
-          setPreviewLoaded(true)
+          // Only enable slideshow if we have valid frames
+          if (validFrames.length > 0) {
+            previewFramesRef.current = validFrames
+            setPreviewFrames(validFrames)
+            setPreviewLoaded(true)
+          } else {
+            previewFetchedRef.current = false
+          }
+        } else if (shouldRetryTimelinePreview(data.generating, retries)) {
+          retries += 1
+          owner.schedule(request, loadFrames, 3000)
+        } else if (data.generating === true) {
+          // Let a later hover start a fresh bounded polling cycle.
+          previewFetchedRef.current = false
+        }
+      } catch (err) {
+        // Silently fail - preview frames are optional, and a later hover may retry.
+        if (owner.isCurrent(request) && err?.name !== 'AbortError' && err?.code !== 'ERR_CANCELED') {
+          previewFetchedRef.current = false
         }
       }
-    } catch (err) {
-      // Silently fail - preview frames are optional
     }
-  }, [image])
+
+    await loadFrames()
+  }, [previewIdentity, previewLocator])
+
+  useEffect(() => {
+    previewOwnerRef.current.cancel()
+    previewFetchedRef.current = false
+    previewFramesRef.current = []
+    setPreviewFrames([])
+    setPreviewLoaded(false)
+    setCurrentFrame(-1)
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current)
+      frameIntervalRef.current = null
+    }
+    return () => previewOwnerRef.current.cancel()
+  }, [previewIdentity])
 
   // Cleanup interval on unmount
   useEffect(() => {

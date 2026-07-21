@@ -28,7 +28,6 @@ from typing import Optional
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
@@ -63,7 +62,26 @@ _runtime_diagnostic_lock = threading.Lock()
 _prediction_slots = threading.BoundedSemaphore(2)
 
 RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS = 300
+RUNTIME_DIAGNOSTIC_INVENTORY_TIMEOUT_SECONDS = 30
 RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT = 64 * 1024
+RUNTIME_DIAGNOSTIC_HIGHLIGHT_LIMIT = 16 * 1024
+RUNTIME_DIAGNOSTIC_ENVIRONMENT = {
+    "CUDNN_FRONTEND_LOG_INFO": "1",
+    "CUDNN_FRONTEND_LOG_FILE": "stderr",
+    "CUDNN_LOGLEVEL_DBG": "3",
+    "CUDNN_LOGDEST_DBG": "stderr",
+}
+RUNTIME_DIAGNOSTIC_HIGHLIGHT_TERMS = (
+    "cudnn",
+    "cuda",
+    "onnxruntime",
+    "ort ",
+    "dll",
+    "loadlibrary",
+    "backend_api_failed",
+    "error",
+    "failed",
+)
 
 # Model input size for WD-Tagger-V3
 MODEL_INPUT_SIZE = 448
@@ -941,7 +959,33 @@ def _bounded_output(value):
     value = _normalize_subprocess_output(value)
     if len(value) <= RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT:
         return value
-    return value[-RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT:]
+    marker = "\n... diagnostic output omitted ...\n"
+    retained = RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT - len(marker)
+    head = retained // 2
+    tail = retained - head
+    return value[:head] + marker + value[-tail:]
+
+
+def _diagnostic_highlights(*values):
+    lines = []
+    seen = set()
+    for value in values:
+        for line in _normalize_subprocess_output(value).splitlines():
+            normalized = line.strip()
+            if not normalized or normalized in seen:
+                continue
+            lowered = normalized.lower()
+            if not any(term in lowered for term in RUNTIME_DIAGNOSTIC_HIGHLIGHT_TERMS):
+                continue
+            seen.add(normalized)
+            lines.append(normalized)
+    return _bounded_output("\n".join(lines))[:RUNTIME_DIAGNOSTIC_HIGHLIGHT_LIMIT]
+
+
+def _runtime_probe_environment():
+    environment = os.environ.copy()
+    environment.update(RUNTIME_DIAGNOSTIC_ENVIRONMENT)
+    return environment
 
 
 def _parse_probe_report(stdout):
@@ -966,15 +1010,23 @@ def _run_runtime_probe(command, timeout_seconds=RUNTIME_DIAGNOSTIC_TIMEOUT_SECON
             text=False,
             timeout=timeout_seconds,
             check=False,
+            env=_runtime_probe_environment(),
         )
     except subprocess.TimeoutExpired as exc:
+        stdout = _normalize_subprocess_output(exc.stdout)
+        stderr = _normalize_subprocess_output(exc.stderr)
+        try:
+            partial_report = _parse_probe_report(stdout)
+        except (TypeError, json.JSONDecodeError):
+            partial_report = None
         return {
             "status": "timed_out",
             "timeout_seconds": timeout_seconds,
             "exit_code": None,
-            "probe": None,
-            "stdout": _bounded_output(exc.stdout),
-            "stderr": _bounded_output(exc.stderr),
+            "probe": partial_report,
+            "stdout": _bounded_output(stdout),
+            "stderr": _bounded_output(stderr),
+            "highlights": _diagnostic_highlights(stdout, stderr),
         }
     except OSError as exc:
         return {
@@ -984,6 +1036,7 @@ def _run_runtime_probe(command, timeout_seconds=RUNTIME_DIAGNOSTIC_TIMEOUT_SECON
             "probe": None,
             "stdout": "",
             "stderr": "",
+            "highlights": "",
         }
 
     normalized_stdout = _normalize_subprocess_output(completed.stdout)
@@ -998,6 +1051,7 @@ def _run_runtime_probe(command, timeout_seconds=RUNTIME_DIAGNOSTIC_TIMEOUT_SECON
             "probe": None,
             "stdout": _bounded_output(normalized_stdout),
             "stderr": _bounded_output(normalized_stderr),
+            "highlights": _diagnostic_highlights(normalized_stdout, normalized_stderr),
         }
     return {
         "status": "completed" if completed.returncode == 0 else "failed",
@@ -1005,6 +1059,7 @@ def _run_runtime_probe(command, timeout_seconds=RUNTIME_DIAGNOSTIC_TIMEOUT_SECON
         "probe": report,
         "stdout": _bounded_output(normalized_stdout),
         "stderr": _bounded_output(normalized_stderr),
+        "highlights": _diagnostic_highlights(normalized_stdout, normalized_stderr),
     }
 
 
@@ -1021,9 +1076,16 @@ def strict_cuda_diagnostic():
     if not _runtime_diagnostic_lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="CUDA diagnostic is already running")
 
+    probe_script = str(Path(__file__).with_name("runtime_probe.py"))
+    inventory_command = [
+        sys.executable,
+        probe_script,
+        "--inventory-only",
+        "--debug-info",
+    ]
     command = [
         sys.executable,
-        str(Path(__file__).with_name("runtime_probe.py")),
+        probe_script,
         str(_model_path),
         "--provider",
         "cuda",
@@ -1033,12 +1095,40 @@ def strict_cuda_diagnostic():
     ]
     try:
         deadline = time.monotonic() + RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS
-        primary = _run_runtime_probe(command)
+        inventory = _run_runtime_probe(
+            inventory_command,
+            timeout_seconds=min(
+                RUNTIME_DIAGNOSTIC_INVENTORY_TIMEOUT_SECONDS,
+                RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS,
+            ),
+        )
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            primary = {
+                "status": "timed_out",
+                "timeout_seconds": 0,
+                "exit_code": None,
+                "error": "Runtime inventory consumed the diagnostic deadline",
+                "probe": None,
+                "stdout": "",
+                "stderr": "",
+                "highlights": "",
+            }
+        else:
+            primary = _run_runtime_probe(command, timeout_seconds=remaining_seconds)
+
         if primary["probe"] is None:
-            return JSONResponse(
-                status_code=504 if primary["status"] == "timed_out" else 502,
-                content=primary,
-            )
+            return {
+                "status": "failed",
+                "exit_code": primary["exit_code"],
+                "probe": None,
+                "stdout": primary["stdout"],
+                "stderr": primary["stderr"],
+                "highlights": primary.get("highlights", ""),
+                "inventory": inventory,
+                "primary": primary,
+                "strict_stage": None,
+            }
 
         strict_stage = None
         if _probe_requires_strict_stage(primary["probe"]):
@@ -1052,6 +1142,7 @@ def strict_cuda_diagnostic():
                     "probe": None,
                     "stdout": "",
                     "stderr": "",
+                    "highlights": "",
                 }
             else:
                 strict_stage = _run_runtime_probe(
@@ -1071,12 +1162,19 @@ def strict_cuda_diagnostic():
                 exit_code = strict_stage["exit_code"]
             elif exit_code == 0:
                 exit_code = 1
+        highlights = _diagnostic_highlights(
+            primary.get("highlights"),
+            strict_stage.get("highlights") if strict_stage else None,
+        )
         return {
             "status": "completed" if primary["exit_code"] == 0 and verified_cuda else "failed",
             "exit_code": exit_code,
             "probe": primary["probe"],
             "stdout": primary["stdout"],
             "stderr": primary["stderr"],
+            "highlights": highlights,
+            "inventory": inventory,
+            "primary": primary,
             "strict_stage": strict_stage,
         }
     finally:

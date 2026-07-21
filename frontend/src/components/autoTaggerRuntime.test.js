@@ -101,3 +101,29 @@ test('formats strict CUDA report with native output and preserved failure eviden
   assert.match(formatted, /native ORT log/)
   assert.match(formatted, /nvidia-cusparse-cu12/)
 })
+
+// AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
+// AC: @auto-tagger-runtime-acceleration-deployment ac-native-runtime-inventory
+test('formats primary native crashes with inventory and highlights', () => {
+  const formatted = formatCudaDiagnostic({
+    status: 'failed',
+    exit_code: 3221225477,
+    probe: null,
+    inventory: {
+      probe: {
+        inventory_only: true,
+        runtime: {
+          native_libraries: [{ name: 'cudnn_graph64_9.dll', path: 'C:/runtime/cudnn_graph64_9.dll' }],
+        },
+      },
+    },
+    primary: { status: 'invalid_output', probe: null },
+    highlights: 'CUDNN_BACKEND_API_FAILED at build_operation_graph',
+    strict_stage: null,
+  })
+
+  assert.match(formatted, /cudnn_graph64_9\.dll/)
+  assert.match(formatted, /CUDNN_BACKEND_API_FAILED/)
+  assert.match(formatted, /3221225477/)
+  assert.match(formatted, /"probe": null/)
+})

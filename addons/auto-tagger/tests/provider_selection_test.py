@@ -568,6 +568,84 @@ def test_health_remains_responsive_while_prediction_is_running(tmp_path, monkeyp
     assert not prediction.is_alive()
 
 
+# AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
+# AC: @auto-tagger-runtime-acceleration-deployment ac-native-runtime-inventory
+def test_primary_native_crash_returns_structured_http_success_data(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "eva02-large-v3" / "model.onnx"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    monkeypatch.setenv("LOCALBOORU_DIAGNOSTIC_SENTINEL", "preserved")
+    inventory = {"inventory_only": True, "runtime": {"native_libraries": []}}
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if "--inventory-only" in command:
+            return subprocess.CompletedProcess(command, 0, json.dumps(inventory), b"")
+        stderr = (
+            "CUDNN_FRONTEND: build_operation_graph\n"
+            "CUDNN_BACKEND_API_FAILED at /core_model/patch_embed/proj/Conv\n"
+        ).encode("utf-16-le")
+        return subprocess.CompletedProcess(command, 3221225477, b"", stderr)
+
+    monkeypatch.setattr(tagger.subprocess, "run", fake_run)
+
+    result = tagger.strict_cuda_diagnostic()
+
+    assert isinstance(result, dict)
+    assert result["status"] == "failed"
+    assert result["exit_code"] == 3221225477
+    assert result["probe"] is None
+    assert result["inventory"]["probe"] == inventory
+    assert result["primary"]["status"] == "invalid_output"
+    assert result["strict_stage"] is None
+    assert "build_operation_graph" in result["stderr"]
+    assert "CUDNN_BACKEND_API_FAILED" in result["highlights"]
+    assert len(calls) == 2
+    assert all("--disable-cpu-fallback" not in command for command, _ in calls)
+    assert calls[0][1]["env"]["CUDNN_LOGLEVEL_DBG"] == "3"
+    assert calls[0][1]["env"]["LOCALBOORU_DIAGNOSTIC_SENTINEL"] == "preserved"
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-native-runtime-inventory
+def test_timed_out_inventory_preserves_early_structured_report(monkeypatch):
+    tagger = load_tagger()
+    early = {"inventory_only": True, "runtime": {"packages": {"onnxruntime-gpu": "1.23.2"}}}
+
+    def time_out(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(
+            "probe",
+            30,
+            output=(json.dumps(early) + "\n").encode(),
+            stderr=b"CUDNN preload still running",
+        )
+
+    monkeypatch.setattr(tagger.subprocess, "run", time_out)
+    result = tagger._run_runtime_probe(["probe"], timeout_seconds=30)
+
+    assert result["status"] == "timed_out"
+    assert result["probe"] == early
+    assert "CUDNN preload" in result["highlights"]
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
+def test_diagnostic_output_retains_head_tail_and_high_signal_lines():
+    tagger = load_tagger()
+    middle = "noise\n" * tagger.RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT
+    output = "HEAD CUDA DLL missing\n" + middle + "TAIL CUDNN_BACKEND_API_FAILED\n"
+
+    bounded = tagger._bounded_output(output)
+    highlights = tagger._diagnostic_highlights(output)
+
+    assert bounded.startswith("HEAD CUDA DLL missing")
+    assert "diagnostic output omitted" in bounded
+    assert bounded.endswith("TAIL CUDNN_BACKEND_API_FAILED\n")
+    assert "HEAD CUDA DLL missing" in highlights
+    assert "TAIL CUDNN_BACKEND_API_FAILED" in highlights
+
+
 # AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
 # AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
 def test_strict_cuda_diagnostic_preserves_primary_report_when_strict_stage_crashes(monkeypatch, tmp_path):
@@ -587,7 +665,9 @@ def test_strict_cuda_diagnostic_preserves_primary_report_when_strict_stage_crash
 
     def fake_run(command, **kwargs):
         calls.append(command)
-        if len(calls) == 1:
+        if "--inventory-only" in command:
+            return subprocess.CompletedProcess(command, 0, b'{"inventory_only": true}', b"")
+        if "--disable-cpu-fallback" not in command:
             stdout = ("EP Error: CUDA DLL missing\n" + json.dumps(report)).encode("utf-16-le")
             return subprocess.CompletedProcess(command, 1, stdout, b"")
         stderr = "probe, session_state.cc:1304 CUDNN failure".encode("utf-16-be")
@@ -602,8 +682,9 @@ def test_strict_cuda_diagnostic_preserves_primary_report_when_strict_stage_crash
     assert "EP Error" in result["stdout"]
     assert result["strict_stage"]["status"] == "invalid_output"
     assert "CUDNN failure" in result["strict_stage"]["stderr"]
+    assert "CUDNN failure" in result["highlights"]
     assert "\x00" not in result["strict_stage"]["stderr"]
-    assert "--disable-cpu-fallback" in calls[1]
+    assert "--disable-cpu-fallback" in calls[2]
 
 
 def test_strict_cuda_diagnostic_does_not_launch_after_deadline(monkeypatch, tmp_path):
@@ -627,7 +708,8 @@ def test_strict_cuda_diagnostic_does_not_launch_after_deadline(monkeypatch, tmp_
     assert len(calls) == 1
     assert result["status"] == "failed"
     assert result["exit_code"] is None
-    assert result["strict_stage"]["status"] == "timed_out"
+    assert result["primary"]["status"] == "timed_out"
+    assert result["strict_stage"] is None
 
 
 def test_strict_cuda_diagnostic_uses_one_deadline_and_strict_failure_exit(monkeypatch, tmp_path):
@@ -646,8 +728,16 @@ def test_strict_cuda_diagnostic_uses_one_deadline_and_strict_failure_exit(monkey
 
     def fake_run(command, **kwargs):
         calls.append(kwargs)
-        report = primary_report if len(calls) == 1 else strict_report
-        return subprocess.CompletedProcess(command, 0 if len(calls) == 1 else 1, json.dumps(report), "")
+        if "--inventory-only" in command:
+            report = {"inventory_only": True}
+            return subprocess.CompletedProcess(command, 0, json.dumps(report), "")
+        report = strict_report if "--disable-cpu-fallback" in command else primary_report
+        return subprocess.CompletedProcess(
+            command,
+            1 if "--disable-cpu-fallback" in command else 0,
+            json.dumps(report),
+            "",
+        )
 
     monkeypatch.setattr(tagger.subprocess, "run", fake_run)
 
@@ -655,7 +745,7 @@ def test_strict_cuda_diagnostic_uses_one_deadline_and_strict_failure_exit(monkey
 
     assert result["status"] == "failed"
     assert result["exit_code"] == 1
-    assert 0 < calls[1]["timeout"] <= calls[0]["timeout"]
+    assert 0 < calls[2]["timeout"] <= calls[1]["timeout"]
 
 
 # AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
@@ -708,19 +798,23 @@ def test_strict_cuda_diagnostic_invokes_deployed_probe_with_exact_runtime(monkey
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
-        return subprocess.CompletedProcess(command, 0, json.dumps(report), "native log")
+        payload = {"inventory_only": True} if "--inventory-only" in command else report
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "native log")
 
     monkeypatch.setattr(tagger.subprocess, "run", fake_run)
 
     result = tagger.strict_cuda_diagnostic()
 
-    command, kwargs = calls[0]
+    inventory_command, inventory_kwargs = calls[0]
+    command, kwargs = calls[1]
+    assert "--inventory-only" in inventory_command
+    assert inventory_kwargs["timeout"] == tagger.RUNTIME_DIAGNOSTIC_INVENTORY_TIMEOUT_SECONDS
     assert command[0] == tagger.sys.executable
     assert command[1] == str(Path(tagger.__file__).with_name("runtime_probe.py"))
     assert command[2] == str(model)
     assert {"--verbose", "--debug-info", "--disable-wrapper-fallback"}.issubset(command)
     assert "--strict-on-zero-cuda" not in command
-    assert kwargs["timeout"] == tagger.RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS
+    assert 0 < kwargs["timeout"] <= tagger.RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS
     assert kwargs["text"] is False
     assert result["probe"] == report
     assert result["stderr"] == "native log"

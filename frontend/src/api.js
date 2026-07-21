@@ -5,6 +5,7 @@ import axios from 'axios'
 import { isMobileApp, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 import { adjustmentQuery } from './utils/imageAdjustments.js'
+import { shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
 import { runtimeDiagnosticTimeoutMs } from './components/autoTaggerRuntime.js'
 
 // Current server config (cached for synchronous access)
@@ -218,8 +219,10 @@ api.interceptors.response.use(
     // 4. Timeout errors
     const isTransient = isNetworkError || status === 503 || error.code === 'ECONNABORTED'
 
+    const suppressOptionalNotFound = shouldSuppressOptionalNotFound(error.config, status)
+
     // Only show popup for real errors after startup
-    if (!duringStartup && !isTransient) {
+    if (!duringStartup && !isTransient && !suppressOptionalNotFound) {
       let message = `API Error: ${method} ${url}\n\nStatus: ${status || 'Network Error'}`
 
       if (data) {
@@ -462,9 +465,9 @@ const previewFrameQueue = {
   running: 0,
   queue: [],
 
-  async enqueue(fn) {
+  async enqueue(fn, signal) {
     return new Promise((resolve, reject) => {
-      this.queue.push({ fn, resolve, reject })
+      this.queue.push({ fn, signal, resolve, reject })
       this.process()
     })
   },
@@ -472,7 +475,12 @@ const previewFrameQueue = {
   async process() {
     if (this.running >= this.maxConcurrent || this.queue.length === 0) return
 
-    const { fn, resolve, reject } = this.queue.shift()
+    const { fn, signal, resolve, reject } = this.queue.shift()
+    if (signal?.aborted) {
+      reject(new DOMException('Timeline preview request was cancelled', 'AbortError'))
+      this.process()
+      return
+    }
     this.running++
 
     try {
@@ -487,12 +495,19 @@ const previewFrameQueue = {
   }
 }
 
-export async function fetchPreviewFrames(imageId, directoryId = null) {
+export async function fetchPreviewFrames(locator, signal = undefined) {
   return previewFrameQueue.enqueue(async () => {
-    const params = directoryId ? `?directory_id=${directoryId}` : ''
-    const response = await api.get(`/images/${imageId}/preview-frames${params}`)
+    const params = new URLSearchParams({
+      directory_id: String(locator.directoryId),
+      library_id: locator.libraryId,
+      file_hash: locator.fileHash,
+    })
+    const response = await api.get(
+      `/images/${locator.imageId}/preview-frames?${params}`,
+      { signal, suppressErrorToast: true }
+    )
     return response.data
-  })
+  }, signal)
 }
 
 // Tags API

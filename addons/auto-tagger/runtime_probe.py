@@ -16,8 +16,12 @@ import tempfile
 import time
 from pathlib import Path
 
-import numpy as np
-import onnxruntime as ort
+if "--inventory-only" in sys.argv:
+    np = None
+    ort = None
+else:
+    import numpy as np
+    import onnxruntime as ort
 
 
 def package_versions():
@@ -111,6 +115,40 @@ def nvidia_smi_info():
         return {"available": True, "output": None, "error": str(error)}
 
 
+def native_library_inventory():
+    libraries = []
+    seen = set()
+    distributions = []
+    for distribution in importlib.metadata.distributions():
+        name = (distribution.metadata.get("Name") or "").lower().replace("_", "-")
+        if name.startswith("nvidia-") or name.startswith("onnxruntime"):
+            distributions.append((name, distribution))
+    for package, distribution in distributions:
+        for relative_path in distribution.files or []:
+            filename = Path(str(relative_path)).name.lower()
+            is_native_library = (
+                filename.endswith((".dll", ".dylib", ".pyd", ".so"))
+                or ".so." in filename
+            )
+            if not is_native_library:
+                continue
+            path = Path(distribution.locate_file(relative_path))
+            key = str(path.resolve()) if path.exists() else str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            libraries.append(
+                {
+                    "package": package,
+                    "name": path.name,
+                    "path": key,
+                    "exists": path.is_file(),
+                    "bytes": path.stat().st_size if path.is_file() else None,
+                }
+            )
+    return sorted(libraries, key=lambda item: (item["package"], item["name"], item["path"]))
+
+
 def provider_spec(provider):
     if provider == "cuda":
         return [
@@ -134,6 +172,18 @@ def strict_stage_succeeded(stage):
     )
 
 
+def metadata_inventory():
+    return {
+        "python": sys.version.split()[0],
+        "python_executable": sys.executable,
+        "platform": platform.platform(),
+        "architecture": platform.machine(),
+        "packages": package_versions(),
+        "native_libraries": native_library_inventory(),
+        "nvidia_smi": nvidia_smi_info(),
+    }
+
+
 def runtime_details(providers, preload, args, debug_output, debug_error):
     return {
         "python": sys.version.split()[0],
@@ -150,6 +200,7 @@ def runtime_details(providers, preload, args, debug_output, debug_error):
         "ort_debug_output": debug_output,
         "ort_debug_error": debug_error,
         "nvidia_smi": nvidia_smi_info(),
+        "native_libraries": native_library_inventory(),
     }
 
 
@@ -238,8 +289,11 @@ def execute_stage(model_path, args, providers, *, disable_cpu_fallback=False):
 
 
 def main():
+    global np, ort
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("model", type=Path)
+    parser.add_argument("model", type=Path, nargs="?")
+    parser.add_argument("--inventory-only", action="store_true")
     parser.add_argument("--provider", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument(
         "--optimization", choices=("all", "basic", "disabled"), default="all"
@@ -250,6 +304,28 @@ def main():
     parser.add_argument("--debug-info", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
+    if not args.inventory_only and args.model is None:
+        parser.error("model is required unless --inventory-only is used")
+
+    if args.inventory_only and ort is None:
+        early_report = {
+            "inventory_only": True,
+            "runtime": {
+                **metadata_inventory(),
+                "ort_import": "pending",
+            },
+        }
+        print(json.dumps(early_report, sort_keys=True), flush=True)
+        try:
+            import numpy as numpy_module
+            import onnxruntime as ort_module
+        except Exception as error:
+            early_report["runtime"]["ort_import"] = "failed"
+            early_report["runtime"]["ort_import_error"] = str(error)
+            print(json.dumps(early_report, indent=2, sort_keys=True), flush=True)
+            return 1
+        np = numpy_module
+        ort = ort_module
 
     preload = {"attempted": args.provider == "cuda", "succeeded": None, "error": None}
     if args.provider == "cuda":
@@ -275,6 +351,10 @@ def main():
     runtime = runtime_details(
         providers, preload, args, debug_output, debug_error
     )
+    if args.inventory_only:
+        print(json.dumps({"inventory_only": True, "runtime": runtime}, indent=2, sort_keys=True))
+        return 0
+
     model = {
         "path": str(args.model.resolve()),
         "name": args.model.parent.name or args.model.name,

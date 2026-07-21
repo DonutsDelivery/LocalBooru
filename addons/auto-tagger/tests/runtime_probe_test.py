@@ -174,6 +174,59 @@ def test_strict_second_stage_runs_only_for_zero_cuda(counts, expected):
     assert probe.needs_strict_stage({"provider_node_counts": counts}) is expected
 
 
+# AC: @auto-tagger-runtime-acceleration-deployment ac-native-runtime-inventory
+def test_native_inventory_includes_versioned_shared_objects_and_pyd(monkeypatch, tmp_path):
+    probe = load_probe()
+    paths = [
+        Path("nvidia/cudnn/bin/cudnn64_9.dll"),
+        Path("nvidia/cudnn/lib/libcudnn.so.9"),
+        Path("onnxruntime/capi/onnxruntime_pybind_state.pyd"),
+        Path("nvidia/cudnn/include/cudnn.h"),
+    ]
+    for path in paths[:-1]:
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"native")
+
+    class Distribution:
+        metadata = {"Name": "nvidia-cudnn-cu12"}
+        files = paths
+
+        @staticmethod
+        def locate_file(path):
+            return tmp_path / path
+
+    monkeypatch.setattr(probe.importlib.metadata, "distributions", lambda: [Distribution()])
+
+    names = {item["name"] for item in probe.native_library_inventory()}
+    assert names == {"cudnn64_9.dll", "libcudnn.so.9", "onnxruntime_pybind_state.pyd"}
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-native-runtime-inventory
+def test_inventory_only_emits_runtime_without_executing_model(monkeypatch, capsys):
+    probe = load_probe()
+    monkeypatch.setattr(
+        probe,
+        "runtime_details",
+        lambda *_args: {
+            "packages": {"onnxruntime-gpu": "1.23.2"},
+            "native_libraries": [{"name": "cudnn64_9.dll", "exists": True}],
+        },
+    )
+    monkeypatch.setattr(
+        probe,
+        "execute_stage",
+        lambda *_args, **_kwargs: pytest.fail("inventory must not execute the model"),
+    )
+    monkeypatch.setattr(probe.ort, "preload_dlls", lambda **_kwargs: None)
+    monkeypatch.setattr(sys, "argv", [str(PROBE_PATH), "--inventory-only"])
+
+    assert probe.main() == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["inventory_only"] is True
+    assert report["runtime"]["native_libraries"][0]["name"] == "cudnn64_9.dll"
+
+
 # AC: @auto-tagger-runtime-acceleration-deployment ac-2
 def test_runtime_inventory_includes_every_nvidia_distribution(monkeypatch):
     probe = load_probe()

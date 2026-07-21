@@ -475,11 +475,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   )
 
   // Timeline preview hook (for video thumbnail preview on hover)
-  const timelinePreview = useTimelinePreview(
-    libraryImageId,
-    image?.directory_id,
-    playback.duration
-  )
+  const timelinePreview = useTimelinePreview(image, playback.duration)
 
   // Whisper subtitle hook
   const subtitles = useWhisperSubtitles(mediaRef, image)
