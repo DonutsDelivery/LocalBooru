@@ -11,7 +11,7 @@ description: >
 spec_ref: "@wd14-managed-filesystem-safety"
 plan_ref: "@plan-wd14-text-sidecar-add-on"
 origin: derived
-status: pending
+status: in_progress
 blocked_by: []
 depends_on:
   - "@implement-native-wd14-sidecar-service"
@@ -31,6 +31,17 @@ history:
         previous: null
     command: task-set
     timestamp: 2026-07-21T18:43:10.979Z
+  - author: "@claude"
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-07-21T20:37:20.304Z
+        previous: null
+    command: task-start
+    timestamp: 2026-07-21T20:37:20.304Z
 created_at: 2026-07-21T18:33:51.767Z
+started_at: 2026-07-21T20:37:20.304Z
 todos: []
 automation: eligible

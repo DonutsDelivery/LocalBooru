@@ -1356,7 +1356,7 @@ tasks:
     type: task
     spec_ref: "@wd14-managed-filesystem-safety"
     plan_ref: "@plan-wd14-text-sidecar-add-on"
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on:
       - "@implement-native-wd14-sidecar-service"
@@ -1369,4 +1369,5 @@ tasks:
     notes_count: 2
     todos_count: 0
     created_at: 2026-07-21T18:33:51.767Z
+    started_at: 2026-07-21T20:37:20.304Z
     automation: eligible
