@@ -42,12 +42,12 @@ workspaces:
       detail: null
       eligible: false
       reason: null
-      updated_at: 2026-07-21T18:43:55.408Z
+      updated_at: 2026-07-21T18:43:57.184Z
     health:
       status: healthy
       issues: []
       summary: Workspace record matches current git branch and worktree state.
-      updated_at: 2026-07-21T18:43:55.408Z
+      updated_at: 2026-07-21T18:43:57.184Z
     integration:
       status: pending
       detail: null
@@ -55,7 +55,7 @@ workspaces:
       publication_mode: pull_request
       target_branch: plan/wd14-sidecars-implementation
       target_commit: 606c05c21dc6c253c7f973a942a3fdf69daa4492
-      updated_at: 2026-07-21T18:43:55.408Z
+      updated_at: 2026-07-21T18:43:57.184Z
     lifecycle_state: ready
     resolved_base_branch: plan/wd14-sidecars-implementation
     task_ref: "@01KY2Z9A97B3AQK8PYK2RYM2VP"
@@ -63,9 +63,9 @@ workspaces:
     timestamps:
       closed_at: null
       last_active_at: 2026-07-21T18:43:51.132Z
-      last_reconciled_at: 2026-07-21T18:43:55.408Z
+      last_reconciled_at: 2026-07-21T18:43:57.184Z
       created_at: 2026-07-21T18:43:41.255Z
-      updated_at: 2026-07-21T18:43:55.408Z
+      updated_at: 2026-07-21T18:43:57.184Z
     workspace_id: dispatch-workspace-01KY2Z9A97B3AQK8PYK2RYM2VP
     worktree_root: /home/user/Programs/Claude Projects/localbooru/.kspec-worktrees
     worktrees:
@@ -74,6 +74,6 @@ workspaces:
         branch_mode: branch
         branch_ref: dispatch/task/implement-native-wd14-sidecar-service/01ky2z9a
         head: 606c05c21dc6c253c7f973a942a3fdf69daa4492
-        last_seen_at: 2026-07-21T18:43:48.974Z
+        last_seen_at: 2026-07-21T18:43:57.184Z
         path: /home/user/Programs/Claude
           Projects/localbooru/.kspec-worktrees/implement-native-wd14-sidecar-service-01ky2z9a
