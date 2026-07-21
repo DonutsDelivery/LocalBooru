@@ -705,11 +705,11 @@ features:
               logs, driver and GPU details, resolved runtime packages, and the preserved CUDA
               failure without requiring command-line access
             when: the user runs the strict CUDA diagnostic
-          - given: a supported NVIDIA system installs or repairs the managed Auto Tagger environment
+          - given: A supported NVIDIA system has a managed CUDA dependency set installed
             id: ac-compatible-cudnn
-            then: the environment uses the exact shipped compatible cuDNN release and a deployment with a
-              different or unreported cuDNN release is reconciled
-            when: the CUDA runtime dependency set is resolved
+            then: Package versions and preload success are reported as evidence but compatibility is accepted
+              only after the shipped model records nonzero CUDA execution
+            when: Runtime compatibility is evaluated
           - given: a strict CUDA diagnostic emits Windows native output or a later diagnostic stage terminates
               unexpectedly
             id: ac-readable-native-diagnostic
