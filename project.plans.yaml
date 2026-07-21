@@ -390,3 +390,252 @@ plans:
           ba56e1d0, and rebased runtime-probe work on top.
         author: "@claude"
         created_at: 2026-07-20T11:22:40.743Z
+  - _ulid: 01KY2Z8654S8JHPEWNDWJKBE0H
+    slugs:
+      - plan-wd14-text-sidecar-add-on
+    title: WD14 Text Sidecar Add-on
+    content: >
+      # WD14 Text Sidecar Add-on
+
+
+      ## Specs
+
+
+      ```yaml
+
+      - title: WD14 Text Sidecars
+        slug: wd14-text-sidecars
+        type: feature
+        parent: "@addons"
+        description: |
+          An installable built-in add-on exchanges LocalBooru tags with same-stem UTF-8 text sidecars used by WD14-compatible dataset and media tools. It supports additive import, safe absorb, and deterministic export over registered media directories.
+        relates_to:
+          - "@tagging"
+          - "@library-management"
+          - "@batch-ops"
+        acceptance_criteria:
+          - id: ac-builtin-install
+            given: |
+              WD14 Text Sidecars is not installed
+            when: |
+              the user installs it from Addons
+            then: |
+              Import, Absorb, and Export become available without installing Python, creating a virtual environment, opening a port, or starting a sidecar process
+          - id: ac-installed-gate
+            given: |
+              WD14 Text Sidecars is not installed
+            when: |
+              a client requests a tag-sidecar operation
+            then: |
+              the operation is rejected without reading media sidecars or changing tags
+        implementation_notes: |
+          Register `wd14-sidecar` as `AddonRuntime::Builtin` in `src-tauri/src/addons/manifest.rs`. Expose native endpoints beneath `/api/settings/wd14-sidecar` and gate them through `AddonManager::get_addon`.
+
+      - title: WD14 Sidecar Exchange Contract
+        slug: wd14-sidecar-exchange-contract
+        type: requirement
+        parent: "@wd14-text-sidecars"
+        description: |
+          Same-stem WD14 files have a stable parse, merge, absorb, and serialization contract that preserves existing LocalBooru metadata and supports safe round trips.
+        acceptance_criteria:
+          - id: ac-text-contract
+            given: |
+              a media file has a same-stem lowercase `.txt` file containing UTF-8 comma-separated tags
+            when: |
+              Import or Absorb reads the sidecar
+            then: |
+              surrounding whitespace and empty values are ignored, duplicate values are added at most once, underscores and spaces remain distinct, and imported tag names use LocalBooru's lowercase naming convention
+          - id: ac-additive-import
+            given: |
+              an image already has LocalBooru tags and its sidecar contains existing and new tags
+            when: |
+              Import processes the image
+            then: |
+              only missing associations are added as manual general tags without inferred confidence, while existing associations, confidence values, categories, and tags remain unchanged
+          - id: ac-safe-absorb
+            given: |
+              one sidecar maps to one or more media records
+            when: |
+              Absorb processes the sidecar
+            then: |
+              the sidecar is removed only after every matching media record commits the additive import successfully, and a failed import leaves the sidecar available for retry
+          - id: ac-deterministic-export
+            given: |
+              a media record has a LocalBooru tag set and no conflicting same-stem media record
+            when: |
+              Export processes the record
+            then: |
+              it writes the complete tag set in deterministic comma-separated order to the same-stem `.txt` file, skips an existing file by default, and replaces it atomically only when overwrite was explicitly requested
+          - id: ac-shared-stem
+            given: |
+              multiple media files in a selected directory resolve to the same sidecar stem
+            when: |
+              a sidecar operation runs
+            then: |
+              Import applies one parsed sidecar to every matching record, Absorb removes it only after every target succeeds, and Export changes nothing unless every target has the same tag set
+          - id: ac-round-trip
+            given: |
+              an image's tag set is exported and the resulting sidecar is imported for an untagged image
+            when: |
+              both operations complete successfully
+            then: |
+              the imported image has the same normalized tag-name set as the exported image
+        implementation_notes: |
+          Implement parsing, serialization, grouping, DB work, and atomic writes in `src-tauri/src/services/wd14_sidecar.rs`. Reuse or extract the additive insertion semantics from `services/task_queue.rs::execute_tag_task`. Do not write ambiguous legacy main-DB image associations.
+
+      - title: WD14 Managed Filesystem Safety
+        slug: wd14-managed-filesystem-safety
+        type: requirement
+        parent: "@wd14-text-sidecars"
+        description: |
+          Sidecar operations remain scoped to mounted LocalBooru libraries and registered watch directories while reporting partial failures without corrupting files or cross-linking database identities.
+        acceptance_criteria:
+          - id: ac-compound-scope
+            given: |
+              mounted libraries or directories contain colliding numeric directory or image identifiers
+            when: |
+              a sidecar operation targets selected directories
+            then: |
+              each read and mutation applies only to the exact submitted library and registered directory identity
+          - id: ac-managed-paths
+            given: |
+              a request selects registered directories
+            when: |
+              media and sidecar paths are resolved
+            then: |
+              paths come from LocalBooru records, remain within canonical registered roots, and symlinked or non-regular sidecars and escaping paths are rejected without mutation
+          - id: ac-batch-results
+            given: |
+              a bounded operation encounters missing sidecars, inaccessible media, invalid text, collisions, and successful files
+            when: |
+              the operation completes
+            then: |
+              successful work remains committed and the response reports aggregate counts plus a specific outcome for each failed or skipped sidecar
+          - id: ac-idempotent-retry
+            given: |
+              an Import or Absorb operation is retried after a partial failure
+            when: |
+              previously committed targets are processed again
+            then: |
+              existing associations are not duplicated or replaced and remaining valid targets can complete safely
+        implementation_notes: |
+          Resolve libraries with `AppState::resolve_library`, query registered roots by directory identity, canonicalize before access, and run blocking work through `spawn_blocking`. The client must never submit a filesystem path. Apply explicit batch bounds before mutation.
+
+      - title: WD14 Add-on Settings
+        slug: wd14-addon-settings
+        type: requirement
+        parent: "@addon-settings"
+        description: |
+          Installed WD14 Text Sidecars provides a desktop settings panel for selecting managed directories and running import, absorb, and export with clear destructive controls and results.
+        acceptance_criteria:
+          - id: ac-installed-visibility
+            given: |
+              the user opens Add-on Settings
+            when: |
+              WD14 Text Sidecars is installed or uninstalled
+            then: |
+              its settings panel is shown only while installed
+          - id: ac-managed-selection
+            given: |
+              multiple mounted libraries contain registered directories, including colliding numeric directory identifiers
+            when: |
+              the user selects operation scope
+            then: |
+              available directories are identified by both library and directory, support select-all and clear, and no arbitrary filesystem path can be entered
+          - id: ac-operation-controls
+            given: |
+              at least one available directory is selected
+            when: |
+              the user runs Import, Absorb, or Export
+            then: |
+              duplicate submissions are disabled while active, Absorb requires deletion confirmation, and overwrite-enabled Export requires replacement confirmation
+          - id: ac-visible-results
+            given: |
+              a sidecar operation returns successes, skips, or failures
+            when: |
+              the panel receives the result
+            then: |
+              it presents the aggregate outcome and actionable per-sidecar failures without leaving the settings screen unusable
+        implementation_notes: |
+          Add API helpers in `frontend/src/api.js` and a `WD14SidecarSettings.jsx` panel. Reuse registered-directory selection conventions from `MigrationSettings.jsx`, but key selection by `library_id:directory_id`. Wire installed-only visibility through `AddonSettings.jsx` and `addonSettingsCatalog.js`.
+      ```
+
+
+      ## Tasks
+
+
+      ```yaml
+
+      - title: Implement native WD14 sidecar service
+        slug: implement-native-wd14-sidecar-service
+        description: |
+          Implement and test the bounded native parser, serializer, same-stem grouping, canonical managed-path validation, additive per-directory tag association logic, safe absorb sequencing, deterministic atomic export, collision handling, counts, and structured per-sidecar results. Keep all work library/directory/image scoped and reuse existing tag semantics.
+        priority: 2
+        tags:
+          - backend
+          - rust
+          - filesystem
+        spec_ref: "@wd14-sidecar-exchange-contract"
+
+      - title: Register and expose the WD14 built-in add-on
+        slug: register-expose-wd14-builtin-addon
+        description: |
+          Register the no-sidecar built-in manifest and add installed-gated native settings routes for Import, Absorb, and Export. Validate compound directory selections before work, invoke the service through `spawn_blocking`, preserve settings-prefix access control, and add route/manifest tests.
+        priority: 2
+        tags:
+          - backend
+          - rust
+          - api
+        spec_ref: "@wd14-text-sidecars"
+        depends_on:
+          - implement-native-wd14-sidecar-service
+
+      - title: Build WD14 add-on settings panel
+        slug: build-wd14-addon-settings-panel
+        description: |
+          Add frontend API helpers and an installed-only Add-on Settings panel with mounted compound-directory selection, Import/Absorb/Export controls, destructive confirmations, overwrite opt-in, in-flight locking, and summary plus per-sidecar failure presentation. Add pure helper/catalog tests.
+        priority: 2
+        tags:
+          - frontend
+          - react
+        spec_ref: "@wd14-addon-settings"
+        depends_on:
+          - register-expose-wd14-builtin-addon
+
+      - title: Verify WD14 sidecar integration
+        slug: verify-wd14-sidecar-integration
+        description: |
+          Verify acceptance-criterion annotations and end-to-end import, absorb, export, collision, failure, and round-trip behavior across Rust and frontend. Run kspec validation/alignment, locked Rust library tests, frontend tests, lint, and production build; record any environment-limited checks rather than hiding them.
+        priority: 2
+        tags:
+          - verification
+          - integration
+        spec_ref: "@wd14-managed-filesystem-safety"
+        depends_on:
+          - implement-native-wd14-sidecar-service
+          - register-expose-wd14-builtin-addon
+          - build-wd14-addon-settings-panel
+      ```
+
+
+      ## Implementation Notes
+
+
+      Use the current Rust/Axum/Tauri v2 implementation; the legacy Python API is reference-only.
+      Keep authoritative filesystem and SQLite mutations in native Rust. The backend should use a
+      bounded synchronous operation for the MVP and return aggregate plus per-sidecar outcomes;
+      persisted task/SSE/cancellation support is intentionally deferred. Existing `.txt` files are
+      skipped unless overwrite is explicitly selected. Imported tags are lowercased, additive,
+      manual, general-category, and confidence-free. All implementation tasks must run through
+      isolated kspec dispatch and stack on the plan branch rather than the current unrelated
+      dispatch branch.
+    status: approved
+    approved_at: null
+    branch: null
+    derived_specs: []
+    derived_tasks: []
+    module_ref: "@core"
+    source_path: /tmp/wd14-text-sidecar-plan.md
+    created_at: 2026-07-21T18:33:14.660Z
+    completed_at: null
+    notes: []
