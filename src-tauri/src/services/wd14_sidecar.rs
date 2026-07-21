@@ -2,9 +2,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
-use rusqlite::{params, params_from_iter};
+use rusqlite::{params, params_from_iter, TransactionBehavior};
 use serde::{Deserialize, Serialize};
+#[cfg(not(unix))]
 use tempfile::NamedTempFile;
 
 use crate::db::library::LibraryContext;
@@ -16,6 +18,10 @@ const MAX_MEDIA_CANDIDATES: usize = 50_000;
 const MAX_SIDECAR_BYTES: u64 = 1024 * 1024;
 const MAX_TAGS_PER_SIDECAR: usize = 10_000;
 const MAX_TAG_BYTES: usize = 1024;
+const MAX_RECONCILIATION_QUERIES: usize = 10_000;
+const TAG_LOOKUP_CHUNK: usize = 500;
+
+static WD14_OPERATION_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct DirectorySelection {
@@ -111,6 +117,12 @@ struct OpenedSidecar {
     identity: FileIdentity,
 }
 
+#[derive(Debug)]
+struct ApplyFailure {
+    error: AppError,
+    added: usize,
+}
+
 #[cfg(unix)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FileIdentity {
@@ -145,6 +157,9 @@ pub fn run_operation(
             "overwrite is only valid for export".into(),
         ));
     }
+    let _operation_guard = WD14_OPERATION_LOCK
+        .lock()
+        .map_err(|_| AppError::Internal("WD14 operation lock is poisoned".into()))?;
 
     let selections: Vec<_> = request
         .directories
@@ -167,10 +182,11 @@ pub fn run_operation(
         record_result(&mut response.summary, result);
     }
 
+    let mut reconciliation_budget = MAX_RECONCILIATION_QUERIES;
     for group in groups.into_values() {
         let result = match operation {
-            Wd14Operation::Import => import_group(state, &group, false),
-            Wd14Operation::Absorb => import_group(state, &group, true),
+            Wd14Operation::Import => import_group(state, &group, false, &mut reconciliation_budget),
+            Wd14Operation::Absorb => import_group(state, &group, true, &mut reconciliation_budget),
             Wd14Operation::Export => export_group(state, &group, request.overwrite),
         };
         record_result(&mut response.summary, &result);
@@ -280,7 +296,7 @@ fn prepare_groups(
                     library_id: selection.library_id,
                     directory_id: selection.directory_id,
                     image_id,
-                    media_path: recorded_path.to_string_lossy().into_owned(),
+                    media_path: display_path(&recorded_path),
                 }],
                 status: SidecarStatus::FailedValidation,
                 tags_parsed: 0,
@@ -292,7 +308,12 @@ fn prepare_groups(
     Ok((groups, failures, media_candidates))
 }
 
-fn import_group(state: &AppState, group: &SidecarGroup, absorb: bool) -> SidecarResult {
+fn import_group(
+    state: &AppState,
+    group: &SidecarGroup,
+    absorb: bool,
+    reconciliation_budget: &mut usize,
+) -> SidecarResult {
     let targets = serialized_targets(group);
     let opened = match read_existing_sidecar(group) {
         Ok(Some(opened)) => opened,
@@ -324,17 +345,19 @@ fn import_group(state: &AppState, group: &SidecarGroup, absorb: bool) -> Sidecar
             target.locator.directory_id,
             target.locator.image_id,
             &tags,
+            reconciliation_budget,
         ) {
             Ok(count) => added += count,
-            Err(error) => {
+            Err(failure) => {
+                added += failure.added;
                 return SidecarResult {
                     sidecar_path: display_path(&group.path),
                     targets,
                     status: SidecarStatus::FailedDatabase,
                     tags_parsed: tags.len(),
                     tags_added: added,
-                    error: Some(error.to_string()),
-                }
+                    error: Some(failure.error.to_string()),
+                };
             }
         }
     }
@@ -356,9 +379,10 @@ fn import_group(state: &AppState, group: &SidecarGroup, absorb: bool) -> Sidecar
 }
 
 fn export_group(state: &AppState, group: &SidecarGroup, overwrite: bool) -> SidecarResult {
-    if let Err(error) = validate_export_target(group) {
-        return result(group, SidecarStatus::FailedValidation, 0, 0, Some(error));
-    }
+    let parent_identity = match validate_export_target(group) {
+        Ok(identity) => identity,
+        Err(error) => return result(group, SidecarStatus::FailedValidation, 0, 0, Some(error)),
+    };
 
     let mut tag_sets = Vec::new();
     for target in &group.targets {
@@ -410,7 +434,7 @@ fn export_group(state: &AppState, group: &SidecarGroup, overwrite: bool) -> Side
         );
     }
     let bytes = serialize_tags(tags);
-    match atomic_write_sidecar(&group.path, &bytes, overwrite) {
+    match atomic_write_sidecar(&group.path, &bytes, overwrite, parent_identity) {
         Ok(WriteOutcome::Written) => result(group, SidecarStatus::Exported, tags.len(), 0, None),
         Ok(WriteOutcome::SkippedExists) => {
             result(group, SidecarStatus::SkippedExists, tags.len(), 0, None)
@@ -430,40 +454,48 @@ fn apply_tags(
     directory_id: i64,
     image_id: i64,
     tags: &BTreeSet<String>,
-) -> Result<usize, AppError> {
-    let tag_ids = {
-        let mut main = library.main_pool.get()?;
-        let transaction = main.transaction()?;
-        let mut tag_ids = Vec::with_capacity(tags.len());
+    reconciliation_budget: &mut usize,
+) -> Result<usize, ApplyFailure> {
+    let write_associations = || -> Result<(usize, Vec<i64>), AppError> {
+        let tag_ids = {
+            let mut main = library.main_pool.get()?;
+            let transaction = main.transaction()?;
+            let mut tag_ids = Vec::with_capacity(tags.len());
+            {
+                let mut insert = transaction.prepare(
+                    "INSERT OR IGNORE INTO tags (name, category) VALUES (?1, 'general')",
+                )?;
+                let mut select = transaction.prepare("SELECT id FROM tags WHERE name = ?1")?;
+                for tag in tags {
+                    insert.execute(params![tag])?;
+                    tag_ids.push(select.query_row(params![tag], |row| row.get::<_, i64>(0))?);
+                }
+            }
+            transaction.commit()?;
+            tag_ids
+        };
+
+        let pool = library.directory_db.get_pool(directory_id)?;
+        let mut connection = pool.get()?;
+        let transaction = connection.transaction()?;
+        let mut added = 0usize;
         {
-            let mut insert = transaction
-                .prepare("INSERT OR IGNORE INTO tags (name, category) VALUES (?1, 'general')")?;
-            let mut select = transaction.prepare("SELECT id FROM tags WHERE name = ?1")?;
-            for tag in tags {
-                insert.execute(params![tag])?;
-                tag_ids.push(select.query_row(params![tag], |row| row.get::<_, i64>(0))?);
+            let mut insert = transaction.prepare(
+                "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
+                 VALUES (?1, ?2, NULL, 1)",
+            )?;
+            for tag_id in &tag_ids {
+                added += insert.execute(params![image_id, tag_id])?;
             }
         }
         transaction.commit()?;
-        tag_ids
+        Ok((added, tag_ids))
     };
 
-    let pool = library.directory_db.get_pool(directory_id)?;
-    let mut connection = pool.get()?;
-    let transaction = connection.transaction()?;
-    let mut added = 0usize;
-    {
-        let mut insert = transaction.prepare(
-            "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
-             VALUES (?1, ?2, NULL, 1)",
-        )?;
-        for tag_id in &tag_ids {
-            added += insert.execute(params![image_id, tag_id])?;
-        }
-    }
-    transaction.commit()?;
-
-    reconcile_counts(library, directory_id, &tag_ids)?;
+    let (added, tag_ids) =
+        write_associations().map_err(|error| ApplyFailure { error, added: 0 })?;
+    reconcile_counts(library, directory_id, &tag_ids, reconciliation_budget)
+        .map_err(|error| ApplyFailure { error, added })?;
     Ok(added)
 }
 
@@ -471,7 +503,18 @@ fn reconcile_counts(
     library: &LibraryContext,
     directory_id: i64,
     tag_ids: &[i64],
+    reconciliation_budget: &mut usize,
 ) -> Result<(), AppError> {
+    let directory_ids = library.directory_db.get_all_directory_ids();
+    if directory_ids.len() > *reconciliation_budget {
+        return Err(AppError::BadRequest(format!(
+            "WD14 count reconciliation exceeds the {MAX_RECONCILIATION_QUERIES}-query operation limit"
+        )));
+    }
+    *reconciliation_budget -= directory_ids.len();
+
+    let mut main = library.main_pool.get()?;
+    let transaction = main.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let unique_tag_ids: Vec<_> = tag_ids
         .iter()
         .copied()
@@ -492,7 +535,7 @@ fn reconcile_counts(
             "SELECT tag_id, COUNT(*) FROM image_tags
              WHERE tag_id IN ({placeholders}) GROUP BY tag_id"
         );
-        for candidate_directory_id in library.directory_db.get_all_directory_ids() {
+        for candidate_directory_id in directory_ids {
             let pool = library.directory_db.get_pool(candidate_directory_id)?;
             let connection = pool.get()?;
             let mut statement = connection.prepare(&query)?;
@@ -515,8 +558,6 @@ fn reconcile_counts(
     )?;
     drop(directory_connection);
 
-    let mut main = library.main_pool.get()?;
-    let transaction = main.transaction()?;
     {
         let mut update = transaction.prepare("UPDATE tags SET post_count = ?1 WHERE id = ?2")?;
         for (tag_id, count) in post_counts {
@@ -538,30 +579,47 @@ fn load_tag_set(
 ) -> Result<BTreeSet<String>, AppError> {
     let pool = library.directory_db.get_pool(directory_id)?;
     let connection = pool.get()?;
-    let mut statement =
-        connection.prepare("SELECT tag_id FROM image_tags WHERE image_id = ?1 ORDER BY tag_id")?;
+    let mut statement = connection
+        .prepare("SELECT tag_id FROM image_tags WHERE image_id = ?1 ORDER BY tag_id LIMIT ?2")?;
     let tag_ids: BTreeSet<i64> = statement
-        .query_map(params![image_id], |row| row.get::<_, i64>(0))?
+        .query_map(
+            params![image_id, (MAX_TAGS_PER_SIDECAR + 1) as i64],
+            |row| row.get::<_, i64>(0),
+        )?
         .collect::<Result<_, _>>()?;
     drop(statement);
     drop(connection);
+    if tag_ids.len() > MAX_TAGS_PER_SIDECAR {
+        return Err(AppError::BadRequest(format!(
+            "Tag set exceeds the {MAX_TAGS_PER_SIDECAR}-tag export limit"
+        )));
+    }
     if tag_ids.is_empty() {
         return Ok(BTreeSet::new());
     }
 
-    let placeholders = std::iter::repeat("?")
-        .take(tag_ids.len())
-        .collect::<Vec<_>>()
-        .join(",");
     let main = library.main_pool.get()?;
-    let mut statement = main.prepare(&format!(
-        "SELECT name FROM tags WHERE id IN ({placeholders}) ORDER BY name"
-    ))?;
-    let tags = statement
-        .query_map(params_from_iter(tag_ids.iter()), |row| {
-            row.get::<_, String>(0)
-        })?
-        .collect::<Result<BTreeSet<_>, _>>()?;
+    let mut tags = BTreeSet::new();
+    for chunk in tag_ids
+        .iter()
+        .copied()
+        .collect::<Vec<_>>()
+        .chunks(TAG_LOOKUP_CHUNK)
+    {
+        let placeholders = std::iter::repeat("?")
+            .take(chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut statement = main.prepare(&format!(
+            "SELECT name FROM tags WHERE id IN ({placeholders}) ORDER BY name"
+        ))?;
+        let names = statement
+            .query_map(params_from_iter(chunk.iter()), |row| {
+                row.get::<_, String>(0)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        tags.extend(names);
+    }
     if tags.len() != tag_ids.len() {
         return Err(AppError::Internal(
             "Image references a missing global tag definition".into(),
@@ -677,13 +735,28 @@ fn remove_absorbed_sidecar(group: &SidecarGroup, expected: &OpenedSidecar) -> Re
     let current = read_existing_sidecar(&quarantined_group);
     let matches = matches!(&current, Ok(Some(current)) if same_sidecar(expected, current));
     if matches {
-        return fs::remove_file(&quarantine)
-            .map_err(|error| format!("Could not remove imported sidecar: {error}"));
+        return match fs::remove_file(&quarantine) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let restore_error =
+                    restore_quarantined_sidecar(&quarantine, &group.path, Some(&expected.bytes))
+                        .err();
+                Err(format!(
+                    "Could not remove imported sidecar: {error}{}",
+                    restore_error
+                        .map(|error| format!("; restoring its same-stem name failed: {error}"))
+                        .unwrap_or_default()
+                ))
+            }
+        };
     }
 
-    let restored =
-        fs::hard_link(&quarantine, &group.path).and_then(|()| fs::remove_file(&quarantine));
-    if let Err(error) = restored {
+    let restore_bytes = current
+        .as_ref()
+        .ok()
+        .and_then(|current| current.as_ref())
+        .map(|current| current.bytes.as_slice());
+    if let Err(error) = restore_quarantined_sidecar(&quarantine, &group.path, restore_bytes) {
         return Err(format!(
             "Sidecar changed after import and was preserved at {}; restoring its original name failed: {error}",
             quarantine.display()
@@ -694,6 +767,33 @@ fn remove_absorbed_sidecar(group: &SidecarGroup, expected: &OpenedSidecar) -> Re
         Ok(None) => Err("Sidecar disappeared while it was being removed".into()),
         Err(error) => Err(error),
     }
+}
+
+fn restore_quarantined_sidecar(
+    quarantine: &Path,
+    original: &Path,
+    bytes: Option<&[u8]>,
+) -> io::Result<()> {
+    match fs::hard_link(quarantine, original) {
+        Ok(()) => return fs::remove_file(quarantine),
+        Err(error) if original.exists() => return Err(error),
+        Err(_) => {}
+    }
+
+    let bytes = bytes.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            "sidecar bytes are unavailable for safe restoration",
+        )
+    })?;
+    let mut restored = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(original)?;
+    restored.write_all(bytes)?;
+    restored.sync_all()?;
+    drop(restored);
+    fs::remove_file(quarantine)
 }
 
 fn read_existing_sidecar(group: &SidecarGroup) -> Result<Option<OpenedSidecar>, String> {
@@ -808,24 +908,27 @@ fn validate_existing_sidecar(group: &SidecarGroup) -> Result<Option<fs::Metadata
     Ok(Some(metadata))
 }
 
-fn validate_export_target(group: &SidecarGroup) -> Result<(), String> {
-    if validate_existing_sidecar(group)?.is_some() {
-        return Ok(());
-    }
+fn validate_export_target(group: &SidecarGroup) -> Result<FileIdentity, String> {
+    validate_existing_sidecar(group)?;
     let parent = group
         .path
         .parent()
         .ok_or_else(|| "Sidecar path has no parent directory".to_string())?;
-    let parent = fs::canonicalize(parent)
+    let canonical = fs::canonicalize(parent)
         .map_err(|error| format!("Could not resolve sidecar directory: {error}"))?;
     if group
         .targets
         .iter()
-        .any(|target| !parent.starts_with(&target.root))
+        .any(|target| !canonical.starts_with(&target.root))
     {
         return Err("Sidecar directory escapes a registered directory".into());
     }
-    Ok(())
+    let metadata = fs::metadata(&canonical)
+        .map_err(|error| format!("Could not inspect sidecar directory: {error}"))?;
+    if !metadata.is_dir() {
+        return Err("Sidecar parent is not a directory".into());
+    }
+    Ok(file_identity(&metadata))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -834,13 +937,123 @@ enum WriteOutcome {
     SkippedExists,
 }
 
-fn atomic_write_sidecar(path: &Path, bytes: &[u8], overwrite: bool) -> io::Result<WriteOutcome> {
+#[cfg(unix)]
+fn atomic_write_sidecar(
+    path: &Path,
+    bytes: &[u8],
+    overwrite: bool,
+    expected_parent: FileIdentity,
+) -> io::Result<WriteOutcome> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    let destination = path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?;
+    let destination = CString::new(destination.as_bytes())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "file name contains NUL"))?;
+    let directory = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(parent)?;
+    if file_identity(&directory.metadata()?) != expected_parent {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "sidecar directory changed after validation",
+        ));
+    }
+
+    let temporary_name = CString::new(format!(".wd14-{}.tmp", uuid::Uuid::new_v4())).unwrap();
+    let temporary_fd = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            temporary_name.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    if temporary_fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut temporary = unsafe { fs::File::from_raw_fd(temporary_fd) };
+    let write_result = temporary
+        .write_all(bytes)
+        .and_then(|()| temporary.sync_all());
+    drop(temporary);
+    if let Err(error) = write_result {
+        unsafe {
+            libc::unlinkat(directory.as_raw_fd(), temporary_name.as_ptr(), 0);
+        }
+        return Err(error);
+    }
+
+    let result = unsafe {
+        if overwrite {
+            libc::renameat(
+                directory.as_raw_fd(),
+                temporary_name.as_ptr(),
+                directory.as_raw_fd(),
+                destination.as_ptr(),
+            )
+        } else {
+            libc::linkat(
+                directory.as_raw_fd(),
+                temporary_name.as_ptr(),
+                directory.as_raw_fd(),
+                destination.as_ptr(),
+                0,
+            )
+        }
+    };
+    if result != 0 {
+        let error = io::Error::last_os_error();
+        unsafe {
+            libc::unlinkat(directory.as_raw_fd(), temporary_name.as_ptr(), 0);
+        }
+        if !overwrite && error.kind() == io::ErrorKind::AlreadyExists {
+            return Ok(WriteOutcome::SkippedExists);
+        }
+        return Err(error);
+    }
+    if !overwrite {
+        let unlink_result =
+            unsafe { libc::unlinkat(directory.as_raw_fd(), temporary_name.as_ptr(), 0) };
+        if unlink_result != 0 {
+            log::warn!(
+                "WD14 export wrote {} but could not remove its temporary link: {}",
+                path.display(),
+                io::Error::last_os_error()
+            );
+        }
+    }
+    directory.sync_all()?;
+    Ok(WriteOutcome::Written)
+}
+
+#[cfg(not(unix))]
+fn atomic_write_sidecar(
+    path: &Path,
+    bytes: &[u8],
+    overwrite: bool,
+    expected_parent: FileIdentity,
+) -> io::Result<WriteOutcome> {
     if path.exists() && !overwrite {
         return Ok(WriteOutcome::SkippedExists);
     }
     let parent = path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    if file_identity(&fs::metadata(parent)?) != expected_parent {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "sidecar directory changed after validation",
+        ));
+    }
     let mut temporary = NamedTempFile::new_in(parent)?;
     temporary.write_all(bytes)?;
     temporary.as_file().sync_all()?;
@@ -862,11 +1075,6 @@ fn atomic_write_sidecar(path: &Path, bytes: &[u8], overwrite: bool) -> io::Resul
             Err(error) => Err(error.error),
         }
     }
-}
-
-#[cfg(unix)]
-fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
-    fs::rename(source, destination)
 }
 
 #[cfg(target_os = "windows")]
@@ -904,13 +1112,6 @@ fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
     fs::rename(source, destination)
 }
 
-#[cfg(unix)]
-fn sync_parent_directory(path: &Path) {
-    if let Ok(directory) = fs::File::open(path) {
-        let _ = directory.sync_all();
-    }
-}
-
 #[cfg(not(unix))]
 fn sync_parent_directory(_path: &Path) {}
 
@@ -922,12 +1123,7 @@ fn sidecar_path_for(media_path: &Path) -> PathBuf {
 fn path_key(path: &Path) -> Vec<u8> {
     use std::os::unix::ffi::OsStrExt;
 
-    let bytes = path.as_os_str().as_bytes();
-    if cfg!(target_os = "macos") {
-        bytes.iter().map(u8::to_ascii_lowercase).collect()
-    } else {
-        bytes.to_vec()
-    }
+    path.as_os_str().as_bytes().to_vec()
 }
 
 #[cfg(target_os = "windows")]
@@ -936,14 +1132,7 @@ fn path_key(path: &Path) -> Vec<u8> {
 
     path.as_os_str()
         .encode_wide()
-        .flat_map(|unit| {
-            let folded = if (b'A' as u16..=b'Z' as u16).contains(&unit) {
-                unit + 32
-            } else {
-                unit
-            };
-            folded.to_le_bytes()
-        })
+        .flat_map(u16::to_le_bytes)
         .collect()
 }
 
@@ -977,6 +1166,24 @@ fn result(
     }
 }
 
+#[cfg(unix)]
+fn display_path(path: &Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+
+    match path.to_str() {
+        Some(path) => path.to_owned(),
+        None => {
+            let mut escaped = String::from("unix-bytes:");
+            for byte in path.as_os_str().as_bytes() {
+                use std::fmt::Write as _;
+                let _ = write!(escaped, "{byte:02X}");
+            }
+            escaped
+        }
+    }
+}
+
+#[cfg(not(unix))]
 fn display_path(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
@@ -1103,11 +1310,13 @@ mod tests {
 
         fn add_tags(&self, image_id: i64, tags: &[&str]) {
             let library = self.state.resolve_library(Some(&self.library_id)).unwrap();
+            let mut reconciliation_budget = MAX_RECONCILIATION_QUERIES;
             apply_tags(
                 &library,
                 1,
                 image_id,
                 &tags.iter().map(|tag| (*tag).to_string()).collect(),
+                &mut reconciliation_budget,
             )
             .unwrap();
         }
@@ -1456,6 +1665,113 @@ mod tests {
         );
     }
 
+    // AC: @wd14-managed-filesystem-safety ac-compound-scope
+    #[test]
+    fn compound_scope_keeps_duplicate_image_ids_in_their_selected_library() {
+        let fixture = Fixture::new(&[(1, "primary.jpg", "primary")]);
+        let auxiliary_data = fixture._temp.path().join("auxiliary-data");
+        let auxiliary_media = fixture._temp.path().join("auxiliary-media");
+        fs::create_dir_all(&auxiliary_data).unwrap();
+        fs::create_dir_all(&auxiliary_media).unwrap();
+        let auxiliary = LibraryContext::open(&auxiliary_data, "Auxiliary").unwrap();
+        let auxiliary_id = auxiliary.uuid.clone();
+        auxiliary
+            .main_pool
+            .get()
+            .unwrap()
+            .execute(
+                "INSERT INTO watch_directories (id, path) VALUES (1, ?1)",
+                params![auxiliary_media.to_string_lossy()],
+            )
+            .unwrap();
+        let auxiliary_path = auxiliary_media.join("auxiliary.jpg");
+        fs::write(&auxiliary_path, b"media").unwrap();
+        let pool = auxiliary.directory_db.get_pool(1).unwrap();
+        let connection = pool.get().unwrap();
+        connection
+            .execute(
+                "INSERT INTO images (id, filename, file_hash) VALUES (1, 'auxiliary.jpg', 'auxiliary')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO image_files (image_id, original_path) VALUES (1, ?1)",
+                params![auxiliary_path.to_string_lossy()],
+            )
+            .unwrap();
+        drop(connection);
+        drop(pool);
+        fixture.state.library_manager().mount(auxiliary);
+        fs::write(auxiliary_media.join("auxiliary.txt"), "scoped").unwrap();
+
+        let response = run_operation(
+            &fixture.state,
+            Wd14Operation::Import,
+            Wd14Request {
+                directories: vec![DirectorySelection {
+                    library_id: auxiliary_id.clone(),
+                    directory_id: 1,
+                }],
+                overwrite: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(response.summary.sidecars_succeeded, 1);
+        assert_eq!(response.results[0].targets[0].library_id, auxiliary_id);
+        assert!(fixture.tags(1).is_empty());
+        let auxiliary = fixture
+            .state
+            .resolve_library(Some(&response.results[0].targets[0].library_id))
+            .unwrap();
+        assert_eq!(
+            load_tag_set(&auxiliary, 1, 1).unwrap(),
+            BTreeSet::from(["scoped".to_string()])
+        );
+    }
+
+    // AC: @wd14-managed-filesystem-safety ac-batch-results
+    #[test]
+    fn mixed_batch_reports_each_sidecar_and_accurate_aggregate_counts() {
+        let fixture = Fixture::new(&[
+            (1, "good.jpg", "good"),
+            (2, "invalid.jpg", "invalid"),
+            (3, "missing.jpg", "missing"),
+        ]);
+        fs::write(fixture.media_root.join("good.txt"), "one, two").unwrap();
+        fs::write(fixture.media_root.join("invalid.txt"), [0xff]).unwrap();
+
+        let response = run_operation(
+            &fixture.state,
+            Wd14Operation::Import,
+            fixture.request(false),
+        )
+        .unwrap();
+        assert_eq!(response.summary.media_candidates, 3);
+        assert_eq!(response.summary.sidecars_succeeded, 1);
+        assert_eq!(response.summary.sidecars_failed, 1);
+        assert_eq!(response.summary.sidecars_skipped, 1);
+        assert_eq!(response.summary.tags_added, 2);
+        assert_eq!(response.results.len(), 3);
+        assert!(response
+            .results
+            .iter()
+            .any(|result| result.status == SidecarStatus::Imported && result.tags_added == 2));
+        assert!(response
+            .results
+            .iter()
+            .any(|result| result.status == SidecarStatus::FailedRead && result.error.is_some()));
+        assert!(response
+            .results
+            .iter()
+            .any(|result| result.status == SidecarStatus::SkippedMissing));
+        assert!(response
+            .results
+            .iter()
+            .all(|result| result.targets.len() == 1
+                && result.targets[0].library_id == fixture.library_id));
+    }
+
     // AC: @wd14-managed-filesystem-safety ac-managed-paths
     #[cfg(unix)]
     #[test]
@@ -1497,5 +1813,22 @@ mod tests {
         let first = PathBuf::from(OsString::from_vec(vec![b'x', 0xff]));
         let second = PathBuf::from(OsString::from_vec(vec![b'x', 0xfe]));
         assert_ne!(path_key(&first), path_key(&second));
+        assert_ne!(display_path(&first), display_path(&second));
+    }
+
+    // AC: @wd14-managed-filesystem-safety ac-managed-paths
+    #[cfg(unix)]
+    #[test]
+    fn export_rejects_a_parent_directory_replaced_after_validation() {
+        let fixture = Fixture::new(&[(1, "sample.jpg", "one")]);
+        let sidecar = fixture.media_root.join("sample.txt");
+        let parent_identity = file_identity(&fs::metadata(&fixture.media_root).unwrap());
+        let moved = fixture._temp.path().join("moved-media");
+        fs::rename(&fixture.media_root, &moved).unwrap();
+        fs::create_dir(&fixture.media_root).unwrap();
+
+        assert!(atomic_write_sidecar(&sidecar, b"tag\n", false, parent_identity).is_err());
+        assert!(!sidecar.exists());
+        assert!(!moved.join("sample.txt").exists());
     }
 }
