@@ -2344,6 +2344,16 @@ reviews:
         runner: cargo
         created_at: 2026-07-21T19:59:44.991Z
         completed_at: 2026-07-21T19:59:44.991Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "Independent review run: 194 passed, 1 ignored; no failures"
+        name: rust-library-tests
+        required: true
+        runner: cargo
+        created_at: 2026-07-21T19:59:46.200Z
+        completed_at: 2026-07-21T19:59:46.200Z
     events:
       - _ulid: 01KY3466E379DPZ3ETB09E4Q3N
         actor: "@claude"
@@ -2365,6 +2375,13 @@ reviews:
           status: pass
           name: wd14-focused-tests
         timestamp: 2026-07-21T19:59:45.015Z
+      - _ulid: 01KY346M1TMKHDP05D440AJ6QH
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: rust-library-tests
+        timestamp: 2026-07-21T19:59:46.234Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -2377,5 +2394,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-21T19:59:32.292Z
-    updated_at: 2026-07-21T19:59:44.991Z
+    updated_at: 2026-07-21T19:59:46.200Z
     notes: []
