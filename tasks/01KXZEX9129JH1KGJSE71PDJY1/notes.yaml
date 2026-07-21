@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01KY2BX4BGF5332CM1J0SQ7MZV
+    content: Implemented and hardware-verified the managed LADA bundle installer with explicit AGPL
+      acceptance, trusted exact manifest/model/package URLs and hashes, bounded local/HTTPS
+      acquisition, link/special/traversal-safe extraction, cancellation, atomic rollback/recovery,
+      progress UI, and clean uninstall. Built unpublished link-free relocatable Python 3.12
+      common/CUDA/XPU/model/source bundles under a 12G/1-CPU cgroup. Real RTX 4070 harness
+      installed, probed before activation, re-probed after activation, and uninstalled while
+      preserving unrelated data. Review fixes included 256px BasicVSR++ probe input and correct
+      final active probe paths. No artifacts published or uploaded.
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T12:55:09.424Z
