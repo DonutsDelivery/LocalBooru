@@ -1584,6 +1584,12 @@ reviews:
         payload:
           thread_ulid: 01KY30WBVBSM51YGJ9M5R36D97
         timestamp: 2026-07-21T19:24:18.309Z
+      - _ulid: 01KY325Q77S1WZSG1PSQRXAP4M
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY30WBVBSM51YGJ9M5R36D97
+        timestamp: 2026-07-21T19:24:19.560Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1641,6 +1647,8 @@ reviews:
               changed file without clobbering."
             created_at: 2026-07-21T19:24:18.295Z
         kind: blocker
+        resolved_at: 2026-07-21T19:24:19.535Z
+        resolved_by: "@claude"
       - _ulid: 01KY30WD6JJSVMJS57EMGF12ZG
         anchor:
           type: code
@@ -1786,5 +1794,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:18.295Z
+    updated_at: 2026-07-21T19:24:19.535Z
     notes: []
