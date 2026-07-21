@@ -727,6 +727,11 @@ features:
             then: each existing managed native-library directory is available ahead of inherited search
               locations exactly once while inherited locations retain their order
             when: the Auto Tagger sidecar starts
+          - given: model inference fails while runtime profiling owns a temporary artifact
+            id: ac-profiler-error-preservation
+            then: the structured diagnostic preserves the original inference error and cleanup failure does not
+              replace it with an output or transport error
+            when: the diagnostic stage tears down profiling and cleans temporary artifacts
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
