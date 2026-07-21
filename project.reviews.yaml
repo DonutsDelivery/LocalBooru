@@ -1965,9 +1965,16 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-07-21T19:30:52.600Z
+      - _ulid: 01KY32JFQ476HVMYKPGFDVC7RA
+        actor: "@claude"
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-07-21T19:31:17.860Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs: []
     subject:
       type: task
@@ -1977,5 +1984,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: null
+    updated_at: 2026-07-21T19:31:17.845Z
     notes: []
