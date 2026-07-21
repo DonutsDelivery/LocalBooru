@@ -923,11 +923,22 @@ async def health():
     }
 
 
-def _bounded_output(value):
+def _normalize_subprocess_output(value):
     if value is None:
         return ""
     if isinstance(value, bytes):
+        if value.startswith((b"\xff\xfe", b"\xfe\xff")):
+            value = value[2:]
+        # Native Windows diagnostics can be UTF-16 while Python appends a UTF-8
+        # JSON report to the same pipe. A single whole-stream UTF-16 decode would
+        # corrupt that report; UTF-8 replacement plus NUL removal preserves both
+        # streams' ASCII diagnostics and the structured JSON suffix.
         value = value.decode("utf-8", errors="replace")
+    return value.replace("\x00", "")
+
+
+def _bounded_output(value):
+    value = _normalize_subprocess_output(value)
     if len(value) <= RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT:
         return value
     return value[-RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT:]
@@ -947,6 +958,62 @@ def _parse_probe_report(stdout):
     raise json.JSONDecodeError("No trailing JSON report found", stdout or "", 0)
 
 
+def _run_runtime_probe(command, timeout_seconds=RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS):
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=False,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "status": "timed_out",
+            "timeout_seconds": timeout_seconds,
+            "exit_code": None,
+            "probe": None,
+            "stdout": _bounded_output(exc.stdout),
+            "stderr": _bounded_output(exc.stderr),
+        }
+    except OSError as exc:
+        return {
+            "status": "failed",
+            "exit_code": None,
+            "error": f"Failed to launch CUDA diagnostic: {exc}",
+            "probe": None,
+            "stdout": "",
+            "stderr": "",
+        }
+
+    normalized_stdout = _normalize_subprocess_output(completed.stdout)
+    normalized_stderr = _normalize_subprocess_output(completed.stderr)
+    try:
+        report = _parse_probe_report(normalized_stdout)
+    except (TypeError, json.JSONDecodeError) as exc:
+        return {
+            "status": "invalid_output",
+            "exit_code": completed.returncode,
+            "error": str(exc),
+            "probe": None,
+            "stdout": _bounded_output(normalized_stdout),
+            "stderr": _bounded_output(normalized_stderr),
+        }
+    return {
+        "status": "completed" if completed.returncode == 0 else "failed",
+        "exit_code": completed.returncode,
+        "probe": report,
+        "stdout": _bounded_output(normalized_stdout),
+        "stderr": _bounded_output(normalized_stderr),
+    }
+
+
+def _probe_requires_strict_stage(report):
+    execution = (report or {}).get("execution") or {}
+    counts = execution.get("provider_node_counts") or {}
+    return execution.get("error") is not None or counts.get("CUDAExecutionProvider", 0) == 0
+
+
 @app.post("/runtime-diagnostic")
 def strict_cuda_diagnostic():
     if _model_path is None or not Path(_model_path).is_file():
@@ -963,51 +1030,54 @@ def strict_cuda_diagnostic():
         "--verbose",
         "--debug-info",
         "--disable-wrapper-fallback",
-        "--strict-on-zero-cuda",
     ]
     try:
-        try:
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
+        deadline = time.monotonic() + RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS
+        primary = _run_runtime_probe(command)
+        if primary["probe"] is None:
             return JSONResponse(
-                status_code=504,
-                content={
-                    "status": "timed_out",
-                    "timeout_seconds": RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS,
-                    "probe": None,
-                    "stdout": _bounded_output(exc.stdout),
-                    "stderr": _bounded_output(exc.stderr),
-                },
+                status_code=504 if primary["status"] == "timed_out" else 502,
+                content=primary,
             )
 
-        stdout = _bounded_output(completed.stdout)
-        stderr = _bounded_output(completed.stderr)
-        try:
-            report = _parse_probe_report(completed.stdout)
-        except (TypeError, json.JSONDecodeError) as exc:
-            return JSONResponse(
-                status_code=502,
-                content={
-                    "status": "invalid_output",
-                    "exit_code": completed.returncode,
-                    "error": str(exc),
+        strict_stage = None
+        if _probe_requires_strict_stage(primary["probe"]):
+            remaining_seconds = deadline - time.monotonic()
+            if remaining_seconds <= 0:
+                strict_stage = {
+                    "status": "timed_out",
+                    "timeout_seconds": 0,
+                    "exit_code": None,
+                    "error": "Primary CUDA probe consumed the diagnostic deadline",
                     "probe": None,
-                    "stdout": stdout,
-                    "stderr": stderr,
-                },
-            )
+                    "stdout": "",
+                    "stderr": "",
+                }
+            else:
+                strict_stage = _run_runtime_probe(
+                    command + ["--disable-cpu-fallback"],
+                    timeout_seconds=remaining_seconds,
+                )
+
+        counts = (primary["probe"].get("execution") or {}).get(
+            "provider_node_counts"
+        ) or {}
+        verified_cuda = counts.get("CUDAExecutionProvider", 0) > 0
+        exit_code = primary["exit_code"]
+        if not verified_cuda:
+            if strict_stage is not None and strict_stage.get("exit_code") is None:
+                exit_code = None
+            elif strict_stage is not None and strict_stage.get("exit_code") != 0:
+                exit_code = strict_stage["exit_code"]
+            elif exit_code == 0:
+                exit_code = 1
         return {
-            "status": "completed" if completed.returncode == 0 else "failed",
-            "exit_code": completed.returncode,
-            "probe": report,
-            "stdout": stdout,
-            "stderr": stderr,
+            "status": "completed" if primary["exit_code"] == 0 and verified_cuda else "failed",
+            "exit_code": exit_code,
+            "probe": primary["probe"],
+            "stdout": primary["stdout"],
+            "stderr": primary["stderr"],
+            "strict_stage": strict_stage,
         }
     finally:
         _runtime_diagnostic_lock.release()

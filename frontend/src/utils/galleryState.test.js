@@ -2,10 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  completeAuthoritativeRefresh,
   createViewRequestOwner,
+  galleryScopePreservesFolder,
   isUnexpectedEmptyPage,
+  libraryRefreshMode,
+  mergeAuthoritativePages,
   mergeFirstPage,
   nextLoadRetryDelay,
+  reconcileAuthoritativeGallery,
   refreshGroupedFolderCatalog,
   shouldRefreshForLibraryEvent,
 } from './galleryState.js'
@@ -80,4 +85,66 @@ test('grouped root refresh replaces stale folder previews after image and scan c
 
   assert.equal(refreshed, true)
   assert.equal(visibleFolders[0].thumbnail_url, '/thumbnail?file_hash=current')
+})
+
+// AC: @identity-safe-image-adjustments ac-scan-reconcile
+test('scan completion authoritatively removes stale image identities', () => {
+  const stale = { id: 12, directory_id: 1, library_id: 'library-a' }
+  const current = { id: 13, directory_id: 1, library_id: 'library-a' }
+
+  assert.equal(libraryRefreshMode({ type: 'image_added' }), 'merge')
+  assert.equal(libraryRefreshMode({
+    type: 'task_completed',
+    data: { task_type: 'scan_directory' },
+  }), 'replace')
+  assert.equal(libraryRefreshMode({
+    type: 'task_completed',
+    data: { task_type: 'tag_image' },
+  }), null)
+
+  assert.deepEqual(reconcileAuthoritativeGallery([current], stale), {
+    images: [current],
+    currentLocator: null,
+  })
+  assert.deepEqual(reconcileAuthoritativeGallery([current], current), {
+    images: [current],
+    currentLocator: current,
+  })
+})
+
+test('authoritative scan refresh retains loaded pages and does not clear newer scan work', () => {
+  const pageOne = { images: [
+    { id: 1, directory_id: 1, library_id: 'primary' },
+    { id: 2, directory_id: 1, library_id: 'primary' },
+  ] }
+  const pageTwo = { images: [
+    { id: 2, directory_id: 1, library_id: 'primary' },
+    { id: 3, directory_id: 1, library_id: 'primary' },
+  ] }
+  assert.deepEqual(mergeAuthoritativePages([pageOne, pageTwo]), [
+    pageOne.images[0],
+    pageOne.images[1],
+    pageTwo.images[1],
+  ])
+  assert.deepEqual(completeAuthoritativeRefresh({
+    completed: 0,
+    generation: 1,
+    latest: 2,
+    refreshed: true,
+  }), { completed: 1, pending: true })
+})
+
+// AC: @grouped-folder-scope-navigation ac-scope-change
+// AC: @grouped-folder-scope-navigation ac-same-scope
+test('grouped folder path survives filters but not directory or library scope changes', () => {
+  const current = { directoryId: 1, libraryId: 'library-a' }
+
+  assert.equal(galleryScopePreservesFolder(current, { directoryId: 1, libraryId: 'library-a' }), true)
+  assert.equal(galleryScopePreservesFolder(current, { directoryId: 2, libraryId: 'library-a' }), false)
+  assert.equal(galleryScopePreservesFolder(current, { directoryId: 1, libraryId: 'library-b' }), false)
+  assert.equal(galleryScopePreservesFolder(current, { directoryId: null, libraryId: 'library-a' }), false)
+  assert.equal(galleryScopePreservesFolder(
+    { directoryId: null, libraryId: null },
+    { directoryId: null, libraryId: null }
+  ), true)
 })

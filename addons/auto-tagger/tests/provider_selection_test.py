@@ -569,7 +569,8 @@ def test_health_remains_responsive_while_prediction_is_running(tmp_path, monkeyp
 
 
 # AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
-def test_strict_cuda_diagnostic_recovers_report_after_native_stdout(monkeypatch, tmp_path):
+# AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
+def test_strict_cuda_diagnostic_preserves_primary_report_when_strict_stage_crashes(monkeypatch, tmp_path):
     tagger = load_tagger()
     model = tmp_path / "eva02-large-v3" / "model.onnx"
     model.parent.mkdir()
@@ -577,24 +578,118 @@ def test_strict_cuda_diagnostic_recovers_report_after_native_stdout(monkeypatch,
     tagger._model_path = model
     report = {
         "model": {"path": str(model), "sha256": "abc"},
-        "execution": {"provider_node_counts": {}},
-        "strict_stage": {
-            "execution": {"error": "CUDA DLL could not be loaded"},
+        "execution": {
+            "provider_node_counts": {},
+            "error": "CUDNN_BACKEND_API_FAILED",
         },
     }
-    stdout = "EP Error: CUDA DLL missing\n" + json.dumps(report, indent=2)
+    calls = []
 
-    monkeypatch.setattr(
-        tagger.subprocess,
-        "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, stdout, ""),
-    )
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if len(calls) == 1:
+            stdout = ("EP Error: CUDA DLL missing\n" + json.dumps(report)).encode("utf-16-le")
+            return subprocess.CompletedProcess(command, 1, stdout, b"")
+        stderr = "probe, session_state.cc:1304 CUDNN failure".encode("utf-16-be")
+        return subprocess.CompletedProcess(command, 1, b"", stderr)
+
+    monkeypatch.setattr(tagger.subprocess, "run", fake_run)
 
     result = tagger.strict_cuda_diagnostic()
 
     assert result["status"] == "failed"
     assert result["probe"] == report
     assert "EP Error" in result["stdout"]
+    assert result["strict_stage"]["status"] == "invalid_output"
+    assert "CUDNN failure" in result["strict_stage"]["stderr"]
+    assert "\x00" not in result["strict_stage"]["stderr"]
+    assert "--disable-cpu-fallback" in calls[1]
+
+
+def test_strict_cuda_diagnostic_does_not_launch_after_deadline(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    report = {"execution": {"provider_node_counts": {}, "error": None}}
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, json.dumps(report), "")
+
+    monotonic = iter([100.0, 100.0 + tagger.RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS])
+    monkeypatch.setattr(tagger.subprocess, "run", fake_run)
+    monkeypatch.setattr(tagger.time, "monotonic", lambda: next(monotonic))
+
+    result = tagger.strict_cuda_diagnostic()
+
+    assert len(calls) == 1
+    assert result["status"] == "failed"
+    assert result["exit_code"] is None
+    assert result["strict_stage"]["status"] == "timed_out"
+
+
+def test_strict_cuda_diagnostic_uses_one_deadline_and_strict_failure_exit(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    primary_report = {"execution": {"provider_node_counts": {}, "error": None}}
+    strict_report = {
+        "execution": {
+            "provider_node_counts": {},
+            "error": "CUDNN_BACKEND_API_FAILED",
+        }
+    }
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(kwargs)
+        report = primary_report if len(calls) == 1 else strict_report
+        return subprocess.CompletedProcess(command, 0 if len(calls) == 1 else 1, json.dumps(report), "")
+
+    monkeypatch.setattr(tagger.subprocess, "run", fake_run)
+
+    result = tagger.strict_cuda_diagnostic()
+
+    assert result["status"] == "failed"
+    assert result["exit_code"] == 1
+    assert 0 < calls[1]["timeout"] <= calls[0]["timeout"]
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
+def test_strict_cuda_diagnostic_decodes_nul_interleaved_success(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "eva02-large-v3" / "model.onnx"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    report = {
+        "model": {"path": str(model), "sha256": "abc"},
+        "execution": {
+            "provider_node_counts": {"CUDAExecutionProvider": 1},
+            "error": None,
+        },
+    }
+    stdout = (
+        ("native warning\n" * 40).encode("utf-16-le")
+        + json.dumps(report).encode("utf-8")
+    )
+    stderr = "wide native stderr".encode("utf-16-be")
+    monkeypatch.setattr(
+        tagger.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 0, stdout, stderr),
+    )
+
+    result = tagger.strict_cuda_diagnostic()
+
+    assert result["status"] == "completed"
+    assert result["probe"] == report
+    assert "native warning" in result["stdout"]
+    assert "wide native stderr" in result["stderr"]
+    assert "\x00" not in result["stdout"] + result["stderr"]
 
 
 # AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
@@ -623,8 +718,10 @@ def test_strict_cuda_diagnostic_invokes_deployed_probe_with_exact_runtime(monkey
     assert command[0] == tagger.sys.executable
     assert command[1] == str(Path(tagger.__file__).with_name("runtime_probe.py"))
     assert command[2] == str(model)
-    assert {"--verbose", "--debug-info", "--disable-wrapper-fallback", "--strict-on-zero-cuda"}.issubset(command)
+    assert {"--verbose", "--debug-info", "--disable-wrapper-fallback"}.issubset(command)
+    assert "--strict-on-zero-cuda" not in command
     assert kwargs["timeout"] == tagger.RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS
+    assert kwargs["text"] is False
     assert result["probe"] == report
     assert result["stderr"] == "native log"
 

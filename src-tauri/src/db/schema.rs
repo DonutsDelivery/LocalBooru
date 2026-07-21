@@ -176,17 +176,20 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         -- SQLite databases, not in the main DB. Cross-database FKs aren't possible.
         CREATE TABLE IF NOT EXISTS watch_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            image_id INTEGER NOT NULL UNIQUE,
+            image_id INTEGER NOT NULL,
             playback_position REAL NOT NULL DEFAULT 0.0,
             duration REAL NOT NULL DEFAULT 0.0,
             completed INTEGER NOT NULL DEFAULT 0,
             last_watched TEXT NOT NULL DEFAULT (datetime('now')),
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            directory_id INTEGER
+            directory_id INTEGER,
+            library_id TEXT,
+            UNIQUE(library_id, directory_id, image_id)
         );
 
         CREATE INDEX IF NOT EXISTS idx_watch_history_image_id ON watch_history(image_id);
         CREATE INDEX IF NOT EXISTS idx_watch_history_completed ON watch_history(completed);
+        CREATE INDEX IF NOT EXISTS idx_watch_history_locator ON watch_history(library_id, directory_id, image_id);
 
         -- Users (for network access auth)
         CREATE TABLE IF NOT EXISTS users (

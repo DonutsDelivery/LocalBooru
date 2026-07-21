@@ -23,13 +23,13 @@ import AddonSettings from './components/AddonSettings'
 import TaskManager from './components/TaskManager'
 import QRConnect from './components/QRConnect'
 import ContinueWatching from './components/ContinueWatching'
-import { fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, healthCheck } from './api'
+import { fetchImage, fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, healthCheck } from './api'
 import DirectoriesPage from './pages/DirectoriesPage'
 import CollectionsPage from './pages/CollectionsPage'
 import CollectionDetailPage from './pages/CollectionDetailPage'
 import WatchPage from './pages/WatchPage'
 import { getColumnCount, tileWidths } from './utils/gridLayout'
-import { createViewRequestOwner, isUnexpectedEmptyPage, mergeFirstPage, refreshGroupedFolderCatalog, shouldRefreshForLibraryEvent } from './utils/galleryState'
+import { completeAuthoritativeRefresh, createViewRequestOwner, galleryScopePreservesFolder, isUnexpectedEmptyPage, libraryRefreshMode, mergeAuthoritativePages, mergeFirstPage, reconcileAuthoritativeGallery, refreshGroupedFolderCatalog } from './utils/galleryState'
 import { classifySidebarSwipe } from './utils/sidebarGestures'
 import { getCurationRecoveryMode } from './utils/curationState'
 import { adjustmentLocator, imageIdentityKey, imageMatchesLocator, reorderImagesForSort, updateImagesByLocator } from './utils/imageAdjustments.js'
@@ -569,6 +569,10 @@ function Gallery() {
   const galleryRequestOwnerRef = useRef(null)
   const galleryForegroundBusyRef = useRef(false)
   const publishedGalleryViewRef = useRef(null)
+  const authoritativeRefreshGenerationRef = useRef(0)
+  const completedAuthoritativeRefreshRef = useRef(0)
+  const refreshNewImagesRef = useRef(null)
+  const authoritativeRefreshRetryDelayRef = useRef(750)
   const lightboxPaginationGenerationRef = useRef(0)
   if (!galleryRequestOwnerRef.current) {
     galleryRequestOwnerRef.current = createViewRequestOwner()
@@ -995,15 +999,20 @@ function Gallery() {
     getLibraryStats().then(setStats).catch(console.error)
   }, [])
 
-  const refreshNewImages = useCallback(async () => {
+  const refreshNewImages = useCallback(async ({ authoritative = false } = {}) => {
     // Folder summary cards refresh through their aggregation route so changed
     // representative identities replace stale content-addressed preview URLs.
-    if (await refreshGroupedFolderCatalog({ groupByFolders, currentFolder, loadFolders })) {
-      return true
+    try {
+      if (await refreshGroupedFolderCatalog({ groupByFolders, currentFolder, loadFolders })) {
+        return true
+      }
+    } catch (error) {
+      console.error('Failed to refresh grouped folder catalog:', error)
+      return false
     }
     if (galleryForegroundBusyRef.current || loadingMoreRef.current) return false
     const replaceView = publishedGalleryViewRef.current !== galleryViewKey
-    if (!replaceView && pageRef.current !== 1) return false
+    if (!authoritative && !replaceView && pageRef.current !== 1) return false
 
     const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
     if (!galleryRequestOwnerRef.current.owns(request)) return false
@@ -1017,7 +1026,7 @@ function Gallery() {
       : null
 
     try {
-      const result = await fetchImages({
+      const query = {
         tags: currentTags,
         rating: currentRating,
         favorites_only: favoritesOnly,
@@ -1034,15 +1043,58 @@ function Gallery() {
         max_duration: currentDuration?.max,
         import_source: currentFolder,
         sort: currentSort,
-        page: 1,
         per_page: calculatePerPage(tileSize)
-      })
+      }
+      const pageCount = authoritative && currentSort !== 'random'
+        ? Math.max(1, pageRef.current)
+        : 1
+      const pageResults = await Promise.all(
+        Array.from({ length: pageCount }, (_, index) => fetchImages({ ...query, page: index + 1 }))
+      )
+      const result = pageResults[0]
+      if (authoritative && pageResults.length > 1) {
+        result.images = mergeAuthoritativePages(pageResults)
+      }
       if (!galleryRequestOwnerRef.current.owns(request)) return false
 
-      if (replaceView) {
-        setImages(result.images)
-        setPage(1)
+      const currentLocator = authoritative ? lightboxIndexRef.current : null
+      if (
+        currentLocator
+        && !result.images.some(image => imageIdentityKey(image) === imageIdentityKey(currentLocator))
+      ) {
+        try {
+          const canonical = await fetchImage(currentLocator.imageId, {
+            directoryId: currentLocator.directoryId,
+            libraryId: currentLocator.libraryId,
+          })
+          if (!galleryRequestOwnerRef.current.owns(request)) return false
+          result.images.push(canonical)
+        } catch (error) {
+          if (error?.response?.status !== 404) {
+            console.error('Failed to verify current image after scan:', error)
+            return false
+          }
+        }
+      }
+
+      if (replaceView || authoritative) {
+        const reconciled = reconcileAuthoritativeGallery(
+          result.images,
+          currentLocator
+        )
+        setImages(reconciled.images)
+        setPage(authoritative ? pageCount : 1)
+        setHasMore(reconciled.images.length < result.total)
         publishedGalleryViewRef.current = galleryViewKey
+        if (authoritative && lightboxIndexRef.current && !reconciled.currentLocator) {
+          loadingMoreRef.current = false
+          lightboxPaginationGenerationRef.current += 1
+          lightboxIndexRef.current = null
+          setLightboxIndex(null)
+          if (window.history.state?.lightbox) {
+            window.history.replaceState(null, '')
+          }
+        }
       } else if (currentSort !== 'random') {
         setImages(previous => mergeFirstPage(previous, result.images))
       }
@@ -1064,20 +1116,41 @@ function Gallery() {
     }
   }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey])
 
+  refreshNewImagesRef.current = refreshNewImages
+
   // Subscribe to real-time library events (debounced incremental refresh).
   // Existing items, scroll position, selection, and lightbox identity stay intact.
-  const triggerDebouncedRefresh = useCallback(() => {
+  const triggerDebouncedRefresh = useCallback((delay = 750) => {
     // Throttle rather than trailing-debounce: a long startup scan may emit
     // continuously for minutes, and resetting the timer on every image would
     // hide all new media until the scan completely finished.
     if (statsUpdateTimeout.current) return
-    statsUpdateTimeout.current = setTimeout(() => {
+    statsUpdateTimeout.current = setTimeout(async () => {
       statsUpdateTimeout.current = null
-      // Always update stats
       getLibraryStats().then(setStats).catch(console.error)
-      refreshNewImages()
-    }, 750)
-  }, [refreshNewImages])
+      const authoritativeGeneration = authoritativeRefreshGenerationRef.current
+      const authoritative = authoritativeGeneration > completedAuthoritativeRefreshRef.current
+      const refreshed = await refreshNewImagesRef.current({ authoritative })
+      const completion = completeAuthoritativeRefresh({
+        completed: completedAuthoritativeRefreshRef.current,
+        generation: authoritativeGeneration,
+        latest: authoritativeRefreshGenerationRef.current,
+        refreshed: authoritative && refreshed,
+      })
+      completedAuthoritativeRefreshRef.current = completion.completed
+      if (authoritative && refreshed) {
+        authoritativeRefreshRetryDelayRef.current = 750
+      } else if (authoritative) {
+        authoritativeRefreshRetryDelayRef.current = Math.min(
+          30_000,
+          authoritativeRefreshRetryDelayRef.current * 2
+        )
+      }
+      if (completion.pending) {
+        triggerDebouncedRefresh(authoritativeRefreshRetryDelayRef.current)
+      }
+    }, delay)
+  }, [])
 
   // Catch up immediately after the app returns to the foreground.
   useEffect(() => {
@@ -1093,7 +1166,12 @@ function Gallery() {
   // SSE events also trigger the same debounce
   useEffect(() => {
     const unsubscribe = subscribeToLibraryEvents((event) => {
-      if (shouldRefreshForLibraryEvent(event)) {
+      const refreshMode = libraryRefreshMode(event)
+      if (refreshMode) {
+        if (refreshMode === 'replace') {
+          authoritativeRefreshGenerationRef.current += 1
+          authoritativeRefreshRetryDelayRef.current = 750
+        }
         triggerDebouncedRefresh()
       }
     })
@@ -1226,9 +1304,15 @@ function Gallery() {
     if (resolution) params.resolution = `${resolution.width}x${resolution.height}`
     if (orientation) params.orientation = orientation
     if (duration) params.duration = `${duration.min ?? 'null'}-${duration.max ?? 'null'}`
-    // Preserve folder grouping state across filter changes
+    // Preserve grouped mode across filters, but a folder belongs to one exact
+    // library/directory scope and must not leak into a newly selected scope.
     if (groupByFolders) params.group = 'folders'
-    if (currentFolder) params.folder = currentFolder
+    const preserveFolder = galleryScopePreservesFolder(
+      { directoryId: currentDirectoryId, libraryId: currentLibraryId },
+      { directoryId, libraryId }
+    )
+    if (currentFolder && preserveFolder) params.folder = currentFolder
+    if (!preserveFolder) enteredFolderPathRef.current = null
     setSearchParams(params)
   }
 

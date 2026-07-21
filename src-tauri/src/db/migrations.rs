@@ -147,6 +147,31 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
         description: "Index curation discard state (main DB)",
         sql: "CREATE INDEX IF NOT EXISTS idx_image_files_curation_discarded_at ON image_files(curation_discarded_at);",
     },
+    // v10: Watch history uses exact library/directory/image identity.
+    Migration {
+        description: "Use composite identity for watch history",
+        sql: "ALTER TABLE watch_history RENAME TO watch_history_legacy;\
+              CREATE TABLE watch_history (\
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                  image_id INTEGER NOT NULL,\
+                  playback_position REAL NOT NULL DEFAULT 0.0,\
+                  duration REAL NOT NULL DEFAULT 0.0,\
+                  completed INTEGER NOT NULL DEFAULT 0,\
+                  last_watched TEXT NOT NULL DEFAULT (datetime('now')),\
+                  created_at TEXT NOT NULL DEFAULT (datetime('now')),\
+                  directory_id INTEGER,\
+                  library_id TEXT,\
+                  UNIQUE(library_id, directory_id, image_id)\
+              );\
+              INSERT INTO watch_history (\
+                  id, image_id, playback_position, duration, completed, last_watched, created_at, directory_id, library_id\
+              ) SELECT id, image_id, playback_position, duration, completed, last_watched, created_at, directory_id, NULL \
+                FROM watch_history_legacy;\
+              DROP TABLE watch_history_legacy;\
+              CREATE INDEX IF NOT EXISTS idx_watch_history_image_id ON watch_history(image_id);\
+              CREATE INDEX IF NOT EXISTS idx_watch_history_completed ON watch_history(completed);\
+              CREATE INDEX IF NOT EXISTS idx_watch_history_locator ON watch_history(library_id, directory_id, image_id);",
+    },
 ];
 
 /// Run all pending migrations on the main library database.
@@ -210,6 +235,60 @@ pub fn run_directory_migrations(conn: &Connection) -> Result<(), rusqlite::Error
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    // AC: @identity-safe-image-adjustments ac-canonical-entry
+    fn watch_history_migration_preserves_legacy_rows_and_allows_composite_identity() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+             INSERT INTO schema_version (version) VALUES (9);
+             CREATE TABLE watch_history (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 image_id INTEGER NOT NULL UNIQUE,
+                 playback_position REAL NOT NULL DEFAULT 0.0,
+                 duration REAL NOT NULL DEFAULT 0.0,
+                 completed INTEGER NOT NULL DEFAULT 0,
+                 last_watched TEXT NOT NULL DEFAULT (datetime('now')),
+                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 directory_id INTEGER
+             );
+             INSERT INTO watch_history
+                 (image_id, playback_position, duration, completed, directory_id)
+             VALUES (12, 5.0, 10.0, 0, 1);",
+        )
+        .unwrap();
+
+        run_main_migrations(&conn).unwrap();
+
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(watch_history)")
+            .unwrap()
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(columns.contains(&"library_id".to_string()));
+        let legacy: (Option<String>, i64, i64, f64) = conn
+            .query_row(
+                "SELECT library_id, directory_id, image_id, playback_position FROM watch_history",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(legacy, (None, 1, 12, 5.0));
+
+        conn.execute(
+            "INSERT INTO watch_history (library_id, directory_id, image_id) VALUES ('library-a', 1, 12)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO watch_history (library_id, directory_id, image_id) VALUES ('library-b', 1, 12)",
+            [],
+        )
+        .unwrap();
+    }
 
     #[test]
     fn curation_migrations_work_for_existing_directory_schema() {

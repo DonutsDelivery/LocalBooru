@@ -20,7 +20,9 @@ use crate::routes::settings::get_config_section;
 const ONNXRUNTIME_CPU: &str = "onnxruntime==1.23.2";
 const ONNXRUNTIME_GPU: &str = "onnxruntime-gpu[cuda,cudnn]==1.23.2";
 const ONNXRUNTIME_VERSION: &str = "1.23.2";
-const AUTO_TAGGER_SOURCE_REVISION: &str = "2026-07-20-clean-ort-reinstall-v2";
+const NVIDIA_CUDNN: &str = "nvidia-cudnn-cu12==9.24.0.43";
+const NVIDIA_CUDNN_VERSION: &str = "9.24.0.43";
+const AUTO_TAGGER_SOURCE_REVISION: &str = "2026-07-21-cudnn-9.24.0.43";
 const AUTO_TAGGER_DEPLOYMENT_FILE: &str = "dependency-deployment.json";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -46,6 +48,7 @@ fn dependency_list_for_platform(
         });
         if matches!(target_os, "linux" | "windows") {
             deps.push(ONNXRUNTIME_GPU);
+            deps.push(NVIDIA_CUDNN);
         } else {
             deps.push(ONNXRUNTIME_CPU);
         }
@@ -66,11 +69,13 @@ fn auto_tagger_dependency_revision(dependencies: &[&str], target_os: &str) -> St
 fn cpu_fallback_dependencies<'a>(dependencies: &[&'a str]) -> Vec<&'a str> {
     dependencies
         .iter()
-        .map(|dependency| {
+        .filter_map(|dependency| {
             if *dependency == ONNXRUNTIME_GPU {
-                ONNXRUNTIME_CPU
+                Some(ONNXRUNTIME_CPU)
+            } else if *dependency == NVIDIA_CUDNN {
+                None
             } else {
-                *dependency
+                Some(*dependency)
             }
         })
         .collect()
@@ -85,23 +90,29 @@ fn read_dependency_deployment(addon_dir: &Path) -> Option<AddonDependencyDeploym
     serde_json::from_slice(&contents).ok()
 }
 
-fn deployment_probe_matches_runtime(deployment: &AddonDependencyDeployment) -> bool {
-    let expected_distribution = match deployment.runtime.as_str() {
+fn probe_matches_runtime(runtime: &str, probe: &serde_json::Value) -> bool {
+    let expected_distribution = match runtime {
         "cuda" => "onnxruntime-gpu",
         "cpu" => "onnxruntime",
         _ => return false,
     };
-    deployment
-        .probe
-        .get("onnxruntime")
-        .and_then(|value| value.as_str())
+    let packages = probe.get("packages");
+    let runtime_matches = probe.get("onnxruntime").and_then(|value| value.as_str())
         == Some(ONNXRUNTIME_VERSION)
-        && deployment
-            .probe
-            .get("packages")
+        && packages
             .and_then(|packages| packages.get(expected_distribution))
             .and_then(|value| value.as_str())
-            == Some(ONNXRUNTIME_VERSION)
+            == Some(ONNXRUNTIME_VERSION);
+    runtime_matches
+        && (runtime != "cuda"
+            || packages
+                .and_then(|packages| packages.get("nvidia-cudnn-cu12"))
+                .and_then(|value| value.as_str())
+                == Some(NVIDIA_CUDNN_VERSION))
+}
+
+fn deployment_probe_matches_runtime(deployment: &AddonDependencyDeployment) -> bool {
+    probe_matches_runtime(&deployment.runtime, &deployment.probe)
 }
 
 fn needs_dependency_reconciliation(
@@ -131,7 +142,18 @@ fn probe_committed_deployment(
         "cpu" => "onnxruntime",
         runtime => return Err(format!("Unknown deployed inference runtime: {}", runtime)),
     };
-    sidecar::probe_onnxruntime(venv_dir, distribution, ONNXRUNTIME_VERSION)
+    let probe = sidecar::probe_onnxruntime(venv_dir, distribution, ONNXRUNTIME_VERSION)?;
+    let live_deployment = AddonDependencyDeployment {
+        probe: probe.clone(),
+        ..deployment
+    };
+    if !deployment_probe_matches_runtime(&live_deployment) {
+        return Err(format!(
+            "Committed {} runtime no longer matches the exact managed dependency set",
+            live_deployment.runtime
+        ));
+    }
+    Ok(probe)
 }
 
 fn write_dependency_deployment(
@@ -157,13 +179,17 @@ fn install_dependency_list(id: &str, dependencies: &[&str], venv_dir: &Path) -> 
         return sidecar::install_deps(venv_dir, dependencies);
     }
 
-    sidecar::uninstall_deps(venv_dir, &["onnxruntime", "onnxruntime-gpu"])?;
+    sidecar::uninstall_deps(
+        venv_dir,
+        &["onnxruntime", "onnxruntime-gpu", "nvidia-cudnn-cu12"],
+    )?;
     if let Err(install_error) = sidecar::install_deps(venv_dir, dependencies) {
         log::warn!(
             "[Addon:{}] GPU runtime installation failed; restoring CPU runtime",
             id
         );
-        let cleanup_error = sidecar::uninstall_deps(venv_dir, &["onnxruntime-gpu"]).err();
+        let cleanup_error =
+            sidecar::uninstall_deps(venv_dir, &["onnxruntime-gpu", "nvidia-cudnn-cu12"]).err();
         let fallback_dependencies = cpu_fallback_dependencies(dependencies);
         let restore_result = sidecar::install_deps(venv_dir, &fallback_dependencies);
         return match (cleanup_error, restore_result) {
@@ -232,15 +258,27 @@ fn reconcile_auto_tagger_dependencies(
             "onnxruntime"
         },
         ONNXRUNTIME_VERSION,
-    ) {
+    )
+    .and_then(|probe| {
+        if probe_matches_runtime(runtime, &probe) {
+            Ok(probe)
+        } else {
+            Err(format!(
+                "Installed {} runtime does not match the exact managed dependency set",
+                runtime
+            ))
+        }
+    }) {
         Ok(probe) => probe,
         Err(probe_error) if runtime == "cuda" => {
-            sidecar::uninstall_deps(venv_dir, &["onnxruntime-gpu"]).map_err(|cleanup_error| {
-                format!(
-                    "GPU runtime probe failed: {}; GPU cleanup also failed: {}",
-                    probe_error, cleanup_error
-                )
-            })?;
+            sidecar::uninstall_deps(venv_dir, &["onnxruntime-gpu", "nvidia-cudnn-cu12"]).map_err(
+                |cleanup_error| {
+                    format!(
+                        "GPU runtime probe failed: {}; GPU cleanup also failed: {}",
+                        probe_error, cleanup_error
+                    )
+                },
+            )?;
             let fallback_dependencies = cpu_fallback_dependencies(dependencies);
             sidecar::install_deps(venv_dir, &fallback_dependencies).map_err(|restore_error| {
                 format!(
@@ -1171,11 +1209,13 @@ mod tests {
     use super::*;
 
     // AC: @addon-platform-dependencies ac-1
+    // AC: @auto-tagger-runtime-acceleration-deployment ac-compatible-cudnn
     #[test]
     fn auto_tagger_gpu_platforms_include_managed_cuda_dependencies() {
         for target_os in ["windows", "linux"] {
             let deps = dependency_list_for_platform("auto-tagger", &["onnxruntime"], target_os);
             assert!(deps.contains(&ONNXRUNTIME_GPU));
+            assert!(deps.contains(&"nvidia-cudnn-cu12==9.24.0.43"));
             assert!(!deps.iter().any(|dependency| *dependency == "onnxruntime"));
             assert_eq!(
                 deps.iter()
@@ -1192,10 +1232,14 @@ mod tests {
         let deps = dependency_list_for_platform("auto-tagger", &["onnxruntime"], "macos");
         assert!(deps.contains(&ONNXRUNTIME_CPU));
         assert!(!deps.iter().any(|dependency| *dependency == ONNXRUNTIME_GPU));
+        assert!(!deps
+            .iter()
+            .any(|dependency| dependency.starts_with("nvidia-cudnn-cu12")));
     }
 
     // AC: @auto-tagger-runtime-acceleration-deployment ac-3
     // AC: @auto-tagger-runtime-acceleration-deployment ac-4
+    // AC: @auto-tagger-runtime-acceleration-deployment ac-compatible-cudnn
     #[test]
     fn auto_tagger_revision_detects_missing_stale_and_current_deployments() {
         let root = std::env::temp_dir().join(format!(
@@ -1229,12 +1273,38 @@ mod tests {
             runtime: "cuda".into(),
             probe: serde_json::json!({
                 "onnxruntime": ONNXRUNTIME_VERSION,
-                "packages": {"onnxruntime-gpu": ONNXRUNTIME_VERSION}
+                "packages": {
+                    "onnxruntime-gpu": ONNXRUNTIME_VERSION,
+                    "nvidia-cudnn-cu12": "9.24.0.43"
+                }
             }),
             warning: None,
         };
         write_dependency_deployment(&root, &current).unwrap();
         assert!(!needs_dependency_reconciliation(&root, &desired, &fallback));
+
+        let incompatible_cudnn = AddonDependencyDeployment {
+            probe: serde_json::json!({
+                "onnxruntime": ONNXRUNTIME_VERSION,
+                "packages": {
+                    "onnxruntime-gpu": ONNXRUNTIME_VERSION,
+                    "nvidia-cudnn-cu12": "9.25.0.15"
+                }
+            }),
+            ..current.clone()
+        };
+        write_dependency_deployment(&root, &incompatible_cudnn).unwrap();
+        assert!(needs_dependency_reconciliation(&root, &desired, &fallback));
+
+        let missing_cudnn = AddonDependencyDeployment {
+            probe: serde_json::json!({
+                "onnxruntime": ONNXRUNTIME_VERSION,
+                "packages": {"onnxruntime-gpu": ONNXRUNTIME_VERSION}
+            }),
+            ..current
+        };
+        write_dependency_deployment(&root, &missing_cudnn).unwrap();
+        assert!(needs_dependency_reconciliation(&root, &desired, &fallback));
 
         let accepted_cpu_fallback = AddonDependencyDeployment {
             desired_revision: desired.clone(),
@@ -1256,6 +1326,46 @@ mod tests {
         };
         write_dependency_deployment(&root, &stale_cpu_fallback).unwrap();
         assert!(needs_dependency_reconciliation(&root, &desired, &fallback));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @auto-tagger-runtime-acceleration-deployment ac-compatible-cudnn
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn committed_cuda_probe_rejects_live_cudnn_version_drift() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-addon-live-cudnn-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let venv_bin = root.join("venv/bin");
+        std::fs::create_dir_all(&venv_bin).unwrap();
+        let deployment = AddonDependencyDeployment {
+            desired_revision: "desired".into(),
+            installed_revision: "desired".into(),
+            runtime: "cuda".into(),
+            probe: serde_json::json!({
+                "onnxruntime": ONNXRUNTIME_VERSION,
+                "packages": {
+                    "onnxruntime-gpu": ONNXRUNTIME_VERSION,
+                    "nvidia-cudnn-cu12": NVIDIA_CUDNN_VERSION
+                }
+            }),
+            warning: None,
+        };
+        write_dependency_deployment(&root, &deployment).unwrap();
+        let python = venv_bin.join("python");
+        std::fs::write(
+            &python,
+            "#!/bin/sh\necho '{\"onnxruntime\":\"1.23.2\",\"available_providers\":[\"CUDAExecutionProvider\",\"CPUExecutionProvider\"],\"packages\":{\"onnxruntime-gpu\":\"1.23.2\",\"nvidia-cublas-cu12\":\"12.9\",\"nvidia-cuda-runtime-cu12\":\"12.9\",\"nvidia-cudnn-cu12\":\"9.25.0.15\"}}'\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let error = probe_committed_deployment(&root, &root.join("venv")).unwrap_err();
+
+        assert!(error.contains("exact managed dependency set"), "{error}");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1406,7 +1516,7 @@ mod tests {
         std::fs::write(
             &python,
             format!(
-                "#!/bin/sh\nif [ \"$1\" = \"-c\" ]; then\n  if [ -f '{}' ]; then echo '{{\"onnxruntime\":\"1.23.2\",\"available_providers\":[\"CPUExecutionProvider\"],\"packages\":{{\"onnxruntime\":\"1.23.2\"}}}}';\n  else echo '{{\"onnxruntime\":\"1.23.2\",\"available_providers\":[\"CPUExecutionProvider\"],\"packages\":{{\"onnxruntime-gpu\":\"1.23.2\",\"nvidia-cublas-cu12\":\"12.9\",\"nvidia-cuda-runtime-cu12\":\"12.9\",\"nvidia-cudnn-cu12\":\"9.24\"}}}}'; fi\n  exit 0\nfi\nfor arg in \"$@\"; do [ \"$arg\" = '{}' ] && touch '{}'; done\nexit 0\n",
+                "#!/bin/sh\nif [ \"$1\" = \"-c\" ]; then\n  if [ -f '{}' ]; then echo '{{\"onnxruntime\":\"1.23.2\",\"available_providers\":[\"CPUExecutionProvider\"],\"packages\":{{\"onnxruntime\":\"1.23.2\"}}}}';\n  else echo '{{\"onnxruntime\":\"1.23.2\",\"available_providers\":[\"CPUExecutionProvider\"],\"packages\":{{\"onnxruntime-gpu\":\"1.23.2\",\"nvidia-cublas-cu12\":\"12.9\",\"nvidia-cuda-runtime-cu12\":\"12.9\",\"nvidia-cudnn-cu12\":\"9.24.0.43\"}}}}'; fi\n  exit 0\nfi\nfor arg in \"$@\"; do [ \"$arg\" = '{}' ] && touch '{}'; done\nexit 0\n",
                 cpu_mode.display(),
                 ONNXRUNTIME_CPU,
                 cpu_mode.display(),
@@ -1469,7 +1579,7 @@ mod tests {
         std::fs::write(
             &python,
             format!(
-                "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'Python 3.11.9'; elif [ \"$1\" = \"-c\" ]; then echo '{{\"onnxruntime\":\"1.23.2\",\"available_providers\":[\"CUDAExecutionProvider\",\"CPUExecutionProvider\"],\"packages\":{{\"onnxruntime-gpu\":\"1.23.2\",\"nvidia-cublas-cu12\":\"12.9\",\"nvidia-cuda-runtime-cu12\":\"12.9\",\"nvidia-cudnn-cu12\":\"9.24\"}}}}'; else printf '%s\\n' \"$*\" >> '{}'; fi\nexit 0\n",
+                "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'Python 3.11.9'; elif [ \"$1\" = \"-c\" ]; then echo '{{\"onnxruntime\":\"1.23.2\",\"available_providers\":[\"CUDAExecutionProvider\",\"CPUExecutionProvider\"],\"packages\":{{\"onnxruntime-gpu\":\"1.23.2\",\"nvidia-cublas-cu12\":\"12.9\",\"nvidia-cuda-runtime-cu12\":\"12.9\",\"nvidia-cudnn-cu12\":\"9.24.0.43\"}}}}'; else printf '%s\\n' \"$*\" >> '{}'; fi\nexit 0\n",
                 invocations.display()
             ),
         )
@@ -1483,7 +1593,7 @@ mod tests {
         let commands: Vec<_> = invocations.lines().collect();
         assert_eq!(
             commands[0],
-            "-m pip uninstall -y onnxruntime onnxruntime-gpu"
+            "-m pip uninstall -y onnxruntime onnxruntime-gpu nvidia-cudnn-cu12"
         );
         assert!(commands[1].starts_with("-m pip install --upgrade "));
         assert!(commands[1].contains(ONNXRUNTIME_GPU));
@@ -1564,10 +1674,13 @@ mod tests {
         let commands: Vec<_> = commands.lines().collect();
         assert_eq!(
             commands[0],
-            "-m pip uninstall -y onnxruntime onnxruntime-gpu"
+            "-m pip uninstall -y onnxruntime onnxruntime-gpu nvidia-cudnn-cu12"
         );
         assert!(commands[1].contains(ONNXRUNTIME_GPU));
-        assert_eq!(commands[2], "-m pip uninstall -y onnxruntime-gpu");
+        assert_eq!(
+            commands[2],
+            "-m pip uninstall -y onnxruntime-gpu nvidia-cudnn-cu12"
+        );
         assert!(commands[3].starts_with("-m pip install --upgrade "));
         assert!(commands[3].contains(ONNXRUNTIME_CPU));
         assert!(commands[3].contains("uvicorn[standard]"));

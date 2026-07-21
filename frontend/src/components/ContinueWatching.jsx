@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getContinueWatching, clearWatchHistory, fetchImage, getMediaUrl } from '../api'
+import { canonicalWatchItem, watchHistoryIdentityKey, watchHistoryLocator } from '../utils/continueWatching.js'
 import './ContinueWatching.css'
 
 function formatTime(s) {
@@ -28,17 +29,17 @@ export default function ContinueWatching({ onImageClick }) {
       const hydrated = await Promise.all(
         watchItems.map(async (item) => {
           try {
-            const image = await fetchImage(item.image_id)
-            return {
-              ...item,
-              id: item.image_id,
-              thumbnail_url: image.thumbnail_url,
-              original_filename: image.original_filename,
-              filename: image.filename,
-              directory_id: image.directory_id,
+            const locator = watchHistoryLocator(item)
+            const image = await fetchImage(locator.imageId, {
+              directoryId: locator.directoryId,
+              libraryId: locator.libraryId,
+            })
+            return canonicalWatchItem(item, image)
+          } catch (error) {
+            // Deleted images are expected; surface identity/API regressions.
+            if (error?.response?.status !== 404) {
+              console.error('Failed to hydrate Continue Watching item:', error)
             }
-          } catch {
-            // Image may have been deleted — skip it
             return null
           }
         })
@@ -51,11 +52,13 @@ export default function ContinueWatching({ onImageClick }) {
     setLoading(false)
   }
 
-  const handleDismiss = async (e, imageId) => {
+  const handleDismiss = async (e, item) => {
     e.stopPropagation()
     try {
-      await clearWatchHistory(imageId)
-      setItems(prev => prev.filter(item => item.id !== imageId))
+      const locator = watchHistoryLocator(item)
+      await clearWatchHistory(locator.imageId, locator.directoryId, locator.libraryId)
+      const dismissedKey = watchHistoryIdentityKey(item)
+      setItems(prev => prev.filter(candidate => watchHistoryIdentityKey(candidate) !== dismissedKey))
     } catch (e) {
       console.error('Failed to dismiss:', e)
     }
@@ -81,7 +84,7 @@ export default function ContinueWatching({ onImageClick }) {
       <div className="continue-watching-row">
         {items.map(item => (
           <div
-            key={item.id}
+            key={watchHistoryIdentityKey(item)}
             className="continue-watching-card"
             onClick={() => onImageClick(item)}
           >
@@ -93,7 +96,7 @@ export default function ContinueWatching({ onImageClick }) {
               <span className="continue-watching-time">
                 {formatTime(item.playback_position)} / {formatTime(item.duration)}
               </span>
-              <button className="continue-watching-dismiss" onClick={(e) => handleDismiss(e, item.id)} title="Dismiss">
+              <button className="continue-watching-dismiss" onClick={(e) => handleDismiss(e, item)} title="Dismiss">
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
               </button>
             </div>

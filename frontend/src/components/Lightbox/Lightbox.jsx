@@ -268,7 +268,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     restartTranscodeFromPosition: streaming.restartTranscodeFromPosition,
     setAudioOutputVolume: streaming.setAudioOutputVolume,
     setAudioOutputMuted: streaming.setAudioOutputMuted
-  }, libraryImageId, image?.directory_id)
+  }, libraryImageId, image?.directory_id, image?.library_id)
 
   const reportSvpPlayback = useCallback((video = mediaRef.current, fps = svpSourceFpsRef.current) => {
     const desktopAPI = getDesktopAPI()
@@ -582,16 +582,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setResumePosition(null)
     clearTimeout(resumeTimerRef.current)
 
-    getPlaybackPosition(libraryImageId).then(data => {
-      if (data.position > 10 && !data.completed) {
-        setResumePosition(data)
+    getPlaybackPosition(libraryImageId, image.directory_id, image.library_id).then(data => {
+      const position = data.playback_position ?? data.position
+      if (position > 10 && !data.completed) {
+        setResumePosition({ ...data, position })
         // Auto-dismiss after 5s
         resumeTimerRef.current = setTimeout(() => setResumePosition(null), 5000)
       }
     }).catch(() => {})
 
     return () => clearTimeout(resumeTimerRef.current)
-  }, [libraryImageId])
+  }, [libraryImageId, image?.directory_id, image?.library_id, image?.filename])
 
   // Auto-generate subtitles when opening a video (if enabled)
   useEffect(() => {
@@ -1789,7 +1790,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     onClick={previewUrl ? handleDiscardPreview : handleGeneratePreview}
                     disabled={adjustmentControls.previewDisabled}
                   >
-                    {generatingPreview ? 'Loading...' : previewUrl ? 'Clear Preview' : 'Preview'}
+                    {generatingPreview ? 'Rendering...' : previewUrl ? 'Clear Exact Preview' : 'Render Exact Preview'}
                   </button>
                   <button
                     className="adjustment-apply"
