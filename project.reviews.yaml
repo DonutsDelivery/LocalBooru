@@ -1596,6 +1596,12 @@ reviews:
         payload:
           thread_ulid: 01KY30WD6JJSVMJS57EMGF12ZG
         timestamp: 2026-07-21T19:24:20.895Z
+      - _ulid: 01KY325STT4XW91KN2BAE8T4WZ
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY30WD6JJSVMJS57EMGF12ZG
+        timestamp: 2026-07-21T19:24:22.234Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1677,6 +1683,8 @@ reviews:
               rejects overflow before accumulating an unbounded result."
             created_at: 2026-07-21T19:24:20.880Z
         kind: blocker
+        resolved_at: 2026-07-21T19:24:22.194Z
+        resolved_by: "@claude"
       - _ulid: 01KY30WEJNMZYBB1V701R3SKYF
         anchor:
           type: code
@@ -1805,5 +1813,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:20.880Z
+    updated_at: 2026-07-21T19:24:22.194Z
     notes: []
