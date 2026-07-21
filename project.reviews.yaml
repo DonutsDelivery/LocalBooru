@@ -2121,6 +2121,12 @@ reviews:
         payload:
           thread_ulid: 01KY32K4SBSGY0N2B9YTCGBVJK
         timestamp: 2026-07-21T19:59:11.288Z
+      - _ulid: 01KY345K70J7PA41T4V6D0KK6C
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY32K4SBSGY0N2B9YTCGBVJK
+        timestamp: 2026-07-21T19:59:12.608Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2272,6 +2278,8 @@ reviews:
               OS-wide case folding; escaped result paths remain unique for non-UTF8 Unix names."
             created_at: 2026-07-21T19:59:11.257Z
         kind: blocker
+        resolved_at: 2026-07-21T19:59:12.589Z
+        resolved_by: "@claude"
       - _ulid: 01KY32K603A2CBBK4GTSJY615F
         anchor:
           type: code
@@ -2298,5 +2306,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:59:11.257Z
+    updated_at: 2026-07-21T19:59:12.589Z
     notes: []
