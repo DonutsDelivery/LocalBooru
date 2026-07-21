@@ -2423,7 +2423,17 @@ reviews:
     slugs: []
     title: Review WD14 built-in addon routes
     author: "@claude"
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "Focused WD14 route/service tests: 16 passed"
+        name: wd14-route-tests
+        required: true
+        runner: cargo
+        created_at: 2026-07-21T20:14:08.722Z
+        completed_at: 2026-07-21T20:14:08.722Z
     events:
       - _ulid: 01KY350M0K6QV3J60QMJM0Q2X6
         actor: "@claude"
@@ -2438,6 +2448,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-07-21T20:14:07.475Z
+      - _ulid: 01KY350YBJC77GPPGRW3TPKNSQ
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: wd14-route-tests
+        timestamp: 2026-07-21T20:14:08.754Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -2450,5 +2467,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-21T20:13:58.164Z
-    updated_at: 2026-07-21T20:14:07.442Z
+    updated_at: 2026-07-21T20:14:08.722Z
     notes: []
