@@ -2115,6 +2115,12 @@ reviews:
         payload:
           thread_ulid: 01KY32K3FR85PXXN0P160DEZPH
         timestamp: 2026-07-21T19:59:10.032Z
+      - _ulid: 01KY345HXRXYJKPJ5E7J5DSD74
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY32K4SBSGY0N2B9YTCGBVJK
+        timestamp: 2026-07-21T19:59:11.288Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2260,6 +2266,11 @@ reviews:
               contain distinct Foo.txt and foo.txt. Exact native path identity is required to avoid
               cross-applying unrelated sidecars.
             created_at: 2026-07-21T19:31:39.436Z
+          - _ulid: 01KY345HWSGTRC2HBMSKJCY4TC
+            author: "@claude"
+            body: "Fixed in 12b74d7: Unix and Windows grouping keys preserve exact native path units without
+              OS-wide case folding; escaped result paths remain unique for non-UTF8 Unix names."
+            created_at: 2026-07-21T19:59:11.257Z
         kind: blocker
       - _ulid: 01KY32K603A2CBBK4GTSJY615F
         anchor:
@@ -2287,5 +2298,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:59:09.995Z
+    updated_at: 2026-07-21T19:59:11.257Z
     notes: []
