@@ -1319,6 +1319,16 @@ reviews:
         runner: pytest
         created_at: 2026-07-21T12:57:16.784Z
         completed_at: 2026-07-21T12:57:16.784Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: 76 tests passed; changed-file ESLint passed; Vite production build passed.
+        name: frontend-tests-lint-build
+        required: true
+        runner: npm
+        created_at: 2026-07-21T12:57:18.051Z
+        completed_at: 2026-07-21T12:57:18.051Z
     events:
       - _ulid: 01KY2C04KAGMSD3QB3PPNPHATX
         actor: "@claude"
@@ -1354,6 +1364,13 @@ reviews:
           status: pass
           name: sidecar-tests
         timestamp: 2026-07-21T12:57:16.805Z
+      - _ulid: 01KY2C11ZHSGM15QZ10BYNDWKQ
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-tests-lint-build
+        timestamp: 2026-07-21T12:57:18.065Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1366,5 +1383,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-21T12:56:47.979Z
-    updated_at: 2026-07-21T12:57:16.784Z
+    updated_at: 2026-07-21T12:57:18.051Z
     notes: []
