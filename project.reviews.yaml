@@ -1491,6 +1491,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY30WEJNMZYBB1V701R3SKYF
         timestamp: 2026-07-21T19:01:47.262Z
+      - _ulid: 01KY30WFZZ875MGPBTDJW1TC2G
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY30WFYR6KGQD4GB4RJB1CGW
+        timestamp: 2026-07-21T19:01:48.671Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1568,7 +1575,25 @@ reviews:
               Group by native PathBuf/OsString identity without lossy display conversion.
             created_at: 2026-07-21T19:01:47.222Z
         kind: blocker
+      - _ulid: 01KY30WFYR6KGQD4GB4RJB1CGW
+        anchor:
+          type: code
+          commit: f31d5a9686279429cb0fc9136491d2ff71c0dbf3
+          line_end: 493
+          line_start: 440
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY30WFYRFJM63Q5X3CS33CWA
+            author: DonutsDelivery
+            body: The attached transaction spans two WAL databases and incrementally changes post_count. SQLite
+              does not provide crash-atomic multi-file commits in this mode, so a crash can leave
+              associations and counts inconsistent and retries may double count. Use idempotent
+              per-database writes plus authoritative count reconciliation, or another recoverable
+              design.
+            created_at: 2026-07-21T19:01:48.632Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:01:47.222Z
+    updated_at: 2026-07-21T19:01:48.632Z
     notes: []
