@@ -1626,6 +1626,12 @@ reviews:
         payload:
           thread_ulid: 01KY30WFYR6KGQD4GB4RJB1CGW
         timestamp: 2026-07-21T19:24:27.457Z
+      - _ulid: 01KY326DH1C7QQ1AA0R0Q5WZV8
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY30WHDGZD58W4Z5YR33PNKY
+        timestamp: 2026-07-21T19:24:42.401Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1774,6 +1780,12 @@ reviews:
               equality. Replace them with behavioral tests proving multi-target import/absorb,
               retained sidecars after target failure, and conflict/no-write behavior."
             created_at: 2026-07-21T19:01:50.128Z
+          - _ulid: 01KY326DGJD02GDJFH013KFBAB
+            author: "@claude"
+            body: "Fixed in b1e9417: replaced synthetic helper assertions with service-level tests covering
+              shared-stem fan-out, failed-target sidecar retention and successful retry removal, and
+              conflict/no-write export behavior."
+            created_at: 2026-07-21T19:24:42.386Z
         kind: blocker
       - _ulid: 01KY30WK6SDKEGMJ1YSGYGE9H3
         anchor:
@@ -1852,5 +1864,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:27.434Z
+    updated_at: 2026-07-21T19:24:42.386Z
     notes: []
