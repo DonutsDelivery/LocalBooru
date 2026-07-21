@@ -11,7 +11,7 @@ description: >
 spec_ref: "@wd14-addon-settings"
 plan_ref: "@plan-wd14-text-sidecar-add-on"
 origin: derived
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on:
   - "@register-expose-wd14-builtin-addon"
@@ -21,6 +21,14 @@ tags:
   - frontend
   - react
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: dispatch/task/build-wd14-addon-settings-panel/01ky2z9a
+  captured_at: 2026-07-21T20:26:06.626Z
+  commit: a49f046f9249fae753750f3b33fdaa7534df3e84
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: "@claude"
     changes:
@@ -39,7 +47,28 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-07-21T20:16:50.206Z
+  - author: "@claude"
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: dispatch/task/build-wd14-addon-settings-panel/01ky2z9a
+          captured_at: 2026-07-21T20:26:06.626Z
+          commit: a49f046f9249fae753750f3b33fdaa7534df3e84
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-07-21T20:26:06.630Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-07-21T20:26:06.631Z
 created_at: 2026-07-21T18:33:51.731Z
 started_at: 2026-07-21T20:16:50.206Z
+submitted_at: 2026-07-21T20:26:06.630Z
 todos: []
 automation: eligible
