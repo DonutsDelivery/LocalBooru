@@ -186,3 +186,8 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T09:00:12.789Z
+  - _ulid: 01KY1YPPVR5P5XE90ZV13XJM3B
+    content: Committed fix cycle 3 and canonical Continue Watching identity as 966e510d.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T09:04:27.512Z
