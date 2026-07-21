@@ -27,3 +27,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T07:46:32.818Z
+  - _ulid: 01KY1YEYV834SXB2MGESCNPSAK
+    content: "Implemented scope-safe grouped navigation: changing directory/library/All clears
+      incompatible folder while retaining group=folders; same-scope filter changes preserve folder.
+      Authoritative grouped catalog refresh failures now retry with bounded backoff. Gallery
+      behavioral tests and full frontend suite pass."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T09:00:13.544Z
