@@ -8,3 +8,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T09:48:09.627Z
+  - _ulid: 01KY21D3JW6TSYHMFTW821D2XC
+    content: "Behavioral verification passed: isolated fake-npm tests prove duplicate dev launch
+      rejection, natural dev-lock release, active dev/build-lock independence, and dev startup while
+      build-cache.lock is held. Existing launcher and truthful build startup handshake tests also
+      pass. Alignment validation retains only five pre-existing warnings."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T09:51:38.588Z
