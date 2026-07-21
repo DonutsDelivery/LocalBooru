@@ -1341,6 +1341,16 @@ reviews:
         runner: shell
         created_at: 2026-07-21T12:57:19.191Z
         completed_at: 2026-07-21T12:57:19.191Z
+      - status: skipped
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Repository-wide validation is blocked by pre-existing malformed legacy Android/core spec
+          records unrelated to this task.
+        name: kspec-validate
+        required: false
+        created_at: 2026-07-21T12:57:20.325Z
+        completed_at: 2026-07-21T12:57:20.325Z
     events:
       - _ulid: 01KY2C04KAGMSD3QB3PPNPHATX
         actor: "@claude"
@@ -1390,6 +1400,13 @@ reviews:
           status: pass
           name: bundle-integrity
         timestamp: 2026-07-21T12:57:19.215Z
+      - _ulid: 01KY2C146KTJFK001XRP3VAE1G
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: skipped
+          name: kspec-validate
+        timestamp: 2026-07-21T12:57:20.339Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1402,5 +1419,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-21T12:56:47.979Z
-    updated_at: 2026-07-21T12:57:19.191Z
+    updated_at: 2026-07-21T12:57:20.325Z
     notes: []
