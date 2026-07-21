@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use super::lada::{
     self, LadaBackend, LadaBackendCompatibility, LadaBackendPreference, LadaDeployment,
     LadaReadiness, LadaReadinessStatus, LADA_ADDON_VERSION, LADA_DEPLOYMENT_FILE,
-    LADA_MODEL_REVISION, LADA_PROTOCOL_VERSION, LADA_UPSTREAM_REVISION,
+    LADA_MODEL_REVISION, LADA_PROBE_TIMEOUT, LADA_PROTOCOL_VERSION, LADA_UPSTREAM_REVISION,
 };
 
 pub const LADA_LICENSE: &str = "AGPL-3.0-only";
@@ -31,6 +31,7 @@ const DOWNLOAD_CHUNK_BYTES: usize = 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 2 * 1024 * 1024;
 const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_ARCHIVE_ENTRIES: usize = 1_000_000;
+const LADA_MODEL_PROBE_TIMEOUT_SECS: f64 = 90.0;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LadaArtifact {
@@ -723,7 +724,7 @@ fn probe_config(
         "fp16": true,
         "model_probe_size": 256,
         "model_probe_frames": 2,
-        "max_probe_seconds": 90.0,
+        "max_probe_seconds": LADA_MODEL_PROBE_TIMEOUT_SECS,
         "models": manifest.models.iter().map(|model| serde_json::json!({
             "name": model.name,
             "role": model.role,
@@ -1252,6 +1253,11 @@ mod tests {
         assert_eq!(persisted.probe_config, active.join("probe.json"));
         let config: serde_json::Value =
             serde_json::from_slice(&std::fs::read(staging.join("probe.json")).unwrap()).unwrap();
+        assert_eq!(
+            config["max_probe_seconds"].as_f64(),
+            Some(LADA_MODEL_PROBE_TIMEOUT_SECS)
+        );
+        assert!(LADA_PROBE_TIMEOUT.as_secs_f64() > LADA_MODEL_PROBE_TIMEOUT_SECS);
         assert!(config["models"].as_array().unwrap().iter().all(|model| {
             Path::new(model["path"].as_str().unwrap()).starts_with(active.join("models"))
         }));
