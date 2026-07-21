@@ -2796,6 +2796,16 @@ reviews:
         runner: npm
         created_at: 2026-07-21T21:47:23.112Z
         completed_at: 2026-07-21T21:47:23.112Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: npm --prefix frontend run build completed successfully
+        name: frontend-build
+        required: true
+        runner: vite
+        created_at: 2026-07-21T21:47:25.954Z
+        completed_at: 2026-07-21T21:47:25.954Z
     events:
       - _ulid: 01KY3AB5ZMNYP5T71PZDBFPSA4
         actor: "@claude"
@@ -2824,6 +2834,13 @@ reviews:
           status: pass
           name: frontend-tests
         timestamp: 2026-07-21T21:47:23.150Z
+      - _ulid: 01KY3ABRD4Q15DNJVQY7NP9HZS
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-build
+        timestamp: 2026-07-21T21:47:25.988Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -2836,5 +2853,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-21T21:47:07.124Z
-    updated_at: 2026-07-21T21:47:23.112Z
+    updated_at: 2026-07-21T21:47:25.954Z
     notes: []
