@@ -716,6 +716,11 @@ features:
             then: A structured failed diagnostic preserves its exit state and readable bounded native evidence
               without returning an opaque transport error
             when: The diagnostic result is displayed
+          - given: CUDA is registered but the shipped model fails inside the native runtime
+            id: ac-native-runtime-inventory
+            then: The report preserves native-library inventory and cuDNN frontend and backend evidence
+              collected before model execution
+            when: The user runs the strict CUDA diagnostic
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
