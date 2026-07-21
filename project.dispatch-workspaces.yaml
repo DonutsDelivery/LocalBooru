@@ -1,6 +1,6 @@
 kynetic_dispatch_workspaces: "1.0"
 workspaces:
-  - active_role: worker
+  - active_role: null
     base_branch_point: 606c05c21dc6c253c7f973a942a3fdf69daa4492
     bootstrap:
       status: succeeded
@@ -42,12 +42,12 @@ workspaces:
       detail: null
       eligible: false
       reason: null
-      updated_at: 2026-07-21T18:43:57.184Z
+      updated_at: 2026-07-21T18:44:02.262Z
     health:
       status: healthy
       issues: []
       summary: Workspace record matches current git branch and worktree state.
-      updated_at: 2026-07-21T18:43:57.559Z
+      updated_at: 2026-07-21T18:44:02.262Z
     integration:
       status: pending
       detail: null
@@ -55,17 +55,17 @@ workspaces:
       publication_mode: pull_request
       target_branch: plan/wd14-sidecars-implementation
       target_commit: 606c05c21dc6c253c7f973a942a3fdf69daa4492
-      updated_at: 2026-07-21T18:43:57.184Z
-    lifecycle_state: active
+      updated_at: 2026-07-21T18:44:02.262Z
+    lifecycle_state: ready
     resolved_base_branch: plan/wd14-sidecars-implementation
     task_ref: "@01KY2Z9A97B3AQK8PYK2RYM2VP"
     task_slug: implement-native-wd14-sidecar-service
     timestamps:
       closed_at: null
       last_active_at: 2026-07-21T18:43:57.559Z
-      last_reconciled_at: 2026-07-21T18:43:57.559Z
+      last_reconciled_at: 2026-07-21T18:44:02.262Z
       created_at: 2026-07-21T18:43:41.255Z
-      updated_at: 2026-07-21T18:43:57.559Z
+      updated_at: 2026-07-21T18:44:02.262Z
     workspace_id: dispatch-workspace-01KY2Z9A97B3AQK8PYK2RYM2VP
     worktree_root: /home/user/Programs/Claude Projects/localbooru/.kspec-worktrees
     worktrees:
