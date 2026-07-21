@@ -14,3 +14,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T18:34:59.158Z
+  - _ulid: 01KY2ZTCG2J69CJDR10164RVKV
+    content: "Automation status set to eligible: Safety spec has four testable ACs and the task note
+      defines the integration gate and exact verification commands."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:43:10.979Z
