@@ -47,6 +47,87 @@
   gap: 3px;
 }
 
+.lada-license-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.lada-license-consent input {
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.lada-license-consent a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+.lada-install-progress {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(33, 150, 243, 0.08);
+  border: 1px solid rgba(33, 150, 243, 0.18);
+}
+
+.lada-progress-copy {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-transform: capitalize;
+}
+
+.lada-progress-track {
+  position: relative;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(33, 150, 243, 0.16);
+}
+
+.lada-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2196f3;
+  transition: width 180ms ease;
+}
+
+.lada-progress-track.indeterminate span {
+  width: 38%;
+  animation: lada-progress-scan 1.2s ease-in-out infinite;
+}
+
+.lada-install-error {
+  padding: 8px 10px;
+  border-left: 3px solid #f44336;
+  border-radius: 4px;
+  background: rgba(244, 67, 54, 0.08);
+  color: #f28b82;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+@keyframes lada-progress-scan {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(270%); }
+}
+
 /* Status badges */
 .addon-status {
   padding: 3px 8px;

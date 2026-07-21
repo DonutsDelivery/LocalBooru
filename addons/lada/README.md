@@ -22,7 +22,9 @@ The package builder produces backend and model archives plus `release-manifest.j
 # Optional: LADA_CUDA_VARIANT=cuda-legacy ./packaging/build-bundles.sh
 ```
 
-One invocation produces the common runtime, CUDA and Intel XPU layers, model bundle, Corresponding Source, and a single manifest that binds all four installable packages.
+One invocation produces the common runtime, CUDA and Intel XPU layers, model bundle, Corresponding Source, and a single manifest that binds all four installable packages. Bundle construction defaults to one download, install, build, compression, OpenMP, and MKL worker; `LADA_BUILD_JOBS` can raise that limit explicitly.
+
+For an unpublished local integration test, build into a private directory and set `LOCALBOORU_LADA_RELEASE_MANIFEST` to the resulting absolute `release-manifest.json` path before starting LocalBooru. The browser cannot select or override this path. The installer resolves local artifacts only from that manifest's directory and still verifies their declared sizes and SHA-256 hashes.
 
 Generated release artifacts are not committed or published automatically. Every offered binary must be accompanied by the exact `source.tar.zst`, license notices, hashes, and source link recorded in its manifest.
 

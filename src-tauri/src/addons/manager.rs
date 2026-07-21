@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
 
 use super::lada::{self, LadaBackendPreference, LadaReadiness};
+use super::lada_install::{self, LadaInstallProgress};
 use super::manifest::{get_addon_manifest, get_addon_registry, AddonInstallation, AddonRuntime};
 use super::sidecar;
 use crate::routes::settings::get_config_section;
@@ -292,6 +293,7 @@ fn reconcile_auto_tagger_dependencies(
 struct AddonState {
     status: AddonStatus,
     readiness: Option<LadaReadiness>,
+    installation_progress: Option<LadaInstallProgress>,
     /// The child process handle, present only while the addon is running.
     process: Option<Arc<TokioMutex<tokio::process::Child>>>,
 }
@@ -310,6 +312,12 @@ pub struct AddonInfo {
     pub installed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readiness: Option<LadaReadiness>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installation_progress: Option<LadaInstallProgress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub license: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<&'static str>,
 }
 
 /// The lifecycle status of an addon.
@@ -338,6 +346,7 @@ pub struct AddonManager {
     data_dir: PathBuf,
     lifecycle: TokioRwLock<()>,
     lada_operation: TokioMutex<()>,
+    lada_install_cancelled: Arc<AtomicBool>,
     shutting_down: AtomicBool,
 }
 
@@ -346,6 +355,12 @@ impl AddonManager {
     pub fn new(data_dir: &Path) -> Self {
         let addons = DashMap::new();
         let addons_base = data_dir.join("addons");
+        if let Err(error) = lada_install::recover_interrupted_install(&addons_base) {
+            log::error!(
+                "[AddonManager] Failed to recover interrupted LADA activation: {}",
+                error
+            );
+        }
 
         // Initialize state for every known addon
         for manifest in get_addon_registry() {
@@ -379,6 +394,7 @@ impl AddonManager {
                 AddonState {
                     status,
                     readiness,
+                    installation_progress: None,
                     process: None,
                 },
             );
@@ -395,6 +411,7 @@ impl AddonManager {
             data_dir: data_dir.to_path_buf(),
             lifecycle: TokioRwLock::new(()),
             lada_operation: TokioMutex::new(()),
+            lada_install_cancelled: Arc::new(AtomicBool::new(false)),
             shutting_down: AtomicBool::new(false),
         }
     }
@@ -612,6 +629,123 @@ impl AddonManager {
         self.lada_operation.lock().await
     }
 
+    pub fn cancel_lada_install(&self) -> Result<(), String> {
+        let installing = self
+            .addons
+            .get("lada")
+            .is_some_and(|state| state.installation_progress.is_some());
+        if !installing {
+            return Err("No LADA installation is in progress".into());
+        }
+        self.lada_install_cancelled.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+
+    pub async fn install_lada(
+        &self,
+        accepted_license: bool,
+        timeout: Duration,
+    ) -> Result<LadaReadiness, String> {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err("Application shutdown is in progress".into());
+        }
+        let _operation = self
+            .lada_operation
+            .try_lock()
+            .map_err(|_| "Another LADA operation is already in progress".to_string())?;
+        self.lada_install_cancelled.store(false, Ordering::SeqCst);
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err("Application shutdown is in progress".into());
+        }
+        let preference = self.lada_backend_preference();
+        let previous = self.addons.get("lada").map(|state| {
+            (
+                state.status.clone(),
+                state.readiness.clone(),
+                self.is_installed(get_addon_manifest("lada").expect("registered LADA add-on")),
+            )
+        });
+
+        let progress = |installation_progress: LadaInstallProgress| {
+            if let Some(mut state) = self.addons.get_mut("lada") {
+                state.status = AddonStatus::Repairing;
+                state.readiness = Some(LadaReadiness::new(
+                    match installation_progress.stage {
+                        lada_install::LadaInstallStage::Resolving
+                        | lada_install::LadaInstallStage::Downloading => {
+                            lada::LadaReadinessStatus::Downloading
+                        }
+                        lada_install::LadaInstallStage::Probing => {
+                            lada::LadaReadinessStatus::Probing
+                        }
+                        _ => lada::LadaReadinessStatus::Installing,
+                    },
+                    preference,
+                    match installation_progress.stage {
+                        lada_install::LadaInstallStage::Resolving => {
+                            "Loading trusted LADA release metadata"
+                        }
+                        lada_install::LadaInstallStage::Downloading => {
+                            "Downloading and verifying LADA packages"
+                        }
+                        lada_install::LadaInstallStage::Installing => {
+                            "Extracting the verified LADA packages"
+                        }
+                        lada_install::LadaInstallStage::Validating => {
+                            "Validating the installed LADA models"
+                        }
+                        lada_install::LadaInstallStage::Probing => {
+                            "Running the bounded accelerator and model probe"
+                        }
+                        lada_install::LadaInstallStage::Activating => {
+                            "Activating the verified LADA deployment"
+                        }
+                    },
+                ));
+                state.installation_progress = Some(installation_progress);
+            }
+        };
+
+        let result = lada_install::install(
+            &self.addons_base(),
+            preference,
+            accepted_license,
+            self.lada_install_cancelled.clone(),
+            timeout,
+            &progress,
+        )
+        .await;
+        match result {
+            Ok(outcome) => {
+                if let Some(mut state) = self.addons.get_mut("lada") {
+                    state.status = AddonStatus::Installed;
+                    state.readiness = Some(outcome.readiness.clone());
+                    state.installation_progress = None;
+                }
+                Ok(outcome.readiness)
+            }
+            Err(error) => {
+                if let Some(mut state) = self.addons.get_mut("lada") {
+                    state.installation_progress = None;
+                    if let Some((status, readiness, was_installed)) = previous {
+                        if was_installed {
+                            state.status = status;
+                            state.readiness = readiness;
+                        } else {
+                            state.status = AddonStatus::Error(error.clone());
+                            state.readiness = Some(LadaReadiness::new(
+                                lada::LadaReadinessStatus::RuntimeFailure,
+                                preference,
+                                error.clone(),
+                            ));
+                        }
+                    }
+                }
+                Err(error)
+            }
+        }
+    }
+
     pub async fn probe_lada_runtime(&self, timeout: Duration) -> LadaReadiness {
         let preference = self.lada_backend_preference();
         let Ok(_operation) = self.lada_operation.try_lock() else {
@@ -653,6 +787,9 @@ impl AddonManager {
             .map(|state| state.status.clone())
             .unwrap_or(AddonStatus::NotInstalled);
         let readiness = state.as_ref().and_then(|state| state.readiness.clone());
+        let installation_progress = state
+            .as_ref()
+            .and_then(|state| state.installation_progress.clone());
         AddonInfo {
             id: manifest.id.to_string(),
             name: manifest.name.to_string(),
@@ -665,6 +802,9 @@ impl AddonManager {
             status,
             installed: self.is_installed(manifest),
             readiness,
+            installation_progress,
+            license: (manifest.id == "lada").then_some(lada_install::LADA_LICENSE),
+            source_url: (manifest.id == "lada").then_some(lada_install::LADA_SOURCE_URL),
         }
     }
 
@@ -891,9 +1031,13 @@ impl AddonManager {
             std::fs::remove_dir_all(&addon_dir)
                 .map_err(|e| format!("Failed to remove addon directory: {}", e))?;
         }
+        if id == "lada" {
+            lada_install::cleanup_staging(&self.addons_base())?;
+        }
 
         if let Some(mut state) = self.addons.get_mut(id) {
             state.status = AddonStatus::NotInstalled;
+            state.installation_progress = None;
             if id == "lada" {
                 state.readiness = Some(LadaReadiness::new(
                     lada::LadaReadinessStatus::NotInstalled,
@@ -1223,6 +1367,8 @@ impl AddonManager {
     /// Called during application exit to ensure no orphan processes remain.
     pub async fn stop_all(&self) {
         self.shutting_down.store(true, Ordering::SeqCst);
+        self.lada_install_cancelled.store(true, Ordering::SeqCst);
+        let _lada_operation = self.lada_operation.lock().await;
         let _lifecycle = self.lifecycle.write().await;
         log::info!("[AddonManager] Stopping all running addons...");
 
@@ -1300,6 +1446,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    // AC: @lada-managed-install ac-verified-activation
+    // AC: @lada-managed-install ac-clean-uninstall
     #[tokio::test]
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     async fn probe_lada_runtime_reaches_ready_and_updates_manager_state() {
@@ -1321,6 +1469,11 @@ mod tests {
             backend_compatibility: lada::LadaBackendCompatibility::default(),
             selected_backend: lada::LadaBackend::Cuda,
             selected_package: "linux_x86_64_cuda".into(),
+            artifact_sha256: std::collections::BTreeMap::from([
+                ("linux_x86_64_common".into(), "0".repeat(64)),
+                ("linux_x86_64_cuda".into(), "1".repeat(64)),
+                ("model_bundle".into(), "2".repeat(64)),
+            ]),
             executable: executable.clone(),
             probe_config: probe_config.clone(),
         };
@@ -1360,6 +1513,9 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
             lada::LadaReadinessStatus::Probing
         );
 
+        std::fs::create_dir_all(root.join("addons/.lada-staging-interrupted")).unwrap();
+        std::fs::create_dir_all(root.join("addons/other-addon")).unwrap();
+        std::fs::write(root.join("library.db"), "media database").unwrap();
         manager.uninstall_addon("lada").unwrap();
         let uninstalled = manager.get_addon("lada").unwrap();
         assert!(!uninstalled.installed);
@@ -1368,7 +1524,70 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
             uninstalled.readiness.unwrap().status,
             lada::LadaReadinessStatus::NotInstalled
         );
+        assert!(!root.join("addons/.lada-staging-interrupted").exists());
+        assert!(root.join("addons/other-addon").exists());
+        assert_eq!(
+            std::fs::read_to_string(root.join("library.db")).unwrap(),
+            "media database"
+        );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @lada-managed-install ac-verified-activation
+    // AC: @lada-managed-install ac-clean-uninstall
+    #[tokio::test]
+    #[ignore = "requires local unpublished LADA bundles and a supported accelerator"]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    async fn installs_local_bundle_with_real_probe_and_clean_uninstall() {
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let harness_base = std::env::var_os("LOCALBOORU_LADA_INSTALL_HARNESS_DIR")
+            .map(PathBuf::from)
+            .expect("set LOCALBOORU_LADA_INSTALL_HARNESS_DIR to an isolated disk-backed directory");
+        assert!(harness_base.is_absolute());
+        let manifest = std::env::var_os(lada_install::LADA_LOCAL_MANIFEST_ENV)
+            .map(PathBuf::from)
+            .expect("set LOCALBOORU_LADA_RELEASE_MANIFEST to the local unpublished manifest");
+        assert!(manifest.is_absolute() && manifest.is_file());
+
+        let root = harness_base.join(format!("run-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let _cleanup = Cleanup(root.clone());
+        std::fs::write(root.join("library.db"), "unrelated media database").unwrap();
+        let manager = AddonManager::new(&root);
+
+        let readiness = manager
+            .install_lada(true, Duration::from_secs(120))
+            .await
+            .expect("local unpublished LADA bundle must install and probe");
+
+        assert_eq!(readiness.status, lada::LadaReadinessStatus::Ready);
+        assert!(readiness.probe_evidence.is_some());
+        let info = manager.get_addon("lada").unwrap();
+        assert!(info.installed);
+        assert_eq!(info.status, AddonStatus::Installed);
+        assert!(info.installation_progress.is_none());
+        let addon_dir = root.join("addons/lada");
+        let deployment = lada::LadaDeployment::load(&addon_dir).unwrap();
+        assert_eq!(deployment.artifact_sha256.len(), 3);
+        assert!(addon_dir.join("release-manifest.json").is_file());
+
+        let activated_readiness = manager.probe_lada_runtime(Duration::from_secs(120)).await;
+        assert_eq!(activated_readiness.status, lada::LadaReadinessStatus::Ready);
+        assert!(activated_readiness.probe_evidence.is_some());
+
+        manager.uninstall_addon("lada").unwrap();
+
+        assert!(!addon_dir.exists());
+        assert_eq!(
+            std::fs::read_to_string(root.join("library.db")).unwrap(),
+            "unrelated media database"
+        );
     }
 
     // AC: @addon-platform-dependencies ac-1
@@ -1802,6 +2021,7 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
             AddonState {
                 status: AddonStatus::Running,
                 readiness: None,
+                installation_progress: None,
                 process: Some(process.clone()),
             },
         );

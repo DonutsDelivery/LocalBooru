@@ -5,6 +5,15 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out="${1:-$root/dist}"
 revision=20cb34a20a83c72c87a991d2c949032c70085b16
 work="${LADA_BUILD_DIR:-$root/build/release}"
+build_jobs="${LADA_BUILD_JOBS:-1}"
+export UV_CONCURRENT_DOWNLOADS="${UV_CONCURRENT_DOWNLOADS:-1}"
+export UV_CONCURRENT_INSTALLS="${UV_CONCURRENT_INSTALLS:-1}"
+export UV_CONCURRENT_BUILDS="${UV_CONCURRENT_BUILDS:-$build_jobs}"
+export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-$build_jobs}"
+export MAX_JOBS="${MAX_JOBS:-$build_jobs}"
+export MAKEFLAGS="${MAKEFLAGS:--j$build_jobs}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$build_jobs}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-$build_jobs}"
 rm -rf "$work"
 mkdir -p "$work" "$out"
 
@@ -23,6 +32,12 @@ adapter_wheel="$("$root/packaging/build-adapter-wheel.sh" "$staged_addon" "$work
 
 export UV_PYTHON_INSTALL_DIR="$work/python"
 uv python install 3.12
+managed_python="$(find "$UV_PYTHON_INSTALL_DIR" -mindepth 1 -maxdepth 1 -type d \
+  -name 'cpython-3.12.*-linux-x86_64-gnu' -print -quit)"
+if [[ -z "$managed_python" ]]; then
+  printf 'uv did not install the expected Linux x86_64 Python 3.12 runtime\n' >&2
+  exit 1
+fi
 template_parent="$work/template"
 template_runtime="$template_parent/runtime"
 uv venv --python 3.12 --relocatable "$template_runtime"
@@ -53,8 +68,8 @@ for backend in cuda xpu; do
   full_runtime="$full_parent/runtime"
   cp -a "$template_parent" "$full_parent"
   VIRTUAL_ENV="$full_runtime" uv sync \
-    --project "$staged_lada" --active --frozen --extra "${extras[$backend]}" \
-    --no-install-project --inexact
+    --project "$staged_lada" --active --python "$full_runtime/bin/python" \
+    --frozen --extra "${extras[$backend]}" --no-install-project --inexact
   VIRTUAL_ENV="$full_runtime" uv pip install \
     --python "$full_runtime/bin/python" --no-deps "$staged_lada"
   VIRTUAL_ENV="$full_runtime" uv pip install \
@@ -63,7 +78,26 @@ for backend in cuda xpu; do
   cp "$staged_addon/THIRD_PARTY_NOTICES.md" "$full_runtime/THIRD_PARTY_NOTICES.md"
   cp "$staged_addon/manifests/addon.json" "$full_runtime/addon.json"
   cp "$staged_addon/manifests/models.json" "$full_runtime/models.json"
+  "$full_runtime/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
   "$full_runtime/bin/python" -c 'import torch, torchvision'
+
+  # A uv virtual environment points back to its build-time interpreter. Overlay
+  # the link-free managed Python tree so the packaged runtime is standalone and
+  # remains executable after extraction into an arbitrary add-on directory.
+  rm -f "$full_runtime/pyvenv.cfg" \
+    "$full_runtime/bin/python" "$full_runtime/bin/python3" \
+    "$full_runtime/bin/python3.12" "$full_runtime/lib64"
+  cp -aL "$managed_python/." "$full_runtime/"
+  cat > "$full_runtime/bin/localbooru-lada-sidecar" <<'EOF'
+#!/bin/sh
+exec "$(dirname -- "$(realpath -- "$0")")/python" -m localbooru_lada "$@"
+EOF
+  chmod 755 "$full_runtime/bin/localbooru-lada-sidecar"
+  "$full_runtime/bin/python" -c 'import sys, torch, torchvision; assert sys.version_info[:2] == (3, 12), sys.version'
+  if find "$full_runtime" -type l -print -quit | grep -q .; then
+    printf '%s runtime unexpectedly contains symbolic links\n' "$backend" >&2
+    exit 1
+  fi
 done
 
 common_parent="$work/common"
@@ -83,8 +117,15 @@ for backend in cuda xpu; do
     --complete "$work/full-$backend/runtime" \
     --output "$layer_parent/runtime"
 done
+for runtime in "$common_runtime" "$work/layer-cuda/runtime" "$work/layer-xpu/runtime"; do
+  if find "$runtime" -type l -print -quit | grep -q .; then
+    printf 'release runtime unexpectedly contains symbolic links: %s\n' "$runtime" >&2
+    exit 1
+  fi
+done
 
-tar_args=(--sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -I 'zstd -19 -T0')
+zstd_threads="${LADA_ZSTD_THREADS:-$build_jobs}"
+tar_args=(--sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -I "zstd -19 -T${zstd_threads}")
 tar "${tar_args[@]}" -cf "$out/linux-x86_64-common.tar.zst" -C "$common_parent" runtime
 tar "${tar_args[@]}" -cf "$out/linux-x86_64-cuda.tar.zst" -C "$work/layer-cuda" runtime
 tar "${tar_args[@]}" -cf "$out/linux-x86_64-xpu.tar.zst" -C "$work/layer-xpu" runtime

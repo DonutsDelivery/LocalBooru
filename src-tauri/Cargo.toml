@@ -47,6 +47,8 @@ image_hasher = "3"
 # Hashing (xxhash for quick file hash, compatible with Python impl)
 xxhash-rust = { version = "0.8", features = ["xxh64"] }
 sha2 = "0.10"
+tar = "0.4"
+zstd = "0.13"
 
 # File watching
 notify = "7"
@@ -58,6 +60,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Async streams (for SSE)
 async-stream = "0.3"
 futures-core = "0.3"
+futures-util = "0.3"
 
 # UPnP / IGD
 igd-next = { version = "0.15", features = ["aio_tokio"] }
