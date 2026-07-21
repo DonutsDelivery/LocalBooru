@@ -78,3 +78,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T19:03:08.523Z
+  - _ulid: 01KY327C0WVAY697HFFAPYDYVG
+    content: "Fix cycle 1 completed in b1e9417. Addressed all ten review blockers: bounded single-handle
+      reads; atomic absorb claim and changed-file restoration; bounded candidate discovery; native
+      path grouping; recoverable count reconciliation; batched export lookups; export
+      representability limits; and behavioral service tests for absorb, shared stems, round trips,
+      no-clobber/overwrite, and additive preservation. Verification: 9 focused tests and 191 full
+      library tests passed, 1 ignored."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T19:25:13.629Z
