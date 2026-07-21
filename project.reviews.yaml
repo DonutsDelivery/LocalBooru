@@ -1572,6 +1572,12 @@ reviews:
         payload:
           thread_ulid: 01KY30W98DQD4XTYNN5ZR3ZT45
         timestamp: 2026-07-21T19:24:15.830Z
+      - _ulid: 01KY325MT4DDVNSDB5PM2KW7YX
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY30W98DQD4XTYNN5ZR3ZT45
+        timestamp: 2026-07-21T19:24:17.093Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1604,6 +1610,8 @@ reviews:
               opened handle and path identity, and bounded-reads MAX+1 bytes from that same handle."
             created_at: 2026-07-21T19:24:15.799Z
         kind: blocker
+        resolved_at: 2026-07-21T19:24:17.069Z
+        resolved_by: "@claude"
       - _ulid: 01KY30WBVBSM51YGJ9M5R36D97
         anchor:
           type: code
@@ -1766,5 +1774,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:15.799Z
+    updated_at: 2026-07-21T19:24:17.069Z
     notes: []
