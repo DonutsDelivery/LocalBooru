@@ -1,1 +1,20 @@
-notes: []
+notes:
+  - _ulid: 01KY2ZB9Q110RRAHVE9TG2A5WR
+    content: >-
+      Execution context:
+
+      - Background: expose the completed native service as the installable built-in
+      @wd14-text-sidecars.
+
+      - Scope: manifest registration, installed gate, compound-directory request validation,
+      settings-prefixed import/absorb/export routes, spawn_blocking, router wiring, and
+      route/manifest tests; no frontend UI.
+
+      - Files: src-tauri/src/addons/manifest.rs, src-tauri/src/routes/wd14_sidecar.rs,
+      src-tauri/src/routes/mod.rs, src-tauri/src/server/mod.rs.
+
+      - Verification: manifest semantics, uninstalled rejection, invalid scope rejection before
+      mutation, mixed-result response, and locked Rust library tests.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:34:56.609Z
