@@ -201,3 +201,9 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T09:00:12.033Z
+  - _ulid: 01KY1YPP167EGBRDPHMZ41V2WX
+    content: Committed release-hardening fix cycle as 966e510d. CUDA task intentionally remains in
+      progress until the exact Windows EVA model records nonzero CUDA nodes.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T09:04:26.662Z
