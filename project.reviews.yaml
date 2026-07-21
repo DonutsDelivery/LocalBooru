@@ -2091,6 +2091,12 @@ reviews:
         payload:
           thread_ulid: 01KY32JKDYZDSKYT2ZTX04H3SB
         timestamp: 2026-07-21T19:58:49.674Z
+      - _ulid: 01KY344Y299JAK9MD48J17QWFA
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY32JMMZ54HFEGVHNMD07BXW
+        timestamp: 2026-07-21T19:58:50.953Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2188,6 +2194,11 @@ reviews:
               not retryable. Ensure every failure path restores the original same-stem pathname
               whenever it remains free; use rename rather than requiring hard-link support.
             created_at: 2026-07-21T19:31:22.912Z
+          - _ulid: 01KY344Y1AFH6GSCBGFZNNPWN9
+            author: "@claude"
+            body: "Fixed through a8bb41e: failed quarantine cleanup restores the same-stem path via hard link or
+              atomic no-clobber write; changed or existing files are never overwritten."
+            created_at: 2026-07-21T19:58:50.922Z
         kind: blocker
       - _ulid: 01KY32K3FR85PXXN0P160DEZPH
         anchor:
@@ -2248,5 +2259,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:58:49.654Z
+    updated_at: 2026-07-21T19:58:50.922Z
     notes: []
