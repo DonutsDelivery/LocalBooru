@@ -204,6 +204,10 @@ features:
             id: ac-video-only
             then: No video timeline preview request is made
             when: The image is opened, edited, or replaced
+          - given: A timeline preview is queued, generating, or in flight
+            id: ac-request-ownership
+            then: Retries and late responses are cancelled and cannot publish into the new media
+            when: The media identity changes or the viewer closes
         tags: []
         created: 2026-07-21T12:02:12.691Z
         notes: []
