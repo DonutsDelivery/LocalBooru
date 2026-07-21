@@ -1470,6 +1470,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY30W98DQD4XTYNN5ZR3ZT45
         timestamp: 2026-07-21T19:01:41.803Z
+      - _ulid: 01KY30WBWE02ZP2GFE6SSZ0DM6
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY30WBVBSM51YGJ9M5R36D97
+        timestamp: 2026-07-21T19:01:44.462Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1497,7 +1504,24 @@ reviews:
               where supported, validate that handle, and bounded-read at most MAX+1 bytes.
             created_at: 2026-07-21T19:01:41.774Z
         kind: blocker
+      - _ulid: 01KY30WBVBSM51YGJ9M5R36D97
+        anchor:
+          type: code
+          commit: f31d5a9686279429cb0fc9136491d2ff71c0dbf3
+          line_end: 357
+          line_start: 346
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY30WBVBYTGN29MRB0T7CNXY
+            author: DonutsDelivery
+            body: Absorb revalidates only the current path type before unlinking. If the original sidecar is
+              replaced by a different valid regular file after import, the replacement is deleted
+              even though its tags were never imported. Preserve and compare stable file
+              identity/content before removal.
+            created_at: 2026-07-21T19:01:44.427Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:01:41.774Z
+    updated_at: 2026-07-21T19:01:44.427Z
     notes: []
