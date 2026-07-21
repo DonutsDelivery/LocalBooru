@@ -490,6 +490,9 @@ features:
             description: >
               Same-stem WD14 files have a stable parse, merge, absorb, and serialization contract
               that preserves existing LocalBooru metadata and supports safe round trips.
+            status:
+              maturity: draft
+              implementation: in_progress
             depends_on: []
             implements: []
             relates_to: []
