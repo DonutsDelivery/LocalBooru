@@ -1550,9 +1550,25 @@ reviews:
           status: pass
           name: rust-library-tests
         timestamp: 2026-07-21T19:02:35.926Z
+      - _ulid: 01KY30XZ83V4QR7KXWBGWASPJR
+        actor: claude-local-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: request_changes
+        timestamp: 2026-07-21T19:02:37.059Z
+      - _ulid: 01KY30XZ83Y7GJY9M635D7AX4E
+        actor: claude-local-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-07-21T19:02:37.059Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs: []
     subject:
       type: task
@@ -1730,7 +1746,14 @@ reviews:
               row/category and unrelated associations required by ac-additive-import.
             created_at: 2026-07-21T19:02:34.645Z
         kind: blocker
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: request_changes
+        reviewer: claude-local-review
+        role: reviewer
+        created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:02:35.889Z
+    updated_at: 2026-07-21T19:02:37.059Z
     notes: []

@@ -62,3 +62,8 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T18:56:41.642Z
+  - _ulid: 01KY30XZADDCSZ6KQA1RWC8VJK
+    content: "[FIX_CYCLE: 1] Review verdict: changes_requested by claude-local-review"
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T19:02:37.133Z
