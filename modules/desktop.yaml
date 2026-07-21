@@ -993,6 +993,11 @@ requirements:
         then: Each directory still queues its normal fast reconciliation work and the queue processes that
           work at bounded concurrency
         when: The bounded development task queue starts
+      - given: A LocalBooru development session is active
+        id: ac-build-lock-independence
+        then: The development session does not block that operation; only another build or cleanup can hold
+          the shared build ownership
+        when: A build or cleanup operation requests exclusive build ownership
     priority: high
     tags: []
     created: 2026-07-20T18:40:13.738Z
