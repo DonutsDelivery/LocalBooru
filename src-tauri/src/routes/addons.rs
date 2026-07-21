@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use axum::extract::{Path as AxumPath, State};
 use axum::response::Json;
 use axum::routing::{any, get, post};
@@ -7,6 +5,7 @@ use axum::Router;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::addons::lada::LADA_PROBE_TIMEOUT;
 use crate::addons::proxy::proxy_to_addon;
 use crate::server::error::AppError;
 use crate::server::state::AppState;
@@ -65,7 +64,7 @@ async fn probe_addon(
     }
     let readiness = state
         .addon_manager()
-        .probe_lada_runtime(Duration::from_secs(120))
+        .probe_lada_runtime(LADA_PROBE_TIMEOUT)
         .await;
     Ok(Json(json!({ "readiness": readiness })))
 }
@@ -116,7 +115,7 @@ async fn install_addon(
         let readiness = tokio::spawn(async move {
             install_state
                 .addon_manager()
-                .install_lada(accepted_license, Duration::from_secs(120))
+                .install_lada(accepted_license, LADA_PROBE_TIMEOUT)
                 .await
         })
         .await?
@@ -211,7 +210,7 @@ async fn repair_addon(
         let readiness = tokio::spawn(async move {
             repair_state
                 .addon_manager()
-                .install_lada(accepted_license, Duration::from_secs(120))
+                .install_lada(accepted_license, LADA_PROBE_TIMEOUT)
                 .await
         })
         .await?

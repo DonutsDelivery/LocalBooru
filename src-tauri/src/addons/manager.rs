@@ -13,7 +13,7 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
 
-use super::lada::{self, LadaBackendPreference, LadaReadiness};
+use super::lada::{self, LadaBackendPreference, LadaReadiness, LADA_PROBE_TIMEOUT};
 use super::lada_install::{self, LadaInstallProgress};
 use super::manifest::{get_addon_manifest, get_addon_registry, AddonInstallation, AddonRuntime};
 use super::sidecar;
@@ -612,7 +612,7 @@ impl AddonManager {
         }
 
         if get_addon_manifest("lada").is_some_and(|manifest| self.is_installed(manifest)) {
-            let readiness = self.probe_lada_runtime(Duration::from_secs(120)).await;
+            let readiness = self.probe_lada_runtime(LADA_PROBE_TIMEOUT).await;
             log::info!(
                 "[AddonManager] LADA startup verification finished with {:?}",
                 readiness.status
@@ -1562,7 +1562,7 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
         let manager = AddonManager::new(&root);
 
         let readiness = manager
-            .install_lada(true, Duration::from_secs(120))
+            .install_lada(true, LADA_PROBE_TIMEOUT)
             .await
             .expect("local unpublished LADA bundle must install and probe");
 
@@ -1577,7 +1577,7 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
         assert_eq!(deployment.artifact_sha256.len(), 3);
         assert!(addon_dir.join("release-manifest.json").is_file());
 
-        let activated_readiness = manager.probe_lada_runtime(Duration::from_secs(120)).await;
+        let activated_readiness = manager.probe_lada_runtime(LADA_PROBE_TIMEOUT).await;
         assert_eq!(activated_readiness.status, lada::LadaReadinessStatus::Ready);
         assert!(activated_readiness.probe_evidence.is_some());
 

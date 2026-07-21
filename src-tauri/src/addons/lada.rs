@@ -12,6 +12,9 @@ pub const LADA_PROTOCOL_VERSION: u32 = 1;
 pub const LADA_UPSTREAM_REVISION: &str = "20cb34a20a83c72c87a991d2c949032c70085b16";
 pub const LADA_MODEL_REVISION: &str = "bcf461d46d9a98981fc64b815df5178f42215cdf";
 pub const LADA_DEPLOYMENT_FILE: &str = "deployment.json";
+/// Hard wall-clock limit for a managed runtime probe, including cold Python startup,
+/// model hashing, accelerator initialization, and the sidecar's model-work budget.
+pub const LADA_PROBE_TIMEOUT: Duration = Duration::from_secs(300);
 const LADA_READINESS_FILE: &str = "readiness.json";
 const MAX_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
 
@@ -936,6 +939,12 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
+    }
+
+    #[test]
+    fn managed_probe_timeout_leaves_cold_start_headroom() {
+        assert_eq!(LADA_PROBE_TIMEOUT, Duration::from_secs(300));
+        assert!(LADA_PROBE_TIMEOUT > Duration::from_secs(90));
     }
 
     // AC: @lada-runtime-readiness ac-ready-only-after-proof
