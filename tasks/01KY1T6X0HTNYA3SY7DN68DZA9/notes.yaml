@@ -47,3 +47,8 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T10:01:45.334Z
+  - _ulid: 01KY28YEH3FK4SJPGQHEPEQZYG
+    content: "Tester validation on 966e510d: grouped-folder navigation is fixed and working smoothly."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T12:03:26.883Z
