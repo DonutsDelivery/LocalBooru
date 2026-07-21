@@ -1614,6 +1614,12 @@ reviews:
         payload:
           thread_ulid: 01KY30WEJNMZYBB1V701R3SKYF
         timestamp: 2026-07-21T19:24:24.901Z
+      - _ulid: 01KY325XPGGM7AX9W28XWG61HB
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY30WFYR6KGQD4GB4RJB1CGW
+        timestamp: 2026-07-21T19:24:26.192Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1737,6 +1743,12 @@ reviews:
               per-database writes plus authoritative count reconciliation, or another recoverable
               design.
             created_at: 2026-07-21T19:01:48.632Z
+          - _ulid: 01KY325XNX91T6S4KHZ2YJS776
+            author: "@claude"
+            body: "Fixed in b1e9417: cross-WAL ATTACH transactions and incremental counters were replaced with
+              idempotent per-database writes followed by authoritative post_count and tagged_count
+              reconciliation."
+            created_at: 2026-07-21T19:24:26.173Z
         kind: blocker
       - _ulid: 01KY30WHDGZD58W4Z5YR33PNKY
         anchor:
@@ -1832,5 +1844,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:24.877Z
+    updated_at: 2026-07-21T19:24:26.173Z
     notes: []
