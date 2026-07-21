@@ -7,3 +7,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T12:03:23.069Z
+  - _ulid: 01KY2A8NFVBGM1BC6RN33AX4G3
+    content: Implemented exact video-only preview identity and request ownership across
+      Lightbox/grid/API/Rust routes. Preview list/frame routes now require library, directory, and
+      current file hash, use the resolved library cache, and optional 404s are request-scoped.
+      Frontend, route, full Rust, and build verification pass.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T12:26:30.267Z
