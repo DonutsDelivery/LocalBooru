@@ -2623,3 +2623,31 @@ reviews:
     created_at: 2026-07-21T20:36:41.935Z
     updated_at: 2026-07-21T20:36:56.893Z
     notes: []
+  - _ulid: 01KY37KCA87AKN02FVECGK4N86
+    slugs: []
+    title: Review WD14 final integration (cycle 1)
+    author: "@claude"
+    checks: []
+    events:
+      - _ulid: 01KY37KBWYDZADPB9G5KCBH5F0
+        actor: "@claude"
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-07-21T20:59:09.598Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@verify-wd14-sidecar-integration"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 606c05c2
+      head_branch: plan/wd14-sidecars-implementation
+      head_commit: e1e521c1
+    threads: []
+    verdicts: []
+    created_at: 2026-07-21T20:59:10.024Z
+    updated_at: null
+    notes: []
