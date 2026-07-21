@@ -215,3 +215,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T10:01:43.636Z
+  - _ulid: 01KY28YBZ8JBNXZ5YQ3P49FCC9
+    content: "Candidate 966e510d disproves the cuDNN 9.24 compatibility hypothesis: exact EVA still
+      fails /core_model/patch_embed/proj/Conv during cuDNN build_operation_graph and records 1,920
+      CPU nodes, zero CUDA. The primary strict diagnostic process can terminate before JSON,
+      producing 502 invalid_output. Next cycle preserves primary native evidence and inventories
+      split DLL/cuDNN logs; no new pin or CUDA claim without nonzero exact-model CUDA nodes."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T12:03:24.265Z
