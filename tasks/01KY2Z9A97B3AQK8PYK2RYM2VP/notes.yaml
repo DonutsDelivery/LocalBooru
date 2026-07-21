@@ -42,3 +42,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T18:43:59.871Z
+  - _ulid: 01KY301ADNFXQYZHSDH3W0QWEC
+    content: "Approach: implement one focused native service with pure parser/serializer/grouping
+      helpers and operation orchestration over compound library/directory identities. Reuse
+      AppState::resolve_library and directory pools; preserve existing associations with INSERT OR
+      IGNORE. Edge cases: invalid UTF-8, limits, multi-dot paths, root escapes/symlinks, same-stem
+      collisions, partial DB/delete/write failures, idempotent retries, and atomic overwrite. Test
+      plan: annotate behavioral Rust tests for all six exchange ACs plus the managed-filesystem
+      safety ACs exercised by the service."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T18:46:58.229Z
