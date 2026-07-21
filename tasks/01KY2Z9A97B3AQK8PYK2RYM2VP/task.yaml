@@ -11,9 +11,8 @@ description: >
 spec_ref: "@wd14-sidecar-exchange-contract"
 plan_ref: "@plan-wd14-text-sidecar-add-on"
 origin: derived
-status: blocked
-blocked_by:
-  - "Agent task-worker failed 3 consecutive times: Authentication required"
+status: pending
+blocked_by: []
 depends_on: []
 context: []
 priority: 2
@@ -44,7 +43,24 @@ history:
         previous: null
     command: task-block
     timestamp: 2026-07-21T18:44:01.221Z
-prior_status: pending
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending
+        previous: blocked
+      blocked_by:
+        new: []
+        previous:
+          - "Agent task-worker failed 3 consecutive times: Authentication required"
+      session_id:
+        new: null
+        previous: null
+      prior_status:
+        new: null
+        previous: pending
+    command: task-unblock
+    timestamp: 2026-07-21T18:46:11.020Z
+prior_status: null
 created_at: 2026-07-21T18:33:51.655Z
 todos: []
 automation: eligible
