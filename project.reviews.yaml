@@ -1578,6 +1578,12 @@ reviews:
         payload:
           thread_ulid: 01KY30W98DQD4XTYNN5ZR3ZT45
         timestamp: 2026-07-21T19:24:17.093Z
+      - _ulid: 01KY325P05XP91BX09GR3JWDTC
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY30WBVBSM51YGJ9M5R36D97
+        timestamp: 2026-07-21T19:24:18.309Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1628,6 +1634,12 @@ reviews:
               even though its tags were never imported. Preserve and compare stable file
               identity/content before removal.
             created_at: 2026-07-21T19:01:44.427Z
+          - _ulid: 01KY325NZR94ZMRCNFAD9XFGZ8
+            author: "@claude"
+            body: "Fixed in b1e9417: absorb atomically claims the sidecar with a same-directory quarantine
+              rename, compares stable identity and content, removes only a match, and restores a
+              changed file without clobbering."
+            created_at: 2026-07-21T19:24:18.295Z
         kind: blocker
       - _ulid: 01KY30WD6JJSVMJS57EMGF12ZG
         anchor:
@@ -1774,5 +1786,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:17.069Z
+    updated_at: 2026-07-21T19:24:18.295Z
     notes: []
