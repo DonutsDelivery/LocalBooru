@@ -2673,6 +2673,12 @@ reviews:
           from: open
           to: closed
         timestamp: 2026-07-21T20:59:27.852Z
+      - _ulid: 01KY3A9KJ2MXX3TQD13DBGBFM7
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY37KTWB73CDNNHQ4HMBXY3E
+        timestamp: 2026-07-21T21:46:15.490Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2699,6 +2705,14 @@ reviews:
             body: Media validation failures are emitted before grouping, so an invalid shared-stem target is
               omitted and Absorb can delete the sidecar after updating only valid targets.
             created_at: 2026-07-21T20:59:24.939Z
+          - _ulid: 01KY3A9KGP059V0QGW76TPMYQR
+            author: "@claude"
+            body: "Fixed in 312952a2: preparation now assigns valid and invalid media records to their shared
+              sidecar group before validation, records group-level preparation errors, and blocks
+              the complete group before any import/export/absorb mutation. The
+              invalid_shared_target_preserves_one_sidecar_and_blocks_every_target regression test
+              verifies one failure, both targets, retained sidecar, and no imported tags."
+            created_at: 2026-07-21T21:46:15.443Z
         kind: blocker
       - _ulid: 01KY37KWCVJZJZ0HE2FX3Q2EX6
         anchor:
@@ -2725,5 +2739,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T20:59:27.851Z
     created_at: 2026-07-21T20:59:10.024Z
-    updated_at: 2026-07-21T20:59:27.852Z
+    updated_at: 2026-07-21T21:46:15.443Z
     notes: []
