@@ -1477,6 +1477,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY30WBVBSM51YGJ9M5R36D97
         timestamp: 2026-07-21T19:01:44.462Z
+      - _ulid: 01KY30WD78SA7D3TKDYS483ADY
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY30WD6JJSVMJS57EMGF12ZG
+        timestamp: 2026-07-21T19:01:45.832Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1521,7 +1528,24 @@ reviews:
               identity/content before removal.
             created_at: 2026-07-21T19:01:44.427Z
         kind: blocker
+      - _ulid: 01KY30WD6JJSVMJS57EMGF12ZG
+        anchor:
+          type: code
+          commit: f31d5a9686279429cb0fc9136491d2ff71c0dbf3
+          line_end: 221
+          line_start: 211
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY30WD6KT3CJ572RQJREQFP4
+            author: DonutsDelivery
+            body: The 50k candidate cap is checked only after every selected database has been fully collected
+              into memory. Large databases can consume unbounded memory/work before rejection.
+              Iterate with a remaining limit or query LIMIT remaining+1 and abort before
+              accumulation exceeds the bound.
+            created_at: 2026-07-21T19:01:45.811Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:01:44.427Z
+    updated_at: 2026-07-21T19:01:45.811Z
     notes: []
