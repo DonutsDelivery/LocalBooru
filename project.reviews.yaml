@@ -1986,6 +1986,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY32JJ7KAECM4WPC6AKM9EC4
         timestamp: 2026-07-21T19:31:20.456Z
+      - _ulid: 01KY32JKEDJN23P3Q6QAMNE7GD
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY32JKDYZDSKYT2ZTX04H3SB
+        timestamp: 2026-07-21T19:31:21.677Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -2029,7 +2036,24 @@ reviews:
               lookups below SQLite's variable limit.
             created_at: 2026-07-21T19:31:20.436Z
         kind: blocker
+      - _ulid: 01KY32JKDYZDSKYT2ZTX04H3SB
+        anchor:
+          type: code
+          commit: b1e9417
+          line_end: 467
+          line_start: 451
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY32JKDZTA9KRX2D87Y6BC56
+            author: "@claude"
+            body: Association inserts commit before reconciliation. A reconciliation error returns tags_added=0
+              for already committed rows, and idempotent retry cannot recover that count. Preserve
+              committed mutation counts in mixed-result reporting or make count repair non-fatal and
+              explicitly reported.
+            created_at: 2026-07-21T19:31:21.663Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:31:20.436Z
+    updated_at: 2026-07-21T19:31:21.663Z
     notes: []
