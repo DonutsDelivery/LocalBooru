@@ -67,6 +67,7 @@ igd-next = { version = "0.15", features = ["aio_tokio"] }
 
 # Utilities
 uuid = { version = "1.0", features = ["v4"] }
+tempfile = "3.25"
 regex = "1"
 chrono = { version = "0.4", features = ["serde"] }
 dashmap = "6"
