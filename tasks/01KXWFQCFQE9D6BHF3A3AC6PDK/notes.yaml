@@ -233,3 +233,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T12:26:31.449Z
+  - _ulid: 01KY2CEEEDXZ00BG8E62QK1ECK
+    content: "Diagnostic hardening committed in 3546805c: primary native failures now return structured
+      evidence, inventory runs before exact-model inference, cuDNN logs and bounded highlights are
+      retained, and strict stage is skipped without a parsed primary report. CUDA acceptance remains
+      open pending tester evidence of nonzero exact-model CUDA nodes."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T13:04:36.813Z
