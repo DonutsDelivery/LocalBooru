@@ -1566,6 +1566,12 @@ reviews:
           from: open
           to: closed
         timestamp: 2026-07-21T19:02:37.059Z
+      - _ulid: 01KY325KJP5N3F9CBZ3XC9QR16
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY30W98DQD4XTYNN5ZR3ZT45
+        timestamp: 2026-07-21T19:24:15.830Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1592,6 +1598,11 @@ reviews:
               the replacement file before the parser enforces its byte cap. Open once with no-follow
               where supported, validate that handle, and bounded-read at most MAX+1 bytes.
             created_at: 2026-07-21T19:01:41.774Z
+          - _ulid: 01KY325KHTJHSX82QSV030KSF7
+            author: "@claude"
+            body: "Fixed in b1e9417: import now opens the sidecar once with no-follow on Unix, validates the
+              opened handle and path identity, and bounded-reads MAX+1 bytes from that same handle."
+            created_at: 2026-07-21T19:24:15.799Z
         kind: blocker
       - _ulid: 01KY30WBVBSM51YGJ9M5R36D97
         anchor:
@@ -1755,5 +1766,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:02:37.059Z
+    updated_at: 2026-07-21T19:24:15.799Z
     notes: []
