@@ -1,1 +1,9 @@
-notes: []
+notes:
+  - _ulid: 01KY28YASXB6E33JW40XDK6F3E
+    content: "Tester evidence: successful Apply is followed occasionally by an optional GET
+      /images/:id/preview-frames request containing directory_id only. Root cause is incomplete
+      preview identity plus unowned retry/response lifetime; adjustment persistence itself
+      succeeds."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T12:03:23.069Z
