@@ -2085,6 +2085,12 @@ reviews:
         payload:
           thread_ulid: 01KY32JKDYZDSKYT2ZTX04H3SB
         timestamp: 2026-07-21T19:58:48.411Z
+      - _ulid: 01KY344WT9PYDJB66A7S50JBNB
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY32JKDYZDSKYT2ZTX04H3SB
+        timestamp: 2026-07-21T19:58:49.674Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2165,6 +2171,8 @@ reviews:
               reconciliation fails."
             created_at: 2026-07-21T19:58:48.394Z
         kind: blocker
+        resolved_at: 2026-07-21T19:58:49.654Z
+        resolved_by: "@claude"
       - _ulid: 01KY32JMMZ54HFEGVHNMD07BXW
         anchor:
           type: code
@@ -2240,5 +2248,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:58:48.394Z
+    updated_at: 2026-07-21T19:58:49.654Z
     notes: []
