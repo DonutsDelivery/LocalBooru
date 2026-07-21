@@ -2875,9 +2875,25 @@ reviews:
           status: pass
           name: adversarial-safety-review
         timestamp: 2026-07-21T21:47:31.670Z
+      - _ulid: 01KY3AC77VNE78RZJHPA6F05X3
+        actor: claude
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: approve
+        timestamp: 2026-07-21T21:47:41.180Z
+      - _ulid: 01KY3AC77W37GXMP5H564H1RS7
+        actor: claude
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-07-21T21:47:41.180Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs: []
     subject:
       type: task
@@ -2885,7 +2901,14 @@ reviews:
       ref: "@verify-wd14-sidecar-integration"
       shadow_commit: ""
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: approve
+        reviewer: claude
+        role: reviewer
+        created_at: 2026-07-21T21:47:41.179Z
     created_at: 2026-07-21T21:47:07.124Z
-    updated_at: 2026-07-21T21:47:31.634Z
+    updated_at: 2026-07-21T21:47:41.180Z
     notes: []
