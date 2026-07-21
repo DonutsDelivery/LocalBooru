@@ -1590,6 +1590,26 @@ export async function getAddonHealth(id) {
   return response.data
 }
 
+async function runWd14SidecarOperation(operation, directories, overwrite = false) {
+  const response = await api.post(`/settings/wd14-sidecar/${operation}`, {
+    directories,
+    overwrite,
+  }, { timeout: 0 })
+  return response.data
+}
+
+export function importWd14Sidecars(directories) {
+  return runWd14SidecarOperation('import', directories)
+}
+
+export function absorbWd14Sidecars(directories) {
+  return runWd14SidecarOperation('absorb', directories)
+}
+
+export function exportWd14Sidecars(directories, overwrite = false) {
+  return runWd14SidecarOperation('export', directories, overwrite)
+}
+
 export async function getAutoTaggerConfig() {
   const response = await api.get('/settings/auto-tagger')
   return response.data

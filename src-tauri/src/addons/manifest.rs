@@ -115,6 +115,15 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             port: None,
             python_deps: &[],
         },
+        AddonManifest {
+            id: "wd14-sidecar",
+            name: "WD14 Text Sidecars",
+            description: "Import, absorb, and export same-stem WD14 tag text files",
+            runtime: AddonRuntime::Builtin,
+            installation: AddonInstallation::Builtin,
+            port: None,
+            python_deps: &[],
+        },
     ]
 });
 
@@ -136,6 +145,16 @@ mod tests {
     #[test]
     fn curation_game_is_a_builtin_addon() {
         let addon = get_addon_manifest("curation-game").unwrap();
+        assert_eq!(addon.runtime, AddonRuntime::Builtin);
+        assert_eq!(addon.installation, AddonInstallation::Builtin);
+        assert_eq!(addon.port, None);
+        assert!(addon.python_deps.is_empty());
+    }
+
+    // AC: @wd14-text-sidecars ac-builtin-install
+    #[test]
+    fn wd14_sidecar_is_a_process_free_builtin_addon() {
+        let addon = get_addon_manifest("wd14-sidecar").unwrap();
         assert_eq!(addon.runtime, AddonRuntime::Builtin);
         assert_eq!(addon.installation, AddonInstallation::Builtin);
         assert_eq!(addon.port, None);
