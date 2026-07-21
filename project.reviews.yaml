@@ -1668,6 +1668,12 @@ reviews:
         payload:
           thread_ulid: 01KY30XQTYEVC6GV50AANJHS5T
         timestamp: 2026-07-21T19:24:49.658Z
+      - _ulid: 01KY326NRXZFCXF4P0NP50GMAD
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY30XQTYEVC6GV50AANJHS5T
+        timestamp: 2026-07-21T19:24:50.846Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1898,6 +1904,8 @@ reviews:
               conflict preservation."
             created_at: 2026-07-21T19:24:49.638Z
         kind: blocker
+        resolved_at: 2026-07-21T19:24:50.817Z
+        resolved_by: "@claude"
       - _ulid: 01KY30XWWMRV13W35Q0JC7KNVS
         anchor:
           type: code
@@ -1923,5 +1931,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:49.638Z
+    updated_at: 2026-07-21T19:24:50.817Z
     notes: []
