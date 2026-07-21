@@ -1498,6 +1498,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY30WFYR6KGQD4GB4RJB1CGW
         timestamp: 2026-07-21T19:01:48.671Z
+      - _ulid: 01KY30WHEJ9R9J2BRVKRER5ABZ
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY30WHDGZD58W4Z5YR33PNKY
+        timestamp: 2026-07-21T19:01:50.162Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1593,7 +1600,24 @@ reviews:
               design.
             created_at: 2026-07-21T19:01:48.632Z
         kind: blocker
+      - _ulid: 01KY30WHDGZD58W4Z5YR33PNKY
+        anchor:
+          type: code
+          commit: f31d5a9686279429cb0fc9136491d2ff71c0dbf3
+          line_end: 958
+          line_start: 838
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY30WHDGS0ZDQRE1TDC6E2KS
+            author: DonutsDelivery
+            body: "The ac-safe-absorb test does not exercise the service: it toggles a local boolean and deletes
+              a file directly. The ac-shared-stem test likewise only checks path derivation and set
+              equality. Replace them with behavioral tests proving multi-target import/absorb,
+              retained sidecars after target failure, and conflict/no-write behavior."
+            created_at: 2026-07-21T19:01:50.128Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:01:48.632Z
+    updated_at: 2026-07-21T19:01:50.128Z
     notes: []
