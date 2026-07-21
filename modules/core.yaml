@@ -189,6 +189,9 @@ features:
         type: requirement
         description: Optional video timeline previews remain attached to the exact media version and never
           interfere with image editing or navigation.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
