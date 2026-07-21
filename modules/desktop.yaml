@@ -707,6 +707,12 @@ features:
             then: the environment uses the exact shipped compatible cuDNN release and a deployment with a
               different or unreported cuDNN release is reconciled
             when: the CUDA runtime dependency set is resolved
+          - given: a strict CUDA diagnostic emits Windows native output or a later diagnostic stage terminates
+              unexpectedly
+            id: ac-readable-native-diagnostic
+            then: the primary structured report and readable bounded native output remain available without an
+              opaque invalid-output failure
+            when: the diagnostic result is displayed
         priority: high
         tags: []
         created: 2026-07-19T06:05:34.743Z
