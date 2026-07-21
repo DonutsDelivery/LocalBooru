@@ -32,3 +32,11 @@ notes:
     supersedes: null
     author: "@claude"
     created_at: 2026-07-21T20:00:40.615Z
+  - _ulid: 01KY350HM47AJ1Z40PSYCVW6JN
+    content: "Implemented through 245682c: process-free builtin manifest; installed gate before
+      spawn_blocking; Import/Absorb/Export under /api/settings/wd14-sidecar; full build_router tests
+      for route mounting, localhost-only access, no-mutation gate, and no venv/process lifecycle.
+      Independent review approved. Focused 16 passed; full Rust library 198 passed, 1 ignored."
+    supersedes: null
+    author: "@claude"
+    created_at: 2026-07-21T20:13:55.716Z
