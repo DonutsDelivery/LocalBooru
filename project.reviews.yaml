@@ -1329,6 +1329,18 @@ reviews:
         runner: npm
         created_at: 2026-07-21T12:57:18.051Z
         completed_at: 2026-07-21T12:57:18.051Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Manifest sizes and SHA-256 matched all five unpublished artifacts; archives had safe
+          expected roots, no duplicates, unsafe paths, links, or special files; Python runtime was
+          link-free and relocatable.
+        name: bundle-integrity
+        required: true
+        runner: shell
+        created_at: 2026-07-21T12:57:19.191Z
+        completed_at: 2026-07-21T12:57:19.191Z
     events:
       - _ulid: 01KY2C04KAGMSD3QB3PPNPHATX
         actor: "@claude"
@@ -1371,6 +1383,13 @@ reviews:
           status: pass
           name: frontend-tests-lint-build
         timestamp: 2026-07-21T12:57:18.065Z
+      - _ulid: 01KY2C133E93YRVFVCTEAAHXCR
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: bundle-integrity
+        timestamp: 2026-07-21T12:57:19.215Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -1383,5 +1402,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-21T12:56:47.979Z
-    updated_at: 2026-07-21T12:57:18.051Z
+    updated_at: 2026-07-21T12:57:19.191Z
     notes: []
