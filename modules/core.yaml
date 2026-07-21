@@ -567,6 +567,9 @@ features:
               Sidecar operations remain scoped to mounted LocalBooru libraries and registered watch
               directories while reporting partial failures without corrupting files or cross-linking
               database identities.
+            status:
+              maturity: draft
+              implementation: in_progress
             depends_on: []
             implements: []
             relates_to: []
