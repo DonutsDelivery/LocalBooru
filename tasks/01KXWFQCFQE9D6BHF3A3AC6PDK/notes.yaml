@@ -241,3 +241,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T13:04:36.813Z
+  - _ulid: 01KY2JG40GN009ES17MN72T3E8
+    content: "Windows candidate 3546805c log02 supplies two identical exact-EVA failures: all cuDNN 9.24
+      split DLLs exist, including cudnn_engines_tensor_ir64_9.dll, but the sidecar search path
+      cannot satisfy cuDNN's delayed tensor-IR load. Both sessions fail
+      CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED at the first Conv. Probe cleanup then raises WinError
+      32 on the active profiler JSON and masks the primary CUDA error as invalid_output. Fix scope:
+      child-only managed NVIDIA PATH plus exception-safe profiler teardown; pins and provider policy
+      unchanged."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T14:50:23.120Z
