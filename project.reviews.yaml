@@ -1608,6 +1608,12 @@ reviews:
         payload:
           thread_ulid: 01KY30WEJNMZYBB1V701R3SKYF
         timestamp: 2026-07-21T19:24:23.576Z
+      - _ulid: 01KY325WE5A8QY62K33F7K69CZ
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY30WEJNMZYBB1V701R3SKYF
+        timestamp: 2026-07-21T19:24:24.901Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1712,6 +1718,8 @@ reviews:
               UTF-8 display strings; a non-UTF8 collision regression test was added."
             created_at: 2026-07-21T19:24:23.547Z
         kind: blocker
+        resolved_at: 2026-07-21T19:24:24.877Z
+        resolved_by: "@claude"
       - _ulid: 01KY30WFYR6KGQD4GB4RJB1CGW
         anchor:
           type: code
@@ -1824,5 +1832,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:23.547Z
+    updated_at: 2026-07-21T19:24:24.877Z
     notes: []
