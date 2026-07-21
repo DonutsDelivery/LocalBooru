@@ -1407,9 +1407,25 @@ reviews:
           status: skipped
           name: kspec-validate
         timestamp: 2026-07-21T12:57:20.339Z
+      - _ulid: 01KY2C169PXWF3X78H05ND2ZTQ
+        actor: claude-code
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: approve
+        timestamp: 2026-07-21T12:57:22.486Z
+      - _ulid: 01KY2C169P52TSTMGVZ2T5JXGD
+        actor: claude-code
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-07-21T12:57:22.486Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs: []
     subject:
       type: task
@@ -1417,7 +1433,14 @@ reviews:
       ref: "@implement-lada-bundle-install"
       shadow_commit: ""
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: approve
+        reviewer: claude-code
+        role: reviewer
+        created_at: 2026-07-21T12:57:22.486Z
     created_at: 2026-07-21T12:56:47.979Z
-    updated_at: 2026-07-21T12:57:20.325Z
+    updated_at: 2026-07-21T12:57:22.486Z
     notes: []
