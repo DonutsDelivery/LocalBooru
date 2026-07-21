@@ -2816,6 +2816,16 @@ reviews:
         runner: eslint
         created_at: 2026-07-21T21:47:27.333Z
         completed_at: 2026-07-21T21:47:27.333Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Independent final review verified cycle-1 blockers and found no remaining release blocker
+        name: adversarial-safety-review
+        required: true
+        runner: agent
+        created_at: 2026-07-21T21:47:31.634Z
+        completed_at: 2026-07-21T21:47:31.634Z
     events:
       - _ulid: 01KY3AB5ZMNYP5T71PZDBFPSA4
         actor: "@claude"
@@ -2858,6 +2868,13 @@ reviews:
           status: pass
           name: wd14-targeted-lint
         timestamp: 2026-07-21T21:47:27.372Z
+      - _ulid: 01KY3ABXYP7J6VKEJ4PH3Q8TK3
+        actor: "@claude"
+        event_type: check_added
+        payload:
+          status: pass
+          name: adversarial-safety-review
+        timestamp: 2026-07-21T21:47:31.670Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -2870,5 +2887,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-07-21T21:47:07.124Z
-    updated_at: 2026-07-21T21:47:27.333Z
+    updated_at: 2026-07-21T21:47:31.634Z
     notes: []
