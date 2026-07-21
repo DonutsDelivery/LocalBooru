@@ -11,7 +11,7 @@ description: >
 spec_ref: "@wd14-sidecar-exchange-contract"
 plan_ref: "@plan-wd14-text-sidecar-add-on"
 origin: derived
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
@@ -25,8 +25,8 @@ review_ref: "@01KY32HQ1RNQJVBKN1W3MTST0J"
 submission_linkage:
   review_url: null
   branch: dispatch/task/implement-native-wd14-sidecar-service/01ky2z9a
-  captured_at: 2026-07-21T19:25:14.872Z
-  commit: b1e9417c236b6022cecaad844b6edbc21f96754b
+  captured_at: 2026-07-21T19:59:17.764Z
+  commit: a8bb41e872dbf7248b149b3384948993bec07908
   remote: origin
   remote_url: https://github.com/DonutsDelivery/LocalBooru.git
   upstream_ref: refs/heads/dispatch/task/implement-native-wd14-sidecar-service/01ky2z9a
@@ -180,9 +180,36 @@ history:
         previous: 2026-07-21T19:03:07.004Z
     command: task-start
     timestamp: 2026-07-21T19:31:49.241Z
+  - author: "@claude"
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: dispatch/task/implement-native-wd14-sidecar-service/01ky2z9a
+          captured_at: 2026-07-21T19:59:17.764Z
+          commit: a8bb41e872dbf7248b149b3384948993bec07908
+          remote: origin
+          remote_url: https://github.com/DonutsDelivery/LocalBooru.git
+          upstream_ref: refs/heads/dispatch/task/implement-native-wd14-sidecar-service/01ky2z9a
+        previous:
+          review_url: null
+          branch: dispatch/task/implement-native-wd14-sidecar-service/01ky2z9a
+          captured_at: 2026-07-21T19:25:14.872Z
+          commit: b1e9417c236b6022cecaad844b6edbc21f96754b
+          remote: origin
+          remote_url: https://github.com/DonutsDelivery/LocalBooru.git
+          upstream_ref: refs/heads/dispatch/task/implement-native-wd14-sidecar-service/01ky2z9a
+      submitted_at:
+        new: 2026-07-21T19:59:17.772Z
+        previous: 2026-07-21T19:25:14.877Z
+    command: task-submit
+    timestamp: 2026-07-21T19:59:17.772Z
 prior_status: null
 created_at: 2026-07-21T18:33:51.655Z
 started_at: 2026-07-21T19:31:49.240Z
-submitted_at: 2026-07-21T19:25:14.877Z
+submitted_at: 2026-07-21T19:59:17.772Z
 todos: []
 automation: eligible
