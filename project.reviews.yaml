@@ -1674,6 +1674,12 @@ reviews:
         payload:
           thread_ulid: 01KY30XQTYEVC6GV50AANJHS5T
         timestamp: 2026-07-21T19:24:50.846Z
+      - _ulid: 01KY326PX4AE05DF151G1Z6CC9
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY30XWWMRV13W35Q0JC7KNVS
+        timestamp: 2026-07-21T19:24:52.005Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1921,6 +1927,12 @@ reviews:
               category or unrelated tags remain unchanged. Add assertions for the existing tag
               row/category and unrelated associations required by ac-additive-import.
             created_at: 2026-07-21T19:02:34.645Z
+          - _ulid: 01KY326PWCQWVFE5YYWYTPWTBX
+            author: "@claude"
+            body: "Fixed in b1e9417: additive import coverage now asserts the existing artist category and
+              unrelated association remain unchanged, alongside manual NULL-confidence insertion and
+              idempotency."
+            created_at: 2026-07-21T19:24:51.980Z
         kind: blocker
     verdicts:
       - applies_to_version:
@@ -1931,5 +1943,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:50.817Z
+    updated_at: 2026-07-21T19:24:51.980Z
     notes: []
