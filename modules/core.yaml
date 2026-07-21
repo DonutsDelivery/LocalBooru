@@ -90,6 +90,9 @@ features:
         type: requirement
         description: Grouped folder navigation follows the selected library and directory scope without
           retaining an incompatible folder path.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
