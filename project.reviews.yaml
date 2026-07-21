@@ -2067,6 +2067,12 @@ reviews:
         payload:
           thread_ulid: 01KY32JH0AQJFH87N3VS1NPSAR
         timestamp: 2026-07-21T19:58:44.672Z
+      - _ulid: 01KY344S3J0WT7D8SRB6N0333S
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY32JJ7KAECM4WPC6AKM9EC4
+        timestamp: 2026-07-21T19:58:45.874Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2117,6 +2123,11 @@ reviews:
               10,000-tag contract. Bound the directory query to MAX_TAGS+1 and chunk main-database
               lookups below SQLite's variable limit.
             created_at: 2026-07-21T19:31:20.436Z
+          - _ulid: 01KY344S2XJKHMBKSEVQAPYXNQ
+            author: "@claude"
+            body: "Fixed in 12b74d7: tag IDs are queried with MAX+1 and tag-name resolution is chunked to 500
+              SQLite variables."
+            created_at: 2026-07-21T19:58:45.853Z
         kind: blocker
       - _ulid: 01KY32JKDYZDSKYT2ZTX04H3SB
         anchor:
@@ -2210,5 +2221,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:58:44.654Z
+    updated_at: 2026-07-21T19:58:45.853Z
     notes: []
