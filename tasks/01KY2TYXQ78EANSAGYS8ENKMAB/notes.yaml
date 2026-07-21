@@ -9,3 +9,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T17:19:03.394Z
+  - _ulid: 01KY2V3ZR1KBNY1EF2JGAK4KGS
+    content: "Test-first fix complete: the new ac-build-lock-independence regression failed with a
+      surviving child retaining completed build ownership. Cleanup now explicitly unlocks and closes
+      descriptor 8 after removing its owner record. The child remains alive while the next lock
+      acquisition succeeds. Isolated development launcher, launcher behavior, build status, shell
+      syntax, and diff checks pass."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T17:21:02.722Z
