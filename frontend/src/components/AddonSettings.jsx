@@ -5,6 +5,7 @@ import AutoTaggerSettings from './AutoTaggerSettings'
 import CastSettings from './CastSettings'
 import CurationGameSettings from './CurationGameSettings'
 import SVPSettings from './SVPSettings'
+import WD14SidecarSettings from './WD14SidecarSettings'
 import WhisperSubtitleSettings from './WhisperSubtitleSettings'
 import { getInstalledConfigurableAddons } from './addonSettingsCatalog'
 import './AddonSettings.css'
@@ -16,6 +17,7 @@ const SETTINGS_COMPONENTS = {
   cast: CastSettings,
   svp: SVPSettings,
   'curation-game': CurationGameSettings,
+  'wd14-sidecar': WD14SidecarSettings,
 }
 
 export default function AddonSettings() {
