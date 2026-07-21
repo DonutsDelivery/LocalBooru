@@ -190,3 +190,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T07:46:33.752Z
+  - _ulid: 01KY1YEXC0D2KV09AHWTFWRWB7
+    content: "Fix cycle implementation pins cuDNN 9.24.0.43, rejects live or persisted version drift
+      before use/commit, preserves mixed UTF-16 native and UTF-8 structured diagnostic output, runs
+      strict fallback within one total deadline, and reports aggregate failure truthfully. Review
+      fixes covered post-install exact-version validation, mixed-encoding JSON, strict
+      timeout/launch outcomes, and one-deadline behavior. Local verification: Python 34 passed/1
+      GPU-gated skip; Rust manager 16/16 and full library 165/165. Exact Windows EVA nonzero-CUDA
+      acceptance remains pending tester evidence."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-21T09:00:12.033Z
