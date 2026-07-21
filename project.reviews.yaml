@@ -1680,6 +1680,12 @@ reviews:
         payload:
           thread_ulid: 01KY30XWWMRV13W35Q0JC7KNVS
         timestamp: 2026-07-21T19:24:52.005Z
+      - _ulid: 01KY326R27EKY9S2DQPR809C3X
+        actor: "@claude"
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01KY30XWWMRV13W35Q0JC7KNVS
+        timestamp: 2026-07-21T19:24:53.192Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -1934,6 +1940,8 @@ reviews:
               idempotency."
             created_at: 2026-07-21T19:24:51.980Z
         kind: blocker
+        resolved_at: 2026-07-21T19:24:53.168Z
+        resolved_by: "@claude"
     verdicts:
       - applies_to_version:
           type: entity_version
@@ -1943,5 +1951,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:02:37.059Z
     created_at: 2026-07-21T18:58:29.496Z
-    updated_at: 2026-07-21T19:24:51.980Z
+    updated_at: 2026-07-21T19:24:53.168Z
     notes: []
