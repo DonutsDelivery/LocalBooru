@@ -1279,21 +1279,6 @@ tasks:
     started_at: 2026-07-21T17:19:02.253Z
     submitted_at: 2026-07-21T17:21:58.592Z
     automation: eligible
-  - _ulid: 01KY2Z9A6B1KS788NKJB60GM3M
-    slugs:
-      - implement-wd14-text-sidecars
-    title: Implement WD14 Text Sidecars
-    type: task
-    spec_ref: "@wd14-text-sidecars"
-    plan_ref: "@plan-wd14-text-sidecar-add-on"
-    status: pending
-    blocked_by: []
-    depends_on: []
-    priority: 3
-    tags: []
-    notes_count: 1
-    todos_count: 0
-    created_at: 2026-07-21T18:33:51.563Z
   - _ulid: 01KY2Z9A6X9BBG2256Q334J3YT
     slugs:
       - implement-wd14-sidecar-exchange-contract
