@@ -2419,3 +2419,29 @@ reviews:
     created_at: 2026-07-21T19:59:32.292Z
     updated_at: 2026-07-21T19:59:47.561Z
     notes: []
+  - _ulid: 01KY350M0MCR5N46SECMN6S0YD
+    slugs: []
+    title: Review WD14 built-in addon routes
+    author: "@claude"
+    checks: []
+    events:
+      - _ulid: 01KY350M0K6QV3J60QMJM0Q2X6
+        actor: "@claude"
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-07-21T20:13:58.164Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs: []
+    subject:
+      type: task
+      content_hash: ""
+      ref: "@register-expose-wd14-builtin-addon"
+      shadow_commit: ""
+    threads: []
+    verdicts: []
+    created_at: 2026-07-21T20:13:58.164Z
+    updated_at: null
+    notes: []
