@@ -2127,6 +2127,12 @@ reviews:
         payload:
           thread_ulid: 01KY32K4SBSGY0N2B9YTCGBVJK
         timestamp: 2026-07-21T19:59:12.608Z
+      - _ulid: 01KY345MD7XBP0QTKWTNS2ACPF
+        actor: "@claude"
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01KY32K603A2CBBK4GTSJY615F
+        timestamp: 2026-07-21T19:59:13.832Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -2296,6 +2302,12 @@ reviews:
               run_operation. Add real multi-library/duplicate-ID and mixed success/failure service
               tests with the missing AC annotations.
             created_at: 2026-07-21T19:31:40.676Z
+          - _ulid: 01KY345MCGSRZ22F8NXZ6HHD1A
+            author: "@claude"
+            body: "Fixed through a8bb41e: service-level tests now prove duplicate compound identities and mixed
+              success, missing, invalid text, inaccessible media, and shared-stem conflict outcomes
+              with aggregate counts."
+            created_at: 2026-07-21T19:59:13.808Z
         kind: blocker
     verdicts:
       - applies_to_version:
@@ -2306,5 +2318,5 @@ reviews:
         role: reviewer
         created_at: 2026-07-21T19:31:43.166Z
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:59:12.589Z
+    updated_at: 2026-07-21T19:59:13.808Z
     notes: []
