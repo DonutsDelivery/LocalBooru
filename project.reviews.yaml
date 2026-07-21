@@ -1993,6 +1993,13 @@ reviews:
           kind: blocker
           thread_ulid: 01KY32JKDYZDSKYT2ZTX04H3SB
         timestamp: 2026-07-21T19:31:21.677Z
+      - _ulid: 01KY32JMNGPHTN69Y1GW0VBVCM
+        actor: "@claude"
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01KY32JMMZ54HFEGVHNMD07BXW
+        timestamp: 2026-07-21T19:31:22.928Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -2053,7 +2060,23 @@ reviews:
               explicitly reported.
             created_at: 2026-07-21T19:31:21.663Z
         kind: blocker
+      - _ulid: 01KY32JMMZ54HFEGVHNMD07BXW
+        anchor:
+          type: code
+          commit: b1e9417
+          line_end: 696
+          line_start: 660
+          path: src-tauri/src/services/wd14_sidecar.rs
+          side: head
+        entries:
+          - _ulid: 01KY32JMN0F7AABBJFRZBC7WP2
+            author: "@claude"
+            body: Quarantine removal/restoration failures can leave no same-stem .txt, so ImportedNotRemoved is
+              not retryable. Ensure every failure path restores the original same-stem pathname
+              whenever it remains free; use rename rather than requiring hard-link support.
+            created_at: 2026-07-21T19:31:22.912Z
+        kind: blocker
     verdicts: []
     created_at: 2026-07-21T19:30:52.600Z
-    updated_at: 2026-07-21T19:31:21.663Z
+    updated_at: 2026-07-21T19:31:22.912Z
     notes: []
