@@ -43,3 +43,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-22T10:37:13.637Z
+  - _ulid: 01KY4Q63ZZCZZ00N2WS7FVNJWD
+    content: "Verification complete at bce5f33: 98/98 frontend tests and production build pass. Task
+      updates refresh retry diagnostics immediately; details controls have task-specific accessible
+      names and expose wrapped/selectable current errors."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-22T10:50:47.168Z
