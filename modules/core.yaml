@@ -730,6 +730,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: a prediction returns several distinct tags for an image
+            id: ac-complete-prediction
+            then: every predicted tag and confidence is visible on that image without duplicates
+            when: the auto-tag task succeeds
         tags: []
         created: 2026-07-22T10:12:41.034Z
         notes: []
