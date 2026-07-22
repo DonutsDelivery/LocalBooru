@@ -783,6 +783,19 @@ features:
         tags: []
         created: 2026-07-22T10:13:24.025Z
         notes: []
+      - _ulid: 01KY4N2GW8K11HAHBVSRRTQW8E
+        slugs:
+          - actionable-task-diagnostics
+        title: Actionable Task Diagnostics
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-22T10:13:52.136Z
+        notes: []
     created: 2026-03-08T08:30:12.686Z
     notes: []
   - _ulid: 01KK692ZE86V65FSD1SKGZYXXR
