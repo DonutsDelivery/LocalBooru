@@ -725,6 +725,9 @@ features:
         type: requirement
         description: Auto Tagger predictions are saved completely to the intended image while preserving
           manual curation and isolating images that reuse local identifiers.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
