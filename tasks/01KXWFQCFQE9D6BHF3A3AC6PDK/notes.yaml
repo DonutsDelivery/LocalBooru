@@ -263,3 +263,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T15:16:50.912Z
+  - _ulid: 01KY4MZPQ5C79EXEVHVD950T08
+    content: "Tester acceptance evidence from immutable Windows candidate d5dfd650: exact shipped
+      eva02-large-v3 model SHA-256 9e768793060c7939b277ccb382783e8670e8a042d29d77aa736be0c8cc898bfc
+      (1,260,435,999 bytes) completed with exit code 0. Runtime registered CUDA and CPU and observed
+      mixed execution with 1,360 CUDA nodes and 560 legitimate CPU nodes; provider durations were
+      CUDA 365.679 ms and CPU 7.256 ms. Managed and desired deployment revisions both resolve to
+      ONNX Runtime GPU 1.23.2 with cuDNN 9.24.0.43, and native preload succeeded. This satisfies
+      ac-1, the nonzero execution requirement in ac-live-cuda-session, and the shipped-model
+      compatibility gate in ac-compatible-cudnn."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-22T10:12:19.814Z
