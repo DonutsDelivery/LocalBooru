@@ -1396,7 +1396,7 @@ tasks:
     title: "Implement: Durable Task Retry Scheduling"
     type: task
     spec_ref: "@durable-task-retry-scheduling"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -1405,6 +1405,7 @@ tasks:
     todos_count: 0
     created_at: 2026-07-22T10:14:10.355Z
     started_at: 2026-07-22T10:14:56.511Z
+    submitted_at: 2026-07-22T10:50:49.995Z
   - _ulid: 01KY4N33XZ2GDMXFEDHENFJW37
     slugs:
       - task-actionable-task-diagnostics
