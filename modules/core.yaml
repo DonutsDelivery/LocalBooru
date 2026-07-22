@@ -805,6 +805,9 @@ features:
         type: requirement
         description: Task Manager presents the current task target, retry state, timing, attempts, and
           latest failure reason in an accessible form.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
