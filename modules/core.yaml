@@ -764,6 +764,9 @@ features:
         type: requirement
         description: Retryable background-task failures wait for their persisted eligibility time, survive
           restarts, and end in truthful success or failure states.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
