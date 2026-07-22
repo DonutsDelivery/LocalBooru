@@ -23,6 +23,7 @@ set -euo pipefail
 printf 'call\n' >>"$FAKE_NPM_CALLS"
 printf '%s\n' "${LOCALBOORU_TASK_QUEUE_WORKERS:-unset}" >>"$FAKE_NPM_WORKERS"
 printf '%s\n' "${CARGO_BUILD_JOBS:-unset}" >>"$FAKE_NPM_CARGO_JOBS"
+printf '%s\n' "${RUSTC_WRAPPER:-unset}" >>"$FAKE_NPM_RUSTC_WRAPPERS"
 printf '%s\n' "$@" >"$FAKE_NPM_ARGUMENTS"
 touch "$FAKE_NPM_ENTERED"
 if [[ "${FAKE_NPM_BLOCK:-0}" == "1" ]]; then
@@ -50,6 +51,7 @@ export LOCALBOORU_WEBKIT_ROOT="$TEMP_DIR/no-webkit"
 export FAKE_NPM_CALLS="$TEMP_DIR/calls"
 export FAKE_NPM_WORKERS="$TEMP_DIR/workers"
 export FAKE_NPM_CARGO_JOBS="$TEMP_DIR/cargo-jobs"
+export FAKE_NPM_RUSTC_WRAPPERS="$TEMP_DIR/rustc-wrappers"
 export FAKE_NPM_ARGUMENTS="$TEMP_DIR/arguments"
 export FAKE_NPM_ENTERED="$TEMP_DIR/entered"
 export FAKE_NPM_RELEASE="$TEMP_DIR/release"
@@ -104,6 +106,9 @@ mapfile -t worker_values <"$FAKE_NPM_WORKERS"
 mapfile -t cargo_job_values <"$FAKE_NPM_CARGO_JOBS"
 [[ "${cargo_job_values[0]}" == "1" ]]
 [[ "${cargo_job_values[1]}" == "1" ]]
+mapfile -t rustc_wrappers <"$FAKE_NPM_RUSTC_WRAPPERS"
+[[ "${rustc_wrappers[0]}" == "$ROOT/scripts/rustc-host-heavy-build.sh" ]]
+[[ "${rustc_wrappers[1]}" == "$ROOT/scripts/rustc-host-heavy-build.sh" ]]
 
 LOCALBOORU_TASK_QUEUE_WORKERS=3 "$ROOT/run-dev.sh" >/dev/null
 mapfile -t worker_values <"$FAKE_NPM_WORKERS"

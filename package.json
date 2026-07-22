@@ -8,7 +8,7 @@
     "check:release-version": "python3 scripts/check-release-version.py",
     "build:frontend": "cd frontend && npm run build",
     "tauri": "cargo tauri",
-    "tauri:dev": "cargo tauri dev",
+    "tauri:dev": "./scripts/tauri-dev.sh",
     "cargo": "./scripts/run-cargo.sh",
     "tauri:build": "./scripts/run-cargo.sh tauri build",
     "tauri:build:debug": "./scripts/run-cargo.sh tauri build --debug",
@@ -24,7 +24,8 @@
     "release:windows": "./scripts/build-windows-local.sh",
     "test:dev-startup": "./scripts/test-run-dev.sh",
     "test:launcher": "./scripts/test-run-launcher.sh",
-    "test:build-gate": "./scripts/test-run-cargo.sh"
+    "test:build-gate": "./scripts/test-run-cargo.sh",
+    "test:host-build": "./scripts/test-host-build-integration.sh"
   },
   "keywords": [
     "booru",
