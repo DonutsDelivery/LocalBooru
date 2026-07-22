@@ -809,6 +809,11 @@ features:
             then: the complete bounded message is wrapped, selectable, and associated with an accessible details
               control
             when: the user opens details with keyboard or pointer input
+          - given: task diagnostics are retained
+            id: ac-current-only
+            then: the current bounded error and lifecycle fields are returned without exposing an unbounded
+              execution history
+            when: the task list is requested
         tags: []
         created: 2026-07-22T10:13:52.136Z
         notes: []
