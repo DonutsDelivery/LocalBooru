@@ -788,6 +788,8 @@ features:
           - actionable-task-diagnostics
         title: Actionable Task Diagnostics
         type: requirement
+        description: Task Manager presents the current task target, retry state, timing, attempts, and
+          latest failure reason in an accessible form.
         depends_on: []
         implements: []
         relates_to: []
