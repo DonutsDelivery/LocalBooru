@@ -13,7 +13,7 @@ DOCKERFILE_HASH="$(sha256sum "$ROOT/Dockerfile.linux-release" | cut -c1-12)"
 IMAGE="localbooru-linux-release:ubuntu24.04-webkit2.52.3-v1-$DOCKERFILE_HASH"
 REBUILD=0
 BUNDLES="appimage,deb,rpm"
-JOBS="${LOCALBOORU_BUILD_JOBS:-$(nproc)}"
+JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
 
 usage() {
   cat <<'EOF'
@@ -24,7 +24,7 @@ Options:
   --deb            Build only the Debian package
   --rpm            Build only the RPM package
   --rebuild-image  Rebuild the release toolchain image
-  --jobs N         Limit parallel compilation (default: host CPU count)
+  --jobs N         Limit parallel compilation (default: 2)
   -h, --help       Show this help
 
 Environment:

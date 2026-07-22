@@ -42,6 +42,12 @@ if [ "${LOCALBOORU_ENABLE_NATIVE_SVP:-1}" = "1" ] && [ -d "$PATCHED_WEBKIT_LIB" 
 else
     export LOCALBOORU_ENABLE_NATIVE_SVP=0
 fi
+DEV_BUILD_JOBS="${LOCALBOORU_DEV_BUILD_JOBS:-1}"
+if [[ ! "$DEV_BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "LOCALBOORU_DEV_BUILD_JOBS must be a positive integer" >&2
+    exit 2
+fi
+export CARGO_BUILD_JOBS="$DEV_BUILD_JOBS"
 export LOCALBOORU_TASK_QUEUE_WORKERS="${LOCALBOORU_TASK_QUEUE_WORKERS:-1}"
 DEV_LOG="${LOCALBOORU_DEV_LOG:-/tmp/localbooru-dev.log}"
 echo "LocalBooru dev output: $DEV_LOG"

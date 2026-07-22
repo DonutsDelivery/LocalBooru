@@ -10,7 +10,7 @@ localbooru_build_acquire_lock "$STATE_DIR" windows "$SOURCE_REVISION"
 python3 "$ROOT/scripts/check-release-version.py"
 DOCKERFILE="$ROOT/Dockerfile.windows-release"
 REBUILD=0
-JOBS="${LOCALBOORU_BUILD_JOBS:-$(nproc)}"
+JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
 
 for arg in "$@"; do
   case "$arg" in

@@ -9,8 +9,9 @@
     "build:frontend": "cd frontend && npm run build",
     "tauri": "cargo tauri",
     "tauri:dev": "cargo tauri dev",
-    "tauri:build": "cargo tauri build",
-    "tauri:build:debug": "cargo tauri build --debug",
+    "cargo": "./scripts/run-cargo.sh",
+    "tauri:build": "./scripts/run-cargo.sh tauri build",
+    "tauri:build:debug": "./scripts/run-cargo.sh tauri build --debug",
     "tauri:build:linux": "./scripts/build-linux-local.sh",
     "tauri:build:linux:appimage": "./scripts/build-linux-local.sh --appimage",
     "tauri:build:linux:deb": "./scripts/build-linux-local.sh --deb",
@@ -22,7 +23,8 @@
     "release:linux": "./scripts/build-linux-local.sh",
     "release:windows": "./scripts/build-windows-local.sh",
     "test:dev-startup": "./scripts/test-run-dev.sh",
-    "test:launcher": "./scripts/test-run-launcher.sh"
+    "test:launcher": "./scripts/test-run-launcher.sh",
+    "test:build-gate": "./scripts/test-run-cargo.sh"
   },
   "keywords": [
     "booru",

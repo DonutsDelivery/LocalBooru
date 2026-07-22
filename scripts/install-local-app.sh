@@ -63,6 +63,7 @@ flock -w "$LOCK_TIMEOUT" 8 || {
 }
 
 source "$HOME/.cargo/env" 2>/dev/null || true
+export CARGO_BUILD_JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
 cd "$ROOT"
 
 echo "[install-local-app] Building standalone release…"

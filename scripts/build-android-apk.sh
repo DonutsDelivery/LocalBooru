@@ -23,6 +23,7 @@ flock -w "$LOCK_TIMEOUT" 8 || {
   echo "[build-android-apk] ERROR: timed out waiting for another build or cleanup" >&2
   exit 1
 }
+export CARGO_BUILD_JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
 
 KEYSTORE="${ANDROID_KEYSTORE:-$HOME/.android/debug.keystore}"
 KEY_ALIAS="${ANDROID_KEY_ALIAS:-androiddebugkey}"
