@@ -114,24 +114,28 @@ pub async fn preview_adjust(
     );
     let cache_dir = resolved.library.data_dir.join("preview_cache");
     let source_path = resolved.path;
+    let expected_source_file_hash = source_file_hash.clone();
     let brightness = adjustments.brightness;
     let contrast = adjustments.contrast;
     let gamma = adjustments.gamma;
 
     tokio::task::spawn_blocking(move || {
+        ensure_path_hash(&source_path, &expected_source_file_hash)?;
         std::fs::create_dir_all(&cache_dir)?;
+        let source_snapshot =
+            create_validated_snapshot(&source_path, &cache_dir, &expected_source_file_hash)?;
+        let image = image::open(&source_snapshot.path)
+            .map_err(|error| AppError::Internal(format!("Failed to open image: {}", error)))?;
         let destination = cache_dir.join(filename);
         let mut temporary = TempPath::new(cache_dir.join(format!(
             ".preview-{}-{}.localbooru-previewing",
             std::process::id(),
             unique_suffix()
         )));
-        let image = image::open(&source_path)
-            .map_err(|error| AppError::Internal(format!("Failed to open image: {}", error)))?;
         apply_adjustments_to_image(&image, &adjustments)
             .save_with_format(&temporary.path, image::ImageFormat::WebP)
             .map_err(|error| AppError::Internal(format!("Failed to save preview: {}", error)))?;
-        std::fs::File::open(&temporary.path)?.sync_all()?;
+        sync_file_contents(&temporary.path)?;
         replace_file(&temporary.path, &destination)
             .map_err(|error| AppError::Internal(format!("Failed to publish preview: {}", error)))?;
         temporary.disarm();
@@ -343,7 +347,38 @@ fn ensure_expected_hash(resolved: &ResolvedImage, expected: &str) -> Result<(), 
             "Image changed since the adjustment operation started".into(),
         ));
     }
+    ensure_path_hash(&resolved.path, expected)
+}
+
+fn ensure_path_hash(path: &Path, expected: &str) -> Result<(), AppError> {
+    let actual = importer::calculate_quick_hash(&path.to_string_lossy())
+        .map_err(|error| AppError::Internal(format!("Hash error: {}", error)))?;
+    if actual != expected {
+        return Err(AppError::BadRequest(
+            "Image changed since the adjustment operation started".into(),
+        ));
+    }
     Ok(())
+}
+
+fn create_validated_snapshot(
+    source: &Path,
+    snapshot_dir: &Path,
+    expected: &str,
+) -> Result<TempPath, AppError> {
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("image");
+    let snapshot = TempPath::new(snapshot_dir.join(format!(
+        ".preview-source-{}-{}.{}",
+        std::process::id(),
+        unique_suffix(),
+        extension
+    )));
+    std::fs::copy(source, &snapshot.path)?;
+    ensure_path_hash(&snapshot.path, expected)?;
+    Ok(snapshot)
 }
 
 fn adjustment_hash(adjustments: &ImageAdjustmentRequest) -> String {
@@ -440,6 +475,26 @@ fn apply_to_resolved_image(
     expected_file_hash: &str,
     force_commit_failure: bool,
 ) -> Result<serde_json::Value, AppError> {
+    apply_to_resolved_image_with_hook(
+        resolved,
+        locator,
+        image_id,
+        adjustments,
+        expected_file_hash,
+        force_commit_failure,
+        || {},
+    )
+}
+
+fn apply_to_resolved_image_with_hook(
+    resolved: ResolvedImage,
+    locator: &ImageLocatorQuery,
+    image_id: i64,
+    adjustments: &ImageAdjustmentRequest,
+    expected_file_hash: &str,
+    force_commit_failure: bool,
+    before_replace: impl FnOnce(),
+) -> Result<serde_json::Value, AppError> {
     ensure_expected_hash(&resolved, expected_file_hash)?;
     let extension = resolved
         .path
@@ -458,7 +513,7 @@ fn apply_to_resolved_image(
         .save_with_format(&adjusted_temp.path, format)
         .map_err(|error| AppError::Internal(format!("Failed to save adjusted image: {}", error)))?;
     std::fs::set_permissions(&adjusted_temp.path, original_metadata.permissions())?;
-    std::fs::File::open(&adjusted_temp.path)?.sync_all()?;
+    sync_file_contents(&adjusted_temp.path)?;
 
     let temporary_string = adjusted_temp.path.to_string_lossy();
     let new_hash = importer::calculate_quick_hash(&temporary_string)
@@ -494,7 +549,7 @@ fn apply_to_resolved_image(
              file_modified_at = ?7, updated_at = datetime('now')
          WHERE id = ?8 AND file_hash = ?9",
         params![
-            canonical_filename,
+            &canonical_filename,
             &new_hash,
             perceptual_hash,
             width as i32,
@@ -537,17 +592,16 @@ fn apply_to_resolved_image(
     let mut backup = TempPath::new(adjustment_backup_path(&resolved.path));
     std::fs::copy(&resolved.path, &backup.path)?;
     std::fs::set_permissions(&backup.path, original_metadata.permissions())?;
-    std::fs::File::open(&backup.path)?.sync_all()?;
+    sync_file_contents(&backup.path)?;
+    ensure_path_hash(&backup.path, expected_file_hash)?;
 
-    replace_file(&adjusted_temp.path, &resolved.path).map_err(|error| {
-        AppError::Internal(format!("Failed to atomically replace image: {}", error))
-    })?;
-    adjusted_temp.disarm();
+    before_replace();
+    replace_file_if_hash_matches(&mut adjusted_temp, &resolved.path, expected_file_hash)?;
 
     let mut created_thumbnail = false;
     if let Some(temporary) = thumbnail_temp.as_mut() {
         if let Err(error) = replace_file(&temporary.path, &thumbnail_path) {
-            restore_original(&mut backup, &resolved.path)?;
+            restore_original_if_hash_matches(&mut backup, &resolved.path, &new_hash)?;
             return Err(AppError::Internal(format!(
                 "Failed to publish adjusted thumbnail: {}",
                 error
@@ -557,6 +611,15 @@ fn apply_to_resolved_image(
         created_thumbnail = true;
     }
 
+    if ensure_path_hash(&resolved.path, &new_hash).is_err() {
+        if created_thumbnail && !thumbnail_hash_in_use(&resolved.library, &new_hash, None, None)? {
+            let _ = std::fs::remove_file(&thumbnail_path);
+        }
+        return Err(AppError::BadRequest(
+            "Image changed before adjusted metadata could be committed".into(),
+        ));
+    }
+
     let commit_result = if force_commit_failure {
         drop(transaction);
         Err(rusqlite::Error::ExecuteReturnedResults)
@@ -564,10 +627,12 @@ fn apply_to_resolved_image(
         transaction.commit()
     };
     if let Err(error) = commit_result {
-        restore_original(&mut backup, &resolved.path)?;
+        let restore_result =
+            restore_original_if_hash_matches(&mut backup, &resolved.path, &new_hash);
         if created_thumbnail && !thumbnail_hash_in_use(&resolved.library, &new_hash, None, None)? {
             let _ = std::fs::remove_file(&thumbnail_path);
         }
+        restore_result?;
         return Err(AppError::Internal(format!(
             "Failed to commit adjusted metadata: {}",
             error
@@ -599,6 +664,7 @@ fn apply_to_resolved_image(
         "contrast": adjustments.contrast,
         "gamma": adjustments.gamma,
         "file_hash": new_hash,
+        "filename": canonical_filename,
         "file_size": file_size,
         "width": width,
         "height": height,
@@ -608,23 +674,12 @@ fn apply_to_resolved_image(
     }))
 }
 
-fn restore_original(backup: &mut TempPath, destination: &Path) -> Result<(), AppError> {
-    match replace_file(&backup.path, destination) {
-        Ok(()) => {
-            backup.disarm();
-            Ok(())
-        }
-        Err(rename_error) => {
-            std::fs::copy(&backup.path, destination).map_err(|copy_error| {
-                AppError::Internal(format!(
-                    "Failed to restore original image after {}: {}",
-                    rename_error, copy_error
-                ))
-            })?;
-            std::fs::File::open(destination)?.sync_all()?;
-            Ok(())
-        }
-    }
+fn restore_original_if_hash_matches(
+    backup: &mut TempPath,
+    destination: &Path,
+    installed_hash: &str,
+) -> Result<(), AppError> {
+    replace_file_if_hash_matches(backup, destination, installed_hash)
 }
 
 pub(crate) fn thumbnail_hash_in_use(
@@ -702,6 +757,251 @@ fn modified_at_rfc3339(metadata: &std::fs::Metadata) -> Option<String> {
     let duration = modified.duration_since(UNIX_EPOCH).ok()?;
     chrono::DateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
         .map(|value| value.to_rfc3339())
+}
+
+fn sync_file_contents(path: &Path) -> std::io::Result<()> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)?
+        .sync_all()
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn replace_file_if_hash_matches(
+    replacement: &mut TempPath,
+    destination: &Path,
+    expected: &str,
+) -> Result<(), AppError> {
+    let installed_hash = importer::calculate_quick_hash(&replacement.path.to_string_lossy())?;
+    exchange_files(&replacement.path, destination).map_err(|error| {
+        AppError::Internal(format!("Failed to atomically exchange image: {}", error))
+    })?;
+    if let Err(validation_error) = ensure_path_hash(&replacement.path, expected) {
+        return rollback_exchange(replacement, destination, &installed_hash, validation_error);
+    }
+    if let Err(remove_error) = std::fs::remove_file(&replacement.path) {
+        return rollback_exchange(
+            replacement,
+            destination,
+            &installed_hash,
+            AppError::Internal(format!("Failed to remove replaced image: {}", remove_error)),
+        );
+    }
+    replacement.disarm();
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn rollback_exchange(
+    captured: &mut TempPath,
+    destination: &Path,
+    installed_hash: &str,
+    cause: AppError,
+) -> Result<(), AppError> {
+    if let Err(error) = exchange_files(&captured.path, destination) {
+        captured.disarm();
+        return Err(AppError::Internal(format!(
+            "Failed to restore captured image after {}: {}",
+            cause, error
+        )));
+    }
+    if ensure_path_hash(&captured.path, installed_hash).is_ok() {
+        return Err(cause);
+    }
+
+    captured.disarm();
+    Err(AppError::Internal(format!(
+        "A newer external image was preserved at {} while restoring after {}",
+        captured.path.display(),
+        cause
+    )))
+}
+
+#[cfg(target_os = "linux")]
+fn exchange_files(first: &Path, second: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let first = CString::new(first.as_os_str().as_bytes())?;
+    let second = CString::new(second.as_os_str().as_bytes())?;
+    let result = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            first.as_ptr(),
+            libc::AT_FDCWD,
+            second.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn exchange_files(first: &Path, second: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let first = CString::new(first.as_os_str().as_bytes())?;
+    let second = CString::new(second.as_os_str().as_bytes())?;
+    let result = unsafe { libc::renamex_np(first.as_ptr(), second.as_ptr(), libc::RENAME_SWAP) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn replace_file_if_hash_matches(
+    replacement: &mut TempPath,
+    destination: &Path,
+    expected: &str,
+) -> Result<(), AppError> {
+    let installed_hash = importer::calculate_quick_hash(&replacement.path.to_string_lossy())?;
+    let mut captured = TempPath::new(destination.with_file_name(format!(
+        ".localbooru-cas-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    )));
+    if let Err(error) =
+        replace_file_windows_with_backup(&replacement.path, destination, &captured.path)
+    {
+        restore_windows_partial_failure(&mut captured, destination)?;
+        return Err(error);
+    }
+    replacement.disarm();
+
+    if let Err(validation_error) = ensure_path_hash(&captured.path, expected) {
+        return rollback_windows_capture(
+            &mut captured,
+            destination,
+            &installed_hash,
+            validation_error,
+        );
+    }
+    if let Err(remove_error) = std::fs::remove_file(&captured.path) {
+        return rollback_windows_capture(
+            &mut captured,
+            destination,
+            &installed_hash,
+            AppError::Internal(format!("Failed to remove replaced image: {}", remove_error)),
+        );
+    }
+    captured.disarm();
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn rollback_windows_capture(
+    captured: &mut TempPath,
+    destination: &Path,
+    installed_hash: &str,
+    cause: AppError,
+) -> Result<(), AppError> {
+    let mut displaced = TempPath::new(destination.with_file_name(format!(
+        ".localbooru-rollback-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    )));
+    if let Err(error) =
+        replace_file_windows_with_backup(&captured.path, destination, &displaced.path)
+    {
+        captured.disarm();
+        restore_windows_partial_failure(&mut displaced, destination)?;
+        return Err(AppError::Internal(format!(
+            "Failed to restore captured image after {}: {}",
+            cause, error
+        )));
+    }
+    captured.disarm();
+
+    if ensure_path_hash(&displaced.path, installed_hash).is_ok() {
+        return Err(cause);
+    }
+
+    displaced.disarm();
+    Err(AppError::Internal(format!(
+        "A newer external image was preserved at {} while restoring after {}",
+        displaced.path.display(),
+        cause
+    )))
+}
+
+#[cfg(target_os = "windows")]
+fn restore_windows_partial_failure(
+    preserved: &mut TempPath,
+    destination: &Path,
+) -> Result<(), AppError> {
+    if !destination.exists() && preserved.path.is_file() {
+        if let Err(error) = replace_file(&preserved.path, destination) {
+            preserved.disarm();
+            return Err(AppError::Internal(format!(
+                "Failed to restore image after partial Windows replacement: {} (preserved at {})",
+                error,
+                preserved.path.display()
+            )));
+        }
+    }
+    preserved.disarm();
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn replace_file_windows_with_backup(
+    replacement: &Path,
+    destination: &Path,
+    captured: &Path,
+) -> Result<(), AppError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{ReplaceFileW, REPLACEFILE_WRITE_THROUGH};
+
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let replacement: Vec<u16> = replacement
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let captured: Vec<u16> = captured.as_os_str().encode_wide().chain(Some(0)).collect();
+    let result = unsafe {
+        ReplaceFileW(
+            destination.as_ptr(),
+            replacement.as_ptr(),
+            captured.as_ptr(),
+            REPLACEFILE_WRITE_THROUGH,
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    if result == 0 {
+        Err(AppError::Internal(format!(
+            "Failed to atomically exchange image: {}",
+            std::io::Error::last_os_error()
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn replace_file_if_hash_matches(
+    replacement: &mut TempPath,
+    destination: &Path,
+    expected: &str,
+) -> Result<(), AppError> {
+    ensure_path_hash(destination, expected)?;
+    replace_file(&replacement.path, destination).map_err(|error| {
+        AppError::Internal(format!("Failed to atomically replace image: {}", error))
+    })?;
+    replacement.disarm();
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -916,6 +1216,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    // AC: @identity-safe-image-adjustments ac-windows-preview
+    #[test]
+    fn durability_flush_uses_a_writable_file_handle() {
+        let root = test_root("writable-flush");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("preview.webp");
+        std::fs::write(&path, b"preview").unwrap();
+
+        sync_file_contents(&path).unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), b"preview");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     // AC: @identity-safe-image-adjustments ac-2
     #[test]
     fn concurrent_preview_generations_have_independent_exact_urls() {
@@ -932,7 +1246,7 @@ mod tests {
         assert!(url.contains("preview_key=generation-a"));
     }
 
-    // AC: @identity-safe-image-adjustments ac-4
+    // AC: @identity-safe-image-adjustments ac-3
     #[test]
     fn commit_failure_restores_original_bytes_and_database_hash() {
         let root = test_root("rollback");
@@ -994,6 +1308,295 @@ mod tests {
                 .contains("localbooru-adjust")));
         drop(state);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-1
+    // AC: @identity-safe-image-adjustments ac-3
+    #[test]
+    fn apply_rejects_externally_changed_source_when_database_hash_is_stale() {
+        let root = test_root("external-apply-change");
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.resolve_library(None).unwrap();
+        let path = root.join("source.png");
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([80, 90, 100])))
+            .save(&path)
+            .unwrap();
+        let old_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+        insert_image(&library, 4, 12, &path, &old_hash);
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([10, 20, 30])))
+            .save(&path)
+            .unwrap();
+        let external_bytes = std::fs::read(&path).unwrap();
+        assert_ne!(
+            importer::calculate_quick_hash(&path.to_string_lossy()).unwrap(),
+            old_hash
+        );
+        let locator = ImageLocatorQuery {
+            library_id: library.uuid.clone(),
+            directory_id: 4,
+        };
+
+        let result = apply_to_resolved_image(
+            resolve_image(&state, &locator, 12).unwrap(),
+            &locator,
+            12,
+            &ImageAdjustmentRequest {
+                brightness: 20,
+                contrast: 0,
+                gamma: 0,
+            },
+            &old_hash,
+            false,
+        );
+
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+        assert_eq!(std::fs::read(&path).unwrap(), external_bytes);
+        let stored: String = library
+            .directory_db
+            .get_pool(4)
+            .unwrap()
+            .get()
+            .unwrap()
+            .query_row("SELECT file_hash FROM images WHERE id = 12", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(stored, old_hash);
+        drop(state);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-3
+    #[test]
+    fn rollback_preserves_write_after_adjusted_file_was_installed() {
+        let root = test_root("external-post-replace");
+        std::fs::create_dir_all(&root).unwrap();
+        let destination = root.join("source.png");
+        let backup_path = root.join("backup.png");
+        let adjusted =
+            DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([80, 90, 100])));
+        adjusted.save(&destination).unwrap();
+        let installed_hash =
+            importer::calculate_quick_hash(&destination.to_string_lossy()).unwrap();
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([40, 50, 60])))
+            .save(&backup_path)
+            .unwrap();
+        let mut backup = TempPath::new(backup_path);
+        let external =
+            DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([10, 20, 30])));
+        external.save(&destination).unwrap();
+        let external_bytes = std::fs::read(&destination).unwrap();
+
+        let result = restore_original_if_hash_matches(&mut backup, &destination, &installed_hash);
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), external_bytes);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-3
+    #[test]
+    fn apply_preserves_external_write_at_final_replace_boundary() {
+        let root = test_root("external-final-replace");
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.resolve_library(None).unwrap();
+        let path = root.join("source.png");
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([80, 90, 100])))
+            .save(&path)
+            .unwrap();
+        let old_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+        insert_image(&library, 4, 12, &path, &old_hash);
+        let locator = ImageLocatorQuery {
+            library_id: library.uuid.clone(),
+            directory_id: 4,
+        };
+        let external =
+            DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([10, 20, 30])));
+        let result = apply_to_resolved_image_with_hook(
+            resolve_image(&state, &locator, 12).unwrap(),
+            &locator,
+            12,
+            &ImageAdjustmentRequest {
+                brightness: 20,
+                contrast: 0,
+                gamma: 0,
+            },
+            &old_hash,
+            false,
+            || external.save(&path).unwrap(),
+        );
+        let external_bytes = {
+            let expected = root.join("external.png");
+            external.save(&expected).unwrap();
+            std::fs::read(expected).unwrap()
+        };
+
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+        assert_eq!(std::fs::read(&path).unwrap(), external_bytes);
+        let stored: String = library
+            .directory_db
+            .get_pool(4)
+            .unwrap()
+            .get()
+            .unwrap()
+            .query_row("SELECT file_hash FROM images WHERE id = 12", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(stored, old_hash);
+        drop(state);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-1
+    #[test]
+    fn preview_decodes_the_same_bytes_that_were_hash_validated() {
+        let root = test_root("preview-hash-open-race");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("source.png");
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([80, 90, 100])))
+            .save(&path)
+            .unwrap();
+        let expected_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+
+        let snapshot = create_validated_snapshot(&path, &root, &expected_hash).unwrap();
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([10, 20, 30])))
+            .save(&path)
+            .unwrap();
+        let decoded = image::open(&snapshot.path).unwrap();
+
+        assert_eq!(decoded.to_rgb8().get_pixel(0, 0).0, [80, 90, 100]);
+        assert_ne!(
+            importer::calculate_quick_hash(&path.to_string_lossy()).unwrap(),
+            expected_hash
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-1
+    #[tokio::test]
+    async fn preview_rejects_externally_changed_source_when_database_hash_is_stale() {
+        let root = test_root("external-preview-change");
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.resolve_library(None).unwrap();
+        let path = root.join("source.png");
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([80, 90, 100])))
+            .save(&path)
+            .unwrap();
+        let old_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+        insert_image(&library, 4, 12, &path, &old_hash);
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([10, 20, 30])))
+            .save(&path)
+            .unwrap();
+        assert_ne!(
+            importer::calculate_quick_hash(&path.to_string_lossy()).unwrap(),
+            old_hash
+        );
+        let locator = ImageLocatorQuery {
+            library_id: library.uuid.clone(),
+            directory_id: 4,
+        };
+
+        let result = preview_adjust(
+            State(state.clone()),
+            AxumPath(12),
+            Query(locator),
+            Json(ImageAdjustmentRequest {
+                brightness: 20,
+                contrast: 0,
+                gamma: 0,
+            }),
+        )
+        .await;
+
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+        assert!(!library.data_dir.join("preview_cache").exists());
+        drop(state);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @identity-safe-image-adjustments ac-apply-decode
+    // AC: @identity-safe-image-adjustments ac-4
+    #[tokio::test]
+    async fn png_and_jpeg_apply_urls_serve_decode_immediately_and_reject_old_hashes() {
+        use axum::body::{to_bytes, Body};
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        for (extension, format) in [
+            ("png", image::ImageFormat::Png),
+            ("jpg", image::ImageFormat::Jpeg),
+        ] {
+            let root = test_root(&format!("apply-decode-{extension}"));
+            let state = AppState::new(&root, 0).unwrap();
+            let library = state.resolve_library(None).unwrap();
+            let path = root.join(format!("source.{extension}"));
+            DynamicImage::ImageRgb8(image::RgbImage::from_pixel(4, 6, image::Rgb([40, 50, 60])))
+                .save_with_format(&path, format)
+                .unwrap();
+            let old_hash = importer::calculate_quick_hash(&path.to_string_lossy()).unwrap();
+            insert_image(&library, 4, 12, &path, &old_hash);
+            let locator = ImageLocatorQuery {
+                library_id: library.uuid.clone(),
+                directory_id: 4,
+            };
+            let response = apply_to_resolved_image(
+                resolve_image(&state, &locator, 12).unwrap(),
+                &locator,
+                12,
+                &ImageAdjustmentRequest {
+                    brightness: 50,
+                    contrast: 0,
+                    gamma: 0,
+                },
+                &old_hash,
+                false,
+            )
+            .unwrap();
+            let new_hash = response["file_hash"].as_str().unwrap();
+            let returned_url = response["url"].as_str().unwrap();
+            assert_ne!(new_hash, old_hash);
+            assert_eq!(
+                response["filename"],
+                format!("{}.{}", &new_hash[..16], extension)
+            );
+            assert!(returned_url.contains(&format!("file_hash={new_hash}")));
+
+            let route_url = returned_url.strip_prefix("/api/images").unwrap();
+            for _ in 0..2 {
+                let served = crate::routes::images::router()
+                    .with_state(state.clone())
+                    .oneshot(
+                        Request::builder()
+                            .uri(route_url)
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(served.status(), StatusCode::OK);
+                let bytes = to_bytes(served.into_body(), usize::MAX).await.unwrap();
+                let decoded = image::load_from_memory(&bytes).unwrap();
+                assert_eq!((decoded.width(), decoded.height()), (4, 6));
+                assert!(decoded.to_rgb8().get_pixel(0, 0).0[0] > 40);
+            }
+
+            let stale_url = route_url.replace(new_hash, &old_hash);
+            let stale = crate::routes::images::router()
+                .with_state(state.clone())
+                .oneshot(
+                    Request::builder()
+                        .uri(stale_url)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(stale.status(), StatusCode::NOT_FOUND);
+
+            drop(state);
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     // AC: @identity-safe-image-adjustments ac-4

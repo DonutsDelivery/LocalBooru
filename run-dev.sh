@@ -15,7 +15,7 @@ mkdir -p "$STATE_DIR"
 exec 7>"$STATE_DIR/dev-instance.lock"
 if ! flock -n 7; then
     echo "A LocalBooru development session is already running." >&2
-    echo "Stop that session before starting another dev build." >&2
+    echo "Stop that session before starting another development launch." >&2
     exit 1
 fi
 
@@ -28,6 +28,7 @@ if command -v ss >/dev/null 2>&1; then
         fi
     done
 fi
+
 cd "$ROOT"
 # HW acceleration defaults are applied by the Tauri process when unset.
 # The optional patched WebKit runtime still has to be selected before launch.

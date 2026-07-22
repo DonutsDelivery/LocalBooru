@@ -10,11 +10,11 @@ import { shouldRevealOnly } from './Lightbox/hooks/useUIVisibility.js'
 
 // AC: @curation-gesture-decisions-recovery ac-1
 // AC: @curation-gesture-decisions-recovery ac-6
-test('horizontal lightbox swipes classify both curation decision directions', () => {
+test('horizontal lightbox swipes stay non-destructive during curation', () => {
   assert.equal(classifyHorizontalSwipe({ deltaX: 51, deltaY: 10, zoomScale: 1 }), 'right')
   assert.equal(classifyHorizontalSwipe({ deltaX: -51, deltaY: 10, zoomScale: 1 }), 'left')
-  assert.equal(curationActionForSwipe('right'), 'keep')
-  assert.equal(curationActionForSwipe('left'), 'discard')
+  assert.equal(curationActionForSwipe('right'), null)
+  assert.equal(curationActionForSwipe('left'), null)
   assert.equal(curationActionForSwipe(null), null)
 })
 

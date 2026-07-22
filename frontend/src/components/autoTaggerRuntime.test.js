@@ -3,12 +3,14 @@ import test from 'node:test'
 
 import {
   formatExecutionState,
+  formatCudaDiagnostic,
   formatPackageVersions,
   formatPreload,
   formatProvider,
   formatProviderList,
   formatProviderMetric,
   formatTimings,
+  runtimeDiagnosticTimeoutMs,
 } from './autoTaggerRuntime.js'
 
 // AC: @auto-tagger-execution-verification ac-6
@@ -69,4 +71,59 @@ test('formats deployment packages and native preload evidence', () => {
   assert.equal(formatPreload({ attempted: false }), 'Not attempted')
   assert.equal(formatPreload(undefined), 'Not available')
   assert.equal(formatPreload({ attempted: true, succeeded: null }), 'Unknown')
+})
+
+// AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+test('keeps the client diagnostic deadline beyond the backend probe deadline', () => {
+  assert.equal(runtimeDiagnosticTimeoutMs(300), 310_000)
+  assert.ok(runtimeDiagnosticTimeoutMs(300) > 300_000)
+})
+
+// AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+test('formats strict CUDA report with native output and preserved failure evidence', () => {
+  const formatted = formatCudaDiagnostic({
+    status: 'failed',
+    exit_code: 1,
+    probe: {
+      model: { name: 'eva02-large-v3', sha256: '9e768793' },
+      runtime: {
+        provider_options: { CUDAExecutionProvider: { device_id: '0' } },
+        packages: { 'nvidia-cusparse-cu12': '12.5' },
+      },
+      execution: { error: 'CUDA launch failed', provider_node_counts: { CPUExecutionProvider: 1920 } },
+      strict_stage: { execution: { error: 'node assignment failed' } },
+    },
+    stderr: 'native ORT log',
+  })
+
+  assert.match(formatted, /eva02-large-v3/)
+  assert.match(formatted, /CUDA launch failed/)
+  assert.match(formatted, /native ORT log/)
+  assert.match(formatted, /nvidia-cusparse-cu12/)
+})
+
+// AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
+// AC: @auto-tagger-runtime-acceleration-deployment ac-native-runtime-inventory
+test('formats primary native crashes with inventory and highlights', () => {
+  const formatted = formatCudaDiagnostic({
+    status: 'failed',
+    exit_code: 3221225477,
+    probe: null,
+    inventory: {
+      probe: {
+        inventory_only: true,
+        runtime: {
+          native_libraries: [{ name: 'cudnn_graph64_9.dll', path: 'C:/runtime/cudnn_graph64_9.dll' }],
+        },
+      },
+    },
+    primary: { status: 'invalid_output', probe: null },
+    highlights: 'CUDNN_BACKEND_API_FAILED at build_operation_graph',
+    strict_stage: null,
+  })
+
+  assert.match(formatted, /cudnn_graph64_9\.dll/)
+  assert.match(formatted, /CUDNN_BACKEND_API_FAILED/)
+  assert.match(formatted, /3221225477/)
+  assert.match(formatted, /"probe": null/)
 })

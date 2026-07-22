@@ -1,6 +1,7 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 /// Check if ffmpeg is available on the system.
 pub fn check_ffmpeg_available() -> bool {
@@ -131,19 +132,21 @@ pub fn get_preview_dir(data_dir: &Path, file_hash: &str) -> PathBuf {
     data_dir.join("previews").join(hash_prefix)
 }
 
-/// Get existing preview frame paths for a file hash.
+/// Get existing complete preview frame paths for a file hash.
 pub fn get_preview_frames(data_dir: &Path, file_hash: &str) -> Vec<PathBuf> {
     let preview_dir = get_preview_dir(data_dir, file_hash);
-    if !preview_dir.exists() {
+    if !preview_dir.join(".complete").is_file() {
         return vec![];
     }
 
-    let mut frames: Vec<PathBuf> = (0..8)
+    let frames: Vec<PathBuf> = (0..8)
         .map(|i| preview_dir.join(format!("frame_{}.webp", i)))
-        .filter(|p| p.exists())
         .collect();
-    frames.sort();
-    frames
+    if frames.iter().all(|path| path.is_file()) {
+        frames
+    } else {
+        vec![]
+    }
 }
 
 /// Delete preview frames for a file hash.
@@ -253,6 +256,76 @@ pub fn extract_preview_frames(
     }
 }
 
+static PREVIEW_GENERATIONS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+
+pub(crate) struct PreviewGenerationGuard {
+    key: PathBuf,
+}
+
+impl PreviewGenerationGuard {
+    fn claim(key: PathBuf) -> Option<Self> {
+        let generations = PREVIEW_GENERATIONS.get_or_init(|| Mutex::new(HashSet::new()));
+        let mut active = generations.lock().unwrap();
+        if !active.insert(key.clone()) {
+            return None;
+        }
+        Some(Self { key })
+    }
+}
+
+impl Drop for PreviewGenerationGuard {
+    fn drop(&mut self) {
+        if let Some(generations) = PREVIEW_GENERATIONS.get() {
+            generations.lock().unwrap().remove(&self.key);
+        }
+    }
+}
+
+pub(crate) fn claim_preview_generation(
+    data_dir: &Path,
+    file_hash: &str,
+) -> Option<PreviewGenerationGuard> {
+    PreviewGenerationGuard::claim(get_preview_dir(data_dir, file_hash))
+}
+
+pub(crate) fn generate_video_previews_claimed(
+    video_path: &str,
+    file_hash: &str,
+    data_dir: &Path,
+    num_frames: usize,
+    _guard: &PreviewGenerationGuard,
+) -> Vec<PathBuf> {
+    let output_dir = get_preview_dir(data_dir, file_hash);
+    let existing = get_preview_frames(data_dir, file_hash);
+    if !existing.is_empty() {
+        return existing;
+    }
+
+    let suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    let staging_dir = output_dir.with_file_name(format!(
+        ".{}-{}-{}",
+        output_dir.file_name().unwrap_or_default().to_string_lossy(),
+        std::process::id(),
+        suffix
+    ));
+    let _ = std::fs::remove_dir_all(&staging_dir);
+    let generated = extract_preview_frames(video_path, &staging_dir, num_frames, 400);
+    if generated.len() != num_frames {
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        return vec![];
+    }
+    if std::fs::write(staging_dir.join(".complete"), b"complete\n").is_err() {
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        return vec![];
+    }
+    let _ = std::fs::remove_dir_all(&output_dir);
+    if std::fs::rename(&staging_dir, &output_dir).is_err() {
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        return vec![];
+    }
+    get_preview_frames(data_dir, file_hash)
+}
+
 /// Generate preview frames for a video file.
 ///
 /// Returns paths to generated frame images, or empty vec on failure.
@@ -262,14 +335,10 @@ pub fn generate_video_previews(
     data_dir: &Path,
     num_frames: usize,
 ) -> Vec<PathBuf> {
-    // Check if previews already exist
-    let existing = get_preview_frames(data_dir, file_hash);
-    if !existing.is_empty() {
-        return existing;
-    }
-
-    let output_dir = get_preview_dir(data_dir, file_hash);
-    extract_preview_frames(video_path, &output_dir, num_frames, 400)
+    let Some(guard) = claim_preview_generation(data_dir, file_hash) else {
+        return vec![];
+    };
+    generate_video_previews_claimed(video_path, file_hash, data_dir, num_frames, &guard)
 }
 
 /// Generate a video thumbnail using ffmpeg.
@@ -316,4 +385,43 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
         .status()
         .map(|s| s.success() && Path::new(output_path).exists())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_cache_requires_a_complete_published_frame_set() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-preview-complete-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let preview_dir = get_preview_dir(&root, "preview-hash");
+        std::fs::create_dir_all(&preview_dir).unwrap();
+        std::fs::write(preview_dir.join("frame_0.webp"), b"partial").unwrap();
+        assert!(get_preview_frames(&root, "preview-hash").is_empty());
+
+        for index in 1..8 {
+            std::fs::write(preview_dir.join(format!("frame_{}.webp", index)), b"frame").unwrap();
+        }
+        assert!(get_preview_frames(&root, "preview-hash").is_empty());
+        std::fs::write(preview_dir.join(".complete"), b"complete\n").unwrap();
+        assert_eq!(get_preview_frames(&root, "preview-hash").len(), 8);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preview_generation_claim_is_single_flight() {
+        let key = PathBuf::from(format!(
+            "preview-claim-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let first = PreviewGenerationGuard::claim(key.clone()).unwrap();
+        assert!(PreviewGenerationGuard::claim(key.clone()).is_none());
+        drop(first);
+        assert!(PreviewGenerationGuard::claim(key).is_some());
+    }
 }

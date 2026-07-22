@@ -3,8 +3,13 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMP_DIR="$(mktemp -d)"
+inherited_child_pid=""
 
 cleanup() {
+  if [[ -n "$inherited_child_pid" ]]; then
+    kill "$inherited_child_pid" 2>/dev/null || true
+    wait "$inherited_child_pid" 2>/dev/null || true
+  fi
   exec 9>&- 2>/dev/null || true
   rm -rf "$TEMP_DIR"
 }
@@ -71,6 +76,34 @@ if grep -F 'LOCALBOORU_BUILD_STATUS=STARTED' "$locked_output" >/dev/null; then
 fi
 flock -u 9
 exec 9>&-
+
+# AC: @safe-development-startup ac-build-lock-independence
+inherited_state="$TEMP_DIR/inherited-state"
+mkdir -p "$inherited_state"
+INHERITED_STATE="$inherited_state" \
+INHERITED_PID_FILE="$TEMP_DIR/inherited-child.pid" \
+HELPER="$ROOT/scripts/build-startup-status.sh" \
+  bash -c '
+    source "$HELPER"
+    localbooru_build_acquire_lock "$INHERITED_STATE" linux test-source
+    sleep 30 &
+    printf "%s\n" "$!" >"$INHERITED_PID_FILE"
+  '
+inherited_child_pid="$(cat "$TEMP_DIR/inherited-child.pid")"
+if ! kill -0 "$inherited_child_pid" 2>/dev/null; then
+  printf 'inherited lock test child exited unexpectedly\n' >&2
+  exit 1
+fi
+exec 9>>"$inherited_state/build-cache.lock"
+if ! flock -n 9; then
+  printf 'surviving child retained completed build ownership\n' >&2
+  exit 1
+fi
+flock -u 9
+exec 9>&-
+kill "$inherited_child_pid" 2>/dev/null || true
+wait "$inherited_child_pid" 2>/dev/null || true
+inherited_child_pid=""
 
 # AC: @truthful-container-build-startup ac-1
 early_output="$TEMP_DIR/early-failure.log"

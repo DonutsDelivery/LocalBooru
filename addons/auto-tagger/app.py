@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import platform
+import subprocess
 import sys
 import tempfile
 import threading
@@ -27,7 +28,6 @@ from typing import Optional
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
@@ -55,9 +55,33 @@ _last_timings_ms = None
 _preload_result = {"attempted": False, "succeeded": None, "error": None}
 _runtime_diagnostics = {}
 _model_identity = None
+_cuda_failure = None
 _model_load_lock = threading.Lock()
 _first_inference_lock = threading.Lock()
+_runtime_diagnostic_lock = threading.Lock()
 _prediction_slots = threading.BoundedSemaphore(2)
+
+RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS = 300
+RUNTIME_DIAGNOSTIC_INVENTORY_TIMEOUT_SECONDS = 30
+RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT = 64 * 1024
+RUNTIME_DIAGNOSTIC_HIGHLIGHT_LIMIT = 16 * 1024
+RUNTIME_DIAGNOSTIC_ENVIRONMENT = {
+    "CUDNN_FRONTEND_LOG_INFO": "1",
+    "CUDNN_FRONTEND_LOG_FILE": "stderr",
+    "CUDNN_LOGLEVEL_DBG": "3",
+    "CUDNN_LOGDEST_DBG": "stderr",
+}
+RUNTIME_DIAGNOSTIC_HIGHLIGHT_TERMS = (
+    "cudnn",
+    "cuda",
+    "onnxruntime",
+    "ort ",
+    "dll",
+    "loadlibrary",
+    "backend_api_failed",
+    "error",
+    "failed",
+)
 
 # Model input size for WD-Tagger-V3
 MODEL_INPUT_SIZE = 448
@@ -140,22 +164,23 @@ def _try_download_model() -> Optional[Path]:
 
 
 def _installed_runtime_packages():
-    names = [
-        "onnxruntime",
-        "onnxruntime-gpu",
-        "nvidia-cublas-cu12",
-        "nvidia-cuda-runtime-cu12",
-        "nvidia-cudnn-cu12",
-        "nvidia-cufft-cu12",
-        "nvidia-curand-cu12",
-    ]
+    names = ["numpy", "onnxruntime", "onnxruntime-gpu"]
     packages = {}
     for name in names:
         try:
             packages[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             continue
-    return packages
+    for distribution in importlib.metadata.distributions():
+        name = (
+            (distribution.metadata.get("Name") or "")
+            .lower()
+            .replace("_", "-")
+            .replace(".", "-")
+        )
+        if name.startswith("nvidia-"):
+            packages[name] = distribution.version
+    return dict(sorted(packages.items()))
 
 
 def _model_file_identity(model_path):
@@ -210,6 +235,7 @@ def _collect_runtime_diagnostics(ort, session=None):
         },
         "ort_debug_output": debug_output,
         "ort_debug_error": debug_error,
+        "cuda_failure": dict(_cuda_failure) if _cuda_failure else None,
     }
 
 
@@ -240,6 +266,7 @@ def _create_ort_session(ort, model_path, providers):
             str(model_path),
             sess_options=options,
             providers=providers,
+            enable_fallback=0,
         )
     except Exception:
         _remove_profile_prefix(options.profile_file_prefix)
@@ -250,12 +277,46 @@ def _combine_warning(current, message):
     return f"{current} {message}" if current else message
 
 
+def _session_evidence(session):
+    try:
+        registered = list(session.get_providers())
+    except Exception as exc:
+        registered = []
+        providers_error = str(exc)
+    else:
+        providers_error = None
+    try:
+        options = session.get_provider_options()
+    except Exception as exc:
+        options = {}
+        options_error = str(exc)
+    else:
+        options_error = None
+    return {
+        "registered_providers": registered,
+        "provider_options": options,
+        "providers_error": providers_error,
+        "provider_options_error": options_error,
+    }
+
+
+def _record_cuda_failure(stage, error, session=None, **evidence):
+    global _cuda_failure
+
+    failure = {"stage": stage, "error": str(error)}
+    if session is not None:
+        failure.update(_session_evidence(session))
+    failure.update(evidence)
+    _cuda_failure = failure
+
+
 def _create_inference_session(ort, model_path, requested_device):
     """Create a profiled provider-aware session with an explicit CPU fallback."""
-    global _preload_result
+    global _preload_result, _cuda_failure
 
     warning = None
     wants_cuda = requested_device in ("auto", "cuda")
+    _cuda_failure = None
     _preload_result = {"attempted": wants_cuda, "succeeded": None, "error": None}
 
     if wants_cuda:
@@ -278,10 +339,20 @@ def _create_inference_session(ort, model_path, requested_device):
     )
 
     if wants_cuda and "CUDAExecutionProvider" in available_providers:
-        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        providers = [
+            ("CUDAExecutionProvider", {"device_id": 0}),
+            "CPUExecutionProvider",
+        ]
         try:
             session = _create_ort_session(ort, model_path, providers)
         except Exception as exc:
+            _record_cuda_failure(
+                "session_creation",
+                exc,
+                available_providers=list(available_providers),
+                requested_providers=providers,
+                preload=dict(_preload_result),
+            )
             message = (
                 f"CUDA provider initialization failed ({exc}); "
                 "using CPUExecutionProvider."
@@ -292,14 +363,48 @@ def _create_inference_session(ort, model_path, requested_device):
                 ort, model_path, ["CPUExecutionProvider"]
             )
         else:
-            registered = session.get_providers()
-            if not registered or registered[0] != "CUDAExecutionProvider":
-                message = (
-                    "CUDA was available but the session registered only CPU; "
-                    "using CPUExecutionProvider."
+            evidence = _session_evidence(session)
+            registered = evidence["registered_providers"]
+            cuda_options = evidence["provider_options"].get("CUDAExecutionProvider")
+            cuda_device = cuda_options.get("device_id") if cuda_options else None
+            if (
+                "CUDAExecutionProvider" not in registered
+                or cuda_options is None
+                or str(cuda_device) != "0"
+            ):
+                reason = (
+                    "CUDA session verification failed: live providers and provider options "
+                    "must include CUDAExecutionProvider on device_id 0"
                 )
+                _record_cuda_failure(
+                    "session_verification", reason, session=session
+                )
+                message = f"{reason}; using CPUExecutionProvider."
                 warning = _combine_warning(warning, message)
                 logger.warning(message)
+                _discard_execution_profile(session)
+                session = _create_ort_session(
+                    ort, model_path, ["CPUExecutionProvider"]
+                )
+            else:
+                try:
+                    session.disable_fallback()
+                except Exception as exc:
+                    _record_cuda_failure(
+                        "session_verification",
+                        f"Unable to disable ONNX Runtime provider fallback: {exc}",
+                        session=session,
+                    )
+                    message = (
+                        "Unable to disable ONNX Runtime provider fallback "
+                        f"({exc}); using CPUExecutionProvider."
+                    )
+                    warning = _combine_warning(warning, message)
+                    logger.warning(message)
+                    _discard_execution_profile(session)
+                    session = _create_ort_session(
+                        ort, model_path, ["CPUExecutionProvider"]
+                    )
         return session, available_providers, warning
 
     if requested_device == "cuda":
@@ -681,8 +786,9 @@ def _discard_execution_profile(session):
         pass
 
 
-def _replace_with_cpu_session(cuda_error):
-    global _ort_module
+def _replace_with_cpu_session(cuda_error, observed_execution=None):
+    global _ort_module, _execution_state, _active_provider
+    global _provider_node_counts, _provider_duration_ms
 
     old_session = _model
     _discard_execution_profile(old_session)
@@ -697,6 +803,11 @@ def _replace_with_cpu_session(cuda_error):
         ort, _model_path, ["CPUExecutionProvider"]
     )
     _set_loaded_session(cpu_session, _available_providers, warning, _model_path)
+    if observed_execution is not None:
+        _execution_state = observed_execution["state"]
+        _active_provider = observed_execution["active_provider"]
+        _provider_node_counts = dict(observed_execution["provider_node_counts"])
+        _provider_duration_ms = dict(observed_execution["provider_duration_ms"])
 
 
 def _run_model(input_name, output_name, image_array):
@@ -716,12 +827,34 @@ def _run_model(input_name, output_name, image_array):
                 and _registered_providers
                 and _registered_providers[0] == "CUDAExecutionProvider"
             ):
+                _record_cuda_failure("first_inference", exc, session=session)
                 _replace_with_cpu_session(exc)
                 session = _model
                 outputs = session.run([output_name], {input_name: image_array})
             else:
                 raise
         _finish_execution_profile(session)
+        if (
+            session is _model
+            and _requested_device in ("auto", "cuda")
+            and "CUDAExecutionProvider" in _registered_providers
+            and _execution_state == "cpu"
+            and _provider_node_counts.get("CUDAExecutionProvider", 0) == 0
+        ):
+            observed = {
+                "state": _execution_state,
+                "active_provider": _active_provider,
+                "provider_node_counts": dict(_provider_node_counts),
+                "provider_duration_ms": dict(_provider_duration_ms),
+            }
+            reason = "completed inference recorded zero CUDA model nodes"
+            _record_cuda_failure(
+                "first_inference_verification",
+                reason,
+                session=session,
+                **observed,
+            )
+            _replace_with_cpu_session(reason, observed)
         return outputs
 
 
@@ -804,7 +937,248 @@ async def health():
         "profile_warning": _profile_warning,
         "model_identity": dict(_model_identity) if _model_identity else None,
         "runtime_diagnostics": dict(_runtime_diagnostics),
+        "cuda_failure": dict(_cuda_failure) if _cuda_failure else None,
     }
+
+
+def _normalize_subprocess_output(value):
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        if value.startswith((b"\xff\xfe", b"\xfe\xff")):
+            value = value[2:]
+        # Native Windows diagnostics can be UTF-16 while Python appends a UTF-8
+        # JSON report to the same pipe. A single whole-stream UTF-16 decode would
+        # corrupt that report; UTF-8 replacement plus NUL removal preserves both
+        # streams' ASCII diagnostics and the structured JSON suffix.
+        value = value.decode("utf-8", errors="replace")
+    return value.replace("\x00", "")
+
+
+def _bounded_output(value):
+    value = _normalize_subprocess_output(value)
+    if len(value) <= RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT:
+        return value
+    marker = "\n... diagnostic output omitted ...\n"
+    retained = RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT - len(marker)
+    head = retained // 2
+    tail = retained - head
+    return value[:head] + marker + value[-tail:]
+
+
+def _diagnostic_highlights(*values):
+    lines = []
+    seen = set()
+    for value in values:
+        for line in _normalize_subprocess_output(value).splitlines():
+            normalized = line.strip()
+            if not normalized or normalized in seen:
+                continue
+            lowered = normalized.lower()
+            if not any(term in lowered for term in RUNTIME_DIAGNOSTIC_HIGHLIGHT_TERMS):
+                continue
+            seen.add(normalized)
+            lines.append(normalized)
+    return _bounded_output("\n".join(lines))[:RUNTIME_DIAGNOSTIC_HIGHLIGHT_LIMIT]
+
+
+def _runtime_probe_environment():
+    environment = os.environ.copy()
+    environment.update(RUNTIME_DIAGNOSTIC_ENVIRONMENT)
+    return environment
+
+
+def _parse_probe_report(stdout):
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(stdout or ""):
+        if character != "{":
+            continue
+        try:
+            report, end = decoder.raw_decode(stdout, index)
+        except json.JSONDecodeError:
+            continue
+        if stdout[end:].strip() == "" and isinstance(report, dict):
+            return report
+    raise json.JSONDecodeError("No trailing JSON report found", stdout or "", 0)
+
+
+def _run_runtime_probe(command, timeout_seconds=RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS):
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=False,
+            timeout=timeout_seconds,
+            check=False,
+            env=_runtime_probe_environment(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = _normalize_subprocess_output(exc.stdout)
+        stderr = _normalize_subprocess_output(exc.stderr)
+        try:
+            partial_report = _parse_probe_report(stdout)
+        except (TypeError, json.JSONDecodeError):
+            partial_report = None
+        return {
+            "status": "timed_out",
+            "timeout_seconds": timeout_seconds,
+            "exit_code": None,
+            "probe": partial_report,
+            "stdout": _bounded_output(stdout),
+            "stderr": _bounded_output(stderr),
+            "highlights": _diagnostic_highlights(stdout, stderr),
+        }
+    except OSError as exc:
+        return {
+            "status": "failed",
+            "exit_code": None,
+            "error": f"Failed to launch CUDA diagnostic: {exc}",
+            "probe": None,
+            "stdout": "",
+            "stderr": "",
+            "highlights": "",
+        }
+
+    normalized_stdout = _normalize_subprocess_output(completed.stdout)
+    normalized_stderr = _normalize_subprocess_output(completed.stderr)
+    try:
+        report = _parse_probe_report(normalized_stdout)
+    except (TypeError, json.JSONDecodeError) as exc:
+        return {
+            "status": "invalid_output",
+            "exit_code": completed.returncode,
+            "error": str(exc),
+            "probe": None,
+            "stdout": _bounded_output(normalized_stdout),
+            "stderr": _bounded_output(normalized_stderr),
+            "highlights": _diagnostic_highlights(normalized_stdout, normalized_stderr),
+        }
+    return {
+        "status": "completed" if completed.returncode == 0 else "failed",
+        "exit_code": completed.returncode,
+        "probe": report,
+        "stdout": _bounded_output(normalized_stdout),
+        "stderr": _bounded_output(normalized_stderr),
+        "highlights": _diagnostic_highlights(normalized_stdout, normalized_stderr),
+    }
+
+
+def _probe_requires_strict_stage(report):
+    execution = (report or {}).get("execution") or {}
+    counts = execution.get("provider_node_counts") or {}
+    return execution.get("error") is not None or counts.get("CUDAExecutionProvider", 0) == 0
+
+
+@app.post("/runtime-diagnostic")
+def strict_cuda_diagnostic():
+    if _model_path is None or not Path(_model_path).is_file():
+        raise HTTPException(status_code=503, detail="No loaded Auto Tagger model to probe")
+    if not _runtime_diagnostic_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="CUDA diagnostic is already running")
+
+    probe_script = str(Path(__file__).with_name("runtime_probe.py"))
+    inventory_command = [
+        sys.executable,
+        probe_script,
+        "--inventory-only",
+        "--debug-info",
+    ]
+    command = [
+        sys.executable,
+        probe_script,
+        str(_model_path),
+        "--provider",
+        "cuda",
+        "--verbose",
+        "--debug-info",
+        "--disable-wrapper-fallback",
+    ]
+    try:
+        deadline = time.monotonic() + RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS
+        inventory = _run_runtime_probe(
+            inventory_command,
+            timeout_seconds=min(
+                RUNTIME_DIAGNOSTIC_INVENTORY_TIMEOUT_SECONDS,
+                RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS,
+            ),
+        )
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            primary = {
+                "status": "timed_out",
+                "timeout_seconds": 0,
+                "exit_code": None,
+                "error": "Runtime inventory consumed the diagnostic deadline",
+                "probe": None,
+                "stdout": "",
+                "stderr": "",
+                "highlights": "",
+            }
+        else:
+            primary = _run_runtime_probe(command, timeout_seconds=remaining_seconds)
+
+        if primary["probe"] is None:
+            return {
+                "status": "failed",
+                "exit_code": primary["exit_code"],
+                "probe": None,
+                "stdout": primary["stdout"],
+                "stderr": primary["stderr"],
+                "highlights": primary.get("highlights", ""),
+                "inventory": inventory,
+                "primary": primary,
+                "strict_stage": None,
+            }
+
+        strict_stage = None
+        if _probe_requires_strict_stage(primary["probe"]):
+            remaining_seconds = deadline - time.monotonic()
+            if remaining_seconds <= 0:
+                strict_stage = {
+                    "status": "timed_out",
+                    "timeout_seconds": 0,
+                    "exit_code": None,
+                    "error": "Primary CUDA probe consumed the diagnostic deadline",
+                    "probe": None,
+                    "stdout": "",
+                    "stderr": "",
+                    "highlights": "",
+                }
+            else:
+                strict_stage = _run_runtime_probe(
+                    command + ["--disable-cpu-fallback"],
+                    timeout_seconds=remaining_seconds,
+                )
+
+        counts = (primary["probe"].get("execution") or {}).get(
+            "provider_node_counts"
+        ) or {}
+        verified_cuda = counts.get("CUDAExecutionProvider", 0) > 0
+        exit_code = primary["exit_code"]
+        if not verified_cuda:
+            if strict_stage is not None and strict_stage.get("exit_code") is None:
+                exit_code = None
+            elif strict_stage is not None and strict_stage.get("exit_code") != 0:
+                exit_code = strict_stage["exit_code"]
+            elif exit_code == 0:
+                exit_code = 1
+        highlights = _diagnostic_highlights(
+            primary.get("highlights"),
+            strict_stage.get("highlights") if strict_stage else None,
+        )
+        return {
+            "status": "completed" if primary["exit_code"] == 0 and verified_cuda else "failed",
+            "exit_code": exit_code,
+            "probe": primary["probe"],
+            "stdout": primary["stdout"],
+            "stderr": primary["stderr"],
+            "highlights": highlights,
+            "inventory": inventory,
+            "primary": primary,
+            "strict_stage": strict_stage,
+        }
+    finally:
+        _runtime_diagnostic_lock.release()
 
 
 class PredictRequest(BaseModel):

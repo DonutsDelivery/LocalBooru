@@ -15,8 +15,6 @@ export function isGestureCandidateCurrent(startToken, currentToken) {
   return startToken !== null && startToken === currentToken
 }
 
-export function curationActionForSwipe(direction) {
-  if (direction === 'right') return 'keep'
-  if (direction === 'left') return 'discard'
+export function curationActionForSwipe() {
   return null
 }

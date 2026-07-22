@@ -314,7 +314,7 @@ async fn list_tasks(
         // Get tasks
         let query_sql = format!(
             "SELECT id, task_type, payload, status, priority, attempts, error_message,
-                    created_at, started_at, completed_at
+                    next_attempt_at, created_at, started_at, completed_at
              FROM task_queue {}
              ORDER BY
                 CASE status
@@ -352,9 +352,10 @@ async fn list_tasks(
                     "priority": row.get::<_, i64>(4)?,
                     "attempts": row.get::<_, i64>(5)?,
                     "error_message": row.get::<_, Option<String>>(6)?,
-                    "created_at": row.get::<_, Option<String>>(7)?,
-                    "started_at": row.get::<_, Option<String>>(8)?,
-                    "completed_at": row.get::<_, Option<String>>(9)?,
+                    "next_attempt_at": row.get::<_, Option<String>>(7)?,
+                    "created_at": row.get::<_, Option<String>>(8)?,
+                    "started_at": row.get::<_, Option<String>>(9)?,
+                    "completed_at": row.get::<_, Option<String>>(10)?,
                 }))
             })?
             .filter_map(|r| r.ok())
@@ -479,18 +480,29 @@ async fn resume_queue(State(state): State<AppState>) -> Json<Value> {
     Json(json!({ "paused": false }))
 }
 
+fn reset_failed_tasks(conn: &rusqlite::Connection) -> Result<usize, AppError> {
+    let updated = conn.execute(
+        "UPDATE task_queue
+         SET status = 'pending', attempts = 0, next_attempt_at = NULL,
+             started_at = NULL, completed_at = NULL
+         WHERE status = 'failed'",
+        [],
+    )?;
+    Ok(updated)
+}
+
 /// POST /api/library/queue/retry-failed — Retry all failed tasks.
 async fn retry_failed(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let state_clone = state.clone();
-    tokio::task::spawn_blocking(move || {
+    let updated = tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;
-        let updated = conn.execute(
-            "UPDATE task_queue SET status = 'pending', attempts = 0, error_message = NULL WHERE status = 'failed'",
-            [],
-        )?;
-        Ok::<_, AppError>(Json(json!({ "retried": updated })))
+        reset_failed_tasks(&conn)
     })
-    .await?
+    .await??;
+    if let Some(task_queue) = state.task_queue() {
+        task_queue.wake();
+    }
+    Ok(Json(json!({ "retried": updated })))
 }
 
 /// DELETE /api/library/queue/pending — Clear all pending tasks.
@@ -901,4 +913,58 @@ async fn file_missing(
         ))
     })
     .await?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema::init_main_db;
+    use rusqlite::Connection;
+
+    #[test]
+    // AC: @durable-task-retry-scheduling ac-manual-retry
+    fn manual_retry_resets_timing_and_attempts_but_retains_last_error() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_main_db(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO task_queue
+             (task_type, payload, status, attempts, error_message, next_attempt_at,
+              started_at, completed_at)
+             VALUES ('tag', '{}', 'failed', 3, 'foreign key failure',
+                     datetime('now', '+1 hour'), datetime('now'), datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(reset_failed_tasks(&conn).unwrap(), 1);
+        let task: (String, i64, String, bool, bool, bool) = conn
+            .query_row(
+                "SELECT status, attempts, error_message, next_attempt_at IS NULL,
+                        started_at IS NULL, completed_at IS NULL
+                 FROM task_queue",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            task,
+            (
+                "pending".into(),
+                0,
+                "foreign key failure".into(),
+                true,
+                true,
+                true
+            )
+        );
+    }
 }

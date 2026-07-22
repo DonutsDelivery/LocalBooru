@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -42,6 +43,10 @@ class FakeSession:
         self.run_error = run_error
         self.run_count = 0
         self.end_profile_count = 0
+        self.fallback_disabled = False
+
+    def disable_fallback(self):
+        self.fallback_disabled = True
 
     def get_providers(self):
         return self._providers
@@ -88,15 +93,25 @@ class FakeOrt:
         self.events.append(("available",))
         return self.available
 
-    def InferenceSession(self, _model_path, *, sess_options, providers):
+    def InferenceSession(self, _model_path, *, sess_options, providers, **kwargs):
+        normalized_providers = [
+            provider[0] if isinstance(provider, tuple) else provider
+            for provider in providers
+        ]
         self.events.append(
-            ("session", tuple(providers), dict(sess_options.config), sess_options.enable_profiling)
+            (
+                "session",
+                tuple(providers),
+                dict(sess_options.config),
+                sess_options.enable_profiling,
+                kwargs,
+            )
         )
-        if providers[0] == "CUDAExecutionProvider":
+        if normalized_providers[0] == "CUDAExecutionProvider":
             if self.fail_cuda:
                 raise RuntimeError("CUDA runtime unavailable")
-            return self.cuda_session or FakeSession(list(providers))
-        return self.cpu_session or FakeSession(list(providers))
+            return self.cuda_session or FakeSession(normalized_providers)
+        return self.cpu_session or FakeSession(normalized_providers)
 
 
 def write_profile(path, providers):
@@ -131,6 +146,57 @@ def test_cuda_registration_is_not_reported_as_execution_before_prediction():
     assert status["registered_providers"][0] == "CUDAExecutionProvider"
     assert status["execution_state"] == "not_run"
     assert status["active_provider"] is None
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-live-cuda-session
+def test_cuda_session_uses_device_zero_verifies_options_and_disables_wrapper_fallback():
+    tagger = load_tagger()
+    session = FakeSession(["CUDAExecutionProvider", "CPUExecutionProvider"])
+    ort = FakeOrt(
+        ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        cuda_session=session,
+    )
+
+    created, _available, warning = tagger._create_inference_session(
+        ort, "model.onnx", "cuda"
+    )
+
+    cuda_event = next(event for event in ort.events if event[0] == "session")
+    assert cuda_event[1][0] == ("CUDAExecutionProvider", {"device_id": 0})
+    assert created is session
+    assert cuda_event[4] == {"enable_fallback": 0}
+    assert created.fallback_disabled is True
+    assert warning is None
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-live-cuda-session
+# AC: @auto-tagger-runtime-acceleration-deployment ac-5
+def test_cuda_provider_option_verification_failure_preserves_evidence_and_uses_fresh_cpu():
+    tagger = load_tagger()
+
+    class MissingCudaOptionsSession(FakeSession):
+        def get_provider_options(self):
+            return {"CPUExecutionProvider": {}}
+
+    cuda_session = MissingCudaOptionsSession(
+        ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    )
+    cpu_session = FakeSession(["CPUExecutionProvider"])
+    ort = FakeOrt(
+        ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        cuda_session=cuda_session,
+        cpu_session=cpu_session,
+    )
+
+    session, _available, warning = tagger._create_inference_session(
+        ort, "model.onnx", "cuda"
+    )
+
+    assert session is cpu_session
+    assert "provider options" in warning.lower()
+    assert tagger._cuda_failure["stage"] == "session_verification"
+    assert tagger._cuda_failure["registered_providers"][0] == "CUDAExecutionProvider"
+    assert tagger._cuda_failure["provider_options"] == {"CPUExecutionProvider": {}}
 
 
 # AC: @auto-tagger-runtime-acceleration-deployment ac-2
@@ -293,12 +359,20 @@ def test_explicit_cuda_initialization_failure_uses_fresh_cpu_options():
 
     cuda_event = next(event for event in ort.events if event[0] == "session")
     cpu_event = ort.events[-1]
-    assert cuda_event[1] == ("CUDAExecutionProvider", "CPUExecutionProvider")
+    assert cuda_event[1] == (
+        ("CUDAExecutionProvider", {"device_id": 0}),
+        "CPUExecutionProvider",
+    )
     assert cuda_event[2] == {}
     assert cuda_event[3] is True
     assert cpu_event[1] == ("CPUExecutionProvider",)
     assert cpu_event[2] == {}
     assert session.get_providers() == ["CPUExecutionProvider"]
+    assert tagger._cuda_failure["stage"] == "session_creation"
+    assert tagger._cuda_failure["error"] == "CUDA runtime unavailable"
+    assert tagger._cuda_failure["requested_providers"][0] == (
+        "CUDAExecutionProvider", {"device_id": 0}
+    )
     assert "CUDA runtime unavailable" in warning
 
 
@@ -336,6 +410,9 @@ def test_cuda_first_run_failure_retries_once_on_cpu(tmp_path, requested_device):
     assert cpu_session.run_count == 1
     assert tagger._execution_state == "cpu"
     assert tagger._registered_providers == ["CPUExecutionProvider"]
+    assert tagger._cuda_failure["stage"] == "first_inference"
+    assert tagger._cuda_failure["error"] == "CUDA launch failed"
+    assert tagger._cuda_failure["registered_providers"][0] == "CUDAExecutionProvider"
     assert "CUDA launch failed" in tagger._provider_warning
 
 
@@ -348,6 +425,13 @@ def test_explicit_cuda_cpu_only_profile_is_reported_as_fallback(tmp_path):
     session = FakeSession(
         ["CUDAExecutionProvider", "CPUExecutionProvider"], profile_path=profile
     )
+    cpu_session = FakeSession(["CPUExecutionProvider"])
+    ort = FakeOrt(
+        ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        cuda_session=session,
+        cpu_session=cpu_session,
+    )
+    tagger._ort_module = ort
     tagger._set_loaded_session(
         session,
         ["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -359,6 +443,12 @@ def test_explicit_cuda_cpu_only_profile_is_reported_as_fallback(tmp_path):
 
     assert tagger._execution_state == "cpu"
     assert tagger._active_provider == "CPUExecutionProvider"
+    assert tagger._model is cpu_session
+    assert tagger._registered_providers == ["CPUExecutionProvider"]
+    assert tagger._cuda_failure["stage"] == "first_inference_verification"
+    assert tagger._cuda_failure["provider_node_counts"] == {
+        "CPUExecutionProvider": 1
+    }
     assert "CUDA was requested" in tagger._provider_warning
     assert "CPU only" in tagger._provider_warning
 
@@ -476,3 +566,289 @@ def test_health_remains_responsive_while_prediction_is_running(tmp_path, monkeyp
     assert status["status"] == "ok"
     assert elapsed < 0.1
     assert not prediction.is_alive()
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
+# AC: @auto-tagger-runtime-acceleration-deployment ac-native-runtime-inventory
+def test_primary_native_crash_returns_structured_http_success_data(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "eva02-large-v3" / "model.onnx"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    monkeypatch.setenv("LOCALBOORU_DIAGNOSTIC_SENTINEL", "preserved")
+    inventory = {"inventory_only": True, "runtime": {"native_libraries": []}}
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if "--inventory-only" in command:
+            return subprocess.CompletedProcess(command, 0, json.dumps(inventory), b"")
+        stderr = (
+            "CUDNN_FRONTEND: build_operation_graph\n"
+            "CUDNN_BACKEND_API_FAILED at /core_model/patch_embed/proj/Conv\n"
+        ).encode("utf-16-le")
+        return subprocess.CompletedProcess(command, 3221225477, b"", stderr)
+
+    monkeypatch.setattr(tagger.subprocess, "run", fake_run)
+
+    result = tagger.strict_cuda_diagnostic()
+
+    assert isinstance(result, dict)
+    assert result["status"] == "failed"
+    assert result["exit_code"] == 3221225477
+    assert result["probe"] is None
+    assert result["inventory"]["probe"] == inventory
+    assert result["primary"]["status"] == "invalid_output"
+    assert result["strict_stage"] is None
+    assert "build_operation_graph" in result["stderr"]
+    assert "CUDNN_BACKEND_API_FAILED" in result["highlights"]
+    assert len(calls) == 2
+    assert all("--disable-cpu-fallback" not in command for command, _ in calls)
+    assert calls[0][1]["env"]["CUDNN_LOGLEVEL_DBG"] == "3"
+    assert calls[0][1]["env"]["LOCALBOORU_DIAGNOSTIC_SENTINEL"] == "preserved"
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-native-runtime-inventory
+def test_timed_out_inventory_preserves_early_structured_report(monkeypatch):
+    tagger = load_tagger()
+    early = {"inventory_only": True, "runtime": {"packages": {"onnxruntime-gpu": "1.23.2"}}}
+
+    def time_out(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(
+            "probe",
+            30,
+            output=(json.dumps(early) + "\n").encode(),
+            stderr=b"CUDNN preload still running",
+        )
+
+    monkeypatch.setattr(tagger.subprocess, "run", time_out)
+    result = tagger._run_runtime_probe(["probe"], timeout_seconds=30)
+
+    assert result["status"] == "timed_out"
+    assert result["probe"] == early
+    assert "CUDNN preload" in result["highlights"]
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
+def test_diagnostic_output_retains_head_tail_and_high_signal_lines():
+    tagger = load_tagger()
+    middle = "noise\n" * tagger.RUNTIME_DIAGNOSTIC_OUTPUT_LIMIT
+    output = "HEAD CUDA DLL missing\n" + middle + "TAIL CUDNN_BACKEND_API_FAILED\n"
+
+    bounded = tagger._bounded_output(output)
+    highlights = tagger._diagnostic_highlights(output)
+
+    assert bounded.startswith("HEAD CUDA DLL missing")
+    assert "diagnostic output omitted" in bounded
+    assert bounded.endswith("TAIL CUDNN_BACKEND_API_FAILED\n")
+    assert "HEAD CUDA DLL missing" in highlights
+    assert "TAIL CUDNN_BACKEND_API_FAILED" in highlights
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+# AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
+def test_strict_cuda_diagnostic_preserves_primary_report_when_strict_stage_crashes(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "eva02-large-v3" / "model.onnx"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    report = {
+        "model": {"path": str(model), "sha256": "abc"},
+        "execution": {
+            "provider_node_counts": {},
+            "error": "CUDNN_BACKEND_API_FAILED",
+        },
+    }
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if "--inventory-only" in command:
+            return subprocess.CompletedProcess(command, 0, b'{"inventory_only": true}', b"")
+        if "--disable-cpu-fallback" not in command:
+            stdout = ("EP Error: CUDA DLL missing\n" + json.dumps(report)).encode("utf-16-le")
+            return subprocess.CompletedProcess(command, 1, stdout, b"")
+        stderr = "probe, session_state.cc:1304 CUDNN failure".encode("utf-16-be")
+        return subprocess.CompletedProcess(command, 1, b"", stderr)
+
+    monkeypatch.setattr(tagger.subprocess, "run", fake_run)
+
+    result = tagger.strict_cuda_diagnostic()
+
+    assert result["status"] == "failed"
+    assert result["probe"] == report
+    assert "EP Error" in result["stdout"]
+    assert result["strict_stage"]["status"] == "invalid_output"
+    assert "CUDNN failure" in result["strict_stage"]["stderr"]
+    assert "CUDNN failure" in result["highlights"]
+    assert "\x00" not in result["strict_stage"]["stderr"]
+    assert "--disable-cpu-fallback" in calls[2]
+
+
+def test_strict_cuda_diagnostic_does_not_launch_after_deadline(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    report = {"execution": {"provider_node_counts": {}, "error": None}}
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, json.dumps(report), "")
+
+    monotonic = iter([100.0, 100.0 + tagger.RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS])
+    monkeypatch.setattr(tagger.subprocess, "run", fake_run)
+    monkeypatch.setattr(tagger.time, "monotonic", lambda: next(monotonic))
+
+    result = tagger.strict_cuda_diagnostic()
+
+    assert len(calls) == 1
+    assert result["status"] == "failed"
+    assert result["exit_code"] is None
+    assert result["primary"]["status"] == "timed_out"
+    assert result["strict_stage"] is None
+
+
+def test_strict_cuda_diagnostic_uses_one_deadline_and_strict_failure_exit(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    primary_report = {"execution": {"provider_node_counts": {}, "error": None}}
+    strict_report = {
+        "execution": {
+            "provider_node_counts": {},
+            "error": "CUDNN_BACKEND_API_FAILED",
+        }
+    }
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(kwargs)
+        if "--inventory-only" in command:
+            report = {"inventory_only": True}
+            return subprocess.CompletedProcess(command, 0, json.dumps(report), "")
+        report = strict_report if "--disable-cpu-fallback" in command else primary_report
+        return subprocess.CompletedProcess(
+            command,
+            1 if "--disable-cpu-fallback" in command else 0,
+            json.dumps(report),
+            "",
+        )
+
+    monkeypatch.setattr(tagger.subprocess, "run", fake_run)
+
+    result = tagger.strict_cuda_diagnostic()
+
+    assert result["status"] == "failed"
+    assert result["exit_code"] == 1
+    assert 0 < calls[2]["timeout"] <= calls[1]["timeout"]
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-readable-native-diagnostic
+def test_strict_cuda_diagnostic_decodes_nul_interleaved_success(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "eva02-large-v3" / "model.onnx"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    report = {
+        "model": {"path": str(model), "sha256": "abc"},
+        "execution": {
+            "provider_node_counts": {"CUDAExecutionProvider": 1},
+            "error": None,
+        },
+    }
+    stdout = (
+        ("native warning\n" * 40).encode("utf-16-le")
+        + json.dumps(report).encode("utf-8")
+    )
+    stderr = "wide native stderr".encode("utf-16-be")
+    monkeypatch.setattr(
+        tagger.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 0, stdout, stderr),
+    )
+
+    result = tagger.strict_cuda_diagnostic()
+
+    assert result["status"] == "completed"
+    assert result["probe"] == report
+    assert "native warning" in result["stdout"]
+    assert "wide native stderr" in result["stderr"]
+    assert "\x00" not in result["stdout"] + result["stderr"]
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+def test_strict_cuda_diagnostic_invokes_deployed_probe_with_exact_runtime(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "eva02-large-v3" / "model.onnx"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    report = {
+        "model": {"path": str(model), "sha256": "abc"},
+        "runtime": {"registered_providers": ["CUDAExecutionProvider"]},
+        "execution": {"provider_node_counts": {"CUDAExecutionProvider": 1}},
+    }
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        payload = {"inventory_only": True} if "--inventory-only" in command else report
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "native log")
+
+    monkeypatch.setattr(tagger.subprocess, "run", fake_run)
+
+    result = tagger.strict_cuda_diagnostic()
+
+    inventory_command, inventory_kwargs = calls[0]
+    command, kwargs = calls[1]
+    assert "--inventory-only" in inventory_command
+    assert inventory_kwargs["timeout"] == tagger.RUNTIME_DIAGNOSTIC_INVENTORY_TIMEOUT_SECONDS
+    assert command[0] == tagger.sys.executable
+    assert command[1] == str(Path(tagger.__file__).with_name("runtime_probe.py"))
+    assert command[2] == str(model)
+    assert {"--verbose", "--debug-info", "--disable-wrapper-fallback"}.issubset(command)
+    assert "--strict-on-zero-cuda" not in command
+    assert 0 < kwargs["timeout"] <= tagger.RUNTIME_DIAGNOSTIC_TIMEOUT_SECONDS
+    assert kwargs["text"] is False
+    assert result["probe"] == report
+    assert result["stderr"] == "native log"
+
+
+# AC: @auto-tagger-runtime-acceleration-deployment ac-strict-diagnostic
+# AC: @auto-tagger-execution-verification ac-5
+def test_strict_diagnostic_is_single_flight_and_health_stays_responsive(monkeypatch, tmp_path):
+    tagger = load_tagger()
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"model")
+    tagger._model_path = model
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocked_run(command, **kwargs):
+        started.set()
+        assert release.wait(timeout=1)
+        return subprocess.CompletedProcess(command, 0, '{"ok": true}', "")
+
+    monkeypatch.setattr(tagger.subprocess, "run", blocked_run)
+    worker = threading.Thread(target=tagger.strict_cuda_diagnostic)
+    worker.start()
+    assert started.wait(timeout=1)
+
+    with pytest.raises(tagger.HTTPException) as busy:
+        tagger.strict_cuda_diagnostic()
+    before = time.perf_counter()
+    status = asyncio.run(tagger.health())
+    elapsed = time.perf_counter() - before
+    release.set()
+    worker.join(timeout=1)
+
+    assert busy.value.status_code == 409
+    assert status["status"] == "ok"
+    assert elapsed < 0.1
+    assert not worker.is_alive()
