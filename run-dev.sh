@@ -11,11 +11,6 @@ fi
 mkdir -p "$CARGO_TARGET_DIR"
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 STATE_DIR="$STATE_HOME/localbooru"
-LOCK_TIMEOUT="${LOCALBOORU_BUILD_LOCK_TIMEOUT:-1800}"
-if [[ ! "$LOCK_TIMEOUT" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-    echo "LOCALBOORU_BUILD_LOCK_TIMEOUT must be a nonnegative number" >&2
-    exit 2
-fi
 mkdir -p "$STATE_DIR"
 exec 7>"$STATE_DIR/dev-instance.lock"
 if ! flock -n 7; then
@@ -32,12 +27,6 @@ if command -v ss >/dev/null 2>&1; then
             exit 1
         fi
     done
-fi
-
-exec 8>"$STATE_DIR/build-cache.lock"
-if ! flock -w "$LOCK_TIMEOUT" 8; then
-    echo "Timed out waiting for another LocalBooru build or cleanup" >&2
-    exit 1
 fi
 cd "$ROOT"
 # HW acceleration defaults are applied by the Tauri process when unset.

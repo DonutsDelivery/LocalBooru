@@ -64,6 +64,12 @@ for _ in $(seq 1 100); do
 done
 [[ -f "$FAKE_NPM_ENTERED" ]]
 
+# A live development app owns only the duplicate-launch lock. It must not block
+# independent release builds or cleanup of unrelated release caches.
+exec 9>"$XDG_STATE_HOME/localbooru/build-cache.lock"
+flock -n 9
+flock -u 9
+
 # AC: @safe-development-startup ac-duplicate-launch
 if "$ROOT/run-dev.sh" >"$TEMP_DIR/second-output" 2>&1; then
   printf 'duplicate development launch unexpectedly succeeded\n' >&2
