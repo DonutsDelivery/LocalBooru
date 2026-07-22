@@ -735,6 +735,10 @@ features:
             id: ac-composite-isolation
             then: only the selected library and directory image receives the predicted tags
             when: one image is auto-tagged
+          - given: an image has manually assigned tags and an earlier automatic tag set
+            id: ac-manual-preservation
+            then: manual tags remain and the automatic tag set exactly matches the completed prediction
+            when: a new prediction is saved
         tags: []
         created: 2026-07-22T10:12:41.034Z
         notes: []
