@@ -29,3 +29,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-22T10:14:08.897Z
+  - _ulid: 01KY4N4JFHBBR0ZVZ0WYZMFZT4
+    content: "Confirmed root cause: the first per-directory association commits, then the same
+      directory-local image ID is inserted into legacy main image_tags and fails its foreign key (or
+      can collide with an unrelated legacy image). Approach: normalize the whole prediction, resolve
+      explicit library/directory/image ownership, and replace automatic associations atomically
+      while preserving manual tags. Tests cover complete sets, cross-directory IDs, rollback, and
+      recovery."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-22T10:14:59.313Z
