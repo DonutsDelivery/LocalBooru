@@ -5,13 +5,21 @@ title: "Implement: Actionable Task Diagnostics"
 type: task
 spec_ref: "@actionable-task-diagnostics"
 derivation: auto
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: hold/gsd-dispatch-57031ec5
+  captured_at: 2026-07-22T10:50:52.404Z
+  commit: bce5f33a837eec81323426af44a9a2147703fc5e
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -23,6 +31,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-07-22T10:14:58.014Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: hold/gsd-dispatch-57031ec5
+          captured_at: 2026-07-22T10:50:52.404Z
+          commit: bce5f33a837eec81323426af44a9a2147703fc5e
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-07-22T10:50:52.416Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-07-22T10:50:52.416Z
 created_at: 2026-07-22T10:14:11.647Z
 started_at: 2026-07-22T10:14:58.014Z
+submitted_at: 2026-07-22T10:50:52.416Z
 todos: []
