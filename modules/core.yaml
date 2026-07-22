@@ -762,6 +762,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: a background task fails with another attempt available
+            id: ac-delayed-eligibility
+            then: the latest reason and next eligible time are retained and the task cannot run before that time
+            when: the retry is scheduled
         tags: []
         created: 2026-07-22T10:13:24.025Z
         notes: []
