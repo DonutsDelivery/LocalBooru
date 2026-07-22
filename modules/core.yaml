@@ -717,6 +717,20 @@ features:
     tests: []
     traits: []
     tags: []
+    requirements:
+      - _ulid: 01KY4N0BEADMWHKKXBSYXD4N9P
+        slugs:
+          - authoritative-auto-tag-persistence
+        title: Authoritative Auto-Tag Persistence
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-22T10:12:41.034Z
+        notes: []
     created: 2026-03-08T08:30:12.686Z
     notes: []
   - _ulid: 01KK692ZE86V65FSD1SKGZYXXR
