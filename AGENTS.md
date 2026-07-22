@@ -8,10 +8,12 @@
 - Preserve unrelated changes. Stage explicit paths only.
 - Do not push, publish, or rewrite history unless the user explicitly asks.
 
-## Build ownership
+## Build and runtime locks
 
-- Never invoke one-shot Cargo builds/tests directly. Use `./scripts/run-cargo.sh <cargo arguments>` so they participate in the machine-wide LocalBooru build gate.
+- Every compiler and Docker build participates in the host-wide heavy-build gate shared with DonutStudio and Jak X. The LocalBooru project lock is a compatibility alias to that host token.
+- Use `scripts/run-cargo.sh` for one-shot Cargo builds, checks, and tests. Do not invoke heavy `cargo` commands directly.
 - Use `./run-dev.sh` for the long-lived development app. It owns only the duplicate-dev lock; merely leaving the app open must not block release builds.
+- Development `rustc` invocations acquire the host token individually, so an idle app owns no build lock while hot recompilation cannot overlap another project's heavy build.
 - Use the project release wrappers for Docker builds. Do not call `docker build`, `cargo tauri build`, or container build scripts directly.
 - Local ad-hoc Cargo commands are capped at two jobs by `.cargo/config.toml`; dev hot rebuilds are capped at one. Do not raise build jobs without checking active builds and available memory.
 - Never run a regular Cargo build and a Docker release build concurrently. If a build gate is occupied, wait or stop the conflicting build; do not bypass or delete lock files.

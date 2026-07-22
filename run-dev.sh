@@ -48,6 +48,7 @@ if [[ ! "$DEV_BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]; then
     exit 2
 fi
 export CARGO_BUILD_JOBS="$DEV_BUILD_JOBS"
+export RUSTC_WRAPPER="${RUSTC_WRAPPER:-$ROOT/scripts/rustc-host-heavy-build.sh}"
 export LOCALBOORU_TASK_QUEUE_WORKERS="${LOCALBOORU_TASK_QUEUE_WORKERS:-1}"
 DEV_LOG="${LOCALBOORU_DEV_LOG:-/tmp/localbooru-dev.log}"
 echo "LocalBooru dev output: $DEV_LOG"
