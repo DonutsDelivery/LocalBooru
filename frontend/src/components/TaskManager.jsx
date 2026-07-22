@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import { getQueueTasks, getQueueStatus, cancelTask, clearCompletedTasks, retryFailedTasks, pauseQueue, resumeQueue, getQueuePaused, resetQueue, subscribeToLibraryEvents } from '../api'
+import { TaskDetailsButton, TaskDetailsPanel, taskDiagnosticModel } from './taskDiagnostics.js'
 import './TaskManager.css'
 
 const TASK_TYPE_LABELS = {
@@ -58,14 +59,15 @@ function groupTasks(tasks) {
   const groupMap = new Map() // key -> group index
 
   for (const task of tasks) {
-    // Failed/cancelled tasks show individually (useful to see errors)
-    if (task.status === 'failed' || task.status === 'cancelled') {
+    // Tasks with diagnostics show individually so their current error/retry state is accessible.
+    if (task.status === 'failed' || task.status === 'cancelled' || task.error_message || task.next_attempt_at) {
       groups.push({ type: 'single', task })
       continue
     }
 
     const dirName = getDirName(task) || '-'
-    const key = `${task.task_type}::${task.payload?.directory_id ?? 'none'}`
+    const libraryId = task.payload?.library_id ?? 'primary'
+    const key = `${libraryId}::${task.task_type}::${task.payload?.directory_id ?? 'none'}`
 
     if (groupMap.has(key)) {
       const group = groups[groupMap.get(key)]
@@ -83,6 +85,7 @@ function groupTasks(tasks) {
       groups.push({
         type: 'group',
         taskType: task.task_type,
+        libraryId,
         dirName,
         directoryId: task.payload?.directory_id,
         count: 1,
@@ -107,6 +110,7 @@ export default function TaskManager() {
   const [typeFilter, setTypeFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState({})
+  const [expandedTasks, setExpandedTasks] = useState(() => new Set())
   // Track progress for long-running tasks: { "task_type::directory_id": { processed, total } }
   const [progress, setProgress] = useState({})
   const mounted = useRef(true)
@@ -154,11 +158,11 @@ export default function TaskManager() {
   // SSE auto-refresh on task events
   useEffect(() => {
     const unsubscribe = subscribeToLibraryEvents((event) => {
-      if (event.type === 'task_started' || event.type === 'task_completed') {
+      if (event.type === 'task_started' || event.type === 'task_updated' || event.type === 'task_completed') {
         loadTasks()
         loadStats()
         // Clear progress for completed tasks
-        if (event.type === 'task_completed' && event.data) {
+        if ((event.type === 'task_completed' || event.type === 'task_updated') && event.data?.status !== 'pending') {
           const key = `${event.data.task_type}::${event.data.directory_id ?? 'none'}`
           setProgress(prev => {
             const next = { ...prev }
@@ -342,13 +346,16 @@ export default function TaskManager() {
               <span className="task-col-time">Time</span>
               <span className="task-col-actions">Actions</span>
             </div>
-            {grouped.map((item, i) => {
+            {grouped.map((item) => {
               if (item.type === 'single') {
                 const task = item.task
                 const singleProgKey = `${task.task_type}::${task.payload?.directory_id ?? 'none'}`
                 const singleProg = task.status === 'processing' ? progress[singleProgKey] : null
+                const diagnostic = taskDiagnosticModel(task)
+                const expanded = expandedTasks.has(task.id)
                 return (
-                  <div key={task.id} className={`task-row ${task.status}`}>
+                  <Fragment key={task.id}>
+                  <div className={`task-row ${task.status}`}>
                     <span className="task-col-type" title={task.task_type}>
                       {TASK_TYPE_LABELS[task.task_type] || task.task_type}
                     </span>
@@ -368,11 +375,8 @@ export default function TaskManager() {
                         <>
                           <span className={`task-status-badge ${STATUS_CLASSES[task.status] || ''}`}>
                             {task.status === 'processing' && <span className="task-spinner" />}
-                            {task.status}
+                            {diagnostic.statusLabel}
                           </span>
-                          {task.error_message && (
-                            <span className="task-error-hint" title={task.error_message}>!</span>
-                          )}
                         </>
                       )}
                     </span>
@@ -383,6 +387,16 @@ export default function TaskManager() {
                       }
                     </span>
                     <span className="task-col-actions">
+                      <TaskDetailsButton
+                        task={task}
+                        expanded={expanded}
+                        onToggle={() => setExpandedTasks(prev => {
+                          const next = new Set(prev)
+                          if (next.has(task.id)) next.delete(task.id)
+                          else next.add(task.id)
+                          return next
+                        })}
+                      />
                       {(task.status === 'pending' || task.status === 'processing') && (
                         <button
                           className="task-cancel-btn"
@@ -395,6 +409,12 @@ export default function TaskManager() {
                       )}
                     </span>
                   </div>
+                  {expanded && (
+                    <div className="task-details-row">
+                      <TaskDetailsPanel task={task} />
+                    </div>
+                  )}
+                  </Fragment>
                 )
               }
 
@@ -405,7 +425,7 @@ export default function TaskManager() {
               const progressKey = `${g.taskType}::${g.directoryId ?? 'none'}`
               const prog = progress[progressKey]
               return (
-                <div key={`group-${i}`} className={`task-row ${statusClass}`}>
+                <div key={`group-${g.libraryId}-${g.taskType}-${g.directoryId ?? 'none'}`} className={`task-row ${statusClass}`}>
                   <span className="task-col-type" title={g.taskType}>
                     {TASK_TYPE_LABELS[g.taskType] || g.taskType}
                   </span>

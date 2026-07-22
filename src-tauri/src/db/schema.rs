@@ -139,6 +139,7 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             priority INTEGER NOT NULL DEFAULT 0,
             attempts INTEGER NOT NULL DEFAULT 0,
             error_message TEXT,
+            next_attempt_at TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             started_at TEXT,
             completed_at TEXT

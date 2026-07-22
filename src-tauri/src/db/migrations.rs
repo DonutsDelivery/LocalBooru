@@ -172,6 +172,17 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
               CREATE INDEX IF NOT EXISTS idx_watch_history_completed ON watch_history(completed);\
               CREATE INDEX IF NOT EXISTS idx_watch_history_locator ON watch_history(library_id, directory_id, image_id);",
     },
+    // v11-v12: Persist retry eligibility separately so fresh schemas can skip
+    // the duplicate column while still applying the claim index migration.
+    Migration {
+        description: "Add durable task retry eligibility",
+        sql: "ALTER TABLE task_queue ADD COLUMN next_attempt_at TEXT;",
+    },
+    Migration {
+        description: "Index eligible task claims",
+        sql: "CREATE INDEX IF NOT EXISTS idx_task_queue_claim
+              ON task_queue(status, priority DESC, COALESCE(next_attempt_at, created_at), created_at);",
+    },
 ];
 
 /// Run all pending migrations on the main library database.
@@ -252,6 +263,12 @@ mod tests {
                  last_watched TEXT NOT NULL DEFAULT (datetime('now')),
                  created_at TEXT NOT NULL DEFAULT (datetime('now')),
                  directory_id INTEGER
+             );
+             CREATE TABLE task_queue (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 status TEXT NOT NULL,
+                 priority INTEGER NOT NULL DEFAULT 0,
+                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
              );
              INSERT INTO watch_history
                  (image_id, playback_position, duration, completed, directory_id)
@@ -337,5 +354,98 @@ mod tests {
             )
             .unwrap();
         assert_eq!(index_count, 1);
+    }
+
+    #[test]
+    // AC: @durable-task-retry-scheduling ac-restart-safe
+    fn existing_queue_initializes_before_retry_migration_runs() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+             INSERT INTO schema_version (version) VALUES (10);
+             CREATE TABLE task_queue (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 task_type TEXT NOT NULL,
+                 payload TEXT,
+                 status TEXT NOT NULL DEFAULT 'pending',
+                 priority INTEGER NOT NULL DEFAULT 0,
+                 attempts INTEGER NOT NULL DEFAULT 0,
+                 error_message TEXT,
+                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 started_at TEXT,
+                 completed_at TEXT
+             );",
+        )
+        .unwrap();
+
+        crate::db::schema::init_main_db(&conn).unwrap();
+
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(task_queue)")
+            .unwrap()
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(columns.contains(&"next_attempt_at".to_string()));
+        let index_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_task_queue_claim'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(index_count, 1);
+    }
+
+    #[test]
+    // AC: @durable-task-retry-scheduling ac-restart-safe
+    fn task_retry_migration_adds_persisted_eligibility_and_claim_index() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+             INSERT INTO schema_version (version) VALUES (10);
+             CREATE TABLE task_queue (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 task_type TEXT NOT NULL,
+                 payload TEXT,
+                 status TEXT NOT NULL DEFAULT 'pending',
+                 priority INTEGER NOT NULL DEFAULT 0,
+                 attempts INTEGER NOT NULL DEFAULT 0,
+                 error_message TEXT,
+                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 started_at TEXT,
+                 completed_at TEXT
+             );
+             INSERT INTO task_queue (task_type, status) VALUES ('tag', 'pending');",
+        )
+        .unwrap();
+
+        run_main_migrations(&conn).unwrap();
+
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(task_queue)")
+            .unwrap()
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(columns.contains(&"next_attempt_at".to_string()));
+        let index_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_task_queue_claim'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(index_count, 1);
+        let next_attempt: Option<String> = conn
+            .query_row("SELECT next_attempt_at FROM task_queue", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert!(next_attempt.is_none());
     }
 }
