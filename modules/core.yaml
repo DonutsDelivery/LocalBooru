@@ -743,6 +743,10 @@ features:
             id: ac-atomic-write
             then: the prior complete automatic tag set remains visible and no partial new set is published
             when: the failure is reported
+          - given: an earlier failed task left one automatic tag and retains a retryable task record
+            id: ac-partial-recovery
+            then: the partial set is replaced by the complete current prediction without changing manual tags
+            when: the task is retried successfully
         tags: []
         created: 2026-07-22T10:12:41.034Z
         notes: []
