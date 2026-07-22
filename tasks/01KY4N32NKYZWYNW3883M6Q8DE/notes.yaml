@@ -37,3 +37,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-22T10:15:01.113Z
+  - _ulid: 01KY4PD8E2B90MP90XGNDRKWK1
+    content: Implemented persisted next-attempt eligibility with guarded due-only claims, bounded
+      retained errors, terminal failure state, immediate manual Retry Failed reset, and no false
+      completion event for scheduled retries. Migration, claim-delay, exhaustion, and manual-retry
+      regressions pass.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-22T10:37:12.514Z
