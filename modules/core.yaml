@@ -739,6 +739,10 @@ features:
             id: ac-manual-preservation
             then: manual tags remain and the automatic tag set exactly matches the completed prediction
             when: a new prediction is saved
+          - given: saving a multi-tag prediction fails before every automatic tag can be saved
+            id: ac-atomic-write
+            then: the prior complete automatic tag set remains visible and no partial new set is published
+            when: the failure is reported
         tags: []
         created: 2026-07-22T10:12:41.034Z
         notes: []
