@@ -1,0 +1,31 @@
+notes:
+  - _ulid: 01KY4N33XYD9BYB1X0JCA526PW
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Task Manager presents the current task target, retry state, timing, attempts, and latest
+      failure reason in an accessible form.
+
+
+
+      Acceptance Criteria:
+
+      - ac-failed-details: Given a task has failed, when the user opens its details in Task Manager,
+      then the target, attempt count, latest error, and relevant timestamps are readable without
+      hover
+
+      - ac-retry-details: Given a failed attempt is waiting for another try, when the task appears
+      in Task Manager, then it is identified as a scheduled retry with its next eligible time and
+      latest reason
+
+      - ac-accessible-details: Given a task contains a long diagnostic message, when the user opens
+      details with keyboard or pointer input, then the complete bounded message is wrapped,
+      selectable, and associated with an accessible details control
+
+      - ac-current-only: Given task diagnostics are retained, when the task list is requested, then
+      the current bounded error and lifecycle fields are returned without exposing an unbounded
+      execution history
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-22T10:14:11.647Z
