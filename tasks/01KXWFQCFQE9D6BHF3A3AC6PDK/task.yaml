@@ -5,7 +5,7 @@ title: Fix Auto Tagger CUDA execution and managed deployment
 type: task
 spec_ref: "@auto-tagger-runtime-acceleration-deployment"
 derivation: auto
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
@@ -14,9 +14,9 @@ tags: []
 vcs_refs: []
 submission_linkage:
   review_url: null
-  branch: hotfix/2.0.3-cuda-curation
-  captured_at: 2026-07-19T07:52:33.741Z
-  commit: 8fcfdc27d6e829c7a62f0e3ed3f9115b5ac0da49
+  branch: hold/gsd-dispatch-57031ec5
+  captured_at: 2026-07-22T10:12:21.804Z
+  commit: 57031ec5c115404b786b8d551ff4e1cb20296af5
   remote: null
   remote_url: null
   upstream_ref: null
@@ -71,7 +71,34 @@ history:
         previous: 2026-07-19T06:06:52.160Z
     command: task-start
     timestamp: 2026-07-20T08:24:56.119Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: hold/gsd-dispatch-57031ec5
+          captured_at: 2026-07-22T10:12:21.804Z
+          commit: 57031ec5c115404b786b8d551ff4e1cb20296af5
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous:
+          review_url: null
+          branch: hotfix/2.0.3-cuda-curation
+          captured_at: 2026-07-19T07:52:33.741Z
+          commit: 8fcfdc27d6e829c7a62f0e3ed3f9115b5ac0da49
+          remote: null
+          remote_url: null
+          upstream_ref: null
+      submitted_at:
+        new: 2026-07-22T10:12:21.816Z
+        previous: 2026-07-19T07:52:33.747Z
+    command: task-submit
+    timestamp: 2026-07-22T10:12:21.816Z
 created_at: 2026-07-19T06:06:28.855Z
 started_at: 2026-07-20T08:24:56.119Z
-submitted_at: 2026-07-19T07:52:33.747Z
+submitted_at: 2026-07-22T10:12:21.816Z
 todos: []
