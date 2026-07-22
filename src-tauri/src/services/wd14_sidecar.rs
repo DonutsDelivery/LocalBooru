@@ -1247,32 +1247,36 @@ fn sidecar_path_for(media_path: &Path) -> PathBuf {
 
 #[cfg(target_os = "windows")]
 fn case_insensitive_grouping(root: &Path) -> io::Result<bool> {
-    use std::mem::{size_of, zeroed};
+    use std::mem::size_of;
     use std::os::windows::fs::OpenOptionsExt;
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
-        FileCaseSensitiveInfo, GetFileInformationByHandleEx, FILE_CASE_SENSITIVE_INFO,
-        FILE_FLAG_BACKUP_SEMANTICS,
+        FileCaseSensitiveInfo, GetFileInformationByHandleEx, FILE_FLAG_BACKUP_SEMANTICS,
     };
+
+    #[repr(C)]
+    struct FileCaseSensitiveInfoLayout {
+        flags: u32,
+    }
 
     let directory = fs::OpenOptions::new()
         .read(true)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
         .open(root)?;
-    let mut info: FILE_CASE_SENSITIVE_INFO = unsafe { zeroed() };
+    let mut info = FileCaseSensitiveInfoLayout { flags: 0 };
     let result = unsafe {
         GetFileInformationByHandleEx(
             directory.as_raw_handle() as _,
             FileCaseSensitiveInfo,
-            (&mut info as *mut FILE_CASE_SENSITIVE_INFO).cast(),
-            size_of::<FILE_CASE_SENSITIVE_INFO>() as u32,
+            (&mut info as *mut FileCaseSensitiveInfoLayout).cast(),
+            size_of::<FileCaseSensitiveInfoLayout>() as u32,
         )
     };
     if result == 0 {
         return Err(io::Error::last_os_error());
     }
     const FILE_CS_FLAG_CASE_SENSITIVE_DIR: u32 = 1;
-    Ok(info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR == 0)
+    Ok(info.flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR == 0)
 }
 
 #[cfg(target_os = "macos")]
