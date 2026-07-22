@@ -800,6 +800,10 @@ features:
             id: ac-failed-details
             then: the target, attempt count, latest error, and relevant timestamps are readable without hover
             when: the user opens its details in Task Manager
+          - given: a failed attempt is waiting for another try
+            id: ac-retry-details
+            then: it is identified as a scheduled retry with its next eligible time and latest reason
+            when: the task appears in Task Manager
         tags: []
         created: 2026-07-22T10:13:52.136Z
         notes: []
