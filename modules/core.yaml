@@ -795,6 +795,11 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: a task has failed
+            id: ac-failed-details
+            then: the target, attempt count, latest error, and relevant timestamps are readable without hover
+            when: the user opens its details in Task Manager
         tags: []
         created: 2026-07-22T10:13:52.136Z
         notes: []
