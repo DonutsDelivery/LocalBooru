@@ -1,0 +1,31 @@
+notes:
+  - _ulid: 01KY4N32NKM402CKR8MQTS9XSW
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Retryable background-task failures wait for their persisted eligibility time, survive
+      restarts, and end in truthful success or failure states.
+
+
+
+      Acceptance Criteria:
+
+      - ac-delayed-eligibility: Given a background task fails with another attempt available, when
+      the retry is scheduled, then the latest reason and next eligible time are retained and the
+      task cannot run before that time
+
+      - ac-restart-safe: Given a delayed retry is waiting and the application restarts, when workers
+      resume before its eligible time, then the task remains waiting until its persisted retry time
+      arrives
+
+      - ac-terminal-failure: Given a task exhausts its allowed attempts, when the final attempt
+      fails, then the task is marked failed with its latest actionable reason, attempt count, and
+      completion time
+
+      - ac-manual-retry: Given failed tasks retain their latest error and terminal timestamps, when
+      the user retries failed tasks, then they become immediately eligible with reset attempts and
+      stale terminal timing removed
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-22T10:14:10.355Z
