@@ -747,6 +747,10 @@ features:
             id: ac-partial-recovery
             then: the partial set is replaced by the complete current prediction without changing manual tags
             when: the task is retried successfully
+          - given: a prediction returns several distinct tags for an image
+            id: ac-complete-prediction
+            then: every predicted tag and confidence is visible on that image without duplicates
+            when: the auto-tag task succeeds
         tags: []
         created: 2026-07-22T10:12:41.034Z
         notes: []
