@@ -5,7 +5,7 @@ import { formatTime } from '../utils/helpers'
 /**
  * Hook for managing video playback state and controls
  */
-export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
+export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, libraryId) {
   const {
     svpStreamUrl,
     svpStartOffset,
@@ -119,7 +119,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
       // Avoid redundant saves within 5s of the same position
       if (Math.abs(pos - lastSavedPositionRef.current) < 5) return
       lastSavedPositionRef.current = pos
-      savePlaybackPosition(imageId, pos, dur, directoryId).catch(() => {})
+      savePlaybackPosition(imageId, pos, dur, directoryId, libraryId).catch(() => {})
     }
 
     saveIntervalRef.current = setInterval(savePosition, 10000)
@@ -129,7 +129,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
       // Save on cleanup (navigation away)
       savePosition()
     }
-  }, [imageId, directoryId, duration, mediaRef, getCurrentAbsoluteTime])
+  }, [imageId, directoryId, libraryId, duration, mediaRef, getCurrentAbsoluteTime])
 
   // Seek forward/backward
   const seekVideo = useCallback((seconds) => {
@@ -208,10 +208,10 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId) {
       const pos = getCurrentAbsoluteTime()
       if (pos > 0) {
         lastSavedPositionRef.current = pos
-        savePlaybackPosition(imageId, pos, duration, directoryId).catch(() => {})
+        savePlaybackPosition(imageId, pos, duration, directoryId, libraryId).catch(() => {})
       }
     }
-  }, [imageId, mediaRef, duration, getCurrentAbsoluteTime])
+  }, [imageId, directoryId, libraryId, mediaRef, duration, getCurrentAbsoluteTime])
 
   // Update current time as video plays — direct DOM write, no React re-render
   const handleTimeUpdate = useCallback(() => {

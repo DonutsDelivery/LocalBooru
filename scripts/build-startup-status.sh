@@ -27,12 +27,17 @@ localbooru_build_owner_value() {
 localbooru_build_cleanup() {
   local exit_code=$?
 
-  if [[ "$LOCALBOORU_BUILD_LOCK_HELD" == 1 && -n "$LOCALBOORU_BUILD_OWNER_FILE" ]]; then
-    local owner_pid=""
-    owner_pid="$(localbooru_build_owner_value pid "$LOCALBOORU_BUILD_OWNER_FILE" 2>/dev/null || true)"
-    if [[ "$owner_pid" == "$$" ]]; then
-      rm -f "$LOCALBOORU_BUILD_OWNER_FILE"
+  if [[ "$LOCALBOORU_BUILD_LOCK_HELD" == 1 ]]; then
+    if [[ -n "$LOCALBOORU_BUILD_OWNER_FILE" ]]; then
+      local owner_pid=""
+      owner_pid="$(localbooru_build_owner_value pid "$LOCALBOORU_BUILD_OWNER_FILE" 2>/dev/null || true)"
+      if [[ "$owner_pid" == "$$" ]]; then
+        rm -f "$LOCALBOORU_BUILD_OWNER_FILE"
+      fi
     fi
+    flock -u 8 2>/dev/null || true
+    exec 8>&-
+    LOCALBOORU_BUILD_LOCK_HELD=0
   fi
 
   if ((exit_code != 0)) && [[ "$LOCALBOORU_BUILD_STATUS_REPORTED" == 0 ]]; then

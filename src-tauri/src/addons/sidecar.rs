@@ -3,6 +3,12 @@
 //! Low-level utilities for Python virtual environment creation,
 //! dependency installation, process spawning, and health checking.
 
+#[cfg(any(target_os = "windows", test))]
+use std::collections::HashSet;
+#[cfg(target_os = "windows")]
+use std::ffi::OsStr;
+#[cfg(any(target_os = "windows", test))]
+use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -398,6 +404,76 @@ where
     });
 }
 
+#[cfg(any(target_os = "windows", test))]
+fn managed_nvidia_bin_dirs(venv_dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let nvidia_dir = venv_dir.join("Lib").join("site-packages").join("nvidia");
+    if !nvidia_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let entries = std::fs::read_dir(&nvidia_dir)
+        .map_err(|error| format!("Failed to read '{}': {}", nvidia_dir.display(), error))?;
+    let mut directories = Vec::new();
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| format!("Failed to read '{}': {}", nvidia_dir.display(), error))?;
+        if entry
+            .file_type()
+            .map_err(|error| format!("Failed to inspect '{}': {}", entry.path().display(), error))?
+            .is_dir()
+        {
+            let bin_dir = entry.path().join("bin");
+            if bin_dir.is_dir() {
+                directories.push(bin_dir);
+            }
+        }
+    }
+    directories.sort();
+    Ok(directories)
+}
+
+#[cfg(any(target_os = "windows", test))]
+#[derive(Eq, Hash, PartialEq)]
+enum WindowsPathKey {
+    Text(String),
+    Native(OsString),
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn windows_path_key(path: &Path) -> WindowsPathKey {
+    match path.to_str() {
+        Some(value) => WindowsPathKey::Text(value.to_lowercase()),
+        None => WindowsPathKey::Native(path.as_os_str().to_os_string()),
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn deduplicate_windows_path_entries(entries: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    entries
+        .into_iter()
+        .filter(|entry| seen.insert(windows_path_key(entry)))
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn compose_windows_search_path(
+    managed: &[PathBuf],
+    inherited: Option<&OsStr>,
+) -> Result<OsString, String> {
+    if managed.is_empty() {
+        return Ok(inherited.unwrap_or_default().to_os_string());
+    }
+
+    let entries = managed.iter().cloned().chain(
+        inherited
+            .into_iter()
+            .flat_map(|value| std::env::split_paths(value)),
+    );
+    std::env::join_paths(deduplicate_windows_path_entries(entries))
+        .map_err(|error| format!("Failed to compose managed Windows PATH: {}", error))
+}
+
 /// Spawn an addon sidecar process running a uvicorn FastAPI app.
 ///
 /// Runs: `{venv_python} -m uvicorn app:app --port {port} --host 127.0.0.1`
@@ -407,6 +483,7 @@ where
 pub async fn spawn_sidecar(
     addon_id: &str,
     python: &Path,
+    _venv_dir: &Path,
     app_dir: &Path,
     port: u16,
     envs: &[(String, String)],
@@ -434,7 +511,40 @@ pub async fn spawn_sidecar(
     .env("PYTHONUNBUFFERED", "1");
 
     for (key, value) in envs {
+        if cfg!(target_os = "windows") && key.eq_ignore_ascii_case("PATH") {
+            continue;
+        }
         cmd.env(key, value);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let inherited_path = envs
+            .iter()
+            .rev()
+            .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+            .map(|(_, value)| OsString::from(value))
+            .or_else(|| std::env::var_os("PATH"));
+        let managed = match managed_nvidia_bin_dirs(_venv_dir) {
+            Ok(directories) => directories,
+            Err(error) => {
+                log::warn!("[Addon:{}] {}", addon_id, error);
+                Vec::new()
+            }
+        };
+        if !managed.is_empty() || inherited_path.is_some() {
+            match compose_windows_search_path(&managed, inherited_path.as_deref()) {
+                Ok(path) => {
+                    cmd.env("PATH", path);
+                }
+                Err(error) => {
+                    log::warn!("[Addon:{}] {}", addon_id, error);
+                    if let Some(path) = inherited_path {
+                        cmd.env("PATH", path);
+                    }
+                }
+            }
+        }
     }
 
     // Unix: create a new process group for clean shutdown
@@ -732,6 +842,70 @@ mod tests {
         assert_eq!(parse_python_minor("Python 3.13.1"), Some(13));
         assert_eq!(parse_python_minor("Python 3.9.20"), Some(9));
         assert_eq!(parse_python_minor("Python 3.14.0"), Some(14));
+    }
+
+    // AC: @auto-tagger-runtime-acceleration-deployment ac-managed-native-library-search
+    #[test]
+    fn managed_nvidia_bin_dirs_are_existing_and_deterministic() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-nvidia-bin-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let nvidia = root.join("Lib").join("site-packages").join("nvidia");
+        let cudnn = nvidia.join("cudnn").join("bin");
+        let cublas = nvidia.join("cublas").join("bin");
+        std::fs::create_dir_all(&cudnn).unwrap();
+        std::fs::create_dir_all(&cublas).unwrap();
+        std::fs::create_dir_all(nvidia.join("cuda_runtime")).unwrap();
+        std::fs::write(nvidia.join("not-a-package"), b"file").unwrap();
+
+        let directories = managed_nvidia_bin_dirs(&root).unwrap();
+
+        assert_eq!(directories, vec![cublas, cudnn]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @auto-tagger-runtime-acceleration-deployment ac-managed-native-library-search
+    #[test]
+    fn managed_nvidia_bins_precede_and_deduplicate_inherited_windows_path() {
+        let managed_with_semicolon = PathBuf::from(r"C:\Apps;Lab\NVIDIA\cuDNN\bin");
+        let entries = vec![
+            managed_with_semicolon.clone(),
+            PathBuf::from(r"C:\Managed\CUDA\bin"),
+            PathBuf::from(r"c:\apps;lab\nvidia\CUDNN\BIN"),
+            PathBuf::from(r"C:\Windows\System32"),
+            PathBuf::from(r"C:\Tools"),
+            PathBuf::from(r"C:\WINDOWS\SYSTEM32"),
+        ];
+
+        assert_eq!(
+            deduplicate_windows_path_entries(entries),
+            vec![
+                managed_with_semicolon,
+                PathBuf::from(r"C:\Managed\CUDA\bin"),
+                PathBuf::from(r"C:\Windows\System32"),
+                PathBuf::from(r"C:\Tools"),
+            ]
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_path_composition_quotes_semicolon_entries() {
+        let managed = vec![PathBuf::from(r"C:\Apps;Lab\NVIDIA\cuDNN\bin")];
+        let inherited = OsStr::new(r"C:\Windows\System32;C:\Tools");
+
+        let composed = compose_windows_search_path(&managed, Some(inherited)).unwrap();
+        let entries: Vec<PathBuf> = std::env::split_paths(&composed).collect();
+
+        assert_eq!(
+            entries,
+            vec![
+                managed[0].clone(),
+                PathBuf::from(r"C:\Windows\System32"),
+                PathBuf::from(r"C:\Tools"),
+            ]
+        );
     }
 
     // AC: @auto-tagger-runtime-acceleration-deployment ac-2

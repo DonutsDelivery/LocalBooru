@@ -5,6 +5,8 @@ import axios from 'axios'
 import { isMobileApp, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 import { adjustmentQuery } from './utils/imageAdjustments.js'
+import { shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
+import { runtimeDiagnosticTimeoutMs } from './components/autoTaggerRuntime.js'
 
 // Current server config (cached for synchronous access)
 let currentServerUrl = null
@@ -217,8 +219,10 @@ api.interceptors.response.use(
     // 4. Timeout errors
     const isTransient = isNetworkError || status === 503 || error.code === 'ECONNABORTED'
 
+    const suppressOptionalNotFound = shouldSuppressOptionalNotFound(error.config, status)
+
     // Only show popup for real errors after startup
-    if (!duringStartup && !isTransient) {
+    if (!duringStartup && !isTransient && !suppressOptionalNotFound) {
       let message = `API Error: ${method} ${url}\n\nStatus: ${status || 'Network Error'}`
 
       if (data) {
@@ -311,8 +315,11 @@ export async function fetchFolders({ directory_id, library_id, rating, favorites
   return response.data
 }
 
-export async function fetchImage(id) {
-  const response = await api.get(`/images/${id}`)
+export async function fetchImage(id, { directoryId = null, libraryId = null } = {}) {
+  const params = {}
+  if (directoryId != null) params.directory_id = directoryId
+  if (libraryId) params.library_id = libraryId
+  const response = await api.get(`/images/${id}`, { params })
   return response.data
 }
 
@@ -458,9 +465,9 @@ const previewFrameQueue = {
   running: 0,
   queue: [],
 
-  async enqueue(fn) {
+  async enqueue(fn, signal) {
     return new Promise((resolve, reject) => {
-      this.queue.push({ fn, resolve, reject })
+      this.queue.push({ fn, signal, resolve, reject })
       this.process()
     })
   },
@@ -468,7 +475,12 @@ const previewFrameQueue = {
   async process() {
     if (this.running >= this.maxConcurrent || this.queue.length === 0) return
 
-    const { fn, resolve, reject } = this.queue.shift()
+    const { fn, signal, resolve, reject } = this.queue.shift()
+    if (signal?.aborted) {
+      reject(new DOMException('Timeline preview request was cancelled', 'AbortError'))
+      this.process()
+      return
+    }
     this.running++
 
     try {
@@ -483,12 +495,19 @@ const previewFrameQueue = {
   }
 }
 
-export async function fetchPreviewFrames(imageId, directoryId = null) {
+export async function fetchPreviewFrames(locator, signal = undefined) {
   return previewFrameQueue.enqueue(async () => {
-    const params = directoryId ? `?directory_id=${directoryId}` : ''
-    const response = await api.get(`/images/${imageId}/preview-frames${params}`)
+    const params = new URLSearchParams({
+      directory_id: String(locator.directoryId),
+      library_id: locator.libraryId,
+      file_hash: locator.fileHash,
+    })
+    const response = await api.get(
+      `/images/${locator.imageId}/preview-frames?${params}`,
+      { signal, suppressErrorToast: true }
+    )
     return response.data
-  })
+  }, signal)
 }
 
 // Tags API
@@ -1160,10 +1179,18 @@ export async function deleteSavedSearch(searchId) {
 }
 
 // Watch History API
-export async function savePlaybackPosition(imageId, position, duration, directoryId = null) {
+export async function savePlaybackPosition(imageId, position, duration, directoryId = null, libraryId = null) {
   const body = { position, duration }
-  if (directoryId) body.directory_id = directoryId
-  const response = await api.post(`/watch-history/${imageId}`, body)
+  const params = {}
+  if (directoryId != null) {
+    body.directory_id = directoryId
+    params.directory_id = directoryId
+  }
+  if (libraryId) {
+    body.library_id = libraryId
+    params.library_id = libraryId
+  }
+  const response = await api.post(`/watch-history/${imageId}`, body, { params })
   return response.data
 }
 
@@ -1172,14 +1199,20 @@ export async function getContinueWatching() {
   return response.data
 }
 
-export async function getPlaybackPosition(imageId) {
-  const response = await api.get(`/watch-history/${imageId}`)
+export async function getPlaybackPosition(imageId, directoryId = null, libraryId = null) {
+  const params = {}
+  if (directoryId != null) params.directory_id = directoryId
+  if (libraryId) params.library_id = libraryId
+  const response = await api.get(`/watch-history/${imageId}`, { params })
   return response.data
 }
 
-export async function clearWatchHistory(imageId = null) {
-  if (imageId) {
-    const response = await api.delete(`/watch-history/${imageId}`)
+export async function clearWatchHistory(imageId = null, directoryId = null, libraryId = null) {
+  if (imageId != null) {
+    const params = {}
+    if (directoryId != null) params.directory_id = directoryId
+    if (libraryId) params.library_id = libraryId
+    const response = await api.delete(`/watch-history/${imageId}`, { params })
     return response.data
   }
   const response = await api.delete('/watch-history')
@@ -1609,6 +1642,14 @@ export function absorbWd14Sidecars(directories) {
 export function exportWd14Sidecars(directories, overwrite = false) {
   return runWd14SidecarOperation('export', directories, overwrite)
 }
+
+export async function runAutoTaggerRuntimeDiagnostic() {
+  const response = await api.post('/addons/auto-tagger/api/runtime-diagnostic', null, {
+    timeout: runtimeDiagnosticTimeoutMs(),
+  })
+  return response.data
+}
+
 
 export async function getAutoTaggerConfig() {
   const response = await api.get('/settings/auto-tagger')

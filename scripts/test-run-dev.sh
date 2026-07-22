@@ -10,11 +10,12 @@ cleanup() {
     touch "$TEMP_DIR/release"
     wait "$FIRST_PID" 2>/dev/null || true
   fi
+  exec 9>&- 2>/dev/null || true
   rm -rf "$TEMP_DIR"
 }
 trap cleanup EXIT
 
-mkdir -p "$TEMP_DIR/bin" "$TEMP_DIR/home" "$TEMP_DIR/state" "$TEMP_DIR/target"
+mkdir -p "$TEMP_DIR/bin" "$TEMP_DIR/home" "$TEMP_DIR/state/localbooru" "$TEMP_DIR/target"
 cat >"$TEMP_DIR/bin/npm" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -45,7 +46,6 @@ export XDG_STATE_HOME="$TEMP_DIR/state"
 export LOCALBOORU_DEV_TARGET_DIR="$TEMP_DIR/target"
 export LOCALBOORU_DEV_LOG="$TEMP_DIR/dev.log"
 export LOCALBOORU_WEBKIT_ROOT="$TEMP_DIR/no-webkit"
-export LOCALBOORU_BUILD_LOCK_TIMEOUT=0
 export FAKE_NPM_CALLS="$TEMP_DIR/calls"
 export FAKE_NPM_WORKERS="$TEMP_DIR/workers"
 export FAKE_NPM_ARGUMENTS="$TEMP_DIR/arguments"
@@ -73,6 +73,10 @@ grep -F 'A LocalBooru development session is already running.' \
   "$TEMP_DIR/second-output" >/dev/null
 [[ "$(wc -l <"$FAKE_NPM_CALLS")" -eq 1 ]]
 
+# AC: @safe-development-startup ac-build-lock-independence
+exec 9>"$TEMP_DIR/state/localbooru/build-cache.lock"
+flock -n 9
+
 touch "$FAKE_NPM_RELEASE"
 wait "$FIRST_PID"
 FIRST_PID=""
@@ -87,6 +91,7 @@ grep -F 'port 5210 is already in use' "$TEMP_DIR/port-output" >/dev/null
 [[ "$(wc -l <"$FAKE_NPM_CALLS")" -eq 1 ]]
 
 # AC: @safe-development-startup ac-single-launch
+# AC: @safe-development-startup ac-build-lock-independence
 "$ROOT/run-dev.sh" "/tmp/second video.mp4" >/dev/null
 [[ "$(wc -l <"$FAKE_NPM_CALLS")" -eq 2 ]]
 

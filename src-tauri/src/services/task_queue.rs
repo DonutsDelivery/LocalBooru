@@ -1,5 +1,6 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use dashmap::DashMap;
@@ -41,6 +42,9 @@ pub const STATUS_CANCELLED: &str = "cancelled";
 
 /// Maximum number of retry attempts before a task is permanently failed.
 const MAX_RETRIES: i64 = 3;
+
+static TAG_PERSIST_LOCK: Mutex<()> = Mutex::new(());
+static TAG_COUNT_REFRESH_LOCK: Mutex<()> = Mutex::new(());
 
 /// Default number of concurrent task workers (num_cpus / 2, minimum 2).
 fn default_workers() -> usize {
@@ -284,7 +288,9 @@ fn read_worker_count(state: &AppState) -> usize {
 fn reset_stuck_tasks(state: &AppState) -> Result<(), AppError> {
     let conn = state.main_db().get()?;
     let updated = conn.execute(
-        "UPDATE task_queue SET status = ?1 WHERE status = ?2",
+        "UPDATE task_queue
+         SET status = ?1, next_attempt_at = NULL, started_at = NULL
+         WHERE status = ?2",
         params![STATUS_PENDING, STATUS_PROCESSING],
     )?;
     if updated > 0 {
@@ -293,57 +299,108 @@ fn reset_stuck_tasks(state: &AppState) -> Result<(), AppError> {
     Ok(())
 }
 
+type ClaimedTask = (i64, String, String, i64);
+
+fn claim_next_task(state: &AppState) -> Result<Option<ClaimedTask>, AppError> {
+    let conn = state.main_db().get()?;
+    loop {
+        let result = conn.query_row(
+            "SELECT id, task_type, payload, COALESCE(attempts, 0) FROM task_queue
+             WHERE status = ?1
+               AND (next_attempt_at IS NULL OR next_attempt_at <= datetime('now'))
+             ORDER BY priority DESC, COALESCE(next_attempt_at, created_at) ASC, created_at ASC
+             LIMIT 1",
+            params![STATUS_PENDING],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            },
+        );
+
+        match result {
+            Ok(task) => {
+                let claimed = conn.execute(
+                    "UPDATE task_queue
+                     SET status = ?1, started_at = datetime('now')
+                     WHERE id = ?2 AND status = ?3
+                       AND (next_attempt_at IS NULL OR next_attempt_at <= datetime('now'))",
+                    params![STATUS_PROCESSING, task.0, STATUS_PENDING],
+                )?;
+                if claimed == 1 {
+                    return Ok(Some(task));
+                }
+                // Another worker won this candidate. Try the next eligible row
+                // instead of treating claim contention as an empty queue.
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+            Err(error) => return Err(AppError::from(error)),
+        }
+    }
+}
+
+fn bounded_task_error(error: &str) -> String {
+    error.chars().take(4096).collect()
+}
+
+fn record_task_failure(
+    conn: &rusqlite::Connection,
+    task_id: i64,
+    attempts: i64,
+    error: &str,
+) -> Result<String, AppError> {
+    let error = bounded_task_error(error);
+    let new_attempts = attempts + 1;
+    if new_attempts < MAX_RETRIES {
+        let delay_seconds = 1i64 << (new_attempts - 1);
+        conn.execute(
+            "UPDATE task_queue
+             SET status = ?1, error_message = ?2, attempts = ?3,
+                 next_attempt_at = datetime('now', ?4), started_at = NULL,
+                 completed_at = NULL
+             WHERE id = ?5 AND status = ?6",
+            params![
+                STATUS_PENDING,
+                error,
+                new_attempts,
+                format!("+{delay_seconds} seconds"),
+                task_id,
+                STATUS_PROCESSING,
+            ],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE task_queue
+             SET status = ?1, error_message = ?2, attempts = ?3,
+                 next_attempt_at = NULL, completed_at = datetime('now')
+             WHERE id = ?4 AND status = ?5",
+            params![
+                STATUS_FAILED,
+                error,
+                new_attempts,
+                task_id,
+                STATUS_PROCESSING
+            ],
+        )?;
+    }
+
+    let status = conn.query_row(
+        "SELECT status FROM task_queue WHERE id = ?1",
+        params![task_id],
+        |row| row.get::<_, String>(0),
+    )?;
+    Ok(status)
+}
+
 /// Try to fetch and process the next pending task.
 /// Returns true if a task was processed, false if queue is empty.
 async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
     let state_clone = state.clone();
 
-    // Fetch next task (blocking DB operation)
-    // Uses atomic UPDATE + SELECT to prevent two workers claiming the same task.
-    let task_info = tokio::task::spawn_blocking(
-        move || -> Result<Option<(i64, String, String, i64)>, AppError> {
-            let conn = state_clone.main_db().get()?;
-
-            // Atomically claim the highest-priority pending task:
-            // 1. Find the best candidate
-            // 2. UPDATE it to 'processing' only if it's still 'pending'
-            // 3. Check changes() to confirm we actually claimed it
-            let result = conn.query_row(
-                "SELECT id, task_type, payload, COALESCE(attempts, 0) FROM task_queue
-             WHERE status = ?1
-             ORDER BY priority DESC, created_at ASC
-             LIMIT 1",
-                params![STATUS_PENDING],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, i64>(3)?,
-                    ))
-                },
-            );
-
-            match result {
-                Ok(task) => {
-                    // Atomically claim: only update if still pending
-                    let claimed = conn.execute(
-                        "UPDATE task_queue SET status = ?1, started_at = datetime('now')
-                     WHERE id = ?2 AND status = ?3",
-                        params![STATUS_PROCESSING, task.0, STATUS_PENDING],
-                    )?;
-                    if claimed == 0 {
-                        // Another worker already claimed it, try again
-                        return Ok(None);
-                    }
-                    Ok(Some(task))
-                }
-                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-                Err(e) => Err(AppError::from(e)),
-            }
-        },
-    )
-    .await??;
+    let task_info = tokio::task::spawn_blocking(move || claim_next_task(&state_clone)).await??;
 
     let (task_id, task_type, payload_str, attempts) = match task_info {
         Some(t) => t,
@@ -366,6 +423,8 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
     }
 
     let payload: Value = serde_json::from_str(&payload_str).unwrap_or_default();
+    let event_directory_id = payload["directory_id"].as_i64();
+    let event_library_id = payload["library_id"].as_str().map(str::to_owned);
 
     // Register cancellation token for this task
     let cancel_token = CancellationToken::new();
@@ -386,75 +445,98 @@ async fn process_next_task(state: &AppState) -> Result<bool, AppError> {
     // Update task status
     let state_clone = state.clone();
     let task_type_clone = task_type.clone();
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+    let final_status = tokio::task::spawn_blocking(move || -> Result<String, AppError> {
         let conn = state_clone.main_db().get()?;
 
         if was_cancelled {
-            // Task was cancelled mid-execution — mark as cancelled
             conn.execute(
-                "UPDATE task_queue SET status = ?1, completed_at = datetime('now') WHERE id = ?2",
-                params![STATUS_CANCELLED, task_id],
+                "UPDATE task_queue
+                 SET status = ?1, next_attempt_at = NULL, completed_at = datetime('now')
+                 WHERE id = ?2 AND status = ?3",
+                params![STATUS_CANCELLED, task_id, STATUS_PROCESSING],
             )?;
-            log::info!("[TaskQueue] Task #{} ({}) cancelled", task_id, task_type_clone);
-            return Ok(());
+            let status = conn.query_row(
+                "SELECT status FROM task_queue WHERE id = ?1",
+                params![task_id],
+                |row| row.get::<_, String>(0),
+            )?;
+            log::info!(
+                "[TaskQueue] Task #{} ({}) cancelled",
+                task_id,
+                task_type_clone
+            );
+            return Ok(status);
         }
 
         match result {
             Ok(()) => {
                 conn.execute(
-                    "UPDATE task_queue SET status = ?1, completed_at = datetime('now') WHERE id = ?2",
-                    params![STATUS_COMPLETED, task_id],
+                    "UPDATE task_queue
+                     SET status = ?1, error_message = NULL, next_attempt_at = NULL,
+                         completed_at = datetime('now')
+                     WHERE id = ?2 AND status = ?3",
+                    params![STATUS_COMPLETED, task_id, STATUS_PROCESSING],
                 )?;
+                let status = conn.query_row(
+                    "SELECT status FROM task_queue WHERE id = ?1",
+                    params![task_id],
+                    |row| row.get::<_, String>(0),
+                )?;
+                Ok(status)
             }
-            Err(e) => {
-                let error_msg = e.to_string();
+            Err(error) => {
+                let error_message = error.to_string();
                 let new_attempts = attempts + 1;
+                let status = record_task_failure(&conn, task_id, attempts, &error_message)?;
 
-                if new_attempts < MAX_RETRIES {
-                    // Retry: set back to pending with incremented attempts
-                    conn.execute(
-                        "UPDATE task_queue SET status = ?1, error_message = ?2, attempts = ?3 WHERE id = ?4",
-                        params![STATUS_PENDING, &error_msg, new_attempts, task_id],
-                    )?;
-
-                    // Exponential backoff: 1s, 2s, 4s (2^(attempt-1) seconds)
+                if status == STATUS_PENDING {
                     let backoff = Duration::from_secs(1u64 << (new_attempts - 1));
-
                     log::warn!(
                         "[TaskQueue] Task #{} ({}) failed (attempt {}/{}), retrying in {:?}: {}",
-                        task_id, task_type_clone, new_attempts, MAX_RETRIES, backoff, error_msg
+                        task_id,
+                        task_type_clone,
+                        new_attempts,
+                        MAX_RETRIES,
+                        backoff,
+                        bounded_task_error(&error_message)
                     );
-
-                    // Schedule the retry by spawning a delayed wake
                     let state_for_wake = state_clone.clone();
                     tokio::spawn(async move {
                         tokio::time::sleep(backoff).await;
-                        if let Some(tq) = state_for_wake.task_queue() {
-                            tq.wake();
+                        if let Some(task_queue) = state_for_wake.task_queue() {
+                            task_queue.wake();
                         }
                     });
                 } else {
-                    // Permanently failed after all retries
-                    conn.execute(
-                        "UPDATE task_queue SET status = ?1, error_message = ?2, attempts = ?3, completed_at = datetime('now') WHERE id = ?4",
-                        params![STATUS_FAILED, &error_msg, new_attempts, task_id],
-                    )?;
                     log::error!(
                         "[TaskQueue] Task #{} ({}) permanently failed after {} attempts: {}",
-                        task_id, task_type_clone, new_attempts, error_msg
+                        task_id,
+                        task_type_clone,
+                        new_attempts,
+                        bounded_task_error(&error_message)
                     );
                 }
+                Ok(status.to_string())
             }
         }
-        Ok(())
     })
     .await??;
 
-    // Broadcast task completion event
     if let Some(events) = state.events() {
+        let event_type = if final_status == STATUS_COMPLETED {
+            event_type::TASK_COMPLETED
+        } else {
+            event_type::TASK_UPDATED
+        };
         events.library.broadcast(
-            event_type::TASK_COMPLETED,
-            serde_json::json!({ "task_id": task_id, "task_type": task_type }),
+            event_type,
+            serde_json::json!({
+                "task_id": task_id,
+                "task_type": task_type,
+                "status": final_status,
+                "directory_id": event_directory_id,
+                "library_id": event_library_id,
+            }),
         );
     }
 
@@ -729,6 +811,7 @@ fn complete_directory_imports(
                 serde_json::json!({
                     "task_type": TASK_COMPLETE_IMPORTS,
                     "directory_id": directory_id,
+                    "library_id": lib.uuid,
                     "processed": 0,
                     "total": total_thumbs,
                     "phase": "thumbnails",
@@ -797,6 +880,7 @@ fn complete_directory_imports(
                                     serde_json::json!({
                                         "task_type": TASK_COMPLETE_IMPORTS,
                                         "directory_id": directory_id,
+                                        "library_id": lib.uuid,
                                         "processed": count,
                                         "total": total_thumbs,
                                         "phase": "thumbnails",
@@ -862,6 +946,7 @@ fn complete_directory_imports(
             serde_json::json!({
                 "task_type": TASK_COMPLETE_IMPORTS,
                 "directory_id": directory_id,
+                "library_id": lib.uuid,
                 "processed": 0,
                 "total": total_images,
                 "phase": "hashing",
@@ -945,6 +1030,7 @@ fn complete_directory_imports(
                     serde_json::json!({
                         "task_type": TASK_COMPLETE_IMPORTS,
                         "directory_id": directory_id,
+                        "library_id": lib.uuid,
                         "processed": processed,
                         "total": total_images,
                         "phase": "hashing",
@@ -1032,13 +1118,259 @@ fn enqueue_missing_age_detection(
 
 // ─── TASK_TAG handler ────────────────────────────────────────────────────────
 
+#[derive(Clone, Debug)]
+struct PredictedTag {
+    name: String,
+    category: String,
+    confidence: f64,
+}
+
+fn normalize_predicted_tags(values: &[Value]) -> Result<Vec<PredictedTag>, AppError> {
+    let mut tags: BTreeMap<String, PredictedTag> = BTreeMap::new();
+    for value in values {
+        let name = value
+            .get("name")
+            .and_then(Value::as_str)
+            .map(|name| name.trim().to_lowercase().replace(' ', "_"))
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| {
+                AppError::Internal("Auto Tagger returned a tag without a name".into())
+            })?;
+        let confidence = value
+            .get("confidence")
+            .and_then(Value::as_f64)
+            .filter(|confidence| confidence.is_finite() && (0.0..=1.0).contains(confidence))
+            .ok_or_else(|| {
+                AppError::Internal(format!(
+                    "Auto Tagger returned invalid confidence for tag '{name}'"
+                ))
+            })?;
+        let category = value
+            .get("category")
+            .and_then(Value::as_str)
+            .unwrap_or("general");
+        if !matches!(
+            category,
+            "general" | "character" | "copyright" | "artist" | "meta"
+        ) {
+            return Err(AppError::Internal(format!(
+                "Auto Tagger returned invalid category '{category}' for tag '{name}'"
+            )));
+        }
+
+        let predicted = PredictedTag {
+            name: name.clone(),
+            category: category.to_string(),
+            confidence,
+        };
+        match tags.get(&name) {
+            Some(existing) if existing.confidence >= confidence => {}
+            _ => {
+                tags.insert(name, predicted);
+            }
+        }
+    }
+    Ok(tags.into_values().collect())
+}
+
+fn refresh_tag_post_counts(lib: &LibraryContext, tag_ids: &HashSet<i64>) -> Result<(), AppError> {
+    if tag_ids.is_empty() {
+        return Ok(());
+    }
+
+    let _refresh_guard = TAG_COUNT_REFRESH_LOCK
+        .lock()
+        .map_err(|_| AppError::Internal("Tag count refresh lock was poisoned".into()))?;
+    let mut ids: Vec<i64> = tag_ids.iter().copied().collect();
+    ids.sort_unstable();
+    let placeholders = std::iter::repeat("?")
+        .take(ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let query = format!(
+        "SELECT tag_id, COUNT(*) FROM image_tags
+         WHERE tag_id IN ({placeholders}) GROUP BY tag_id"
+    );
+    let mut counts: HashMap<i64, i64> = ids.iter().map(|id| (*id, 0)).collect();
+
+    // Directory databases own v2 image associations. Legacy main rows may be
+    // mirrored copies, so including them would double-count upgraded libraries.
+    for directory_id in lib.directory_db.get_all_directory_ids() {
+        let Ok(pool) = lib.directory_db.get_pool(directory_id) else {
+            log::warn!("[TaskQueue] Skipping unavailable directory #{directory_id} during tag count refresh");
+            continue;
+        };
+        let Ok(conn) = pool.get() else {
+            log::warn!("[TaskQueue] Skipping unreadable directory #{directory_id} during tag count refresh");
+            continue;
+        };
+        let mut stmt = match conn.prepare(&query) {
+            Ok(stmt) => stmt,
+            Err(error) => {
+                log::warn!(
+                    "[TaskQueue] Skipping directory #{} during tag count refresh: {}",
+                    directory_id,
+                    error
+                );
+                continue;
+            }
+        };
+        let rows = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        for row in rows {
+            let (tag_id, count) = row?;
+            *counts.entry(tag_id).or_default() += count;
+        }
+    }
+
+    let mut main_conn = lib.main_pool.get()?;
+    let tx = main_conn.transaction()?;
+    for tag_id in ids {
+        tx.execute(
+            "UPDATE tags SET post_count = ?1 WHERE id = ?2",
+            params![counts.get(&tag_id).copied().unwrap_or(0), tag_id],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+fn remove_unassociated_tags(lib: &LibraryContext, tag_ids: &[i64]) -> Result<(), AppError> {
+    for tag_id in tag_ids {
+        let mut associated = false;
+        for directory_id in lib.directory_db.get_all_directory_ids() {
+            let Ok(pool) = lib.directory_db.get_pool(directory_id) else {
+                continue;
+            };
+            let Ok(conn) = pool.get() else {
+                continue;
+            };
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM image_tags WHERE tag_id = ?1",
+                params![tag_id],
+                |row| row.get(0),
+            )?;
+            if count > 0 {
+                associated = true;
+                break;
+            }
+        }
+        if !associated {
+            let main = lib.main_pool.get()?;
+            main.execute(
+                "DELETE FROM tags
+                 WHERE id = ?1 AND post_count = 0
+                   AND NOT EXISTS (SELECT 1 FROM image_tags WHERE tag_id = ?1)",
+                params![tag_id],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn persist_predicted_tags(
+    lib: &LibraryContext,
+    directory_id: i64,
+    image_id: i64,
+    tags: &[PredictedTag],
+) -> Result<(), AppError> {
+    let _persist_guard = TAG_PERSIST_LOCK
+        .lock()
+        .map_err(|_| AppError::Internal("Tag persistence lock was poisoned".into()))?;
+    let pool = lib.directory_db.get_pool(directory_id)?;
+    let mut conn = pool.get()?;
+    let image_exists = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM images WHERE id = ?1)",
+        params![image_id],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !image_exists {
+        return Err(AppError::NotFound(format!(
+            "Image {image_id} was not found in directory {directory_id}"
+        )));
+    }
+
+    let (resolved_tags, created_tag_ids): (Vec<(i64, f64)>, Vec<i64>) = {
+        let mut main_conn = lib.main_pool.get()?;
+        let tx = main_conn.transaction()?;
+        let mut resolved = Vec::with_capacity(tags.len());
+        let mut created = Vec::new();
+        for tag in tags {
+            let inserted = tx.execute(
+                "INSERT OR IGNORE INTO tags (name, category) VALUES (?1, ?2)",
+                params![&tag.name, &tag.category],
+            )?;
+            let tag_id = tx.query_row(
+                "SELECT id FROM tags WHERE name = ?1",
+                params![&tag.name],
+                |row| row.get::<_, i64>(0),
+            )?;
+            if inserted == 1 {
+                created.push(tag_id);
+            }
+            resolved.push((tag_id, tag.confidence));
+        }
+        tx.commit()?;
+        (resolved, created)
+    };
+
+    let mut affected_tag_ids: HashSet<i64> = resolved_tags.iter().map(|(id, _)| *id).collect();
+    let association_result = (|| -> Result<(), AppError> {
+        let tx = conn.transaction()?;
+        let previous_auto_ids: Vec<i64> = tx
+            .prepare("SELECT tag_id FROM image_tags WHERE image_id = ?1 AND is_manual = 0")?
+            .query_map(params![image_id], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        affected_tag_ids.extend(previous_auto_ids);
+
+        tx.execute(
+            "DELETE FROM image_tags WHERE image_id = ?1 AND is_manual = 0",
+            params![image_id],
+        )?;
+        for (tag_id, confidence) in &resolved_tags {
+            tx.execute(
+                "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
+                 VALUES (?1, ?2, ?3, 0)",
+                params![image_id, tag_id, confidence],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    })();
+    drop(conn);
+    drop(pool);
+
+    if let Err(error) = association_result {
+        if let Err(cleanup_error) = remove_unassociated_tags(lib, &created_tag_ids) {
+            log::error!(
+                "[TaskQueue] Failed to clean up tags after prediction rollback: {}",
+                cleanup_error
+            );
+        }
+        return Err(error);
+    }
+
+    if let Err(error) = refresh_tag_post_counts(lib, &affected_tag_ids) {
+        // Associations are authoritative and already committed. A derived count
+        // refresh must not turn that successful persistence into a failed task.
+        log::error!(
+            "[TaskQueue] Failed to refresh tag post counts after tagging directory #{} image #{}: {}",
+            directory_id,
+            image_id,
+            error
+        );
+    }
+    Ok(())
+}
+
 /// Execute a tag task by sending the image to the auto-tagger addon sidecar.
 ///
 /// Expected payload: { "image_id": N, "directory_id": N, "image_path": "..." }
 ///
 /// The auto-tagger addon (port 18001) receives a POST to /predict with the
 /// image file path and returns predicted tags with confidence scores.
-/// If the addon is not running, the task is skipped (not failed).
+/// If the addon is not running, the attempt fails with an actionable reason.
 async fn execute_tag_task(
     state: &AppState,
     lib: &Arc<LibraryContext>,
@@ -1047,36 +1379,38 @@ async fn execute_tag_task(
     let image_id = payload["image_id"]
         .as_i64()
         .ok_or_else(|| AppError::Internal("Missing image_id in tag task".into()))?;
-    let directory_id = payload["directory_id"].as_i64();
-    let mut image_path = payload["image_path"].as_str().unwrap_or("").to_string();
+    let directory_id = payload["directory_id"]
+        .as_i64()
+        .ok_or_else(|| AppError::Internal("Missing directory_id in tag task".into()))?;
+    let lib_for_path = lib.clone();
+    let image_path = tokio::task::spawn_blocking(move || -> Result<String, AppError> {
+        let pool = lib_for_path.directory_db.get_pool(directory_id)?;
+        let conn = pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT original_path FROM image_files
+             WHERE image_id = ?1 AND file_exists = 1
+               AND curation_discarded_at IS NULL
+               AND COALESCE(file_status, '') != 'drive_offline'
+             ORDER BY id",
+        )?;
+        let candidates = stmt
+            .query_map(params![image_id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        candidates
+            .into_iter()
+            .find(|path| std::path::Path::new(path).is_file())
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "No available file for image {image_id} in directory {directory_id}"
+                ))
+            })
+    })
+    .await??;
 
-    // Resolve image path from directory DB if not in the payload
-    if image_path.is_empty() {
-        if let Some(dir_id) = directory_id {
-            let lib = lib.clone();
-            let resolved = tokio::task::spawn_blocking(move || -> Option<String> {
-                let pool = lib.directory_db.get_pool(dir_id).ok()?;
-                let conn = pool.get().ok()?;
-                conn.query_row(
-                    "SELECT original_path FROM image_files WHERE image_id = ?1 AND file_exists = 1 LIMIT 1",
-                    rusqlite::params![image_id],
-                    |row| row.get::<_, String>(0),
-                ).ok()
-            }).await.unwrap_or(None);
-
-            if let Some(path) = resolved {
-                image_path = path;
-            }
-        }
-    }
-
-    if image_path.is_empty() || !std::path::Path::new(&image_path).exists() {
-        log::warn!(
-            "[TaskQueue] Tag task for image #{}: file not found at '{}'",
-            image_id,
-            image_path
-        );
-        return Ok(());
+    if !std::path::Path::new(&image_path).exists() {
+        return Err(AppError::NotFound(format!(
+            "Tag task file is missing for directory {directory_id}, image {image_id}: {image_path}"
+        )));
     }
 
     // Skip video files — the auto-tagger only handles images
@@ -1087,23 +1421,19 @@ async fn execute_tag_task(
     // Check if auto-tagger addon is running
     let addon_status = state.addon_manager().get_addon_status("auto-tagger");
     if addon_status != AddonStatus::Running {
-        log::info!(
-            "[TaskQueue] Skipping tag task for image #{} (auto-tagger addon not running, status: {:?})",
-            image_id, addon_status
-        );
-        return Ok(());
+        return Err(AppError::Internal(format!(
+            "Auto Tagger is not running for directory {directory_id}, image {image_id} (status: {addon_status:?})"
+        )));
     }
 
-    let base_url = match state.addon_manager().addon_url("auto-tagger") {
-        Some(url) => url,
-        None => {
-            log::warn!(
-                "[TaskQueue] auto-tagger addon URL unavailable for image #{}",
-                image_id
-            );
-            return Ok(());
-        }
-    };
+    let base_url = state
+        .addon_manager()
+        .addon_url("auto-tagger")
+        .ok_or_else(|| {
+            AppError::Internal(format!(
+                "Auto Tagger URL is unavailable for directory {directory_id}, image {image_id}"
+            ))
+        })?;
 
     // Send image path to the auto-tagger sidecar
     let predict_url = format!("{}/predict", base_url.trim_end_matches('/'));
@@ -1119,137 +1449,51 @@ async fn execute_tag_task(
             "image_id": image_id,
         }))
         .send()
-        .await;
-
-    let response = match response {
-        Ok(r) => r,
-        Err(e) => {
-            log::warn!(
-                "[TaskQueue] Failed to reach auto-tagger for image #{}: {}",
-                image_id,
-                e
-            );
-            return Ok(());
-        }
-    };
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "Failed to reach Auto Tagger for directory {directory_id}, image {image_id}: {error}"
+            ))
+        })?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        log::warn!(
-            "[TaskQueue] auto-tagger returned {} for image #{}: {}",
-            status,
-            image_id,
-            body
-        );
-        return Ok(());
+        let bounded_body: String = body.chars().take(2048).collect();
+        return Err(AppError::Internal(format!(
+            "Auto Tagger returned {status} for directory {directory_id}, image {image_id}: {bounded_body}"
+        )));
     }
 
     // Parse the response — expected: { "tags": [{"name": "...", "confidence": 0.9, "category": "..."}, ...] }
-    let result: Value = response.json().await.map_err(|e| {
+    let result: Value = response.json().await.map_err(|error| {
         AppError::Internal(format!(
-            "Failed to parse auto-tagger response for image #{}: {}",
-            image_id, e
+            "Failed to parse Auto Tagger response for directory {directory_id}, image {image_id}: {error}"
         ))
     })?;
 
-    let tags = match result.get("tags").and_then(|t| t.as_array()) {
-        Some(t) => t,
-        None => {
-            log::info!(
-                "[TaskQueue] auto-tagger returned no tags for image #{}",
-                image_id
-            );
-            return Ok(());
-        }
-    };
+    let tags = result
+        .get("tags")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            AppError::Internal(format!(
+                "Auto Tagger response omitted tags for directory {directory_id}, image {image_id}"
+            ))
+        })?;
+    let predicted = normalize_predicted_tags(tags)?;
 
-    if tags.is_empty() {
-        log::info!(
-            "[TaskQueue] auto-tagger returned empty tags for image #{}",
-            image_id
-        );
-        return Ok(());
-    }
-
-    // Insert tags into the database
     let lib = lib.clone();
-    let tags_owned: Vec<Value> = tags.clone();
-    let dir_id = directory_id;
-
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let main_conn = lib.main_pool.get()?;
-        let mut inserted = 0u32;
-
-        for tag_val in &tags_owned {
-            let tag_name = match tag_val.get("name").and_then(|n| n.as_str()) {
-                Some(n) => n.trim().to_lowercase(),
-                None => continue,
-            };
-            if tag_name.is_empty() {
-                continue;
-            }
-
-            let confidence = tag_val
-                .get("confidence")
-                .and_then(|c| c.as_f64())
-                .unwrap_or(0.0);
-            let category = tag_val
-                .get("category")
-                .and_then(|c| c.as_str())
-                .unwrap_or("general");
-
-            // Ensure the tag exists in the global tags table (upsert)
-            main_conn.execute(
-                "INSERT OR IGNORE INTO tags (name, category) VALUES (?1, ?2)",
-                params![&tag_name, category],
-            )?;
-
-            let tag_id: i64 = main_conn.query_row(
-                "SELECT id FROM tags WHERE name = ?1",
-                params![&tag_name],
-                |row| row.get(0),
-            )?;
-
-            // Insert into directory-level image_tags if we have a directory
-            if let Some(did) = dir_id {
-                if let Ok(dir_pool) = lib.directory_db.get_pool(did) {
-                    if let Ok(dir_conn) = dir_pool.get() {
-                        dir_conn.execute(
-                            "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
-                             VALUES (?1, ?2, ?3, 0)",
-                            params![image_id, tag_id, confidence],
-                        )?;
-                    }
-                }
-            }
-
-            // Also insert into main DB image_tags
-            main_conn.execute(
-                "INSERT OR IGNORE INTO image_tags (image_id, tag_id, confidence, is_manual)
-                 VALUES (?1, ?2, ?3, 0)",
-                params![image_id, tag_id, confidence],
-            )?;
-
-            // Update tag post count
-            main_conn.execute(
-                "UPDATE tags SET post_count = (
-                    SELECT COUNT(*) FROM image_tags WHERE tag_id = ?1
-                ) WHERE id = ?1",
-                params![tag_id],
-            )?;
-
-            inserted += 1;
-        }
-
-        log::info!(
-            "[TaskQueue] Tagged image #{}: {} tags inserted",
-            image_id, inserted
-        );
-
-        Ok(())
+    tokio::task::spawn_blocking(move || {
+        persist_predicted_tags(&lib, directory_id, image_id, &predicted)
     })
     .await??;
+
+    log::info!(
+        "[TaskQueue] Tagged directory #{} image #{} with {} automatic tags",
+        directory_id,
+        image_id,
+        tags.len()
+    );
 
     Ok(())
 }
@@ -2002,6 +2246,331 @@ mod tests {
         drop(second_pool);
         drop(conn);
         drop(pool);
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    fn create_tag_directory(state: &AppState, name: &str) -> (Arc<LibraryContext>, i64, i64) {
+        let lib = state.library_manager().primary().clone();
+        let directory_id = {
+            let conn = lib.main_pool.get().unwrap();
+            conn.execute(
+                "INSERT INTO watch_directories (path, name) VALUES (?1, ?2)",
+                params![format!("/test/{name}"), name],
+            )
+            .unwrap();
+            conn.last_insert_rowid()
+        };
+        let pool = lib.directory_db.get_pool(directory_id).unwrap();
+        let conn = pool.get().unwrap();
+        init_directory_db(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO images (filename, file_hash) VALUES (?1, ?2)",
+            params![format!("{name}.jpg"), format!("hash-{name}")],
+        )
+        .unwrap();
+        let image_id = conn.last_insert_rowid();
+        (lib, directory_id, image_id)
+    }
+
+    fn image_tag_names(
+        lib: &LibraryContext,
+        directory_id: i64,
+        image_id: i64,
+    ) -> Vec<(String, bool, f64)> {
+        let pool = lib.directory_db.get_pool(directory_id).unwrap();
+        let conn = pool.get().unwrap();
+        let rows: Vec<(i64, bool, f64)> = conn
+            .prepare(
+                "SELECT tag_id, is_manual, COALESCE(confidence, 0.0)
+                 FROM image_tags WHERE image_id = ?1 ORDER BY tag_id",
+            )
+            .unwrap()
+            .query_map(params![image_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let main = lib.main_pool.get().unwrap();
+        rows.into_iter()
+            .map(|(tag_id, manual, confidence)| {
+                let name = main
+                    .query_row(
+                        "SELECT name FROM tags WHERE id = ?1",
+                        params![tag_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                (name, manual, confidence)
+            })
+            .collect()
+    }
+
+    #[test]
+    // AC: @authoritative-auto-tag-persistence ac-complete-prediction
+    fn complete_prediction_persists_all_distinct_tags_and_highest_confidence() {
+        let data_dir = temp_test_dir("complete-tags");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let (lib, directory_id, image_id) = create_tag_directory(&state, "complete");
+        let predicted = normalize_predicted_tags(&[
+            serde_json::json!({"name": "1girl", "confidence": 0.92, "category": "general"}),
+            serde_json::json!({"name": "solo", "confidence": 0.81, "category": "general"}),
+            serde_json::json!({"name": "blue eyes", "confidence": 0.73, "category": "general"}),
+            serde_json::json!({"name": "solo", "confidence": 0.61, "category": "general"}),
+        ])
+        .unwrap();
+
+        persist_predicted_tags(&lib, directory_id, image_id, &predicted).unwrap();
+
+        let tags = image_tag_names(&lib, directory_id, image_id);
+        assert_eq!(tags.len(), 3);
+        assert!(tags.iter().any(|(name, _, confidence)| {
+            name == "solo" && (*confidence - 0.81).abs() < f64::EPSILON
+        }));
+        assert!(tags.iter().all(|(_, manual, _)| !manual));
+        let post_counts: Vec<i64> = lib
+            .main_pool
+            .get()
+            .unwrap()
+            .prepare("SELECT post_count FROM tags WHERE name IN ('1girl', 'solo', 'blue_eyes')")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(post_counts, vec![1, 1, 1]);
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    // AC: @authoritative-auto-tag-persistence ac-composite-isolation
+    // AC: @authoritative-auto-tag-persistence ac-manual-preservation
+    // AC: @authoritative-auto-tag-persistence ac-partial-recovery
+    fn retry_replaces_partial_auto_tags_without_touching_manual_or_other_directory() {
+        let data_dir = temp_test_dir("partial-recovery");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let (lib, directory_id, image_id) = create_tag_directory(&state, "first");
+        let (_, other_directory_id, other_image_id) = create_tag_directory(&state, "second");
+        assert_eq!(other_image_id, image_id);
+
+        let (manual_id, partial_id) = {
+            let main = lib.main_pool.get().unwrap();
+            main.execute(
+                "INSERT INTO tags (name, category) VALUES ('favorite_manual', 'meta')",
+                [],
+            )
+            .unwrap();
+            let manual_id = main.last_insert_rowid();
+            main.execute(
+                "INSERT INTO tags (name, category) VALUES ('partial_old', 'general')",
+                [],
+            )
+            .unwrap();
+            (manual_id, main.last_insert_rowid())
+        };
+        {
+            let pool = lib.directory_db.get_pool(directory_id).unwrap();
+            let conn = pool.get().unwrap();
+            conn.execute(
+                "INSERT INTO image_tags (image_id, tag_id, confidence, is_manual)
+                 VALUES (?1, ?2, 1.0, 1), (?1, ?3, 0.5, 0)",
+                params![image_id, manual_id, partial_id],
+            )
+            .unwrap();
+        }
+
+        let predicted = normalize_predicted_tags(&[
+            serde_json::json!({"name": "complete_a", "confidence": 0.9, "category": "general"}),
+            serde_json::json!({"name": "complete_b", "confidence": 0.8, "category": "general"}),
+        ])
+        .unwrap();
+        persist_predicted_tags(&lib, directory_id, image_id, &predicted).unwrap();
+
+        let tags = image_tag_names(&lib, directory_id, image_id);
+        assert!(tags
+            .iter()
+            .any(|(name, manual, _)| name == "favorite_manual" && *manual));
+        assert!(tags
+            .iter()
+            .any(|(name, manual, _)| name == "complete_a" && !manual));
+        assert!(tags
+            .iter()
+            .any(|(name, manual, _)| name == "complete_b" && !manual));
+        assert!(!tags.iter().any(|(name, _, _)| name == "partial_old"));
+        assert!(image_tag_names(&lib, other_directory_id, other_image_id).is_empty());
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    // AC: @authoritative-auto-tag-persistence ac-atomic-write
+    fn failed_prediction_write_rolls_back_to_previous_auto_tag_set() {
+        let data_dir = temp_test_dir("tag-rollback");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let (lib, directory_id, image_id) = create_tag_directory(&state, "rollback");
+        let predicted = normalize_predicted_tags(&[
+            serde_json::json!({"name": "new_a", "confidence": 0.9, "category": "general"}),
+            serde_json::json!({"name": "new_b", "confidence": 0.8, "category": "general"}),
+        ])
+        .unwrap();
+
+        let (old_id, blocked_id) = {
+            let main = lib.main_pool.get().unwrap();
+            main.execute(
+                "INSERT INTO tags (name, category) VALUES ('old_complete', 'general')",
+                [],
+            )
+            .unwrap();
+            let old_id = main.last_insert_rowid();
+            main.execute(
+                "INSERT INTO tags (name, category) VALUES ('new_b', 'general')",
+                [],
+            )
+            .unwrap();
+            (old_id, main.last_insert_rowid())
+        };
+        {
+            let pool = lib.directory_db.get_pool(directory_id).unwrap();
+            let conn = pool.get().unwrap();
+            conn.execute(
+                "INSERT INTO image_tags (image_id, tag_id, confidence, is_manual)
+                 VALUES (?1, ?2, 0.7, 0)",
+                params![image_id, old_id],
+            )
+            .unwrap();
+            conn.execute_batch(&format!(
+                "CREATE TRIGGER reject_middle_tag BEFORE INSERT ON image_tags
+                 WHEN NEW.tag_id = {blocked_id}
+                 BEGIN SELECT RAISE(ABORT, 'injected tag failure'); END;"
+            ))
+            .unwrap();
+        }
+
+        assert!(persist_predicted_tags(&lib, directory_id, image_id, &predicted).is_err());
+        let tags = image_tag_names(&lib, directory_id, image_id);
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].0, "old_complete");
+        let orphan_count: i64 = lib
+            .main_pool
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM tags WHERE name = 'new_a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphan_count, 0);
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    // AC: @durable-task-retry-scheduling ac-delayed-eligibility
+    // AC: @durable-task-retry-scheduling ac-restart-safe
+    fn delayed_retry_is_not_claimed_until_persisted_time_is_due() {
+        let data_dir = temp_test_dir("retry-eligibility");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        {
+            let conn = state.main_db().get().unwrap();
+            conn.execute(
+                "INSERT INTO task_queue
+                 (task_type, payload, status, priority, attempts, next_attempt_at)
+                 VALUES ('tag', '{}', 'pending', 10, 1, datetime('now', '+1 hour'))",
+                [],
+            )
+            .unwrap();
+        }
+
+        assert!(claim_next_task(&state).unwrap().is_none());
+        {
+            let conn = state.main_db().get().unwrap();
+            conn.execute(
+                "UPDATE task_queue SET next_attempt_at = datetime('now', '-1 second')",
+                [],
+            )
+            .unwrap();
+        }
+        assert!(claim_next_task(&state).unwrap().is_some());
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn concurrent_cancellation_owns_the_terminal_task_state() {
+        let data_dir = temp_test_dir("cancel-finalization");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let task_id = {
+            let conn = state.main_db().get().unwrap();
+            conn.execute(
+                "INSERT INTO task_queue (task_type, payload, status, attempts, completed_at)
+                 VALUES ('tag', '{}', 'cancelled', 0, datetime('now'))",
+                [],
+            )
+            .unwrap();
+            conn.last_insert_rowid()
+        };
+
+        let status = {
+            let conn = state.main_db().get().unwrap();
+            record_task_failure(&conn, task_id, 0, "late worker failure").unwrap()
+        };
+        assert_eq!(status, STATUS_CANCELLED);
+        let (stored_status, attempts): (String, i64) = state
+            .main_db()
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT status, attempts FROM task_queue WHERE id = ?1",
+                params![task_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stored_status, STATUS_CANCELLED);
+        assert_eq!(attempts, 0);
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    // AC: @durable-task-retry-scheduling ac-terminal-failure
+    // AC: @durable-task-retry-scheduling ac-truthful-success
+    fn exhausted_failure_is_terminal_with_bounded_actionable_error() {
+        let data_dir = temp_test_dir("terminal-failure");
+        let state = AppState::new(&data_dir, 0).unwrap();
+        let task_id = {
+            let conn = state.main_db().get().unwrap();
+            conn.execute(
+                "INSERT INTO task_queue (task_type, payload, status, attempts)
+                 VALUES ('tag', '{}', 'processing', 2)",
+                [],
+            )
+            .unwrap();
+            conn.last_insert_rowid()
+        };
+        let long_error = format!("persistence failed: {}", "x".repeat(6000));
+        let transition = {
+            let conn = state.main_db().get().unwrap();
+            record_task_failure(&conn, task_id, 2, &long_error).unwrap()
+        };
+        assert_eq!(transition, STATUS_FAILED);
+        let (status, attempts, error_len, completed): (String, i64, i64, bool) = state
+            .main_db()
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT status, attempts, length(error_message), completed_at IS NOT NULL
+                 FROM task_queue WHERE id = ?1",
+                params![task_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(status, STATUS_FAILED);
+        assert_eq!(attempts, MAX_RETRIES);
+        assert!(error_len <= 4096);
+        assert!(completed);
         drop(state);
         let _ = std::fs::remove_dir_all(data_dir);
     }

@@ -21,7 +21,7 @@ import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
 import { curationActionForSwipe } from '../../utils/lightboxGestures.js'
 import { isVideoMediaElement, releaseVideoMedia } from '../../utils/lightboxMedia.js'
-import { adjustmentLocator, appendCacheBuster, createAdjustmentOperationOwner, imageFileHash } from '../../utils/imageAdjustments.js'
+import { adjustmentControlState, adjustmentLocator, appendCacheBuster, commitAdjustmentSourceTransition, createAdjustmentOperationOwner, createImageSourceOwner, imageFileHash } from '../../utils/imageAdjustments.js'
 
 // Video diagnostics overlay — press I to toggle, B for bare mode (video only)
 function FPSMonitor({ videoRef, visible, onToggleBare }) {
@@ -161,6 +161,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   if (!adjustmentRequestOwnerRef.current) {
     adjustmentRequestOwnerRef.current = createAdjustmentOperationOwner()
   }
+  const imageSourceOwnerRef = useRef(null)
+  if (!imageSourceOwnerRef.current) {
+    imageSourceOwnerRef.current = createImageSourceOwner()
+  }
   const mountedRef = useRef(true)
   const svpPathEnabledRef = useRef(false)
   const [svpPipelineGeneration, setSvpPipelineGeneration] = useState(0)
@@ -168,6 +172,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const image = images[currentIndex]
   const currentImageKey = image?.url ?? image?.file_path ?? image?.id
   activeImageKeyRef.current = currentImageKey
+  const renderedImageUrl = isVideo(image?.original_filename)
+    ? null
+    : getMediaUrl(previewUrl || image?.url)
+  const renderedImageSource = useMemo(
+    () => imageSourceOwnerRef.current.activate(renderedImageUrl),
+    [currentImageKey, renderedImageUrl, imageRetryKey]
+  )
 
   useEffect(() => () => {
     mountedRef.current = false
@@ -257,7 +268,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     restartTranscodeFromPosition: streaming.restartTranscodeFromPosition,
     setAudioOutputVolume: streaming.setAudioOutputVolume,
     setAudioOutputMuted: streaming.setAudioOutputMuted
-  }, libraryImageId, image?.directory_id)
+  }, libraryImageId, image?.directory_id, image?.library_id)
 
   const reportSvpPlayback = useCallback((video = mediaRef.current, fps = svpSourceFpsRef.current) => {
     const desktopAPI = getDesktopAPI()
@@ -464,11 +475,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   )
 
   // Timeline preview hook (for video thumbnail preview on hover)
-  const timelinePreview = useTimelinePreview(
-    libraryImageId,
-    image?.directory_id,
-    playback.duration
-  )
+  const timelinePreview = useTimelinePreview(image, playback.duration)
 
   // Whisper subtitle hook
   const subtitles = useWhisperSubtitles(mediaRef, image)
@@ -571,16 +578,17 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setResumePosition(null)
     clearTimeout(resumeTimerRef.current)
 
-    getPlaybackPosition(libraryImageId).then(data => {
-      if (data.position > 10 && !data.completed) {
-        setResumePosition(data)
+    getPlaybackPosition(libraryImageId, image.directory_id, image.library_id).then(data => {
+      const position = data.playback_position ?? data.position
+      if (position > 10 && !data.completed) {
+        setResumePosition({ ...data, position })
         // Auto-dismiss after 5s
         resumeTimerRef.current = setTimeout(() => setResumePosition(null), 5000)
       }
     }).catch(() => {})
 
     return () => clearTimeout(resumeTimerRef.current)
-  }, [libraryImageId])
+  }, [libraryImageId, image?.directory_id, image?.library_id, image?.filename])
 
   // Auto-generate subtitles when opening a video (if enabled)
   useEffect(() => {
@@ -991,31 +999,36 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     try {
       const { applyImageAdjustments, discardImagePreview } = await import('../../api')
       const result = await applyImageAdjustments(locator, requestedAdjustments, expectedFileHash)
-
-      if (onImageUpdate) {
-        const updates = {
-          url: result.url || appendCacheBuster(image.url),
-          thumbnail_url: result.thumbnail_url || appendCacheBuster(image.thumbnail_url)
-        }
-        for (const key of ['file_hash', 'file_size', 'width', 'height', 'file_modified_at']) {
-          if (result[key] != null) updates[key] = result[key]
-        }
-        onImageUpdate(locator, updates)
+      const updates = {
+        url: result.url || appendCacheBuster(image.url),
+        thumbnail_url: result.thumbnail_url || appendCacheBuster(image.thumbnail_url)
       }
-
-      if (capturedPreview) {
-        try {
-          await discardImagePreview(locator, capturedPreview)
-        } catch {
-          // Preview cleanup is best-effort and exact to the captured generation.
-        }
+      for (const key of ['file_hash', 'filename', 'file_size', 'width', 'height', 'file_modified_at']) {
+        if (result[key] != null) updates[key] = result[key]
       }
-      if (!adjustmentRequestOwnerRef.current.ownsPreview(uiRequest) || !mountedRef.current) return
+      const publishCommittedSource = () => onImageUpdate?.(locator, updates)
+      const cleanupPreview = capturedPreview
+        ? () => discardImagePreview(locator, capturedPreview)
+        : null
 
-      setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
-      setPreviewUrl(null)
-      setPreviewIdentity(null)
-      setShowAdjustments(false)
+      if (adjustmentRequestOwnerRef.current.ownsPreview(uiRequest) && mountedRef.current) {
+        commitAdjustmentSourceTransition({
+          operationOwner: adjustmentRequestOwnerRef.current,
+          sourceOwner: imageSourceOwnerRef.current,
+          committedSource: getMediaUrl(updates.url),
+          clearPreview: () => {
+            setPreviewUrl(null)
+            setPreviewIdentity(null)
+            setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
+            setShowAdjustments(false)
+          },
+          publishCommittedSource,
+          cleanupPreview,
+        })
+      } else {
+        publishCommittedSource()
+        if (cleanupPreview) Promise.resolve().then(cleanupPreview).catch(() => {})
+      }
     } catch (err) {
       if (adjustmentRequestOwnerRef.current.ownsPreview(uiRequest) && mountedRef.current) {
         console.error('Failed to apply adjustments:', err)
@@ -1028,6 +1041,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [image, adjustments, previewIdentity, onImageUpdate])
 
   // Gamma exponent for SVG filter (computed outside getFilterStyle so JSX can use it)
+  const adjustmentControls = adjustmentControlState({
+    applying: applyingAdjustments,
+    generatingPreview,
+    adjustments,
+  })
+
   const gammaExponent = adjustments.gamma !== 0
     ? Math.pow(3.0, -adjustments.gamma / 100)
     : 1
@@ -1313,15 +1332,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     }
   }
 
-  // Handle touch end with curation precedence over the ordinary sidebar gesture
+  // Handle touch end while preserving ordinary Lightbox swipes during curation
   const handleTouchEndWithSidebar = useCallback((e) => {
-    const onCurationSwipe = curationMode
-      ? (direction) => {
-          const action = curationActionForSwipe(direction)
-          if (action === 'keep') curationMode.onKeep()
-          else if (action === 'discard') curationMode.onDiscard()
-        }
-      : null
+    const onCurationSwipe = curationMode ? curationActionForSwipe : null
     zoomPan.handleTouchEnd(e, onSidebarHover, sidebarOpen, onCurationSwipe)
   }, [zoomPan, onSidebarHover, sidebarOpen, curationMode])
 
@@ -1711,6 +1724,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     max="200"
                     step="1"
                     value={adjustments.brightness}
+                    disabled={adjustmentControls.inputsDisabled}
                     onChange={e => {
                       adjustmentRequestOwnerRef.current.invalidatePreview()
                       setAdjustments(prev => ({ ...prev, brightness: parseInt(e.target.value) }))
@@ -1729,6 +1743,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     max="100"
                     step="1"
                     value={adjustments.contrast}
+                    disabled={adjustmentControls.inputsDisabled}
                     onChange={e => {
                       adjustmentRequestOwnerRef.current.invalidatePreview()
                       setAdjustments(prev => ({ ...prev, contrast: parseInt(e.target.value) }))
@@ -1747,6 +1762,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     max="100"
                     step="1"
                     value={adjustments.gamma}
+                    disabled={adjustmentControls.inputsDisabled}
                     onChange={e => {
                       adjustmentRequestOwnerRef.current.invalidatePreview()
                       setAdjustments(prev => ({ ...prev, gamma: parseInt(e.target.value) }))
@@ -1757,6 +1773,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 <div className="adjustment-actions">
                   <button
                     className="adjustment-reset"
+                    disabled={adjustmentControls.resetDisabled}
                     onClick={() => {
                       setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
                       if (previewUrl) handleDiscardPreview()
@@ -1767,14 +1784,14 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   <button
                     className="adjustment-preview"
                     onClick={previewUrl ? handleDiscardPreview : handleGeneratePreview}
-                    disabled={generatingPreview || (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0)}
+                    disabled={adjustmentControls.previewDisabled}
                   >
-                    {generatingPreview ? 'Loading...' : previewUrl ? 'CSS' : 'Preview'}
+                    {generatingPreview ? 'Rendering...' : previewUrl ? 'Clear Exact Preview' : 'Render Exact Preview'}
                   </button>
                   <button
                     className="adjustment-apply"
                     onClick={handleApplyAdjustments}
-                    disabled={applyingAdjustments || (adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.gamma === 0)}
+                    disabled={adjustmentControls.applyDisabled}
                   >
                     {applyingAdjustments ? 'Saving...' : 'Apply'}
                   </button>
@@ -2396,12 +2413,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           <img
             key={`${previewUrl ? `${image.id}-preview` : image.id}-${imageRetryKey}`}
             ref={mediaRef}
-            src={getMediaUrl(previewUrl || image.url)}
+            src={renderedImageUrl}
             alt=""
             className="lightbox-media"
             style={{ ...(previewUrl ? {} : getFilterStyle()), ...zoomPan.getZoomTransform() }}
             onContextMenu={handleImageContextMenu}
-            onError={() => setImageLoadError(true)}
+            onError={() => {
+              if (imageSourceOwnerRef.current.owns(renderedImageSource)) {
+                setImageLoadError(true)
+              }
+            }}
           />
         )}
       </div>

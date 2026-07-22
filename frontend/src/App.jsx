@@ -23,16 +23,17 @@ import AddonSettings from './components/AddonSettings'
 import TaskManager from './components/TaskManager'
 import QRConnect from './components/QRConnect'
 import ContinueWatching from './components/ContinueWatching'
-import { fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, healthCheck } from './api'
+import { fetchImage, fetchImages, fetchFolders, fetchTags, getLibraryStats, subscribeToLibraryEvents, batchDeleteImages, batchRetag, batchAgeDetect, batchMoveImages, fetchDirectories, healthCheck } from './api'
 import DirectoriesPage from './pages/DirectoriesPage'
 import CollectionsPage from './pages/CollectionsPage'
 import CollectionDetailPage from './pages/CollectionDetailPage'
 import WatchPage from './pages/WatchPage'
 import { getColumnCount, tileWidths } from './utils/gridLayout'
-import { isUnexpectedEmptyPage, mergeFirstPage } from './utils/galleryState'
+import { completeAuthoritativeRefresh, createViewRequestOwner, galleryScopePreservesFolder, isUnexpectedEmptyPage, libraryRefreshMode, mergeAuthoritativePages, mergeFirstPage, reconcileAuthoritativeGallery, refreshGroupedFolderCatalog } from './utils/galleryState'
 import { classifySidebarSwipe } from './utils/sidebarGestures'
 import { getCurationRecoveryMode } from './utils/curationState'
 import { adjustmentLocator, imageIdentityKey, imageMatchesLocator, reorderImagesForSort, updateImagesByLocator } from './utils/imageAdjustments.js'
+import { loadMoveDirectoryOptions } from './utils/batchMove.js'
 import { useAllAddonStatuses } from './hooks/useAddonStatus'
 import { useCurationGame } from './hooks/useCurationGame'
 import { useMobileDrawer } from './hooks/useMobileDrawer'
@@ -565,6 +566,17 @@ function Gallery() {
   const loadingMoreRef = useRef(false)
   const pageRef = useRef(page)
   const imagesRef = useRef(images)
+  const galleryRequestOwnerRef = useRef(null)
+  const galleryForegroundBusyRef = useRef(false)
+  const publishedGalleryViewRef = useRef(null)
+  const authoritativeRefreshGenerationRef = useRef(0)
+  const completedAuthoritativeRefreshRef = useRef(0)
+  const refreshNewImagesRef = useRef(null)
+  const authoritativeRefreshRetryDelayRef = useRef(750)
+  const lightboxPaginationGenerationRef = useRef(0)
+  if (!galleryRequestOwnerRef.current) {
+    galleryRequestOwnerRef.current = createViewRequestOwner()
+  }
 
   // Keep ref in sync with state (for use in timeouts)
   useEffect(() => {
@@ -584,6 +596,8 @@ function Gallery() {
     const handlePopState = (e) => {
       // If lightbox is open and we're going back, close it
       if (lightboxIndexRef.current !== null && !e.state?.lightbox) {
+        loadingMoreRef.current = false
+        lightboxPaginationGenerationRef.current += 1
         setLightboxIndex(null)
       }
     }
@@ -668,6 +682,15 @@ function Gallery() {
   // Folder grouping URL params
   const groupByFolders = searchParams.get('group') === 'folders'
   const currentFolder = searchParams.get('folder') || null
+  const galleryViewKey = `${searchParams.toString()}|tile=${tileSize}`
+  galleryRequestOwnerRef.current.activate(galleryViewKey)
+
+  useEffect(() => {
+    galleryForegroundBusyRef.current = false
+    loadingMoreRef.current = false
+    lightboxPaginationGenerationRef.current += 1
+    setIsJumping(false)
+  }, [galleryViewKey])
 
   const galleryQuery = useMemo(() => ({
     tags: currentTags,
@@ -770,6 +793,10 @@ function Gallery() {
 
   // Load folders for folder grouping view
   const loadFolders = useCallback(async () => {
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return false
+    galleryForegroundBusyRef.current = true
+
     setLoading(true)
     try {
       const result = await fetchFolders({
@@ -779,6 +806,8 @@ function Gallery() {
         favorites_only: favoritesOnly,
         tags: currentTags,
       })
+      if (!galleryRequestOwnerRef.current.owns(request)) return false
+
       const folderItems = result.folders.map(f => ({
         ...f,
         _isFolder: true,
@@ -789,11 +818,20 @@ function Gallery() {
       setTotal(result.total)
       setHasMore(false)
       setPage(1)
+      publishedGalleryViewRef.current = galleryViewKey
+      return true
     } catch (error) {
-      console.error('Failed to load folders:', error)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to load folders:', error)
+      }
+      return false
+    } finally {
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        galleryForegroundBusyRef.current = false
+        setLoading(false)
+      }
     }
-    setLoading(false)
-  }, [currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags])
+  }, [currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags, galleryViewKey])
 
   // Load images
   const loadImages = useCallback(async (pageNum = 1, append = false) => {
@@ -805,6 +843,10 @@ function Gallery() {
       }
       return true
     }
+
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return false
+    galleryForegroundBusyRef.current = true
 
     setLoading(true)
     try {
@@ -828,6 +870,7 @@ function Gallery() {
         page: pageNum,
         per_page: calculatePerPage(tileSize)
       })
+      if (!galleryRequestOwnerRef.current.owns(request)) return false
 
       // A transiently unhealthy backend can return an empty middle page while
       // still reporting more rows. Do not advance past that gap permanently;
@@ -854,14 +897,20 @@ function Gallery() {
       setTotal(result.total)
       // Note: hasMore is computed by useEffect based on actual images.length
       setPage(pageNum)
+      if (!append) publishedGalleryViewRef.current = galleryViewKey
       return true
     } catch (error) {
-      console.error('Failed to load images:', error)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to load images:', error)
+      }
       return false
     } finally {
-      setLoading(false)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        galleryForegroundBusyRef.current = false
+        setLoading(false)
+      }
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders, galleryViewKey])
 
   const curation = useCurationGame({
     loadedImages: images,
@@ -950,10 +999,23 @@ function Gallery() {
     getLibraryStats().then(setStats).catch(console.error)
   }, [])
 
-  const refreshNewImages = useCallback(async () => {
-    // Folder summary cards have their own aggregation and should not be replaced
-    // while the user is browsing them.
-    if (groupByFolders && !currentFolder) return true
+  const refreshNewImages = useCallback(async ({ authoritative = false } = {}) => {
+    // Folder summary cards refresh through their aggregation route so changed
+    // representative identities replace stale content-addressed preview URLs.
+    try {
+      if (await refreshGroupedFolderCatalog({ groupByFolders, currentFolder, loadFolders })) {
+        return true
+      }
+    } catch (error) {
+      console.error('Failed to refresh grouped folder catalog:', error)
+      return false
+    }
+    if (galleryForegroundBusyRef.current || loadingMoreRef.current) return false
+    const replaceView = publishedGalleryViewRef.current !== galleryViewKey
+    if (!authoritative && !replaceView && pageRef.current !== 1) return false
+
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return false
 
     const preserveAnchor = window.scrollY >= 200 || lightboxIndexRef.current !== null
     const anchor = preserveAnchor
@@ -964,7 +1026,7 @@ function Gallery() {
       : null
 
     try {
-      const result = await fetchImages({
+      const query = {
         tags: currentTags,
         rating: currentRating,
         favorites_only: favoritesOnly,
@@ -981,11 +1043,59 @@ function Gallery() {
         max_duration: currentDuration?.max,
         import_source: currentFolder,
         sort: currentSort,
-        page: 1,
         per_page: calculatePerPage(tileSize)
-      })
+      }
+      const pageCount = authoritative && currentSort !== 'random'
+        ? Math.max(1, pageRef.current)
+        : 1
+      const pageResults = await Promise.all(
+        Array.from({ length: pageCount }, (_, index) => fetchImages({ ...query, page: index + 1 }))
+      )
+      const result = pageResults[0]
+      if (authoritative && pageResults.length > 1) {
+        result.images = mergeAuthoritativePages(pageResults)
+      }
+      if (!galleryRequestOwnerRef.current.owns(request)) return false
 
-      if (currentSort !== 'random') {
+      const currentLocator = authoritative ? lightboxIndexRef.current : null
+      if (
+        currentLocator
+        && !result.images.some(image => imageIdentityKey(image) === imageIdentityKey(currentLocator))
+      ) {
+        try {
+          const canonical = await fetchImage(currentLocator.imageId, {
+            directoryId: currentLocator.directoryId,
+            libraryId: currentLocator.libraryId,
+          })
+          if (!galleryRequestOwnerRef.current.owns(request)) return false
+          result.images.push(canonical)
+        } catch (error) {
+          if (error?.response?.status !== 404) {
+            console.error('Failed to verify current image after scan:', error)
+            return false
+          }
+        }
+      }
+
+      if (replaceView || authoritative) {
+        const reconciled = reconcileAuthoritativeGallery(
+          result.images,
+          currentLocator
+        )
+        setImages(reconciled.images)
+        setPage(authoritative ? pageCount : 1)
+        setHasMore(reconciled.images.length < result.total)
+        publishedGalleryViewRef.current = galleryViewKey
+        if (authoritative && lightboxIndexRef.current && !reconciled.currentLocator) {
+          loadingMoreRef.current = false
+          lightboxPaginationGenerationRef.current += 1
+          lightboxIndexRef.current = null
+          setLightboxIndex(null)
+          if (window.history.state?.lightbox) {
+            window.history.replaceState(null, '')
+          }
+        }
+      } else if (currentSort !== 'random') {
         setImages(previous => mergeFirstPage(previous, result.images))
       }
       setTotal(result.total)
@@ -999,25 +1109,48 @@ function Gallery() {
       }
       return true
     } catch (error) {
-      console.error('Failed to refresh newly indexed images:', error)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to refresh newly indexed images:', error)
+      }
       return false
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey])
+
+  refreshNewImagesRef.current = refreshNewImages
 
   // Subscribe to real-time library events (debounced incremental refresh).
   // Existing items, scroll position, selection, and lightbox identity stay intact.
-  const triggerDebouncedRefresh = useCallback(() => {
+  const triggerDebouncedRefresh = useCallback((delay = 750) => {
     // Throttle rather than trailing-debounce: a long startup scan may emit
     // continuously for minutes, and resetting the timer on every image would
     // hide all new media until the scan completely finished.
     if (statsUpdateTimeout.current) return
-    statsUpdateTimeout.current = setTimeout(() => {
+    statsUpdateTimeout.current = setTimeout(async () => {
       statsUpdateTimeout.current = null
-      // Always update stats
       getLibraryStats().then(setStats).catch(console.error)
-      refreshNewImages()
-    }, 750)
-  }, [refreshNewImages])
+      const authoritativeGeneration = authoritativeRefreshGenerationRef.current
+      const authoritative = authoritativeGeneration > completedAuthoritativeRefreshRef.current
+      const refreshed = await refreshNewImagesRef.current({ authoritative })
+      const completion = completeAuthoritativeRefresh({
+        completed: completedAuthoritativeRefreshRef.current,
+        generation: authoritativeGeneration,
+        latest: authoritativeRefreshGenerationRef.current,
+        refreshed: authoritative && refreshed,
+      })
+      completedAuthoritativeRefreshRef.current = completion.completed
+      if (authoritative && refreshed) {
+        authoritativeRefreshRetryDelayRef.current = 750
+      } else if (authoritative) {
+        authoritativeRefreshRetryDelayRef.current = Math.min(
+          30_000,
+          authoritativeRefreshRetryDelayRef.current * 2
+        )
+      }
+      if (completion.pending) {
+        triggerDebouncedRefresh(authoritativeRefreshRetryDelayRef.current)
+      }
+    }, delay)
+  }, [])
 
   // Catch up immediately after the app returns to the foreground.
   useEffect(() => {
@@ -1033,7 +1166,12 @@ function Gallery() {
   // SSE events also trigger the same debounce
   useEffect(() => {
     const unsubscribe = subscribeToLibraryEvents((event) => {
-      if (event.type === 'image_added') {
+      const refreshMode = libraryRefreshMode(event)
+      if (refreshMode) {
+        if (refreshMode === 'replace') {
+          authoritativeRefreshGenerationRef.current += 1
+          authoritativeRefreshRetryDelayRef.current = 750
+        }
         triggerDebouncedRefresh()
       }
     })
@@ -1058,6 +1196,10 @@ function Gallery() {
   // Jump to a specific image number in the results
   const jumpToImage = useCallback(async (targetIndex) => {
     if (targetIndex < 1 || targetIndex > total) return
+
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return
+    galleryForegroundBusyRef.current = true
 
     setIsJumping(true)
     const perPage = calculatePerPage(tileSize)
@@ -1084,18 +1226,26 @@ function Gallery() {
         page: targetPage,
         per_page: perPage
       })
+      if (!galleryRequestOwnerRef.current.owns(request)) return
 
       setImages(result.images)
       setTotal(result.total)
       setPage(targetPage)
+      publishedGalleryViewRef.current = galleryViewKey
 
       // Scroll to top since we're showing a new set of images
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (error) {
-      console.error('Failed to jump to image:', error)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to jump to image:', error)
+      }
+    } finally {
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        galleryForegroundBusyRef.current = false
+        setIsJumping(false)
+      }
     }
-    setIsJumping(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, total, tileSize])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, total, tileSize, galleryViewKey])
 
   // Handle jump by offset (for +/- 100 buttons)
   const handleJumpByOffset = useCallback((offset) => {
@@ -1154,9 +1304,15 @@ function Gallery() {
     if (resolution) params.resolution = `${resolution.width}x${resolution.height}`
     if (orientation) params.orientation = orientation
     if (duration) params.duration = `${duration.min ?? 'null'}-${duration.max ?? 'null'}`
-    // Preserve folder grouping state across filter changes
+    // Preserve grouped mode across filters, but a folder belongs to one exact
+    // library/directory scope and must not leak into a newly selected scope.
     if (groupByFolders) params.group = 'folders'
-    if (currentFolder) params.folder = currentFolder
+    const preserveFolder = galleryScopePreservesFolder(
+      { directoryId: currentDirectoryId, libraryId: currentLibraryId },
+      { directoryId, libraryId }
+    )
+    if (currentFolder && preserveFolder) params.folder = currentFolder
+    if (!preserveFolder) enteredFolderPathRef.current = null
     setSearchParams(params)
   }
 
@@ -1218,6 +1374,7 @@ function Gallery() {
   const handleLightboxClose = useCallback(() => {
     // Reset load-more guard in case it was left set by an aborted fetch
     loadingMoreRef.current = false
+    lightboxPaginationGenerationRef.current += 1
     // Scroll to the image that was being viewed
     const imageKey = lightboxIndex ? imageIdentityKey(lightboxIndex) : null
 
@@ -1251,7 +1408,13 @@ function Gallery() {
     // Use ref to prevent concurrent load-more (stale closure on images/page)
     if (newIndex >= images.length && hasMore && !loading && !loadingMoreRef.current) {
       loadingMoreRef.current = true
+      const paginationGeneration = lightboxPaginationGenerationRef.current
       const nextPage = pageRef.current + 1
+      const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+      if (!galleryRequestOwnerRef.current.owns(request)) {
+        loadingMoreRef.current = false
+        return
+      }
       try {
         const result = await fetchImages({
           tags: currentTags,
@@ -1273,6 +1436,14 @@ function Gallery() {
           page: nextPage,
           per_page: calculatePerPage(tileSize)
         })
+        if (
+          !galleryRequestOwnerRef.current.owns(request)
+          || paginationGeneration !== lightboxPaginationGenerationRef.current
+          || lightboxIndexRef.current === null
+        ) {
+          loadingMoreRef.current = false
+          return
+        }
 
         if (result.images.length > 0) {
           // Deduplicate using functional updater to avoid stale closure on images
@@ -1297,7 +1468,9 @@ function Gallery() {
         // Nothing new loaded — advance page anyway so next attempt tries further
         setPage(nextPage)
       } catch (error) {
-        console.error('Failed to load more images:', error)
+        if (galleryRequestOwnerRef.current.owns(request)) {
+          console.error('Failed to load more images:', error)
+        }
       }
       loadingMoreRef.current = false
     }
@@ -1387,12 +1560,13 @@ function Gallery() {
 
   const openMoveModal = async () => {
     try {
-      const dirs = await fetchDirectories()
+      const dirs = await loadMoveDirectoryOptions(fetchDirectories)
       setMoveDirectories(dirs)
       setSelectedMoveDir(null)
       setShowMoveModal(true)
     } catch (error) {
       console.error('Failed to fetch directories:', error)
+      toast.error(`Failed to load move destinations: ${error.message || 'Unknown error'}`)
     }
   }
 

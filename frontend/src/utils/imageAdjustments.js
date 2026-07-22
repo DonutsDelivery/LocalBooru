@@ -44,6 +44,19 @@ export function adjustmentQuery(locator, preview = null) {
   return params.toString()
 }
 
+export function adjustmentControlState({ applying, generatingPreview, adjustments }) {
+  const hasAdjustments = adjustments.brightness !== 0
+    || adjustments.contrast !== 0
+    || adjustments.gamma !== 0
+
+  return {
+    inputsDisabled: applying,
+    resetDisabled: applying,
+    previewDisabled: applying || generatingPreview || !hasAdjustments,
+    applyDisabled: applying || !hasAdjustments,
+  }
+}
+
 export function appendCacheBuster(url, value = Date.now()) {
   if (!url) return url
   const separator = url.includes('?') ? '&' : '?'
@@ -100,6 +113,37 @@ export function reorderImagesForSort(images, sort) {
     const compared = typeof a === 'string' ? a.localeCompare(b) : a - b
     return compared * direction
   })
+}
+
+export function createImageSourceOwner() {
+  let activeSource = null
+
+  return {
+    activate(source) {
+      activeSource = { source }
+      return activeSource
+    },
+    owns(source) {
+      return source === activeSource
+    },
+  }
+}
+
+export function commitAdjustmentSourceTransition({
+  operationOwner,
+  sourceOwner,
+  committedSource,
+  clearPreview,
+  publishCommittedSource,
+  cleanupPreview,
+}) {
+  operationOwner.invalidatePreview()
+  sourceOwner.activate(committedSource)
+  clearPreview()
+  publishCommittedSource()
+  if (cleanupPreview) {
+    Promise.resolve().then(cleanupPreview).catch(() => {})
+  }
 }
 
 export function createAdjustmentOperationOwner() {
