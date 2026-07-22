@@ -804,6 +804,11 @@ features:
             id: ac-retry-details
             then: it is identified as a scheduled retry with its next eligible time and latest reason
             when: the task appears in Task Manager
+          - given: a task contains a long diagnostic message
+            id: ac-accessible-details
+            then: the complete bounded message is wrapped, selectable, and associated with an accessible details
+              control
+            when: the user opens details with keyboard or pointer input
         tags: []
         created: 2026-07-22T10:13:52.136Z
         notes: []
