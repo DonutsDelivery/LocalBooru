@@ -39,3 +39,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-22T10:14:59.313Z
+  - _ulid: 01KY4PD6T3CPC4438Z4Z9ACQVW
+    content: "Implemented authoritative composite-identity persistence: complete normalized predictions
+      replace only automatic tags atomically in the directory database, manual tags remain, legacy
+      main image associations are never written, and affected global post counts are recalculated.
+      Behavioral regressions cover 3+ tags/deduplication, colliding directory IDs, historical
+      one-tag repair, manual preservation, and rollback."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-22T10:37:10.851Z
