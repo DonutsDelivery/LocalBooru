@@ -767,6 +767,10 @@ features:
             id: ac-delayed-eligibility
             then: the latest reason and next eligible time are retained and the task cannot run before that time
             when: the retry is scheduled
+          - given: a delayed retry is waiting and the application restarts
+            id: ac-restart-safe
+            then: the task remains waiting until its persisted retry time arrives
+            when: workers resume before its eligible time
         tags: []
         created: 2026-07-22T10:13:24.025Z
         notes: []
