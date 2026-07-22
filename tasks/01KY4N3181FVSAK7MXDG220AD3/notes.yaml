@@ -1,0 +1,31 @@
+notes:
+  - _ulid: 01KY4N31804CYSVKD1Y8W2R2X5
+    content: >-
+      Implementation notes (auto-generated from spec):
+
+
+      Auto Tagger predictions are saved completely to the intended image while preserving manual
+      curation and isolating images that reuse local identifiers.
+
+
+
+      Acceptance Criteria:
+
+      - ac-composite-isolation: Given images in different libraries or directories share the same
+      local identifier, when one image is auto-tagged, then only the selected library and directory
+      image receives the predicted tags
+
+      - ac-manual-preservation: Given an image has manually assigned tags and an earlier automatic
+      tag set, when a new prediction is saved, then manual tags remain and the automatic tag set
+      exactly matches the completed prediction
+
+      - ac-atomic-write: Given saving a multi-tag prediction fails before every automatic tag can be
+      saved, when the failure is reported, then the prior complete automatic tag set remains visible
+      and no partial new set is published
+
+      - ac-partial-recovery: Given an earlier failed task left one automatic tag and retains a
+      retryable task record, when the task is retried successfully, then the partial set is replaced
+      by the complete current prediction without changing manual tags
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-07-22T10:14:08.897Z
