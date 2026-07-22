@@ -755,6 +755,8 @@ features:
           - durable-task-retry-scheduling
         title: Durable Task Retry Scheduling
         type: requirement
+        description: Retryable background-task failures wait for their persisted eligibility time, survive
+          restarts, and end in truthful success or failure states.
         depends_on: []
         implements: []
         relates_to: []
