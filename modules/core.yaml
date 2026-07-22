@@ -750,6 +750,19 @@ features:
         tags: []
         created: 2026-07-22T10:12:41.034Z
         notes: []
+      - _ulid: 01KY4N1NDR8W4K1QXS56HEETYQ
+        slugs:
+          - durable-task-retry-scheduling
+        title: Durable Task Retry Scheduling
+        type: requirement
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-07-22T10:13:24.025Z
+        notes: []
     created: 2026-03-08T08:30:12.686Z
     notes: []
   - _ulid: 01KK692ZE86V65FSD1SKGZYXXR
