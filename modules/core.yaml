@@ -784,6 +784,11 @@ features:
             id: ac-manual-retry
             then: they become immediately eligible with reset attempts and stale terminal timing removed
             when: the user retries failed tasks
+          - given: an Auto Tagger request cannot reach the service, receives an error response, or cannot save
+              its result
+            id: ac-truthful-success
+            then: the attempt is not reported as completed successfully
+            when: the task attempt ends
         tags: []
         created: 2026-07-22T10:13:24.025Z
         notes: []
