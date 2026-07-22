@@ -771,6 +771,11 @@ features:
             id: ac-restart-safe
             then: the task remains waiting until its persisted retry time arrives
             when: workers resume before its eligible time
+          - given: a task exhausts its allowed attempts
+            id: ac-terminal-failure
+            then: the task is marked failed with its latest actionable reason, attempt count, and completion
+              time
+            when: the final attempt fails
         tags: []
         created: 2026-07-22T10:13:24.025Z
         notes: []
