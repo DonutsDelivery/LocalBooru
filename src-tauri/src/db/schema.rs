@@ -132,7 +132,7 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE TABLE IF NOT EXISTS task_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             task_type TEXT NOT NULL
-                CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extract_metadata')),
+                CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extract_metadata','complete_directory_imports')),
             payload TEXT,
             status TEXT NOT NULL DEFAULT 'pending'
                 CHECK(status IN ('pending','processing','completed','failed','cancelled')),

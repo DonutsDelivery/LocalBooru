@@ -205,14 +205,39 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
               PRAGMA foreign_keys = ON;",
     },
     // v14: Older builds created task_queue with `extractmetadata` in its CHECK
-    // constraint, while every producer uses the canonical `extract_metadata`.
-    // Rebuild the table and preserve queued/failed work while normalizing that
-    // legacy value so existing databases can accept metadata tasks again.
+    // constraint, while producers use canonical `extract_metadata` and
+    // `complete_directory_imports`. Rebuild the table and preserve queued/failed
+    // work while normalizing the legacy metadata value.
     Migration {
         description: "Repair legacy task queue metadata constraint",
         sql: "CREATE TABLE task_queue_new (\
                   id INTEGER PRIMARY KEY AUTOINCREMENT,\
-                  task_type TEXT NOT NULL CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extract_metadata')),\
+                  task_type TEXT NOT NULL CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extract_metadata','complete_directory_imports')),\
+                  payload TEXT,\
+                  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed','cancelled')),\
+                  priority INTEGER NOT NULL DEFAULT 0,\
+                  attempts INTEGER NOT NULL DEFAULT 0,\
+                  error_message TEXT,\
+                  next_attempt_at TEXT,\
+                  created_at TEXT NOT NULL DEFAULT (datetime('now')),\
+                  started_at TEXT,\
+                  completed_at TEXT\
+              );\
+              INSERT INTO task_queue_new (id, task_type, payload, status, priority, attempts, error_message, next_attempt_at, created_at, started_at, completed_at) SELECT id, CASE task_type WHEN 'extractmetadata' THEN 'extract_metadata' ELSE task_type END, payload, status, priority, attempts, error_message, next_attempt_at, created_at, started_at, completed_at FROM task_queue;\
+              DROP TABLE task_queue;\
+              ALTER TABLE task_queue_new RENAME TO task_queue;\
+              CREATE INDEX IF NOT EXISTS idx_task_queue_status ON task_queue(status);\
+              CREATE INDEX IF NOT EXISTS idx_task_queue_task_type ON task_queue(task_type);\
+              CREATE INDEX IF NOT EXISTS idx_task_queue_claim ON task_queue(status, priority DESC, COALESCE(next_attempt_at, created_at), created_at);",
+    },
+    // v15: Databases that already applied the earlier v14 repair still reject
+    // deferred directory completion tasks. Rebuild transactionally so their
+    // existing queue rows and claim indexes survive the corrected constraint.
+    Migration {
+        description: "Allow deferred directory completion tasks in task queue",
+        sql: "CREATE TABLE task_queue_new (\
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                  task_type TEXT NOT NULL CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extract_metadata','complete_directory_imports')),\
                   payload TEXT,\
                   status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed','cancelled')),\
                   priority INTEGER NOT NULL DEFAULT 0,\
@@ -471,6 +496,18 @@ mod tests {
                  started_at TEXT,
                  completed_at TEXT
              );
+             CREATE TABLE collections (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 name TEXT NOT NULL
+             );
+             CREATE TABLE collection_items (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 collection_id INTEGER NOT NULL,
+                 image_id INTEGER NOT NULL,
+                 sort_order INTEGER NOT NULL DEFAULT 0,
+                 added_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 UNIQUE(collection_id, image_id)
+             );
              INSERT INTO task_queue (task_type, status) VALUES ('tag', 'pending');",
         )
         .unwrap();
@@ -510,7 +547,7 @@ mod tests {
              INSERT INTO schema_version (version) VALUES (13);
              CREATE TABLE task_queue (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 task_type TEXT NOT NULL CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extractmetadata')),
+                 task_type TEXT NOT NULL,
                  payload TEXT,
                  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed','cancelled')),
                  priority INTEGER NOT NULL DEFAULT 0,
@@ -521,7 +558,8 @@ mod tests {
                  started_at TEXT,
                  completed_at TEXT
              );
-             INSERT INTO task_queue (task_type, status) VALUES ('extractmetadata', 'failed');",
+             INSERT INTO task_queue (task_type, status) VALUES ('extractmetadata', 'failed');
+             INSERT INTO task_queue (task_type, status) VALUES ('complete_directory_imports', 'pending');",
         )
         .unwrap();
 
@@ -533,8 +571,69 @@ mod tests {
             })
             .unwrap();
         assert_eq!(legacy_task_type, "extract_metadata");
+        let completion_task_type: String = conn
+            .query_row("SELECT task_type FROM task_queue WHERE id = 2", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(completion_task_type, "complete_directory_imports");
         conn.execute(
             "INSERT INTO task_queue (task_type, status) VALUES ('extract_metadata', 'pending')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO task_queue (task_type, status) VALUES ('complete_directory_imports', 'pending')",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn task_queue_v15_repairs_previously_migrated_constraint() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+             INSERT INTO schema_version (version) VALUES (14);
+             CREATE TABLE task_queue (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 task_type TEXT NOT NULL CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extract_metadata')),
+                 payload TEXT,
+                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed','cancelled')),
+                 priority INTEGER NOT NULL DEFAULT 0,
+                 attempts INTEGER NOT NULL DEFAULT 0,
+                 error_message TEXT,
+                 next_attempt_at TEXT,
+                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 started_at TEXT,
+                 completed_at TEXT
+             );
+             INSERT INTO task_queue (task_type, status) VALUES ('extract_metadata', 'failed');",
+        )
+        .unwrap();
+
+        run_main_migrations(&conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO task_queue (task_type, status) VALUES ('complete_directory_imports', 'pending')",
+            [],
+        )
+        .unwrap();
+        let version: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_version", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, 15);
+    }
+
+    #[test]
+    fn fresh_task_queue_accepts_deferred_directory_completion_tasks() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::schema::init_main_db(&conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO task_queue (task_type, status) VALUES ('complete_directory_imports', 'pending')",
             [],
         )
         .unwrap();
