@@ -47,8 +47,17 @@ if [[ ! "$DEV_BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]; then
     echo "LOCALBOORU_DEV_BUILD_JOBS must be a positive integer" >&2
     exit 2
 fi
+DEV_BUILD_WAIT_SECONDS="${LOCALBOORU_DEV_BUILD_WAIT_SECONDS:-7200}"
+if [[ ! "$DEV_BUILD_WAIT_SECONDS" =~ ^[0-9]+$ ]]; then
+    echo "LOCALBOORU_DEV_BUILD_WAIT_SECONDS must be a non-negative integer" >&2
+    exit 2
+fi
 export CARGO_BUILD_JOBS="$DEV_BUILD_JOBS"
-export RUSTC_WRAPPER="${RUSTC_WRAPPER:-$ROOT/scripts/rustc-host-heavy-build.sh}"
+# A desktop launch should queue for a bounded compiler slot rather than
+# disappear when another project is already building. Keep this independent of
+# the host-wide fail-fast default used by one-shot agent commands.
+export HOST_HEAVY_BUILD_WAIT_SECONDS="$DEV_BUILD_WAIT_SECONDS"
+export RUSTC_WRAPPER="${RUSTC_WRAPPER:-$ROOT/scripts/rustc-host-heavy-build-dev.sh}"
 export LOCALBOORU_TASK_QUEUE_WORKERS="${LOCALBOORU_TASK_QUEUE_WORKERS:-1}"
 DEV_LOG="${LOCALBOORU_DEV_LOG:-/tmp/localbooru-dev.log}"
 echo "LocalBooru dev output: $DEV_LOG"
