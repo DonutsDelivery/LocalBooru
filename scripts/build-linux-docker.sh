@@ -8,6 +8,8 @@ ROOT="$BUILD/worktree"
 DIST="/dist"
 JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
 BUNDLES="${LOCALBOORU_RELEASE_BUNDLES:-appimage,deb,rpm}"
+ALLOW_NATIVE_RUNTIME_BOOTSTRAP="${LOCALBOORU_ALLOW_NATIVE_RUNTIME_BOOTSTRAP:-0}"
+NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS="${LOCALBOORU_NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS:-900}"
 WEBKIT_VERSION="2.52.3"
 WEBKIT_SHA256="5b3e0d174e63dcc28848b1194e0e7448d5948c3c2427ecd931c2c5be5261aebb"
 VAPOURSYNTH_COMMIT="c05906995662bacd5bddf853d8e68f19286987db" # R75
@@ -16,6 +18,14 @@ APPIMAGETOOL_SHA256="b90f4a8b18967545fda78a445b27680a1642f1ef9488ced28b65398f2be
 export CCACHE_DIR="${CCACHE_DIR:-/ccache}"
 export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-30G}"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$BUILD/target}"
+[[ "$ALLOW_NATIVE_RUNTIME_BOOTSTRAP" =~ ^[01]$ ]] || {
+  echo "ERROR: LOCALBOORU_ALLOW_NATIVE_RUNTIME_BOOTSTRAP must be 0 or 1" >&2
+  exit 2
+}
+[[ "$NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || {
+  echo "ERROR: LOCALBOORU_NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS must be a positive integer" >&2
+  exit 2
+}
 mkdir -p "$BUILD/downloads" "$DIST" "$CCACHE_DIR"
 ccache --max-size "$CCACHE_MAXSIZE" >/dev/null
 
@@ -96,12 +106,26 @@ prepare_webkit() {
   else
     echo "==> Reusing patched WebKitGTK configuration"
   fi
-  rm -f \
-    "$build_dir/lib/libjavascriptcoregtk-4.1.so" \
-    "$build_dir/lib/libjavascriptcoregtk-4.1.so.0" \
-    "$build_dir/lib/libwebkit2gtk-4.1.so" \
-    "$build_dir/lib/libwebkit2gtk-4.1.so.0"
-  cmake --build "$build_dir" --target WebKit WebKitWebProcess --parallel "$JOBS"
+
+  if [[ ! -s "$build_dir/lib/libwebkit2gtk-4.1.so.0" ||
+        ! -s "$build_dir/lib/libjavascriptcoregtk-4.1.so.0" ||
+        ! -x "$build_dir/bin/WebKitWebProcess" ]]; then
+    if [[ "$ALLOW_NATIVE_RUNTIME_BOOTSTRAP" != 1 ]]; then
+      echo "ERROR: patched WebKitGTK cache is incomplete; refusing an implicit source build." >&2
+      echo "Run the host wrapper with --bootstrap-native-runtime to resume it." >&2
+      exit 75
+    fi
+    echo "==> Bootstrapping patched WebKitGTK (bounded to ${NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS}s)"
+    rm -f \
+      "$build_dir/lib/libjavascriptcoregtk-4.1.so" \
+      "$build_dir/lib/libjavascriptcoregtk-4.1.so.0" \
+      "$build_dir/lib/libwebkit2gtk-4.1.so" \
+      "$build_dir/lib/libwebkit2gtk-4.1.so.0"
+    timeout --signal=TERM --kill-after=30s "$NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS" \
+      cmake --build "$build_dir" --target WebKit WebKitWebProcess --parallel "$JOBS"
+  else
+    echo "==> Reusing completed patched WebKitGTK runtime"
+  fi
   test -s "$build_dir/lib/libwebkit2gtk-4.1.so.0"
   test -x "$build_dir/bin/WebKitWebProcess"
 }

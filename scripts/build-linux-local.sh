@@ -7,11 +7,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/build-startup-status.sh"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
 SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
-localbooru_build_acquire_lock "$STATE_DIR" linux "$SOURCE_REVISION"
-python3 "$ROOT/scripts/check-release-version.py"
 DOCKERFILE_HASH="$(sha256sum "$ROOT/Dockerfile.linux-release" | cut -c1-12)"
 IMAGE="localbooru-linux-release:ubuntu24.04-webkit2.52.3-v1-$DOCKERFILE_HASH"
 REBUILD=0
+BOOTSTRAP_NATIVE_RUNTIME=0
 BUNDLES="appimage,deb,rpm"
 JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
 
@@ -24,6 +23,9 @@ Options:
   --deb            Build only the Debian package
   --rpm            Build only the RPM package
   --rebuild-image  Rebuild the release toolchain image
+  --bootstrap-native-runtime
+                    Explicitly compile a missing native runtime cache. Normal
+                    release runs never start this long-running bootstrap.
   --jobs N         Limit parallel compilation (default: 2)
   -h, --help       Show this help
 
@@ -33,6 +35,8 @@ Environment:
   LOCALBOORU_BUILD_JOBS         Parallel build limit
   LOCALBOORU_LINUX_BUILD_LIMIT_GB  Refuse builds above this cache size (default: 30)
   LOCALBOORU_CCACHE_SIZE         ccache size cap (default: 8G)
+  LOCALBOORU_NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS
+                                Bootstrap limit in seconds (default: 900)
 EOF
 }
 
@@ -42,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     --deb) BUNDLES="deb"; shift ;;
     --rpm) BUNDLES="rpm"; shift ;;
     --rebuild-image) REBUILD=1; shift ;;
+    --bootstrap-native-runtime) BOOTSTRAP_NATIVE_RUNTIME=1; shift ;;
     --jobs)
       [[ $# -ge 2 && "$2" =~ ^[1-9][0-9]*$ ]] || {
         echo "ERROR: --jobs requires a positive integer" >&2
@@ -69,8 +74,10 @@ DIST_ROOT="${LOCALBOORU_DIST_LINUX_DIR:-$ROOT/dist-linux-local}"
 CCACHE_ROOT="${LOCALBOORU_CCACHE_DIR:-$ROOT/.ccache-docker}"
 SOURCE_COMMIT="$(git -C "$ROOT" rev-parse --verify "${SOURCE_REVISION}^{commit}")"
 GIT_COMMON_DIR="$(realpath "$(git -C "$ROOT" rev-parse --git-common-dir)")"
-localbooru_build_write_owner "$SOURCE_COMMIT"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$SOURCE_COMMIT")}"
+WEBKIT_PATCH_PATH="patches/webkitgtk/2.52.3-playbin-video-filter.patch"
+WEBKIT_PATCH_HASH="$(git -C "$ROOT" show "$SOURCE_COMMIT:$WEBKIT_PATCH_PATH" | sha256sum | cut -d' ' -f1)"
+VAPOURSYNTH_COMMIT="c05906995662bacd5bddf853d8e68f19286987db"
 CACHE_MARKER=".localbooru-build-cache"
 
 has_symlink_component() {
@@ -151,6 +158,47 @@ fi
 printf '==> Linux persistent build cache before build: %s (limit: %sG)\n' \
   "$(du -sh "$BUILD_ROOT" | cut -f1)" "$BUILD_LIMIT_GB"
 
+native_runtime_cache_missing=()
+if [[ ! -e "$BUILD_ROOT/webkit-build/.localbooru-config-ubuntu24-gtk3-v2" ]]; then
+  native_runtime_cache_missing+=("webkit-build/.localbooru-config-ubuntu24-gtk3-v2")
+fi
+if [[ ! -s "$BUILD_ROOT/webkit-build/lib/libwebkit2gtk-4.1.so.0" ]]; then
+  native_runtime_cache_missing+=("webkit-build/lib/libwebkit2gtk-4.1.so.0")
+fi
+if [[ ! -s "$BUILD_ROOT/webkit-build/lib/libjavascriptcoregtk-4.1.so.0" ]]; then
+  native_runtime_cache_missing+=("webkit-build/lib/libjavascriptcoregtk-4.1.so.0")
+fi
+if [[ ! -x "$BUILD_ROOT/webkit-build/bin/WebKitWebProcess" ]]; then
+  native_runtime_cache_missing+=("webkit-build/bin/WebKitWebProcess")
+fi
+if [[ ! -f "$BUILD_ROOT/webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_PATCH_HASH" ]]; then
+  native_runtime_cache_missing+=("webkitgtk-2.52.3/.localbooru-patch-$WEBKIT_PATCH_HASH")
+fi
+if [[ ! -f "$BUILD_ROOT/vapoursynth-stage/.localbooru-vapoursynth-$VAPOURSYNTH_COMMIT" ]]; then
+  native_runtime_cache_missing+=("vapoursynth-stage/.localbooru-vapoursynth-$VAPOURSYNTH_COMMIT")
+fi
+
+if ((${#native_runtime_cache_missing[@]})) && [[ "$BOOTSTRAP_NATIVE_RUNTIME" != 1 ]]; then
+  localbooru_build_emit_status NEEDS_BOOTSTRAP \
+    "platform=linux" \
+    "source=$SOURCE_COMMIT" \
+    "cache=$BUILD_ROOT" \
+    "missing=$(IFS=,; echo "${native_runtime_cache_missing[*]}")" >&2
+  cat >&2 <<EOF
+ERROR: Linux native runtime cache is incomplete. Refusing to take the release
+build token for an implicit WebKitGTK source build.
+
+Bootstrap explicitly (resumable, bounded):
+  LOCALBOORU_NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS=900 \\
+    scripts/build-linux-local.sh --bootstrap-native-runtime --jobs $JOBS
+EOF
+  exit 75
+fi
+
+localbooru_build_acquire_lock "$STATE_DIR" linux "$SOURCE_REVISION"
+python3 "$ROOT/scripts/check-release-version.py"
+localbooru_build_write_owner "$SOURCE_COMMIT"
+
 if [[ "$REBUILD" == 1 ]] || ! "$CONTAINER" image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "==> Building release toolchain image $IMAGE"
   localbooru_build_started "$SOURCE_COMMIT" container-image
@@ -177,6 +225,8 @@ localbooru_build_started "$SOURCE_COMMIT" artifacts
   -e LC_ALL=C.UTF-8 \
   -e LOCALBOORU_BUILD_JOBS="$JOBS" \
   -e LOCALBOORU_RELEASE_BUNDLES="$BUNDLES" \
+  -e LOCALBOORU_ALLOW_NATIVE_RUNTIME_BOOTSTRAP="$BOOTSTRAP_NATIVE_RUNTIME" \
+  -e LOCALBOORU_NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS="${LOCALBOORU_NATIVE_RUNTIME_BOOTSTRAP_TIMEOUT_SECONDS:-900}" \
   -e GIT_DIR=/git \
   -e GIT_WORK_TREE=/source \
   -e CARGO_TARGET_DIR=/build/target \
