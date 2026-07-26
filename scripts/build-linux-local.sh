@@ -68,6 +68,7 @@ BUILD_ROOT="${LOCALBOORU_DOCKER_BUILD_ROOT:-$ROOT/build-linux-docker}"
 DIST_ROOT="${LOCALBOORU_DIST_LINUX_DIR:-$ROOT/dist-linux-local}"
 CCACHE_ROOT="${LOCALBOORU_CCACHE_DIR:-$ROOT/.ccache-docker}"
 SOURCE_COMMIT="$(git -C "$ROOT" rev-parse --verify "${SOURCE_REVISION}^{commit}")"
+GIT_COMMON_DIR="$(realpath "$(git -C "$ROOT" rev-parse --git-common-dir)")"
 localbooru_build_write_owner "$SOURCE_COMMIT"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$SOURCE_COMMIT")}"
 CACHE_MARKER=".localbooru-build-cache"
@@ -176,10 +177,13 @@ localbooru_build_started "$SOURCE_COMMIT" artifacts
   -e LC_ALL=C.UTF-8 \
   -e LOCALBOORU_BUILD_JOBS="$JOBS" \
   -e LOCALBOORU_RELEASE_BUNDLES="$BUNDLES" \
+  -e GIT_DIR=/git \
+  -e GIT_WORK_TREE=/source \
   -e CARGO_TARGET_DIR=/build/target \
   -e CCACHE_DIR=/ccache \
   -e CCACHE_MAXSIZE="${LOCALBOORU_CCACHE_SIZE:-8G}" \
   -v "$ROOT:/source:ro" \
+  -v "$GIT_COMMON_DIR:/git:ro" \
   -v "$BUILD_ROOT:/build" \
   -v "$BUILD_ROOT/cargo-home:/cargo-home" \
   -v "$DIST_ROOT:/dist" \
