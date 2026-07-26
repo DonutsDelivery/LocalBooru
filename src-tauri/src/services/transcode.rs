@@ -26,6 +26,27 @@ struct HwCaps {
     scale_cuda: bool,
 }
 
+#[cfg(target_os = "windows")]
+fn run_ffmpeg_probe(args: &[&str]) -> std::io::Result<std::process::Output> {
+    use std::os::windows::process::CommandExt;
+    let mut command = std::process::Command::new("ffmpeg");
+    command
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .creation_flags(0x08000000); // CREATE_NO_WINDOW
+    command.output()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn run_ffmpeg_probe(args: &[&str]) -> std::io::Result<std::process::Output> {
+    std::process::Command::new("ffmpeg")
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+}
+
 impl HwCaps {
     /// Full GPU pipeline available: CUDA decode → GPU scale → NVENC encode
     fn full_gpu(&self) -> bool {
@@ -42,12 +63,7 @@ fn detect_hw_caps() -> &'static HwCaps {
         };
 
         // Check encoders (NVENC)
-        if let Ok(output) = std::process::Command::new("ffmpeg")
-            .args(["-encoders"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output()
-        {
+        if let Ok(output) = run_ffmpeg_probe(&["-encoders"]) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 hw.nvenc = stdout.contains("h264_nvenc");
@@ -55,12 +71,7 @@ fn detect_hw_caps() -> &'static HwCaps {
         }
 
         // Check hwaccels (cuda)
-        if let Ok(output) = std::process::Command::new("ffmpeg")
-            .args(["-hwaccels"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output()
-        {
+        if let Ok(output) = run_ffmpeg_probe(&["-hwaccels"]) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 hw.cuda_hwaccel = stdout.contains("cuda");
@@ -68,12 +79,7 @@ fn detect_hw_caps() -> &'static HwCaps {
         }
 
         // Check filters (scale_cuda)
-        if let Ok(output) = std::process::Command::new("ffmpeg")
-            .args(["-filters"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output()
-        {
+        if let Ok(output) = run_ffmpeg_probe(&["-filters"]) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 hw.scale_cuda = stdout.contains("scale_cuda");
@@ -467,6 +473,7 @@ impl TranscodeManager {
 
         // Spawn FFmpeg — on Linux, set PR_SET_PDEATHSIG so the child is killed
         // automatically when the parent process exits (even via SIGKILL / process::exit).
+        // On Windows, hide the console window to prevent cmd.exe popup flashes.
         let mut ffmpeg_cmd = Command::new(&cmd[0]);
         ffmpeg_cmd
             .args(&cmd[1..])
@@ -479,6 +486,12 @@ impl TranscodeManager {
                 libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
                 Ok(())
             });
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            ffmpeg_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
 
         let child = ffmpeg_cmd

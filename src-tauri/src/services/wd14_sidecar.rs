@@ -1400,7 +1400,12 @@ fn directory_entry_key(path: &Path, case_insensitive: bool) -> Result<Vec<u8>, S
     Ok(key)
 }
 
-#[cfg(not(unix))]
+#[cfg(target_os = "windows")]
+fn directory_entry_key(path: &Path, case_insensitive: bool) -> Result<Vec<u8>, String> {
+    Ok(path_key(path, case_insensitive))
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
 fn directory_entry_key(path: &Path, case_insensitive: bool) -> Result<Vec<u8>, String> {
     if case_insensitive && !path.to_string_lossy().is_ascii() {
         return Err(format!(
@@ -1431,19 +1436,15 @@ fn path_key(path: &Path, case_insensitive: bool) -> Vec<u8> {
 
     let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
     let normalized: Vec<u16> = if case_insensitive {
-        match String::from_utf16(&wide) {
-            Ok(path) => path.to_lowercase().encode_utf16().collect(),
-            Err(_) => wide
-                .into_iter()
-                .map(|unit| {
-                    if (b'A' as u16..=b'Z' as u16).contains(&unit) {
-                        unit + (b'a' - b'A') as u16
-                    } else {
-                        unit
-                    }
-                })
-                .collect(),
-        }
+        wide.into_iter()
+            .map(|unit| {
+                if (b'A' as u16..=b'Z' as u16).contains(&unit) {
+                    unit + (b'a' - b'A') as u16
+                } else {
+                    unit
+                }
+            })
+            .collect()
     } else {
         wide
     };
@@ -1922,6 +1923,28 @@ mod tests {
         let upper = Path::new("dataset/FOO.txt");
         assert_ne!(path_key(lower, false), path_key(upper, false));
         assert_eq!(path_key(lower, true), path_key(upper, true));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn grouping_keys_fold_unicode_on_case_insensitive_filesystems() {
+        let upper = Path::new("dataset/Ärger/スパイ.txt");
+        let lower = Path::new("dataset/ärger/スパイ.txt");
+        assert_ne!(path_key(upper, false), path_key(lower, false));
+        assert_eq!(path_key(upper, true), path_key(lower, true));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_grouping_key_preserves_unicode_units_and_folds_ascii() {
+        let unicode = Path::new("C:\\資料\\İ.txt");
+        let distinct = Path::new("C:\\資料\\i\u{307}.txt");
+        assert!(directory_entry_key(unicode, true).is_ok());
+        assert_ne!(path_key(unicode, true), path_key(distinct, true));
+        assert_eq!(
+            path_key(Path::new("C:\\資料\\Foo.txt"), true),
+            path_key(Path::new("C:\\資料\\fOO.txt"), true)
+        );
     }
 
     // AC: @wd14-sidecar-exchange-contract ac-shared-stem

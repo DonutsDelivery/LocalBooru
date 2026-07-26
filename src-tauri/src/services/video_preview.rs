@@ -3,17 +3,26 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
+#[cfg(target_os = "windows")]
+fn suppress_console_window(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+fn suppress_console_window(_command: &mut Command) {}
+
 /// Check if ffmpeg is available on the system.
 pub fn check_ffmpeg_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        Command::new("ffmpeg")
+        let mut command = Command::new("ffmpeg");
+        command
             .arg("-version")
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+            .stderr(std::process::Stdio::null());
+        suppress_console_window(&mut command);
+        command.status().map(|s| s.success()).unwrap_or(false)
     })
 }
 
@@ -21,13 +30,13 @@ pub fn check_ffmpeg_available() -> bool {
 pub fn check_ffprobe_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        Command::new("ffprobe")
+        let mut command = Command::new("ffprobe");
+        command
             .arg("-version")
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+            .stderr(std::process::Stdio::null());
+        suppress_console_window(&mut command);
+        command.status().map(|s| s.success()).unwrap_or(false)
     })
 }
 
@@ -37,20 +46,20 @@ pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
         return None;
     }
 
-    let output = Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "format=duration:stream=width,height",
-            "-of",
-            "json",
-            file_path,
-        ])
-        .output()
-        .ok()?;
+    let mut command = Command::new("ffprobe");
+    command.args([
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "format=duration:stream=width,height",
+        "-of",
+        "json",
+        file_path,
+    ]);
+    suppress_console_window(&mut command);
+    let output = command.output().ok()?;
 
     if !output.status.success() {
         return None;
@@ -113,7 +122,10 @@ pub fn get_hwaccel_args() -> Vec<String> {
         if !check_ffmpeg_available() {
             return vec![];
         }
-        let output = Command::new("ffmpeg").args(["-hwaccels"]).output().ok();
+        let mut command = Command::new("ffmpeg");
+        command.arg("-hwaccels");
+        suppress_console_window(&mut command);
+        let output = command.output().ok();
 
         if let Some(out) = output {
             let stdout = String::from_utf8_lossy(&out.stdout);
@@ -235,11 +247,13 @@ pub fn extract_preview_frames(
         (cmd_args[0].clone(), cmd_args[1..].to_vec())
     };
 
-    let result = Command::new(&program)
+    let mut command = Command::new(&program);
+    command
         .args(&args)
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+        .stderr(std::process::Stdio::null());
+    suppress_console_window(&mut command);
+    let result = command.status();
 
     match result {
         Ok(status) if status.success() => {
@@ -378,10 +392,13 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
 
     let (program, args) = (cmd_args[0].clone(), cmd_args[1..].to_vec());
 
-    Command::new(&program)
+    let mut command = Command::new(&program);
+    command
         .args(&args)
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    suppress_console_window(&mut command);
+    command
         .status()
         .map(|s| s.success() && Path::new(output_path).exists())
         .unwrap_or(false)

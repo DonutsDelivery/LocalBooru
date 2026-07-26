@@ -183,6 +183,53 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
         sql: "CREATE INDEX IF NOT EXISTS idx_task_queue_claim
               ON task_queue(status, priority DESC, COALESCE(next_attempt_at, created_at), created_at);",
     },
+    // v13: Remove FK from collection_items.image_id — images live in per-directory
+    // SQLite databases, not in the main DB. The FK was preventing collection creation
+    // because image IDs from directory DBs don't exist in the main images table.
+    Migration {
+        description: "Remove foreign key constraint from collection_items.image_id",
+        sql: "PRAGMA foreign_keys = OFF;\
+              CREATE TABLE collection_items_new (\
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,\
+                  image_id INTEGER NOT NULL,\
+                  sort_order INTEGER NOT NULL DEFAULT 0,\
+                  added_at TEXT NOT NULL DEFAULT (datetime('now')),\
+                  UNIQUE(collection_id, image_id)\
+              );\
+              INSERT INTO collection_items_new SELECT * FROM collection_items;\
+              DROP TABLE collection_items;\
+              ALTER TABLE collection_items_new RENAME TO collection_items;\
+              CREATE INDEX IF NOT EXISTS idx_collection_items_collection_id ON collection_items(collection_id);\
+              CREATE INDEX IF NOT EXISTS idx_collection_items_image_id ON collection_items(image_id);\
+              PRAGMA foreign_keys = ON;",
+    },
+    // v14: Older builds created task_queue with `extractmetadata` in its CHECK
+    // constraint, while every producer uses the canonical `extract_metadata`.
+    // Rebuild the table and preserve queued/failed work while normalizing that
+    // legacy value so existing databases can accept metadata tasks again.
+    Migration {
+        description: "Repair legacy task queue metadata constraint",
+        sql: "CREATE TABLE task_queue_new (\
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                  task_type TEXT NOT NULL CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extract_metadata')),\
+                  payload TEXT,\
+                  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed','cancelled')),\
+                  priority INTEGER NOT NULL DEFAULT 0,\
+                  attempts INTEGER NOT NULL DEFAULT 0,\
+                  error_message TEXT,\
+                  next_attempt_at TEXT,\
+                  created_at TEXT NOT NULL DEFAULT (datetime('now')),\
+                  started_at TEXT,\
+                  completed_at TEXT\
+              );\
+              INSERT INTO task_queue_new (id, task_type, payload, status, priority, attempts, error_message, next_attempt_at, created_at, started_at, completed_at) SELECT id, CASE task_type WHEN 'extractmetadata' THEN 'extract_metadata' ELSE task_type END, payload, status, priority, attempts, error_message, next_attempt_at, created_at, started_at, completed_at FROM task_queue;\
+              DROP TABLE task_queue;\
+              ALTER TABLE task_queue_new RENAME TO task_queue;\
+              CREATE INDEX IF NOT EXISTS idx_task_queue_status ON task_queue(status);\
+              CREATE INDEX IF NOT EXISTS idx_task_queue_task_type ON task_queue(task_type);\
+              CREATE INDEX IF NOT EXISTS idx_task_queue_claim ON task_queue(status, priority DESC, COALESCE(next_attempt_at, created_at), created_at);",
+    },
 ];
 
 /// Run all pending migrations on the main library database.
@@ -453,5 +500,43 @@ mod tests {
             })
             .unwrap();
         assert!(next_attempt.is_none());
+    }
+
+    #[test]
+    fn task_queue_constraint_migration_normalizes_legacy_metadata_tasks() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+             INSERT INTO schema_version (version) VALUES (13);
+             CREATE TABLE task_queue (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 task_type TEXT NOT NULL CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extractmetadata')),
+                 payload TEXT,
+                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed','cancelled')),
+                 priority INTEGER NOT NULL DEFAULT 0,
+                 attempts INTEGER NOT NULL DEFAULT 0,
+                 error_message TEXT,
+                 next_attempt_at TEXT,
+                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 started_at TEXT,
+                 completed_at TEXT
+             );
+             INSERT INTO task_queue (task_type, status) VALUES ('extractmetadata', 'failed');",
+        )
+        .unwrap();
+
+        run_main_migrations(&conn).unwrap();
+
+        let legacy_task_type: String = conn
+            .query_row("SELECT task_type FROM task_queue WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(legacy_task_type, "extract_metadata");
+        conn.execute(
+            "INSERT INTO task_queue (task_type, status) VALUES ('extract_metadata', 'pending')",
+            [],
+        )
+        .unwrap();
     }
 }

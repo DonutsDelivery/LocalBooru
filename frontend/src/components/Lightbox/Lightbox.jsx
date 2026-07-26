@@ -1161,7 +1161,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
       const isVideoFile = isVideo(image?.original_filename)
 
-      // VLC-like video controls
+      // VLC-like video controls — seeking requires Ctrl/Shift modifiers.
+      // Bare arrow keys always navigate the gallery.
       if (isVideoFile && mediaRef.current) {
         switch (e.key) {
           case ' ':
@@ -1173,29 +1174,39 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             }
             return
           case 'ArrowLeft':
-            e.preventDefault()
-            if (casting.isCasting) {
-              casting.castSeekRelative(e.ctrlKey || e.metaKey ? -30 : e.shiftKey ? -1 : -5)
-            } else if (e.ctrlKey || e.metaKey) {
-              playback.seekVideo(-30) // Ctrl+Left: -30s
-            } else if (e.shiftKey) {
-              playback.seekVideo(-1) // Shift+Left: -1s
-            } else {
-              playback.seekVideo(-5) // Left: -5s
+            if (e.ctrlKey || e.metaKey) {
+              e.preventDefault()
+              casting.isCasting
+                ? casting.castSeekRelative(-30)
+                : playback.seekVideo(-30)
+              return
             }
-            return
+            if (e.shiftKey) {
+              e.preventDefault()
+              casting.isCasting
+                ? casting.castSeekRelative(-1)
+                : playback.seekVideo(-1)
+              return
+            }
+            // No modifier: gallery navigation (falls through below)
+            break
           case 'ArrowRight':
-            e.preventDefault()
-            if (casting.isCasting) {
-              casting.castSeekRelative(e.ctrlKey || e.metaKey ? 30 : e.shiftKey ? 1 : 5)
-            } else if (e.ctrlKey || e.metaKey) {
-              playback.seekVideo(30) // Ctrl+Right: +30s
-            } else if (e.shiftKey) {
-              playback.seekVideo(1) // Shift+Right: +1s
-            } else {
-              playback.seekVideo(5) // Right: +5s
+            if (e.ctrlKey || e.metaKey) {
+              e.preventDefault()
+              casting.isCasting
+                ? casting.castSeekRelative(30)
+                : playback.seekVideo(30)
+              return
             }
-            return
+            if (e.shiftKey) {
+              e.preventDefault()
+              casting.isCasting
+                ? casting.castSeekRelative(1)
+                : playback.seekVideo(1)
+              return
+            }
+            // No modifier: gallery navigation (falls through below)
+            break
           case 'ArrowUp':
             e.preventDefault()
             casting.isCasting ? casting.castVolumeRelative(0.05) : playback.adjustVolume(0.05)
@@ -2418,7 +2429,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             className="lightbox-media"
             style={{ ...(previewUrl ? {} : getFilterStyle()), ...zoomPan.getZoomTransform() }}
             onContextMenu={handleImageContextMenu}
-            onError={() => {
+            onError={(event) => {
+              console.warn('[Lightbox] Media load failed', {
+                imageId: image.id,
+                directoryId: image.directory_id,
+                libraryId: image.library_id,
+                source: event.currentTarget.currentSrc || event.currentTarget.src,
+              })
               if (imageSourceOwnerRef.current.owns(renderedImageSource)) {
                 setImageLoadError(true)
               }

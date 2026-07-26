@@ -270,8 +270,12 @@ pub fn generate_thumbnail_from_image(
 pub fn generate_thumbnail(file_path: &str, output_path: &str, size: u32) -> bool {
     match image::open(file_path) {
         Ok(img) => generate_thumbnail_from_image(&img, output_path, size),
-        Err(e) => {
-            log::error!("Failed to open image for thumbnail: {}", e);
+        Err(error) => {
+            log::error!(
+                "[Thumbnail] Decoder failed for path={}: {}",
+                file_path,
+                error
+            );
             false
         }
     }

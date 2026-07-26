@@ -160,10 +160,12 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
 
         -- Collection items
+        -- NOTE: image_id has no FK constraint because images live in
+        -- per-directory SQLite databases, not in the main DB.
         CREATE TABLE IF NOT EXISTS collection_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
-            image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+            image_id INTEGER NOT NULL,
             sort_order INTEGER NOT NULL DEFAULT 0,
             added_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(collection_id, image_id)
