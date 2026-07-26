@@ -2,6 +2,7 @@
 
 LOCALBOORU_BUILD_STATUS_REPORTED=0
 LOCALBOORU_BUILD_LOCK_HELD=0
+LOCALBOORU_BUILD_LOCK_SUPERVISED=0
 LOCALBOORU_BUILD_OWNER_FILE=""
 LOCALBOORU_BUILD_PLATFORM=""
 LOCALBOORU_BUILD_SOURCE=""
@@ -27,7 +28,7 @@ localbooru_build_owner_value() {
 localbooru_build_cleanup() {
   local exit_code=$?
 
-  if [[ "$LOCALBOORU_BUILD_LOCK_HELD" == 1 ]]; then
+  if [[ "$LOCALBOORU_BUILD_LOCK_HELD" == 1 || "$LOCALBOORU_BUILD_LOCK_SUPERVISED" == 1 ]]; then
     if [[ -n "$LOCALBOORU_BUILD_OWNER_FILE" ]]; then
       local owner_pid=""
       owner_pid="$(localbooru_build_owner_value pid "$LOCALBOORU_BUILD_OWNER_FILE" 2>/dev/null || true)"
@@ -35,9 +36,12 @@ localbooru_build_cleanup() {
         rm -f "$LOCALBOORU_BUILD_OWNER_FILE"
       fi
     fi
-    flock -u 8 2>/dev/null || true
-    exec 8>&-
+    if [[ "$LOCALBOORU_BUILD_LOCK_HELD" == 1 ]]; then
+      flock -u 8 2>/dev/null || true
+      exec 8>&-
+    fi
     LOCALBOORU_BUILD_LOCK_HELD=0
+    LOCALBOORU_BUILD_LOCK_SUPERVISED=0
   fi
 
   if ((exit_code != 0)) && [[ "$LOCALBOORU_BUILD_STATUS_REPORTED" == 0 ]]; then
@@ -63,6 +67,20 @@ localbooru_build_acquire_lock() {
   LOCALBOORU_BUILD_SOURCE="$requested_source"
   LOCALBOORU_BUILD_OWNER_FILE="$state_dir/build-cache.owner"
   mkdir -p "$state_dir"
+
+  # Validate the host gate's inherited token before treating a global lock
+  # alias as reentrant. This avoids deadlocking a queued build on itself.
+  if [[ "${_HOST_HEAVY_BUILD_INTERNAL:-0}" == 1 && -n "${HOST_HEAVY_BUILD_TOKEN:-}" ]]; then
+    local host_gate="${HOST_HEAVY_BUILD_GATE:-$HOME/.local/bin/host-heavy-build}"
+    if "$host_gate" run --project "${HOST_HEAVY_BUILD_PROJECT:-localbooru}" \
+      --worktree "$PWD" -- true >/dev/null; then
+      LOCALBOORU_BUILD_LOCK_SUPERVISED=1
+      trap localbooru_build_cleanup EXIT
+      localbooru_build_write_owner "$requested_source"
+      return 0
+    fi
+  fi
+
   exec 8>>"$state_dir/build-cache.lock"
 
   local lock_acquired=0
