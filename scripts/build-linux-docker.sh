@@ -43,6 +43,11 @@ mkdir -p "$ROOT"
 git -c safe.directory="$SOURCE" -C "$SOURCE" archive --format=tar "$RESOLVED_SOURCE_REVISION" \
   | tar -C "$ROOT" -xf -
 
+# The host wrapper binds Git metadata only to archive this exact candidate.
+# Native dependency bootstraps may invoke their own Git clones; never let them
+# inherit the mounted source worktree as GIT_WORK_TREE/GIT_DIR.
+unset GIT_DIR GIT_WORK_TREE
+
 rm -f "$DIST/SHA256SUMS" "$DIST/LocalBooru-Native-Runtime-Sources.tar.xz"
 [[ ",$BUNDLES," == *",appimage,"* ]] && \
   rm -f "$DIST/LocalBooru-Linux.AppImage" "$DIST/LocalBooru-Linux.zip"
