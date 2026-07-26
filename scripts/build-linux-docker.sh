@@ -139,11 +139,14 @@ prepare_vapoursynth() {
 
   if [[ ! -d "$source/.git" ]]; then
     rm -rf "$source" "$build_dir" "$stage"
-    git clone --filter=blob:none https://github.com/vapoursynth/vapoursynth.git "$source"
+    env -u GIT_DIR -u GIT_WORK_TREE \
+      git clone --filter=blob:none https://github.com/vapoursynth/vapoursynth.git "$source"
   fi
-  git -C "$source" fetch --depth 1 origin "$VAPOURSYNTH_COMMIT"
-  git -C "$source" checkout --detach "$VAPOURSYNTH_COMMIT"
-  [[ "$(git -C "$source" rev-parse HEAD)" == "$VAPOURSYNTH_COMMIT" ]]
+  env -u GIT_DIR -u GIT_WORK_TREE \
+    git -C "$source" fetch --depth 1 origin "$VAPOURSYNTH_COMMIT"
+  env -u GIT_DIR -u GIT_WORK_TREE \
+    git -C "$source" checkout --detach "$VAPOURSYNTH_COMMIT"
+  [[ "$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$source" rev-parse HEAD)" == "$VAPOURSYNTH_COMMIT" ]]
 
   if [[ ! -f "$stage/.localbooru-vapoursynth-$VAPOURSYNTH_COMMIT" ]]; then
     rm -rf "$build_dir" "$stage"
