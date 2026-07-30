@@ -865,6 +865,178 @@ video.lightbox-media.video-display-original {
   object-fit: none;
 }
 
+/* Integrated 180°/360° equirectangular viewer. The video element remains the
+   playback/audio owner while WebGL presents it through a movable perspective. */
+video.lightbox-media.vr-video-source {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.vr-video-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #000;
+  cursor: grab;
+  touch-action: none;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.vr-video-canvas.dragging {
+  cursor: grabbing;
+}
+
+.vr-video-canvas:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(100, 181, 246, 0.9);
+}
+
+.vr-video-controls {
+  position: absolute;
+  z-index: 18;
+  top: calc(var(--title-bar-height, 0px) + max(68px, var(--safe-top, 0px)));
+  left: max(16px, var(--safe-left, 0px));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  color: #fff;
+  background: rgba(10, 12, 16, 0.78);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(12px);
+  transition: opacity 0.2s ease;
+}
+
+.vr-video-controls button,
+.vr-video-controls select {
+  min-height: 30px;
+  border: 0;
+  border-radius: 7px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  font: inherit;
+}
+
+.vr-video-controls button {
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.vr-video-controls button:hover,
+.vr-video-controls select:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.vr-video-controls select {
+  max-width: 132px;
+  padding: 4px 24px 4px 8px;
+  cursor: pointer;
+}
+
+.vr-video-controls select option {
+  color: #fff;
+  background: #17191f;
+}
+
+.vr-projection-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.vr-projection-toggle button {
+  min-height: 26px;
+  padding: 3px 7px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.vr-projection-toggle button.active {
+  color: #d8efff;
+  background: rgba(33, 150, 243, 0.48);
+}
+
+.vr-eye-toggle,
+.vr-fov-readout {
+  white-space: nowrap;
+  font-size: 0.76rem;
+}
+
+.vr-fov-readout {
+  min-width: 38px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.vr-reset-view {
+  width: 32px;
+  padding: 5px !important;
+}
+
+.vr-reset-view svg {
+  display: block;
+  width: 19px;
+  height: 19px;
+}
+
+.vr-drag-hint {
+  position: absolute;
+  z-index: 17;
+  left: 50%;
+  bottom: calc(146px + var(--safe-bottom, 0px));
+  transform: translateX(-50%);
+  padding: 7px 12px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.58);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.vr-drag-hint.active {
+  color: #d8efff;
+  background: rgba(10, 42, 68, 0.82);
+}
+
+.vr-video-subtitles {
+  position: absolute;
+  z-index: 16;
+  left: 10%;
+  right: 10%;
+  bottom: calc(184px + var(--safe-bottom, 0px));
+  color: #fff;
+  font-size: clamp(1rem, 2.2vw, 1.75rem);
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  white-space: pre-line;
+  text-shadow: 0 2px 3px #000, 0 0 7px #000;
+  pointer-events: none;
+}
+
+.lightbox.ui-hidden .vr-video-controls,
+.lightbox.ui-hidden .vr-drag-hint:not(.active) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lightbox-display-mode:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 /* Bottom control bar */
 .lightbox-video-controls {
   position: absolute;
@@ -991,6 +1163,25 @@ video.lightbox-media.video-display-original {
 .video-control-btn svg {
   width: 28px;
   height: 28px;
+}
+
+.vr-toggle-btn {
+  min-width: 32px;
+}
+
+.vr-toggle-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.vr-toggle-btn.active {
+  color: #90caf9;
+  background: rgba(33, 150, 243, 0.24);
+}
+
+.vr-toggle-btn.active:hover {
+  background: rgba(33, 150, 243, 0.38);
 }
 
 /* SVP toggle button */
@@ -2567,6 +2758,41 @@ video::cue {
 }
 
 @media (max-width: 768px) {
+  .vr-video-controls {
+    top: max(66px, calc(var(--safe-top, 0px) + 54px));
+    left: max(8px, var(--safe-left, 0px));
+    right: max(8px, var(--safe-right, 0px));
+    width: fit-content;
+    max-width: calc(100vw - var(--safe-left, 0px) - var(--safe-right, 0px) - 16px);
+    gap: 4px;
+    padding: 5px;
+  }
+
+  .vr-video-controls button,
+  .vr-video-controls select {
+    min-height: 36px;
+  }
+
+  .vr-video-controls select {
+    max-width: 112px;
+    padding-left: 6px;
+    font-size: 0.76rem;
+  }
+
+  .vr-fov-readout {
+    display: none;
+  }
+
+  .vr-drag-hint {
+    bottom: calc(126px + var(--safe-bottom, 0px));
+  }
+
+  .vr-video-subtitles {
+    left: 5%;
+    right: 5%;
+    bottom: calc(158px + var(--safe-bottom, 0px));
+  }
+
   .lightbox-toolbar {
     top: max(8px, var(--safe-top));
     right: max(8px, var(--safe-right));

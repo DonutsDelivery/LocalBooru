@@ -6,8 +6,10 @@ import { toast } from '../Toast'
 import ContextMenu from '../ContextMenu'
 import SVPSideMenu from '../SVPSideMenu'
 import QualitySelector from '../QualitySelector'
+import VRVideoViewport from './VRVideoViewport'
 import '../Lightbox.css'
 import { isVideo, formatTime } from './utils/helpers'
+import { detectVRProjection } from './utils/vrVideo.js'
 import { useUIVisibility } from './hooks/useUIVisibility'
 import { useZoomPan } from './hooks/useZoomPan'
 import { useVideoStreaming } from './hooks/useVideoStreaming'
@@ -185,6 +187,15 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     adjustmentRequestOwnerRef.current.invalidatePreview()
   }, [])
   const isVideoFile = isVideo(image?.original_filename)
+  const detectedVRProjection = useMemo(
+    () => detectVRProjection(image?.original_filename || image?.filename),
+    [image?.original_filename, image?.filename]
+  )
+  const [vrEnabled, setVrEnabled] = useState(() => Boolean(detectedVRProjection))
+
+  useEffect(() => {
+    setVrEnabled(Boolean(detectedVRProjection))
+  }, [currentImageKey, detectedVRProjection])
 
   // UI visibility and fullscreen hook
   const {
@@ -203,6 +214,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const { installed: castInstalled } = useAddonStatus('cast')
   const { installed: svpInstalled } = useAddonStatus('svp')
   const casting = useCastSession(mediaRef, image)
+  const vrActive = vrEnabled && !casting.isCasting && !curationMode
   // Video streaming hook
   const streaming = useVideoStreaming(mediaRef, image, currentQuality, {
     svpInstalled,
@@ -1259,6 +1271,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             e.preventDefault()
             setShowDiagnostics(p => !p)
             return
+          case 'v':
+          case 'V':
+            e.preventDefault()
+            if (!casting.isCasting && !curationMode) setVrEnabled(value => !value)
+            return
         }
       }
 
@@ -1380,6 +1397,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setContextMenu({ x: e.clientX, y: e.clientY })
   }, [])
 
+  const handleVRUnavailable = useCallback((message) => {
+    setVrEnabled(false)
+    toast.error(message)
+  }, [])
+
   // Determine if we should play the video directly (no streaming)
   const shouldPlayDirect = useMemo(() => {
     if (image?.is_local_direct_file) return true
@@ -1443,7 +1465,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   return (
     <div
-      className={`lightbox ${!showUI ? 'ui-hidden' : ''} ${zoomPan.zoom.scale > 1 ? 'zoomed' : ''} ${isFullscreen ? 'fullscreen' : ''} ${isVideoFile ? 'lightbox-video' : ''} ${casting.isCasting ? 'casting-active' : ''} ${curationMode ? 'curation-active' : ''}`}
+      className={`lightbox ${!showUI ? 'ui-hidden' : ''} ${zoomPan.zoom.scale > 1 ? 'zoomed' : ''} ${isFullscreen ? 'fullscreen' : ''} ${isVideoFile ? 'lightbox-video' : ''} ${vrActive ? 'vr-active' : ''} ${casting.isCasting ? 'casting-active' : ''} ${curationMode ? 'curation-active' : ''}`}
       onClick={handleNavClick}
       onDoubleClick={handleDoubleClick}
       onMouseMove={(e) => { handleMouseMove(); zoomPan.handleMouseMoveDrag(e); }}
@@ -1841,7 +1863,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           <button
             className={`lightbox-btn lightbox-display-mode lightbox-secondary-action ${playback.videoDisplayMode !== 'fit' ? 'active' : ''}`}
             onClick={playback.cycleDisplayMode}
-            title={`Display: ${playback.videoDisplayMode} (click to cycle)`}
+            disabled={vrActive}
+            title={vrActive ? 'Display mode is controlled by VR view' : `Display: ${playback.videoDisplayMode} (click to cycle)`}
           >
             {playback.videoDisplayMode === 'fit' ? (
               /* Fit icon - arrows pointing inward */
@@ -1938,22 +1961,23 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         ) : isVideoFile ? (
           <div
             className="lightbox-video-container"
-            onTouchStart={casting.isCasting || curationMode ? undefined : gestures.handleTouchStart}
-            onTouchMove={casting.isCasting || curationMode ? undefined : gestures.handleTouchMove}
-            onTouchEnd={casting.isCasting || curationMode ? undefined : gestures.handleTouchEnd}
-            onTouchCancel={casting.isCasting || curationMode ? cancelRevealTap : gestures.handleTouchCancel}
+            onTouchStart={casting.isCasting || curationMode || vrActive ? undefined : gestures.handleTouchStart}
+            onTouchMove={casting.isCasting || curationMode || vrActive ? undefined : gestures.handleTouchMove}
+            onTouchEnd={casting.isCasting || curationMode || vrActive ? undefined : gestures.handleTouchEnd}
+            onTouchCancel={casting.isCasting || curationMode || vrActive ? cancelRevealTap : gestures.handleTouchCancel}
           >
             <video
               key={`${currentImageKey}-${svpPipelineGeneration}`}
               ref={mediaRef}
               src={directVideoSrc}
+              crossOrigin="anonymous"
               preload="auto"
               autoPlay
               playsInline
               loop={false}
-              className={`lightbox-media video-display-${playback.videoDisplayMode} ${streaming.svpStreamUrl ? 'svp-streaming' : streaming.opticalFlowStreamUrl ? 'interpolated-streaming' : streaming.transcodeStreamUrl ? 'transcode-streaming' : ''}`}
+              className={`lightbox-media video-display-${playback.videoDisplayMode} ${vrActive ? 'vr-video-source' : ''} ${streaming.svpStreamUrl ? 'svp-streaming' : streaming.opticalFlowStreamUrl ? 'interpolated-streaming' : streaming.transcodeStreamUrl ? 'transcode-streaming' : ''}`}
               style={zoomPan.getZoomTransform()}
-              onClick={curationMode ? undefined : handleVideoClick}
+              onClick={curationMode || vrActive ? undefined : handleVideoClick}
               onLoadStart={(event) => reportDirectFileStage('loadstart', event.currentTarget)}
               onLoadedData={(event) => reportDirectFileStage('loadeddata', event.currentTarget)}
               onPlay={(event) => {
@@ -2010,6 +2034,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 failOpenNativeSvp(event.currentTarget)
               }}
               onContextMenu={handleVideoContextMenu}
+            />
+            <VRVideoViewport
+              active={vrActive}
+              videoRef={mediaRef}
+              mediaKey={`${currentImageKey}-${svpPipelineGeneration}`}
+              filename={image.original_filename || image.filename}
+              onUnavailable={handleVRUnavailable}
+              onTap={curationMode ? undefined : handleVideoClick}
+              onContextMenu={handleVideoContextMenu}
+              onInteraction={resetHideTimer}
             />
             {/* Video diagnostics — press I to toggle, B for bare mode */}
             <FPSMonitor videoRef={mediaRef} visible={showDiagnostics} onToggleBare={setDebugBare} />
@@ -2135,6 +2169,20 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 </button>}
               </div>
               <div className="video-utility-controls">
+              {!casting.isCasting && !curationMode && (
+              <button
+                className={`video-control-btn vr-toggle-btn ${vrActive ? 'active' : ''}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setVrEnabled(value => !value)
+                }}
+                title={vrActive ? 'Disable VR view (V)' : 'View 180°/360° video (V)'}
+                aria-label={vrActive ? 'Disable VR view' : 'Enable VR view'}
+                aria-pressed={vrActive}
+              >
+                <span className="vr-toggle-label">VR</span>
+              </button>
+              )}
               {!casting.isCasting && whisperInstalled && (
               <div className="subtitle-btn-container">
                 <button
