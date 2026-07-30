@@ -25,8 +25,9 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct SavePositionBody {
-    #[serde(alias = "position")]
+    #[serde(alias = "position", default)]
     playback_position: f64,
+    #[serde(default)]
     duration: f64,
     #[serde(default)]
     directory_id: Option<i64>,
@@ -150,6 +151,19 @@ async fn save_position(
     Query(locator): Query<ImageLocatorQuery>,
     Json(body): Json<SavePositionBody>,
 ) -> Result<Json<Value>, AppError> {
+    // Silently skip empty updates (no playback position or duration).
+    // This handles cleanup-triggered saves when navigating away from videos
+    // while the media element is already reset.
+    if body.playback_position <= 0.0 && body.duration <= 0.0 {
+        return Ok(Json(json!({
+            "image_id": image_id,
+            "playback_position": 0.0,
+            "duration": 0.0,
+            "progress": 0.0,
+            "completed": false,
+            "skipped": true
+        })));
+    }
     if locator.directory_id.is_some()
         && body.directory_id.is_some()
         && locator.directory_id != body.directory_id

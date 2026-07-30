@@ -1949,6 +1949,11 @@ async fn bridge_svp_play(
 }
 
 /// POST /svp/stop — Stop SVP streams via sidecar.
+///
+/// Tolerates sidecar errors (e.g. "stop was superseded" when another client
+/// already cleaned up) and missing SVP installs so that image-only galleries
+/// that unconditionally call /settings/svp/stop during cleanup do not see
+/// spurious 500 errors.
 async fn bridge_svp_stop(
     State(state): State<AppState>,
     body: Option<Json<Value>>,
@@ -1975,7 +1980,7 @@ async fn bridge_svp_stop(
         })));
     }
 
-    bridge_post(
+    match bridge_post(
         &state,
         "svp",
         "/svp/stop",
@@ -1983,6 +1988,18 @@ async fn bridge_svp_stop(
         None,
     )
     .await
+    {
+        Ok(response) => Ok(response),
+        Err(AppError::Internal(detail))
+            if detail.contains("superseded") || detail.contains("supersede") =>
+        {
+            Ok(Json(json!({
+                "success": true,
+                "message": detail,
+            })))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// GET /svp/stream/{stream_id}/{filename} — Serve SVP HLS files via sidecar.

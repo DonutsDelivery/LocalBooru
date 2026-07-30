@@ -134,15 +134,63 @@ grep -F "LOCALBOORU_BUILD_STATUS=STARTED platform=windows source=$source_commit 
 grep -F "LOCALBOORU_SOURCE_REVISION=$source_commit" "$BUILD_STATUS_TEST_DOCKER_LOG" >/dev/null
 
 : >"$BUILD_STATUS_TEST_DOCKER_LOG"
+linux_missing_output="$TEMP_DIR/linux-missing-runtime.log"
+if XDG_STATE_HOME="$TEMP_DIR/linux-missing-state" \
+    LOCALBOORU_SOURCE_REVISION=HEAD \
+    LOCALBOORU_DOCKER_BUILD_ROOT="$TEMP_DIR/linux-missing-build" \
+    LOCALBOORU_CCACHE_DIR="$TEMP_DIR/linux-missing-ccache" \
+    LOCALBOORU_DIST_LINUX_DIR="$TEMP_DIR/linux-missing-dist" \
+    "$ROOT/scripts/build-linux-local.sh" --deb >"$linux_missing_output" 2>&1; then
+  printf 'missing native runtime cache unexpectedly started a release\n' >&2
+  exit 1
+fi
+grep -F 'LOCALBOORU_BUILD_STATUS=NEEDS_BOOTSTRAP platform=linux' "$linux_missing_output" >/dev/null
+grep -F 'Refusing to take the release' "$linux_missing_output" >/dev/null
+if grep -F 'LOCALBOORU_BUILD_STATUS=STARTED' "$linux_missing_output" >/dev/null; then
+  printf 'missing native runtime cache claimed it started\n' >&2
+  exit 1
+fi
+[[ ! -s "$BUILD_STATUS_TEST_DOCKER_LOG" ]]
+[[ ! -e "$TEMP_DIR/linux-missing-state/localbooru/build-cache.owner" ]]
+
+linux_build="$TEMP_DIR/linux-build"
+patch_hash="$(sha256sum "$ROOT/patches/webkitgtk/2.52.3-playbin-video-filter.patch" | cut -d' ' -f1)"
+mkdir -p \
+  "$linux_build/webkit-build/lib" \
+  "$linux_build/webkit-build/bin" \
+  "$linux_build/webkitgtk-2.52.3" \
+  "$linux_build/vapoursynth-stage"
+printf '%s\n' 'localbooru-build-cache-v1' >"$linux_build/.localbooru-build-cache"
+: >"$linux_build/webkit-build/.localbooru-config-ubuntu24-gtk3-v2"
+touch "$linux_build/webkitgtk-2.52.3/.localbooru-patch-$patch_hash"
+touch "$linux_build/vapoursynth-stage/.localbooru-vapoursynth-c05906995662bacd5bddf853d8e68f19286987db"
+printf 'webkit runtime\n' >"$linux_build/webkit-build/lib/libwebkit2gtk-4.1.so.0"
+printf 'javascript runtime\n' >"$linux_build/webkit-build/lib/libjavascriptcoregtk-4.1.so.0"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$linux_build/webkit-build/bin/WebKitWebProcess"
+chmod +x "$linux_build/webkit-build/bin/WebKitWebProcess"
+
 linux_output="$TEMP_DIR/linux-started.log"
 LOCALBOORU_SOURCE_REVISION=HEAD \
 LOCALBOORU_BUILD_JOBS=1 \
-LOCALBOORU_DOCKER_BUILD_ROOT="$TEMP_DIR/linux-build" \
+LOCALBOORU_DOCKER_BUILD_ROOT="$linux_build" \
 LOCALBOORU_CCACHE_DIR="$TEMP_DIR/linux-ccache" \
 LOCALBOORU_DIST_LINUX_DIR="$TEMP_DIR/linux-dist" \
   "$ROOT/scripts/build-linux-local.sh" --deb >"$linux_output" 2>&1
 grep -F "LOCALBOORU_BUILD_STATUS=STARTED platform=linux source=$source_commit stage=artifacts" \
   "$linux_output" >/dev/null
 grep -F "LOCALBOORU_SOURCE_REVISION=$source_commit" "$BUILD_STATUS_TEST_DOCKER_LOG" >/dev/null
+grep -F 'LOCALBOORU_ALLOW_NATIVE_RUNTIME_BOOTSTRAP=0' "$BUILD_STATUS_TEST_DOCKER_LOG" >/dev/null
+
+: >"$BUILD_STATUS_TEST_DOCKER_LOG"
+linux_bootstrap_output="$TEMP_DIR/linux-bootstrap.log"
+LOCALBOORU_SOURCE_REVISION=HEAD \
+LOCALBOORU_BUILD_JOBS=1 \
+LOCALBOORU_DOCKER_BUILD_ROOT="$TEMP_DIR/linux-bootstrap-build" \
+LOCALBOORU_CCACHE_DIR="$TEMP_DIR/linux-bootstrap-ccache" \
+LOCALBOORU_DIST_LINUX_DIR="$TEMP_DIR/linux-bootstrap-dist" \
+  "$ROOT/scripts/build-linux-local.sh" --bootstrap-native-runtime --deb >"$linux_bootstrap_output" 2>&1
+grep -F "LOCALBOORU_BUILD_STATUS=STARTED platform=linux source=$source_commit stage=artifacts" \
+  "$linux_bootstrap_output" >/dev/null
+grep -F 'LOCALBOORU_ALLOW_NATIVE_RUNTIME_BOOTSTRAP=1' "$BUILD_STATUS_TEST_DOCKER_LOG" >/dev/null
 
 printf 'Build startup status tests passed\n'

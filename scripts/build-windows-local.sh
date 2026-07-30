@@ -35,6 +35,7 @@ BUILD_ROOT="${LOCALBOORU_WINDOWS_BUILD_ROOT:-/mnt/storage/Programs/localbooru-bu
 DIST_PATH="${LOCALBOORU_DIST_WINDOWS_DIR:-$ROOT/dist-windows-local}"
 BUILD_LIMIT_GB="${LOCALBOORU_WINDOWS_BUILD_LIMIT_GB:-30}"
 SOURCE_COMMIT="$(git -C "$ROOT" rev-parse --verify "${SOURCE_REVISION}^{commit}")"
+GIT_COMMON_DIR="$(realpath "$(git -C "$ROOT" rev-parse --git-common-dir)")"
 localbooru_build_write_owner "$SOURCE_COMMIT"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$SOURCE_COMMIT")}"
 CACHE_MARKER=".localbooru-build-cache"
@@ -121,7 +122,10 @@ localbooru_build_started "$SOURCE_COMMIT" artifacts
   -e LOCALBOORU_SOURCE_REVISION="$SOURCE_COMMIT" \
   -e SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
   -e npm_config_cache=/build/npm-cache \
+  -e GIT_DIR=/git \
+  -e GIT_WORK_TREE=/source \
   -v "$ROOT:/source:ro" \
+  -v "$GIT_COMMON_DIR:/git:ro" \
   -v "$BUILD_ROOT:/build" \
   -v "$DIST_PATH:/dist" \
   -w /build/worktree \
