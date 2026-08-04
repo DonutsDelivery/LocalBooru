@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const localServerPort = process.env.VITE_LOCALBOORU_PORT || '8790'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -10,11 +12,11 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8790',
+        target: `http://127.0.0.1:${localServerPort}`,
         changeOrigin: true,
       },
       '/thumbnails': {
-        target: 'http://127.0.0.1:8790',
+        target: `http://127.0.0.1:${localServerPort}`,
         changeOrigin: true,
       },
     },

@@ -17,6 +17,8 @@ let mediaTokenExpiry = 0       // epoch ms when currentMediaToken expires
 let currentCertFingerprint = null  // TLS certificate fingerprint for pinning
 let certValidated = false  // Whether certificate has been validated this session
 
+const LOCAL_SERVER_PORT = import.meta.env?.VITE_LOCALBOORU_PORT || '8790'
+
 // Detect if running in Tauri
 function isTauriApp() {
   return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
@@ -26,7 +28,7 @@ function isTauriApp() {
 function getLocalServerBase() {
   const isDevServer = ['5173', '5174', '5175', '5210'].includes(window.location.port)
   if (isTauriApp()) {
-    return isDevServer ? '' : 'http://127.0.0.1:8790'
+    return isDevServer ? '' : `http://127.0.0.1:${LOCAL_SERVER_PORT}`
   }
   return ''
 }
@@ -987,7 +989,7 @@ export function getMediaUrl(path) {
   const isDevServer = ['5173', '5174', '5175', '5210'].includes(window.location.port)
   if (isDevServer || isTauriApp()) {
     const cleanPath = path.startsWith('/') ? path : `/${path}`
-    return `http://127.0.0.1:8790${cleanPath}`
+    return `http://127.0.0.1:${LOCAL_SERVER_PORT}${cleanPath}`
   }
 
   // The browser frontend is served by the backend, so same-origin paths work.

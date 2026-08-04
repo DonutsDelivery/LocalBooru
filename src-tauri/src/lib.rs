@@ -49,6 +49,16 @@ use svp_manager_snapshot::ManagerGraphSnapshotStore;
 /// Default port for the embedded HTTP server.
 const DEFAULT_PORT: u16 = 8790;
 
+/// Resolve the embedded HTTP server port, allowing isolated test instances to
+/// coexist with the user's normal LocalBooru process.
+fn get_server_port() -> u16 {
+    std::env::var("LOCALBOORU_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port != 0)
+        .unwrap_or(DEFAULT_PORT)
+}
+
 /// Get the data directory path (same logic as Python config.py).
 fn get_data_dir(#[allow(unused)] app: &tauri::App) -> PathBuf {
     // Check for portable mode
@@ -252,9 +262,11 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default();
 
-    // Single instance: focus existing window if already running (desktop only)
+    // Single instance: focus existing window if already running (desktop only).
+    // Isolated acceptance launches opt out explicitly so they cannot forward
+    // into the user's instance.
     #[cfg(desktop)]
-    {
+    if std::env::var("LOCALBOORU_DISABLE_SINGLE_INSTANCE").as_deref() != Ok("1") {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(quit_flag) = app.try_state::<Arc<AtomicBool>>() {
                 if quit_flag.load(Ordering::SeqCst) {
@@ -308,7 +320,7 @@ pub fn run() {
 
         // ── Initialize AppState (database + config) ──
         let data_dir = get_data_dir(app);
-        let port = DEFAULT_PORT;
+        let port = get_server_port();
         let app_state = AppState::new_with_manager_graph_snapshots(
             &data_dir,
             port,

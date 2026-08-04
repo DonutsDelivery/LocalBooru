@@ -5,6 +5,7 @@
 
 const SERVERS_KEY = 'localbooru_servers'
 const ACTIVE_SERVER_KEY = 'localbooru_active_server'
+const LOCAL_SERVER_PORT = import.meta.env?.VITE_LOCALBOORU_PORT || '8790'
 
 // Local embedded server constant (always available on Tauri mobile)
 export const LOCAL_SERVER = {
@@ -229,7 +230,7 @@ export async function getApiBaseUrl() {
   if (!isMobileApp()) {
     // Desktop: always use embedded server
     const isDevServer = window.location.port === '5173' || window.location.port === '5174'
-    return isDevServer ? 'http://127.0.0.1:8790/api' : '/api'
+    return isDevServer ? `http://127.0.0.1:${LOCAL_SERVER_PORT}/api` : '/api'
   }
 
   // Mobile: check if using local or remote server

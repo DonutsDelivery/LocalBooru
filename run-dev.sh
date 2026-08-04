@@ -31,4 +31,6 @@ if [ "${LOCALBOORU_ENABLE_NATIVE_SVP:-1}" = "1" ] && [ -d "$PATCHED_WEBKIT_LIB" 
 else
     export LOCALBOORU_ENABLE_NATIVE_SVP=0
 fi
-exec npm run tauri:dev -- -- -- "$@" >> /tmp/localbooru-dev.log 2>&1
+DEV_LOG="${LOCALBOORU_DEV_LOG:-/tmp/localbooru-dev.log}"
+mkdir -p "$(dirname "$DEV_LOG")"
+exec npm run tauri:dev -- -- -- "$@" >>"$DEV_LOG" 2>&1

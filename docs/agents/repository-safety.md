@@ -31,3 +31,18 @@ a test fixture or copy its contents into a worktree.
 - If private data appears in the working tree or index, stop and remove it from
   the index before committing. If it was committed, stop and report the exact
   commit/path so repository history can be handled deliberately.
+
+## Isolated local-app testing
+
+Use the disposable isolated launcher for local desktop testing:
+
+```bash
+npm run app:test-isolated
+```
+
+It assigns a temporary `HOME`, XDG config/data/state roots, `TMPDIR`, Cargo
+target directory, `LOCALBOORU_PORTABLE_DATA`, and an unused embedded HTTP port.
+It also disables only that test process's single-instance forwarding, so it
+cannot hand its launch or files to the user's normal LocalBooru instance. The
+temporary root is removed when the launcher exits. Set
+`LOCALBOORU_TEST_PORT` when the default test port is occupied.
