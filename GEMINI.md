@@ -1,5 +1,14 @@
 
 
+## Repository privacy boundary
+
+Never copy, back up, export, snapshot, or commit a user's LocalBooru library or
+private files into this repository or any worktree. This includes databases and
+SQLite sidecars, thumbnails, media, metadata, settings, logs, caches,
+credentials, and generated personal data. Use synthetic fixtures or disposable
+test data outside the repository, inspect staged paths before committing, and
+stop if private data appears. See `docs/agents/repository-safety.md`.
+
 <!-- GLOBAL_INSTRUCTION_START -->
 # CLAUDE.md
 

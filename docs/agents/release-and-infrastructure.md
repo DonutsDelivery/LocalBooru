@@ -2,6 +2,11 @@
 
 This document is the operational source of truth for LocalBooru release builds.
 
+Release and acceptance work must use synthetic or disposable test data outside
+this repository. Never back up, copy, or commit a user's library, thumbnails,
+media, databases, settings, logs, caches, or other private files into a
+worktree. See `docs/agents/repository-safety.md`.
+
 ## Platform ownership
 
 | Platform | Normal build owner | Fallback |

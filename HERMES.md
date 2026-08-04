@@ -7,6 +7,15 @@ Before release, packaging, Sonoma VM, or WinBoat work, read
 use the pinned local wrappers; WinBoat is runtime-only. macOS must be built with
 Apple tooling and VM/CI success does not establish stable real-Mac support.
 
+## Repository privacy boundary
+
+Never copy, back up, export, snapshot, or commit a user's LocalBooru library or
+private files into this repository or any worktree. This includes databases and
+SQLite sidecars, thumbnails, media, metadata, settings, logs, caches,
+credentials, and generated personal data. Use synthetic fixtures or disposable
+test data outside the repository, inspect staged paths before committing, and
+stop if private data appears. See `docs/agents/repository-safety.md`.
+
 <!-- GLOBAL_INSTRUCTION_START -->
 # CLAUDE.md
 

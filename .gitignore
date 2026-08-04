@@ -44,6 +44,9 @@ venv/
 # Database
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
+/src-tauri/backup/
 
 # IDE
 .idea/
