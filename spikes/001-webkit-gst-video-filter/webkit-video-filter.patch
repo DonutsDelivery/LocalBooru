@@ -1,0 +1,17 @@
+*** Begin Patch
+*** Update File: Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@
+     g_object_set(m_pipeline.get(), "audio-sink", m_audioSink.get(), "video-sink", createVideoSink(), nullptr);
++
++    // Downstream proof-of-concept hook. Production integration should expose
++    // this through a supported WebKit setting rather than a global variable.
++    if (const char* factoryName = g_getenv("WEBKIT_GST_VIDEO_FILTER")) {
++        GRefPtr<GstElement> videoFilter = adoptGRef(gst_element_factory_make(factoryName, nullptr));
++        if (videoFilter)
++            g_object_set(m_pipeline.get(), "video-filter", videoFilter.get(), nullptr);
++        else
++            GST_ERROR_OBJECT(m_pipeline.get(), "Unable to create requested video filter %s", factoryName);
++    }
+ 
+     if (m_shouldPreservePitch && !isMediaStream && !GStreamerQuirksManager::singleton().needsCustomInstantRateChange()) {
+*** End Patch

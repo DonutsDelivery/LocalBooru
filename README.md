@@ -16,6 +16,12 @@ A local image library with automatic AI tagging, designed for organizing and bro
 | **Linux** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.zip) &#124; [AppImage](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.AppImage) &#124; [.deb](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.deb) &#124; [.rpm](https://github.com/DonutsDelivery/LocalBooru/releases/latest/download/LocalBooru-Linux.rpm) |
 | **macOS (legacy 0.3.33)** | [Portable (ZIP)](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-macOS-arm64.zip) &#124; [DMG (Apple Silicon)](https://github.com/DonutsDelivery/LocalBooru/releases/download/v0.3.33/LocalBooru-macOS-arm64.dmg) |
 
+> The macOS links are legacy compatibility builds, not a current stable support
+> claim. New native artifacts remain inspection-only until the exact package
+> passes database, gallery, video/sidecar, import, and sustained-use acceptance
+> on real Apple hardware. See
+> [`docs/agents/release-and-infrastructure.md`](docs/agents/release-and-infrastructure.md).
+
 ### USB Portable Mode
 
 The **Portable** versions automatically store all data next to the app - no setup needed:

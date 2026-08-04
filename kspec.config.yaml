@@ -1,0 +1,14 @@
+# kspec project configuration
+# This file was scaffolded by kspec upgrade. Review and customize for your project.
+# Documentation: https://github.com/lepahc/kynetic-spec
+
+dispatch:
+  publication_mode: auto
+
+  # Resolved from repository default branch.
+  # base_branch: "main"
+
+# coverage:
+#   scan_paths:
+#     - "tests/"
+#     - "src/"

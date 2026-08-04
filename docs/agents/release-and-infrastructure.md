@@ -11,6 +11,115 @@ This document is the operational source of truth for LocalBooru release builds.
 | macOS universal | Native `macos-14` job in the manual fallback workflow | None; Apple tooling is required |
 | iOS | GitHub workflow / Apple toolchain | `.github/workflows/build-ios.yml` |
 
+The shared DonutsDelivery stable profile owns the public support claim. It
+currently excludes macOS because build availability is not real-hardware product
+acceptance. A VM or CI artifact may be retained for inspection, but must not be
+silently promoted into the website/GitHub stable matrix.
+
+## Native macOS build
+
+`scripts/build-macos-ci.sh` is the canonical native build and verifier. It
+requires Node 20, the locked frontend dependencies, Rust targets
+`aarch64-apple-darwin` and `x86_64-apple-darwin`, Tauri CLI 2.9.4, and Apple
+`lipo`, `hdiutil`, `plutil`, `ditto`, and `codesign`. From a clean exact source
+commit on native macOS:
+
+```bash
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+cargo install tauri-cli --version 2.9.4 --locked
+./scripts/build-macos-ci.sh
+```
+
+The script runs version checks, frontend tests/build, locked Rust tests/checks,
+builds `universal-apple-darwin`, verifies both architectures, bundle ID, minimum
+macOS version, DMG integrity, ad-hoc signature, ZIP integrity, and SHA-256. It
+writes `LocalBooru-macOS-universal.dmg`, `.zip`, and `SHA256SUMS-macOS` beneath
+`dist-macos/`. Do not bypass a failed architecture, signature, version, or DMG
+check. Ad-hoc signing is local/inspection evidence, not Developer ID signing or
+notarization.
+
+The configured local Sonoma worker is
+`/home/user/VMs/donutstudio-macos-builder`. Stage a clean SHA-named source archive
+with lockfiles and provenance; never build from the dirty host checkout or an old
+downloaded app. The x86_64 VM can compile and functionally exercise the x86_64
+slice, but cannot execute the arm64 slice. Preserve the universal package receipt
+separately from x86_64 runtime acceptance.
+
+## Sonoma VM lifecycle and LocalBooru acceptance
+
+```bash
+cd /home/user/VMs/donutstudio-macos-builder
+docker ps -a --filter name=donutstudio-macos-builder
+./launch.sh
+./wait-for-ssh.sh 240
+gvncviewer --zoom=70 127.0.0.1:0
+```
+
+Do not start a duplicate. The operator signs in; agents do not enter credentials.
+Before restart, inspect active guest compilers and preserve logs/artifacts. The VM
+may be restarted without asking, but never through an active compile/link.
+
+```bash
+./shutdown-macos.sh
+# Wait for tracked launcher/container exit before ./launch.sh again.
+```
+
+Install the exact DMG/ZIP candidate into `/Users/builder/Applications`, then
+record source SHA, artifact hash, bundle version/identifier, architectures,
+signature state, installed process path, and installed/build artifact hash. Run
+the following independently:
+
+1. Create/open/migrate/reopen a database and verify no candidate touches an
+   unrelated production library.
+2. Import representative image and video sets; verify thumbnails, metadata,
+   search/filter/sort, tags, ratings, duplicate handling, cancellation, and
+   restart persistence.
+3. Exercise gallery/lightbox navigation, zoom/fullscreen, deletion/restore, and
+   window bounds at `1920x1080` plus a smaller workspace.
+4. Exercise native video playback, seeking, audio, subtitles, long/VFR media,
+   helper/sidecar discovery, hardware-disabled fallback, and export/transcode
+   paths. Missing macOS helpers are blockers, not optional warnings.
+5. Exercise local server/API startup, loopback/LAN policy, authentication,
+   permissions, sleep/wake, network loss/recovery, updater behavior, and clean
+   shutdown.
+6. Run sustained imports and video/gallery use while checking CPU, memory,
+   handles, child processes, database integrity, and recovery after app/guest
+   restart.
+
+VM success proves software-rendered x86_64 function only. Stable macOS support
+requires the exact shipping package on real Apple Silicon and any claimed Intel
+hardware, including representative GPU/video acceleration, real audio, large
+library/import workloads, permissions, signing/notarization, updater, helpers,
+and sustained use.
+
+## WinBoat lifecycle and LocalBooru acceptance
+
+Windows artifacts come only from `scripts/build-windows-local.sh`; WinBoat is
+runtime-only. Stage the exact `dist-windows-local` installer/ZIP by source SHA and
+artifact hash—never rebuild in Windows.
+
+```bash
+docker compose -f /home/user/.winboat/docker-compose.yml ps
+docker compose -f /home/user/.winboat/docker-compose.yml up -d windows
+```
+
+Sign in interactively, install/extract into an isolated candidate location, and
+run the same database/import/gallery/video/server/persistence matrix. Add Windows
+installer/portable parity, WebView/runtime prerequisites, path/Unicode behavior,
+file locks, Defender/SmartScreen/Authenticode state, uninstall/reinstall, and
+hardware/software rendering fallback. Record screenshots and runtime evidence;
+package presence alone is not acceptance.
+
+Stop through Windows **Power → Shut down**. Bounded host fallback:
+
+```bash
+docker compose -f /home/user/.winboat/docker-compose.yml stop --timeout 120 windows
+docker compose -f /home/user/.winboat/docker-compose.yml ps
+```
+
+Never use `docker kill`, recreate the compose project, delete
+`/home/user/winboat`, or compile/package LocalBooru in WinBoat.
+
 Desktop workflows upload inspection artifacts only. Tag creation and publication
 remain explicit operator actions after every promised platform is verified.
 
