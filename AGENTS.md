@@ -15,6 +15,21 @@ credentials, and generated personal data. Use synthetic fixtures or disposable
 test data outside the repository, inspect staged paths before committing, and
 stop if private data appears. See `docs/agents/repository-safety.md`.
 
+## Isolated testing boundary
+
+All local desktop testing must use the disposable isolated instance:
+
+```bash
+npm run app:test-isolated
+```
+
+Do not use `run-dev.sh`, `npm run tauri:dev`, a packaged app, or another local
+launcher for repository testing against the normal user profile. Do not point
+`LOCALBOORU_PORTABLE_DATA` at a user's files or pass user-library file paths to
+the isolated launcher. If the isolated launcher cannot start, stop and report
+the blocker instead of falling back to the user's instance. See
+`docs/agents/repository-safety.md` for the isolation contract.
+
 <!-- GLOBAL_INSTRUCTION_START -->
 # CLAUDE.md
 
