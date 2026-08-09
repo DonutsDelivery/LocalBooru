@@ -29,6 +29,26 @@ features:
     tests: []
     traits: []
     tags: []
+    features:
+      - _ulid: 01KZKW9ZY4Z5FWVXMQT8BGKWYY
+        slugs:
+          - online-content-providers
+        title: Online content providers
+        type: feature
+        description: Browse external booru providers in a separate remote domain, explicitly import selected
+          media, and track publication attempts without conflating remote records with local library
+          items.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        priority: high
+        tags:
+          - online
+          - remote-provider
+        created: 2026-08-09T18:24:35.268Z
+        notes: []
     requirements:
       - _ulid: 01KKEB10D4GRID0REALTIME0UP0
         slugs:
