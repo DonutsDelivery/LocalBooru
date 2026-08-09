@@ -43,6 +43,35 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: a user opens Online and browses a configured source
+            id: ac-remote-domain
+            then: the UI labels them as remote and does not expose local favorite, delete, move, retag, or
+              collection actions
+            when: remote records are returned
+          - given: a source or media URL is requested
+            id: ac-secure-fetch
+            then: credentials stay backend-owned and private, loopback, link-local, reserved, and unapproved
+              local-network destinations are rejected at every hop
+            when: the backend resolves or follows it
+          - given: a remote item is visible
+            id: ac-explicit-import
+            then: LocalBooru stages, bounds, hashes, atomically installs, indexes, and records provenance for
+              the local copy without mutating the remote item
+            when: the user explicitly imports it into a watched directory
+          - given: family mode or a source policy restricts content
+            id: ac-content-policy
+            then: the backend filters disallowed ratings before returning records
+            when: fresh or cached remote results are served
+          - given: a local item and one or more eligible destinations are selected
+            id: ac-publication-ledger
+            then: an immutable snapshot and independent per-target state, idempotency key, attempts, errors,
+              remote identity, and receipt are durable
+            when: publication is queued or updated
+          - given: online foundations are implemented
+            id: ac-deferred-federation
+            then: DonutBooru server transformation, ActivityPub, and server-to-server federation remain absent
+            when: scope is reviewed
         priority: high
         tags:
           - online
