@@ -26,9 +26,7 @@ const FRAGMENT_SHADER = `
   uniform sampler2D uVideo;
   uniform float uAspect;
   uniform float uFov;
-  uniform float uYaw;
-  uniform float uPitch;
-  uniform float uRoll;
+  uniform mat4 uRotationMatrix;
   uniform int uProjection;
   uniform int uStereo;
   uniform int uEye;
@@ -40,26 +38,8 @@ const FRAGMENT_SHADER = `
     vec2 screen = vec2((vUv.x * 2.0 - 1.0) * uAspect, vUv.y * 2.0 - 1.0);
     vec3 direction = normalize(vec3(screen * focalScale, 1.0));
 
-    float rollCos = cos(uRoll);
-    float rollSin = sin(uRoll);
-    direction.xy = vec2(
-      direction.x * rollCos - direction.y * rollSin,
-      direction.x * rollSin + direction.y * rollCos
-    );
-
-    float pitchCos = cos(uPitch);
-    float pitchSin = sin(uPitch);
-    direction.yz = vec2(
-      direction.y * pitchCos + direction.z * pitchSin,
-      -direction.y * pitchSin + direction.z * pitchCos
-    );
-
-    float yawCos = cos(uYaw);
-    float yawSin = sin(uYaw);
-    direction.xz = vec2(
-      direction.x * yawCos + direction.z * yawSin,
-      -direction.x * yawSin + direction.z * yawCos
-    );
+    // Apply rotation matrix (computed on CPU)
+    direction = (uRotationMatrix * vec4(direction, 0.0)).xyz;
 
     float longitude = atan(direction.x, direction.z);
     float latitude = asin(clamp(direction.y, -1.0, 1.0));
@@ -147,6 +127,19 @@ export default function VRVideoViewport({
   const [dragging, setDragging] = useState(false)
   const [subtitleText, setSubtitleText] = useState('')
 
+  // Diagnostic modes
+  const [freezeTexture, setFreezeTexture] = useState(false)
+  const [forceDpr1, setForceDpr1] = useState(false)
+  const [showPerfStats, setShowPerfStats] = useState(false)
+  const perfRef = useRef({
+    uploadCount: 0,
+    drawCount: 0,
+    lastUploadTime: 0,
+    lastDrawTime: 0,
+    uploadTotalMs: 0,
+    drawTotalMs: 0,
+  })
+
   const applyCamera = useCallback((updater) => {
     const next = typeof updater === 'function' ? updater(cameraRef.current) : updater
     cameraRef.current = next
@@ -163,6 +156,23 @@ export default function VRVideoViewport({
     applyCamera({ ...DEFAULT_VR_CAMERA })
     applyConfig(current => ({ ...current, fov: DEFAULT_VR_FOV }))
   }, [applyCamera, applyConfig])
+
+  // Diagnostic mode toggles
+  const toggleFreezeTexture = useCallback(() => {
+    setFreezeTexture(prev => !prev)
+    perfRef.current.uploadCount = 0
+    perfRef.current.drawCount = 0
+    perfRef.current.uploadTotalMs = 0
+    perfRef.current.drawTotalMs = 0
+  }, [])
+
+  const toggleForceDpr1 = useCallback(() => {
+    setForceDpr1(prev => !prev)
+  }, [])
+
+  const togglePerfStats = useCallback(() => {
+    setShowPerfStats(prev => !prev)
+  }, [])
 
   useEffect(() => {
     const nextConfig = {
@@ -288,7 +298,7 @@ export default function VRVideoViewport({
     }
 
     const resize = () => {
-      const ratio = Math.min(window.devicePixelRatio || 1, 2)
+      const ratio = forceDpr1 ? 1 : Math.min(window.devicePixelRatio || 1, 2)
       const width = Math.max(1, Math.round(canvas.clientWidth * ratio))
       const height = Math.max(1, Math.round(canvas.clientHeight * ratio))
       if (canvas.width !== width || canvas.height !== height) {
@@ -308,46 +318,100 @@ export default function VRVideoViewport({
       projection: gl.getUniformLocation(program, 'uProjection'),
       stereo: gl.getUniformLocation(program, 'uStereo'),
       eye: gl.getUniformLocation(program, 'uEye'),
+      // Rotation matrix uniform (replaces per-pixel trig)
+      rotationMatrix: gl.getUniformLocation(program, 'uRotationMatrix'),
+    }
+
+    let textureWidth = 0
+    let textureHeight = 0
+    let textureInitialized = false
+
+    const ensureTextureStorage = (w, h) => {
+      if (!textureInitialized || textureWidth !== w || textureHeight !== h) {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, texture)
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+        textureWidth = w
+        textureHeight = h
+        textureInitialized = true
+      }
     }
 
     const render = () => {
       if (cancelled) return
-      resize()
-      const shouldUpload = video.readyState >= 2 && (
+
+      // Only call resize when needed (ResizeObserver handles actual size changes)
+      // resize() is also called from ResizeObserver and vrviewchange
+
+      const shouldUpload = !freezeTexture && video.readyState >= 2 && (
         frameDirty
         || (typeof video.requestVideoFrameCallback !== 'function' && video.currentTime !== lastVideoTime)
       )
 
       if (shouldUpload) {
+        const uploadStart = performance.now()
         try {
-          gl.activeTexture(gl.TEXTURE0)
-          gl.bindTexture(gl.TEXTURE_2D, texture)
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video)
+          // Use texSubImage2D with preallocated storage
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            ensureTextureStorage(video.videoWidth, video.videoHeight)
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, texture)
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video)
+          }
           lastVideoTime = video.currentTime
           frameDirty = false
           viewDirty = true
+          perfRef.current.uploadCount++
+          perfRef.current.uploadTotalMs += performance.now() - uploadStart
+          perfRef.current.lastUploadTime = performance.now()
         } catch (error) {
           fail(error)
           return
         }
       }
 
-      if (viewDirty && video.readyState >= 2) {
+      const shouldDraw = viewDirty && video.readyState >= 2 && (textureInitialized || freezeTexture)
+
+      if (shouldDraw) {
+        const drawStart = performance.now()
         const currentCamera = cameraRef.current
         const currentConfig = configRef.current
         gl.useProgram(program)
         gl.uniform1f(locations.aspect, canvas.width / canvas.height)
         gl.uniform1f(locations.fov, currentConfig.fov)
-        gl.uniform1f(locations.yaw, currentCamera.yaw * Math.PI / 180)
-        gl.uniform1f(locations.pitch, currentCamera.pitch * Math.PI / 180)
-        gl.uniform1f(locations.roll, currentCamera.roll * Math.PI / 180)
+
+        // Compute rotation matrix on CPU once per frame
+        const yawRad = currentCamera.yaw * Math.PI / 180
+        const pitchRad = currentCamera.pitch * Math.PI / 180
+        const rollRad = currentCamera.roll * Math.PI / 180
+
+        const cy = Math.cos(yawRad), sy = Math.sin(yawRad)
+        const cp = Math.cos(pitchRad), sp = Math.sin(pitchRad)
+        const cr = Math.cos(rollRad), sr = Math.sin(rollRad)
+
+        // R = Rz(roll) * Ry(pitch) * Rz(yaw) — column-major for WebGL
+        const rotMatrix = new Float32Array([
+          cy * cp,  cp * sy,  -sp,  0,
+          cr * sy + cy * sp * sr,  cr * cy - sr * sp * sy,  cp * sr,  0,
+          sr * sy - cr * cy * sp,  cr * sp * sy + cy * sr,  cp * cr,  0,
+          0,  0,  0,  1,
+        ])
+        gl.uniformMatrix4fv(locations.rotationMatrix, false, rotMatrix)
+
         gl.uniform1i(locations.projection, currentConfig.projection === '180' ? 1 : 0)
         gl.uniform1i(locations.stereo, currentConfig.stereo === 'sbs' ? 1 : currentConfig.stereo === 'tb' ? 2 : 0)
         gl.uniform1i(locations.eye, currentConfig.eye === 'right' ? 1 : 0)
         gl.drawArrays(gl.TRIANGLES, 0, 6)
         viewDirty = false
+        perfRef.current.drawCount++
+        perfRef.current.drawTotalMs += performance.now() - drawStart
+        perfRef.current.lastDrawTime = performance.now()
       }
-      animationFrame = requestAnimationFrame(render)
+
+      // Only continue rAF loop if something is dirty or we need to keep rendering
+      if (frameDirty || viewDirty || !freezeTexture) {
+        animationFrame = requestAnimationFrame(render)
+      }
     }
 
     const markFrameDirty = () => {
@@ -517,6 +581,24 @@ export default function VRVideoViewport({
   }, [applyConfig, onInteraction])
 
   const handleKeyDown = useCallback((event) => {
+    if (event.key === 'f' || event.key === 'F') {
+      event.preventDefault()
+      event.stopPropagation()
+      toggleFreezeTexture()
+      return
+    }
+    if (event.key === 'd' || event.key === 'D') {
+      event.preventDefault()
+      event.stopPropagation()
+      toggleForceDpr1()
+      return
+    }
+    if (event.key === 'p' || event.key === 'P') {
+      event.preventDefault()
+      event.stopPropagation()
+      togglePerfStats()
+      return
+    }
     let deltaX = 0
     let deltaY = 0
     if (event.key === 'ArrowLeft') deltaX = 5
@@ -544,7 +626,7 @@ export default function VRVideoViewport({
     event.preventDefault()
     event.stopPropagation()
     applyCamera(current => updateVRCamera(current, deltaX, deltaY, configRef.current.projection, 1))
-  }, [applyCamera, applyConfig, resetView])
+  }, [applyCamera, applyConfig, resetView, toggleFreezeTexture, toggleForceDpr1, togglePerfStats])
 
   if (!active) return null
 
@@ -631,6 +713,39 @@ export default function VRVideoViewport({
         {dragging ? `${Math.round(camera.yaw)}° / ${Math.round(camera.pitch)}°` : 'Drag to look • wheel or pinch to zoom'}
       </div>
       {subtitleText && <div className="vr-video-subtitles">{subtitleText}</div>}
+      {/* Diagnostic mode toggles */}
+      <div className="vr-diagnostic-controls" style={{
+        position: 'absolute', zIndex: 18, right: 16, top: 60,
+        display: 'flex', flexDirection: 'column', gap: 6,
+        background: 'rgba(10, 12, 16, 0.78)', padding: 8,
+        borderRadius: 8, border: '1px solid rgba(255,255,255,0.16)',
+        backdropFilter: 'blur(12px)', fontSize: '0.7rem'
+      }}>
+        <label style={{display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#fff'}}>
+          <input type="checkbox" checked={freezeTexture} onChange={toggleFreezeTexture} /> Freeze texture (F)
+        </label>
+        <label style={{display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#fff'}}>
+          <input type="checkbox" checked={forceDpr1} onChange={toggleForceDpr1} /> Force DPR=1 (D)
+        </label>
+        <label style={{display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#fff'}}>
+          <input type="checkbox" checked={showPerfStats} onChange={togglePerfStats} /> Perf stats (P)
+        </label>
+      </div>
+      {showPerfStats && perfRef.current.uploadCount > 0 && (
+        <div className="vr-perf-stats" style={{
+          position: 'absolute', zIndex: 18, right: 16, bottom: 180,
+          background: 'rgba(0, 0, 0, 0.8)', padding: 10, borderRadius: 8,
+          fontFamily: 'monospace', fontSize: '0.7rem', color: '#0f0',
+          border: '1px solid rgba(255,255,255,0.16)', minWidth: 200
+        }}>
+          <div>Uploads: {perfRef.current.uploadCount}</div>
+          <div>Avg upload: {perfRef.current.uploadCount ? (perfRef.current.uploadTotalMs / perfRef.current.uploadCount).toFixed(2) : 0}ms</div>
+          <div>Draws: {perfRef.current.drawCount}</div>
+          <div>Avg draw: {perfRef.current.drawCount ? (perfRef.current.drawTotalMs / perfRef.current.drawCount).toFixed(2) : 0}ms</div>
+          <div>Canvas: {canvasRef.current?.width}×{canvasRef.current?.height}</div>
+          <div>Video: {videoRef.current?.videoWidth}×{videoRef.current?.videoHeight}</div>
+        </div>
+      )}
     </>
   )
 }
