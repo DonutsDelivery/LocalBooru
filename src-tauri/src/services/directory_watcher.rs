@@ -1002,6 +1002,7 @@ mod tests {
         ))
     }
 
+    // AC: @safe-development-startup ac-reconciliation-preserved
     #[test]
     fn startup_queues_fast_reconciliation_for_never_scanned_directory() {
         let data_dir = temp_test_dir("startup-reconcile");

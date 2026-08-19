@@ -7,3 +7,4 @@ pub mod rate_limit;
 pub mod task_queue;
 pub mod transcode;
 pub mod video_preview;
+pub mod wd14_sidecar;

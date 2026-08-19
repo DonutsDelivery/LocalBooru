@@ -132,7 +132,7 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE TABLE IF NOT EXISTS task_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             task_type TEXT NOT NULL
-                CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extract_metadata')),
+                CHECK(task_type IN ('tag','scan_directory','verify_files','upload','age_detect','extract_metadata','complete_directory_imports')),
             payload TEXT,
             status TEXT NOT NULL DEFAULT 'pending'
                 CHECK(status IN ('pending','processing','completed','failed','cancelled')),
@@ -160,10 +160,12 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
 
         -- Collection items
+        -- NOTE: image_id has no FK constraint because images live in
+        -- per-directory SQLite databases, not in the main DB.
         CREATE TABLE IF NOT EXISTS collection_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
-            image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+            image_id INTEGER NOT NULL,
             sort_order INTEGER NOT NULL DEFAULT 0,
             added_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(collection_id, image_id)
@@ -190,7 +192,6 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
 
         CREATE INDEX IF NOT EXISTS idx_watch_history_image_id ON watch_history(image_id);
         CREATE INDEX IF NOT EXISTS idx_watch_history_completed ON watch_history(completed);
-        CREATE INDEX IF NOT EXISTS idx_watch_history_locator ON watch_history(library_id, directory_id, image_id);
 
         -- Users (for network access auth)
         CREATE TABLE IF NOT EXISTS users (

@@ -1,0 +1,4 @@
+[build]
+# Bound ad-hoc Cargo commands so a missed wrapper cannot exhaust the workstation.
+# Project release wrappers may override this with CARGO_BUILD_JOBS/--jobs.
+jobs = 2

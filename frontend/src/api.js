@@ -108,7 +108,7 @@ export async function updateServerConfig(workingUrl = null) {
         try {
           const probe = await probeServer(server)
           if (probe.success && probe.url) resolved = probe.url
-        } catch (e) { /* probe failed; fall through to default */ }
+        } catch { /* probe failed; fall through to default */ }
       }
       if (resolved) {
         primaryUrl = resolved
@@ -950,7 +950,7 @@ async function fetchMediaToken() {
       currentMediaToken = data.token
       mediaTokenExpiry = Date.now() + ((data.expires_in || 86400) * 1000)
     }
-  } catch (e) {
+  } catch {
     /* keep existing token; getMediaUrl handles the fallback */
   }
 }
@@ -1585,8 +1585,13 @@ export async function getAddon(id) {
   return response.data
 }
 
-export async function installAddon(id) {
-  const response = await api.post(`/addons/${id}/install`)
+export async function installAddon(id, options) {
+  const response = await api.post(`/addons/${id}/install`, options, { timeout: 0 })
+  return response.data
+}
+
+export async function cancelAddonInstall(id) {
+  const response = await api.post(`/addons/${id}/install/cancel`)
   return response.data
 }
 
@@ -1605,8 +1610,13 @@ export async function stopAddon(id) {
   return response.data
 }
 
-export async function updateAddon(id) {
-  const response = await api.post(`/addons/${id}/update`)
+export async function updateAddon(id, options) {
+  const response = await api.post(`/addons/${id}/update`, options, { timeout: 0 })
+  return response.data
+}
+
+export async function probeAddon(id) {
+  const response = await api.post(`/addons/${id}/probe`, undefined, { timeout: 135000 })
   return response.data
 }
 
@@ -1615,12 +1625,33 @@ export async function getAddonHealth(id) {
   return response.data
 }
 
+async function runWd14SidecarOperation(operation, directories, overwrite = false) {
+  const response = await api.post(`/settings/wd14-sidecar/${operation}`, {
+    directories,
+    overwrite,
+  }, { timeout: 0 })
+  return response.data
+}
+
+export function importWd14Sidecars(directories) {
+  return runWd14SidecarOperation('import', directories)
+}
+
+export function absorbWd14Sidecars(directories) {
+  return runWd14SidecarOperation('absorb', directories)
+}
+
+export function exportWd14Sidecars(directories, overwrite = false) {
+  return runWd14SidecarOperation('export', directories, overwrite)
+}
+
 export async function runAutoTaggerRuntimeDiagnostic() {
   const response = await api.post('/addons/auto-tagger/api/runtime-diagnostic', null, {
     timeout: runtimeDiagnosticTimeoutMs(),
   })
   return response.data
 }
+
 
 export async function getAutoTaggerConfig() {
   const response = await api.get('/settings/auto-tagger')

@@ -560,9 +560,10 @@ pub async fn get_image_file(
         .clone()
         .ok_or_else(|| AppError::BadRequest("library_id is required".into()))?;
     let expected_hash = q.file_hash.clone();
+    let library_id_for_lookup = library_id.clone();
 
-    let file_path: PathBuf = tokio::task::spawn_blocking(move || {
-        let lib = state_clone.resolve_library(Some(&library_id))?;
+    let file_path = match tokio::task::spawn_blocking(move || {
+        let lib = state_clone.resolve_library(Some(&library_id_for_lookup))?;
         let (path, hash) = resolve_exact_media(&lib, directory_id, image_id)?;
         if expected_hash
             .as_deref()
@@ -574,15 +575,45 @@ pub async fn get_image_file(
         }
         Ok(path)
     })
-    .await??;
+    .await?
+    {
+        Ok(path) => path,
+        Err(error) => {
+            log::warn!(
+                "[Media] Failed to resolve image_id={} directory_id={} library_id={}: {}",
+                image_id,
+                directory_id,
+                library_id,
+                error
+            );
+            return Err(error);
+        }
+    };
 
-    // Check file availability — distinguish missing from drive offline
-    match crate::services::file_tracker::check_file_availability(file_path.to_str().unwrap_or("")) {
+    // Check file availability — distinguish missing from drive offline.
+    // `to_string_lossy` preserves Windows/Japanese paths and avoids silently
+    // probing an empty string when a Unix path has non-UTF-8 bytes.
+    let availability_path = file_path.to_string_lossy();
+    match crate::services::file_tracker::check_file_availability(&availability_path) {
         crate::services::file_tracker::FileStatus::Available => {}
         crate::services::file_tracker::FileStatus::DriveOffline => {
+            log::warn!(
+                "[Media] Drive offline for image_id={} directory_id={} library_id={} path={}",
+                image_id,
+                directory_id,
+                library_id,
+                file_path.display()
+            );
             return Err(AppError::ServiceUnavailable("Drive is offline".into()));
         }
         crate::services::file_tracker::FileStatus::Missing => {
+            log::warn!(
+                "[Media] File missing for image_id={} directory_id={} library_id={} path={}",
+                image_id,
+                directory_id,
+                library_id,
+                file_path.display()
+            );
             return Err(AppError::NotFound("File not found on disk".into()));
         }
     }
@@ -591,9 +622,30 @@ pub async fn get_image_file(
     let response = ServeFile::new(&file_path)
         .oneshot(request)
         .await
-        .map_err(|e| AppError::Internal(format!("Failed to serve file: {}", e)))?;
+        .map_err(|error| {
+            log::error!(
+                "[Media] ServeFile failure for image_id={} directory_id={} library_id={} path={}: {}",
+                image_id,
+                directory_id,
+                library_id,
+                file_path.display(),
+                error
+            );
+            AppError::Internal(format!("Failed to serve file: {}", error))
+        })?
+        .into_response();
+    if !response.status().is_success() {
+        log::warn!(
+            "[Media] Non-success response for image_id={} directory_id={} library_id={} path={} status={}",
+            image_id,
+            directory_id,
+            library_id,
+            file_path.display(),
+            response.status()
+        );
+    }
 
-    Ok(response.into_response())
+    Ok(response)
 }
 
 /// GET /api/images/:image_id/thumbnail — Serve the thumbnail.

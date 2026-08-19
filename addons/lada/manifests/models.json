@@ -1,0 +1,41 @@
+{
+  "repository": "https://huggingface.co/ladaapp/lada",
+  "revision": "bcf461d46d9a98981fc64b815df5178f42215cdf",
+  "license": "AGPL-3.0-only",
+  "models": [
+    {
+      "name": "lada_mosaic_detection_model_v2.pt",
+      "role": "detection",
+      "variant": "v2",
+      "size": 45153839,
+      "sha256": "056756fcab250bcdf0833e75aac33e2197b8809b0ab8c16e14722dcec94269b5",
+      "source_url": "https://huggingface.co/ladaapp/lada/resolve/bcf461d46d9a98981fc64b815df5178f42215cdf/lada_mosaic_detection_model_v2.pt"
+    },
+    {
+      "name": "lada_mosaic_detection_model_v4_accurate.pt",
+      "role": "detection",
+      "variant": "v4-accurate",
+      "size": 45136630,
+      "sha256": "c244d7e49d8f88e264b8dc15f91fb21f5908ad8fb6f300b7bc88462d0801bc1f",
+      "source_url": "https://huggingface.co/ladaapp/lada/resolve/bcf461d46d9a98981fc64b815df5178f42215cdf/lada_mosaic_detection_model_v4_accurate.pt"
+    },
+    {
+      "name": "lada_mosaic_detection_model_v4_fast.pt",
+      "role": "detection",
+      "variant": "v4-fast",
+      "default": true,
+      "size": 5981796,
+      "sha256": "9a6b660d1d3e3797d39515e08b0e72fcc59815f38279faa7a4ab374ab2c1e3b4",
+      "source_url": "https://huggingface.co/ladaapp/lada/resolve/bcf461d46d9a98981fc64b815df5178f42215cdf/lada_mosaic_detection_model_v4_fast.pt"
+    },
+    {
+      "name": "lada_mosaic_restoration_model_generic_v1.2.pth",
+      "role": "restoration",
+      "variant": "basicvsrpp-v1.2",
+      "default": true,
+      "size": 78441770,
+      "sha256": "d404152576ce64fb5b2f315c03062709dac4f5f8548934866cd01c823c8104ee",
+      "source_url": "https://huggingface.co/ladaapp/lada/resolve/bcf461d46d9a98981fc64b815df5178f42215cdf/lada_mosaic_restoration_model_generic_v1.2.pth"
+    }
+  ]
+}

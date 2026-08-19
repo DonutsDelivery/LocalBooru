@@ -229,7 +229,13 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     onSelect?.(image.id)
   }
 
-  const handleLoadError = () => {
+  const handleLoadError = (event) => {
+    console.warn('[MediaItem] Thumbnail load failed', {
+      imageId: image.id,
+      directoryId: image.directory_id,
+      libraryId: image.library_id,
+      source: event.currentTarget.currentSrc || event.currentTarget.src,
+    })
     setError(true)
     // Always mark as loaded so we show the appropriate placeholder
     setLoaded(true)

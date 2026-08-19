@@ -54,6 +54,10 @@ function getDirName(task) {
 }
 
 /** Group tasks by (task_type, directory) for active statuses, keep individual rows for failed */
+function taskProgressKey(taskType, directoryId, libraryId = 'primary') {
+  return `${libraryId ?? 'primary'}::${taskType}::${directoryId ?? 'none'}`
+}
+
 function groupTasks(tasks) {
   const groups = []
   const groupMap = new Map() // key -> group index
@@ -67,7 +71,7 @@ function groupTasks(tasks) {
 
     const dirName = getDirName(task) || '-'
     const libraryId = task.payload?.library_id ?? 'primary'
-    const key = `${libraryId}::${task.task_type}::${task.payload?.directory_id ?? 'none'}`
+    const key = taskProgressKey(task.task_type, task.payload?.directory_id, libraryId)
 
     if (groupMap.has(key)) {
       const group = groups[groupMap.get(key)]
@@ -163,7 +167,11 @@ export default function TaskManager() {
         loadStats()
         // Clear progress for completed tasks
         if ((event.type === 'task_completed' || event.type === 'task_updated') && event.data?.status !== 'pending') {
-          const key = `${event.data.task_type}::${event.data.directory_id ?? 'none'}`
+          const key = taskProgressKey(
+            event.data.task_type,
+            event.data.directory_id,
+            event.data.library_id,
+          )
           setProgress(prev => {
             const next = { ...prev }
             delete next[key]
@@ -173,7 +181,7 @@ export default function TaskManager() {
       }
       if (event.type === 'task_progress' && event.data) {
         const d = event.data
-        const key = `${d.task_type}::${d.directory_id ?? 'none'}`
+        const key = taskProgressKey(d.task_type, d.directory_id, d.library_id)
         setProgress(prev => ({ ...prev, [key]: { processed: d.processed, total: d.total } }))
       }
     })
@@ -349,7 +357,11 @@ export default function TaskManager() {
             {grouped.map((item) => {
               if (item.type === 'single') {
                 const task = item.task
-                const singleProgKey = `${task.task_type}::${task.payload?.directory_id ?? 'none'}`
+                const singleProgKey = taskProgressKey(
+                  task.task_type,
+                  task.payload?.directory_id,
+                  task.payload?.library_id,
+                )
                 const singleProg = task.status === 'processing' ? progress[singleProgKey] : null
                 const diagnostic = taskDiagnosticModel(task)
                 const expanded = expandedTasks.has(task.id)
@@ -422,7 +434,7 @@ export default function TaskManager() {
               const g = item
               const isActive = g.processing > 0
               const statusClass = isActive ? 'processing' : g.pending > 0 ? '' : 'completed'
-              const progressKey = `${g.taskType}::${g.directoryId ?? 'none'}`
+              const progressKey = taskProgressKey(g.taskType, g.directoryId, g.libraryId)
               const prog = progress[progressKey]
               return (
                 <div key={`group-${g.libraryId}-${g.taskType}-${g.directoryId ?? 'none'}`} className={`task-row ${statusClass}`}>

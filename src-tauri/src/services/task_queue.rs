@@ -56,6 +56,17 @@ fn default_workers() -> usize {
 
 /// Settings key for configuring worker concurrency.
 const SETTINGS_WORKERS_KEY: &str = "task_queue_workers";
+const ENV_WORKERS_KEY: &str = "LOCALBOORU_TASK_QUEUE_WORKERS";
+
+fn parse_worker_count_override(value: Option<&str>) -> Option<usize> {
+    value?.parse::<usize>().ok().map(|workers| workers.max(1))
+}
+
+fn bounded_parallelism(available: usize, worker_override: Option<&str>, maximum: usize) -> usize {
+    parse_worker_count_override(worker_override)
+        .unwrap_or_else(|| available.max(1))
+        .min(maximum.max(1))
+}
 
 // ─── BackgroundTaskQueue ─────────────────────────────────────────────────────
 
@@ -246,6 +257,11 @@ impl Default for BackgroundTaskQueue {
 /// Read the configured worker count from the settings DB table.
 /// Falls back to DEFAULT_WORKERS if not set or invalid.
 fn read_worker_count(state: &AppState) -> usize {
+    let environment_value = std::env::var(ENV_WORKERS_KEY).ok();
+    if let Some(workers) = parse_worker_count_override(environment_value.as_deref()) {
+        return workers;
+    }
+
     let conn = match state.main_db().get() {
         Ok(c) => c,
         Err(_) => return default_workers(),
@@ -795,6 +811,7 @@ fn complete_directory_imports(
                 serde_json::json!({
                     "task_type": TASK_COMPLETE_IMPORTS,
                     "directory_id": directory_id,
+                    "library_id": lib.uuid,
                     "processed": 0,
                     "total": total_thumbs,
                     "phase": "thumbnails",
@@ -809,10 +826,11 @@ fn complete_directory_imports(
 
         let next_idx = AtomicUsize::new(0);
         let generated = AtomicUsize::new(0);
-        let parallelism = std::thread::available_parallelism()
+        let available = std::thread::available_parallelism()
             .map(|n| n.get())
-            .unwrap_or(4)
-            .min(8);
+            .unwrap_or(4);
+        let environment_value = std::env::var(ENV_WORKERS_KEY).ok();
+        let parallelism = bounded_parallelism(available, environment_value.as_deref(), 8);
 
         std::thread::scope(|s| {
             for _ in 0..parallelism {
@@ -862,6 +880,7 @@ fn complete_directory_imports(
                                     serde_json::json!({
                                         "task_type": TASK_COMPLETE_IMPORTS,
                                         "directory_id": directory_id,
+                                        "library_id": lib.uuid,
                                         "processed": count,
                                         "total": total_thumbs,
                                         "phase": "thumbnails",
@@ -927,6 +946,7 @@ fn complete_directory_imports(
             serde_json::json!({
                 "task_type": TASK_COMPLETE_IMPORTS,
                 "directory_id": directory_id,
+                "library_id": lib.uuid,
                 "processed": 0,
                 "total": total_images,
                 "phase": "hashing",
@@ -1010,6 +1030,7 @@ fn complete_directory_imports(
                     serde_json::json!({
                         "task_type": TASK_COMPLETE_IMPORTS,
                         "directory_id": directory_id,
+                        "library_id": lib.uuid,
                         "processed": processed,
                         "total": total_images,
                         "phase": "hashing",
@@ -2113,6 +2134,22 @@ mod tests {
 
     fn temp_test_dir(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("localbooru-task-{}-{}", name, uuid::Uuid::new_v4()))
+    }
+
+    // AC: @safe-development-startup ac-bounded-workers
+    #[test]
+    fn worker_override_parser_is_bounded_and_failure_safe() {
+        assert_eq!(parse_worker_count_override(None), None);
+        assert_eq!(parse_worker_count_override(Some("")), None);
+        assert_eq!(parse_worker_count_override(Some("invalid")), None);
+        assert_eq!(parse_worker_count_override(Some("-1")), None);
+        assert_eq!(parse_worker_count_override(Some("0")), Some(1));
+        assert_eq!(parse_worker_count_override(Some("1")), Some(1));
+        assert_eq!(parse_worker_count_override(Some("3")), Some(3));
+        assert_eq!(bounded_parallelism(32, Some("1"), 8), 1);
+        assert_eq!(bounded_parallelism(32, Some("3"), 8), 3);
+        assert_eq!(bounded_parallelism(32, None, 8), 8);
+        assert_eq!(bounded_parallelism(0, None, 8), 1);
     }
 
     #[test]
