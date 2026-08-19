@@ -127,15 +127,20 @@ export default function VRVideoViewport({
   const [dragging, setDragging] = useState(false)
   const [subtitleText, setSubtitleText] = useState('')
 
-  // Diagnostic modes
-  const [freezeTexture, setFreezeTexture] = useState(false)
-  const [forceDpr1, setForceDpr1] = useState(false)
+  // Diagnostic modes — use refs so render loop sees current values without re-creating effect
+  const freezeTextureRef = useRef(false)
+  const forceDpr1Ref = useRef(false)
   const [showPerfStats, setShowPerfStats] = useState(false)
-  const perfRef = useRef({
+  // Perf state for reactive overlay updates
+  const [perfStats, setPerfStats] = useState({
     uploadCount: 0,
     drawCount: 0,
-    lastUploadTime: 0,
-    lastDrawTime: 0,
+    avgUploadMs: 0,
+    avgDrawMs: 0,
+  })
+  const perfAccumRef = useRef({
+    uploadCount: 0,
+    drawCount: 0,
     uploadTotalMs: 0,
     drawTotalMs: 0,
   })
@@ -157,21 +162,36 @@ export default function VRVideoViewport({
     applyConfig(current => ({ ...current, fov: DEFAULT_VR_FOV }))
   }, [applyCamera, applyConfig])
 
-  // Diagnostic mode toggles
+  // Diagnostic mode toggles — update refs immediately, state for UI
   const toggleFreezeTexture = useCallback(() => {
-    setFreezeTexture(prev => !prev)
-    perfRef.current.uploadCount = 0
-    perfRef.current.drawCount = 0
-    perfRef.current.uploadTotalMs = 0
-    perfRef.current.drawTotalMs = 0
+    const next = !freezeTextureRef.current
+    freezeTextureRef.current = next
+    // Reset perf on toggle
+    perfAccumRef.current = { uploadCount: 0, drawCount: 0, uploadTotalMs: 0, drawTotalMs: 0 }
+    setPerfStats({ uploadCount: 0, drawCount: 0, avgUploadMs: 0, avgDrawMs: 0 })
+    setFreezeTextureUI(next)
   }, [])
 
   const toggleForceDpr1 = useCallback(() => {
-    setForceDpr1(prev => !prev)
+    const next = !forceDpr1Ref.current
+    forceDpr1Ref.current = next
+    setForceDpr1UI(next)
+    // Force immediate resize on DPR change
+    canvasRef.current?.dispatchEvent(new Event('vrviewchange'))
   }, [])
 
   const togglePerfStats = useCallback(() => {
     setShowPerfStats(prev => !prev)
+  }, [])
+
+  // UI-only state for checkboxes (refs are source of truth for render loop)
+  const [freezeTextureUI, setFreezeTextureUI] = useState(false)
+  const [forceDpr1UI, setForceDpr1UI] = useState(false)
+
+  // Sync UI checkboxes with refs on mount (in case of HMR)
+  useEffect(() => {
+    setFreezeTextureUI(freezeTextureRef.current)
+    setForceDpr1UI(forceDpr1Ref.current)
   }, [])
 
   useEffect(() => {
@@ -247,6 +267,7 @@ export default function VRVideoViewport({
     let frameDirty = true
     let viewDirty = true
     let lastVideoTime = -1
+    let hasUploadedFirstFrame = false
 
     const fail = (error) => {
       if (cancelled) return
@@ -298,7 +319,7 @@ export default function VRVideoViewport({
     }
 
     const resize = () => {
-      const ratio = forceDpr1 ? 1 : Math.min(window.devicePixelRatio || 1, 2)
+      const ratio = forceDpr1Ref.current ? 1 : Math.min(window.devicePixelRatio || 1, 2)
       const width = Math.max(1, Math.round(canvas.clientWidth * ratio))
       const height = Math.max(1, Math.round(canvas.clientHeight * ratio))
       if (canvas.width !== width || canvas.height !== height) {
@@ -312,14 +333,10 @@ export default function VRVideoViewport({
     const locations = {
       aspect: gl.getUniformLocation(program, 'uAspect'),
       fov: gl.getUniformLocation(program, 'uFov'),
-      yaw: gl.getUniformLocation(program, 'uYaw'),
-      pitch: gl.getUniformLocation(program, 'uPitch'),
-      roll: gl.getUniformLocation(program, 'uRoll'),
+      rotationMatrix: gl.getUniformLocation(program, 'uRotationMatrix'),
       projection: gl.getUniformLocation(program, 'uProjection'),
       stereo: gl.getUniformLocation(program, 'uStereo'),
       eye: gl.getUniformLocation(program, 'uEye'),
-      // Rotation matrix uniform (replaces per-pixel trig)
-      rotationMatrix: gl.getUniformLocation(program, 'uRotationMatrix'),
     }
 
     let textureWidth = 0
@@ -337,13 +354,22 @@ export default function VRVideoViewport({
       }
     }
 
+    // Perf stats updater (2 Hz)
+    let perfUpdateTimer = null
+    const updatePerfStats = () => {
+      const { uploadCount, drawCount, uploadTotalMs, drawTotalMs } = perfAccumRef.current
+      setPerfStats({
+        uploadCount,
+        drawCount,
+        avgUploadMs: uploadCount > 0 ? uploadTotalMs / uploadCount : 0,
+        avgDrawMs: drawCount > 0 ? drawTotalMs / drawCount : 0,
+      })
+    }
+
     const render = () => {
       if (cancelled) return
 
-      // Only call resize when needed (ResizeObserver handles actual size changes)
-      // resize() is also called from ResizeObserver and vrviewchange
-
-      const shouldUpload = !freezeTexture && video.readyState >= 2 && (
+      const shouldUpload = !freezeTextureRef.current && video.readyState >= 2 && (
         frameDirty
         || (typeof video.requestVideoFrameCallback !== 'function' && video.currentTime !== lastVideoTime)
       )
@@ -351,7 +377,6 @@ export default function VRVideoViewport({
       if (shouldUpload) {
         const uploadStart = performance.now()
         try {
-          // Use texSubImage2D with preallocated storage
           if (video.videoWidth > 0 && video.videoHeight > 0) {
             ensureTextureStorage(video.videoWidth, video.videoHeight)
             gl.activeTexture(gl.TEXTURE0)
@@ -361,16 +386,16 @@ export default function VRVideoViewport({
           lastVideoTime = video.currentTime
           frameDirty = false
           viewDirty = true
-          perfRef.current.uploadCount++
-          perfRef.current.uploadTotalMs += performance.now() - uploadStart
-          perfRef.current.lastUploadTime = performance.now()
+          hasUploadedFirstFrame = true
+          perfAccumRef.current.uploadCount++
+          perfAccumRef.current.uploadTotalMs += performance.now() - uploadStart
         } catch (error) {
           fail(error)
           return
         }
       }
 
-      const shouldDraw = viewDirty && video.readyState >= 2 && (textureInitialized || freezeTexture)
+      const shouldDraw = viewDirty && video.readyState >= 2 && (textureInitialized || (freezeTextureRef.current && hasUploadedFirstFrame))
 
       if (shouldDraw) {
         const drawStart = performance.now()
@@ -403,13 +428,14 @@ export default function VRVideoViewport({
         gl.uniform1i(locations.eye, currentConfig.eye === 'right' ? 1 : 0)
         gl.drawArrays(gl.TRIANGLES, 0, 6)
         viewDirty = false
-        perfRef.current.drawCount++
-        perfRef.current.drawTotalMs += performance.now() - drawStart
-        perfRef.current.lastDrawTime = performance.now()
+        perfAccumRef.current.drawCount++
+        perfAccumRef.current.drawTotalMs += performance.now() - drawStart
       }
 
-      // Only continue rAF loop if something is dirty or we need to keep rendering
-      if (frameDirty || viewDirty || !freezeTexture) {
+      // Continue rAF only if: video frames still coming, view is dirty, or camera changed
+      // In freeze mode: stop after first frame uploaded and drawn
+      const shouldContinue = frameDirty || viewDirty || !freezeTextureRef.current
+      if (shouldContinue) {
         animationFrame = requestAnimationFrame(render)
       }
     }
@@ -425,11 +451,14 @@ export default function VRVideoViewport({
 
     const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null
     resizeObserver?.observe(canvas)
-    window.addEventListener('resize', resize)
+    // NO window.addEventListener('resize', resize) — ResizeObserver handles it
     const markViewDirty = () => { viewDirty = true }
     canvas.addEventListener('vrviewchange', markViewDirty)
     resize()
     animationFrame = requestAnimationFrame(render)
+
+    // Start perf stats timer
+    perfUpdateTimer = setInterval(updatePerfStats, 500)
 
     const handleContextLost = (event) => {
       event.preventDefault()
@@ -443,8 +472,8 @@ export default function VRVideoViewport({
       if (videoFrameCallback !== null && typeof video.cancelVideoFrameCallback === 'function') {
         video.cancelVideoFrameCallback(videoFrameCallback)
       }
+      if (perfUpdateTimer !== null) clearInterval(perfUpdateTimer)
       resizeObserver?.disconnect()
-      window.removeEventListener('resize', resize)
       canvas.removeEventListener('vrviewchange', markViewDirty)
       canvas.removeEventListener('webglcontextlost', handleContextLost)
       if (document.pointerLockElement === canvas) document.exitPointerLock?.()
@@ -581,24 +610,6 @@ export default function VRVideoViewport({
   }, [applyConfig, onInteraction])
 
   const handleKeyDown = useCallback((event) => {
-    if (event.key === 'f' || event.key === 'F') {
-      event.preventDefault()
-      event.stopPropagation()
-      toggleFreezeTexture()
-      return
-    }
-    if (event.key === 'd' || event.key === 'D') {
-      event.preventDefault()
-      event.stopPropagation()
-      toggleForceDpr1()
-      return
-    }
-    if (event.key === 'p' || event.key === 'P') {
-      event.preventDefault()
-      event.stopPropagation()
-      togglePerfStats()
-      return
-    }
     let deltaX = 0
     let deltaY = 0
     if (event.key === 'ArrowLeft') deltaX = 5
@@ -626,7 +637,7 @@ export default function VRVideoViewport({
     event.preventDefault()
     event.stopPropagation()
     applyCamera(current => updateVRCamera(current, deltaX, deltaY, configRef.current.projection, 1))
-  }, [applyCamera, applyConfig, resetView, toggleFreezeTexture, toggleForceDpr1, togglePerfStats])
+  }, [applyCamera, applyConfig, resetView])
 
   if (!active) return null
 
@@ -722,26 +733,26 @@ export default function VRVideoViewport({
         backdropFilter: 'blur(12px)', fontSize: '0.7rem'
       }}>
         <label style={{display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#fff'}}>
-          <input type="checkbox" checked={freezeTexture} onChange={toggleFreezeTexture} /> Freeze texture (F)
+          <input type="checkbox" checked={freezeTextureUI} onChange={toggleFreezeTexture} /> Freeze texture
         </label>
         <label style={{display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#fff'}}>
-          <input type="checkbox" checked={forceDpr1} onChange={toggleForceDpr1} /> Force DPR=1 (D)
+          <input type="checkbox" checked={forceDpr1UI} onChange={toggleForceDpr1} /> Force DPR=1
         </label>
         <label style={{display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#fff'}}>
-          <input type="checkbox" checked={showPerfStats} onChange={togglePerfStats} /> Perf stats (P)
+          <input type="checkbox" checked={showPerfStats} onChange={togglePerfStats} /> Perf stats
         </label>
       </div>
-      {showPerfStats && perfRef.current.uploadCount > 0 && (
+      {showPerfStats && perfStats.uploadCount > 0 && (
         <div className="vr-perf-stats" style={{
           position: 'absolute', zIndex: 18, right: 16, bottom: 180,
           background: 'rgba(0, 0, 0, 0.8)', padding: 10, borderRadius: 8,
           fontFamily: 'monospace', fontSize: '0.7rem', color: '#0f0',
           border: '1px solid rgba(255,255,255,0.16)', minWidth: 200
         }}>
-          <div>Uploads: {perfRef.current.uploadCount}</div>
-          <div>Avg upload: {perfRef.current.uploadCount ? (perfRef.current.uploadTotalMs / perfRef.current.uploadCount).toFixed(2) : 0}ms</div>
-          <div>Draws: {perfRef.current.drawCount}</div>
-          <div>Avg draw: {perfRef.current.drawCount ? (perfRef.current.drawTotalMs / perfRef.current.drawCount).toFixed(2) : 0}ms</div>
+          <div>Uploads: {perfStats.uploadCount}</div>
+          <div>Avg upload: {perfStats.avgUploadMs.toFixed(2)}ms</div>
+          <div>Draws: {perfStats.drawCount}</div>
+          <div>Avg draw: {perfStats.avgDrawMs.toFixed(2)}ms</div>
           <div>Canvas: {canvasRef.current?.width}×{canvasRef.current?.height}</div>
           <div>Video: {videoRef.current?.videoWidth}×{videoRef.current?.videoHeight}</div>
         </div>

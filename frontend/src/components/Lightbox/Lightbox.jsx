@@ -1285,10 +1285,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           break
         case 'ArrowLeft':
         case 'a':
+          if (vrActive) break
           onNav(-1)
           break
         case 'ArrowRight':
         case 'd':
+          if (vrActive) break
           onNav(1)
           break
         case 'f':
