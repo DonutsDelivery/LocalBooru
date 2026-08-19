@@ -77,7 +77,7 @@ cl >/tmp/localbooru-msvc-version.log 2>&1 || true
 sed -n '1,4p' /tmp/localbooru-msvc-version.log
 sccache --start-server >/dev/null 2>&1 || true
 
-npm --prefix frontend ci
+npm --prefix frontend ci --prefer-offline --no-audit --no-fund
 npm --prefix frontend test
 npm --prefix frontend run build
 

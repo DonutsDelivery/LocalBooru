@@ -26,6 +26,25 @@ the isolated launcher. If the isolated launcher cannot start, stop and report
 the blocker instead of falling back to the user's instance. See
 `docs/agents/repository-safety.md` for the isolation contract.
 
+## Booru Node infrastructure boundary
+
+The reusable server is the separate private `DonutsDelivery/booru-node`
+repository (local checkout: `/home/user/Programs/Claude Projects/booru-node-clean`).
+LocalBooru is a client of that server and must not become a second copy of its
+API, deployment scripts, private node configuration, or release history.
+
+Make reusable server fixes in `booru-node`, test them there, and deploy only an
+immutable semantic-version release archive with its verified SHA-256 via
+`scripts/update-node.py`. Never deploy a moving branch, direct source sync, or
+this LocalBooru checkout to a node VPS. Existing node configuration, OAuth and
+storage credentials, PostgreSQL data, backups, and media remain external to
+release directories. DonutBooru must retain remote-media enforcement; do not
+copy booru/user media onto a VPS or silently change federation state. The setup
+script is for clean nodes; production updates use the updater and its backup,
+staged activation, health-check, and application-rollback path. Database
+migrations are forward-only during automatic rollback, so restoration from the
+retained backup is an explicit operator action.
+
 <!-- GLOBAL_INSTRUCTION_START -->
 # CLAUDE.md
 

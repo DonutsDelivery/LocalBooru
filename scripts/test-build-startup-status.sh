@@ -126,6 +126,7 @@ windows_output="$TEMP_DIR/windows-started.log"
 LOCALBOORU_SOURCE_REVISION=HEAD \
 LOCALBOORU_BUILD_JOBS=1 \
 LOCALBOORU_WINDOWS_BUILD_ROOT="$TEMP_DIR/windows-build" \
+LOCALBOORU_WINDOWS_SCCACHE_ROOT="$TEMP_DIR/windows-sccache" \
 LOCALBOORU_DIST_WINDOWS_DIR="$TEMP_DIR/windows-dist" \
   "$ROOT/scripts/build-windows-local.sh" >"$windows_output" 2>&1
 source_commit="$(git -C "$ROOT" rev-parse HEAD)"

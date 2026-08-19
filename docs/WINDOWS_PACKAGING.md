@@ -19,6 +19,10 @@ The first image build downloads MSVC, the Windows SDK, Rust, Node.js, and the pi
 - `/mnt/storage/Programs/localbooru-sccache-windows-docker` reserved for compiler-cache objects;
 - `dist-windows-local/` for final artifacts.
 
+On hosts where `/mnt/storage` is rotational, the two persistent cache paths
+must be symlinks to SSD/NVMe storage. The host wrapper fails before Docker
+starts if either resolved path is rotational.
+
 Override these with `LOCALBOORU_WINDOWS_BUILD_ROOT`, `LOCALBOORU_WINDOWS_SCCACHE_ROOT`, and `LOCALBOORU_DIST_WINDOWS_DIR`.
 
 Expected outputs:

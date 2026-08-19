@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/build-startup-status.sh"
+source "$ROOT/scripts/build-storage.sh"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
 SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
 localbooru_build_acquire_lock "$STATE_DIR" windows "$SOURCE_REVISION"
@@ -40,21 +41,6 @@ SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$
 CACHE_MARKER=".localbooru-build-cache"
 BUILD_ROOT_DEFAULT="/mnt/storage/Programs/localbooru-build-windows-docker"
 
-has_symlink_component() {
-  local current
-  current="$(realpath -ms -- "$1")"
-  while true; do
-    [[ -L "$current" ]] && return 0
-    [[ "$current" == "/" ]] && return 1
-    current="$(dirname "$current")"
-  done
-}
-
-if has_symlink_component "$BUILD_ROOT"; then
-  echo "ERROR: refusing build cache path with a symlink component: $BUILD_ROOT" >&2
-  exit 1
-fi
-
 BUILD_ROOT="$(realpath -m -- "$BUILD_ROOT")"
 BUILD_ROOT_DEFAULT="$(realpath -m -- "$BUILD_ROOT_DEFAULT")"
 marker_value=""
@@ -84,6 +70,12 @@ if [[ "$marker_value" != "localbooru-build-cache-v1" ]]; then
   fi
   mv -f "$marker_temp" "$BUILD_ROOT/$CACHE_MARKER"
 fi
+
+SCCACHE_ROOT="${LOCALBOORU_WINDOWS_SCCACHE_ROOT:-/mnt/storage/Programs/localbooru-sccache-windows-docker}"
+mkdir -p "$SCCACHE_ROOT"
+SCCACHE_ROOT="$(realpath -m -- "$SCCACHE_ROOT")"
+localbooru_assert_ssd_path "$BUILD_ROOT" "Windows build cache"
+localbooru_assert_ssd_path "$SCCACHE_ROOT" "Windows compiler cache"
 
 if [[ -L "$DIST_PATH" ]]; then
   DIST_PATH="$(readlink -f "$DIST_PATH")"
@@ -121,8 +113,10 @@ localbooru_build_started "$SOURCE_COMMIT" artifacts
   -e LOCALBOORU_SOURCE_REVISION="$SOURCE_COMMIT" \
   -e SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
   -e npm_config_cache=/build/npm-cache \
+  -e SCCACHE_DIR=/ccache \
   -v "$ROOT:/source:ro" \
   -v "$BUILD_ROOT:/build" \
+  -v "$SCCACHE_ROOT:/ccache" \
   -v "$DIST_PATH:/dist" \
   -w /build/worktree \
   "$IMAGE" \

@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/build-startup-status.sh"
+source "$ROOT/scripts/build-storage.sh"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
 SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
 localbooru_build_acquire_lock "$STATE_DIR" linux "$SOURCE_REVISION"
@@ -72,9 +73,9 @@ localbooru_build_write_owner "$SOURCE_COMMIT"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct "$SOURCE_COMMIT")}"
 CACHE_MARKER=".localbooru-build-cache"
 
-has_symlink_component() {
+has_symlink_ancestor() {
   local current
-  current="$(realpath -ms -- "$1")"
+  current="$(dirname "$(realpath -ms -- "$1")")"
   while true; do
     [[ -L "$current" ]] && return 0
     [[ "$current" == "/" ]] && return 1
@@ -87,8 +88,8 @@ prepare_cache_root() {
   local default_path="$2"
   local resolved default_resolved marker_value first_entry marker_temp
 
-  if has_symlink_component "$path"; then
-    echo "ERROR: refusing build cache path with a symlink component: $path" >&2
+  if has_symlink_ancestor "$path"; then
+    echo "ERROR: refusing build cache path with a symlink ancestor: $path" >&2
     exit 1
   fi
 
@@ -130,6 +131,8 @@ prepare_cache_root "$BUILD_ROOT" "$ROOT/build-linux-docker"
 BUILD_ROOT="$PREPARED_CACHE_ROOT"
 prepare_cache_root "$CCACHE_ROOT" "$ROOT/.ccache-docker"
 CCACHE_ROOT="$PREPARED_CACHE_ROOT"
+localbooru_assert_ssd_path "$BUILD_ROOT" "Linux build cache"
+localbooru_assert_ssd_path "$CCACHE_ROOT" "Linux compiler cache"
 
 mkdir -p "$DIST_ROOT"
 mkdir -p "$BUILD_ROOT/cargo-home" "$BUILD_ROOT/npm-cache"

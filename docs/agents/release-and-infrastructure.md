@@ -163,6 +163,10 @@ The default persistent directories are:
   cache directory;
 - `dist-windows-local/` — final verified artifacts.
 
+On hosts where `/mnt/storage` is rotational, the first two paths must be
+symlinks to non-rotational storage. The wrapper resolves and rejects build or
+compiler-cache paths backed by a rotational device before Docker starts.
+
 Override them with `LOCALBOORU_WINDOWS_BUILD_ROOT`,
 `LOCALBOORU_WINDOWS_SCCACHE_ROOT`, and `LOCALBOORU_DIST_WINDOWS_DIR`.
 Ubuntu's sccache 0.7.7 is deliberately not enabled as `RUSTC_WRAPPER`: `cc-rs`
@@ -222,8 +226,8 @@ The default persistent directories are:
 - `.ccache-docker/` — C/C++ compiler cache
 - `dist-linux-local/` — final verified artifacts
 
-Large build roots can live on another filesystem without changing the source
-checkout:
+Large build roots can live on another non-rotational filesystem without
+changing the source checkout:
 
 ```bash
 LOCALBOORU_DOCKER_BUILD_ROOT=/path/to/build-cache \
@@ -231,6 +235,17 @@ LOCALBOORU_CCACHE_DIR=/path/to/ccache \
 LOCALBOORU_DIST_LINUX_DIR=/path/to/artifacts \
 ./scripts/build-linux-local.sh
 ```
+
+The wrapper resolves these paths and rejects build or compiler-cache storage
+backed by a rotational device before Docker starts. Stable project paths may be
+symlinked to SSD/NVMe storage.
+
+Development Cargo targets and the patched WebKit build/ccache paths use the
+same fail-closed check. `run-dev.sh` keeps its stable
+`/mnt/storage/Programs/localbooru-target-dev` path for compatibility, while
+`scripts/build-patched-webkit.sh` keeps the existing paths under
+`LOCALBOORU_WEBKIT_ROOT`; on rotational storage, those paths must resolve
+through leaf symlinks to SSD/NVMe directories.
 
 `LOCALBOORU_BUILD_JOBS` or `--jobs` limits compilation parallelism. WebKitGTK is
 the dominant build cost; do not delete the persistent build root between

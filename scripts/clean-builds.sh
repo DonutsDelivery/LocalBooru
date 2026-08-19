@@ -95,9 +95,9 @@ canonical() {
   realpath -m -- "$1"
 }
 
-has_symlink_component() {
+has_symlink_ancestor() {
   local current
-  current="$(realpath -ms -- "$1")"
+  current="$(dirname "$(realpath -ms -- "$1")")"
   while true; do
     [[ -L "$current" ]] && return 0
     [[ "$current" == "/" ]] && return 1
@@ -151,8 +151,8 @@ assert_safe() {
     return 0
   fi
 
-  if has_symlink_component "$path"; then
-    echo "ERROR: refusing cleanup path with a symlink component: $path" >&2
+  if has_symlink_ancestor "$path"; then
+    echo "ERROR: refusing cleanup path with a symlink ancestor: $path" >&2
     return 1
   fi
 
@@ -232,8 +232,13 @@ for path in "${PATHS[@]}"; do
   assert_safe "$path"
   resolved="$(canonical "$path")"
   if [[ -e "$resolved" || -L "$resolved" ]]; then
-    echo "Removing $resolved"
-    rm -rf -- "$resolved"
+    if [[ -L "$path" ]]; then
+      echo "Clearing symlink target $resolved"
+      find "$resolved" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    else
+      echo "Removing $resolved"
+      rm -rf -- "$resolved"
+    fi
   fi
 done
 

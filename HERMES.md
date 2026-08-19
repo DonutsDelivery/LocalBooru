@@ -1,11 +1,22 @@
 
 
-# Platform build and acceptance
+# LocalBooru agent routing
 
-Before release, packaging, Sonoma VM, or WinBoat work, read
-`docs/agents/release-and-infrastructure.md`. Linux and Windows release artifacts
-use the pinned local wrappers; WinBoat is runtime-only. macOS must be built with
-Apple tooling and VM/CI success does not establish stable real-Mac support.
+Before any build, release, packaging, Sonoma VM, or WinBoat work, read
+`docs/agents/release-and-infrastructure.md`. Before repository testing or work
+that may touch application data, read `docs/agents/repository-safety.md`.
+
+## Build storage boundary
+
+Build trees and compiler caches must resolve to non-rotational storage. Use the
+project wrappers and their storage checks; do not bypass them or replace the
+stable `/mnt/storage/Programs/localbooru-*` leaf symlinks with real directories
+on the HDD. Linux and Windows release artifacts use the pinned local wrappers,
+and development Cargo and patched WebKit builds follow the same SSD/NVMe rule.
+See `docs/agents/release-and-infrastructure.md` for paths and overrides.
+
+WinBoat is runtime-only. macOS must be built with Apple tooling; VM or CI
+success does not establish stable real-Mac support.
 
 ## Repository privacy boundary
 
@@ -30,6 +41,25 @@ launcher for repository testing against the normal user profile. Do not point
 the isolated launcher. If the isolated launcher cannot start, stop and report
 the blocker instead of falling back to the user's instance. See
 `docs/agents/repository-safety.md` for the isolation contract.
+
+## Booru Node infrastructure boundary
+
+The reusable server is the separate private `DonutsDelivery/booru-node`
+repository (local checkout: `/home/user/Programs/Claude Projects/booru-node-clean`).
+LocalBooru is a client of that server and must not become a second copy of its
+API, deployment scripts, private node configuration, or release history.
+
+Make reusable server fixes in `booru-node`, test them there, and deploy only an
+immutable semantic-version release archive with its verified SHA-256 via
+`scripts/update-node.py`. Never deploy a moving branch, direct source sync, or
+this LocalBooru checkout to a node VPS. Existing node configuration, OAuth and
+storage credentials, PostgreSQL data, backups, and media remain external to
+release directories. DonutBooru must retain remote-media enforcement; do not
+copy booru/user media onto a VPS or silently change federation state. The setup
+script is for clean nodes; production updates use the updater and its backup,
+staged activation, health-check, and application-rollback path. Database
+migrations are forward-only during automatic rollback, so restoration from the
+retained backup is an explicit operator action.
 
 <!-- GLOBAL_INSTRUCTION_START -->
 # CLAUDE.md
@@ -377,7 +407,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 
 <!-- AGENT_SESSION_SIGNALS_START -->
-## Agent Session Signals (Claude Terminal)
+## Agent Session Signals (DonutCode)
 
 Signals are final-response metadata. Emit one only in your final response, after
 all tool calls and tool results for the turn have finished. Never emit a signal
@@ -401,9 +431,183 @@ without the user answering a blocking question, and put it immediately before
 that question in the final response. Do not use input-needed for optional
 follow-up questions. Emit only one signal for a given state.
 
-These managed instructions are read by Claude Terminal. Keep all surrounding
+These managed instructions are read by DonutCode. Keep all surrounding
 user-authored instructions unchanged.
 <!-- AGENT_SESSION_SIGNALS_END -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

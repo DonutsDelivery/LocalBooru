@@ -212,8 +212,8 @@ stage_native_runtime() {
 
 build_tauri_bundles() {
   echo "==> Installing locked JavaScript dependencies"
-  (cd "$ROOT" && npm ci)
-  (cd "$ROOT/frontend" && npm ci)
+  (cd "$ROOT" && npm ci --prefer-offline --no-audit --no-fund)
+  (cd "$ROOT/frontend" && npm ci --prefer-offline --no-audit --no-fund)
 
   echo "==> Building Tauri bundles: $BUNDLES"
   (cd "$ROOT" && cargo tauri build --ci --bundles "$BUNDLES")

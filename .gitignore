@@ -11,6 +11,8 @@ python-embed/
 /dist-windows-local/
 /build-windows-docker/
 /.sccache-windows-docker/
+/.ccache-webkit/
+/.webkit-build/
 /.android-signing.*/
 /.localbooru-cache-marker.*
 /python-venv-linux/

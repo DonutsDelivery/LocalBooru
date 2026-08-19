@@ -1,6 +1,7 @@
 #!/bin/bash
 source "$HOME/.cargo/env" 2>/dev/null
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$ROOT/scripts/build-storage.sh"
 if [[ -n "${LOCALBOORU_DEV_TARGET_DIR:-}" ]]; then
     export CARGO_TARGET_DIR="$LOCALBOORU_DEV_TARGET_DIR"
 elif [[ -d /mnt/storage/Programs && -w /mnt/storage/Programs ]]; then
@@ -9,6 +10,7 @@ else
     export CARGO_TARGET_DIR="$ROOT/target"
 fi
 mkdir -p "$CARGO_TARGET_DIR"
+localbooru_assert_ssd_path "$CARGO_TARGET_DIR" "development Cargo target"
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 STATE_DIR="$STATE_HOME/localbooru"
 mkdir -p "$STATE_DIR"

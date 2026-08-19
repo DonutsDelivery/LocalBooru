@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$root/scripts/build-storage.sh"
 webkit_root="${LOCALBOORU_WEBKIT_ROOT:-/mnt/storage/Programs/localbooru-webkit2gtk-4.1-patched}"
-build_dir="$webkit_root/local-build"
+build_dir="${LOCALBOORU_WEBKIT_BUILD_DIR:-$webkit_root/local-build}"
 source_dir="$webkit_root/src/webkitgtk-2.52.3"
 deps_dir="$webkit_root/user-deps"
 cache_dir="${LOCALBOORU_WEBKIT_CCACHE_DIR:-$webkit_root/.ccache}"
@@ -15,7 +17,9 @@ export RUBYLIB="$deps_dir/usr/lib/ruby/3.4.0/x86_64-linux:$deps_dir/usr/lib/ruby
 export CCACHE_DIR="$cache_dir"
 export CCACHE_MAXSIZE="${LOCALBOORU_WEBKIT_CCACHE_SIZE:-30G}"
 
-mkdir -p "$cache_dir"
+mkdir -p "$build_dir" "$cache_dir"
+localbooru_assert_ssd_path "$build_dir" "patched WebKit build tree"
+localbooru_assert_ssd_path "$cache_dir" "patched WebKit compiler cache"
 "$ccache_bin" --max-size "$CCACHE_MAXSIZE"
 
 # Reuse the existing CMake cache and only add compiler launchers. This does not
