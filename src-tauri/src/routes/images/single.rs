@@ -1111,6 +1111,11 @@ async fn serve_cached_file(path: &Path, content_type: &str) -> Result<Response, 
 
 #[cfg(test)]
 mod tests {
+    use axum::body::{to_bytes, Body};
+    use axum::http::Request;
+    use axum::routing::get;
+    use axum::Router;
+
     use super::*;
 
     // AC: @identity-safe-image-adjustments ac-1
@@ -1160,6 +1165,59 @@ mod tests {
         ));
 
         drop(library);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // AC: @folder-thumbnail-route-identity ac-cached-duplicate
+    #[tokio::test]
+    async fn uncached_thumbnail_skips_stale_duplicate_path_for_later_live_path() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-live-duplicate-thumbnail-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let live_path = root.join("live.png");
+        image::DynamicImage::new_rgb8(4, 3)
+            .save(&live_path)
+            .unwrap();
+
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.library_manager().primary().clone();
+        let pool = library.directory_db.get_pool(11).unwrap();
+        let connection = pool.get().unwrap();
+        connection
+            .execute(
+                "INSERT INTO images (id, filename, file_hash) VALUES (7, 'image.png', 'uncached-duplicate-hash')",
+                [],
+            )
+            .unwrap();
+        for path in [root.join("stale.png"), live_path] {
+            connection
+                .execute(
+                    "INSERT INTO image_files (image_id, original_path, file_extension) VALUES (7, ?1, 'png')",
+                    params![path.to_string_lossy()],
+                )
+                .unwrap();
+        }
+        drop(connection);
+
+        let app = Router::new()
+            .route("/api/images/{image_id}/thumbnail", get(get_image_thumbnail))
+            .with_state(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/images/7/thumbnail?directory_id=11&library_id=primary&file_hash=uncached-duplicate-hash")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert!(image::load_from_memory(&body).is_ok());
         let _ = std::fs::remove_dir_all(root);
     }
 }
