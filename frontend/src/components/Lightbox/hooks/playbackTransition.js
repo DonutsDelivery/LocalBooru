@@ -9,6 +9,9 @@ export function capturePlaybackIntent(video, absoluteTime, imageKey) {
     position,
     shouldPlay: Boolean(video && !video.paused && !ended),
     ended,
+    playbackRate: Number.isFinite(video?.playbackRate) ? video.playbackRate : 1,
+    volume: Number.isFinite(video?.volume) ? video.volume : 1,
+    muted: Boolean(video?.muted),
   }
 }
 
