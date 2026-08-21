@@ -566,9 +566,9 @@ function Gallery() {
   const loadingMoreRef = useRef(false)
   const pageRef = useRef(page)
   const imagesRef = useRef(images)
-  const folderRequestOwnerRef = useRef(null)
-  if (!folderRequestOwnerRef.current) {
-    folderRequestOwnerRef.current = createViewRequestOwner()
+  const galleryRequestOwnerRef = useRef(null)
+  if (!galleryRequestOwnerRef.current) {
+    galleryRequestOwnerRef.current = createViewRequestOwner()
   }
 
   // Keep ref in sync with state (for use in timeouts)
@@ -674,7 +674,11 @@ function Gallery() {
   const groupByFolders = searchParams.get('group') === 'folders'
   const currentFolder = searchParams.get('folder') || null
   const galleryViewKey = searchParams.toString()
-  folderRequestOwnerRef.current.activate(galleryViewKey)
+  galleryRequestOwnerRef.current.activate(galleryViewKey)
+
+  useEffect(() => {
+    setIsJumping(false)
+  }, [galleryViewKey])
 
   const galleryQuery = useMemo(() => ({
     tags: currentTags,
@@ -777,8 +781,8 @@ function Gallery() {
 
   // Load folders for folder grouping view
   const loadFolders = useCallback(async () => {
-    const request = folderRequestOwnerRef.current.begin(galleryViewKey)
-    if (!folderRequestOwnerRef.current.owns(request)) return false
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return false
 
     setLoading(true)
     try {
@@ -789,7 +793,7 @@ function Gallery() {
         favorites_only: favoritesOnly,
         tags: currentTags,
       })
-      if (!folderRequestOwnerRef.current.owns(request)) return false
+      if (!galleryRequestOwnerRef.current.owns(request)) return false
 
       const folderItems = result.folders.map(f => ({
         ...f,
@@ -803,12 +807,15 @@ function Gallery() {
       setPage(1)
       return true
     } catch (error) {
-      if (folderRequestOwnerRef.current.owns(request)) {
+      if (galleryRequestOwnerRef.current.owns(request)) {
         console.error('Failed to load folders:', error)
       }
       return false
     } finally {
-      if (folderRequestOwnerRef.current.owns(request)) setLoading(false)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        setLoading(false)
+        setIsJumping(false)
+      }
     }
   }, [currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags, galleryViewKey])
 
@@ -822,6 +829,9 @@ function Gallery() {
       }
       return true
     }
+
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return false
 
     setLoading(true)
     try {
@@ -845,6 +855,7 @@ function Gallery() {
         page: pageNum,
         per_page: calculatePerPage(tileSize)
       })
+      if (!galleryRequestOwnerRef.current.owns(request)) return false
 
       // A transiently unhealthy backend can return an empty middle page while
       // still reporting more rows. Do not advance past that gap permanently;
@@ -873,12 +884,17 @@ function Gallery() {
       setPage(pageNum)
       return true
     } catch (error) {
-      console.error('Failed to load images:', error)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to load images:', error)
+      }
       return false
     } finally {
-      setLoading(false)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        setLoading(false)
+        setIsJumping(false)
+      }
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders, galleryViewKey])
 
   const curation = useCurationGame({
     loadedImages: images,
@@ -974,6 +990,9 @@ function Gallery() {
       return true
     }
 
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return false
+
     const preserveAnchor = window.scrollY >= 200 || lightboxIndexRef.current !== null
     const anchor = preserveAnchor
       ? Array.from(document.querySelectorAll('[data-image-id]'))
@@ -1003,6 +1022,7 @@ function Gallery() {
         page: 1,
         per_page: calculatePerPage(tileSize)
       })
+      if (!galleryRequestOwnerRef.current.owns(request)) return false
 
       if (currentSort !== 'random') {
         setImages(previous => mergeFirstPage(previous, result.images))
@@ -1018,10 +1038,17 @@ function Gallery() {
       }
       return true
     } catch (error) {
-      console.error('Failed to refresh newly indexed images:', error)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to refresh newly indexed images:', error)
+      }
       return false
+    } finally {
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        setLoading(false)
+        setIsJumping(false)
+      }
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders, loadFolders])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey])
 
   // Subscribe to real-time library events (debounced incremental refresh).
   // Existing items, scroll position, selection, and lightbox identity stay intact.
@@ -1078,6 +1105,9 @@ function Gallery() {
   const jumpToImage = useCallback(async (targetIndex) => {
     if (targetIndex < 1 || targetIndex > total) return
 
+    const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+    if (!galleryRequestOwnerRef.current.owns(request)) return
+
     setIsJumping(true)
     const perPage = calculatePerPage(tileSize)
     const targetPage = Math.ceil(targetIndex / perPage)
@@ -1103,6 +1133,7 @@ function Gallery() {
         page: targetPage,
         per_page: perPage
       })
+      if (!galleryRequestOwnerRef.current.owns(request)) return
 
       setImages(result.images)
       setTotal(result.total)
@@ -1111,10 +1142,16 @@ function Gallery() {
       // Scroll to top since we're showing a new set of images
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (error) {
-      console.error('Failed to jump to image:', error)
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        console.error('Failed to jump to image:', error)
+      }
+    } finally {
+      if (galleryRequestOwnerRef.current.owns(request)) {
+        setIsJumping(false)
+        setLoading(false)
+      }
     }
-    setIsJumping(false)
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, total, tileSize])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, total, tileSize, galleryViewKey])
 
   // Handle jump by offset (for +/- 100 buttons)
   const handleJumpByOffset = useCallback((offset) => {
@@ -1271,6 +1308,11 @@ function Gallery() {
     if (newIndex >= images.length && hasMore && !loading && !loadingMoreRef.current) {
       loadingMoreRef.current = true
       const nextPage = pageRef.current + 1
+      const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
+      if (!galleryRequestOwnerRef.current.owns(request)) {
+        loadingMoreRef.current = false
+        return
+      }
       try {
         const result = await fetchImages({
           tags: currentTags,
@@ -1292,6 +1334,10 @@ function Gallery() {
           page: nextPage,
           per_page: calculatePerPage(tileSize)
         })
+        if (!galleryRequestOwnerRef.current.owns(request)) {
+          loadingMoreRef.current = false
+          return
+        }
 
         if (result.images.length > 0) {
           // Deduplicate using functional updater to avoid stale closure on images
@@ -1316,7 +1362,9 @@ function Gallery() {
         // Nothing new loaded — advance page anyway so next attempt tries further
         setPage(nextPage)
       } catch (error) {
-        console.error('Failed to load more images:', error)
+        if (galleryRequestOwnerRef.current.owns(request)) {
+          console.error('Failed to load more images:', error)
+        }
       }
       loadingMoreRef.current = false
     }

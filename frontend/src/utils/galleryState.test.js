@@ -41,23 +41,33 @@ test('an empty middle page is retried instead of advancing the pagination cursor
 })
 
 // AC: @folder-thumbnail-route-identity ac-rescan-refresh
-test('background folder results cannot overwrite a newer gallery view', async () => {
+test('only the latest request for the active gallery view may publish', async () => {
   const owner = createViewRequestOwner()
-  owner.activate('group=folders&library=old')
-  const oldRequest = owner.begin('group=folders&library=old')
-  let visibleGallery = 'new gallery'
+  let visibleGallery = 'initial'
+  const publish = async (request, result) => {
+    await Promise.resolve()
+    if (owner.owns(request)) visibleGallery = result
+  }
 
-  const oldResult = Promise.resolve('old folders').then(result => {
-    if (owner.owns(oldRequest)) visibleGallery = result
-  })
+  owner.activate('library=old')
+  const oldImages = owner.begin('library=old')
+  owner.activate('group=folders&library=old')
+  const folders = owner.begin('group=folders&library=old')
+  await publish(oldImages, 'stale images')
+  assert.equal(visibleGallery, 'initial')
 
   owner.activate('library=new')
-  await oldResult
+  const firstImages = owner.begin('library=new')
+  const latestImages = owner.begin('library=new')
+  await publish(folders, 'stale folders')
+  await publish(firstImages, 'stale query')
+  await publish(latestImages, 'current images')
 
-  assert.equal(visibleGallery, 'new gallery')
-  const newRequest = owner.begin('library=new')
-  assert.equal(owner.owns(oldRequest), false)
-  assert.equal(owner.owns(newRequest), true)
+  assert.equal(visibleGallery, 'current images')
+  assert.equal(owner.owns(oldImages), false)
+  assert.equal(owner.owns(folders), false)
+  assert.equal(owner.owns(firstImages), false)
+  assert.equal(owner.owns(latestImages), true)
 })
 
 // AC: @folder-thumbnail-route-identity ac-rescan-refresh
