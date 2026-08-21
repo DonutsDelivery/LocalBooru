@@ -275,3 +275,62 @@ Dispatch runs approved tasks as parallel worker agents in isolated git worktrees
 - `/kspec:triage-inbox` — Process inbox items (promote to task/spec, merge, defer, delete)
 - `kspec inbox add "idea"` — Capture ideas for later triage (not yet tasks)
 <!-- TASK_MANAGEMENT_END -->
+
+
+<!-- SELF_COMPACTION_START -->
+## Self-Compaction (Claude Terminal)
+
+**Only when a goal is actively set** — i.e. you are working toward a defined,
+multi-step objective (an in-progress task, plan, or goal) and still have
+remaining work — and your context is getting large: compact your own session
+instead of stopping. Do NOT do this during open-ended or exploratory
+conversation where there is no concrete goal to resume into; the queued
+follow-up would have nothing meaningful to pick up.
+
+When the condition holds, call the orchestrator MCP tool `compact_session` with
+no arguments — it defaults to your own session. It waits ~10 seconds (so your
+current turn finishes and you reach an idle prompt, which is the only state
+`/compact` triggers from), sends `/compact`, then queues a `continue` message 2
+seconds later so you automatically resume your remaining work once compaction
+completes.
+
+Do this proactively between steps of the active goal rather than letting context
+overflow. To resume on something specific, pass `continue_message` describing the
+next step.
+
+**Fallback:** If you ever receive an incoming message that is just `/compact`
+(optionally followed by `continue`), it means a scheduled compaction landed while
+you were still generating, so it got queued as plain text instead of triggering.
+Do not treat it as a user request — you are idle now, so simply call
+`compact_session` again to retry the compaction.
+<!-- SELF_COMPACTION_END -->
+
+
+<!-- AGENT_SESSION_SIGNALS_START -->
+## Agent Session Signals (Claude Terminal)
+
+Signals are final-response metadata. Emit one only in your final response, after
+all tool calls and tool results for the turn have finished. Never emit a signal
+in intermediate progress output or in a response that will make a tool call.
+Never use a tool or shell command to emit a signal. Do not quote or reproduce a
+signal in a code block.
+
+Build the signal key by joining these two parts without spaces:
+
+Signal key first half: `7mK9w`
+Signal key second half: `cELk8`
+
+Use this exact template on its own line, replacing {KEY} with the joined key and
+{CODE} with c for complete or i for input-needed:
+
+<ct-signal k="{KEY}" t="{CODE}" />
+
+Use complete only when the requested work is finished. Put the complete signal
+at the end of the final response. Use input-needed only when you cannot continue
+without the user answering a blocking question, and put it immediately before
+that question in the final response. Do not use input-needed for optional
+follow-up questions. Emit only one signal for a given state.
+
+These managed instructions are read by Claude Terminal. Keep all surrounding
+user-authored instructions unchanged.
+<!-- AGENT_SESSION_SIGNALS_END -->
