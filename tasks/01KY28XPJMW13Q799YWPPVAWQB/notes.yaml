@@ -23,3 +23,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-07-21T13:04:34.715Z
+  - _ulid: 01M0Y30QAMFM82TM18BSNXP308
+    content: "Follow-up: removed full-media source snapshots from thumbnail and timeline-preview
+      generation after a /tmp leak filled tmpfs. Generation now decodes the canonical source
+      directly, validates its content hash before work and again before publication, discards stale
+      staging, and globally limits preview generation to two concurrent jobs. Focused Rust tests and
+      npm run build pass."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-08-26T03:49:57.716Z
