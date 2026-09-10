@@ -7,13 +7,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VITE_PORT="${LOCALBOORU_DEV_VITE_PORT:-5210}"
 DEV_LOG="${LOCALBOORU_DEV_DESKTOP_LOG:-/tmp/localbooru-dev-desktop.log}"
+DEV_TARGET_DIR="${LOCALBOORU_DEV_TARGET_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/localbooru/builds/dev-target}"
 
 if [[ -n "${LOCALBOORU_DEV_BINARY:-}" ]]; then
     DEV_BINARY="$LOCALBOORU_DEV_BINARY"
-elif [[ -x /mnt/storage/Programs/localbooru-target-dev/debug/localbooru ]]; then
-    DEV_BINARY="/mnt/storage/Programs/localbooru-target-dev/debug/localbooru"
 else
-    DEV_BINARY="$ROOT/target/debug/localbooru"
+    DEV_BINARY="$DEV_TARGET_DIR/debug/localbooru"
 fi
 
 if [[ ! -x "$DEV_BINARY" ]]; then
@@ -46,6 +45,20 @@ fi
 if ! vite_ready; then
     echo "LocalBooru Dev frontend did not open port $VITE_PORT; see $DEV_LOG" >&2
     exit 1
+fi
+
+# Desktop-entry launches skip run-dev.sh, so they must select the patched
+# WebKit themselves. Without this, VR texImage2D uses system WebKit's
+# software upload path and stutters; the Mac WKWebView path is unrelated.
+WEBKIT_ROOT="${LOCALBOORU_WEBKIT_ROOT:-/mnt/storage/Programs/localbooru-webkit2gtk-4.1-patched}"
+PATCHED_WEBKIT_LIB="$WEBKIT_ROOT/local-build/lib"
+PATCHED_WEB_PROCESS="$WEBKIT_ROOT/local-build/bin/WebKitWebProcess"
+if [[ "${LOCALBOORU_ENABLE_NATIVE_SVP:-1}" == "1" && -d "$PATCHED_WEBKIT_LIB" && -x "$PATCHED_WEB_PROCESS" ]]; then
+    export LOCALBOORU_ENABLE_NATIVE_SVP=1
+    export LD_LIBRARY_PATH="$PATCHED_WEBKIT_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export LOCALBOORU_WEB_PROCESS_PATH="$PATCHED_WEB_PROCESS"
+else
+    export LOCALBOORU_ENABLE_NATIVE_SVP=0
 fi
 
 exec "$DEV_BINARY" "$@"
