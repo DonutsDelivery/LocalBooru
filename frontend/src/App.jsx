@@ -2083,7 +2083,7 @@ function AppShell() {
   // Initialize server configuration for mobile app
   useEffect(() => {
     async function initMobile() {
-      const { isMobileApp, getServers, getActiveServer, setActiveServerId, pingAllServers, LOCAL_SERVER } = await import('./serverManager')
+      const { isMobileApp, isWindowsOrMacDesktopApp, getServers, getActiveServer, setActiveServerId, pingAllServers, LOCAL_SERVER } = await import('./serverManager')
       const { updateServerConfig, healthCheck: apiHealthCheck } = await import('./api')
 
       addLog(`isMobileApp=${isMobileApp()}, isTauri=${isTauri}`)
@@ -2128,8 +2128,22 @@ function AppShell() {
             setShowServerSetup(true)
           }
         }
+      } else if (isWindowsOrMacDesktopApp()) {
+        // Mac/Windows are library clients: restore the last paired remote
+        // server (or show the picker). Linux desktop stays on its embedded
+        // library and must not attach the remote proxy.
+        const serverList = await getServers()
+        const active = await getActiveServer()
+        if (active && active.id !== LOCAL_SERVER.id) {
+          addLog(`Restoring paired server ${active.name || active.id}`)
+          await updateServerConfig()
+        } else if (!active && serverList.length > 0) {
+          setServers(serverList)
+          setServerStatuses(await pingAllServers(serverList))
+          setShowServerSetup(true)
+        }
       }
-      addLog('Mobile init complete')
+      addLog('Client server initialization complete')
       setMobileReady(true)
     }
     initMobile().catch(err => addLog(`initMobile error: ${err.message || err}`))
