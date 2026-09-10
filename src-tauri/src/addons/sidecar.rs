@@ -987,8 +987,13 @@ exit 0
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         let started = std::time::Instant::now();
 
+        // The probe must fail fast on the direct child exiting, while the
+        // inherited pipes stay open via the background sleep. Linux shells
+        // exit in ~1ms, but macOS bash 3.2 fork/exec latency for a script
+        // that leaves a background job can exceed 100ms, so allow headroom
+        // while keeping the 5s hang guard below.
         let result =
-            run_managed_command(&script, &[], &root, Duration::from_millis(100), 1024).await;
+            run_managed_command(&script, &[], &root, Duration::from_millis(1500), 1024).await;
 
         assert!(result.unwrap().success);
         assert!(started.elapsed() < Duration::from_secs(5));
