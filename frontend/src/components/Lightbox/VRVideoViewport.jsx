@@ -5,9 +5,7 @@ import {
   detectVRInputProjection,
   detectVRProjection,
   detectVRStereo,
-  fitVRTextureSize,
   normalizeYaw,
-  shouldStageVRTexture,
   uploadVRVideoFrame,
   updateVRCamera,
   updateVRFov,
@@ -258,9 +256,6 @@ export default function VRVideoViewport({
     let frameDirty = true
     let viewDirty = true
     let lastVideoTime = -1
-    let maxTextureSize = 0
-    let textureSourceCanvas = null
-    let textureSourceContext = null
 
     const fail = (error) => {
       if (cancelled) return
@@ -276,7 +271,6 @@ export default function VRVideoViewport({
         powerPreference: 'high-performance',
       })
       if (!gl) throw new Error('WebGL is not supported by this device')
-      maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE)
       program = createProgram(gl)
       buffer = gl.createBuffer()
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
@@ -359,25 +353,9 @@ export default function VRVideoViewport({
       if (shouldUpload) {
         try {
           if (video.videoWidth > 0 && video.videoHeight > 0) {
-            const fitted = fitVRTextureSize(video.videoWidth, video.videoHeight, maxTextureSize)
-            if (!fitted.width || !fitted.height) throw new Error('Decoded video dimensions are unavailable')
             gl.activeTexture(gl.TEXTURE0)
             gl.bindTexture(gl.TEXTURE_2D, texture)
-            if (shouldStageVRTexture(navigator.platform, fitted.scaled)) {
-              if (!textureSourceCanvas) {
-                textureSourceCanvas = document.createElement('canvas')
-                textureSourceContext = textureSourceCanvas.getContext('2d', { alpha: false })
-                if (!textureSourceContext) throw new Error('VR texture downscaling is unavailable')
-              }
-              if (textureSourceCanvas.width !== fitted.width || textureSourceCanvas.height !== fitted.height) {
-                textureSourceCanvas.width = fitted.width
-                textureSourceCanvas.height = fitted.height
-              }
-              textureSourceContext.drawImage(video, 0, 0, fitted.width, fitted.height)
-              gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureSourceCanvas)
-            } else {
-              uploadVRVideoFrame(gl, video)
-            }
+            uploadVRVideoFrame(gl, video)
             textureInitialized = true
           }
           lastVideoTime = video.currentTime
