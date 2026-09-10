@@ -5,11 +5,11 @@ import {
   detectVRInputProjection,
   detectVRProjection,
   detectVRStereo,
+  fitVRTextureSize,
   normalizeYaw,
-  uploadVRVideoFrame,
+  shouldStageVRTexture,
   updateVRCamera,
   updateVRFov,
-  vrPointerDelta,
 } from './Lightbox/utils/vrVideo.js'
 
 test('detects explicit 180 and 360 VR filename markers', () => {
@@ -27,15 +27,40 @@ test('does not infer VR from ordinary video dimensions', () => {
 
 test('detects common stereo layouts while leaving ordinary files mono', () => {
   assert.equal(detectVRStereo('concert_VR180_SBS.mp4'), 'sbs')
+  assert.equal(detectVRStereo('concert_VR180_3dh.mp4'), 'sbs')
   assert.equal(detectVRStereo('concert-vr180-top-bottom.mp4'), 'tb')
+  assert.equal(detectVRStereo('concert-vr180-3dv.mp4'), 'tb')
   assert.equal(detectVRStereo('concert-vr360.mp4'), 'mono')
 })
 
-test('detects explicit fisheye input while defaulting rectangular panoramas to equirectangular', () => {
-  assert.equal(detectVRInputProjection('concert_VR180_fisheye_SBS.mp4'), 'fisheye')
-  assert.equal(detectVRInputProjection('concert_VR180_fish-eye.mp4'), 'fisheye')
-  assert.equal(detectVRInputProjection('concert_VR180_SBS.mp4'), 'equirectangular')
-  assert.equal(detectVRInputProjection(null), 'equirectangular')
+test('detects fisheye input independently from angular coverage', () => {
+  assert.equal(detectVRInputProjection('concert_VR180_dual-fisheye_SBS.mp4'), 'fisheye')
+  assert.equal(detectVRInputProjection('concert_VR180_fish_eye.mp4'), 'fisheye')
+  assert.equal(detectVRInputProjection('concert_VR180_SBS.mp4'), 'equirect')
+})
+
+test('fits oversized VR frames inside the runtime texture limit', () => {
+  assert.deepEqual(fitVRTextureSize(4320, 2160, 4096), {
+    width: 4096,
+    height: 2048,
+    scaled: true,
+  })
+  assert.deepEqual(fitVRTextureSize(8192, 4096, 4096), {
+    width: 4096,
+    height: 2048,
+    scaled: true,
+  })
+  assert.deepEqual(fitVRTextureSize(3840, 2160, 4096), {
+    width: 3840,
+    height: 2160,
+    scaled: false,
+  })
+})
+
+test('stages macOS hardware video surfaces without resizing them', () => {
+  assert.equal(shouldStageVRTexture('MacIntel', false), true)
+  assert.equal(shouldStageVRTexture('Linux x86_64', false), false)
+  assert.equal(shouldStageVRTexture('Linux x86_64', true), true)
 })
 
 test('360 wins when a filename describes a 360 by 180 panorama', () => {
@@ -61,26 +86,4 @@ test('field of view remains inside the interactive viewer limits', () => {
   assert.equal(updateVRFov(100, -500), 30)
   assert.equal(updateVRFov(100, 500), 120)
   assert.equal(updateVRFov(100, -5), 95)
-})
-
-test('mouse dragging uses bounded cursor position deltas', () => {
-  assert.deepEqual(vrPointerDelta({ x: 240, y: 160 }, 228, 173), {
-    deltaX: -12,
-    deltaY: 13,
-  })
-})
-
-test('uploads video with the full texImage2D overload required by WebKitGTK', () => {
-  const calls = []
-  const gl = {
-    TEXTURE_2D: 1,
-    RGBA: 2,
-    UNSIGNED_BYTE: 3,
-    texImage2D: (...args) => calls.push(args),
-  }
-  const video = { videoWidth: 3840, videoHeight: 1920 }
-
-  uploadVRVideoFrame(gl, video)
-
-  assert.deepEqual(calls, [[1, 0, 2, 2, 3, video]])
 })

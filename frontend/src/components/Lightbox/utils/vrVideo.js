@@ -4,12 +4,12 @@ const VR_MARKERS = {
 }
 
 const VR_STEREO_MARKERS = {
-  sbs: /(?:^|[\s._-])(?:sbs|side[\s._-]*by[\s._-]*side)(?=[\s._-]|$)/i,
-  tb: /(?:^|[\s._-])(?:tb|top[\s._-]*(?:bottom|and[\s._-]*bottom)|over[\s._-]*under)(?=[\s._-]|$)/i,
+  sbs: /(?:^|[\s._-])(?:sbs|3dh|side[\s._-]*by[\s._-]*side)(?=[\s._-]|$)/i,
+  tb: /(?:^|[\s._-])(?:tb|3dv|top[\s._-]*(?:bottom|and[\s._-]*bottom)|over[\s._-]*under)(?=[\s._-]|$)/i,
 }
 
 const VR_INPUT_PROJECTION_MARKERS = {
-  fisheye: /(?:^|[\s._-])(?:fish[\s._-]*eye|fisheye)(?=[\s._-]|$)/i,
+  fisheye: /(?:^|[\s._-])(?:dual[\s._-]*)?fish[\s._-]*eye(?=[\s._-]|$)/i,
 }
 
 export const DEFAULT_VR_CAMERA = Object.freeze({
@@ -55,8 +55,26 @@ export function detectVRStereo(filename) {
 }
 
 export function detectVRInputProjection(filename) {
-  if (filename && VR_INPUT_PROJECTION_MARKERS.fisheye.test(filename)) return 'fisheye'
-  return 'equirectangular'
+  if (!filename) return 'equirect'
+  return VR_INPUT_PROJECTION_MARKERS.fisheye.test(filename) ? 'fisheye' : 'equirect'
+}
+
+export function fitVRTextureSize(width, height, maxTextureSize) {
+  if (!Number.isFinite(width) || !Number.isFinite(height)
+      || width <= 0 || height <= 0 || !Number.isFinite(maxTextureSize)
+      || maxTextureSize <= 0) {
+    return { width: 0, height: 0, scaled: false }
+  }
+  const scale = Math.min(1, maxTextureSize / width, maxTextureSize / height)
+  return {
+    width: Math.max(1, Math.floor(width * scale)),
+    height: Math.max(1, Math.floor(height * scale)),
+    scaled: scale < 1,
+  }
+}
+
+export function shouldStageVRTexture(platform, scaled) {
+  return Boolean(scaled || /Mac/i.test(platform || ''))
 }
 
 export function updateVRCamera(camera, deltaX, deltaY, projection = '360', sensitivity = 0.18) {
@@ -72,25 +90,4 @@ export function updateVRCamera(camera, deltaX, deltaY, projection = '360', sensi
 
 export function updateVRFov(fov, delta) {
   return clamp(fov + delta, MIN_VR_FOV, MAX_VR_FOV)
-}
-
-export function vrPointerDelta(previous, clientX, clientY) {
-  return {
-    deltaX: clientX - previous.x,
-    deltaY: clientY - previous.y,
-  }
-}
-
-export function uploadVRVideoFrame(gl, video) {
-  // WebKitGTK only offers its video-frame GPU copy path for a full texImage2D
-  // DOM-source upload. Preallocating and using texSubImage2D forces the slow
-  // software conversion path on Linux.
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    video,
-  )
 }

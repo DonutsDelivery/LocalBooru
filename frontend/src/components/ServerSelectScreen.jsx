@@ -9,10 +9,14 @@ import {
   testServerConnection,
   probeServer,
   pingAllServers,
+  serverFromQrHandshake,
   isMobileApp,
   LOCAL_SERVER
 } from '../serverManager'
 import { updateServerConfig, verifyHandshake } from '../api'
+import { validateDesktopPairingRequest } from '../devicePairing'
+import { scanQrCode } from '../qrScanner'
+import PhonePairingApproval from './PhonePairingApproval'
 import './ServerSelectScreen.css'
 
 export default function ServerSelectScreen({ servers: initialServers, serverStatuses: initialStatuses, error: initialError, onConnect, onAddServer }) {
@@ -25,6 +29,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingServer, setEditingServer] = useState(null)
   const [inlineError, setInlineError] = useState(initialError || null)
+  const [desktopPairingRequest, setDesktopPairingRequest] = useState(null)
 
   // Update inline error when prop changes
   useEffect(() => {
@@ -108,78 +113,10 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   }
 
   async function handleScanQR() {
-    let stream = null
-    let scanInterval = null
-
     try {
       setScanError(null)
       setScanning(true)
-
-      // Get camera stream directly
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-      })
-
-      // Create fullscreen overlay with our own video element
-      const overlay = document.createElement('div')
-      overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:#000;display:flex;flex-direction:column;'
-
-      // Video element — we control this directly
-      const video = document.createElement('video')
-      video.setAttribute('autoplay', '')
-      video.setAttribute('playsinline', '')
-      video.setAttribute('muted', '')
-      video.style.cssText = 'flex:1;width:100%;object-fit:cover;background:#000;'
-      video.srcObject = stream
-      overlay.appendChild(video)
-
-      // Scan target indicator
-      const indicator = document.createElement('div')
-      indicator.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:250px;height:250px;border:3px solid rgba(99,102,241,0.8);border-radius:16px;pointer-events:none;'
-      overlay.appendChild(indicator)
-
-      // Bottom bar with cancel
-      const bottomBar = document.createElement('div')
-      bottomBar.style.cssText = 'padding:16px;display:flex;justify-content:center;background:rgba(0,0,0,0.7);'
-      const closeBtn = document.createElement('button')
-      closeBtn.textContent = 'Cancel'
-      closeBtn.style.cssText = 'padding:12px 32px;font-size:16px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;'
-      bottomBar.appendChild(closeBtn)
-      overlay.appendChild(bottomBar)
-
-      document.body.appendChild(overlay)
-
-      await video.play()
-
-      // Canvas for frame capture
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d', { willReadFrequently: true })
-
-      // Use BarcodeDetector if available (Android Chrome 83+), else fall back to html5-qrcode
-      let decoder
-      if ('BarcodeDetector' in window) {
-        decoder = new BarcodeDetector({ formats: ['qr_code'] })
-      } else {
-        const { Html5Qrcode } = await import('html5-qrcode')
-        // We'll use canvas-based decoding below
-        decoder = null
-      }
-
-      let cleaned = false
-      const cleanup = () => {
-        if (cleaned) return
-        cleaned = true
-        clearInterval(scanInterval)
-        stream.getTracks().forEach(t => t.stop())
-        overlay.remove()
-        setScanning(false)
-      }
-
-      closeBtn.onclick = cleanup
-
-      const processResult = async (decodedText) => {
-        cleanup()
-
+      const decodedText = await scanQrCode({ idPrefix: 'qr-scanner-select' })
         // Parse QR data
         let qrData
         try {
@@ -189,7 +126,17 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
           return
         }
 
-        // Validate QR data
+        // Reverse pairing: this phone authorizes the requesting desktop.
+        if (qrData.type === 'localbooru-desktop-pairing') {
+          if (!await validateDesktopPairingRequest(qrData)) {
+            setScanError('This desktop authorization QR is invalid or expired')
+            return
+          }
+          setDesktopPairingRequest(qrData)
+          return
+        }
+
+        // Legacy phone-connect QR.
         if (qrData.type !== 'localbooru') {
           setScanError('Not a LocalBooru QR code')
           return
@@ -233,7 +180,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
         }
 
         // Verify handshake and get JWT token
-        let token = null
+        let pairedServer = null
         if (qrData.nonce) {
           try {
             let handshakeResult
@@ -242,68 +189,28 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
             } else {
               handshakeResult = await verifyHandshake(workingUrl, qrData.nonce)
             }
-            if (handshakeResult.success && handshakeResult.token) {
-              token = handshakeResult.token
-            }
+            pairedServer = serverFromQrHandshake(qrData, workingUrl, handshakeResult)
           } catch (err) {
-            console.error('[QR] Handshake verification failed:', err.message)
+            setScanError(`Pairing authorization failed: ${err.message}`)
+            return
           }
+        }
+        if (!pairedServer) {
+          setScanError('This server QR cannot issue a revocable device credential. Create a new QR on the server.')
+          return
         }
 
         // Add or update existing server (avoids duplicates on re-pair)
-        const newServer = await addOrUpdateServer({
-          name: qrData.name || 'LocalBooru Server',
-          url: workingUrl,
-          token,
-          username: null,
-          password: null,
-          lastConnected: new Date().toISOString()
-        })
+        const newServer = await addOrUpdateServer(pairedServer)
 
         // Auto-connect to the new server
         await setActiveServerId(newServer.id)
         await updateServerConfig()
         onConnect?.()
-      }
-
-      // Scan frames periodically
-      scanInterval = setInterval(async () => {
-        if (cleaned || video.readyState < 2) return
-
-        try {
-          if (decoder && decoder.detect) {
-            // BarcodeDetector API — can scan video directly
-            const barcodes = await decoder.detect(video)
-            if (barcodes.length > 0) {
-              processResult(barcodes[0].rawValue)
-            }
-          } else {
-            // Fallback: capture frame to canvas, then decode with html5-qrcode
-            canvas.width = video.videoWidth
-            canvas.height = video.videoHeight
-            ctx.drawImage(video, 0, 0)
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-            // Use jsQR-style decode via html5-qrcode internal
-            const { Html5Qrcode } = await import('html5-qrcode')
-            const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
-            const file = new File([blob], 'frame.png', { type: 'image/png' })
-            try {
-              const result = await Html5Qrcode.scanFile(file, false)
-              processResult(result)
-            } catch {
-              // No QR found in this frame — continue scanning
-            }
-          }
-        } catch {
-          // Scan error for this frame, ignore
-        }
-      }, 200) // 5 fps scanning
-
     } catch (err) {
-      if (stream) stream.getTracks().forEach(t => t.stop())
-      if (scanInterval) clearInterval(scanInterval)
       console.error('Scan error:', err)
       setScanError(err.message || 'Failed to start QR scanner. Check camera permissions.')
+    } finally {
       setScanning(false)
     }
   }
@@ -497,6 +404,13 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
           server={editingServer}
           onSave={handleEditSave}
           onClose={() => setEditingServer(null)}
+        />
+      )}
+      {desktopPairingRequest && (
+        <PhonePairingApproval
+          request={desktopPairingRequest}
+          servers={servers}
+          onClose={() => setDesktopPairingRequest(null)}
         />
       )}
     </div>

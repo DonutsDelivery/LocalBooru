@@ -8,12 +8,20 @@ import {
   getActiveServerId,
   setActiveServerId,
   testServerConnection,
-  isMobileApp
+  serverFromQrHandshake,
+  isMobileApp,
+  isTauriApp,
+  LOCAL_SERVER,
 } from '../serverManager'
-import { updateServerConfig } from '../api'
+import { updateServerConfig, verifyHandshake } from '../api'
+import { validateDesktopPairingRequest } from '../devicePairing'
+import { scanQrCode } from '../qrScanner'
+import PhonePairingApproval from './PhonePairingApproval'
 import './ServerSettings.css'
 
 export default function ServerSettings({ onServerChange }) {
+  const mobileClient = isMobileApp()
+  const nativeClient = isTauriApp()
   const [servers, setServers] = useState([])
   const [activeServerId, setActiveServerIdState] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -21,6 +29,7 @@ export default function ServerSettings({ onServerChange }) {
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState(null)
+  const [desktopPairingRequest, setDesktopPairingRequest] = useState(null)
 
   // Load servers on mount
   useEffect(() => {
@@ -43,6 +52,7 @@ export default function ServerSettings({ onServerChange }) {
     setActiveServerIdState(id)
     await updateServerConfig()
     onServerChange?.()
+    if (!mobileClient) window.location.reload()
   }
 
   async function handleDelete(id) {
@@ -75,40 +85,7 @@ export default function ServerSettings({ onServerChange }) {
     try {
       setScanError(null)
       setScanning(true)
-
-      // Dynamic import html5-qrcode
-      const { Html5Qrcode } = await import('html5-qrcode')
-
-      // Create scanner container
-      const scannerId = 'qr-scanner-settings-' + Date.now()
-      const container = document.createElement('div')
-      container.id = scannerId
-      container.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:#000;'
-      document.body.appendChild(container)
-
-      // Add close button
-      const closeBtn = document.createElement('button')
-      closeBtn.textContent = 'Cancel'
-      closeBtn.style.cssText = 'position:fixed;bottom:40px;left:50%;transform:translateX(-50%);z-index:10001;padding:12px 32px;font-size:16px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;'
-      document.body.appendChild(closeBtn)
-
-      const scanner = new Html5Qrcode(scannerId)
-
-      const cleanup = () => {
-        scanner.stop().catch(() => {})
-        container.remove()
-        closeBtn.remove()
-        setScanning(false)
-      }
-
-      closeBtn.onclick = cleanup
-
-      await scanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        async (decodedText) => {
-          cleanup()
-
+      const decodedText = await scanQrCode({ idPrefix: 'qr-scanner-settings' })
           // Parse QR data
           let qrData
           try {
@@ -118,7 +95,16 @@ export default function ServerSettings({ onServerChange }) {
             return
           }
 
-          // Validate QR data
+          if (qrData.type === 'localbooru-desktop-pairing') {
+            if (!await validateDesktopPairingRequest(qrData)) {
+              setScanError('This desktop authorization QR is invalid or expired')
+              return
+            }
+            setDesktopPairingRequest(qrData)
+            return
+          }
+
+          // Validate legacy phone-connect QR data.
           if (qrData.type !== 'localbooru') {
             setScanError('Not a LocalBooru QR code')
             return
@@ -143,22 +129,25 @@ export default function ServerSettings({ onServerChange }) {
             return
           }
 
+          if (!qrData.nonce) {
+            setScanError('This server QR cannot issue a revocable device credential. Create a new QR on the server.')
+            return
+          }
+          let pairedServer
+          try {
+            const handshake = await verifyHandshake(workingUrl, qrData.nonce)
+            pairedServer = serverFromQrHandshake(qrData, workingUrl, handshake)
+          } catch (error) {
+            setScanError(`Pairing authorization failed: ${error.message}`)
+            return
+          }
+
           // Add or update existing server (avoids duplicates on re-pair)
-          await addOrUpdateServer({
-            name: qrData.name || 'LocalBooru Server',
-            url: workingUrl,
-            username: null,
-            password: null,
-            certFingerprint: qrData.cert_fingerprint || null,
-            lastConnected: new Date().toISOString()
-          })
+          await addOrUpdateServer(pairedServer)
 
           await loadServers()
           await updateServerConfig()
           onServerChange?.()
-        },
-        () => {} // ignore scan errors (expected while scanning)
-      )
     } catch (err) {
       console.error('Scan error:', err)
       setScanError(err.message || 'Failed to start QR scanner. Check camera permissions.')
@@ -167,8 +156,9 @@ export default function ServerSettings({ onServerChange }) {
     }
   }
 
-  // Don't show on web (non-mobile)
-  if (!isMobileApp()) {
+  // A hosted browser has no separate connection catalog. Native desktop and
+  // mobile clients both retain explicit local/remote server selection.
+  if (!nativeClient) {
     return (
       <div className="server-settings">
         <div className="server-info">
@@ -187,13 +177,15 @@ export default function ServerSettings({ onServerChange }) {
       <div className="server-header">
         <h3>Servers</h3>
         <div className="server-header-actions">
-          <button
-            className="scan-qr-btn"
-            onClick={handleScanQR}
-            disabled={scanning}
-          >
-            {scanning ? 'Scanning...' : 'Scan QR'}
-          </button>
+          {mobileClient && (
+            <button
+              className="scan-qr-btn"
+              onClick={handleScanQR}
+              disabled={scanning}
+            >
+              {scanning ? 'Scanning...' : 'Scan QR'}
+            </button>
+          )}
           <button className="add-server-btn" onClick={() => setShowAddModal(true)}>
             + Add
           </button>
@@ -207,13 +199,41 @@ export default function ServerSettings({ onServerChange }) {
         </div>
       )}
 
-      {servers.length === 0 ? (
+      {servers.length === 0 && mobileClient ? (
         <div className="no-servers">
           <p>No servers configured.</p>
           <p>Add a server to connect to your LocalBooru library.</p>
         </div>
       ) : (
         <div className="server-list">
+          {!mobileClient && (
+            <div
+              className={`server-card local-server ${activeServerId === LOCAL_SERVER.id ? 'active' : ''}`}
+              onClick={() => handleSetActive(LOCAL_SERVER.id)}
+            >
+              <div className="server-status">
+                <span className="status-dot connected" title="Available"></span>
+              </div>
+              <div className="server-info">
+                <div className="server-name">This Device</div>
+                <div className="server-url">Embedded local backend</div>
+              </div>
+              <div className="server-actions">
+                {activeServerId === LOCAL_SERVER.id && <span className="active-badge">Active</span>}
+                {activeServerId !== LOCAL_SERVER.id && (
+                  <button
+                    className="connect-btn"
+                    onClick={event => {
+                      event.stopPropagation()
+                      void handleSetActive(LOCAL_SERVER.id)
+                    }}
+                  >
+                    Use server
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {servers.map(server => (
             <ServerCard
               key={server.id}
@@ -237,6 +257,13 @@ export default function ServerSettings({ onServerChange }) {
           }}
         />
       )}
+      {desktopPairingRequest && (
+        <PhonePairingApproval
+          request={desktopPairingRequest}
+          servers={servers}
+          onClose={() => setDesktopPairingRequest(null)}
+        />
+      )}
     </div>
   )
 }
@@ -247,7 +274,7 @@ function ServerCard({ server, isActive, onSetActive, onEdit, onDelete }) {
 
   async function testConnection() {
     setTesting(true)
-    const result = await testServerConnection(server.url, server.username, server.password)
+    const result = await testServerConnection(server.url, server.username, server.password, server.token)
     setStatus(result.success ? 'connected' : 'error')
     setTesting(false)
   }

@@ -106,3 +106,29 @@
   color: #f59e0b;
   font-size: 13px;
 }
+
+.desktop-pairing { max-width: 560px; margin: 0 auto; padding: 22px; border: 1px solid #34345a; border-radius: 16px; background: linear-gradient(145deg, rgba(99, 102, 241, .12), rgba(15, 118, 110, .08)); }
+.pairing-lead, .pairing-waiting { color: #b8b8cc; line-height: 1.5; }
+.pairing-device-name { display: grid; gap: 7px; margin: 18px auto; max-width: 360px; color: #aaa; text-align: left; }
+.pairing-device-name input { padding: 11px 13px; color: #fff; background: #121225; border: 1px solid #3c3c60; border-radius: 9px; }
+.pairing-primary, .pairing-secondary, .pairing-result button { padding: 10px 16px; color: #fff; background: #6366f1; border: 0; border-radius: 9px; cursor: pointer; }
+.pairing-primary:disabled { opacity: .55; cursor: not-allowed; }
+.pairing-secondary { background: #2b2b48; }
+.pairing-qr { margin-top: 18px; }
+.pairing-qr svg { display: block; width: min(480px, calc(100vw - 96px)); max-width: 100%; height: auto; }
+.pairing-qr.expired { opacity: .28; filter: grayscale(1); }
+.pairing-summary { display: grid; gap: 5px; margin: 0 auto 14px; max-width: 360px; color: #aaa; font-family: monospace; font-size: 12px; }
+.pairing-summary strong { color: #fff; font-size: 14px; }
+.pairing-results { margin: 18px auto 0; padding: 14px; border-radius: 10px; text-align: left; }
+.pairing-results.success { background: rgba(16, 185, 129, .1); color: #a7f3d0; }
+.pairing-results.failure { background: rgba(239, 68, 68, .1); color: #fecaca; }
+.pairing-result { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.pairing-security-notes { margin: 20px 0 0; padding-left: 20px; color: #888; font-size: 12px; text-align: left; line-height: 1.5; }
+.qr-connect-divider { display: flex; align-items: center; gap: 12px; margin: 28px auto; color: #666; max-width: 560px; }
+.qr-connect-divider::before, .qr-connect-divider::after { content: ''; flex: 1; border-top: 1px solid #34345a; }
+.paired-devices { max-width: 560px; margin: 18px auto 0; text-align: left; }
+.paired-device { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; padding: 12px; background: #17172b; border-radius: 9px; }
+.paired-device > div { display: grid; gap: 3px; }
+.paired-device small { color: #888; }
+.paired-device button { padding: 8px 12px; color: #fecaca; background: rgba(239, 68, 68, .14); border: 0; border-radius: 8px; cursor: pointer; }
+.paired-device.revoked { opacity: .55; }

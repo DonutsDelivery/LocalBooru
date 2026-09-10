@@ -1,11 +1,18 @@
 /**
  * Server Manager - handles multi-server support for mobile app
- * Uses localStorage on all platforms (works in Tauri WebView)
+ * Stores public server metadata locally and credentials in native protected storage when available.
  */
 
 const SERVERS_KEY = 'localbooru_servers'
 const ACTIVE_SERVER_KEY = 'localbooru_active_server'
 const LOCAL_SERVER_PORT = import.meta.env?.VITE_LOCALBOORU_PORT || '8790'
+let serverMutationQueue = Promise.resolve()
+
+function serializeServerMutation(operation) {
+  const next = serverMutationQueue.then(operation, operation)
+  serverMutationQueue = next.catch(() => {})
+  return next
+}
 
 // Local embedded server constant (always available on Tauri mobile)
 export const LOCAL_SERVER = {
@@ -49,7 +56,26 @@ function createServer(data) {
   }
 }
 
-// Storage helpers — always use localStorage (works in Tauri WebView, persistent across sessions)
+export function serverFromQrHandshake(qrData, workingUrl, handshake) {
+  if (!handshake?.success || !handshake.token) {
+    throw new Error(handshake?.error || 'The server did not issue a device credential')
+  }
+  if (typeof handshake.serverId !== 'string' || !handshake.serverId.trim()) {
+    throw new Error('The server did not provide its stable identity with the device credential')
+  }
+  return {
+    id: handshake.serverId,
+    name: handshake.serverName || qrData.name || 'LocalBooru Server',
+    url: workingUrl,
+    token: handshake.token,
+    username: null,
+    password: null,
+    certFingerprint: qrData.cert_fingerprint || null,
+    lastConnected: new Date().toISOString(),
+  }
+}
+
+// Public metadata helpers. Credentials are stripped before native-app writes.
 async function getStorageItem(key) {
   return localStorage.getItem(key)
 }
@@ -58,11 +84,49 @@ async function setStorageItem(key, value) {
   localStorage.setItem(key, value)
 }
 
+async function loadProtectedCredentials() {
+  if (!isTauriApp()) return null
+  try {
+    if (window.AndroidCredentialStore?.load) {
+      return JSON.parse(window.AndroidCredentialStore.load())
+    }
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke('load_paired_server_credentials')
+  } catch (error) {
+    console.warn('[Servers] Protected credential store is unavailable:', error)
+    return null
+  }
+}
+
+async function storeProtectedCredentials(credentials) {
+  if (!isTauriApp()) return false
+  if (window.AndroidCredentialStore?.store) {
+    if (!window.AndroidCredentialStore.store(JSON.stringify(credentials))) {
+      throw new Error('Android protected credential store rejected the update')
+    }
+    return true
+  }
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('store_paired_server_credentials', { credentials })
+  return true
+}
+
 // Get all saved servers
 export async function getServers() {
   try {
     const data = await getStorageItem(SERVERS_KEY)
-    return data ? JSON.parse(data) : []
+    const servers = data ? JSON.parse(data) : []
+    const credentials = await loadProtectedCredentials()
+    if (!credentials) return servers
+    const merged = servers.map(server => ({
+      ...server,
+      token: credentials[server.id]?.token || server.token || null,
+      password: credentials[server.id]?.password || server.password || null,
+    }))
+    if (servers.some(server => server.token || server.password)) {
+      await saveServers(merged)
+    }
+    return merged
   } catch (e) {
     console.error('Failed to get servers:', e)
     return []
@@ -71,76 +135,99 @@ export async function getServers() {
 
 // Save servers list
 export async function saveServers(servers) {
+  if (isTauriApp()) {
+    const credentials = Object.fromEntries(servers
+      .filter(server => server.token || server.password)
+      .map(server => [server.id, {
+        ...(server.token ? { token: server.token } : {}),
+        ...(server.password ? { password: server.password } : {}),
+      }]))
+    await storeProtectedCredentials(credentials)
+    const metadata = servers.map(server => {
+      const publicServer = { ...server }
+      delete publicServer.token
+      delete publicServer.password
+      return publicServer
+    })
+    await setStorageItem(SERVERS_KEY, JSON.stringify(metadata))
+    return
+  }
   await setStorageItem(SERVERS_KEY, JSON.stringify(servers))
 }
 
 // Add a new server
 export async function addServer(serverData) {
-  const servers = await getServers()
-  const server = createServer(serverData)
-  servers.push(server)
-  await saveServers(servers)
+  return serializeServerMutation(async () => {
+    const servers = await getServers()
+    const server = createServer(serverData)
+    servers.push(server)
+    await saveServers(servers)
 
-  // If this is the first server, make it active
-  if (servers.length === 1) {
-    await setActiveServerId(server.id)
-  }
+    // If this is the first server, make it active
+    if (servers.length === 1) {
+      await setActiveServerId(server.id)
+    }
 
-  return server
+    return server
+  })
 }
 
 // Add a server or update existing one if URL matches
 export async function addOrUpdateServer(serverData) {
-  const servers = await getServers()
-  const normalizeUrl = (url) => url?.replace(/\/+$/, '')
-  const existing = servers.find(s => normalizeUrl(s.url) === normalizeUrl(serverData.url))
-
-  if (existing) {
-    // Update the existing server entry with new token/name
-    const updated = { ...existing, ...serverData, id: existing.id }
-    const index = servers.indexOf(existing)
-    servers[index] = updated
+  return serializeServerMutation(async () => {
+    if (!serverData.id || serverData.id === LOCAL_SERVER.id) {
+      throw new Error('Paired server returned an invalid stable identity')
+    }
+    const servers = await getServers()
+    const normalizeUrl = (url) => url?.replace(/\/+$/, '')
+    const identityMatch = servers.find(server => server.id === serverData.id)
+    const urlMatch = servers.find(server => normalizeUrl(server.url) === normalizeUrl(serverData.url))
+    if (urlMatch && urlMatch.id !== serverData.id) {
+      throw new Error('This address now identifies a different LocalBooru server')
+    }
+    if (identityMatch) {
+      const updated = { ...identityMatch, ...serverData, id: identityMatch.id }
+      servers[servers.indexOf(identityMatch)] = updated
+      await saveServers(servers)
+      return updated
+    }
+    const server = createServer(serverData)
+    servers.push(server)
     await saveServers(servers)
-    return updated
-  }
-
-  // No match — add as new
-  const server = createServer(serverData)
-  servers.push(server)
-  await saveServers(servers)
-
-  if (servers.length === 1) {
-    await setActiveServerId(server.id)
-  }
-
-  return server
+    if (servers.length === 1) await setActiveServerId(server.id)
+    return server
+  })
 }
 
 // Update an existing server
 export async function updateServer(id, updates) {
-  const servers = await getServers()
-  const index = servers.findIndex(s => s.id === id)
-  if (index !== -1) {
-    servers[index] = { ...servers[index], ...updates }
-    await saveServers(servers)
-    return servers[index]
-  }
-  return null
+  return serializeServerMutation(async () => {
+    const servers = await getServers()
+    const index = servers.findIndex(s => s.id === id)
+    if (index !== -1) {
+      servers[index] = { ...servers[index], ...updates }
+      await saveServers(servers)
+      return servers[index]
+    }
+    return null
+  })
 }
 
 // Remove a server
 export async function removeServer(id) {
-  const servers = await getServers()
-  const filtered = servers.filter(s => s.id !== id)
-  await saveServers(filtered)
+  return serializeServerMutation(async () => {
+    const servers = await getServers()
+    const filtered = servers.filter(s => s.id !== id)
+    await saveServers(filtered)
 
-  // If we removed the active server, switch to another
-  const activeId = await getActiveServerId()
-  if (activeId === id && filtered.length > 0) {
-    await setActiveServerId(filtered[0].id)
-  } else if (filtered.length === 0) {
-    await setActiveServerId(null)
-  }
+    // If we removed the active server, switch to another
+    const activeId = await getActiveServerId()
+    if (activeId === id && filtered.length > 0) {
+      await setActiveServerId(filtered[0].id)
+    } else if (filtered.length === 0) {
+      await setActiveServerId(null)
+    }
+  })
 }
 
 // Get active server ID
@@ -173,10 +260,12 @@ export async function getActiveServer() {
 //   { success: true } on HTTP success
 //   { success: false, error, networkFailure: true } on network/timeout/refused
 //   { success: false, error, networkFailure: false } on HTTP error response (server reachable)
-export async function testServerConnection(url, username = null, password = null) {
+export async function testServerConnection(url, username = null, password = null, token = null) {
   try {
     const headers = {}
-    if (username && password) {
+    if (token) {
+      headers['Authorization'] = 'Bearer ' + token
+    } else if (username && password) {
       headers['Authorization'] = 'Basic ' + btoa(`${username}:${password}`)
     }
 
@@ -209,13 +298,13 @@ export async function testServerConnection(url, username = null, password = null
 // Returns the working URL on success, plus the underlying probe result.
 export async function probeServer(server) {
   if (!server || !server.url) return { success: false, error: 'No URL configured' }
-  const primary = await testServerConnection(server.url, server.username, server.password)
+  const primary = await testServerConnection(server.url, server.username, server.password, server.token)
   if (primary.success) {
     return { success: true, url: server.url, usedFallback: false }
   }
   // Only fall back on network-level failure; HTTP error means server is reachable.
   if (server.fallbackUrl && primary.networkFailure) {
-    const fb = await testServerConnection(server.fallbackUrl, server.username, server.password)
+    const fb = await testServerConnection(server.fallbackUrl, server.username, server.password, server.token)
     if (fb.success) {
       return { success: true, url: server.fallbackUrl, usedFallback: true }
     }
@@ -227,7 +316,7 @@ export async function probeServer(server) {
 
 // Get the API base URL
 export async function getApiBaseUrl() {
-  if (!isMobileApp()) {
+  if (!isTauriApp()) {
     // Desktop: always use embedded server
     const isDevServer = window.location.port === '5173' || window.location.port === '5174'
     return isDevServer ? `http://127.0.0.1:${LOCAL_SERVER_PORT}/api` : '/api'
@@ -252,7 +341,7 @@ export async function pingAllServers(servers) {
     servers.map(async (server) => {
       const result = await probeServer(server)
       if (result.success && result.url) {
-        try { await updateServer(server.id, { _lastReachableUrl: result.url }) } catch (e) { /* ignore */ }
+        try { await updateServer(server.id, { _lastReachableUrl: result.url }) } catch { /* ignore */ }
       }
       return { id: server.id, online: result.success }
     })
@@ -262,7 +351,7 @@ export async function pingAllServers(servers) {
 
 // Get auth headers for the active server
 export async function getAuthHeaders() {
-  if (!isMobileApp()) {
+  if (!isTauriApp()) {
     return {}
   }
 

@@ -19,7 +19,14 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
   const isTauriApp = isTauri();
   const isDesktop = isTauriApp;
   const isMobile = isMobileApp();
+  const usesNativeMacChrome = isDesktop && /Mac/i.test(navigator.platform || '');
   const apiRef = useRef(null);
+  const [desktopServers, setDesktopServers] = useState([]);
+
+  useEffect(() => {
+    if (!isDesktop || isMobile) return;
+    import('../serverManager').then(({ getServers }) => getServers().then(setDesktopServers)).catch(() => {});
+  }, [isDesktop, isMobile]);
 
   // Get desktop API on mount
   useEffect(() => {
@@ -33,13 +40,14 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
         '--title-bar-height',
         `calc(${MOBILE_TITLE_BAR_HEIGHT}px + var(--safe-top))`
       );
-    } else if (isDesktop) {
+    } else if (isDesktop && !usesNativeMacChrome) {
       document.documentElement.style.setProperty('--title-bar-height', `${TITLE_BAR_HEIGHT}px`);
       document.documentElement.classList.add('desktop-app');
     } else {
       document.documentElement.style.setProperty('--title-bar-height', '0px');
+      document.documentElement.classList.remove('desktop-app');
     }
-  }, [isDesktop, isMobile]);
+  }, [isDesktop, isMobile, usesNativeMacChrome]);
 
   // Keep resize chrome synchronized with native maximize/restore actions.
   useEffect(() => {
@@ -70,17 +78,6 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
       unlisten();
     };
   }, [isDesktop]);
-
-
-  // Programmatic drag for Tauri (data-tauri-drag-region only works on direct element, not children)
-  const handleDragMouseDown = useCallback((e) => {
-    // Only handle left mouse button
-    if (e.button !== 0) return;
-    const api = apiRef.current;
-    if (api?.startDragging) {
-      api.startDragging();
-    }
-  }, []);
 
   const handleResizeMouseDown = useCallback((event, direction) => {
     startWindowResize({
@@ -129,7 +126,7 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
   }
 
   // Only render the full title bar in Tauri.
-  if (!isDesktop) {
+  if (!isDesktop || usesNativeMacChrome) {
     return null;
   }
 
@@ -178,7 +175,7 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
       <div className="title-bar">
       <div
         className="title-bar-drag"
-        onMouseDown={isTauriApp ? handleDragMouseDown : undefined}
+        data-tauri-drag-region
       >
         <div className="title-bar-icon">
           <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
@@ -191,6 +188,13 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
       </div>
 
       <div className="title-bar-controls">
+        {desktopServers.length > 0 && (
+          <button className="title-bar-btn switch-server" onClick={onSwitchServer} title="Switch paired server">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/>
+            </svg>
+          </button>
+        )}
         <button
           className="title-bar-btn"
           onClick={onOpenFile}

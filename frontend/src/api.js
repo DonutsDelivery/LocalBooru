@@ -2,10 +2,11 @@
  * LocalBooru API client - supports both local and multi-server mode
  */
 import axios from 'axios'
-import { isMobileApp, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
+import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 import { adjustmentQuery } from './utils/imageAdjustments.js'
 import { shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
+import { remoteMediaProxyUrl } from './utils/remoteMediaRouting.js'
 import { runtimeDiagnosticTimeoutMs } from './components/autoTaggerRuntime.js'
 
 // Current server config (cached for synchronous access)
@@ -36,7 +37,7 @@ function getLocalServerBase() {
 // Get API URL - same origin when served from backend, fallback for dev
 function getApiUrl() {
   // Mobile app with remote server on Tauri — route through local proxy
-  if (isMobileApp() && currentServerUrl && isTauriApp()) {
+  if (currentServerUrl && isTauriApp()) {
     return `${getLocalServerBase()}/remote/api`
   }
 
@@ -53,7 +54,7 @@ function getApiUrl() {
 // just responded to a probe — it becomes the proxy's primary so we don't pay a 1.5s connect-fail
 // per request while running on the fallback network (e.g. Tailscale when the LAN URL is unreachable).
 export async function updateServerConfig(workingUrl = null) {
-  if (!isMobileApp()) return
+  if (!isTauriClient()) return
 
   // Reset the media token on any server change; it is re-minted below when a
   // session token is available.
@@ -306,13 +307,15 @@ export async function fetchImages({
   return response.data
 }
 
-export async function fetchFolders({ directory_id, library_id, rating, favorites_only, tags } = {}) {
+export async function fetchFolders({ directory_id, library_id, rating, favorites_only, tags, page = 1, per_page = 50 } = {}) {
   const params = new URLSearchParams()
   if (directory_id) params.append('directory_id', directory_id)
   if (library_id) params.append('library_id', library_id)
   if (rating) params.append('rating', rating)
   if (favorites_only) params.append('favorites_only', 'true')
   if (tags) params.append('tags', tags)
+  params.append('page', page)
+  params.append('per_page', per_page)
   const response = await api.get(`/images/folders?${params}`)
   return response.data
 }
@@ -434,6 +437,24 @@ export async function batchMoveImages(imageIds, targetDirectoryId) {
     target_directory_id: targetDirectoryId
   })
   return response.data
+}
+
+export async function batchSetFavorite(images, isFavorite = true) {
+  const items = images.map(image => ({
+    image_id: image.id,
+    directory_id: image.directory_id,
+    library_id: image.library_id || 'primary'
+  }))
+  const result = { updated: 0, errors: [], total_requested: items.length, is_favorite: isFavorite }
+  for (let offset = 0; offset < items.length; offset += 400) {
+    const response = await api.patch('/images/batch/favorite', {
+      items: items.slice(offset, offset + 400),
+      is_favorite: isFavorite
+    })
+    result.updated += response.data.updated || 0
+    result.errors.push(...(response.data.errors || []))
+  }
+  return result
 }
 
 export async function applyImageAdjustments(locator, { brightness, contrast, gamma }, expectedFileHash) {
@@ -648,6 +669,16 @@ export async function pruneDirectory(id, dumpsterPath = null, libraryId) {
   return response.data
 }
 
+export async function pruneFolder(importSource, dumpsterPath = null, directoryId = null, libraryId = null) {
+  const response = await api.post('/images/folders/prune', {
+    import_source: importSource === '__unfiled__' ? null : importSource,
+    dumpster_path: dumpsterPath,
+    directory_id: directoryId,
+    library_id: libraryId
+  })
+  return response.data
+}
+
 // Library API
 export async function getLibraryStats() {
   const response = await api.get('/library/stats')
@@ -799,6 +830,70 @@ export async function bulkRepairDirectories(directoryIds, libraryId) {
 
 export async function detectAgesRetrospective() {
   const response = await api.post('/library/detect-ages')
+  return response.data
+}
+
+// Online sources, remote imports, and publication ledger
+export async function getRemoteSources() {
+  const response = await api.get('/online/sources')
+  return response.data
+}
+
+export async function createRemoteSource(source) {
+  const response = await api.post('/online/sources', source)
+  return response.data
+}
+
+export async function deleteRemoteSource(sourceId) {
+  await api.delete(`/online/sources/${encodeURIComponent(sourceId)}`)
+}
+
+export async function probeRemoteSource(sourceId) {
+  const response = await api.post(`/online/sources/${encodeURIComponent(sourceId)}/probe`)
+  return response.data
+}
+
+export async function getRemoteConnections(sourceId) {
+  const response = await api.get(`/online/sources/${encodeURIComponent(sourceId)}/connections`)
+  return response.data
+}
+
+export async function createRemoteConnection(sourceId, connection) {
+  const response = await api.post(`/online/sources/${encodeURIComponent(sourceId)}/connections`, connection)
+  return response.data
+}
+
+export async function deleteRemoteConnection(sourceId, connectionId) {
+  await api.delete(`/online/sources/${encodeURIComponent(sourceId)}/connections/${encodeURIComponent(connectionId)}`)
+}
+
+export async function browseRemoteSource(sourceId, params) {
+  const response = await api.get(`/online/sources/${encodeURIComponent(sourceId)}/browse`, { params })
+  return response.data
+}
+
+export async function importRemoteItem(sourceId, remotePostId, options) {
+  const response = await api.post(`/online/sources/${encodeURIComponent(sourceId)}/items/${encodeURIComponent(remotePostId)}/import`, options)
+  return response.data
+}
+
+export async function preflightPublication(targetSourceIds) {
+  const response = await api.post('/online/publications/preflight', { target_source_ids: targetSourceIds })
+  return response.data
+}
+
+export async function createPublication(publication) {
+  const response = await api.post('/online/publications', publication)
+  return response.data
+}
+
+export async function getPublications() {
+  const response = await api.get('/online/publications')
+  return response.data
+}
+
+export async function simulatePublication(publicationId) {
+  const response = await api.post(`/online/publications/${encodeURIComponent(publicationId)}/simulate`)
   return response.data
 }
 
@@ -960,13 +1055,20 @@ export function getMediaUrl(path) {
   if (!path) return ''
   if (path.startsWith('http')) return path
 
-  // On mobile with remote server — route through local proxy (auth handled by proxy)
+  // Every Tauri frontend uses the embedded authenticated proxy for remote media.
+  // Routing only Android this way leaves paired desktop frontends requesting the
+  // same media identity from their unrelated local embedded library.
+  const tauri = isTauriApp()
+  const proxyUrl = remoteMediaProxyUrl(path, {
+    tauri,
+    remoteServerUrl: currentServerUrl,
+    localServerBase: tauri ? getLocalServerBase() : '',
+  })
+  if (proxyUrl) return proxyUrl
+
+  // Non-Tauri mobile browser with a remote server — use a scoped query token.
   if (isMobileApp() && currentServerUrl) {
     const cleanPath = path.startsWith('/') ? path : `/${path}`
-    if (isTauriApp()) {
-      // Proxy handles auth via set_remote_proxy token
-      return `${getLocalServerBase()}/remote${cleanPath}`
-    }
     // Non-Tauri mobile (browser) — direct URL with token. Prefer the short-lived,
     // read-only media token over the 30-day session JWT (H1); refresh it in the
     // background as it nears expiry. Fall back to the session token only in the

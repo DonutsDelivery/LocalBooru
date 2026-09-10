@@ -63,8 +63,12 @@
   gap: 8px;
   padding-left: 12px;
   height: 100%;
-  -webkit-app-region: drag;
+  cursor: default;
 }
+
+/* Keep hit-testing on the direct Tauri drag-region element. Tauri intentionally
+   does not inherit the drag attribute through child nodes. */
+.title-bar-drag > * { pointer-events: none; }
 
 /* App icon */
 .title-bar-icon {
