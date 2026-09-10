@@ -10,6 +10,68 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::server::state::AppState;
 
+const PAIRED_SERVER_CREDENTIAL_SERVICE: &str = "com.localbooru.app";
+const PAIRED_SERVER_CREDENTIAL_ACCOUNT: &str = "paired-server-credentials";
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn load_desktop_keyring_credentials() -> Result<Option<Vec<u8>>, String> {
+    let entry = keyring::Entry::new(
+        PAIRED_SERVER_CREDENTIAL_SERVICE,
+        PAIRED_SERVER_CREDENTIAL_ACCOUNT,
+    )
+    .map_err(|error| format!("OS credential store is unavailable: {error}"))?;
+    match entry.get_secret() {
+        Ok(secret) => Ok(Some(secret)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(format!("Could not load OS-protected credentials: {error}")),
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn store_desktop_keyring_credentials(bytes: &[u8]) -> Result<(), String> {
+    keyring::Entry::new(
+        PAIRED_SERVER_CREDENTIAL_SERVICE,
+        PAIRED_SERVER_CREDENTIAL_ACCOUNT,
+    )
+    .map_err(|error| format!("OS credential store is unavailable: {error}"))?
+    .set_secret(bytes)
+    .map_err(|error| format!("Could not store OS-protected credentials: {error}"))
+}
+
+/// Load remote server tokens from the app's protected credential store.
+#[tauri::command]
+pub fn load_paired_server_credentials() -> Result<serde_json::Value, String> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    if let Some(bytes) = load_desktop_keyring_credentials()? {
+        return serde_json::from_slice(&bytes)
+            .map_err(|_| "Stored paired-server credentials are corrupt".into());
+    }
+    Ok(serde_json::json!({}))
+}
+
+/// Atomically replace the protected map of remote server credentials.
+#[tauri::command]
+pub fn store_paired_server_credentials(credentials: serde_json::Value) -> Result<(), String> {
+    let object = credentials
+        .as_object()
+        .ok_or_else(|| "Paired-server credentials must be an object".to_string())?;
+    if object.len() > 128 {
+        return Err("Too many paired-server credentials".into());
+    }
+    let bytes = serde_json::to_vec(&credentials).map_err(|error| error.to_string())?;
+    if bytes.len() > 256 * 1024 {
+        return Err("Paired-server credential store is too large".into());
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    return store_desktop_keyring_credentials(&bytes);
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = bytes;
+        Ok(())
+    }
+}
+
 /// Backend status response (kept for frontend compatibility)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BackendStatus {

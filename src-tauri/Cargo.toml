@@ -89,6 +89,10 @@ gtk = { version = "0.18", features = ["v3_24"] }
 gdk = { version = "0.18", features = ["v3_24"] }
 gdk-pixbuf = "0.18"
 webkit2gtk = "2.0"
+keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Pipes"] }

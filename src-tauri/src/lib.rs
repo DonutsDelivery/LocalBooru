@@ -25,8 +25,9 @@ mod svp_manager_snapshot;
 use commands::{
     backend_get_local_ip, backend_get_network_settings, backend_get_port, backend_health_check,
     backend_restart, backend_start, backend_status, backend_stop, copy_image_to_clipboard,
-    get_app_version, quit_app, set_remote_proxy, show_image_context_menu, show_in_folder,
-    test_remote_server, verify_remote_handshake,
+    get_app_version, load_paired_server_credentials, quit_app, set_remote_proxy,
+    show_image_context_menu, show_in_folder, store_paired_server_credentials, test_remote_server,
+    verify_remote_handshake,
 };
 use direct_file::{
     direct_file_request_from_args, pick_direct_media_file, release_direct_media_file,
@@ -780,6 +781,8 @@ pub fn run() {
             test_remote_server,
             verify_remote_handshake,
             set_remote_proxy,
+            load_paired_server_credentials,
+            store_paired_server_credentials,
             native_video_capabilities,
             native_video_open,
             native_video_show_image,
