@@ -648,6 +648,7 @@ async fn play(
             let quality = QualityPreset {
                 resolution: Some("720p".into()),
                 bitrate: Some("5M".into()),
+                remux: false,
             };
             let info = state
                 .transcode_manager()

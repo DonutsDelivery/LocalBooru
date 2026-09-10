@@ -623,6 +623,8 @@ async fn verify_handshake(
     Ok(Json(json!({
         "success": true,
         "verified": true,
-        "token": token
+        "token": token,
+        "serverId": state.library_manager().primary().uuid,
+        "serverName": state.library_manager().primary().name
     })))
 }

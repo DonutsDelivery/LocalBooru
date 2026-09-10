@@ -55,8 +55,8 @@ export function detectVRStereo(filename) {
 }
 
 export function detectVRInputProjection(filename) {
-  if (!filename) return 'equirect'
-  return VR_INPUT_PROJECTION_MARKERS.fisheye.test(filename) ? 'fisheye' : 'equirect'
+  if (filename && VR_INPUT_PROJECTION_MARKERS.fisheye.test(filename)) return 'fisheye'
+  return 'equirectangular'
 }
 
 export function fitVRTextureSize(width, height, maxTextureSize) {
@@ -73,8 +73,12 @@ export function fitVRTextureSize(width, height, maxTextureSize) {
   }
 }
 
-export function shouldStageVRTexture(platform, scaled) {
-  return Boolean(scaled || /Mac/i.test(platform || ''))
+export function shouldStageVRTexture(_platform, scaled) {
+  // Only downscale when the decoded frame exceeds MAX_TEXTURE_SIZE.
+  // Staging through a 2D canvas every frame bypasses WebKit's GPU video
+  // copy (IOSurface on macOS, dmabuf on Linux) and reintroduces the lag
+  // the original 4K/8K viewer did not have.
+  return Boolean(scaled)
 }
 
 export function updateVRCamera(camera, deltaX, deltaY, projection = '360', sensitivity = 0.18) {
@@ -90,4 +94,25 @@ export function updateVRCamera(camera, deltaX, deltaY, projection = '360', sensi
 
 export function updateVRFov(fov, delta) {
   return clamp(fov + delta, MIN_VR_FOV, MAX_VR_FOV)
+}
+
+export function vrPointerDelta(previous, clientX, clientY) {
+  return {
+    deltaX: clientX - previous.x,
+    deltaY: clientY - previous.y,
+  }
+}
+
+export function uploadVRVideoFrame(gl, video) {
+  // WebKitGTK only offers its video-frame GPU copy path for a full texImage2D
+  // DOM-source upload. Preallocating and using texSubImage2D forces the slow
+  // software conversion path on Linux.
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    video,
+  )
 }

@@ -8,8 +8,10 @@ import {
   fitVRTextureSize,
   normalizeYaw,
   shouldStageVRTexture,
+  uploadVRVideoFrame,
   updateVRCamera,
   updateVRFov,
+  vrPointerDelta,
 } from './utils/vrVideo.js'
 
 const VERTEX_SHADER = `
@@ -29,11 +31,10 @@ const FRAGMENT_SHADER = `
   uniform sampler2D uVideo;
   uniform float uAspect;
   uniform float uFov;
-  uniform float uYaw;
-  uniform float uPitch;
-  uniform float uRoll;
-  uniform int uProjection;
+  uniform mat4 uRotationMatrix;
+  uniform float uSourceAspect;
   uniform int uInputProjection;
+  uniform int uProjection;
   uniform int uStereo;
   uniform int uEye;
 
@@ -44,26 +45,8 @@ const FRAGMENT_SHADER = `
     vec2 screen = vec2((vUv.x * 2.0 - 1.0) * uAspect, vUv.y * 2.0 - 1.0);
     vec3 direction = normalize(vec3(screen * focalScale, 1.0));
 
-    float rollCos = cos(uRoll);
-    float rollSin = sin(uRoll);
-    direction.xy = vec2(
-      direction.x * rollCos - direction.y * rollSin,
-      direction.x * rollSin + direction.y * rollCos
-    );
-
-    float pitchCos = cos(uPitch);
-    float pitchSin = sin(uPitch);
-    direction.yz = vec2(
-      direction.y * pitchCos + direction.z * pitchSin,
-      -direction.y * pitchSin + direction.z * pitchCos
-    );
-
-    float yawCos = cos(uYaw);
-    float yawSin = sin(uYaw);
-    direction.xz = vec2(
-      direction.x * yawCos + direction.z * yawSin,
-      -direction.x * yawSin + direction.z * yawCos
-    );
+    // Apply rotation matrix (computed on CPU)
+    direction = (uRotationMatrix * vec4(direction, 0.0)).xyz;
 
     vec2 sourceUv;
 
@@ -73,11 +56,16 @@ const FRAGMENT_SHADER = `
         gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
         return;
       }
-      float sourceAngle = atan(direction.y, direction.x);
-      float sourceRadius = theta / PI;
+
+      float sinTheta = sin(theta);
+      vec2 radialDirection = sinTheta > 0.0001 ? direction.xy / sinTheta : vec2(0.0);
+      float radius = theta / PI;
+      float eyeAspect = uSourceAspect;
+      if (uStereo == 1) eyeAspect *= 0.5;
+      else if (uStereo == 2) eyeAspect *= 2.0;
       sourceUv = vec2(
-        0.5 + cos(sourceAngle) * sourceRadius,
-        0.5 - sin(sourceAngle) * sourceRadius
+        0.5 + radialDirection.x * radius / max(eyeAspect, 0.0001),
+        0.5 - radialDirection.y * radius
       );
     } else {
       float longitude = atan(direction.x, direction.z);
@@ -152,14 +140,13 @@ export default function VRVideoViewport({
   const canvasRef = useRef(null)
   const cameraRef = useRef({ ...DEFAULT_VR_CAMERA })
   const configRef = useRef({
-    projection: detectVRProjection(filename) || '360',
     inputProjection: detectVRInputProjection(filename),
+    projection: detectVRProjection(filename) || '360',
     stereo: detectVRStereo(filename),
     eye: 'left',
     fov: DEFAULT_VR_FOV,
   })
   const pointerPositionsRef = useRef(new Map())
-  const mousePointerIdRef = useRef(null)
   const gestureRef = useRef({ moved: false, distance: null })
   const [camera, setCamera] = useState(cameraRef.current)
   const [config, setConfig] = useState(configRef.current)
@@ -185,8 +172,8 @@ export default function VRVideoViewport({
 
   useEffect(() => {
     const nextConfig = {
-      projection: detectVRProjection(filename) || '360',
       inputProjection: detectVRInputProjection(filename),
+      projection: detectVRProjection(filename) || '360',
       stereo: detectVRStereo(filename),
       eye: 'left',
       fov: DEFAULT_VR_FOV,
@@ -251,15 +238,15 @@ export default function VRVideoViewport({
     let program
     let texture
     let buffer
-    let textureSourceCanvas
-    let textureSourceContext
-    let maxTextureSize
     let animationFrame = null
     let videoFrameCallback = null
     let cancelled = false
     let frameDirty = true
     let viewDirty = true
     let lastVideoTime = -1
+    let maxTextureSize = 0
+    let textureSourceCanvas = null
+    let textureSourceContext = null
 
     const fail = (error) => {
       if (cancelled) return
@@ -326,48 +313,57 @@ export default function VRVideoViewport({
     const locations = {
       aspect: gl.getUniformLocation(program, 'uAspect'),
       fov: gl.getUniformLocation(program, 'uFov'),
-      yaw: gl.getUniformLocation(program, 'uYaw'),
-      pitch: gl.getUniformLocation(program, 'uPitch'),
-      roll: gl.getUniformLocation(program, 'uRoll'),
-      projection: gl.getUniformLocation(program, 'uProjection'),
+      rotationMatrix: gl.getUniformLocation(program, 'uRotationMatrix'),
+      sourceAspect: gl.getUniformLocation(program, 'uSourceAspect'),
       inputProjection: gl.getUniformLocation(program, 'uInputProjection'),
+      projection: gl.getUniformLocation(program, 'uProjection'),
       stereo: gl.getUniformLocation(program, 'uStereo'),
       eye: gl.getUniformLocation(program, 'uEye'),
     }
 
+    let textureInitialized = false
+
+    const hasVideoFrameCallback = typeof video.requestVideoFrameCallback === 'function'
+
+    const requestRender = () => {
+      if (cancelled || animationFrame !== null) return
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = null
+        render()
+      })
+    }
+
     const render = () => {
       if (cancelled) return
-      resize()
+
       const shouldUpload = video.readyState >= 2 && (
         frameDirty
-        || (typeof video.requestVideoFrameCallback !== 'function' && video.currentTime !== lastVideoTime)
+        || (!hasVideoFrameCallback && video.currentTime !== lastVideoTime)
       )
 
       if (shouldUpload) {
         try {
-          const fitted = fitVRTextureSize(video.videoWidth, video.videoHeight, maxTextureSize)
-          if (!fitted.width || !fitted.height) throw new Error('Decoded video dimensions are unavailable')
-          let textureSource = video
-          if (shouldStageVRTexture(navigator.platform, fitted.scaled)) {
-            if (!textureSourceCanvas) {
-              textureSourceCanvas = document.createElement('canvas')
-              textureSourceContext = textureSourceCanvas.getContext('2d', { alpha: false })
-              if (!textureSourceContext) throw new Error('VR texture downscaling is unavailable')
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            const fitted = fitVRTextureSize(video.videoWidth, video.videoHeight, maxTextureSize)
+            if (!fitted.width || !fitted.height) throw new Error('Decoded video dimensions are unavailable')
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, texture)
+            if (shouldStageVRTexture(navigator.platform, fitted.scaled)) {
+              if (!textureSourceCanvas) {
+                textureSourceCanvas = document.createElement('canvas')
+                textureSourceContext = textureSourceCanvas.getContext('2d', { alpha: false })
+                if (!textureSourceContext) throw new Error('VR texture downscaling is unavailable')
+              }
+              if (textureSourceCanvas.width !== fitted.width || textureSourceCanvas.height !== fitted.height) {
+                textureSourceCanvas.width = fitted.width
+                textureSourceCanvas.height = fitted.height
+              }
+              textureSourceContext.drawImage(video, 0, 0, fitted.width, fitted.height)
+              gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureSourceCanvas)
+            } else {
+              uploadVRVideoFrame(gl, video)
             }
-            if (textureSourceCanvas.width !== fitted.width || textureSourceCanvas.height !== fitted.height) {
-              textureSourceCanvas.width = fitted.width
-              textureSourceCanvas.height = fitted.height
-            }
-            textureSourceContext.drawImage(video, 0, 0, fitted.width, fitted.height)
-            textureSource = textureSourceCanvas
-          }
-          gl.activeTexture(gl.TEXTURE0)
-          gl.bindTexture(gl.TEXTURE_2D, texture)
-          while (gl.getError() !== gl.NO_ERROR) {}
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureSource)
-          const uploadError = gl.getError()
-          if (uploadError !== gl.NO_ERROR) {
-            throw new Error(`WebGL video texture upload failed (0x${uploadError.toString(16)})`)
+            textureInitialized = true
           }
           lastVideoTime = video.currentTime
           frameDirty = false
@@ -378,41 +374,70 @@ export default function VRVideoViewport({
         }
       }
 
-      if (viewDirty && video.readyState >= 2) {
+      const shouldDraw = viewDirty && video.readyState >= 2 && textureInitialized
+
+      if (shouldDraw) {
         const currentCamera = cameraRef.current
         const currentConfig = configRef.current
         gl.useProgram(program)
         gl.uniform1f(locations.aspect, canvas.width / canvas.height)
         gl.uniform1f(locations.fov, currentConfig.fov)
-        gl.uniform1f(locations.yaw, currentCamera.yaw * Math.PI / 180)
-        gl.uniform1f(locations.pitch, currentCamera.pitch * Math.PI / 180)
-        gl.uniform1f(locations.roll, currentCamera.roll * Math.PI / 180)
-        gl.uniform1i(locations.projection, currentConfig.projection === '180' ? 1 : 0)
+        gl.uniform1f(locations.sourceAspect, video.videoWidth / video.videoHeight)
+
+        // Compute rotation matrix on CPU once per frame
+        const yawRad = currentCamera.yaw * Math.PI / 180
+        const pitchRad = currentCamera.pitch * Math.PI / 180
+        const rollRad = currentCamera.roll * Math.PI / 180
+
+        const cy = Math.cos(yawRad), sy = Math.sin(yawRad)
+        const cp = Math.cos(pitchRad), sp = Math.sin(pitchRad)
+        const cr = Math.cos(rollRad), sr = Math.sin(rollRad)
+
+        // R = Rz(roll) * Ry(pitch) * Rz(yaw) — column-major for WebGL
+        const rotMatrix = new Float32Array([
+          cy * cp,  cp * sy,  -sp,  0,
+          cr * sy + cy * sp * sr,  cr * cy - sr * sp * sy,  cp * sr,  0,
+          sr * sy - cr * cy * sp,  cr * sp * sy + cy * sr,  cp * cr,  0,
+          0,  0,  0,  1,
+        ])
+        gl.uniformMatrix4fv(locations.rotationMatrix, false, rotMatrix)
+
         gl.uniform1i(locations.inputProjection, currentConfig.inputProjection === 'fisheye' ? 1 : 0)
+        gl.uniform1i(locations.projection, currentConfig.projection === '180' ? 1 : 0)
         gl.uniform1i(locations.stereo, currentConfig.stereo === 'sbs' ? 1 : currentConfig.stereo === 'tb' ? 2 : 0)
         gl.uniform1i(locations.eye, currentConfig.eye === 'right' ? 1 : 0)
         gl.drawArrays(gl.TRIANGLES, 0, 6)
         viewDirty = false
       }
-      animationFrame = requestAnimationFrame(render)
+
+      // requestVideoFrameCallback schedules the next real decoded frame. Older
+      // WebViews keep polling only while playback can advance.
+      if (frameDirty || viewDirty || (!hasVideoFrameCallback && !video.paused)) requestRender()
     }
 
     const markFrameDirty = () => {
       if (cancelled) return
       frameDirty = true
+      requestRender()
       videoFrameCallback = video.requestVideoFrameCallback(markFrameDirty)
     }
-    if (typeof video.requestVideoFrameCallback === 'function') {
+    if (hasVideoFrameCallback) {
       videoFrameCallback = video.requestVideoFrameCallback(markFrameDirty)
     }
 
-    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null
+    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
+      resize()
+      requestRender()
+    }) : null
     resizeObserver?.observe(canvas)
-    window.addEventListener('resize', resize)
-    const markViewDirty = () => { viewDirty = true }
+    // NO window.addEventListener('resize', resize) — ResizeObserver handles it
+    const markViewDirty = () => {
+      viewDirty = true
+      requestRender()
+    }
     canvas.addEventListener('vrviewchange', markViewDirty)
     resize()
-    animationFrame = requestAnimationFrame(render)
+    requestRender()
 
     const handleContextLost = (event) => {
       event.preventDefault()
@@ -427,10 +452,8 @@ export default function VRVideoViewport({
         video.cancelVideoFrameCallback(videoFrameCallback)
       }
       resizeObserver?.disconnect()
-      window.removeEventListener('resize', resize)
       canvas.removeEventListener('vrviewchange', markViewDirty)
       canvas.removeEventListener('webglcontextlost', handleContextLost)
-      if (document.pointerLockElement === canvas) document.exitPointerLock?.()
       if (gl) {
         if (texture) gl.deleteTexture(texture)
         if (buffer) gl.deleteBuffer(buffer)
@@ -444,41 +467,6 @@ export default function VRVideoViewport({
     canvasRef.current?.dispatchEvent(new Event('vrviewchange'))
   }, [active, camera, config])
 
-  useEffect(() => {
-    if (!active) return undefined
-    const handleLockedMouseMove = (event) => {
-      if (document.pointerLockElement !== canvasRef.current
-          || mousePointerIdRef.current === null
-          || !pointerPositionsRef.current.has(mousePointerIdRef.current)) return
-      if (Math.abs(event.movementX) + Math.abs(event.movementY) < 0.01) return
-      event.preventDefault()
-      if (Math.abs(event.movementX) + Math.abs(event.movementY) > 2) {
-        gestureRef.current.moved = true
-      }
-      onInteraction?.()
-      applyCamera(current => updateVRCamera(
-        current,
-        event.movementX,
-        event.movementY,
-        configRef.current.projection,
-      ))
-    }
-    const handleLockedMouseUp = () => {
-      const pointerId = mousePointerIdRef.current
-      if (pointerId === null || !pointerPositionsRef.current.has(pointerId)) return
-      pointerPositionsRef.current.delete(pointerId)
-      mousePointerIdRef.current = null
-      setDragging(false)
-      if (document.pointerLockElement === canvasRef.current) document.exitPointerLock?.()
-    }
-    document.addEventListener('mousemove', handleLockedMouseMove)
-    document.addEventListener('mouseup', handleLockedMouseUp)
-    return () => {
-      document.removeEventListener('mousemove', handleLockedMouseMove)
-      document.removeEventListener('mouseup', handleLockedMouseUp)
-    }
-  }, [active, applyCamera, onInteraction])
-
   const handlePointerDown = useCallback((event) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
     event.preventDefault()
@@ -488,7 +476,6 @@ export default function VRVideoViewport({
     canvas?.focus({ preventScroll: true })
     canvas?.setPointerCapture?.(event.pointerId)
     pointerPositionsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
-    if (event.pointerType === 'mouse') mousePointerIdRef.current = event.pointerId
     if (pointerPositionsRef.current.size === 1) {
       gestureRef.current = { moved: false, distance: null }
     } else {
@@ -496,14 +483,6 @@ export default function VRVideoViewport({
       gestureRef.current.distance = pointerDistance(pointerPositionsRef.current)
     }
     setDragging(true)
-    if (event.pointerType === 'mouse' && canvas?.requestPointerLock) {
-      try {
-        const request = canvas.requestPointerLock()
-        request?.catch?.(() => {})
-      } catch {
-        // Pointer capture remains the bounded fallback on WebViews without pointer lock.
-      }
-    }
   }, [onInteraction])
 
   const handlePointerMove = useCallback((event) => {
@@ -530,9 +509,7 @@ export default function VRVideoViewport({
       return
     }
 
-    if (document.pointerLockElement === canvasRef.current) return
-    const deltaX = event.clientX - previous.x
-    const deltaY = event.clientY - previous.y
+    const { deltaX, deltaY } = vrPointerDelta(previous, event.clientX, event.clientY)
     if (Math.abs(deltaX) + Math.abs(deltaY) < 0.01) return
     if (Math.abs(deltaX) + Math.abs(deltaY) > 2) gestureRef.current.moved = true
     applyCamera(current => updateVRCamera(current, deltaX, deltaY, configRef.current.projection))
@@ -546,11 +523,9 @@ export default function VRVideoViewport({
       && pointerPositionsRef.current.size === 1
       && !gestureRef.current.moved
     pointerPositionsRef.current.delete(event.pointerId)
-    if (mousePointerIdRef.current === event.pointerId) mousePointerIdRef.current = null
     gestureRef.current.distance = pointerDistance(pointerPositionsRef.current)
     if (pointerPositionsRef.current.size === 0) {
       setDragging(false)
-      if (document.pointerLockElement === canvasRef.current) document.exitPointerLock?.()
       if (wasTap) onTap?.(event)
     }
   }, [onTap])
@@ -622,7 +597,7 @@ export default function VRVideoViewport({
         className={`vr-video-canvas ${dragging ? 'dragging' : ''}`}
         tabIndex="0"
         role="img"
-        aria-label={`${config.inputProjection} ${config.projection} degree VR video view. Drag to look around.`}
+        aria-label={`${config.projection} degree VR video view. Drag to look around.`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={(event) => finishPointer(event)}
@@ -648,28 +623,28 @@ export default function VRVideoViewport({
         onClick={(event) => event.stopPropagation()}
         onTouchStart={(event) => event.stopPropagation()}
       >
-        <div className="vr-projection-toggle" aria-label="VR projection">
-          <button
-            className={config.projection === '180' ? 'active' : ''}
-            onClick={() => setProjection('180')}
-            title="180° equirectangular input"
-          >180°</button>
-          <button
-            className={config.projection === '360' ? 'active' : ''}
-            onClick={() => setProjection('360')}
-            disabled={config.inputProjection === 'fisheye'}
-            title="360° equirectangular input"
-          >360°</button>
-        </div>
         <select
           value={config.inputProjection}
           onChange={(event) => setInputProjection(event.target.value)}
           aria-label="VR input projection"
           title="Input projection"
         >
-          <option value="equirect">Equirectangular</option>
+          <option value="equirectangular">Equirectangular (rectangular)</option>
           <option value="fisheye">Fisheye</option>
         </select>
+        <div className="vr-projection-toggle" aria-label="VR projection">
+          <button
+            className={config.projection === '180' ? 'active' : ''}
+            onClick={() => setProjection('180')}
+            title="180° coverage"
+          >180°</button>
+          <button
+            className={config.projection === '360' ? 'active' : ''}
+            onClick={() => setProjection('360')}
+            disabled={config.inputProjection === 'fisheye'}
+            title={config.inputProjection === 'fisheye' ? 'Fisheye input is 180°' : '360° coverage'}
+          >360°</button>
+        </div>
         <select
           value={config.stereo}
           onChange={(event) => applyConfig(current => ({ ...current, stereo: event.target.value }))}

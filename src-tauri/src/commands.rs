@@ -348,12 +348,17 @@ pub async fn test_remote_server(url: String) -> Result<TestServerResult, String>
 
 /// Verify handshake with a remote server and get JWT token.
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HandshakeResult {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_name: Option<String>,
 }
 
 #[tauri::command]
@@ -375,40 +380,62 @@ pub async fn verify_remote_handshake(
         .await
     {
         Ok(resp) => {
-            if !resp.status().is_success() {
+            let status = resp.status();
+            let body = match resp.json::<serde_json::Value>().await {
+                Ok(body) => body,
+                Err(e) => {
+                    return Ok(HandshakeResult {
+                        success: false,
+                        token: None,
+                        error: Some(e.to_string()),
+                        server_id: None,
+                        server_name: None,
+                    });
+                }
+            };
+            if !status.is_success() {
                 return Ok(HandshakeResult {
                     success: false,
                     token: None,
-                    error: Some(format!("HTTP {}", resp.status())),
+                    error: Some(
+                        body.get("detail")
+                            .or_else(|| body.get("error"))
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| format!("HTTP {status}")),
+                    ),
+                    server_id: None,
+                    server_name: None,
                 });
             }
-            match resp.json::<serde_json::Value>().await {
-                Ok(body) => {
-                    let token = body
-                        .get("token")
-                        .and_then(|t| t.as_str())
-                        .map(|s| s.to_string());
-                    let success = body
-                        .get("success")
-                        .and_then(|s| s.as_bool())
-                        .unwrap_or(token.is_some());
-                    Ok(HandshakeResult {
-                        success,
-                        token,
-                        error: None,
-                    })
-                }
-                Err(e) => Ok(HandshakeResult {
-                    success: false,
-                    token: None,
-                    error: Some(e.to_string()),
-                }),
-            }
+            let token = body
+                .get("token")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned);
+            let success = body
+                .get("success")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(token.is_some());
+            Ok(HandshakeResult {
+                success,
+                token,
+                error: None,
+                server_id: body
+                    .get("serverId")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_owned),
+                server_name: body
+                    .get("serverName")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_owned),
+            })
         }
         Err(e) => Ok(HandshakeResult {
             success: false,
             token: None,
             error: Some(e.to_string()),
+            server_id: None,
+            server_name: None,
         }),
     }
 }

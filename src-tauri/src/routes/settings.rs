@@ -1604,26 +1604,36 @@ fn parse_quality_preset(preset: Option<&str>) -> QualityPreset {
         Some("480p") => QualityPreset {
             resolution: Some("480p".into()),
             bitrate: Some("1536K".into()),
+            remux: false,
         },
         Some("720p") => QualityPreset {
             resolution: Some("720p".into()),
             bitrate: Some("4M".into()),
+            remux: false,
         },
         Some("1080p") => QualityPreset {
             resolution: Some("1080p".into()),
             bitrate: Some("8M".into()),
+            remux: false,
         },
         Some("1080p_enhanced") => QualityPreset {
             resolution: Some("1080p".into()),
             bitrate: Some("20M".into()),
+            remux: false,
         },
         Some("1440p") => QualityPreset {
             resolution: Some("1440p".into()),
             bitrate: Some("14M".into()),
+            remux: false,
         },
         Some("4k") | Some("2160p") => QualityPreset {
             resolution: Some("4k".into()),
             bitrate: Some("25M".into()),
+            remux: false,
+        },
+        Some("apple_remux") => QualityPreset {
+            remux: true,
+            ..QualityPreset::default()
         },
         _ => QualityPreset::default(), // Original quality, CRF mode
     }
@@ -1693,6 +1703,10 @@ async fn serve_transcode_file(
     // Determine content type
     let content_type = if filename.ends_with(".m3u8") {
         "application/vnd.apple.mpegurl"
+    } else if filename.ends_with(".mp4") {
+        "video/mp4"
+    } else if filename.ends_with(".m4s") {
+        "video/iso.segment"
     } else if filename.ends_with(".ts") {
         "video/mp2t"
     } else {

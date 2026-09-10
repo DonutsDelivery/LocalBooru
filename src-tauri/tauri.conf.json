@@ -21,6 +21,7 @@
         "fullscreen": false,
         "decorations": false,
         "transparent": true,
+        "acceptFirstMouse": true,
         "center": true
       }
     ],

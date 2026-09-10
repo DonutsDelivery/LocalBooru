@@ -302,12 +302,20 @@ pub fn run() {
     // Desktop-only plugins
     #[cfg(desktop)]
     {
+        let window_state_flags = tauri_plugin_window_state::StateFlags::all()
+            - tauri_plugin_window_state::StateFlags::DECORATIONS;
         builder = builder
             .plugin(tauri_plugin_autostart::init(
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                 None,
             ))
-            .plugin(tauri_plugin_window_state::Builder::new().build());
+            // Decorations are platform-owned configuration. Restoring the old
+            // frameless value would undo the native macOS title bar migration.
+            .plugin(
+                tauri_plugin_window_state::Builder::new()
+                    .with_state_flags(window_state_flags)
+                    .build(),
+            );
     }
 
     builder = builder.setup(move |app| {

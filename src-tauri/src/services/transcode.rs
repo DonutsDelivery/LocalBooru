@@ -296,6 +296,7 @@ impl Drop for TranscodeStream {
 pub struct QualityPreset {
     pub resolution: Option<String>, // e.g., "720p", "1080p"
     pub bitrate: Option<String>,    // e.g., "4M", "1536K"
+    pub remux: bool,
 }
 
 impl QualityPreset {
@@ -433,7 +434,7 @@ impl TranscodeManager {
         if !self.owns_transition(transition_epoch) {
             return Err("Transcode start was superseded".into());
         }
-        let audio_gain_db = if video_info.has_audio {
+        let audio_gain_db = if video_info.has_audio && !quality.remux {
             tokio::select! {
                 gain = detect_audio_gain(file_path) => gain,
                 _ = shutdown.changed() => {
@@ -516,7 +517,11 @@ impl TranscodeManager {
 
         // Wait for playlist + first segment
         let playlist_path = hls_dir.join("playlist.m3u8");
-        let segment_path = hls_dir.join("segment_0.ts");
+        let segment_path = hls_dir.join(if quality.remux {
+            "segment_0.m4s"
+        } else {
+            "segment_0.ts"
+        });
 
         for attempt in 0..200 {
             if !self.owns_transition(transition_epoch) {
@@ -640,6 +645,11 @@ fn build_ffmpeg_command(
     audio_gain_db: Option<f64>,
 ) -> Vec<String> {
     let hw = detect_hw_caps();
+
+    // Packet-copy remux path (e.g. Apple HEVC passthrough): no re-encode.
+    if quality.remux {
+        return build_packet_copy_remux_command(file_path, hls_dir, start_position, video_info);
+    }
 
     // minterpolate is CPU-only — if requested, we must use the CPU decode path
     let needs_minterpolate = target_fps
@@ -819,6 +829,57 @@ fn build_ffmpeg_command(
         hls_dir.join("playlist.m3u8").to_string_lossy().into(),
     ]);
 
+    cmd
+}
+
+/// Packet-copy HLS remux for HEVC streams (Apple passthrough): wraps the
+/// original HEVC bitstream in fMP4 segments without re-encoding.
+fn build_packet_copy_remux_command(
+    file_path: &str,
+    hls_dir: &Path,
+    start_position: f64,
+    video_info: &VideoInfo,
+) -> Vec<String> {
+    let mut cmd = vec!["ffmpeg".into(), "-y".into()];
+    let effective_start = if video_info.duration > 0.0 {
+        start_position.clamp(0.0, (video_info.duration - 1.0).max(0.0))
+    } else {
+        start_position.max(0.0)
+    };
+    if effective_start > 0.0 {
+        cmd.extend(["-ss".into(), format!("{effective_start:.3}")]);
+    }
+    cmd.extend([
+        "-i".into(),
+        file_path.into(),
+        "-map".into(),
+        "0:v:0".into(),
+        "-map".into(),
+        "0:a:0?".into(),
+        "-c".into(),
+        "copy".into(),
+        "-bsf:v".into(),
+        "hevc_mp4toannexb".into(),
+        "-tag:v".into(),
+        "hvc1".into(),
+        "-avoid_negative_ts".into(),
+        "make_zero".into(),
+        "-f".into(),
+        "hls".into(),
+        "-hls_segment_type".into(),
+        "fmp4".into(),
+        "-hls_time".into(),
+        "2".into(),
+        "-hls_list_size".into(),
+        "0".into(),
+        "-hls_flags".into(),
+        "append_list+independent_segments".into(),
+        "-hls_fmp4_init_filename".into(),
+        "init.mp4".into(),
+        "-hls_segment_filename".into(),
+        hls_dir.join("segment_%d.m4s").to_string_lossy().into(),
+        hls_dir.join("playlist.m3u8").to_string_lossy().into(),
+    ]);
     cmd
 }
 

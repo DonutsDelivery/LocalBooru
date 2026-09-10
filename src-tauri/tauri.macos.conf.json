@@ -1,4 +1,21 @@
 {
+  "app": {
+    "windows": [
+      {
+        "title": "LocalBooru",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "acceptFirstMouse": true,
+        "center": true
+      }
+    ]
+  },
   "bundle": {
     "targets": ["app", "dmg"],
     "macOS": {
