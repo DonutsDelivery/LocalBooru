@@ -8,10 +8,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
+use std::sync::{Mutex, OnceLock};
+
 use crate::server::state::AppState;
 
 const PAIRED_SERVER_CREDENTIAL_SERVICE: &str = "com.localbooru.app";
 const PAIRED_SERVER_CREDENTIAL_ACCOUNT: &str = "paired-server-credentials";
+
+fn paired_credential_cache() -> &'static Mutex<Option<serde_json::Value>> {
+    static CACHE: OnceLock<Mutex<Option<serde_json::Value>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn load_desktop_keyring_credentials() -> Result<Option<Vec<u8>>, String> {
@@ -41,12 +48,24 @@ fn store_desktop_keyring_credentials(bytes: &[u8]) -> Result<(), String> {
 /// Load remote server tokens from the app's protected credential store.
 #[tauri::command]
 pub fn load_paired_server_credentials() -> Result<serde_json::Value, String> {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    if let Some(bytes) = load_desktop_keyring_credentials()? {
-        return serde_json::from_slice(&bytes)
-            .map_err(|_| "Stored paired-server credentials are corrupt".into());
+    if let Ok(cache) = paired_credential_cache().lock() {
+        if let Some(value) = cache.as_ref() {
+            return Ok(value.clone());
+        }
     }
-    Ok(serde_json::json!({}))
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let loaded = if let Some(bytes) = load_desktop_keyring_credentials()? {
+        serde_json::from_slice(&bytes)
+            .map_err(|_| "Stored paired-server credentials are corrupt".to_string())?
+    } else {
+        serde_json::json!({})
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let loaded = serde_json::json!({});
+    if let Ok(mut cache) = paired_credential_cache().lock() {
+        *cache = Some(loaded.clone());
+    }
+    Ok(loaded)
 }
 
 /// Atomically replace the protected map of remote server credentials.
@@ -63,7 +82,18 @@ pub fn store_paired_server_credentials(credentials: serde_json::Value) -> Result
         return Err("Paired-server credential store is too large".into());
     }
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    return store_desktop_keyring_credentials(&bytes);
+    {
+        if let Ok(cache) = paired_credential_cache().lock() {
+            if cache.as_ref() == Some(&credentials) {
+                return Ok(());
+            }
+        }
+        store_desktop_keyring_credentials(&bytes)?;
+        if let Ok(mut cache) = paired_credential_cache().lock() {
+            *cache = Some(credentials);
+        }
+        return Ok(());
+    }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {

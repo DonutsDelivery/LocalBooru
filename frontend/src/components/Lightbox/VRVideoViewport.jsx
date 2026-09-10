@@ -31,8 +31,9 @@ const FRAGMENT_SHADER = `
   uniform sampler2D uVideo;
   uniform float uAspect;
   uniform float uFov;
-  uniform mat4 uRotationMatrix;
-  uniform float uSourceAspect;
+  uniform float uYaw;
+  uniform float uPitch;
+  uniform float uRoll;
   uniform int uInputProjection;
   uniform int uProjection;
   uniform int uStereo;
@@ -45,8 +46,26 @@ const FRAGMENT_SHADER = `
     vec2 screen = vec2((vUv.x * 2.0 - 1.0) * uAspect, vUv.y * 2.0 - 1.0);
     vec3 direction = normalize(vec3(screen * focalScale, 1.0));
 
-    // Apply rotation matrix (computed on CPU)
-    direction = (uRotationMatrix * vec4(direction, 0.0)).xyz;
+    float rollCos = cos(uRoll);
+    float rollSin = sin(uRoll);
+    direction.xy = vec2(
+      direction.x * rollCos - direction.y * rollSin,
+      direction.x * rollSin + direction.y * rollCos
+    );
+
+    float pitchCos = cos(uPitch);
+    float pitchSin = sin(uPitch);
+    direction.yz = vec2(
+      direction.y * pitchCos + direction.z * pitchSin,
+      -direction.y * pitchSin + direction.z * pitchCos
+    );
+
+    float yawCos = cos(uYaw);
+    float yawSin = sin(uYaw);
+    direction.xz = vec2(
+      direction.x * yawCos + direction.z * yawSin,
+      -direction.x * yawSin + direction.z * yawCos
+    );
 
     vec2 sourceUv;
 
@@ -56,16 +75,11 @@ const FRAGMENT_SHADER = `
         gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
         return;
       }
-
-      float sinTheta = sin(theta);
-      vec2 radialDirection = sinTheta > 0.0001 ? direction.xy / sinTheta : vec2(0.0);
-      float radius = theta / PI;
-      float eyeAspect = uSourceAspect;
-      if (uStereo == 1) eyeAspect *= 0.5;
-      else if (uStereo == 2) eyeAspect *= 2.0;
+      float sourceAngle = atan(direction.y, direction.x);
+      float sourceRadius = theta / PI;
       sourceUv = vec2(
-        0.5 + radialDirection.x * radius / max(eyeAspect, 0.0001),
-        0.5 - radialDirection.y * radius
+        0.5 + cos(sourceAngle) * sourceRadius,
+        0.5 - sin(sourceAngle) * sourceRadius
       );
     } else {
       float longitude = atan(direction.x, direction.z);
@@ -313,8 +327,9 @@ export default function VRVideoViewport({
     const locations = {
       aspect: gl.getUniformLocation(program, 'uAspect'),
       fov: gl.getUniformLocation(program, 'uFov'),
-      rotationMatrix: gl.getUniformLocation(program, 'uRotationMatrix'),
-      sourceAspect: gl.getUniformLocation(program, 'uSourceAspect'),
+      yaw: gl.getUniformLocation(program, 'uYaw'),
+      pitch: gl.getUniformLocation(program, 'uPitch'),
+      roll: gl.getUniformLocation(program, 'uRoll'),
       inputProjection: gl.getUniformLocation(program, 'uInputProjection'),
       projection: gl.getUniformLocation(program, 'uProjection'),
       stereo: gl.getUniformLocation(program, 'uStereo'),
@@ -382,26 +397,9 @@ export default function VRVideoViewport({
         gl.useProgram(program)
         gl.uniform1f(locations.aspect, canvas.width / canvas.height)
         gl.uniform1f(locations.fov, currentConfig.fov)
-        gl.uniform1f(locations.sourceAspect, video.videoWidth / video.videoHeight)
-
-        // Compute rotation matrix on CPU once per frame
-        const yawRad = currentCamera.yaw * Math.PI / 180
-        const pitchRad = currentCamera.pitch * Math.PI / 180
-        const rollRad = currentCamera.roll * Math.PI / 180
-
-        const cy = Math.cos(yawRad), sy = Math.sin(yawRad)
-        const cp = Math.cos(pitchRad), sp = Math.sin(pitchRad)
-        const cr = Math.cos(rollRad), sr = Math.sin(rollRad)
-
-        // R = Rz(roll) * Ry(pitch) * Rz(yaw) — column-major for WebGL
-        const rotMatrix = new Float32Array([
-          cy * cp,  cp * sy,  -sp,  0,
-          cr * sy + cy * sp * sr,  cr * cy - sr * sp * sy,  cp * sr,  0,
-          sr * sy - cr * cy * sp,  cr * sp * sy + cy * sr,  cp * cr,  0,
-          0,  0,  0,  1,
-        ])
-        gl.uniformMatrix4fv(locations.rotationMatrix, false, rotMatrix)
-
+        gl.uniform1f(locations.yaw, currentCamera.yaw * Math.PI / 180)
+        gl.uniform1f(locations.pitch, currentCamera.pitch * Math.PI / 180)
+        gl.uniform1f(locations.roll, currentCamera.roll * Math.PI / 180)
         gl.uniform1i(locations.inputProjection, currentConfig.inputProjection === 'fisheye' ? 1 : 0)
         gl.uniform1i(locations.projection, currentConfig.projection === '180' ? 1 : 0)
         gl.uniform1i(locations.stereo, currentConfig.stereo === 'sbs' ? 1 : currentConfig.stereo === 'tb' ? 2 : 0)

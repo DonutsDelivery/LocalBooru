@@ -84,18 +84,31 @@ async function setStorageItem(key, value) {
   localStorage.setItem(key, value)
 }
 
+let cachedProtectedCredentials = undefined
+let protectedCredentialsLoad = null
+
 async function loadProtectedCredentials() {
   if (!isTauriApp()) return null
-  try {
-    if (window.AndroidCredentialStore?.load) {
-      return JSON.parse(window.AndroidCredentialStore.load())
+  if (cachedProtectedCredentials !== undefined) return cachedProtectedCredentials
+  if (protectedCredentialsLoad) return protectedCredentialsLoad
+  protectedCredentialsLoad = (async () => {
+    try {
+      if (window.AndroidCredentialStore?.load) {
+        cachedProtectedCredentials = JSON.parse(window.AndroidCredentialStore.load())
+        return cachedProtectedCredentials
+      }
+      const { invoke } = await import('@tauri-apps/api/core')
+      cachedProtectedCredentials = await invoke('load_paired_server_credentials')
+      return cachedProtectedCredentials
+    } catch (error) {
+      console.warn('[Servers] Protected credential store is unavailable:', error)
+      cachedProtectedCredentials = null
+      return null
+    } finally {
+      protectedCredentialsLoad = null
     }
-    const { invoke } = await import('@tauri-apps/api/core')
-    return await invoke('load_paired_server_credentials')
-  } catch (error) {
-    console.warn('[Servers] Protected credential store is unavailable:', error)
-    return null
-  }
+  })()
+  return protectedCredentialsLoad
 }
 
 async function storeProtectedCredentials(credentials) {
@@ -104,10 +117,12 @@ async function storeProtectedCredentials(credentials) {
     if (!window.AndroidCredentialStore.store(JSON.stringify(credentials))) {
       throw new Error('Android protected credential store rejected the update')
     }
+    cachedProtectedCredentials = credentials
     return true
   }
   const { invoke } = await import('@tauri-apps/api/core')
   await invoke('store_paired_server_credentials', { credentials })
+  cachedProtectedCredentials = credentials
   return true
 }
 
@@ -341,7 +356,7 @@ export async function pingAllServers(servers) {
     servers.map(async (server) => {
       const result = await probeServer(server)
       if (result.success && result.url) {
-        try { await updateServer(server.id, { _lastReachableUrl: result.url }) } catch { /* ignore */ }
+        server._lastReachableUrl = result.url
       }
       return { id: server.id, online: result.success }
     })
