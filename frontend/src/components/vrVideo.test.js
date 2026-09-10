@@ -2,11 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   DEFAULT_VR_CAMERA,
+  detectVRInputProjection,
   detectVRProjection,
   detectVRStereo,
   normalizeYaw,
+  uploadVRVideoFrame,
   updateVRCamera,
   updateVRFov,
+  vrPointerDelta,
 } from './Lightbox/utils/vrVideo.js'
 
 test('detects explicit 180 and 360 VR filename markers', () => {
@@ -26,6 +29,13 @@ test('detects common stereo layouts while leaving ordinary files mono', () => {
   assert.equal(detectVRStereo('concert_VR180_SBS.mp4'), 'sbs')
   assert.equal(detectVRStereo('concert-vr180-top-bottom.mp4'), 'tb')
   assert.equal(detectVRStereo('concert-vr360.mp4'), 'mono')
+})
+
+test('detects explicit fisheye input while defaulting rectangular panoramas to equirectangular', () => {
+  assert.equal(detectVRInputProjection('concert_VR180_fisheye_SBS.mp4'), 'fisheye')
+  assert.equal(detectVRInputProjection('concert_VR180_fish-eye.mp4'), 'fisheye')
+  assert.equal(detectVRInputProjection('concert_VR180_SBS.mp4'), 'equirectangular')
+  assert.equal(detectVRInputProjection(null), 'equirectangular')
 })
 
 test('360 wins when a filename describes a 360 by 180 panorama', () => {
@@ -51,4 +61,26 @@ test('field of view remains inside the interactive viewer limits', () => {
   assert.equal(updateVRFov(100, -500), 30)
   assert.equal(updateVRFov(100, 500), 120)
   assert.equal(updateVRFov(100, -5), 95)
+})
+
+test('mouse dragging uses bounded cursor position deltas', () => {
+  assert.deepEqual(vrPointerDelta({ x: 240, y: 160 }, 228, 173), {
+    deltaX: -12,
+    deltaY: 13,
+  })
+})
+
+test('uploads video with the full texImage2D overload required by WebKitGTK', () => {
+  const calls = []
+  const gl = {
+    TEXTURE_2D: 1,
+    RGBA: 2,
+    UNSIGNED_BYTE: 3,
+    texImage2D: (...args) => calls.push(args),
+  }
+  const video = { videoWidth: 3840, videoHeight: 1920 }
+
+  uploadVRVideoFrame(gl, video)
+
+  assert.deepEqual(calls, [[1, 0, 2, 2, 3, video]])
 })

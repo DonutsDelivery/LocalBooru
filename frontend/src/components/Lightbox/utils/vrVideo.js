@@ -8,6 +8,10 @@ const VR_STEREO_MARKERS = {
   tb: /(?:^|[\s._-])(?:tb|top[\s._-]*(?:bottom|and[\s._-]*bottom)|over[\s._-]*under)(?=[\s._-]|$)/i,
 }
 
+const VR_INPUT_PROJECTION_MARKERS = {
+  fisheye: /(?:^|[\s._-])(?:fish[\s._-]*eye|fisheye)(?=[\s._-]|$)/i,
+}
+
 export const DEFAULT_VR_CAMERA = Object.freeze({
   yaw: 0,
   pitch: 0,
@@ -50,6 +54,11 @@ export function detectVRStereo(filename) {
   return 'mono'
 }
 
+export function detectVRInputProjection(filename) {
+  if (filename && VR_INPUT_PROJECTION_MARKERS.fisheye.test(filename)) return 'fisheye'
+  return 'equirectangular'
+}
+
 export function updateVRCamera(camera, deltaX, deltaY, projection = '360', sensitivity = 0.18) {
   const nextYaw = camera.yaw - deltaX * sensitivity
   return {
@@ -63,4 +72,25 @@ export function updateVRCamera(camera, deltaX, deltaY, projection = '360', sensi
 
 export function updateVRFov(fov, delta) {
   return clamp(fov + delta, MIN_VR_FOV, MAX_VR_FOV)
+}
+
+export function vrPointerDelta(previous, clientX, clientY) {
+  return {
+    deltaX: clientX - previous.x,
+    deltaY: clientY - previous.y,
+  }
+}
+
+export function uploadVRVideoFrame(gl, video) {
+  // WebKitGTK only offers its video-frame GPU copy path for a full texImage2D
+  // DOM-source upload. Preallocating and using texSubImage2D forces the slow
+  // software conversion path on Linux.
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    video,
+  )
 }
