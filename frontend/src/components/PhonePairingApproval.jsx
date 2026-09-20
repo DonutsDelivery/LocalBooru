@@ -7,7 +7,6 @@ export default function PhonePairingApproval({ request, servers, onClose, onComp
     [servers],
   )
   const [selected, setSelected] = useState(() => new Set())
-  const [confirmName, setConfirmName] = useState('')
   const [authorizing, setAuthorizing] = useState(false)
   const [results, setResults] = useState([])
   const [error, setError] = useState(null)
@@ -28,7 +27,7 @@ export default function PhonePairingApproval({ request, servers, onClose, onComp
   }
 
   async function authorize() {
-    if (confirmName.trim() !== request.displayName || selected.size === 0) return
+    if (selected.size === 0) return
     if (Number(request.expiresAt) <= Math.floor(Date.now() / 1000)) {
       setError('This authorization request has expired.')
       return
@@ -95,13 +94,9 @@ export default function PhonePairingApproval({ request, servers, onClose, onComp
               {compatibleServers.length === 0 && <p className="pairing-warning">No saved server has a compatible authenticated token. Reconnect this phone to a current LocalBooru server first.</p>}
               {servers.some(server => !server.token || !server.url?.startsWith('https://')) && <p className="pairing-warning">Servers using legacy password sessions or unencrypted HTTP are not eligible. Connect them over HTTPS with QR authentication first.</p>}
             </div>
-            <label className="pairing-name-confirmation">
-              To confirm the requesting device, type <strong>{request.displayName}</strong>
-              <input autoComplete="off" value={confirmName} onChange={event => setConfirmName(event.target.value)} disabled={authorizing || isExpired} />
-            </label>
             <div className="pairing-approval-actions">
               <button className="pairing-cancel" onClick={onClose} disabled={authorizing}>Reject</button>
-              <button className="pairing-authorize" onClick={authorize} disabled={authorizing || isExpired || selected.size === 0 || confirmName.trim() !== request.displayName}>
+              <button className="pairing-authorize" onClick={authorize} disabled={authorizing || isExpired || selected.size === 0}>
                 {authorizing ? 'Authorizing…' : `Authorize ${selected.size || ''} server${selected.size === 1 ? '' : 's'}`}
               </button>
             </div>

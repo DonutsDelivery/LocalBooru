@@ -1,6 +1,5 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { fireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PhonePairingApproval from './PhonePairingApproval'
 import { authorizeServerForDesktop, confirmDeviceAuthorization } from '../devicePairing'
@@ -45,7 +44,7 @@ describe('PhonePairingApproval', () => {
     vi.clearAllMocks()
   })
 
-  it('requires explicit server selection, exact device name, and device approval', async () => {
+  it('requires explicit server selection and device approval', async () => {
     const onComplete = vi.fn()
     await act(async () => root.render(
       <PhonePairingApproval request={request} servers={servers} onComplete={onComplete} onClose={vi.fn()} />,
@@ -61,12 +60,6 @@ describe('PhonePairingApproval', () => {
     expect(authorizeButton.disabled).toBe(true)
 
     await act(async () => choices[0].click())
-    expect(authorizeButton.disabled).toBe(true)
-
-    const confirmation = container.querySelector('.pairing-name-confirmation input')
-    await act(async () => {
-      fireEvent.change(confirmation, { target: { value: 'Bedroom Desktop' } })
-    })
     expect(authorizeButton.disabled).toBe(false)
 
     await act(async () => authorizeButton.click())
@@ -86,10 +79,6 @@ describe('PhonePairingApproval', () => {
     const choices = [...container.querySelectorAll('input[type="checkbox"]')]
     await act(async () => choices[0].click())
     await act(async () => choices[1].click())
-    const confirmation = container.querySelector('.pairing-name-confirmation input')
-    await act(async () => {
-      fireEvent.change(confirmation, { target: { value: 'Bedroom Desktop' } })
-    })
     await act(async () => container.querySelector('.pairing-authorize').click())
 
     expect(confirmDeviceAuthorization).toHaveBeenCalledTimes(1)
