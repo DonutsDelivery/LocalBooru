@@ -255,6 +255,52 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
               CREATE INDEX IF NOT EXISTS idx_task_queue_task_type ON task_queue(task_type);\
               CREATE INDEX IF NOT EXISTS idx_task_queue_claim ON task_queue(status, priority DESC, COALESCE(next_attempt_at, created_at), created_at);",
     },
+    // v16: Persist proof-of-possession pairing grants and revocable device identities.
+    Migration {
+        description: "Add revocable device pairing credentials",
+        sql: "CREATE TABLE IF NOT EXISTS paired_devices (\
+                  device_id TEXT PRIMARY KEY,\
+                  display_name TEXT NOT NULL,\
+                  public_key_spki TEXT NOT NULL,\
+                  public_key_fingerprint TEXT NOT NULL UNIQUE,\
+                  created_at TEXT NOT NULL DEFAULT (datetime('now')),\
+                  last_seen_at TEXT,\
+                  revoked_at TEXT\
+              );\
+              CREATE TABLE IF NOT EXISTS device_pairing_grants (\
+                  grant_id TEXT PRIMARY KEY,\
+                  grant_secret_hash TEXT NOT NULL,\
+                  desktop_session_id TEXT NOT NULL,\
+                  display_name TEXT NOT NULL,\
+                  public_key_spki TEXT NOT NULL,\
+                  public_key_fingerprint TEXT NOT NULL,\
+                  challenge TEXT NOT NULL,\
+                  authorized_by TEXT NOT NULL,\
+                  expires_at INTEGER NOT NULL,\
+                  consumed_at TEXT,\
+                  created_at TEXT NOT NULL DEFAULT (datetime('now'))\
+              );\
+              CREATE INDEX IF NOT EXISTS idx_device_pairing_grants_expiry ON device_pairing_grants(expires_at, consumed_at);\
+              CREATE TABLE IF NOT EXISTS device_pairing_audit (\
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                  event_type TEXT NOT NULL,\
+                  device_id TEXT,\
+                  public_key_fingerprint TEXT,\
+                  detail TEXT,\
+                  created_at TEXT NOT NULL DEFAULT (datetime('now'))\
+              );\
+              CREATE INDEX IF NOT EXISTS idx_device_pairing_audit_created ON device_pairing_audit(created_at DESC);",
+    },
+    // v17/v18: Bind pending grants to the durable authorizing identity.
+    Migration {
+        description: "Bind device pairing grants to their authorizer",
+        sql: "ALTER TABLE device_pairing_grants ADD COLUMN authorized_by_user_id INTEGER;",
+    },
+    Migration {
+        description: "Bind device pairing grants to authorizing devices",
+        sql: "ALTER TABLE device_pairing_grants ADD COLUMN authorized_by_device_id TEXT;\
+              CREATE INDEX IF NOT EXISTS idx_device_pairing_grants_authorizer_device ON device_pairing_grants(authorized_by_device_id, consumed_at);",
+    },
 ];
 
 /// Run all pending migrations on the main library database.

@@ -55,6 +55,7 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
             header::CONTENT_TYPE,
             header::RANGE,
             header::ACCEPT,
+            "X-LocalBooru-Pairing-Secret".parse().unwrap(),
         ])
         .expose_headers([
             "Content-Range".parse().unwrap(),
@@ -73,6 +74,10 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         .nest("/api/images", crate::routes::images::router())
         .nest("/api/tags", crate::routes::tags::router())
         .nest("/api/directories", crate::routes::directories::router())
+        .nest(
+            "/api/device-pairing",
+            crate::routes::device_pairing::router(),
+        )
         .nest("/api/library", crate::routes::library::router())
         .nest("/api/collections", crate::routes::collections::router())
         .nest("/api/users", crate::routes::users::router())
@@ -126,6 +131,7 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         .layer(AccessControlLayer {
             jwt_secret: state.jwt_secret().to_string(),
             data_dir: state.data_dir().to_path_buf(),
+            db: state.main_db().clone(),
         })
         .with_state(state)
         .nest("/remote", proxy_router)

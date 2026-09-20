@@ -10,6 +10,7 @@ use crate::db::directory_db::DirectoryDbManager;
 use crate::db::library::{LibraryContext, LibraryManager};
 use crate::db::pool::DbPool;
 use crate::routes::cast::CastState;
+use crate::routes::device_pairing::{create_desktop_pairing_sessions, DesktopPairingSessions};
 use crate::routes::migration::{create_migration_state, SharedMigrationState};
 use crate::routes::models::{create_model_registry, ModelRegistry};
 use crate::routes::network::{HandshakeManager, SharedHandshakeManager};
@@ -60,6 +61,7 @@ struct AppStateInner {
     migration_state: SharedMigrationState,
     /// Network handshake nonce manager (SSL pinning / QR verification)
     handshake_manager: SharedHandshakeManager,
+    desktop_pairing_sessions: DesktopPairingSessions,
     /// Shared HTTP client (connection pool reused across requests)
     http_client: reqwest::Client,
     /// Immutable SVP Manager graph snapshots trusted by desktop session routes.
@@ -173,6 +175,7 @@ impl AppState {
 
         // Create handshake nonce manager
         let handshake_manager = Arc::new(HandshakeManager::new());
+        let desktop_pairing_sessions = create_desktop_pairing_sessions();
 
         // Create shared HTTP client (connection pool reused across requests).
         // connect_timeout caps how long we wait on TCP SYN before giving up — without
@@ -204,6 +207,7 @@ impl AppState {
                 model_registry,
                 migration_state,
                 handshake_manager,
+                desktop_pairing_sessions,
                 http_client,
                 manager_graph_snapshots,
                 directory_watcher: std::sync::OnceLock::new(),
@@ -412,6 +416,10 @@ impl AppState {
     /// Get the network handshake nonce manager.
     pub fn handshake_manager(&self) -> &SharedHandshakeManager {
         &self.inner.handshake_manager
+    }
+
+    pub fn desktop_pairing_sessions(&self) -> &DesktopPairingSessions {
+        &self.inner.desktop_pairing_sessions
     }
 
     /// Get the shared HTTP client (reuses connection pool across requests).

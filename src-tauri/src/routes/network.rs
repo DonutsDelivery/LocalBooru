@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::server::error::AppError;
-use crate::server::middleware::auth::create_jwt;
+use crate::server::middleware::auth::create_device_jwt;
 use crate::server::state::AppState;
 use crate::server::utils::get_local_ip;
 
@@ -611,14 +611,14 @@ async fn verify_handshake(
 ) -> Result<Json<Value>, AppError> {
     state.handshake_manager().verify_nonce(&body.nonce)?;
 
-    // Issue a JWT for the paired device
-    let token = create_jwt(
-        0, // user_id: 0 for device pairing (not a user account)
-        "qr_paired_device",
-        "local_network",
-        true, // can_write
-        state.jwt_secret(),
+    // Persist the phone identity so its credential has no calendar expiry and
+    // can still be invalidated immediately from the paired-devices UI.
+    let device_id = uuid::Uuid::new_v4().to_string();
+    state.main_db().get()?.execute(
+        "INSERT INTO paired_devices (device_id, display_name, public_key_spki, public_key_fingerprint, last_seen_at) VALUES (?1, 'Android device', '', ?2, datetime('now'))",
+        rusqlite::params![device_id, format!("legacy-qr:{device_id}")],
     )?;
+    let token = create_device_jwt(&device_id, "Android device", state.jwt_secret())?;
 
     Ok(Json(json!({
         "success": true,

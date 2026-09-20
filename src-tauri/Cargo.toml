@@ -47,6 +47,10 @@ image_hasher = "3"
 # Hashing (xxhash for quick file hash, compatible with Python impl)
 xxhash-rust = { version = "0.8", features = ["xxh64"] }
 sha2 = "0.10"
+base64 = "0.22"
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+rsa = { version = "0.9", features = ["sha2"] }
+subtle = "2"
 tar = "0.4"
 zstd = "0.13"
 

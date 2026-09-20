@@ -425,6 +425,7 @@ async fn media_token(
         user.user_id,
         &user.username,
         &user.access_level,
+        user.device_id.as_deref(),
         state.jwt_secret(),
     )?;
     Ok(Json(json!({

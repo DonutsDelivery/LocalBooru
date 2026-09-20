@@ -11,7 +11,17 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
 
-use super::auth::decode_jwt;
+use super::auth::{decode_jwt, refresh_claim_identity, Claims};
+use crate::db::pool::DbPool;
+
+fn claim_allows_source(claims: &Claims, source: &str) -> bool {
+    match claims.access_level.as_str() {
+        "public" => true,
+        "local_network" => source != "public",
+        "localhost" => source == "localhost",
+        _ => false,
+    }
+}
 
 /// Endpoints that are always localhost-only (sensitive settings).
 const LOCALHOST_ONLY_PREFIXES: &[&str] = &[
@@ -19,6 +29,8 @@ const LOCALHOST_ONLY_PREFIXES: &[&str] = &[
     "/api/network",
     "/api/users",
     "/api/direct-files",
+    "/api/device-pairing/desktop-sessions",
+    "/api/device-pairing/devices",
 ];
 
 /// Endpoints exempt from access control (prefix match).
@@ -39,7 +51,6 @@ const EXEMPT_EXACT: &[&str] = &["/api"];
 /// Endpoints under localhost-only prefixes that should still be accessible from network.
 const LOCALHOST_EXEMPTIONS: &[&str] = &[
     "/api/network/verify-handshake",
-    "/api/network/qr-data",
     "/api/settings/saved-searches",
     "/api/settings/family-mode",
     "/api/settings/video-playback",
@@ -53,7 +64,22 @@ const LOCALHOST_EXEMPTIONS: &[&str] = &[
     "/api/users/login",
     "/api/users/verify",
     "/api/users/media-token",
+    "/api/device-pairing/grants",
+    "/api/device-pairing/exchange",
 ];
+
+/// POST endpoints that inspect or verify without mutating server state.
+const READ_ONLY_POST_EXACT: &[&str] = &[
+    "/api/network/verify-handshake",
+    "/api/users/verify",
+    "/api/settings/video-info",
+    "/api/settings/audio-gain",
+];
+
+fn is_device_pairing_delivery(path: &str) -> bool {
+    path.starts_with("/api/device-pairing/desktop-sessions/")
+        && (path.ends_with("/deliver") || path.ends_with("/verify"))
+}
 
 /// Test whether an IPv4 address falls in the RFC 6598 carrier-grade NAT range
 /// (100.64.0.0/10), which Tailscale uses for its internal "100.x.x.x" addresses.
@@ -149,6 +175,7 @@ pub struct AccessControlLayer {
     pub jwt_secret: String,
     /// Data directory, used to read the `allow_settings_local_network` opt-in flag.
     pub data_dir: PathBuf,
+    pub db: DbPool,
 }
 
 impl<S> Layer<S> for AccessControlLayer {
@@ -159,6 +186,7 @@ impl<S> Layer<S> for AccessControlLayer {
             inner,
             jwt_secret: self.jwt_secret.clone(),
             data_dir: self.data_dir.clone(),
+            db: self.db.clone(),
         }
     }
 }
@@ -170,6 +198,7 @@ pub struct AccessControlService<S> {
     inner: S,
     jwt_secret: String,
     data_dir: PathBuf,
+    db: DbPool,
 }
 
 impl<S> Service<Request<Body>> for AccessControlService<S>
@@ -192,6 +221,7 @@ where
 
         let jwt_secret = self.jwt_secret.clone();
         let data_dir = self.data_dir.clone();
+        let db = self.db.clone();
 
         Box::pin(async move {
             let path = req.uri().path().to_string();
@@ -228,9 +258,8 @@ where
                 return inner.call(req).await;
             }
 
-            // Decide whether a `?token=` query token grants access to THIS request.
-            // A full session token (scope=None) grants access everywhere (still
-            // subject to the localhost-only checks below). A media-scoped token is
+            // Decide whether a media-scoped `?token=` grants access to THIS request.
+            // Full session tokens are never accepted from URLs. A media token is
             // read-only and only honored for GET requests on `/api/images/...` —
             // the one media path that requires a token (streams, cast-media, share,
             // /thumbnails and /watch are already exempt). This lets the frontend put
@@ -239,16 +268,19 @@ where
             let query_token_grants = |token: &str| -> bool {
                 match decode_jwt(token, &jwt_secret) {
                     Ok(claims) if claims.is_media_scoped() => {
-                        method == "GET" && path.starts_with("/api/images/")
+                        method == "GET"
+                            && path.starts_with("/api/images/")
+                            && refresh_claim_identity(claims, &db)
+                                .is_some_and(|claims| claim_allows_source(&claims, access_level))
                     }
-                    Ok(_) => true,
+                    Ok(_) => false,
                     Err(_) => false,
                 }
             };
 
             // Bearer header: accept full session tokens only. A media token is
             // rejected here so it can never authenticate a real API call.
-            let has_valid_jwt = req
+            let bearer_claims = req
                 .headers()
                 .get("authorization")
                 .and_then(|v| v.to_str().ok())
@@ -256,27 +288,27 @@ where
                     auth.strip_prefix("Bearer ")
                         .or_else(|| auth.strip_prefix("bearer "))
                 })
-                .map(
-                    |token| matches!(decode_jwt(token, &jwt_secret), Ok(c) if !c.is_media_scoped()),
-                )
-                .unwrap_or(false);
+                .and_then(|token| decode_jwt(token, &jwt_secret).ok())
+                .filter(|claims| claims.scope.is_none())
+                .and_then(|claims| refresh_claim_identity(claims, &db))
+                .filter(|claims| claim_allows_source(claims, access_level));
 
-            // Query parameter (for <img>/<video> src URLs): full token, or a media
-            // token limited to GET image routes.
-            let has_valid_jwt = has_valid_jwt
-                || req
-                    .uri()
-                    .query()
-                    .and_then(|q| q.split('&').find_map(|pair| pair.strip_prefix("token=")))
-                    .map(|token| query_token_grants(token))
-                    .unwrap_or(false);
+            // Query parameters are accepted only for short-lived media tokens.
+            let has_valid_query_jwt = req
+                .uri()
+                .query()
+                .and_then(|q| q.split('&').find_map(|pair| pair.strip_prefix("token=")))
+                .map(query_token_grants)
+                .unwrap_or(false);
+            let has_valid_jwt = bearer_claims.is_some() || has_valid_query_jwt;
 
             // Paths explicitly allowed from the network even though they sit under a
             // localhost-only prefix: pairing handshake, login/verify, and user-preference
             // settings the LAN/Android client legitimately needs.
             let is_exempt_path = LOCALHOST_EXEMPTIONS
                 .iter()
-                .any(|exempt| path == *exempt || path.starts_with(&format!("{}/", exempt)));
+                .any(|exempt| path == *exempt || path.starts_with(&format!("{}/", exempt)))
+                || (method == "POST" && is_device_pairing_delivery(&path));
 
             // Localhost-only endpoints (settings / network / user management) stay
             // restricted even WITH a valid JWT. Localhost already returned above, so
@@ -290,8 +322,28 @@ where
                 .any(|prefix| path.starts_with(prefix))
                 && !is_exempt_path;
 
+            let is_mutating = !matches!(method.as_str(), "GET" | "HEAD")
+                && !(method == "POST" && READ_ONLY_POST_EXACT.contains(&path.as_str()));
+            if is_mutating
+                && bearer_claims
+                    .as_ref()
+                    .is_some_and(|claims| !claims.can_write)
+            {
+                let response = (
+                    StatusCode::FORBIDDEN,
+                    axum::Json(serde_json::json!({
+                        "error": "Write access required",
+                        "detail": "This credential is read-only."
+                    })),
+                )
+                    .into_response();
+                return Ok(response);
+            }
+
             if is_localhost_only {
                 let opt_in_allowed = !path.starts_with("/api/direct-files")
+                    && !path.starts_with("/api/device-pairing/desktop-sessions")
+                    && !path.starts_with("/api/device-pairing/devices")
                     && has_valid_jwt
                     && access_level == "local_network"
                     && lan_settings_opt_in(&data_dir);
@@ -341,7 +393,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::middleware::auth::create_jwt;
+    use crate::server::middleware::auth::{create_jwt, create_media_jwt};
     use tower::{service_fn, ServiceExt};
 
     #[tokio::test]
@@ -353,6 +405,8 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&data_dir).unwrap();
+        let db = crate::db::pool::create_main_pool(&data_dir).unwrap();
+        crate::db::schema::init_main_db(&db.get().unwrap()).unwrap();
 
         let inner = service_fn(|_request: Request<Body>| async move {
             Ok::<_, std::convert::Infallible>(Response::new(Body::empty()))
@@ -360,6 +414,7 @@ mod tests {
         let service = AccessControlLayer {
             jwt_secret: secret.into(),
             data_dir: data_dir.clone(),
+            db: db.clone(),
         }
         .layer(inner);
 
@@ -387,6 +442,8 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&data_dir).unwrap();
+        let db = crate::db::pool::create_main_pool(&data_dir).unwrap();
+        crate::db::schema::init_main_db(&db.get().unwrap()).unwrap();
         std::fs::write(
             data_dir.join("settings.json"),
             r#"{"network":{"allow_settings_local_network":true}}"#,
@@ -399,6 +456,7 @@ mod tests {
         let service = AccessControlLayer {
             jwt_secret: secret.into(),
             data_dir: data_dir.clone(),
+            db: db.clone(),
         }
         .layer(inner);
         let mut request = Request::builder()
@@ -413,6 +471,127 @@ mod tests {
 
         let response = service.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn lan_clients_cannot_mint_phone_pairing_offers() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "localbooru-qr-offer-access-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let db = crate::db::pool::create_main_pool(&data_dir).unwrap();
+        crate::db::schema::init_main_db(&db.get().unwrap()).unwrap();
+        let inner = service_fn(|_request: Request<Body>| async move {
+            Ok::<_, std::convert::Infallible>(Response::new(Body::empty()))
+        });
+        let service = AccessControlLayer {
+            jwt_secret: "qr-offer-test-secret".into(),
+            data_dir: data_dir.clone(),
+            db,
+        }
+        .layer(inner);
+        let mut request = Request::builder()
+            .method("GET")
+            .uri("/api/network/qr-data")
+            .body(Body::empty())
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([192, 168, 1, 25], 50000))));
+
+        let response = service.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn full_query_tokens_and_read_only_mutations_are_rejected() {
+        let secret = "query-token-and-write-test-secret";
+        let data_dir = std::env::temp_dir().join(format!(
+            "localbooru-query-token-access-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let db = crate::db::pool::create_main_pool(&data_dir).unwrap();
+        crate::db::schema::init_main_db(&db.get().unwrap()).unwrap();
+        db.get()
+            .unwrap()
+            .execute(
+                "INSERT INTO users (id, username, password_hash, is_active, access_level, can_write) VALUES (5, 'reader', 'unused', 1, 'local_network', 0)",
+                [],
+            )
+            .unwrap();
+        let full_token = create_jwt(5, "reader", "local_network", false, secret).unwrap();
+        let media_token = create_media_jwt(5, "reader", "local_network", None, secret).unwrap();
+        let inner = service_fn(|_request: Request<Body>| async move {
+            Ok::<_, std::convert::Infallible>(Response::new(Body::empty()))
+        });
+        let service = AccessControlLayer {
+            jwt_secret: secret.into(),
+            data_dir: data_dir.clone(),
+            db,
+        }
+        .layer(inner);
+        let mut full_query = Request::builder()
+            .method("GET")
+            .uri(format!("/api/images/1?token={full_token}"))
+            .body(Body::empty())
+            .unwrap();
+        full_query
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([192, 168, 1, 25], 50000))));
+        assert_eq!(
+            service.clone().oneshot(full_query).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        let mut media_query = Request::builder()
+            .method("GET")
+            .uri(format!("/api/images/1?token={media_token}"))
+            .body(Body::empty())
+            .unwrap();
+        media_query
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([192, 168, 1, 25], 50000))));
+        assert_eq!(
+            service.clone().oneshot(media_query).await.unwrap().status(),
+            StatusCode::OK
+        );
+
+        let mut read_only_post = Request::builder()
+            .method("POST")
+            .uri("/api/users/verify")
+            .header("authorization", format!("Bearer {full_token}"))
+            .body(Body::empty())
+            .unwrap();
+        read_only_post
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([192, 168, 1, 25], 50000))));
+        assert_eq!(
+            service
+                .clone()
+                .oneshot(read_only_post)
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+
+        let mut mutation = Request::builder()
+            .method("POST")
+            .uri("/api/images/1/favorite")
+            .header("authorization", format!("Bearer {full_token}"))
+            .body(Body::empty())
+            .unwrap();
+        mutation
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([192, 168, 1, 25], 50000))));
+        assert_eq!(
+            service.oneshot(mutation).await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
         let _ = std::fs::remove_dir_all(data_dir);
     }
 }

@@ -2,6 +2,7 @@ pub mod addons;
 pub mod app_update;
 pub mod cast;
 pub mod collections;
+pub mod device_pairing;
 pub mod directories;
 pub mod images;
 pub mod libraries;
