@@ -330,6 +330,18 @@ pub fn run() {
         // ── Initialize AppState (database + config) ──
         let data_dir = get_data_dir(app);
         let port = get_server_port();
+        // Before any pool opens the main database: probe for confirmed
+        // corruption so a poisoned WAL from a crash/kill can never turn the
+        // next B-tree balance into an allocator abort. Healthy databases are
+        // untouched; damaged sidecars are preserved as .damaged-*.bak.
+        let main_db_path = data_dir.join("library.db");
+        if std::path::Path::new(&main_db_path).exists() {
+            let quarantined =
+                crate::db::resilience::ensure_recovery_ready(&main_db_path);
+            if quarantined {
+                log::warn!("[Startup] Main database sidecars were quarantined; SQLite will rebuild from the main file");
+            }
+        }
         let app_state = AppState::new_with_manager_graph_snapshots(
             &data_dir,
             port,

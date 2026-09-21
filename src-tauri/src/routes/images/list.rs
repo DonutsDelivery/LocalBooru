@@ -119,6 +119,125 @@ mod tests {
         request
     }
 
+    // AC: @grouped-folder-catalog-scale ac-many-folders-many-images
+    // A single directory with hundreds of thousands of images across
+    // thousands of folders must serve a paginated catalog quickly, in
+    // deterministic order, without unbounded memory or per-folder scans.
+    #[tokio::test]
+    async fn grouped_folder_catalog_scales_to_many_folders_and_images() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-folder-catalog-scale-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.library_manager().primary().clone();
+
+        const FOLDER_COUNT: i64 = 5_000;
+        const IMAGES_PER_FOLDER: i64 = 60;
+
+        {
+            let pool = library.directory_db.get_pool(11).unwrap();
+            let connection = pool.get().unwrap();
+            connection.execute("BEGIN", []).unwrap();
+            let mut insert = connection
+                .prepare(
+                    "INSERT INTO images (id, filename, file_hash, import_source, width, height, file_modified_at) \
+                     VALUES (?1, 'image.png', ?2, ?3, 2, 2, ?4)",
+                )
+                .unwrap();
+            let mut insert_file = connection
+                .prepare(
+                    "INSERT INTO image_files (image_id, original_path, file_extension) \
+                     VALUES (?1, ?2, 'png')",
+                )
+                .unwrap();
+            let mut image_id = 1i64;
+            for folder in 0..FOLDER_COUNT {
+                let import_source = format!("/scale/folder-{:05}", folder);
+                for i in 0..IMAGES_PER_FOLDER {
+                    // Newer images later so each folder's representative is the
+                    // last inserted one.
+                    let modified = format!("2026-01-01 00:{:02}:{:02}", i % 60, (folder % 60));
+                    insert
+                        .execute(params![
+                            image_id,
+                            format!("scale-hash-{}", image_id),
+                            &import_source,
+                            &modified
+                        ])
+                        .unwrap();
+                    insert_file
+                        .execute(params![
+                            image_id,
+                            format!("/scale/folder-{:05}/{}.png", folder, i)
+                        ])
+                        .unwrap();
+                    image_id += 1;
+                }
+            }
+            connection.execute("COMMIT", []).unwrap();
+        }
+
+        let app = Router::new()
+            .route("/api/images/folders", get(list_folders))
+            .with_state(state);
+
+        let started = std::time::Instant::now();
+        let response = app
+            .clone()
+            .oneshot(request("/api/images/folders?per_page=100"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let catalog: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let elapsed_first_page = started.elapsed();
+
+        assert_eq!(catalog["total"], FOLDER_COUNT);
+        assert_eq!(catalog["page"], 1);
+        let folders = catalog["folders"].as_array().unwrap();
+        assert_eq!(folders.len(), 100);
+        // Deterministic order: folder-00000 first, each with the full count.
+        assert_eq!(folders[0]["path"], "/scale/folder-00000");
+        assert_eq!(folders[0]["count"], IMAGES_PER_FOLDER);
+        assert!(folders[0]["thumbnail_url"].as_str().is_some());
+
+        // Second page continues the deterministic order.
+        let response = app
+            .clone()
+            .oneshot(request("/api/images/folders?page=2&per_page=100"))
+            .await
+            .unwrap();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let catalog: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let folders = catalog["folders"].as_array().unwrap();
+        assert_eq!(folders[0]["path"], "/scale/folder-00100");
+
+        // Last page holds the tail.
+        let response = app
+            .clone()
+            .oneshot(request("/api/images/folders?page=50&per_page=100"))
+            .await
+            .unwrap();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let catalog: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let folders = catalog["folders"].as_array().unwrap();
+        assert_eq!(folders.len(), 100);
+        assert_eq!(folders[99]["path"], "/scale/folder-04999");
+
+        // 300k rows across three catalog requests must stay interactive.
+        assert!(
+            elapsed_first_page.as_secs() < 30,
+            "first catalog page took {:?}",
+            elapsed_first_page
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     // AC: @folder-thumbnail-route-identity ac-exact-thumbnail
     // AC: @folder-thumbnail-route-identity ac-cached-duplicate
     #[tokio::test]
@@ -677,10 +796,11 @@ pub async fn list_folders(
     let favorites_only = q.favorites_only;
     let client_ip = addr.ip();
     let library_id = q.library_id.clone();
+    let page = q.page.max(1);
+    let per_page = q.per_page.clamp(1, 500);
 
     let state_clone = state.clone();
-
-    let folders = tokio::task::spawn_blocking(move || {
+    let total = tokio::task::spawn_blocking(move || {
         // Apply family mode + access tier filtering (same as list_images)
         let tier = AccessTier::from_ip(&client_ip);
         let family_locked = state_clone.is_family_mode_locked();
@@ -693,17 +813,25 @@ pub async fn list_folders(
                 state_clone.library_manager().all_mounted()
             };
 
-        let mut folders_map: std::collections::HashMap<
-            String,
-            (
-                i64,
-                Option<String>,
-                Option<i32>,
-                Option<i32>,
-                Option<(String, String, i64, i64)>,
-            ),
-        > = std::collections::HashMap::new();
-        // key -> (count, thumbnail_url, width, height, representative sort key)
+        // Single-row catalog entry: count plus the newest eligible image's
+        // identity (id + hash + dimensions + sort key) for the thumbnail.
+        // Representative data is aggregated in the same indexed pass as the
+        // counts, so a multi-million-image directory is scanned once instead
+        // of once per folder.
+        struct FolderCatalogEntry {
+            count: i64,
+            thumb_image_id: Option<i64>,
+            thumb_file_hash: Option<String>,
+            thumb_width: Option<i32>,
+            thumb_height: Option<i32>,
+            // (padded sort key, image id) — newest eligible representative.
+            thumb_sort_key: Option<(String, i64)>,
+            thumb_library_uuid: Option<String>,
+            thumb_directory_id: Option<i64>,
+        }
+
+        let mut folders_map: std::collections::HashMap<String, FolderCatalogEntry> =
+            std::collections::HashMap::new();
 
         for lib in &target_libs {
             let visible_dir_ids: Option<HashSet<i64>> = {
@@ -797,93 +925,135 @@ pub async fn list_folders(
 
                 let where_sql = format!("WHERE {}", where_parts.join(" AND "));
 
-                // Count by import_source
+                // Two indexed streaming passes per directory (no temp b-tree,
+                // no per-folder scans): counts by folder, then each folder's
+                // newest eligible image as the representative. SQLite's
+                // bare-column-with-max() rule applies because the second query
+                // has exactly one aggregate. With the import_source index both
+                // stay O(N) on multi-million-image directories.
                 let count_sql = format!(
                     "SELECT i.import_source, COUNT(i.id) FROM images i {} GROUP BY i.import_source",
                     where_sql
                 );
+                let rep_sql = format!(
+                    "SELECT i.import_source, \
+                            MAX(COALESCE(i.file_modified_at, i.created_at) || ':' || printf('%020d', i.id)), \
+                            i.id, i.file_hash, i.width, i.height \
+                     FROM images i {} GROUP BY i.import_source",
+                    where_sql
+                );
 
+                // Counts pass — cheap indexed aggregation.
                 if let Ok(mut stmt) = dir_conn.prepare(&count_sql) {
                     if let Ok(rows) = stmt.query_map([], |row| {
                         Ok((row.get::<_, Option<String>>(0)?, row.get::<_, i64>(1)?))
                     }) {
                         for row in rows.flatten() {
-                            let key = row.0.unwrap_or_default();
                             let entry = folders_map
-                                .entry(key.clone())
-                                .or_insert((0, None, None, None, None));
-                            entry.0 += row.1;
+                                .entry(row.0.unwrap_or_default())
+                                .or_insert(FolderCatalogEntry {
+                                    count: 0,
+                                    thumb_image_id: None,
+                                    thumb_file_hash: None,
+                                    thumb_width: None,
+                                    thumb_height: None,
+                                    thumb_sort_key: None,
+                                    thumb_library_uuid: None,
+                                    thumb_directory_id: None,
+                                });
+                            entry.count += row.1;
                         }
                     }
                 }
 
-                // Get representative thumbnail for each folder
-                for (key, entry) in folders_map.iter_mut() {
-                    let (source_filter, source_param): (String, Option<String>) = if key.is_empty()
-                    {
-                        ("i.import_source IS NULL".to_string(), None)
-                    } else {
-                        ("i.import_source = ?1".to_string(), Some(key.clone()))
+                let catalog_rows: Vec<(Option<String>, String, i64, Option<String>, Option<i32>, Option<i32>)> = {
+                    let mut stmt = match dir_conn.prepare(&rep_sql) {
+                        Ok(s) => s,
+                        Err(_) => continue,
                     };
-
-                    let thumb_sql = format!(
-                        "SELECT i.id, i.file_hash, i.width, i.height, \
-                                COALESCE(i.file_modified_at, i.created_at) \
-                         FROM images i {} AND {} \
-                         ORDER BY COALESCE(i.file_modified_at, i.created_at) DESC, i.id DESC LIMIT 1",
-                        where_sql, source_filter
-                    );
-
-                    if let Ok(mut stmt) = dir_conn.prepare(&thumb_sql) {
-                        let thumb_result = if let Some(ref param_val) = source_param {
-                            stmt.query_row(rusqlite::params![param_val], |row| {
-                                Ok((
-                                    row.get::<_, i64>(0)?,
-                                    row.get::<_, String>(1)?,
-                                    row.get::<_, Option<i32>>(2)?,
-                                    row.get::<_, Option<i32>>(3)?,
-                                    row.get::<_, String>(4)?,
-                                ))
-                            })
-                        } else {
-                            stmt.query_row([], |row| {
-                                Ok((
-                                    row.get::<_, i64>(0)?,
-                                    row.get::<_, String>(1)?,
-                                    row.get::<_, Option<i32>>(2)?,
-                                    row.get::<_, Option<i32>>(3)?,
-                                    row.get::<_, String>(4)?,
-                                ))
-                            })
-                        };
-                        if let Ok(thumb) = thumb_result {
-                            let candidate_key = (thumb.4, lib.uuid.clone(), *dir_id, thumb.0);
-                            let is_newer = entry
-                                .4
-                                .as_ref()
-                                .map(|current| &candidate_key > current)
-                                .unwrap_or(true);
-                            if is_newer {
-                                entry.1 = Some(folder_thumbnail_url(
-                                    &lib.uuid,
-                                    *dir_id,
-                                    thumb.0,
-                                    &thumb.1,
-                                ));
-                                entry.2 = thumb.2;
-                                entry.3 = thumb.3;
-                                entry.4 = Some(candidate_key);
-                            }
-                        }
+                    let rows = match stmt.query_map([], |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                            row.get::<_, Option<i32>>(4)?,
+                            row.get::<_, Option<i32>>(5)?,
+                        ))
+                    }) {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    };
+                    match rows.collect::<Result<Vec<_>, _>>() {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    }
+                };
+                for (_key, sort_key, image_id, file_hash, width, height) in catalog_rows {
+                    let entry = folders_map
+                        .entry(_key.unwrap_or_default())
+                        .or_insert(FolderCatalogEntry {
+                            count: 0,
+                            thumb_image_id: None,
+                            thumb_file_hash: None,
+                            thumb_width: None,
+                            thumb_height: None,
+                            thumb_sort_key: None,
+                            thumb_library_uuid: None,
+                            thumb_directory_id: None,
+                        });
+                    // Representative pass — count already accumulated above.
+                    // Across libraries/directories the newest representative
+                    // wins: (sort key, image id) compare.
+                    let candidate_key = (sort_key, image_id);
+                    let is_newer = match &entry.thumb_sort_key {
+                        Some(current) => candidate_key > *current,
+                        None => true,
+                    };
+                    if is_newer {
+                        entry.thumb_image_id = Some(image_id);
+                        entry.thumb_file_hash = file_hash;
+                        entry.thumb_width = width;
+                        entry.thumb_height = height;
+                        entry.thumb_sort_key = Some(candidate_key);
+                        entry.thumb_library_uuid = Some(lib.uuid.clone());
+                        entry.thumb_directory_id = Some(*dir_id);
                     }
                 }
             }
         } // end for lib in &target_libs
 
-        // Build folder list (skip single-item folders)
-        let mut folders: Vec<serde_json::Value> = folders_map
+        // Build folder list (skip single-item folders), ordered deterministically
+        // so pagination across requests is stable.
+        let mut all_folders: Vec<(String, FolderCatalogEntry)> = folders_map
+            .into_iter()
+            .filter(|(_, data)| data.count > 1)
+            .collect();
+
+        all_folders.sort_by(|a, b| {
+            // Unfiled (empty import_source) sorts last, then by lowercase name.
+            let folder_name = |key: &String| {
+                if key.is_empty() {
+                    "\u{10FFFF}".to_string()
+                } else {
+                    std::path::Path::new(key)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(key)
+                        .to_lowercase()
+                }
+            };
+            let a_name = folder_name(&a.0);
+            let b_name = folder_name(&b.0);
+            // Tie-break on the full path so same-named folders keep stable order.
+            a_name.cmp(&b_name).then_with(|| a.0.cmp(&b.0))
+        });
+
+        let total = all_folders.len();
+        let start = (((page - 1) * per_page) as usize).min(total);
+        let end = (start + per_page as usize).min(total);
+        let folders: Vec<serde_json::Value> = all_folders[start..end]
             .iter()
-            .filter(|(_, data)| data.0 > 1)
             .map(|(key, data)| {
                 let path = if key.is_empty() {
                     None
@@ -899,36 +1069,38 @@ pub async fn list_folders(
                         .unwrap_or(key)
                         .to_string()
                 };
+                let thumbnail_url = match (
+                    data.thumb_image_id,
+                    data.thumb_file_hash.as_deref(),
+                    data.thumb_library_uuid.as_deref(),
+                    data.thumb_directory_id,
+                ) {
+                    (Some(image_id), Some(file_hash), Some(lib_uuid), Some(dir_id)) => {
+                        Some(folder_thumbnail_url(lib_uuid, dir_id, image_id, file_hash))
+                    }
+                    _ => None,
+                };
                 json!({
                     "path": path,
                     "name": name,
-                    "count": data.0,
-                    "thumbnail_url": data.1,
-                    "width": data.2,
-                    "height": data.3,
+                    "count": data.count,
+                    "thumbnail_url": thumbnail_url,
+                    "width": data.thumb_width,
+                    "height": data.thumb_height,
                 })
             })
             .collect();
 
-        folders.sort_by(|a, b| {
-            let a_null = a["path"].is_null();
-            let b_null = b["path"].is_null();
-            if a_null != b_null {
-                return a_null.cmp(&b_null);
-            }
-            let a_name = a["name"].as_str().unwrap_or("").to_lowercase();
-            let b_name = b["name"].as_str().unwrap_or("").to_lowercase();
-            a_name.cmp(&b_name)
-        });
-
-        Ok::<_, AppError>(folders)
+        Ok::<_, AppError>((folders, total))
     })
     .await??;
 
-    let total = folders.len();
+    let (folders, total) = total;
     Ok(Json(json!({
         "folders": folders,
-        "total": total
+        "total": total,
+        "page": page,
+        "per_page": per_page
     })))
 }
 
@@ -940,6 +1112,10 @@ pub struct ListFoldersQuery {
     #[serde(default)]
     pub favorites_only: bool,
     pub tags: Option<String>,
+    #[serde(default = "default_page")]
+    pub page: i64,
+    #[serde(default = "default_per_page")]
+    pub per_page: i64,
 }
 
 /// Fallback: query images from the main/legacy database.

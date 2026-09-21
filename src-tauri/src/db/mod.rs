@@ -3,6 +3,7 @@ pub mod library;
 pub mod migrations;
 pub mod models;
 pub mod pool;
+pub mod resilience;
 pub mod schema;
 
 pub use directory_db::DirectoryDbManager;

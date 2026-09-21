@@ -307,7 +307,7 @@ export async function fetchImages({
   return response.data
 }
 
-export async function fetchFolders({ directory_id, library_id, rating, favorites_only, tags, page = 1, per_page = 50 } = {}) {
+export async function fetchFolders({ directory_id, library_id, rating, favorites_only, tags, page = 1, per_page = 100 } = {}) {
   const params = new URLSearchParams()
   if (directory_id) params.append('directory_id', directory_id)
   if (library_id) params.append('library_id', library_id)

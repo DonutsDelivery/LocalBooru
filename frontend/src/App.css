@@ -164,8 +164,17 @@
 /* Directory list */
 .directory-buttons {
   display: flex;
+  align-items: flex-end;
   gap: 12px;
   margin-bottom: 20px;
+}
+
+.directory-library-target {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
 }
 
 .add-directory-btn {
