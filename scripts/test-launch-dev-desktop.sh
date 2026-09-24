@@ -42,6 +42,7 @@ export PATH="$TEMP_DIR/bin:$PATH"
 export FAKE_VITE_READY="$TEMP_DIR/vite-ready"
 export FAKE_NPM_CALLS="$TEMP_DIR/npm-calls"
 export FAKE_BINARY_ARGS="$TEMP_DIR/binary-args"
+export XDG_CACHE_HOME="$TEMP_DIR/cache"
 
 # A ready frontend must launch the binary immediately without starting npm.
 touch "$FAKE_VITE_READY"
@@ -61,5 +62,15 @@ if LOCALBOORU_DEV_BINARY="$TEMP_DIR/missing" "$ROOT/scripts/launch-dev-desktop.s
     exit 1
 fi
 grep -F 'Rebuild explicitly with:' "$TEMP_DIR/missing.out" >/dev/null
+
+# Without an explicit test override, the launcher uses the one canonical
+# per-user dev target rather than a worktree-local or named candidate target.
+mkdir -p "$XDG_CACHE_HOME/localbooru/builds/dev-target/debug"
+cp "$TEMP_DIR/localbooru" "$XDG_CACHE_HOME/localbooru/builds/dev-target/debug/localbooru"
+rm -f "$FAKE_BINARY_ARGS"
+"$ROOT/scripts/launch-dev-desktop.sh" "/tmp/canonical image.png"
+[[ "$(<"$FAKE_BINARY_ARGS")" == "/tmp/canonical image.png" ]]
+! grep -Fq 'target/debug/localbooru' "$ROOT/scripts/launch-dev-desktop.sh"
+! grep -Fq 'localbooru-target-' "$ROOT/scripts/launch-dev-desktop.sh"
 
 printf 'Desktop Dev launcher tests passed\n'

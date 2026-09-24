@@ -16,7 +16,7 @@ impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer
              PRAGMA journal_mode = WAL;
              PRAGMA cache_size = -64000;
              PRAGMA synchronous = NORMAL;
-             PRAGMA mmap_size = 268435456;
+             PRAGMA mmap_size = 0;
              PRAGMA foreign_keys = ON;",
         )?;
         Ok(())

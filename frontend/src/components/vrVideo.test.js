@@ -2,17 +2,54 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   DEFAULT_VR_CAMERA,
+  DEFAULT_VR_CONFIG,
+  VR_SETTINGS_STORAGE_KEY,
   detectVRInputProjection,
   detectVRProjection,
   detectVRStereo,
   fitVRTextureSize,
+  loadVRConfig,
   normalizeYaw,
+  saveVRConfig,
   shouldStageVRTexture,
   uploadVRVideoFrame,
   updateVRCamera,
   updateVRFov,
   vrPointerDelta,
 } from './Lightbox/utils/vrVideo.js'
+
+test('uses 180 SBS fisheye defaults and persists the last VR settings', () => {
+  const values = new Map()
+  const storage = {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  }
+
+  assert.deepEqual(loadVRConfig(storage), DEFAULT_VR_CONFIG)
+
+  const selected = {
+    inputProjection: 'equirectangular',
+    projection: '360',
+    stereo: 'tb',
+    eye: 'right',
+    fov: 75,
+  }
+  saveVRConfig(selected, storage)
+  assert.equal(values.has(VR_SETTINGS_STORAGE_KEY), true)
+  assert.deepEqual(loadVRConfig(storage), selected)
+})
+
+test('sanitizes invalid persisted VR settings', () => {
+  const storage = {
+    getItem: () => JSON.stringify({
+      inputProjection: 'cube', projection: '720', stereo: 'red-cyan', eye: 'both', fov: 999,
+    }),
+  }
+  assert.deepEqual(loadVRConfig(storage), {
+    ...DEFAULT_VR_CONFIG,
+    fov: 120,
+  })
+})
 
 test('detects explicit 180 and 360 VR filename markers', () => {
   assert.equal(detectVRProjection('concert_VR180_SBS.mp4'), '180')

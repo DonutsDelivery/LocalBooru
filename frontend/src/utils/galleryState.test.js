@@ -75,16 +75,19 @@ test('grouped root refresh replaces stale folder previews after image and scan c
   }), false)
 
   let visibleFolders = [{ path: '/set', thumbnail_url: '/thumbnail?file_hash=stale' }]
+  let refreshPages = []
   const refreshed = await refreshGroupedFolderCatalog({
     groupByFolders: true,
     currentFolder: null,
-    loadFolders: async () => {
+    loadFolders: async ({ page } = {}) => {
+      refreshPages.push(page ?? null)
       visibleFolders = [{ path: '/set', thumbnail_url: '/thumbnail?file_hash=current' }]
     },
   })
 
   assert.equal(refreshed, true)
   assert.equal(visibleFolders[0].thumbnail_url, '/thumbnail?file_hash=current')
+  assert.deepEqual(refreshPages, [1])
 })
 
 // AC: @identity-safe-image-adjustments ac-scan-reconcile

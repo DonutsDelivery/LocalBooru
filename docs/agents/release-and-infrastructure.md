@@ -245,6 +245,7 @@ The container builds:
 3. WebKitGTK 2.52.3 from the pinned upstream tarball and SHA-256.
 4. The tracked LocalBooru WebKit patch, including:
    - application-owned GStreamer `video-filter` insertion;
+   - direct GStreamer GL-frame copies for video-backed WebGL textures;
    - `LOCALBOORU_WEB_PROCESS_PATH` selection for the Manager-compatible helper.
 5. VapourSynth R75 from a pinned Git commit.
 6. LocalBooru's GStreamer pass-through and VapourSynth bridge plugins.

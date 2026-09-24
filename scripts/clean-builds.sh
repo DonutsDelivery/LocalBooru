@@ -48,10 +48,11 @@ WINDOWS_SCCACHE_ROOT="${LOCALBOORU_WINDOWS_SCCACHE_ROOT:-$WINDOWS_SCCACHE_DEFAUL
 DIST_LINUX_ROOT="${LOCALBOORU_DIST_LINUX_DIR:-$ROOT/dist-linux-local}"
 DIST_WINDOWS_ROOT="${LOCALBOORU_DIST_WINDOWS_DIR:-$ROOT/dist-windows-local}"
 CACHE_MARKER=".localbooru-build-cache"
+DEV_TARGET_ROOT="${LOCALBOORU_DEV_TARGET_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/localbooru/builds/dev-target}"
 
 DEV_PATHS=(
   "$ROOT/target/debug"
-  "/mnt/storage/Programs/localbooru-target-dev/debug"
+  "$DEV_TARGET_ROOT/debug"
 )
 ANDROID_PATHS=(
   "$ROOT/src-tauri/gen/android/app/build"
@@ -62,10 +63,10 @@ ANDROID_PATHS=(
   "$ROOT/target/armv7-linux-androideabi"
   "$ROOT/target/i686-linux-android"
   "$ROOT/target/x86_64-linux-android"
-  "/mnt/storage/Programs/localbooru-target-dev/aarch64-linux-android"
-  "/mnt/storage/Programs/localbooru-target-dev/armv7-linux-androideabi"
-  "/mnt/storage/Programs/localbooru-target-dev/i686-linux-android"
-  "/mnt/storage/Programs/localbooru-target-dev/x86_64-linux-android"
+  "$DEV_TARGET_ROOT/aarch64-linux-android"
+  "$DEV_TARGET_ROOT/armv7-linux-androideabi"
+  "$DEV_TARGET_ROOT/i686-linux-android"
+  "$DEV_TARGET_ROOT/x86_64-linux-android"
 )
 LINUX_PATHS=(
   "$LINUX_BUILD_ROOT"

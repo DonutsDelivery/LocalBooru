@@ -1,13 +1,7 @@
 #!/bin/bash
 source "$HOME/.cargo/env" 2>/dev/null
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -n "${LOCALBOORU_DEV_TARGET_DIR:-}" ]]; then
-    export CARGO_TARGET_DIR="$LOCALBOORU_DEV_TARGET_DIR"
-elif [[ -d /mnt/storage/Programs && -w /mnt/storage/Programs ]]; then
-    export CARGO_TARGET_DIR="/mnt/storage/Programs/localbooru-target-dev"
-else
-    export CARGO_TARGET_DIR="$ROOT/target"
-fi
+export CARGO_TARGET_DIR="${LOCALBOORU_DEV_TARGET_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/localbooru/builds/dev-target}"
 mkdir -p "$CARGO_TARGET_DIR"
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 STATE_DIR="$STATE_HOME/localbooru"

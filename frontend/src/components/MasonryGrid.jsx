@@ -212,6 +212,7 @@ function MasonryGrid({
                 ) : (
                   <MediaItem
                     image={image}
+                    useFullImage={tileSize === 5}
                     onClick={() => onImageClick(image)}
                     user={user}
                     onRatingChange={onImageUpdate}

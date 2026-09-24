@@ -271,6 +271,7 @@ pub fn extract_preview_frames(
 }
 
 static PREVIEW_GENERATIONS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+const MAX_CONCURRENT_PREVIEW_GENERATIONS: usize = 2;
 
 pub(crate) struct PreviewGenerationGuard {
     key: PathBuf,
@@ -280,9 +281,10 @@ impl PreviewGenerationGuard {
     fn claim(key: PathBuf) -> Option<Self> {
         let generations = PREVIEW_GENERATIONS.get_or_init(|| Mutex::new(HashSet::new()));
         let mut active = generations.lock().unwrap();
-        if !active.insert(key.clone()) {
+        if active.contains(&key) || active.len() >= MAX_CONCURRENT_PREVIEW_GENERATIONS {
             return None;
         }
+        active.insert(key.clone());
         Some(Self { key })
     }
 }
@@ -308,6 +310,7 @@ pub(crate) fn generate_video_previews_claimed(
     data_dir: &Path,
     num_frames: usize,
     _guard: &PreviewGenerationGuard,
+    source_is_current: impl FnOnce() -> bool,
 ) -> Vec<PathBuf> {
     let output_dir = get_preview_dir(data_dir, file_hash);
     let existing = get_preview_frames(data_dir, file_hash);
@@ -328,31 +331,31 @@ pub(crate) fn generate_video_previews_claimed(
         let _ = std::fs::remove_dir_all(&staging_dir);
         return vec![];
     }
-    if std::fs::write(staging_dir.join(".complete"), b"complete\n").is_err() {
-        let _ = std::fs::remove_dir_all(&staging_dir);
-        return vec![];
-    }
-    let _ = std::fs::remove_dir_all(&output_dir);
-    if std::fs::rename(&staging_dir, &output_dir).is_err() {
-        let _ = std::fs::remove_dir_all(&staging_dir);
+    if !publish_preview_staging(&staging_dir, &output_dir, source_is_current) {
         return vec![];
     }
     get_preview_frames(data_dir, file_hash)
 }
 
-/// Generate preview frames for a video file.
-///
-/// Returns paths to generated frame images, or empty vec on failure.
-pub fn generate_video_previews(
-    video_path: &str,
-    file_hash: &str,
-    data_dir: &Path,
-    num_frames: usize,
-) -> Vec<PathBuf> {
-    let Some(guard) = claim_preview_generation(data_dir, file_hash) else {
-        return vec![];
-    };
-    generate_video_previews_claimed(video_path, file_hash, data_dir, num_frames, &guard)
+fn publish_preview_staging(
+    staging_dir: &Path,
+    output_dir: &Path,
+    source_is_current: impl FnOnce() -> bool,
+) -> bool {
+    if !source_is_current() {
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        return false;
+    }
+    if std::fs::write(staging_dir.join(".complete"), b"complete\n").is_err() {
+        let _ = std::fs::remove_dir_all(staging_dir);
+        return false;
+    }
+    let _ = std::fs::remove_dir_all(output_dir);
+    if std::fs::rename(staging_dir, output_dir).is_err() {
+        let _ = std::fs::remove_dir_all(staging_dir);
+        return false;
+    }
+    true
 }
 
 /// Generate a video thumbnail using ffmpeg.
@@ -430,15 +433,62 @@ mod tests {
     }
 
     #[test]
-    fn preview_generation_claim_is_single_flight() {
-        let key = PathBuf::from(format!(
+    fn preview_generation_claim_is_single_flight_and_bounded() {
+        let first_key = PathBuf::from(format!(
             "preview-claim-{}-{}",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
-        let first = PreviewGenerationGuard::claim(key.clone()).unwrap();
-        assert!(PreviewGenerationGuard::claim(key.clone()).is_none());
+        let second_key = first_key.with_extension("second");
+        let waiting_key = first_key.with_extension("waiting");
+        let first = PreviewGenerationGuard::claim(first_key.clone()).unwrap();
+        assert!(PreviewGenerationGuard::claim(first_key).is_none());
+        let second = PreviewGenerationGuard::claim(second_key).unwrap();
+        assert!(PreviewGenerationGuard::claim(waiting_key.clone()).is_none());
         drop(first);
-        assert!(PreviewGenerationGuard::claim(key).is_some());
+        assert!(PreviewGenerationGuard::claim(waiting_key).is_some());
+        drop(second);
+    }
+
+    #[test]
+    fn changed_source_discards_staging_before_preview_publication() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-preview-validation-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let output_dir = root.join("published");
+        let stale_staging = root.join("stale-staging");
+        std::fs::create_dir_all(&output_dir).unwrap();
+        std::fs::write(output_dir.join("existing"), b"existing").unwrap();
+        std::fs::create_dir_all(&stale_staging).unwrap();
+        std::fs::write(stale_staging.join("frame_0.webp"), b"stale").unwrap();
+
+        assert!(!publish_preview_staging(
+            &stale_staging,
+            &output_dir,
+            || false
+        ));
+        assert!(!stale_staging.exists());
+        assert_eq!(
+            std::fs::read(output_dir.join("existing")).unwrap(),
+            b"existing"
+        );
+
+        let current_staging = root.join("current-staging");
+        std::fs::create_dir_all(&current_staging).unwrap();
+        std::fs::write(current_staging.join("frame_0.webp"), b"current").unwrap();
+        assert!(publish_preview_staging(
+            &current_staging,
+            &output_dir,
+            || true
+        ));
+        assert!(!current_staging.exists());
+        assert_eq!(
+            std::fs::read(output_dir.join("frame_0.webp")).unwrap(),
+            b"current"
+        );
+        assert!(output_dir.join(".complete").is_file());
+        let _ = std::fs::remove_dir_all(root);
     }
 }

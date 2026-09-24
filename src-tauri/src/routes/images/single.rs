@@ -19,6 +19,12 @@ use crate::services::video_preview;
 
 use super::helpers::{find_image_directory, get_image_tags_from_directory};
 
+fn media_path_matches_hash(path: &Path, expected_hash: &str) -> bool {
+    let path = path.to_string_lossy();
+    importer::calculate_quick_hash(&path).is_ok_and(|hash| hash == expected_hash)
+        || importer::calculate_file_hash(&path).is_ok_and(|hash| hash == expected_hash)
+}
+
 #[derive(Debug, Deserialize)]
 pub struct DirectoryQuery {
     pub directory_id: Option<i64>,
@@ -101,49 +107,53 @@ fn generate_thumbnail_from_candidates(
     expected_hash: &str,
     output: &Path,
 ) -> bool {
+    generate_thumbnail_from_candidates_with(
+        candidates,
+        expected_hash,
+        output,
+        |candidate, attempt_output| {
+            if importer::is_video_file(&candidate.to_string_lossy()) {
+                importer::generate_video_thumbnail(
+                    &candidate.to_string_lossy(),
+                    attempt_output.to_str().unwrap_or(""),
+                    300,
+                )
+            } else {
+                importer::generate_thumbnail(
+                    &candidate.to_string_lossy(),
+                    attempt_output.to_str().unwrap_or(""),
+                    300,
+                )
+            }
+        },
+    )
+}
+
+fn generate_thumbnail_from_candidates_with(
+    candidates: Vec<PathBuf>,
+    expected_hash: &str,
+    output: &Path,
+    mut generate: impl FnMut(&Path, &Path) -> bool,
+) -> bool {
     for candidate in candidates {
         if !candidate.is_file() {
             continue;
         }
-        let extension = candidate
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("media");
         let suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
-        let source_snapshot = output.with_file_name(format!(
-            ".thumbnail-source-{}-{}.{}",
-            std::process::id(),
-            suffix,
-            extension
-        ));
         let attempt_output = output.with_file_name(format!(
             ".thumbnail-output-{}-{}.tmp.webp",
             std::process::id(),
             suffix
         ));
-        if std::fs::copy(&candidate, &source_snapshot).is_err() {
-            continue;
-        }
-        let snapshot = source_snapshot.to_string_lossy();
-        let matches_hash = importer::calculate_quick_hash(&snapshot)
-            .is_ok_and(|hash| hash == expected_hash)
-            || importer::calculate_file_hash(&snapshot).is_ok_and(|hash| hash == expected_hash);
-        if !matches_hash {
-            let _ = std::fs::remove_file(&source_snapshot);
+        if !media_path_matches_hash(&candidate, expected_hash) {
             continue;
         }
 
-        let generated = if importer::is_video_file(&candidate.to_string_lossy()) {
-            importer::generate_video_thumbnail(
-                &snapshot,
-                attempt_output.to_str().unwrap_or(""),
-                300,
-            )
-        } else {
-            importer::generate_thumbnail(&snapshot, attempt_output.to_str().unwrap_or(""), 300)
-        };
-        let _ = std::fs::remove_file(&source_snapshot);
-        if !generated {
+        if !generate(&candidate, &attempt_output) {
+            let _ = std::fs::remove_file(&attempt_output);
+            continue;
+        }
+        if !media_path_matches_hash(&candidate, expected_hash) {
             let _ = std::fs::remove_file(&attempt_output);
             continue;
         }
@@ -168,36 +178,17 @@ fn generate_video_previews_from_candidates(
         if !candidate.is_file() {
             continue;
         }
-        let extension = candidate
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("video");
-        let suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
-        let source_snapshot = std::env::temp_dir().join(format!(
-            "localbooru-preview-source-{}-{}.{}",
-            std::process::id(),
-            suffix,
-            extension
-        ));
-        if std::fs::copy(&candidate, &source_snapshot).is_err() {
-            continue;
-        }
-        let snapshot = source_snapshot.to_string_lossy();
-        let matches_hash = importer::calculate_quick_hash(&snapshot)
-            .is_ok_and(|hash| hash == expected_hash)
-            || importer::calculate_file_hash(&snapshot).is_ok_and(|hash| hash == expected_hash);
-        if !matches_hash {
-            let _ = std::fs::remove_file(&source_snapshot);
+        if !media_path_matches_hash(&candidate, expected_hash) {
             continue;
         }
         let generated = video_preview::generate_video_previews_claimed(
-            &snapshot,
+            &candidate.to_string_lossy(),
             expected_hash,
             data_dir,
             8,
             &generation,
+            || media_path_matches_hash(&candidate, expected_hash),
         );
-        let _ = std::fs::remove_file(&source_snapshot);
         if generated.len() == 8 {
             return true;
         }
@@ -1224,6 +1215,41 @@ mod tests {
     use axum::Router;
 
     use super::*;
+
+    #[test]
+    fn thumbnail_generation_reads_source_directly_and_rejects_mid_generation_changes() {
+        let root = std::env::temp_dir().join(format!(
+            "localbooru-thumbnail-source-validation-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let source = root.join("source.mp4");
+        let output = root.join("thumbnail.webp");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&source, b"original video bytes").unwrap();
+        let expected_hash = importer::calculate_quick_hash(&source.to_string_lossy()).unwrap();
+
+        let generated = generate_thumbnail_from_candidates_with(
+            vec![source.clone()],
+            &expected_hash,
+            &output,
+            |input, attempt_output| {
+                assert_eq!(input, source);
+                std::fs::write(attempt_output, b"generated thumbnail").unwrap();
+                std::fs::write(&source, b"changed video bytes").unwrap();
+                true
+            },
+        );
+
+        assert!(!generated);
+        assert!(!output.exists());
+        assert!(std::fs::read_dir(&root).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("thumbnail-output")));
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     // AC: @identity-safe-image-adjustments ac-1
     #[test]

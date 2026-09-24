@@ -25,6 +25,7 @@ printf '%s\n' "${LOCALBOORU_TASK_QUEUE_WORKERS:-unset}" >>"$FAKE_NPM_WORKERS"
 printf '%s\n' "${CARGO_BUILD_JOBS:-unset}" >>"$FAKE_NPM_CARGO_JOBS"
 printf '%s\n' "${HOST_HEAVY_BUILD_WAIT_SECONDS:-unset}" >>"$FAKE_NPM_BUILD_WAITS"
 printf '%s\n' "${RUSTC_WRAPPER:-unset}" >>"$FAKE_NPM_RUSTC_WRAPPERS"
+printf '%s\n' "${CARGO_TARGET_DIR:-unset}" >>"$FAKE_NPM_TARGETS"
 printf '%s\n' "$@" >"$FAKE_NPM_ARGUMENTS"
 touch "$FAKE_NPM_ENTERED"
 if [[ "${FAKE_NPM_BLOCK:-0}" == "1" ]]; then
@@ -54,6 +55,7 @@ export FAKE_NPM_WORKERS="$TEMP_DIR/workers"
 export FAKE_NPM_CARGO_JOBS="$TEMP_DIR/cargo-jobs"
 export FAKE_NPM_BUILD_WAITS="$TEMP_DIR/build-waits"
 export FAKE_NPM_RUSTC_WRAPPERS="$TEMP_DIR/rustc-wrappers"
+export FAKE_NPM_TARGETS="$TEMP_DIR/targets"
 export FAKE_NPM_ARGUMENTS="$TEMP_DIR/arguments"
 export FAKE_NPM_ENTERED="$TEMP_DIR/entered"
 export FAKE_NPM_RELEASE="$TEMP_DIR/release"
@@ -122,6 +124,15 @@ mapfile -t worker_values <"$FAKE_NPM_WORKERS"
 LOCALBOORU_DEV_BUILD_WAIT_SECONDS=9 "$ROOT/run-dev.sh" >/dev/null
 mapfile -t build_wait_values <"$FAKE_NPM_BUILD_WAITS"
 [[ "${build_wait_values[3]}" == "9" ]]
+
+# The default target is one per-user cache shared by every worktree. It must
+# never fall back to a worktree-local target directory.
+unset LOCALBOORU_DEV_TARGET_DIR
+export XDG_CACHE_HOME="$TEMP_DIR/cache"
+"$ROOT/run-dev.sh" >/dev/null
+mapfile -t target_values <"$FAKE_NPM_TARGETS"
+[[ "${target_values[4]}" == "$XDG_CACHE_HOME/localbooru/builds/dev-target" ]]
+! grep -Fq 'ROOT/target' "$ROOT/run-dev.sh"
 
 printf '%s\n' \
   run \
