@@ -48,6 +48,7 @@ export function advanceMusicSession(session, choice) {
     history: [...session.history, session.current].filter(Boolean),
     playedKeys: [...session.playedKeys, musicTrackKey(track)],
     notice: null,
+    playbackError: null,
   }
 }
 
@@ -66,4 +67,12 @@ export function appendRelatedTracks(session, tracks) {
     return true
   })
   return { ...session, recommendations: [...session.recommendations, ...additions] }
+}
+
+export function removeExplicitQueueTrack(session, index) {
+  if (!session || !Number.isInteger(index) || index < 0 || index >= session.explicitQueue.length) return session
+  return {
+    ...session,
+    explicitQueue: session.explicitQueue.filter((_, itemIndex) => itemIndex !== index),
+  }
 }

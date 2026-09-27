@@ -11,9 +11,10 @@ import './Music.css'
 const defaultFacets = { artists: [], albums: [], genres: [], years: [], folders: [] }
 const labelFor = (value, fallback) => value || fallback
 const itemKey = item => `${item.library_id || ''}:${item.id}`
+const musicItemTitle = (item, mode) => mode === 'albums' ? item.display_title || item.title : item.title
 function matchesCollectionFilters(item, filters) {
   const query = filters.query.trim().toLocaleLowerCase()
-  if (query && ![item.title, item.artist, item.album].some(value => value?.toLocaleLowerCase().includes(query))) return false
+  if (query && ![item.display_title, item.title, item.artist, item.album].some(value => value?.toLocaleLowerCase().includes(query))) return false
   if (filters.artist && item.artist !== filters.artist) return false
   if (filters.album && item.album !== filters.album && item.title !== filters.album) return false
   if (filters.genre && item.genre !== filters.genre) return false
@@ -254,13 +255,13 @@ export default function MusicPage() {
         {!loading && !activeItems.length && <div className="music-empty"><span>♫</span><h2>No {mode} found</h2><p>Try another search or add a music folder in Directories.</p></div>}
         <div className="music-masonry">
           {activeItems.map(item => <article className="music-card" key={itemKey(item)}>
-            <button className="music-card-open" onClick={() => openItem(item)} aria-label={`Open ${item.title}`}>
+            <button className="music-card-open" onClick={() => openItem(item)} aria-label={`Open ${musicItemTitle(item, mode)}`}>
               <MusicArtwork item={item} />
-              <span className="music-card-details"><strong>{labelFor(item.title, mode === 'albums' ? 'Unknown album' : 'Untitled track')}</strong><small>{labelFor(item.artist, 'Unknown artist')}</small></span>
+              <span className="music-card-details"><strong>{labelFor(musicItemTitle(item, mode), mode === 'albums' ? 'Unknown album' : 'Untitled track')}</strong><small>{labelFor(item.artist, 'Unknown artist')}</small></span>
             </button>
             <div className="music-card-actions">
               {mode === 'songs' && <button onClick={event => toggleFavorite(event, item)} aria-label={item.is_favorite ? 'Remove favorite' : 'Add favorite'} title="Favorite">{item.is_favorite ? '♥' : '♡'}</button>}
-              {session && <button onClick={() => mode === 'songs' ? queueTrack(item) : openItem(item)} aria-label={mode === 'songs' ? `Queue ${item.title}` : `Open ${item.title}`} title={mode === 'songs' ? 'Add to queue' : 'Open album'}>{mode === 'songs' ? '＋ Queue' : 'Tracks'}</button>}
+              {session && <button onClick={() => mode === 'songs' ? queueTrack(item) : openItem(item)} aria-label={mode === 'songs' ? `Queue ${item.title}` : `Open ${musicItemTitle(item, mode)}`} title={mode === 'songs' ? 'Add to queue' : 'Open album'}>{mode === 'songs' ? '＋ Queue' : 'Tracks'}</button>}
               {filters.collection ? directMembers.has(`${item._standaloneTrack ? 'track' : mode === 'albums' ? 'album' : 'track'}:${itemKey(item._standaloneTrack || item)}`)
                 ? <button onClick={() => changeCollectionMembership(item, false)} title="Remove from collection">Remove</button>
                 : <small>{mode === 'songs' ? 'From album' : 'Contains a collection song'}</small>

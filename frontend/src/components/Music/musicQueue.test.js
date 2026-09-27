@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  advanceMusicSession, appendRelatedTracks, nextMusicTrack, orderedAlbumTracks,
+  advanceMusicSession, appendRelatedTracks, nextMusicTrack, orderedAlbumTracks, removeExplicitQueueTrack,
 } from './musicQueue.js'
 
 const track = (id, artist = 'Artist A', disc_number = 1, track_number = id) => ({
@@ -87,4 +87,19 @@ test('song mix keeps its selected seed while advancing through recommendations',
   assert.equal(session.current.id, 3)
   assert.equal(session.seed.id, 1)
   assert.deepEqual(session.history.map(item => item.id), [1, 2])
+})
+
+test('removing one explicit queue entry leaves playback, album order, and recommendations intact', () => {
+  const session = albumSession([track(4), track(5), track(6)])
+  session.explicitQueue = [track(80), track(81)]
+  session.recommendations = [track(90, 'Artist B')]
+  const updated = removeExplicitQueueTrack(session, 0)
+  assert.deepEqual(updated.explicitQueue.map(item => item.id), [81])
+  assert.strictEqual(updated.current, session.current)
+  assert.strictEqual(updated.seed, session.seed)
+  assert.strictEqual(updated.albumTracks, session.albumTracks)
+  assert.strictEqual(updated.recommendations, session.recommendations)
+  assert.equal(updated.albumCursor, session.albumCursor)
+  assert.equal(nextMusicTrack(updated).track.id, 81)
+  assert.strictEqual(removeExplicitQueueTrack(updated, 99), updated)
 })

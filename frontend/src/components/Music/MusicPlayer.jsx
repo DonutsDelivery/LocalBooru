@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { getMediaUrl, fetchRelatedMusic } from '../../api'
 import { nativeVideoAPI, videoControlAPI, isTauri } from '../../tauriAPI'
-import { advanceMusicSession, appendRelatedTracks, musicTrackKey, nextMusicTrack, orderedAlbumTracks, upcomingAlbumTracks } from './musicQueue'
+import { advanceMusicSession, appendRelatedTracks, musicTrackKey, nextMusicTrack, orderedAlbumTracks, removeExplicitQueueTrack, upcomingAlbumTracks } from './musicQueue'
 import MusicLightbox from './MusicLightbox'
 import './Music.css'
 
@@ -35,7 +35,7 @@ export function MusicPlayerProvider({ children }) {
   const relatedRequestRef = useRef(null)
   const waitingForNextRef = useRef(false)
   const generationRef = useRef(0)
-  sessionRef.current = session
+  useEffect(() => { sessionRef.current = session }, [session])
 
   useEffect(() => { sessionStorage.setItem('dmc_music_browse', JSON.stringify(browse)) }, [browse])
 
@@ -58,9 +58,10 @@ export function MusicPlayerProvider({ children }) {
       kind: 'album', album, albumTracks: ordered, albumCursor,
       seed: start, current: start, relatedShuffle: false,
       explicitQueue: [], recommendations: [], history: [],
-      playedKeys: [musicTrackKey(start)], relatedExhausted: false, loadingRelated: false, notice: null,
+      playedKeys: [musicTrackKey(start)], relatedExhausted: false, loadingRelated: false, notice: null, playbackError: null,
     })
     setPosition(0)
+    setDuration(Number(start.duration) || 0)
     setPlaying(true)
     setViewer({ kind: 'session' })
   }, [])
@@ -73,20 +74,22 @@ export function MusicPlayerProvider({ children }) {
       kind: 'mix', album: null, albumTracks: [], albumCursor: -1,
       seed: track, current: track, relatedShuffle: true,
       explicitQueue: [], recommendations: [], history: [],
-      playedKeys: [musicTrackKey(track)], relatedExhausted: false, loadingRelated: false, notice: null,
+      playedKeys: [musicTrackKey(track)], relatedExhausted: false, loadingRelated: false, notice: null, playbackError: null,
     })
     setPosition(0)
+    setDuration(Number(track.duration) || 0)
     setPlaying(true)
     setViewer({ kind: 'session' })
   }, [])
 
   const advance = useCallback(() => {
-    const current = sessionRef.current
+    const current = session
     const choice = nextMusicTrack(current)
     if (choice) {
       waitingForNextRef.current = false
       setSession(previous => advanceMusicSession(previous, choice))
       setPosition(0)
+      setDuration(Number(choice.track.duration) || 0)
       setPlaying(true)
     } else if (current && !current.relatedExhausted) {
       // Prefetch starts in an effect, so Next can arrive before loadingRelated
@@ -97,7 +100,7 @@ export function MusicPlayerProvider({ children }) {
       setPlaying(false)
       setSession(previous => previous ? { ...previous, notice: previous.notice || 'No further related songs in this library.' } : previous)
     }
-  }, [])
+  }, [session])
 
   const previous = useCallback(() => {
     if (audioRef.current?.currentTime > 3) {
@@ -113,11 +116,31 @@ export function MusicPlayerProvider({ children }) {
     setSession({ ...current, current: track, history: current.history.slice(0, -1),
       explicitQueue: [current.current, ...current.explicitQueue] })
     setPosition(0)
+    setDuration(Number(track.duration) || 0)
     setPlaying(true)
   }, [])
 
   const queueTrack = useCallback(track => {
     setSession(previous => previous ? { ...previous, explicitQueue: [...previous.explicitQueue, track], notice: null } : previous)
+  }, [])
+
+  const removeQueuedTrack = useCallback(index => {
+    setSession(previous => removeExplicitQueueTrack(previous, index))
+  }, [])
+
+  const reportPlaybackError = useCallback((track, error) => {
+    // Pausing for video or replacing a source can reject an in-flight play()
+    // with AbortError even though the audio file itself is healthy.
+    if (error?.name === 'AbortError') return
+    if (!track || !sessionRef.current?.current ||
+      musicTrackKey(sessionRef.current.current) !== musicTrackKey(track)) return
+    const message = error?.name === 'NotAllowedError'
+      ? 'Playback was blocked. Press Play to try again.'
+      : `Could not play “${track.title || 'this song'}”. The file may be missing or unsupported.`
+    setPlaying(false)
+    setSession(previous => previous && musicTrackKey(previous.current) === musicTrackKey(track)
+      ? { ...previous, playbackError: message }
+      : previous)
   }, [])
 
   const setRelatedShuffle = useCallback(enabled => {
@@ -144,19 +167,14 @@ export function MusicPlayerProvider({ children }) {
     if (!audio || !currentTrack) return
     audio.src = getMediaUrl(currentTrack.stream_url)
     audio.load()
-    setDuration(Number(currentTrack.duration) || 0)
-    setPosition(0)
-    if (playing) audio.play().catch(() => setPlaying(false))
-  // Track identity is the only reason to replace the media source.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack])
 
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
-    if (playing && currentTrack) audio.play().catch(() => setPlaying(false))
+    if (playing && currentTrack) audio.play().catch(error => reportPlaybackError(currentTrack, error))
     else audio.pause()
-  }, [playing, currentTrack])
+  }, [playing, currentTrack, reportPlaybackError])
 
   // Video playback pauses music at the actual play event, not on gallery open.
   useEffect(() => {
@@ -189,6 +207,8 @@ export function MusicPlayerProvider({ children }) {
     const requestKey = `${generation}:${session.playedKeys.join(',')}:${session.recommendations.map(musicTrackKey).join(',')}`
     if (relatedRequestRef.current === requestKey) return
     relatedRequestRef.current = requestKey
+    // The session tracks request state so the queue can show pending results.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSession(previous => previous ? { ...previous, loadingRelated: true } : previous)
     const excluded = [...session.albumTracks, ...session.explicitQueue, ...session.recommendations, session.current,
       ...session.history].filter(track => track?.library_id === session.seed.library_id).map(track => track.id)
@@ -210,15 +230,17 @@ export function MusicPlayerProvider({ children }) {
 
   useEffect(() => {
     if (!waitingForNextRef.current || !session || session.loadingRelated) return
+    // Resolve a Next request that arrived while recommendations were loading.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     advance()
   }, [session, advance])
 
   const value = useMemo(() => ({
     browse, setBrowse, updateBrowse, session, viewer, playing, position, duration, volume,
-    setPlaying, setVolume, startAlbum, startSong, advance, previous, queueTrack,
+    setPlaying, setVolume, startAlbum, startSong, advance, previous, queueTrack, removeQueuedTrack,
     setRelatedShuffle, openAlbum, openSession, closeViewer, seek,
   }), [browse, session, viewer, playing, position, duration, volume, updateBrowse,
-    startAlbum, startSong, advance, previous, queueTrack, setRelatedShuffle,
+    startAlbum, startSong, advance, previous, queueTrack, removeQueuedTrack, setRelatedShuffle,
     openAlbum, openSession, closeViewer, seek])
 
   return <MusicPlayerContext.Provider value={value}>
@@ -227,6 +249,8 @@ export function MusicPlayerProvider({ children }) {
       onTimeUpdate={event => setPosition(event.currentTarget.currentTime)}
       onDurationChange={event => setDuration(event.currentTarget.duration || 0)}
       onEnded={advance}
+      onPlaying={() => setSession(previous => previous?.playbackError ? { ...previous, playbackError: null } : previous)}
+      onError={event => reportPlaybackError(sessionRef.current?.current, event.currentTarget.error)}
     />
     {viewer && <MusicLightbox />}
   </MusicPlayerContext.Provider>
@@ -245,7 +269,9 @@ export function PersistentMusicPlayer() {
   return <div className="music-mini-player" role="region" aria-label="Music player">
     <button className="music-mini-track" onClick={openSession} aria-label="Open music player">
       {track.artwork_url ? <img src={getMediaUrl(track.artwork_url)} alt="" /> : <span className="music-art-fallback">♫</span>}
-      <span><strong>{track.title}</strong><small>{track.artist || 'Unknown artist'}</small></span>
+      <span><strong>{track.title}</strong><small>{track.artist || 'Unknown artist'}</small>
+        {session.playbackError && <small className="music-mini-error" role="alert">Playback error · Open player</small>}
+      </span>
     </button>
     <div className="music-mini-controls">
       <button onClick={previous} aria-label="Previous track">⏮</button>

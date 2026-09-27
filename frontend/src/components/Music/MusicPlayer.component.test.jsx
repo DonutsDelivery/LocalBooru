@@ -26,7 +26,7 @@ const song = (id, artist = 'Artist A') => ({
 })
 
 function PlayerHarness({ immediateNext = false }) {
-  const { session, playing, startSong, advance } = useMusicPlayer()
+  const { session, playing, startSong, advance, queueTrack } = useMusicPlayer()
   const advanced = useRef(false)
   // A layout effect can press Next after the selected song renders but before
   // the recommendation prefetch effect has marked the request as loading.
@@ -39,10 +39,15 @@ function PlayerHarness({ immediateNext = false }) {
   return <>
     <button onClick={() => startSong(song(1))}>Start song</button>
     <button onClick={advance}>Skip</button>
+    <button onClick={() => queueTrack(song(80))}>Queue song 80</button>
+    <button onClick={() => queueTrack(song(81))}>Queue song 81</button>
     <output data-testid="current">{session?.current?.id || ''}</output>
     <output data-testid="seed">{session?.seed?.id || ''}</output>
     <output data-testid="playing">{String(playing)}</output>
     <output data-testid="notice">{session?.notice || ''}</output>
+    <output data-testid="queued">{session?.explicitQueue.map(track => track.id).join(',') || ''}</output>
+    <output data-testid="related">{session?.recommendations.map(track => track.id).join(',') || ''}</output>
+    <output data-testid="playback-error">{session?.playbackError || ''}</output>
   </>
 }
 
@@ -91,4 +96,43 @@ test('native video playback pauses music without replacing its queue', async () 
   expect(screen.getByTestId('playing').textContent).toBe('false')
   expect(screen.getByTestId('current').textContent).toBe('1')
   expect(screen.getByTestId('seed').textContent).toBe('1')
+})
+
+test('removing an explicitly queued song leaves the current song and recommendations intact', async () => {
+  api.fetchRelatedMusic.mockResolvedValue({ tracks: [2, 3, 4, 5, 6, 7].map(id => song(id)) })
+  render(<MusicPlayerProvider><PlayerHarness /></MusicPlayerProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Start song' }))
+  await waitFor(() => expect(screen.getByTestId('related').textContent).toBe('2,3,4,5,6,7'))
+  fireEvent.click(screen.getByRole('button', { name: 'Queue song 80' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Queue song 81' }))
+  expect(screen.getByTestId('queued').textContent).toBe('80,81')
+  fireEvent.click(screen.getByRole('button', { name: 'Remove Song 80 from queue' }))
+  expect(screen.getByTestId('queued').textContent).toBe('81')
+  expect(screen.getByTestId('current').textContent).toBe('1')
+  expect(screen.getByTestId('seed').textContent).toBe('1')
+  expect(screen.getByTestId('related').textContent).toBe('2,3,4,5,6,7')
+  fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
+  expect(screen.getByTestId('current').textContent).toBe('81')
+})
+
+test('audio element errors pause playback and show a clear session notice', async () => {
+  api.fetchRelatedMusic.mockResolvedValue({ tracks: [2, 3, 4, 5, 6, 7].map(id => song(id)) })
+  const { container } = render(<MusicPlayerProvider><PlayerHarness /></MusicPlayerProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Start song' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Queue song 80' }))
+  fireEvent.error(container.querySelector('audio'))
+  expect(screen.getByTestId('playing').textContent).toBe('false')
+  expect(screen.getByTestId('queued').textContent).toBe('80')
+  expect(screen.getByTestId('playback-error').textContent).toMatch(/Could not play “Song 1”/)
+  expect(screen.getByRole('alert').textContent).toMatch(/file may be missing or unsupported/)
+})
+
+test('a rejected audio play request reports an actionable playback notice', async () => {
+  HTMLMediaElement.prototype.play.mockRejectedValueOnce(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }))
+  api.fetchRelatedMusic.mockResolvedValue({ tracks: [2, 3, 4, 5, 6, 7].map(id => song(id)) })
+  render(<MusicPlayerProvider><PlayerHarness /></MusicPlayerProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Start song' }))
+  await waitFor(() => expect(screen.getByTestId('playback-error').textContent).toMatch(/Press Play to try again/))
+  expect(screen.getByTestId('playing').textContent).toBe('false')
+  expect(screen.getByTestId('current').textContent).toBe('1')
 })
