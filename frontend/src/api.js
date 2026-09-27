@@ -1,5 +1,5 @@
 /**
- * LocalBooru API client - supports both local and multi-server mode
+ * DonutMediaCenter API client - supports both local and multi-server mode
  */
 import axios from 'axios'
 import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
@@ -972,7 +972,7 @@ export async function discoverUPnP() {
   return response.data
 }
 
-export async function openUPnPPort(externalPort, internalPort = null, description = 'LocalBooru') {
+export async function openUPnPPort(externalPort, internalPort = null, description = 'DonutMediaCenter') {
   const response = await api.post('/network/upnp/open-port', {
     external_port: externalPort,
     internal_port: internalPort || externalPort,

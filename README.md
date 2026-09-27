@@ -1,4 +1,4 @@
-# LocalBooru
+# DonutMediaCenter
 
 A local image library with automatic AI tagging, designed for organizing and browsing large image collections.
 
@@ -43,7 +43,7 @@ The installer versions use AppData/home directory instead (shared across updates
 - **Content rating** - Automatically classifies images by rating (PG, PG13, R, X, XXX)
 
 ### Smart Organization
-- **Watch directories** - Point LocalBooru at your image folders and it automatically imports and tags new images
+- **Watch directories** - Point DonutMediaCenter at your image folders and it automatically imports and tags new images
 - **Tag-based search** - Find images instantly using tag combinations
 - **Favorites** - Mark your best images and filter to show only favorites
 - **Pruning** - Clean up non-favorited images by moving them to a dumpster folder
@@ -71,9 +71,9 @@ The installer versions use AppData/home directory instead (shared across updates
 
 ## Getting Started
 
-1. **Launch LocalBooru** - The app starts with an empty library
+1. **Launch DonutMediaCenter** - The app starts with an empty library
 2. **Add a directory** - Go to "Directories" and click "Add Directory" to select a folder containing images
-3. **Wait for processing** - LocalBooru will scan and tag your images in the background
+3. **Wait for processing** - DonutMediaCenter will scan and tag your images in the background
 4. **Browse and enjoy** - Use the gallery to browse, search, and favorite your images
 
 ## Usage Tips

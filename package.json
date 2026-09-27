@@ -1,7 +1,7 @@
 {
-  "name": "localbooru",
+  "name": "donutmediacenter",
   "version": "2.0.3",
-  "description": "Local image library with automatic tagging",
+  "description": "Local image, video, and music library",
   "private": true,
   "scripts": {
     "build": "npm run build:frontend",
@@ -31,6 +31,7 @@
   "keywords": [
     "booru",
     "image-gallery",
+    "music-library",
     "tagger",
     "tauri"
   ],

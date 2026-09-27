@@ -102,7 +102,7 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
                 <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="currentColor" opacity="0.85"/>
               </svg>
             </div>
-            <span className="title-bar-title">LocalBooru</span>
+            <span className="title-bar-title">DonutMediaCenter</span>
           </div>
 
           <div className="title-bar-controls">
@@ -184,7 +184,7 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
             <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="currentColor" opacity="0.85"/>
           </svg>
         </div>
-        <span className="title-bar-title">LocalBooru</span>
+        <span className="title-bar-title">DonutMediaCenter</span>
       </div>
 
       <div className="title-bar-controls">

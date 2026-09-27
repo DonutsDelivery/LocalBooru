@@ -67,9 +67,9 @@ export default function QRConnect({ active = true }) {
           </div>
 
           <div className="qr-instructions">
-            <p>Scan this QR code with the LocalBooru mobile app to connect.</p>
+            <p>Scan this QR code with the DonutMediaCenter mobile app to connect.</p>
             <ol>
-              <li>Open the LocalBooru app on your phone</li>
+              <li>Open the DonutMediaCenter app on your phone</li>
               <li>Go to Settings &gt; Servers</li>
               <li>Tap "Scan QR Code"</li>
             </ol>

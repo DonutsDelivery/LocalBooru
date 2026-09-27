@@ -106,7 +106,7 @@ export default function ServerSettings({ onServerChange }) {
 
           // Validate legacy phone-connect QR data.
           if (qrData.type !== 'localbooru') {
-            setScanError('Not a LocalBooru QR code')
+            setScanError('Not a DonutMediaCenter QR code')
             return
           }
 
@@ -202,7 +202,7 @@ export default function ServerSettings({ onServerChange }) {
       {servers.length === 0 && mobileClient ? (
         <div className="no-servers">
           <p>No servers configured.</p>
-          <p>Add a server to connect to your LocalBooru library.</p>
+          <p>Add a server to connect to your DonutMediaCenter library.</p>
         </div>
       ) : (
         <div className="server-list">
@@ -380,7 +380,7 @@ function AddServerModal({ server, onSave, onClose }) {
         const urlObj = new URL(finalUrl)
         defaultName = urlObj.hostname
       } catch {
-        defaultName = 'LocalBooru Server'
+        defaultName = 'DonutMediaCenter Server'
       }
     }
 

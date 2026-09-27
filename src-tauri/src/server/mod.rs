@@ -196,7 +196,7 @@ pub async fn start_server(
 
 async fn api_root() -> Json<serde_json::Value> {
     Json(serde_json::json!({
-        "name": "LocalBooru",
+        "name": "DonutMediaCenter",
         "version": env!("CARGO_PKG_VERSION"),
         "status": "running"
     }))

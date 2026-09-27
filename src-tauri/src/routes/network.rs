@@ -425,7 +425,7 @@ async fn get_qr_data(State(state): State<AppState>) -> Result<Json<Value>, AppEr
         json!({
             "type": "localbooru",
             "version": 2,
-            "name": "LocalBooru",
+            "name": "DonutMediaCenter",
             "local": local_url,
             "public": public_url,
             "auth": auth_required,
@@ -478,7 +478,7 @@ async fn upnp_discover() -> Result<Json<Value>, AppError> {
 async fn upnp_open_port(Json(body): Json<UPnPPortRequest>) -> Result<Json<Value>, AppError> {
     let internal_port = body.internal_port.unwrap_or(body.external_port);
     let protocol_str = body.protocol.as_deref().unwrap_or("TCP");
-    let description = body.description.as_deref().unwrap_or("LocalBooru");
+    let description = body.description.as_deref().unwrap_or("DonutMediaCenter");
     let protocol = parse_protocol(protocol_str)?;
 
     // Determine local IP to map the port to

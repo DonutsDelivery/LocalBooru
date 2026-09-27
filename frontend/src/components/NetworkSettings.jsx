@@ -158,7 +158,7 @@ export default function NetworkSettings() {
     <div className="network-settings">
       <h2>Network Access</h2>
       <p className="settings-description">
-        Configure how LocalBooru can be accessed from other devices on your network or the internet.
+        Configure how DonutMediaCenter can be accessed from other devices on your network or the internet.
         Remote access is always read-only for security.
       </p>
 

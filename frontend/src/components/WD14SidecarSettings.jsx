@@ -141,7 +141,7 @@ export default function WD14SidecarSettings() {
         <h2>WD14 Text Sidecars</h2>
         <p className="settings-description">
           Exchange comma-separated tags with same-stem .txt files beside indexed media.
-          Operations are limited to mounted, registered LocalBooru directories.
+          Operations are limited to mounted, registered DonutMediaCenter directories.
         </p>
       </header>
 
@@ -233,7 +233,7 @@ export default function WD14SidecarSettings() {
         </div>
         <p className="wd14-operation-note">
           Import adds tags. Absorb adds tags and then removes only fully committed sidecars.
-          Export writes the current LocalBooru tags.
+          Export writes the current DonutMediaCenter tags.
         </p>
       </div>
 

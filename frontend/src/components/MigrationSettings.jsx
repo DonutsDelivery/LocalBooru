@@ -284,7 +284,7 @@ export default function MigrationSettings() {
       <section>
         <h2>Data Location</h2>
         <p className="setting-description">
-          LocalBooru can store data in your system directory (AppData/home folder) or in a portable folder next to the application.
+          DonutMediaCenter can store data in your system directory (AppData/home folder) or in a portable folder next to the application.
         </p>
 
         <div className="current-mode">
@@ -372,12 +372,12 @@ export default function MigrationSettings() {
                 ) : (
                   <p>Copied {result.files_copied || 0} files ({formatBytes(result.bytes_copied || 0)})</p>
                 )}
-                <p><strong>Important:</strong> Restart LocalBooru to use the new data location.</p>
+                <p><strong>Important:</strong> Restart DonutMediaCenter to use the new data location.</p>
                 <div className="result-actions">
                   {isDesktopApp() && (
                     <button
                       onClick={async () => {
-                        if (!confirm('Restart LocalBooru?\n\nThe app will restart and use the new data location.')) return
+                        if (!confirm('Restart DonutMediaCenter?\n\nThe app will restart and use the new data location.')) return
                         try {
                           const api = getDesktopAPI()
                           if (api?.restartBackend) {
@@ -422,7 +422,7 @@ export default function MigrationSettings() {
               <p>Copy all data to the portable location for a self-contained installation.</p>
 
               {!info.portable_path && (
-                <p className="warning">Run LocalBooru from a portable installation to enable this option.</p>
+                <p className="warning">Run DonutMediaCenter from a portable installation to enable this option.</p>
               )}
               {info.portable_has_data && (
                 <p className="info">Portable location has existing data. Selected directories will be merged.</p>
@@ -553,7 +553,7 @@ export default function MigrationSettings() {
           <li>Your original image files are NOT moved - they stay in your watch directories.</li>
           <li>You can select which watch directories to include.</li>
           <li><strong>Import vs Migration:</strong> If the destination already has data, selected directories will be imported (merged) into the existing database. Duplicate images are automatically skipped.</li>
-          <li>After migration/import, restart LocalBooru to use the new data location.</li>
+          <li>After migration/import, restart DonutMediaCenter to use the new data location.</li>
           <li>You can delete the source data after verifying the migration was successful.</li>
         </ul>
       </section>

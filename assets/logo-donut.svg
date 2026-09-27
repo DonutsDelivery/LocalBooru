@@ -1,15 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- Donut base -->
-  <circle cx="32" cy="32" r="26" fill="#1e1e1e" stroke="#00FFA3" stroke-width="2"/>
-  <circle cx="32" cy="32" r="10" fill="#141414" stroke="#00FFA3" stroke-width="2"/>
-
-  <!-- Frosting/glaze with image frame pattern -->
-  <path d="M32 8c13.255 0 24 10.745 24 24s-10.745 24-24 24S8 45.255 8 32 18.745 8 32 8z" fill="none" stroke="#00FFA3" stroke-width="1" stroke-dasharray="4 2"/>
-
-  <!-- Image icon in the donut ring -->
-  <g transform="translate(20, 20)">
-    <rect x="1" y="3" width="22" height="18" rx="2" fill="#282828" stroke="#00FFA3" stroke-width="1.5"/>
-    <circle cx="8" cy="10" r="3" fill="#00FFA3" opacity="0.6"/>
-    <path d="M4 18l5-6 3 3 6-7 5 10H4z" fill="#00FFA3" opacity="0.8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <rect width="256" height="256" rx="58" fill="#15191D"/>
+  <circle cx="128" cy="128" r="91" fill="#00DCA0"/>
+  <path d="M128 40c48.6 0 88 39.4 88 88 0 48.6-39.4 88-88 88-48.6 0-88-39.4-88-88 0-48.6 39.4-88 88-88Z" fill="#17E8AE"/>
+  <path d="M44 110c9-3 11-15 19-17 10-2 15 11 25 9 10-2 10-15 22-17 10-2 16 9 27 8 10-1 13-13 23-12 11 1 15 13 26 12 10-1 14-10 21-8 5 9 8 18 9 28-8 7-14 17-25 17-12 0-12-12-24-12-11 0-13 14-25 15-11 1-14-11-25-10-11 1-13 14-25 13-12-1-13-13-24-13-10 0-15 8-22 12-2-8-3-16-2-25Z" fill="#65FFD1"/>
+  <circle cx="128" cy="128" r="39" fill="#15191D"/>
+  <path d="m119 108 29 20-29 20v-40Z" fill="#E8FFF7"/>
+  <g stroke="#D743C7" stroke-width="7" stroke-linecap="round">
+    <path d="m76 67 8 7"/><path d="m151 55 8 8"/><path d="m196 103 8 7"/><path d="m63 158 9 5"/>
+  </g>
+  <g stroke="#FFE576" stroke-width="7" stroke-linecap="round">
+    <path d="m112 57 4 10"/><path d="m183 74-8 7"/><path d="m193 165-8 5"/><path d="m92 193 7-8"/>
   </g>
 </svg>

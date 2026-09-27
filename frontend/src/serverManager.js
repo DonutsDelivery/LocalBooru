@@ -45,7 +45,7 @@ export function isWindowsOrMacDesktopApp() {
 function createServer(data) {
   return {
     id: data.id || crypto.randomUUID(),
-    name: data.name || 'LocalBooru Server',
+    name: data.name || 'DonutMediaCenter Server',
     url: data.url,
     fallbackUrl: data.fallbackUrl || null,  // Optional secondary URL (e.g. Tailscale) used when primary fails
     username: data.username || null,
@@ -65,7 +65,7 @@ export function serverFromQrHandshake(qrData, workingUrl, handshake) {
   }
   return {
     id: handshake.serverId,
-    name: handshake.serverName || qrData.name || 'LocalBooru Server',
+    name: handshake.serverName || qrData.name || 'DonutMediaCenter Server',
     url: workingUrl,
     token: handshake.token,
     username: null,
@@ -198,7 +198,7 @@ export async function addOrUpdateServer(serverData) {
     const identityMatch = servers.find(server => server.id === serverData.id)
     const urlMatch = servers.find(server => normalizeUrl(server.url) === normalizeUrl(serverData.url))
     if (urlMatch && urlMatch.id !== serverData.id) {
-      throw new Error('This address now identifies a different LocalBooru server')
+      throw new Error('This address now identifies a different DonutMediaCenter server')
     }
     if (identityMatch) {
       const updated = { ...identityMatch, ...serverData, id: identityMatch.id }

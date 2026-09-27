@@ -11,7 +11,7 @@ import {
 import { setActiveServerId } from '../serverManager'
 import { updateServerConfig } from '../api'
 
-const DEFAULT_DEVICE_NAME = `${navigator.platform || 'LocalBooru'} Desktop`
+const DEFAULT_DEVICE_NAME = `${navigator.platform || 'DonutMediaCenter'} Desktop`
 
 export default function DesktopPairing({ active = true }) {
   const [deviceName, setDeviceName] = useState(() => localStorage.getItem('localbooru_device_name') || DEFAULT_DEVICE_NAME)
@@ -123,7 +123,7 @@ export default function DesktopPairing({ active = true }) {
   return (
     <section className="desktop-pairing">
       <h3>Connect servers from phone</h3>
-      <p className="pairing-lead">Authorize this desktop from a phone that is already connected to your LocalBooru servers.</p>
+      <p className="pairing-lead">Authorize this desktop from a phone that is already connected to your DonutMediaCenter servers.</p>
 
       <label className="pairing-device-name">
         Desktop name
@@ -150,7 +150,7 @@ export default function DesktopPairing({ active = true }) {
               marginSize={4}
               bgColor="#ffffff"
               fgColor="#000000"
-              title="LocalBooru desktop authorization"
+              title="DonutMediaCenter desktop authorization"
             />
           </div>
           <div className="pairing-summary">

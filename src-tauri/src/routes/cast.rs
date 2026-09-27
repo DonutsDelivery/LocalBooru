@@ -687,8 +687,8 @@ async fn play(
     let title = file_path
         .file_stem()
         .and_then(|name| name.to_str())
-        .map(|name| format!("LocalBooru #{} - {}", image_id, name))
-        .unwrap_or_else(|| format!("LocalBooru #{}", image_id));
+        .map(|name| format!("DonutMediaCenter #{} - {}", image_id, name))
+        .unwrap_or_else(|| format!("DonutMediaCenter #{}", image_id));
 
     // Proxy to the cast addon to start playback
     let addon_body = json!({

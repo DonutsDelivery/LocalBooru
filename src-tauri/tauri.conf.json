@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "LocalBooru",
+  "productName": "DonutMediaCenter",
   "version": "2.0.3",
   "identifier": "com.localbooru.app",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "LocalBooru",
+        "title": "DonutMediaCenter",
         "width": 1280,
         "height": 800,
         "minWidth": 800,
@@ -43,9 +43,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "category": "Graphics and Design",
-    "shortDescription": "Local image library with automatic tagging",
-    "longDescription": "LocalBooru is a local image library manager with optional AI-powered tagging via addons. Lightweight Rust backend with no Python required for core functionality.",
+    "category": "Music",
+    "shortDescription": "Local image, video, and music library",
+    "longDescription": "DonutMediaCenter organizes local images, videos, and music with optional AI-powered image tagging.",
     "homepage": "https://github.com/DonutsDelivery/LocalBooru",
     "license": "MIT",
     "licenseFile": "../LICENSE",

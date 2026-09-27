@@ -114,7 +114,7 @@ export default function PhonePairingApproval({ request, servers: initialServers,
                   <span><strong>{server.name}</strong><small>{server.url}</small></span>
                 </label>
               ))}
-              {compatibleServers.length === 0 && <p className="pairing-warning">No saved server has a compatible authenticated token. Reconnect this phone to a current LocalBooru server first.</p>}
+              {compatibleServers.length === 0 && <p className="pairing-warning">No saved server has a compatible authenticated token. Reconnect this phone to a current DonutMediaCenter server first.</p>}
               {servers.some(server => !server.token || !isEligiblePairingServerUrl(server.url)) && <p className="pairing-warning">Some saved servers are not eligible: they have no authenticated token session, or their address is not a private local-network address. Reconnect to them over the local network first.</p>}
             </div>
             <div className="pairing-approval-actions">

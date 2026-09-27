@@ -678,7 +678,7 @@ pub fn run() {
             let quit_flag = Arc::new(AtomicBool::new(false));
             app.manage(quit_flag.clone());
 
-            let open_item = MenuItem::with_id(app, "open", "Open LocalBooru", true, None::<&str>)?;
+            let open_item = MenuItem::with_id(app, "open", "Open DonutMediaCenter", true, None::<&str>)?;
             let browser_item =
                 MenuItem::with_id(app, "browser", "Open in Browser", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
@@ -690,7 +690,7 @@ pub fn run() {
             let _tray = TrayIconBuilder::new()
                 .icon(tray_icon)
                 .menu(&menu)
-                .tooltip("LocalBooru")
+                .tooltip("DonutMediaCenter")
                 .on_menu_event(move |app_handle, event| {
                     match event.id.as_ref() {
                         "open" => {
@@ -733,7 +733,7 @@ pub fn run() {
                 .build(app)?;
         }
 
-        log::info!("LocalBooru v2 started (embedded Rust backend)");
+        log::info!("DonutMediaCenter started (embedded Rust backend)");
 
         Ok(())
     });

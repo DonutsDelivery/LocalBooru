@@ -196,7 +196,7 @@ async function encryptForDesktop(publicKeySpki, value) {
 
 export async function authorizeServerForDesktop(server, pairingRequest) {
   if (!server.token) throw new Error('This server does not have a token-based authenticated session')
-  if (!isTauriApp()) throw new Error('Desktop authorization requires LocalBooru protected native networking')
+  if (!isTauriApp()) throw new Error('Desktop authorization requires DonutMediaCenter protected native networking')
   const probe = await probeServer(server)
   if (!probe.success || !probe.url) {
     throw new Error(`The selected server is not reachable: ${probe.error || 'connection failed'}`)

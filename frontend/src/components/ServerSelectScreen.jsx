@@ -138,7 +138,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
 
         // Legacy phone-connect QR.
         if (qrData.type !== 'localbooru') {
-          setScanError('Not a LocalBooru QR code')
+          setScanError('Not a DonutMediaCenter QR code')
           return
         }
 
@@ -228,7 +228,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   return (
     <div className="server-select-screen">
       <div className="server-select-header">
-        <h1>LocalBooru</h1>
+        <h1>DonutMediaCenter</h1>
         <p>Select a server to connect</p>
       </div>
 
@@ -482,7 +482,7 @@ function AddServerModal({ server, onSave, onClose }) {
         const urlObj = new URL(finalUrl)
         defaultName = urlObj.hostname
       } catch {
-        defaultName = 'LocalBooru Server'
+        defaultName = 'DonutMediaCenter Server'
       }
     }
 
