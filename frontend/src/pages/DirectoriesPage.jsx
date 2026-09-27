@@ -11,6 +11,7 @@ import { getDesktopAPI, isDesktopApp } from '../tauriAPI'
 import { toast } from '../components/Toast'
 import { useAddonStatus } from '../hooks/useAddonStatus'
 import { useMobileDrawer } from '../hooks/useMobileDrawer'
+import { directoryLibraryTargetValue, resolveDirectoryLibraryTarget } from '../utils/directoryLibraryTarget'
 
 // Helper to create composite key for directory (avoids ID collisions across libraries)
 const makeDirKey = (dir) => `${dir.library_id || 'primary'}:${dir.id}`
@@ -45,6 +46,7 @@ function DirectoriesPage() {
   const [newLibraryName, setNewLibraryName] = useState('')
   const [newLibraryCreateNew, setNewLibraryCreateNew] = useState(false)
   const [activeLibrary, setActiveLibrary] = useState(null) // null = all libraries
+  const [addTargetLibrary, setAddTargetLibrary] = useState('primary')
   const drawer = useMobileDrawer()
 
   const refreshDirectories = async () => {
@@ -113,35 +115,52 @@ function DirectoriesPage() {
     ? parentDirs.filter(p => p.library_id === activeLibraryUuid)
     : parentDirs
 
+  useEffect(() => {
+    if (addTargetLibrary === 'primary') return
+    const target = libraries.find(library => library.uuid === addTargetLibrary)
+    if (!target?.mounted) setAddTargetLibrary('primary')
+  }, [addTargetLibrary, libraries])
+
+  const requireAddTargetLibrary = () =>
+    resolveDirectoryLibraryTarget(libraries, addTargetLibrary)
+
   const handleAddDirectory = async () => {
-    const api = getDesktopAPI()
-    if (api?.addDirectory) {
-      const path = await api.addDirectory()
-      if (path) {
-        const { addDirectory } = await import('../api')
-        const libraryId = activeLibraryUuid && !libraries.find(l => l.uuid === activeLibraryUuid)?.is_primary ? activeLibraryUuid : undefined
-        await addDirectory(path, { library_id: libraryId })
-        await refreshDirectories()
+    try {
+      const libraryId = requireAddTargetLibrary()
+      const api = getDesktopAPI()
+      if (api?.addDirectory) {
+        const path = await api.addDirectory()
+        if (path) {
+          const { addDirectory } = await import('../api')
+          await addDirectory(path, { library_id: libraryId })
+          await refreshDirectories()
+        }
+      } else {
+        toast.warning('Directory picker only available in desktop app')
       }
-    } else {
-      toast.warning('Directory picker only available in desktop app')
+    } catch (error) {
+      toast.error(`Failed to add directory: ${error.response?.data?.detail || error.message}`)
     }
   }
 
   const handleAddParentDirectory = async () => {
-    const api = getDesktopAPI()
-    if (api?.addDirectory) {
-      const path = await api.addDirectory()
-      if (path) {
-        const { addParentDirectory } = await import('../api')
-        const libraryId = activeLibraryUuid && !libraries.find(l => l.uuid === activeLibraryUuid)?.is_primary ? activeLibraryUuid : undefined
-        const result = await addParentDirectory(path, { library_id: libraryId })
-        toast.success(result.message)
-        await refreshDirectories()
-        await refreshParentDirs()
+    try {
+      const libraryId = requireAddTargetLibrary()
+      const api = getDesktopAPI()
+      if (api?.addDirectory) {
+        const path = await api.addDirectory()
+        if (path) {
+          const { addParentDirectory } = await import('../api')
+          const result = await addParentDirectory(path, { library_id: libraryId })
+          toast.success(result.message)
+          await refreshDirectories()
+          await refreshParentDirs()
+        }
+      } else {
+        toast.warning('Directory picker only available in desktop app')
       }
-    } else {
-      toast.warning('Directory picker only available in desktop app')
+    } catch (error) {
+      toast.error(`Failed to add parent directory: ${error.response?.data?.detail || error.message}`)
     }
   }
 
@@ -510,6 +529,25 @@ function DirectoriesPage() {
             <p>Add folders to automatically import and tag images.</p>
 
             <div className="directory-buttons">
+              <label className="directory-library-target">
+                <span>Add to library</span>
+                <select
+                  aria-label="Add directories to library"
+                  value={addTargetLibrary}
+                  onChange={event => setAddTargetLibrary(event.target.value)}
+                  disabled={libraries.length === 0}
+                >
+                  {libraries.map(library => (
+                    <option
+                      key={library.uuid}
+                      value={directoryLibraryTargetValue(library)}
+                      disabled={!library.mounted}
+                    >
+                      {library.name}{!library.mounted ? ' (offline)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button onClick={handleAddDirectory} className="add-directory-btn">
                 + Add Directory
               </button>
@@ -544,7 +582,10 @@ function DirectoriesPage() {
                 <button
                   key={lib.uuid}
                   className={`library-tab ${isActive ? 'active' : ''}`}
-                  onClick={() => setActiveLibrary(tabId)}
+                  onClick={() => {
+                    setActiveLibrary(tabId)
+                    if (lib.mounted) setAddTargetLibrary(tabId)
+                  }}
                   style={{
                     padding: '8px 16px',
                     background: isActive ? 'var(--accent)' : 'transparent',

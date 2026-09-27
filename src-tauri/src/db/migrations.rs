@@ -354,6 +354,12 @@ pub static DIRECTORY_MIGRATIONS: &[Migration] = &[
         description: "Index curation discard state",
         sql: "CREATE INDEX IF NOT EXISTS idx_image_files_curation_discarded_at ON image_files(curation_discarded_at);",
     },
+    // v6: Index import_source so grouped-folder catalogs and per-folder
+    // representative lookups stay fast on multi-million-image directories.
+    Migration {
+        description: "Index import_source for grouped folder queries",
+        sql: "CREATE INDEX IF NOT EXISTS idx_images_import_source ON images(import_source);",
+    },
 ];
 
 /// Run all pending migrations on a per-directory database.
@@ -435,7 +441,11 @@ mod tests {
     fn curation_migrations_work_for_existing_directory_schema() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
-            "CREATE TABLE image_files (
+            "CREATE TABLE images (
+                id INTEGER PRIMARY KEY,
+                import_source TEXT
+            );
+            CREATE TABLE image_files (
                 id INTEGER PRIMARY KEY,
                 original_path TEXT NOT NULL,
                 file_status TEXT NOT NULL
@@ -458,7 +468,11 @@ mod tests {
     fn curation_migrations_tolerate_current_fresh_schema() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
-            "CREATE TABLE image_files (
+            "CREATE TABLE images (
+                id INTEGER PRIMARY KEY,
+                import_source TEXT
+            );
+            CREATE TABLE image_files (
                 id INTEGER PRIMARY KEY,
                 original_path TEXT NOT NULL,
                 file_status TEXT NOT NULL,

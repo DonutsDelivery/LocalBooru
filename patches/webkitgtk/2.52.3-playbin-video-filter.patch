@@ -2,10 +2,17 @@ diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStrea
 
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -3571,6 +3571,25 @@ void MediaPlayerPrivateGStreamer::createGSTPlayBin(const URL& url)
+@@ -3571,6 +3571,32 @@ void MediaPlayerPrivateGStreamer::createGSTPlayBin(const URL& url)
          if (auto* scale = makeGStreamerElement("scaletempo"_s))
              g_object_set(m_pipeline.get(), "audio-filter", scale, nullptr);
      }
++
++    // Deinterlacing doubles the frame-processing work and most LocalBooru
++    // content is progressive. Keep it off, especially for the WebGL VR path.
++    guint playFlags = 0;
++    g_object_get(m_pipeline.get(), "flags", &playFlags, nullptr);
++    constexpr guint playFlagDeinterlace = 1U << 9;
++    g_object_set(m_pipeline.get(), "flags", playFlags & ~playFlagDeinterlace, nullptr);
 +
 +    const char* videoFilterName = g_getenv("WEBKIT_GST_VIDEO_FILTER");
 +    GUniquePtr<char> videoFilterNameFromFile;
@@ -43,3 +50,184 @@ diff --git a/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp b/Source/We
  #if PLATFORM(WPE)
      return findWebKitProcess("WPEWebProcess");
  #else
+
+diff --git a/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMapperANGLE.cpp b/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMapperANGLE.cpp
+--- a/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMapperANGLE.cpp
++++ b/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMapperANGLE.cpp
+@@ -38,6 +38,17 @@
+ #include <wtf/StdLibExtras.h>
+ #include <wtf/TZoneMallocInlines.h>
+ 
++#if ENABLE(VIDEO) && USE(GSTREAMER_GL)
++#include "GStreamerCommon.h"
++#include "PlatformDisplay.h"
++#include "VideoFrameGStreamer.h"
++#include <gst/gl/gstglmemory.h>
++#define GST_USE_UNSTABLE_API
++#include <gst/gl/gstglcolorconvert.h>
++#include <gst/gl/gstglupload.h>
++#undef GST_USE_UNSTABLE_API
++#endif
++
+ #if ENABLE(MEDIA_STREAM) || ENABLE(WEB_CODECS)
+ #include "VideoFrame.h"
+ #if USE(GSTREAMER)
+@@ -207,9 +218,156 @@
+ }
+ 
+ #if ENABLE(VIDEO)
+-bool GraphicsContextGLTextureMapperANGLE::copyTextureFromVideoFrame(VideoFrame&, PlatformGLObject, GCGLenum, GCGLint, GCGLenum, GCGLenum, GCGLenum, bool, bool)
++#if USE(GSTREAMER_GL)
++static GRefPtr<GstCaps> copyCapsAsGLMemory(GstCaps* caps, const char* format)
+ {
+-    // FIXME: Implement copy-free (or at least, software copy-free) texture transfer.
++    auto converted = adoptGRef(gst_caps_copy(caps));
++    gst_caps_set_features(converted.get(), 0, gst_caps_features_new(GST_CAPS_FEATURE_MEMORY_GL_MEMORY, nullptr));
++    gst_caps_set_simple(converted.get(), "format", G_TYPE_STRING, format, "texture-target", G_TYPE_STRING, "2D", nullptr);
++    return converted;
++}
++
++static GstMemory* rgbGLMemoryFromVideoFrame(VideoFrameGStreamer& gstFrame, GCGLenum format, GRefPtr<GstBuffer>& keepAlive)
++{
++    auto* sample = gstFrame.sample().get();
++    auto* buffer = sample ? gst_sample_get_buffer(sample) : nullptr;
++    auto* caps = sample ? gst_sample_get_caps(sample) : nullptr;
++    auto* memory = buffer ? gst_buffer_peek_memory(buffer, 0) : nullptr;
++    if (!memory || !caps)
++        return nullptr;
++
++    const bool alreadyRGBGL = gst_is_gl_memory(memory)
++        && GST_VIDEO_INFO_IS_RGB(&gstFrame.info())
++        && GST_VIDEO_INFO_N_PLANES(&gstFrame.info()) == 1;
++    if (alreadyRGBGL)
++        return memory;
++
++    auto* glContext = PlatformDisplay::sharedDisplay().gstGLContext();
++    if (!glContext)
++        return nullptr;
++
++    const char* inputFormat = gst_video_format_to_string(GST_VIDEO_INFO_FORMAT(&gstFrame.info()));
++    const char* rgbFormat = format == GraphicsContextGL::RGB ? "RGB" : "RGBA";
++    if (!inputFormat)
++        return nullptr;
++
++    GRefPtr<GstBuffer> glBuffer(buffer);
++    if (!gst_is_gl_memory(memory)) {
++        static GstGLUpload* upload = nullptr;
++        static GstGLContext* uploadContext = nullptr;
++        static GRefPtr<GstCaps> lastInCaps;
++        static GRefPtr<GstCaps> lastOutCaps;
++        if (upload && uploadContext != glContext) {
++            gst_object_unref(upload);
++            upload = nullptr;
++            lastInCaps = nullptr;
++            lastOutCaps = nullptr;
++        }
++        if (!upload) {
++            upload = gst_gl_upload_new(glContext);
++            uploadContext = glContext;
++        }
++        if (!upload)
++            return nullptr;
++
++        auto outCaps = copyCapsAsGLMemory(caps, inputFormat);
++        if (!lastInCaps || !gst_caps_is_equal(lastInCaps.get(), caps) || !lastOutCaps || !gst_caps_is_equal(lastOutCaps.get(), outCaps.get())) {
++            if (!gst_gl_upload_set_caps(upload, caps, outCaps.get()))
++                return nullptr;
++            lastInCaps = caps;
++            lastOutCaps = WTF::move(outCaps);
++        }
++
++        GstBuffer* uploaded = nullptr;
++        auto result = gst_gl_upload_perform_with_buffer(upload, buffer, &uploaded);
++        if (result != GST_GL_UPLOAD_DONE || !uploaded)
++            return nullptr;
++        glBuffer = adoptGRef(uploaded);
++        memory = gst_buffer_peek_memory(glBuffer.get(), 0);
++        if (!memory || !gst_is_gl_memory(memory))
++            return nullptr;
++    }
++
++    static GRefPtr<GstGLColorConvert> colorConvert;
++    static GstGLContext* convertContext = nullptr;
++    static GRefPtr<GstCaps> lastConvertInCaps;
++    static GRefPtr<GstCaps> lastConvertOutCaps;
++    if (colorConvert && convertContext != glContext) {
++        colorConvert = nullptr;
++        lastConvertInCaps = nullptr;
++        lastConvertOutCaps = nullptr;
++    }
++    if (!colorConvert) {
++        colorConvert = adoptGRef(gst_gl_color_convert_new(glContext));
++        convertContext = glContext;
++    }
++    if (!colorConvert)
++        return nullptr;
++
++    auto convertInCaps = copyCapsAsGLMemory(caps, inputFormat);
++    auto convertOutCaps = copyCapsAsGLMemory(caps, rgbFormat);
++    if (!lastConvertInCaps || !gst_caps_is_equal(lastConvertInCaps.get(), convertInCaps.get())
++        || !lastConvertOutCaps || !gst_caps_is_equal(lastConvertOutCaps.get(), convertOutCaps.get())) {
++        if (!gst_gl_color_convert_set_caps(colorConvert.get(), convertInCaps.get(), convertOutCaps.get()))
++            return nullptr;
++        lastConvertInCaps = WTF::move(convertInCaps);
++        lastConvertOutCaps = WTF::move(convertOutCaps);
++    }
++
++    GstBuffer* converted = gst_gl_color_convert_perform(colorConvert.get(), glBuffer.get());
++    if (!converted)
++        return nullptr;
++    keepAlive = adoptGRef(converted);
++    memory = gst_buffer_peek_memory(keepAlive.get(), 0);
++    if (!memory || !gst_is_gl_memory(memory))
++        return nullptr;
++    return memory;
++}
++#endif
++
++bool GraphicsContextGLTextureMapperANGLE::copyTextureFromVideoFrame(VideoFrame& videoFrame, PlatformGLObject texture, GCGLenum target, GCGLint level, GCGLenum internalFormat, GCGLenum format, GCGLenum type, bool premultiplyAlpha, bool flipY)
++{
++#if USE(GSTREAMER_GL)
++    if (!is<VideoFrameGStreamer>(videoFrame) || target != TEXTURE_2D)
++        return false;
++
++    auto& gstFrame = downcast<VideoFrameGStreamer>(videoFrame);
++    GRefPtr<GstBuffer> convertedBuffer;
++    auto* memory = rgbGLMemoryFromVideoFrame(gstFrame, format, convertedBuffer);
++    if (!memory)
++        return false;
++
++    if (!makeContextCurrent() || !enableExtensionsImpl({ "GL_ANGLE_texture_external_update"_s, "GL_CHROMIUM_copy_texture"_s }))
++        return false;
++
++    ScopedRestoreTextureBinding restoreBinding(TEXTURE_BINDING_2D, TEXTURE_2D);
++    ScopedTexture sourceTexture;
++    GL_BindTexture(TEXTURE_2D, sourceTexture);
++    auto size = gstFrame.presentationSize();
++    GL_TexImage2DExternalANGLE(TEXTURE_2D, 0, internalFormat, size.width(), size.height(), 0, format, type);
++
++    GCGLint nativeSourceTexture = 0;
++    GL_GetTexParameteriv(TEXTURE_2D, GL_TEXTURE_NATIVE_ID_ANGLE, &nativeSourceTexture);
++    auto outputFormat = format == RGB ? GST_GL_RGB : GST_GL_RGBA;
++    if (!nativeSourceTexture || !gst_gl_memory_copy_into(GST_GL_MEMORY_CAST(memory), nativeSourceTexture, GST_GL_TEXTURE_TARGET_2D, outputFormat, size.width(), size.height()))
++        return false;
++
++    GL_InvalidateTextureANGLE(TEXTURE_2D);
++    // GStreamer GL textures use the opposite vertical origin from DOM video
++    // sources, so the WebGL unpack flip is inverted for this direct copy.
++    GL_CopyTextureCHROMIUM(sourceTexture, 0, target, texture, level, internalFormat, type, !flipY, premultiplyAlpha, false);
++    return GL_GetError() == NO_ERROR;
++#else
++    UNUSED_PARAM(videoFrame);
++    UNUSED_PARAM(texture);
++    UNUSED_PARAM(target);
++    UNUSED_PARAM(level);
++    UNUSED_PARAM(internalFormat);
++    UNUSED_PARAM(format);
++    UNUSED_PARAM(type);
++    UNUSED_PARAM(premultiplyAlpha);
++    UNUSED_PARAM(flipY);
++#endif
+     return false;
+ }
+ #endif

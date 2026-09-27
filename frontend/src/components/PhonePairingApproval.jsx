@@ -1,9 +1,32 @@
 import { useEffect, useMemo, useState } from 'react'
-import { authorizeServerForDesktop, confirmDeviceAuthorization, formatPairingFingerprint } from '../devicePairing'
+import {
+  authorizeServerForDesktop,
+  confirmDeviceAuthorization,
+  formatPairingFingerprint,
+  isEligiblePairingServerUrl,
+} from '../devicePairing'
+import { getServers } from '../serverManager'
 
-export default function PhonePairingApproval({ request, servers, onClose, onComplete }) {
+export default function PhonePairingApproval({ request, servers: initialServers, onClose, onComplete }) {
+  // The caller's list can be stale: the phone may have paired to a server
+  // earlier in this same session without this screen ever unmounting, and the
+  // scan flow hands the pre-pairing snapshot down. Always re-read the live
+  // store when the approval dialog opens.
+  const [servers, setServers] = useState(initialServers || [])
+  useEffect(() => {
+    let cancelled = false
+    getServers().then(live => {
+      if (!cancelled) setServers(live)
+    }).catch(() => { /* keep the snapshot */ })
+    return () => { cancelled = true }
+  }, [])
+
+  // Eligibility mirrors the server-side grant rule (devicePairing.isEligiblePairingServerUrl):
+  // token session + HTTPS, or token session + private-LAN HTTP. Filtering by
+  // HTTPS alone locked out private-LAN HTTP servers entirely — the common
+  // LocalBooru setup — leaving the Authorize button permanently disabled.
   const compatibleServers = useMemo(
-    () => servers.filter(server => server.token && server.url?.startsWith('https://')),
+    () => servers.filter(server => server.token && isEligiblePairingServerUrl(server.url)),
     [servers],
   )
   const [selected, setSelected] = useState(() => new Set())
@@ -92,7 +115,7 @@ export default function PhonePairingApproval({ request, servers, onClose, onComp
                 </label>
               ))}
               {compatibleServers.length === 0 && <p className="pairing-warning">No saved server has a compatible authenticated token. Reconnect this phone to a current LocalBooru server first.</p>}
-              {servers.some(server => !server.token || !server.url?.startsWith('https://')) && <p className="pairing-warning">Servers using legacy password sessions or unencrypted HTTP are not eligible. Connect them over HTTPS with QR authentication first.</p>}
+              {servers.some(server => !server.token || !isEligiblePairingServerUrl(server.url)) && <p className="pairing-warning">Some saved servers are not eligible: they have no authenticated token session, or their address is not a private local-network address. Reconnect to them over the local network first.</p>}
             </div>
             <div className="pairing-approval-actions">
               <button className="pairing-cancel" onClick={onClose} disabled={authorizing}>Reject</button>

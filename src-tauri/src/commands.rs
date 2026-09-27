@@ -3,6 +3,9 @@
 //! The axum backend is embedded in the Tauri process — no separate process management needed.
 
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -14,10 +17,74 @@ use crate::server::state::AppState;
 
 const PAIRED_SERVER_CREDENTIAL_SERVICE: &str = "com.localbooru.app";
 const PAIRED_SERVER_CREDENTIAL_ACCOUNT: &str = "paired-server-credentials";
+const CREDENTIAL_DIR: &str = ".credentials";
+const PAIRED_CREDENTIAL_FILE: &str = "paired-server-credentials.json";
 
 fn paired_credential_cache() -> &'static Mutex<Option<serde_json::Value>> {
     static CACHE: OnceLock<Mutex<Option<serde_json::Value>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// Path of the file-backed credential store. Mirrors `get_data_dir` in lib.rs
+/// so credentials live in the same app-private directory on every platform —
+/// including Android, where the OS keyring is unavailable and credentials were
+/// previously lost on every app restart (the "pairing invalid the next day" bug).
+fn paired_credential_file_path(#[allow(unused)] app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let data_dir = if let Ok(portable_data) = std::env::var("LOCALBOORU_PORTABLE_DATA") {
+        PathBuf::from(portable_data)
+    } else {
+        #[cfg(mobile)]
+        {
+            app.path()
+                .app_data_dir()
+                .map_err(|error| format!("App data directory is unavailable: {error}"))?
+        }
+        #[cfg(desktop)]
+        {
+            #[cfg(target_os = "windows")]
+            let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+            #[cfg(not(target_os = "windows"))]
+            let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+            base.join(".localbooru")
+        }
+    };
+    Ok(data_dir.join(CREDENTIAL_DIR).join(PAIRED_CREDENTIAL_FILE))
+}
+
+fn read_credential_file(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "Could not read stored paired-server credentials: {error}"
+        )),
+    }
+}
+
+fn write_credential_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| "Paired-server credential path has no parent".to_string())?;
+    fs::create_dir_all(dir)
+        .map_err(|error| format!("Could not create the credential directory: {error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
+            .map_err(|error| format!("Could not protect the credential directory: {error}"))?;
+    }
+    let temp_path = path.with_extension("json.tmp");
+    fs::write(&temp_path, bytes)
+        .map_err(|error| format!("Could not write stored paired-server credentials: {error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o600))
+            .map_err(|error| format!("Could not protect stored credentials: {error}"))?;
+    }
+    fs::rename(&temp_path, path)
+        .map_err(|error| format!("Could not finalize stored credentials: {error}"))?;
+    Ok(())
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -46,22 +113,42 @@ fn store_desktop_keyring_credentials(bytes: &[u8]) -> Result<(), String> {
 }
 
 /// Load remote server tokens from the app's protected credential store.
+///
+/// Primary source: the durable file-backed store in the app data directory
+/// (the only store available on Android). On desktop the OS keyring is also
+/// kept in sync and preferred when it holds newer data, so tokens survive
+/// restarts everywhere while desktop keeps keyring-grade protection.
 #[tauri::command]
-pub fn load_paired_server_credentials() -> Result<serde_json::Value, String> {
+pub fn load_paired_server_credentials(app: AppHandle) -> Result<serde_json::Value, String> {
     if let Ok(cache) = paired_credential_cache().lock() {
         if let Some(value) = cache.as_ref() {
             return Ok(value.clone());
         }
     }
+    let file_path = paired_credential_file_path(&app)?;
+    let file_value = match read_credential_file(&file_path)? {
+        Some(bytes) if !bytes.is_empty() => Some(
+            serde_json::from_slice::<serde_json::Value>(&bytes)
+                .map_err(|_| "Stored paired-server credentials are corrupt".to_string())?,
+        ),
+        _ => None,
+    };
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let loaded = if let Some(bytes) = load_desktop_keyring_credentials()? {
-        serde_json::from_slice(&bytes)
-            .map_err(|_| "Stored paired-server credentials are corrupt".to_string())?
-    } else {
-        serde_json::json!({})
+    let keyring_value = match load_desktop_keyring_credentials()? {
+        Some(bytes) => Some(
+            serde_json::from_slice::<serde_json::Value>(&bytes)
+                .map_err(|_| "OS keyring credentials are corrupt".to_string())?,
+        ),
+        None => None,
     };
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    let loaded = serde_json::json!({});
+    let keyring_value: Option<serde_json::Value> = None;
+    // Prefer whichever store actually has credentials; if both do and they
+    // disagree, the file wins because it is written on every platform while
+    // the keyring is desktop-only. They are kept in sync on every store.
+    let loaded = file_value
+        .or(keyring_value)
+        .unwrap_or(serde_json::json!({}));
     if let Ok(mut cache) = paired_credential_cache().lock() {
         *cache = Some(loaded.clone());
     }
@@ -69,8 +156,15 @@ pub fn load_paired_server_credentials() -> Result<serde_json::Value, String> {
 }
 
 /// Atomically replace the protected map of remote server credentials.
+///
+/// Writes the durable file-backed store on every platform and additionally
+/// mirrors into the OS keyring where one exists (desktop). The file is the
+/// source of truth so Android keeps pairings across restarts.
 #[tauri::command]
-pub fn store_paired_server_credentials(credentials: serde_json::Value) -> Result<(), String> {
+pub fn store_paired_server_credentials(
+    app: AppHandle,
+    credentials: serde_json::Value,
+) -> Result<(), String> {
     let object = credentials
         .as_object()
         .ok_or_else(|| "Paired-server credentials must be an object".to_string())?;
@@ -81,25 +175,24 @@ pub fn store_paired_server_credentials(credentials: serde_json::Value) -> Result
     if bytes.len() > 256 * 1024 {
         return Err("Paired-server credential store is too large".into());
     }
+    if let Ok(cache) = paired_credential_cache().lock() {
+        if cache.as_ref() == Some(&credentials) {
+            return Ok(());
+        }
+    }
+    let file_path = paired_credential_file_path(&app)?;
+    write_credential_file(&file_path, &bytes)?;
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        if let Ok(cache) = paired_credential_cache().lock() {
-            if cache.as_ref() == Some(&credentials) {
-                return Ok(());
-            }
-        }
-        store_desktop_keyring_credentials(&bytes)?;
-        if let Ok(mut cache) = paired_credential_cache().lock() {
-            *cache = Some(credentials);
-        }
-        return Ok(());
+        // Best effort: the file above is the durable source of truth, the
+        // keyring is a desktop convenience mirror. A keyring failure must not
+        // lose the credentials the file already saved.
+        let _ = store_desktop_keyring_credentials(&bytes);
     }
-
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        let _ = bytes;
-        Ok(())
+    if let Ok(mut cache) = paired_credential_cache().lock() {
+        *cache = Some(credentials);
     }
+    Ok(())
 }
 
 /// Backend status response (kept for frontend compatibility)

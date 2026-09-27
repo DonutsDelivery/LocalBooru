@@ -92,6 +92,7 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_images_perceptual_hash ON images(perceptual_hash);
         CREATE INDEX IF NOT EXISTS idx_images_rating ON images(rating);
         CREATE INDEX IF NOT EXISTS idx_images_is_favorite ON images(is_favorite);
+        CREATE INDEX IF NOT EXISTS idx_images_import_source ON images(import_source);
         CREATE INDEX IF NOT EXISTS idx_images_min_detected_age ON images(min_detected_age);
         CREATE INDEX IF NOT EXISTS idx_images_max_detected_age ON images(max_detected_age);
         CREATE INDEX IF NOT EXISTS idx_images_file_created_at ON images(file_created_at);
@@ -272,6 +273,7 @@ pub fn init_directory_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_images_perceptual_hash ON images(perceptual_hash);
         CREATE INDEX IF NOT EXISTS idx_images_rating ON images(rating);
         CREATE INDEX IF NOT EXISTS idx_images_is_favorite ON images(is_favorite);
+        CREATE INDEX IF NOT EXISTS idx_images_import_source ON images(import_source);
         CREATE INDEX IF NOT EXISTS idx_images_min_detected_age ON images(min_detected_age);
         CREATE INDEX IF NOT EXISTS idx_images_max_detected_age ON images(max_detected_age);
         CREATE INDEX IF NOT EXISTS idx_images_file_created_at ON images(file_created_at);

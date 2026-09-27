@@ -91,6 +91,6 @@ export function galleryScopePreservesFolder(current, next) {
 
 export async function refreshGroupedFolderCatalog({ groupByFolders, currentFolder, loadFolders }) {
   if (!groupByFolders || currentFolder) return false
-  await loadFolders()
+  await loadFolders({ page: 1 })
   return true
 }

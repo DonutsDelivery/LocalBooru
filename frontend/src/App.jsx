@@ -606,7 +606,9 @@ function Gallery() {
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
 
-  // Keep hasMore in sync with actual images count (fixes stale closure bugs)
+  // Keep hasMore in sync with actual images count (fixes stale closure bugs).
+  // In folder-grouping view `total` is the folder count and images are folder
+  // tiles, so the same comparison works for incremental folder paging.
   useEffect(() => {
     if (total > 0) {
       setHasMore(images.length < total)
@@ -792,12 +794,13 @@ function Gallery() {
   }, [])
 
   // Load folders for folder grouping view
-  const loadFolders = useCallback(async () => {
+  const folderPageRef = useRef(1)
+  const loadFolders = useCallback(async ({ page = 1, append = false } = {}) => {
     const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
     if (!galleryRequestOwnerRef.current.owns(request)) return false
     galleryForegroundBusyRef.current = true
 
-    setLoading(true)
+    if (!append) setLoading(true)
     try {
       const result = await fetchFolders({
         directory_id: currentDirectoryId,
@@ -805,6 +808,7 @@ function Gallery() {
         rating: currentRating,
         favorites_only: favoritesOnly,
         tags: currentTags,
+        page,
       })
       if (!galleryRequestOwnerRef.current.owns(request)) return false
 
@@ -812,13 +816,24 @@ function Gallery() {
         ...f,
         _isFolder: true,
         // Use thumbnail dimensions for masonry column balancing
-        id: `folder-${f.path}`,
+        id: `folder-${f.path ?? '__unfiled__'}`,
       }))
-      setImages(folderItems)
+      if (append) {
+        setImages(prev => {
+          const existingKeys = new Set(prev.map(item => item.id))
+          return [...prev, ...folderItems.filter(item => !existingKeys.has(item.id))]
+        })
+      } else {
+        setImages(folderItems)
+      }
       setTotal(result.total)
-      setHasMore(false)
-      setPage(1)
-      publishedGalleryViewRef.current = galleryViewKey
+      // The folder catalog reports per-folder counts in `total`; hasMore must
+      // track how many folder tiles are actually loaded, not the image total.
+      setHasMore(folderItems.length > 0 && (append ? imagesRef.current.length : 0) + folderItems.length < result.total)
+      // Advance the shared page cursor (pageRef syncs from this state), so
+      // handleLoadMore requests the next page instead of re-fetching page 2.
+      setPage(page)
+      if (!append) publishedGalleryViewRef.current = galleryViewKey
       return true
     } catch (error) {
       if (galleryRequestOwnerRef.current.owns(request)) {
@@ -828,7 +843,7 @@ function Gallery() {
     } finally {
       if (galleryRequestOwnerRef.current.owns(request)) {
         galleryForegroundBusyRef.current = false
-        setLoading(false)
+        if (!append) setLoading(false)
       }
     }
   }, [currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags, galleryViewKey])
@@ -838,10 +853,10 @@ function Gallery() {
     // If folder grouping is active and no specific folder selected, load folders instead
     if (groupByFolders && !currentFolder) {
       if (pageNum === 1 && !append) {
-        await loadFolders()
-        return true
+        return await loadFolders({ page: 1 })
       }
-      return true
+      // Infinite-scroll page: append the next folder page.
+      return await loadFolders({ page: pageNum, append: true })
     }
 
     const request = galleryRequestOwnerRef.current.begin(galleryViewKey)
@@ -1193,7 +1208,10 @@ function Gallery() {
     }
   }, [loading, hasMore, loadImages])
 
-  // Jump to a specific image number in the results
+  // Jump to a specific image number in the results.
+  // Accumulates like infinite scroll: backward targets scroll through
+  // already-loaded tiles, forward targets append only the missing pages, so
+  // previously seen content stays above and scroll-back always works.
   const jumpToImage = useCallback(async (targetIndex) => {
     if (targetIndex < 1 || targetIndex > total) return
 
@@ -1204,37 +1222,70 @@ function Gallery() {
     setIsJumping(true)
     const perPage = calculatePerPage(tileSize)
     const targetPage = Math.ceil(targetIndex / perPage)
+    const currentPage = pageRef.current
+    const baseCount = imagesRef.current.length
+    // Capture once at jump start; refs don't refresh between loop iterations.
+    const loadedKeys = new Set(imagesRef.current.map(imageIdentityKey))
+
+    // Masonry distributes tiles across columns, so DOM order ≠ array order.
+    // Anchor on the target item's own data-image-id instead of an index.
+    const scrollToImageId = (imageId) => {
+      if (imageId === undefined || imageId === null) return
+      requestAnimationFrame(() => {
+        const element = document.querySelector(
+          `[data-image-id="${CSS.escape(String(imageId))}"]`,
+        )
+        element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
 
     try {
-      const result = await fetchImages({
-        tags: currentTags,
-        rating: currentRating,
-        favorites_only: favoritesOnly,
-        directory_id: currentDirectoryId,
-        library_id: currentLibraryId,
-        min_age: currentMinAge,
-        max_age: currentMaxAge,
-        timeframe: currentTimeframe,
-        filename: currentFilename,
-        min_width: currentResolution?.width,
-        min_height: currentResolution?.height,
-        orientation: currentOrientation,
-        min_duration: currentDuration?.min,
-        max_duration: currentDuration?.max,
-        import_source: currentFolder,
-        sort: currentSort,
-        page: targetPage,
-        per_page: perPage
-      })
-      if (!galleryRequestOwnerRef.current.owns(request)) return
+      // Earlier content is never dropped, so anything at or before the last
+      // loaded page is already on screen — just scroll to it.
+      if (targetPage <= currentPage) {
+        scrollToImageId(imagesRef.current[targetIndex - 1]?.id)
+        return
+      }
 
-      setImages(result.images)
-      setTotal(result.total)
-      setPage(targetPage)
+      let lastTotal = null
+      const appended = []
+      for (let nextPage = currentPage + 1; nextPage <= targetPage; nextPage++) {
+        const result = await fetchImages({
+          tags: currentTags,
+          rating: currentRating,
+          favorites_only: favoritesOnly,
+          directory_id: currentDirectoryId,
+          library_id: currentLibraryId,
+          min_age: currentMinAge,
+          max_age: currentMaxAge,
+          timeframe: currentTimeframe,
+          filename: currentFilename,
+          min_width: currentResolution?.width,
+          min_height: currentResolution?.height,
+          orientation: currentOrientation,
+          min_duration: currentDuration?.min,
+          max_duration: currentDuration?.max,
+          import_source: currentFolder,
+          sort: currentSort,
+          page: nextPage,
+          per_page: perPage
+        })
+        if (!galleryRequestOwnerRef.current.owns(request)) return
+
+        lastTotal = result.total
+        const newImages = result.images.filter(img => !loadedKeys.has(imageIdentityKey(img)))
+        newImages.forEach(img => loadedKeys.add(imageIdentityKey(img)))
+        appended.push(...newImages)
+        setImages(prev => {
+          const existingKeys = new Set(prev.map(imageIdentityKey))
+          return [...prev, ...result.images.filter(img => !existingKeys.has(imageIdentityKey(img)))]
+        })
+        setPage(nextPage)
+      }
+      if (lastTotal !== null) setTotal(lastTotal)
       publishedGalleryViewRef.current = galleryViewKey
-
-      // Scroll to top since we're showing a new set of images
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      const targetImage = appended[targetIndex - 1 - baseCount] ?? appended[appended.length - 1]
+      scrollToImageId(targetImage?.id)
     } catch (error) {
       if (galleryRequestOwnerRef.current.owns(request)) {
         console.error('Failed to jump to image:', error)

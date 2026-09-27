@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { getMediaUrl, fetchPreviewFrames, uploadImage } from '../api'
 import { imageIdentityKey } from '../utils/imageAdjustments.js'
+import { gridMediaPath, isGridVideo } from '../utils/gridMediaSource.js'
 import {
   createTimelinePreviewOwner,
   shouldRetryTimelinePreview,
@@ -19,11 +20,28 @@ const isVideo = (filename) => {
   return ['webm', 'mp4', 'mov', 'avi', 'mkv'].includes(ext)
 }
 
-function MediaItem({ image, onClick, isSelectable = false, isSelected = false, onSelect, onImageUpdate }) {
+function MediaItem({ image, useFullImage = false, onClick, isSelectable = false, isSelected = false, onSelect, onImageUpdate }) {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
   const [localRating] = useState(image?.rating)
   const [contextMenu, setContextMenu] = useState(null)
+  // Compute derived values (safe before hooks)
+  const thumbnailUrl = image?.thumbnail_url ? getMediaUrl(image.thumbnail_url) : ''
+  const gridMediaSource = gridMediaPath(image, useFullImage)
+  const gridMediaUrl = gridMediaSource ? getMediaUrl(gridMediaSource) : ''
+  const previewLocator = useMemo(() => timelinePreviewLocator(image), [image])
+  // Tracks the source the loaded/error flags belong to. Resetting during
+  // render (not in a passive effect) makes a thumbnail<->full source switch
+  // synchronously show the placeholder again, and lets a load event that
+  // fired before passive effects win over the reset instead of the reverse.
+  const [lastSettledUrl, setLastSettledUrl] = useState(gridMediaUrl)
+  if (lastSettledUrl !== gridMediaUrl) {
+    setLastSettledUrl(gridMediaUrl)
+    if (loaded || error) {
+      setLoaded(false)
+      setError(false)
+    }
+  }
 
   // Preview frames state
   const [previewFrames, setPreviewFrames] = useState([])
@@ -36,11 +54,9 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
   const isHoveringRef = useRef(false) // Track hover state for late-loading frames
   const previewFramesRef = useRef([]) // Ref for closure-safe access in intervals
 
-  // Compute derived values (safe before hooks)
-  const thumbnailUrl = image?.thumbnail_url ? getMediaUrl(image.thumbnail_url) : ''
-  const previewLocator = useMemo(() => timelinePreviewLocator(image), [image])
+  // Determine if we should use preview frames for hover animation
   const previewIdentity = timelinePreviewIdentityKey(previewLocator)
-  const isVideoFile = isVideo(image?.original_filename)
+  const isVideoFile = isGridVideo(image)
   const fileStatus = image?.file_status || 'available'
 
   // Determine if we should use preview frames for hover animation
@@ -247,7 +263,7 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
     if (currentFrame >= 0 && frames[currentFrame]) {
       return frames[currentFrame]
     }
-    return thumbnailUrl
+    return gridMediaUrl
   }
 
   // Render file status overlay
@@ -280,7 +296,7 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
   }
 
   // Guard against missing image data - AFTER all hooks
-  if (!image || !image.thumbnail_url) {
+  if (!image || !gridMediaUrl) {
     return (
       <div className="media-item media-error">
         <div className="error-placeholder">Image unavailable</div>
@@ -322,8 +338,9 @@ function MediaItem({ image, onClick, isSelectable = false, isSelected = false, o
         </div>
       )}
 
-      {/* Always use thumbnail images in grid - never load actual videos */}
+      {/* Largest tiles use full still images; videos always keep their thumbnails. */}
       <img
+        key={gridMediaUrl}
         src={getCurrentDisplaySrc()}
         alt=""
         loading="lazy"

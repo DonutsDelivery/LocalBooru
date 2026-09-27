@@ -2,10 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_VR_CAMERA,
   DEFAULT_VR_FOV,
-  detectVRInputProjection,
-  detectVRProjection,
-  detectVRStereo,
+  loadVRConfig,
   normalizeYaw,
+  saveVRConfig,
   uploadVRVideoFrame,
   updateVRCamera,
   updateVRFov,
@@ -143,7 +142,6 @@ export default function VRVideoViewport({
   active,
   videoRef,
   mediaKey,
-  filename,
   onUnavailable,
   onTap,
   onContextMenu,
@@ -151,13 +149,7 @@ export default function VRVideoViewport({
 }) {
   const canvasRef = useRef(null)
   const cameraRef = useRef({ ...DEFAULT_VR_CAMERA })
-  const configRef = useRef({
-    inputProjection: detectVRInputProjection(filename),
-    projection: detectVRProjection(filename) || '360',
-    stereo: detectVRStereo(filename),
-    eye: 'left',
-    fov: DEFAULT_VR_FOV,
-  })
+  const configRef = useRef(loadVRConfig())
   const pointerPositionsRef = useRef(new Map())
   const gestureRef = useRef({ moved: false, distance: null })
   const [camera, setCamera] = useState(cameraRef.current)
@@ -174,6 +166,7 @@ export default function VRVideoViewport({
   const applyConfig = useCallback((updater) => {
     const next = typeof updater === 'function' ? updater(configRef.current) : updater
     configRef.current = next
+    saveVRConfig(next)
     setConfig(next)
   }, [])
 
@@ -183,21 +176,13 @@ export default function VRVideoViewport({
   }, [applyCamera, applyConfig])
 
   useEffect(() => {
-    const nextConfig = {
-      inputProjection: detectVRInputProjection(filename),
-      projection: detectVRProjection(filename) || '360',
-      stereo: detectVRStereo(filename),
-      eye: 'left',
-      fov: DEFAULT_VR_FOV,
-    }
     pointerPositionsRef.current.clear()
     gestureRef.current = { moved: false, distance: null }
     setDragging(false)
     cameraRef.current = { ...DEFAULT_VR_CAMERA }
-    configRef.current = nextConfig
     setCamera(cameraRef.current)
-    setConfig(nextConfig)
-  }, [mediaKey, filename])
+    setConfig(configRef.current)
+  }, [mediaKey])
 
   useEffect(() => {
     if (!active) {
@@ -406,7 +391,6 @@ export default function VRVideoViewport({
       requestRender()
     }) : null
     resizeObserver?.observe(canvas)
-    // NO window.addEventListener('resize', resize) — ResizeObserver handles it
     const markViewDirty = () => {
       viewDirty = true
       requestRender()

@@ -32,7 +32,7 @@ STORE_PASS="${ANDROID_STORE_PASS:-android}"
 OUTPUT_APK="$PROJECT_ROOT/LocalBooru.apk"
 
 if ! command -v zipalign >/dev/null || ! command -v apksigner >/dev/null; then
-  SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+  SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
   if [[ -n "$SDK_ROOT" && -d "$SDK_ROOT/build-tools" ]]; then
     BUILD_TOOLS_DIR="$(printf '%s\n' "$SDK_ROOT"/build-tools/* | sort -V | tail -n 1)"
     export PATH="$BUILD_TOOLS_DIR:$PATH"

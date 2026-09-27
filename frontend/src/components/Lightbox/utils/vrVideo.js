@@ -21,6 +21,43 @@ export const DEFAULT_VR_CAMERA = Object.freeze({
 export const DEFAULT_VR_FOV = 100
 export const MIN_VR_FOV = 30
 export const MAX_VR_FOV = 120
+export const VR_SETTINGS_STORAGE_KEY = 'localbooru_vr_view_settings'
+export const DEFAULT_VR_CONFIG = Object.freeze({
+  inputProjection: 'fisheye',
+  projection: '180',
+  stereo: 'sbs',
+  eye: 'left',
+  fov: DEFAULT_VR_FOV,
+})
+
+export function loadVRConfig(storage = globalThis.localStorage) {
+  if (!storage) return { ...DEFAULT_VR_CONFIG }
+  try {
+    const saved = JSON.parse(storage.getItem(VR_SETTINGS_STORAGE_KEY) || '{}')
+    return {
+      inputProjection: ['equirectangular', 'fisheye'].includes(saved.inputProjection)
+        ? saved.inputProjection : DEFAULT_VR_CONFIG.inputProjection,
+      projection: ['180', '360'].includes(saved.projection)
+        ? saved.projection : DEFAULT_VR_CONFIG.projection,
+      stereo: ['mono', 'sbs', 'tb'].includes(saved.stereo)
+        ? saved.stereo : DEFAULT_VR_CONFIG.stereo,
+      eye: ['left', 'right'].includes(saved.eye) ? saved.eye : DEFAULT_VR_CONFIG.eye,
+      fov: Number.isFinite(saved.fov)
+        ? clamp(saved.fov, MIN_VR_FOV, MAX_VR_FOV) : DEFAULT_VR_CONFIG.fov,
+    }
+  } catch {
+    return { ...DEFAULT_VR_CONFIG }
+  }
+}
+
+export function saveVRConfig(config, storage = globalThis.localStorage) {
+  if (!storage) return
+  try {
+    storage.setItem(VR_SETTINGS_STORAGE_KEY, JSON.stringify(config))
+  } catch {
+    // Playback should continue when storage is unavailable or full.
+  }
+}
 
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))
