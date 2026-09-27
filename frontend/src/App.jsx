@@ -8,6 +8,7 @@ import { BrowserRouter, Routes, Route, useSearchParams, useNavigate, useLocation
 import { isMobileApp, LOCAL_SERVER } from './serverManager'
 import MasonryGrid from './components/MasonryGrid'
 import MediaSectionsNav from './components/MediaSectionsNav'
+import { MusicPlayerProvider, MusicPage, PersistentMusicPlayer } from './components/Music/MusicExperience'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
 import TitleBar from './components/TitleBar'
@@ -2340,15 +2341,19 @@ function AppShell() {
       <ToastContainer />
       <BrowserRouter>
         <BackButtonHandler />
-        <Routes>
-          <Route path="/" element={<Gallery mediaType="image" />} />
-          <Route path="/videos" element={<Gallery mediaType="video" />} />
-          <Route path="/directories" element={<DirectoriesPage />} />
-          <Route path="/collections" element={<CollectionsPage />} />
-          <Route path="/collections/:id" element={<CollectionDetailPage />} />
-          <Route path="/watch/:token" element={<WatchPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+        <MusicPlayerProvider>
+          <Routes>
+            <Route path="/" element={<Gallery mediaType="image" />} />
+            <Route path="/videos" element={<Gallery mediaType="video" />} />
+            <Route path="/music" element={<MusicPage />} />
+            <Route path="/directories" element={<DirectoriesPage />} />
+            <Route path="/collections" element={<CollectionsPage />} />
+            <Route path="/collections/:id" element={<CollectionDetailPage />} />
+            <Route path="/watch/:token" element={<WatchPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+          <PersistentMusicPlayer />
+        </MusicPlayerProvider>
       </BrowserRouter>
     </>
   )

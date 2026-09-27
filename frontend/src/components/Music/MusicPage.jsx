@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import MediaSectionsNav from '../MediaSectionsNav'
 import {
   addMusicCollectionItem, createMusicCollection, fetchLibraries, fetchMusicAlbum,
   fetchMusicAlbums, fetchMusicCollection, fetchMusicCollections, fetchMusicFacets,
@@ -236,9 +236,7 @@ export default function MusicPage() {
       </div>
     </aside>
     <main className="music-main">
-      <nav className="music-media-nav" aria-label="Media sections">
-        <NavLink to="/" end>Images</NavLink><NavLink to="/videos">Videos</NavLink><NavLink to="/music">Music</NavLink>
-      </nav>
+      <MediaSectionsNav />
       <div className="music-toolbar">
         <div className="music-mode-switch" role="group" aria-label="Music view">
           <button className={mode === 'albums' ? 'active' : ''} onClick={() => switchMode('albums')}>Albums</button>
