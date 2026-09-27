@@ -87,18 +87,21 @@ export default function MusicPage() {
           }
           if (mode === 'albums' && collectionTracks.length) {
             const ids = new Set(collectionAlbums.map(itemKey))
-            const albumRefs = collectionTracks.filter(track => track.album_id).map(track => ({
+            const hasNamedAlbum = track => track.album_id && track.album?.trim().toLowerCase() !== 'unknown album'
+            const albumRefs = collectionTracks.filter(hasNamedAlbum).map(track => ({
               id: track.album_id, title: track.album, artist: track.artist,
               artwork_url: track.artwork_url, library_id: track.library_id,
             }))
             for (const album of albumRefs) if (!ids.has(itemKey(album))) { ids.add(itemKey(album)); collectionAlbums.push(album) }
             // A track with no album still needs an Albums-mode entry so its
             // collection never disappears when switching music views.
-            for (const track of collectionTracks.filter(track => !track.album_id)) {
+            for (const track of collectionTracks.filter(track => !hasNamedAlbum(track))) {
               collectionAlbums.push({
                 id: `single-${track.id}`, title: track.title || 'Untitled track',
                 artist: track.artist, artwork_url: track.artwork_url,
-                library_id: track.library_id, track_count: 1, _standaloneTrack: track,
+                library_id: track.library_id, track_count: 1, genre: track.genre,
+                year: track.year, directory_id: track.directory_id,
+                is_favorite: track.is_favorite, _standaloneTrack: track,
               })
             }
           }
@@ -118,13 +121,17 @@ export default function MusicPage() {
             album: filters.album || undefined, genre: filters.genre || undefined,
             year: filters.year || undefined, favorites_only: filters.favorites || undefined,
             directory_id: filters.folder || undefined, library_id: filters.library || undefined,
-            page: 1, per_page: 60 * page,
+            per_page: 60,
           }
-          const result = mode === 'albums' ? await fetchMusicAlbums(params) : await fetchMusicTracks(params)
+          const results = await Promise.all(Array.from({ length: page }, (_, index) =>
+            mode === 'albums'
+              ? fetchMusicAlbums({ ...params, page: index + 1 })
+              : fetchMusicTracks({ ...params, page: index + 1 })
+          ))
           if (!alive) return
-          if (mode === 'albums') setAlbums(result.albums || [])
-          else setTracks(result.tracks || [])
-          setTotal(result.total || 0)
+          if (mode === 'albums') setAlbums(results.flatMap(result => result.albums || []))
+          else setTracks(results.flatMap(result => result.tracks || []))
+          setTotal(results[0]?.total || 0)
         }
       } catch (cause) {
         if (alive) setError(cause.response?.data?.detail || 'Could not load the music library.')
