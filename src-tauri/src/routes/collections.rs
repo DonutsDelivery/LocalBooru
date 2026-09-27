@@ -166,7 +166,7 @@ fn collection_members(
     collection_id: i64,
 ) -> Result<Vec<CollectionMember>, AppError> {
     let mut stmt = conn.prepare("SELECT image_id, directory_id, library_id FROM collection_items WHERE collection_id = ?1 ORDER BY sort_order")?;
-    Ok(stmt
+    let members = stmt
         .query_map(params![collection_id], |row| {
             Ok(CollectionMember {
                 image_id: row.get(0)?,
@@ -175,7 +175,8 @@ fn collection_members(
             })
         })?
         .filter_map(Result::ok)
-        .collect())
+        .collect();
+    Ok(members)
 }
 
 fn member_thumbnail_url(member: &CollectionMember) -> String {
