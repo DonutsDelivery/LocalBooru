@@ -35,6 +35,7 @@ import { classifySidebarSwipe } from './utils/sidebarGestures'
 import { getCurationRecoveryMode } from './utils/curationState'
 import { adjustmentLocator, imageIdentityKey, imageMatchesLocator, reorderImagesForSort, updateImagesByLocator } from './utils/imageAdjustments.js'
 import { loadMoveDirectoryOptions } from './utils/batchMove.js'
+import { toggleTagFilter } from './utils/tagFilters.js'
 import { useAllAddonStatuses } from './hooks/useAddonStatus'
 import { useCurationGame } from './hooks/useCurationGame'
 import { useMobileDrawer } from './hooks/useMobileDrawer'
@@ -1384,17 +1385,9 @@ function Gallery({ mediaType = 'image' }) {
   }, [jumpInput, total, jumpToImage])
 
   const handleTagClick = (tagName) => {
-    const currentTagList = currentTags ? currentTags.split(',').map(t => t.trim()) : []
-    let newTagList
-
-    if (currentTagList.includes(tagName)) {
-      newTagList = currentTagList.filter(t => t !== tagName)
-    } else {
-      newTagList = [...currentTagList, tagName]
-    }
-
     const params = {}
-    if (newTagList.length > 0) params.tags = newTagList.join(',')
+    const nextTags = toggleTagFilter(currentTags, tagName)
+    if (nextTags) params.tags = nextTags
     if (currentRating !== 'pg,pg13,r,x,xxx') params.rating = currentRating
     if (favoritesOnly) params.favorites = 'true'
     if (currentSort !== 'newest') params.sort = currentSort

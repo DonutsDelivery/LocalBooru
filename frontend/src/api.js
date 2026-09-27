@@ -7,6 +7,7 @@ import { validateServerCertificate, isHttps } from './sslPinning'
 import { adjustmentQuery } from './utils/imageAdjustments.js'
 import { shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
 import { remoteMediaProxyUrl } from './utils/remoteMediaRouting.js'
+import { splitTagFilters } from './utils/tagFilters.js'
 import { runtimeDiagnosticTimeoutMs } from './components/autoTaggerRuntime.js'
 
 // Current server config (cached for synchronous access)
@@ -283,10 +284,11 @@ export async function fetchImages({
   per_page = 50
 }) {
   const params = new URLSearchParams()
+  const tagFilters = splitTagFilters(tags, exclude_tags)
   if (media_type) params.append('media_type', media_type)
   if (watched_status) params.append('watched_status', watched_status)
-  if (tags) params.append('tags', tags)
-  if (exclude_tags) params.append('exclude_tags', exclude_tags)
+  if (tagFilters.included) params.append('tags', tagFilters.included)
+  if (tagFilters.excluded) params.append('exclude_tags', tagFilters.excluded)
   if (rating) params.append('rating', rating)
   if (favorites_only) params.append('favorites_only', 'true')
   if (exclude_favorites) params.append('exclude_favorites', 'true')

@@ -16,19 +16,31 @@ function TagSearch({
 
   // Debounce tag input for performance (150ms delay)
   const debouncedTagInput = useDebounce(tagInput, 150)
+  const excluding = tagInput.trim().startsWith('-')
+
+  const chooseTag = (name) => {
+    if (!name) return
+    onTagClick(excluding ? `-${name}` : name)
+    setTagInput('')
+    setSuggestionIndex(-1)
+    setSuggestions([])
+  }
 
   // Fetch suggestions from API when debounced input changes
   useEffect(() => {
-    if (debouncedTagInput.length < 2) {
+    const input = debouncedTagInput.trim()
+    const query = (input.startsWith('-') ? input.slice(1) : input).trim()
+    if (query.length < 2) {
       setSuggestions([])
       return
     }
 
     let cancelled = false
-    searchTags(debouncedTagInput, 10).then(results => {
+    searchTags(query, 10).then(results => {
       if (!cancelled) {
         // Filter out already active tags
-        const filtered = results.filter(tag => !activeTags.includes(tag.name))
+        const prefix = input.startsWith('-') ? '-' : ''
+        const filtered = results.filter(tag => !activeTags.includes(`${prefix}${tag.name}`))
         setSuggestions(filtered.slice(0, 8))
       }
     }).catch(err => {
@@ -74,22 +86,22 @@ function TagSearch({
                 setSuggestionIndex(prev => prev > 0 ? prev - 1 : suggestions.length - 1)
               } else if (e.key === 'Enter' && tagInput.trim()) {
                 e.preventDefault()
-                const selectedTag = suggestionIndex >= 0 ? suggestions[suggestionIndex] : suggestions[0]
-                if (selectedTag) {
-                  onTagClick(selectedTag.name)
-                  setTagInput('')
-                  setSuggestionIndex(-1)
-                }
+                const typedName = tagInput.trim().replace(/^-/, '').trim().toLowerCase().replace(/\s+/g, '_')
+                const currentSuggestions = debouncedTagInput.trim() === tagInput.trim() ? suggestions : []
+                const selectedTag = suggestionIndex >= 0 ? currentSuggestions[suggestionIndex]
+                  : currentSuggestions.find(tag => tag.name === typedName) || currentSuggestions[0]
+                chooseTag(selectedTag?.name || typedName)
               } else if (e.key === 'Escape') {
                 setTagInput('')
                 setSuggestionIndex(-1)
+                setSuggestions([])
               }
             }}
-            placeholder="Type to search tags..."
+            placeholder="Search tag or -tag..."
             className="search-input"
           />
           {tagInput && (
-            <button type="button" className="search-clear" onClick={() => { setTagInput(''); setSuggestionIndex(-1) }}>
+            <button type="button" className="search-clear" onClick={() => { setTagInput(''); setSuggestionIndex(-1); setSuggestions([]) }}>
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
               </svg>
@@ -101,13 +113,9 @@ function TagSearch({
               <button
                 key={tag.name}
                 className={`suggestion-item tag-${tag.category} ${index === suggestionIndex ? 'selected' : ''}`}
-                onClick={() => {
-                  onTagClick(tag.name)
-                  setTagInput('')
-                  setSuggestionIndex(-1)
-                }}
+                onClick={() => chooseTag(tag.name)}
               >
-                <span className="suggestion-name">{tag.name.replace(/_/g, ' ')}</span>
+                <span className="suggestion-name">{excluding ? '-' : ''}{tag.name.replace(/_/g, ' ')}</span>
                 <span className="suggestion-count">({tag.post_count})</span>
               </button>
             ))}
@@ -123,11 +131,12 @@ function TagSearch({
             {activeTags.map(tag => (
               <button
                 key={tag}
-                className="tag active"
+                className={`tag active ${tag.startsWith('-') ? 'excluded' : ''}`}
                 onClick={() => onTagClick(tag)}
-                title="Remove from filters"
+                title={tag.startsWith('-') ? 'Remove excluded tag' : 'Remove tag filter'}
+                aria-label={`Remove ${tag.startsWith('-') ? 'excluded ' : ''}tag ${tag.replace(/^-/, '').replace(/_/g, ' ')}`}
               >
-                {tag.replace(/_/g, ' ')}
+                {tag.replace(/^-/, '').replace(/_/g, ' ')}
                 <svg viewBox="0 0 24 24" fill="currentColor" className="remove-icon">
                   <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                 </svg>

@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { fetchImages, fetchTags, getLibraryStats, subscribeToLibraryEvents } from '../api'
+import { toggleTagFilter } from '../utils/tagFilters.js'
 
 export function useImageFiltering() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -190,17 +191,9 @@ export function useImageFiltering() {
   }, [loading, hasMore, page, loadImages])
 
   const handleTagClick = useCallback((tagName) => {
-    const currentTagList = currentTags ? currentTags.split(',').map(t => t.trim()) : []
-    let newTagList
-
-    if (currentTagList.includes(tagName)) {
-      newTagList = currentTagList.filter(t => t !== tagName)
-    } else {
-      newTagList = [...currentTagList, tagName]
-    }
-
     const params = {}
-    if (newTagList.length > 0) params.tags = newTagList.join(',')
+    const nextTags = toggleTagFilter(currentTags, tagName)
+    if (nextTags) params.tags = nextTags
     if (currentRating !== 'pg,pg13,r,x,xxx') params.rating = currentRating
     if (favoritesOnly) params.favorites = 'true'
     if (currentSort !== 'newest') params.sort = currentSort

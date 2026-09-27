@@ -934,6 +934,16 @@
   color: var(--accent);
 }
 
+.active-tags .tag.excluded {
+  border-left-color: var(--text-muted);
+}
+
+.active-tags .tag.excluded::before {
+  content: '−';
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
 .tag-artist { color: var(--tag-artist); }
 .tag-character { color: var(--tag-character); }
 .tag-copyright { color: var(--tag-copyright); }
