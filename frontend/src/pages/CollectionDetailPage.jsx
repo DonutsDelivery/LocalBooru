@@ -211,7 +211,7 @@ export default function CollectionDetailPage() {
           </div>
         </div>
 
-        {loading || loadedCollectionKey !== collectionStateKey ? (
+        {loadedCollectionKey !== collectionStateKey ? (
           <div className="collections-loading">Loading...</div>
         ) : images.length === 0 ? (
           <div className="collections-empty">
