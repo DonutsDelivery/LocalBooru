@@ -399,8 +399,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         const token = transition.token
         if (transition.timer) clearTimeout(transition.timer)
 
-        releaseVideoMedia(video)
-
+        // Remount after the Manager graph settles. Calling video.load() here
+        // synchronously tears down WebKit's active GStreamer pipeline while
+        // the SVP filter is being inserted, which can hang the WebView.
+        // React releases the old element when the generation changes.
         transition.timer = setTimeout(() => {
           if (svpTransitionRef.current.token !== token
               || activeImageKeyRef.current !== imageKey
