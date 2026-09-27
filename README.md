@@ -32,12 +32,18 @@ The **Portable** versions automatically store all data next to the app - no setu
 2. Run the app - a `data` folder is created automatically
 3. Copy the entire folder to any computer and your library comes with you
 
-**Windows**: Fully self-contained with bundled Python.
-**Linux/macOS**: Requires system Python 3.10+ with pip installed.
+The core library and local music metadata indexing do not require Python. Optional add-ons may have their own dependencies.
 
 The installer versions use AppData/home directory instead (shared across updates).
 
 ## Features
+
+### Media Libraries
+- **Images, Videos, and Music** - Browse each media type with its own filters and collections
+- **Albums and Songs** - Play album tracks in disc order or start a song-based related mix
+- **Local related listening** - Queue similar songs from your own library without a streaming service
+- **Persistent player** - Keep music playing while browsing images, videos, and collections
+- **Existing organization** - Legacy image and video collections keep their members after the galleries are separated
 
 ### Automatic AI Tagging
 - **Booru-style tags** - Automatically tags images with character, artist, copyright, and general tags using AI models
@@ -45,20 +51,20 @@ The installer versions use AppData/home directory instead (shared across updates
 - **Content rating** - Automatically classifies images by rating (PG, PG13, R, X, XXX)
 
 ### Smart Organization
-- **Watch directories** - Point DonutMediaCenter at your image folders and it automatically imports and tags new images
+- **Watch directories** - Add folders containing images, videos, or audio; the library indexes new files as they appear
 - **Tag-based search** - Find images instantly using tag combinations
 - **Favorites** - Mark your best images and filter to show only favorites
 - **Pruning** - Clean up non-favorited images by moving them to a dumpster folder
 
 ### Modern Interface
 - **Masonry grid** - Beautiful responsive gallery layout
-- **Lightbox viewer** - Full-screen image viewing with keyboard navigation
+- **Media viewers** - Image navigation, video playback controls, and an album or song queue for music
 - **Dark theme** - Easy on the eyes for extended browsing sessions
-- **Filter sidebar** - Filter by tags, ratings, age range, and directories
+- **Relevant filters** - Filter images, videos, and music using the information available for each type
 
 ### Flexible Access
-- **Desktop app** - Native Electron application for Windows, macOS, and Linux
-- **Web browser** - Access your library from any browser at `http://localhost:8787`
+- **Desktop app** - Native Tauri application for Windows, macOS, and Linux
+- **Web browser** - Access your local server from a browser when network access is enabled
 - **System tray** - Runs quietly in the background, always ready
 
 ### Auto Updates
@@ -68,15 +74,15 @@ The installer versions use AppData/home directory instead (shared across updates
 ## Installation
 
 ### Requirements
-- **Windows/macOS**: No additional requirements
-- **Linux**: Python 3.10+ with pip (for the tagging backend)
+- **Windows/macOS**: Use a supported desktop build.
+- **Linux**: Use a supported package or AppImage; optional add-ons may require extra dependencies.
 
 ## Getting Started
 
 1. **Launch DonutMediaCenter** - The app starts with an empty library
-2. **Add a directory** - Go to "Directories" and click "Add Directory" to select a folder containing images
-3. **Wait for processing** - DonutMediaCenter will scan and tag your images in the background
-4. **Browse and enjoy** - Use the gallery to browse, search, and favorite your images
+2. **Add a directory** - Go to "Directories" and add folders containing images, videos, or music
+3. **Wait for indexing** - DonutMediaCenter scans media and runs enabled image tagging add-ons
+4. **Browse and listen** - Use Images, Videos, or Music to search, organize, and play your library
 
 ## Usage Tips
 
