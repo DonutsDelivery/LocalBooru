@@ -9,6 +9,7 @@ pub mod libraries;
 pub mod library;
 pub mod migration;
 pub mod models;
+pub mod music;
 pub mod network;
 pub mod settings;
 pub mod share;

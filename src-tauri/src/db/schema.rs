@@ -154,6 +154,7 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             description TEXT,
+            media_type TEXT CHECK(media_type IN ('image','video')),
             cover_image_id INTEGER REFERENCES images(id) ON DELETE SET NULL,
             item_count INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -174,6 +175,62 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
 
         CREATE INDEX IF NOT EXISTS idx_collection_items_collection_id ON collection_items(collection_id);
         CREATE INDEX IF NOT EXISTS idx_collection_items_image_id ON collection_items(image_id);
+
+        -- Music is indexed by watched file path. Album records keep release order
+        -- and music collections are separate from the existing image collections.
+        CREATE TABLE IF NOT EXISTS music_albums (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            album_key TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            artist TEXT NOT NULL,
+            genre TEXT,
+            year INTEGER,
+            artwork_path TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS music_tracks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL UNIQUE,
+            directory_id INTEGER NOT NULL,
+            album_id INTEGER NOT NULL REFERENCES music_albums(id),
+            title TEXT NOT NULL,
+            artist TEXT NOT NULL,
+            album_artist TEXT,
+            genre TEXT,
+            year INTEGER,
+            disc_number INTEGER NOT NULL DEFAULT 1,
+            track_number INTEGER NOT NULL DEFAULT 0,
+            duration REAL,
+            file_size INTEGER,
+            modified_at INTEGER,
+            artwork_path TEXT,
+            is_favorite INTEGER NOT NULL DEFAULT 0,
+            is_available INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_music_tracks_album_order ON music_tracks(album_id, disc_number, track_number, id);
+        CREATE INDEX IF NOT EXISTS idx_music_tracks_directory ON music_tracks(directory_id);
+        CREATE INDEX IF NOT EXISTS idx_music_tracks_artist ON music_tracks(artist);
+        CREATE INDEX IF NOT EXISTS idx_music_tracks_genre ON music_tracks(genre);
+
+        CREATE TABLE IF NOT EXISTS music_collections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS music_collection_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            collection_id INTEGER NOT NULL REFERENCES music_collections(id) ON DELETE CASCADE,
+            item_type TEXT NOT NULL CHECK(item_type IN ('album','track')),
+            item_id INTEGER NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            added_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(collection_id, item_type, item_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_music_collection_items_collection ON music_collection_items(collection_id, sort_order);
 
         -- Watch history
         -- Note: image_id has no FK constraint because images live in per-directory

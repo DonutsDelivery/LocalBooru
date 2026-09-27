@@ -301,6 +301,11 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
         sql: "ALTER TABLE device_pairing_grants ADD COLUMN authorized_by_device_id TEXT;\
               CREATE INDEX IF NOT EXISTS idx_device_pairing_grants_authorizer_device ON device_pairing_grants(authorized_by_device_id, consumed_at);",
     },
+    // Legacy mixed collections keep NULL and remain visible in both galleries.
+    Migration {
+        description: "Scope new image and video collections by media type",
+        sql: "ALTER TABLE collections ADD COLUMN media_type TEXT CHECK(media_type IN ('image','video'));",
+    },
 ];
 
 /// Run all pending migrations on the main library database.

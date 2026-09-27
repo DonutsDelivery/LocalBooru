@@ -6,6 +6,7 @@ use crate::db::library::LibraryContext;
 use crate::server::error::AppError;
 use crate::server::state::AppState;
 use crate::services::importer::{self, ImportStatus};
+use crate::services::music;
 
 /// File availability status.
 #[derive(Debug, Clone, PartialEq)]
@@ -120,6 +121,20 @@ pub fn scan_directory(
         {
             continue;
         }
+        if music::is_audio_file(entry.path()) {
+            stats.found += 1;
+            if let Err(error) = music::index_audio_file(lib, directory_id, entry.path()) {
+                log::warn!(
+                    "Music import error for {}: {}",
+                    entry.path().display(),
+                    error
+                );
+                stats.errors += 1;
+            } else {
+                stats.imported += 1;
+            }
+            continue;
+        }
         if !importer::is_media_file(entry.path()) {
             continue;
         }
@@ -145,6 +160,7 @@ pub fn scan_directory(
     // removing the old reference then preserves tags, favorites, and thumbnail.
     if clean_deleted {
         stats.removed = clean_deleted_files(lib, directory_id)? as i64;
+        music::reconcile_audio_files(lib, directory_id)?;
     }
 
     // Reconcile cached directory counts after additions, changes, and removals.

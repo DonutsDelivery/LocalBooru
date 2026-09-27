@@ -672,6 +672,7 @@ async fn remove_parent_directory(
                     }
                 }
                 for dir_id in &child_ids {
+                    crate::services::music::mark_directory_unavailable(&lib, *dir_id)?;
                     if let Err(e) = lib.directory_db.delete_directory_db(*dir_id) {
                         log::warn!("[ParentDir] Failed to delete DB for dir {}: {}", dir_id, e);
                     }
@@ -980,6 +981,7 @@ async fn delete_directories_with_lib(
             }
 
             // Delete directory DB file
+            crate::services::music::mark_directory_unavailable(&lib, dir_id)?;
             let _ = lib.directory_db.delete_directory_db(dir_id);
 
             // Delete directory record from main DB
@@ -2259,6 +2261,7 @@ async fn dedup_directories(State(state): State<AppState>) -> Result<Json<Value>,
                 let lib_clone = lib.clone();
                 let did = *dir_id;
                 tokio::task::spawn_blocking(move || {
+                    let _ = crate::services::music::mark_directory_unavailable(&lib_clone, did);
                     let _ = lib_clone.directory_db.delete_directory_db(did);
                     if let Ok(conn) = lib_clone.main_pool.get() {
                         let _ = conn
@@ -2307,6 +2310,7 @@ async fn dedup_directories(State(state): State<AppState>) -> Result<Json<Value>,
             }
 
             for dir_id in &duplicate_ids {
+                crate::services::music::mark_directory_unavailable(&lib_clone, *dir_id)?;
                 let _ = lib_clone.directory_db.delete_directory_db(*dir_id);
                 conn.execute(
                     "DELETE FROM watch_directories WHERE id = ?1",

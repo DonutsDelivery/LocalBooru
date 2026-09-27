@@ -15,6 +15,7 @@ use crate::db::schema::init_directory_db;
 use crate::server::state::AppState;
 use crate::services::file_tracker;
 use crate::services::importer;
+use crate::services::music;
 use crate::services::task_queue;
 
 /// Check if a path is inside a "dumpster" subfolder (pruned images).
@@ -729,6 +730,35 @@ fn handle_fs_event(
     event: Event,
     rt: &tokio::runtime::Handle,
 ) {
+    // Audio shares watched folders with images, but has a separate index and
+    // never enters the image import or tagging pipeline.
+    for path in &event.paths {
+        if !music::is_audio_file(path) || is_in_dumpster(path) {
+            continue;
+        }
+        let path = path.clone();
+        let lib = lib.clone();
+        let removed = matches!(
+            event.kind,
+            EventKind::Remove(_) | EventKind::Modify(ModifyKind::Name(RenameMode::From))
+        );
+        rt.spawn(async move {
+            if !removed {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            let result = tokio::task::spawn_blocking(move || {
+                if removed {
+                    music::mark_audio_missing(&lib, &path)
+                } else {
+                    music::index_audio_file(&lib, directory_id, &path)
+                }
+            })
+            .await;
+            if let Ok(Err(error)) = result {
+                log::warn!("[Watcher] Music index error: {}", error);
+            }
+        });
+    }
     match event.kind {
         // New file created
         EventKind::Create(_) => {

@@ -80,6 +80,7 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         )
         .nest("/api/library", crate::routes::library::router())
         .nest("/api/collections", crate::routes::collections::router())
+        .nest("/api/music", crate::routes::music::router())
         .nest("/api/users", crate::routes::users::router())
         .nest("/api/settings", crate::routes::settings::router())
         .nest(
