@@ -6,6 +6,7 @@ import MediaSectionsNav from '../components/MediaSectionsNav'
 import MasonryGrid from '../components/MasonryGrid'
 import Lightbox from '../components/Lightbox'
 import { adjustmentLocator, imageMatchesLocator, updateImagesByLocator } from '../utils/imageAdjustments.js'
+import { loadCollectionPages, restoreCollectionScroll, savedCollectionPage } from '../utils/collectionState.js'
 import { useMobileDrawer } from '../hooks/useMobileDrawer'
 
 export default function CollectionDetailPage() {
@@ -51,26 +52,18 @@ export default function CollectionDetailPage() {
   useEffect(() => {
     let active = true
     const restore = async () => {
-      const storedPage = Number(sessionStorage.getItem(`${collectionStateKey}_page`))
-      const savedPage = Number.isSafeInteger(storedPage) && storedPage > 0 ? storedPage : 1
-      let loadedImages = []
-      let lastData = null
-      let loadedPage = 0
       try {
-        for (let nextPage = 1; nextPage <= savedPage; nextPage++) {
-          const data = await fetchCollection(id, nextPage, 50, mediaType)
-          if (!active) return
-          loadedImages = [...loadedImages, ...(data.images || [])]
-          lastData = data
-          loadedPage = nextPage
-          if (!data.has_more) break
-        }
-        if (!active) return
-        setCollection(lastData)
-        setImages(loadedImages)
-        setPage(loadedPage)
-        setHasMore(lastData?.has_more || false)
-        sessionStorage.setItem(`${collectionStateKey}_page`, String(loadedPage))
+        const restored = await loadCollectionPages(
+          nextPage => fetchCollection(id, nextPage, 50, mediaType),
+          savedCollectionPage(sessionStorage, collectionStateKey),
+          () => active,
+        )
+        if (!active || !restored) return
+        setCollection(restored.collection)
+        setImages(restored.images)
+        setPage(restored.page)
+        setHasMore(restored.hasMore)
+        sessionStorage.setItem(`${collectionStateKey}_page`, String(restored.page))
       } catch (error) {
         console.error('Failed to restore collection:', error)
         if (active) {
@@ -95,7 +88,7 @@ export default function CollectionDetailPage() {
     restoredScrollKeyRef.current = collectionStateKey
     requestAnimationFrame(() => {
       const container = document.querySelector('.collection-detail-page > .masonry-container')
-      if (container) container.scrollTop = Number(sessionStorage.getItem(`${collectionStateKey}_scroll`) || 0)
+      restoreCollectionScroll(sessionStorage, collectionStateKey, container)
     })
   }, [loading, loadedCollectionKey, collectionStateKey])
 
