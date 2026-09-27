@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { fetchCollections, createCollection, deleteCollection, getMediaUrl } from '../api'
 import Sidebar from '../components/Sidebar'
@@ -12,9 +12,11 @@ export default function CollectionsPage() {
   const mediaType = searchParams.get('media_type') === 'video' ? 'video' : 'image'
   const [collections, setCollections] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadedMediaType, setLoadedMediaType] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
+  const restoredScrollTypeRef = useRef(null)
   const drawer = useMobileDrawer()
 
   useEffect(() => {
@@ -25,7 +27,10 @@ export default function CollectionsPage() {
       })
       .catch(error => console.error('Failed to load collections:', error))
       .finally(() => {
-        if (active) setLoading(false)
+        if (active) {
+          setLoadedMediaType(mediaType)
+          setLoading(false)
+        }
       })
     return () => { active = false }
   }, [mediaType])
@@ -33,6 +38,15 @@ export default function CollectionsPage() {
   useEffect(() => {
     sessionStorage.setItem(`donutMediaCenter_section_url_${mediaType}`, `${window.location.pathname}${window.location.search}`)
   }, [mediaType, searchParams])
+
+  useEffect(() => {
+    if (loading || loadedMediaType !== mediaType || restoredScrollTypeRef.current === mediaType) return
+    restoredScrollTypeRef.current = mediaType
+    requestAnimationFrame(() => {
+      const grid = document.querySelector('.collections-page .collections-grid')
+      if (grid) grid.scrollTop = Number(sessionStorage.getItem(`donutMediaCenter_collections_scroll_${mediaType}`) || 0)
+    })
+  }, [loading, loadedMediaType, mediaType])
 
   const handleCreate = async () => {
     if (!newName.trim() || creating) return
@@ -64,7 +78,7 @@ export default function CollectionsPage() {
       <div className="main-container">
         {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
         <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={drawer.close} />
-        <main className="content with-sidebar">
+        <main className="content with-sidebar collections-page">
         <MediaSectionsNav />
         <div className="collections-header">
           <div className="collections-title-row">
@@ -98,7 +112,7 @@ export default function CollectionsPage() {
           </div>
         )}
 
-        {loading ? (
+        {loading || loadedMediaType !== mediaType ? (
           <div className="collections-loading">Loading collections...</div>
         ) : collections.length === 0 ? (
           <div className="collections-empty">
@@ -106,7 +120,9 @@ export default function CollectionsPage() {
             <p>Create a collection to organize your {mediaType === 'video' ? 'videos' : 'images'}.</p>
           </div>
         ) : (
-          <div className="collections-grid">
+          <div className="collections-grid" onScroll={(event) => {
+            sessionStorage.setItem(`donutMediaCenter_collections_scroll_${mediaType}`, String(event.currentTarget.scrollTop))
+          }}>
             {collections.map(c => (
               <div
                 key={c.id}

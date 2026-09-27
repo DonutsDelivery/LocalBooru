@@ -16,13 +16,16 @@ export default function CollectionDetailPage() {
   const [collection, setCollection] = useState(null)
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadedCollectionKey, setLoadedCollectionKey] = useState(null)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState('')
   const removingRef = useRef(false)
+  const restoredScrollKeyRef = useRef(null)
   const drawer = useMobileDrawer()
+  const collectionStateKey = `donutMediaCenter_collection_${mediaType}_${id}`
 
   const loadCollection = useCallback(async (pageNum = 1, append = false) => {
     try {
@@ -34,25 +37,77 @@ export default function CollectionDetailPage() {
         setImages(data.images || [])
       }
       setHasMore(data.has_more)
+      setPage(pageNum)
+      sessionStorage.setItem(`${collectionStateKey}_page`, String(pageNum))
+      setLoading(false)
+      return true
     } catch (e) {
       console.error('Failed to load collection:', e)
+      setLoading(false)
+      return false
     }
-    setLoading(false)
-  }, [id, mediaType])
+  }, [id, mediaType, collectionStateKey])
 
   useEffect(() => {
-    loadCollection()
-  }, [loadCollection])
+    let active = true
+    const restore = async () => {
+      const storedPage = Number(sessionStorage.getItem(`${collectionStateKey}_page`))
+      const savedPage = Number.isSafeInteger(storedPage) && storedPage > 0 ? storedPage : 1
+      let loadedImages = []
+      let lastData = null
+      let loadedPage = 0
+      try {
+        for (let nextPage = 1; nextPage <= savedPage; nextPage++) {
+          const data = await fetchCollection(id, nextPage, 50, mediaType)
+          if (!active) return
+          loadedImages = [...loadedImages, ...(data.images || [])]
+          lastData = data
+          loadedPage = nextPage
+          if (!data.has_more) break
+        }
+        if (!active) return
+        setCollection(lastData)
+        setImages(loadedImages)
+        setPage(loadedPage)
+        setHasMore(lastData?.has_more || false)
+        sessionStorage.setItem(`${collectionStateKey}_page`, String(loadedPage))
+      } catch (error) {
+        console.error('Failed to restore collection:', error)
+        if (active) {
+          setCollection(null)
+          setImages([])
+          setPage(1)
+          setHasMore(false)
+        }
+      } finally {
+        if (active) {
+          setLoadedCollectionKey(collectionStateKey)
+          setLoading(false)
+        }
+      }
+    }
+    restore()
+    return () => { active = false }
+  }, [id, mediaType, collectionStateKey])
+
+  useEffect(() => {
+    if (loading || loadedCollectionKey !== collectionStateKey || restoredScrollKeyRef.current === collectionStateKey) return
+    restoredScrollKeyRef.current = collectionStateKey
+    requestAnimationFrame(() => {
+      const container = document.querySelector('.collection-detail-page > .masonry-container')
+      if (container) container.scrollTop = Number(sessionStorage.getItem(`${collectionStateKey}_scroll`) || 0)
+    })
+  }, [loading, loadedCollectionKey, collectionStateKey])
 
   useEffect(() => {
     sessionStorage.setItem(`donutMediaCenter_section_url_${mediaType}`, `${window.location.pathname}${window.location.search}`)
   }, [mediaType, searchParams])
 
-  const handleLoadMore = useCallback(() => {
-    if (!hasMore || loading) return
+  const handleLoadMore = useCallback(async () => {
+    if (!hasMore || loading) return false
     const nextPage = page + 1
-    setPage(nextPage)
-    loadCollection(nextPage, true)
+    setLoading(true)
+    return loadCollection(nextPage, true)
   }, [hasMore, loading, page, loadCollection])
 
   const handleImageClick = (image) => {
@@ -115,7 +170,11 @@ export default function CollectionDetailPage() {
       <div className="main-container">
         {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
         <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={drawer.close} />
-        <main className="content with-sidebar">
+        <main className="content with-sidebar collection-detail-page" onScrollCapture={(event) => {
+          if (event.target.classList?.contains('masonry-container')) {
+            sessionStorage.setItem(`${collectionStateKey}_scroll`, String(event.target.scrollTop))
+          }
+        }}>
         <MediaSectionsNav />
         <div className="collections-header collection-detail-header">
           <div className="collection-detail-title-row">
@@ -152,7 +211,7 @@ export default function CollectionDetailPage() {
           </div>
         </div>
 
-        {loading ? (
+        {loading || loadedCollectionKey !== collectionStateKey ? (
           <div className="collections-loading">Loading...</div>
         ) : images.length === 0 ? (
           <div className="collections-empty">

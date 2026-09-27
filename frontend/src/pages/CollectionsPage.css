@@ -93,6 +93,10 @@
 .collections-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  align-content: start;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
   gap: 16px;
   padding: 16px;
 }
