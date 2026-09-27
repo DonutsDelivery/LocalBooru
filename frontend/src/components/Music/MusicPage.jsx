@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import MediaSectionsNav from '../MediaSectionsNav'
+import SidebarNavigation from '../SidebarNavigation'
 import {
   addMusicCollectionItem, createMusicCollection, fetchLibraries, fetchMusicAlbum,
   fetchMusicAlbums, fetchMusicCollection, fetchMusicCollections, fetchMusicFacets,
@@ -210,7 +210,7 @@ export default function MusicPage() {
 
   return <div className="music-page">
     <aside className="music-sidebar">
-      <nav className="sidebar-nav" aria-label="Media libraries"><MediaSectionsNav /></nav>
+      <SidebarNavigation />
       <h1>Music</h1>
       <p>Your local albums and songs</p>
       <div className="music-side-section">
