@@ -69,6 +69,42 @@ pub struct ScanStats {
     pub removed: i64,
 }
 
+#[derive(Clone, Copy)]
+pub struct DirectoryMediaSettings {
+    pub images: bool,
+    pub videos: bool,
+    pub music: bool,
+}
+
+impl DirectoryMediaSettings {
+    pub fn allows_gallery_file(self, path: &Path) -> bool {
+        importer::is_media_file(path)
+            && if importer::is_video_file(&path.to_string_lossy()) {
+                self.videos
+            } else {
+                self.images
+            }
+    }
+}
+
+pub fn directory_media_settings(
+    lib: &LibraryContext,
+    directory_id: i64,
+) -> Result<DirectoryMediaSettings, AppError> {
+    let conn = lib.main_pool.get()?;
+    Ok(conn.query_row(
+        "SELECT show_images, show_videos, show_music FROM watch_directories WHERE id = ?1",
+        params![directory_id],
+        |row| {
+            Ok(DirectoryMediaSettings {
+                images: row.get(0)?,
+                videos: row.get(1)?,
+                music: row.get(2)?,
+            })
+        },
+    )?)
+}
+
 /// Scan a directory for media files and import them.
 ///
 /// Uses streaming file discovery to start processing while scanning.
@@ -90,6 +126,7 @@ pub fn scan_directory(
             directory_path
         )));
     }
+    let media = directory_media_settings(lib, directory_id)?;
 
     // Walk the directory for media files
     let walker: Box<dyn Iterator<Item = walkdir::DirEntry>> = if recursive {
@@ -122,6 +159,9 @@ pub fn scan_directory(
             continue;
         }
         if music::is_audio_file(entry.path()) {
+            if !media.music {
+                continue;
+            }
             stats.found += 1;
             if let Err(error) = music::index_audio_file(lib, directory_id, entry.path()) {
                 log::warn!(
@@ -135,7 +175,7 @@ pub fn scan_directory(
             }
             continue;
         }
-        if !importer::is_media_file(entry.path()) {
+        if !media.allows_gallery_file(entry.path()) {
             continue;
         }
 

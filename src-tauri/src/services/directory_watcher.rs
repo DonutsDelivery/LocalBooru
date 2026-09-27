@@ -48,6 +48,9 @@ struct ParentSettings {
     recursive: bool,
     auto_tag: bool,
     auto_age_detect: bool,
+    show_images: bool,
+    show_videos: bool,
+    show_music: bool,
     library: Arc<LibraryContext>,
 }
 
@@ -248,12 +251,18 @@ impl DirectoryWatcher {
         recursive: bool,
         auto_tag: bool,
         auto_age_detect: bool,
+        show_images: bool,
+        show_videos: bool,
+        show_music: bool,
         library: Arc<LibraryContext>,
     ) {
         let settings = ParentSettings {
             recursive,
             auto_tag,
             auto_age_detect,
+            show_images,
+            show_videos,
+            show_music,
             library,
         };
         if let Ok(mut pd) = self.parent_dirs.lock() {
@@ -497,28 +506,32 @@ fn load_parent_directories(state: &AppState) -> Result<Vec<(String, ParentSettin
         // Get distinct parent_paths with the settings from the first child directory
         let mut stmt = conn
             .prepare(
-                "SELECT parent_path, recursive, auto_tag, auto_age_detect
+                "SELECT parent_path, recursive, auto_tag, auto_age_detect,
+                        show_images, show_videos, show_music
                  FROM watch_directories
                  WHERE parent_path IS NOT NULL AND enabled = 1
                  GROUP BY parent_path",
             )
             .map_err(|e| format!("Query error: {}", e))?;
 
-        let rows: Vec<(String, bool, bool, bool)> = stmt
+        let rows: Vec<(String, bool, bool, bool, bool, bool, bool)> = stmt
             .query_map([], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?))
             })
             .map_err(|e| format!("Query error: {}", e))?
             .filter_map(|r| r.ok())
             .collect();
 
-        for (parent_path, recursive, auto_tag, auto_age_detect) in rows {
+        for (parent_path, recursive, auto_tag, auto_age_detect, show_images, show_videos, show_music) in rows {
             parents.push((
                 parent_path,
                 ParentSettings {
                     recursive,
                     auto_tag,
                     auto_age_detect,
+                    show_images,
+                    show_videos,
+                    show_music,
                     library: lib.clone(),
                 },
             ));
@@ -614,6 +627,9 @@ async fn poll_parent_directories(
                 let recursive = settings.recursive;
                 let auto_tag = settings.auto_tag;
                 let auto_age_detect = settings.auto_age_detect;
+                let show_images = settings.show_images;
+                let show_videos = settings.show_videos;
+                let show_music = settings.show_music;
                 let state_clone = state.clone();
                 let watches_clone = watches.clone();
                 let parent_path_clone = parent_path.clone();
@@ -628,14 +644,17 @@ async fn poll_parent_directories(
 
                         let now = chrono::Utc::now().to_rfc3339();
                         conn.execute(
-                            "INSERT INTO watch_directories (path, name, enabled, recursive, auto_tag, auto_age_detect, parent_path, created_at)
-                             VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7)",
+                            "INSERT INTO watch_directories (path, name, enabled, recursive, auto_tag, auto_age_detect, show_images, show_videos, show_music, parent_path, created_at)
+                             VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                             params![
                                 &subdir_path_clone,
                                 &subdir_name_clone,
                                 recursive,
                                 auto_tag,
                                 auto_age_detect,
+                                show_images,
+                                show_videos,
+                                show_music,
                                 &parent_path_clone,
                                 &now,
                             ],
@@ -730,10 +749,17 @@ fn handle_fs_event(
     event: Event,
     rt: &tokio::runtime::Handle,
 ) {
+    let media = match file_tracker::directory_media_settings(lib, directory_id) {
+        Ok(media) => media,
+        Err(error) => {
+            log::warn!("[Watcher] Cannot read directory media settings: {}", error);
+            return;
+        }
+    };
     // Audio shares watched folders with images, but has a separate index and
     // never enters the image import or tagging pipeline.
     for path in &event.paths {
-        if !music::is_audio_file(path) || is_in_dumpster(path) {
+        if !media.music || !music::is_audio_file(path) || is_in_dumpster(path) {
             continue;
         }
         let path = path.clone();
@@ -750,6 +776,9 @@ fn handle_fs_event(
                 if removed {
                     music::mark_audio_missing(&lib, &path)
                 } else {
+                    if !file_tracker::directory_media_settings(&lib, directory_id)?.music {
+                        return Ok(());
+                    }
                     music::index_audio_file(&lib, directory_id, &path)
                 }
             })
@@ -763,7 +792,7 @@ fn handle_fs_event(
         // New file created
         EventKind::Create(_) => {
             for path in &event.paths {
-                if path.is_file() && importer::is_media_file(path) && !is_in_dumpster(path) {
+                if path.is_file() && media.allows_gallery_file(path) && !is_in_dumpster(path) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
                     let lib_clone = lib.clone();
@@ -797,7 +826,7 @@ fn handle_fs_event(
         // File moved/renamed TO this directory — treat as new file
         EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
             for path in &event.paths {
-                if path.is_file() && importer::is_media_file(path) && !is_in_dumpster(path) {
+                if path.is_file() && media.allows_gallery_file(path) && !is_in_dumpster(path) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
                     let lib_clone = lib.clone();
@@ -830,7 +859,7 @@ fn handle_fs_event(
         // Other modifications — import untracked media files
         EventKind::Modify(_) => {
             for path in &event.paths {
-                if path.is_file() && importer::is_media_file(path) && !is_in_dumpster(path) {
+                if path.is_file() && media.allows_gallery_file(path) && !is_in_dumpster(path) {
                     let file_path = path.to_string_lossy().to_string();
                     let state_clone = state.clone();
                     let lib_clone = lib.clone();
@@ -908,11 +937,15 @@ async fn debounced_import(
         let fp = file_path.clone();
 
         match tokio::task::spawn_blocking(move || {
-            importer::import_image(&state_clone, &lib_clone, &fp, directory_id, true)
+            let media = file_tracker::directory_media_settings(&lib_clone, directory_id)?;
+            if !media.allows_gallery_file(std::path::Path::new(&fp)) {
+                return Ok(None);
+            }
+            importer::import_image(&state_clone, &lib_clone, &fp, directory_id, true).map(Some)
         })
         .await
         {
-            Ok(Ok(result)) => {
+            Ok(Ok(Some(result))) => {
                 if result.status == importer::ImportStatus::Imported {
                     log::info!(
                         "[Watcher] Imported: {}",
@@ -934,6 +967,7 @@ async fn debounced_import(
                 }
                 return;
             }
+            Ok(Ok(None)) => return,
             Ok(Err(e)) => {
                 let msg = format!("{}", e);
                 if (msg.contains("database is locked") || msg.contains("database is busy"))

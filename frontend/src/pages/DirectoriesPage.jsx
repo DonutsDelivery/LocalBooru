@@ -47,6 +47,9 @@ function DirectoriesPage() {
   const [newLibraryCreateNew, setNewLibraryCreateNew] = useState(false)
   const [activeLibrary, setActiveLibrary] = useState(null) // null = all libraries
   const [addTargetLibrary, setAddTargetLibrary] = useState('primary')
+  const [pendingDirectory, setPendingDirectory] = useState(null)
+  const [newDirectoryMedia, setNewDirectoryMedia] = useState({ show_images: false, show_videos: false, show_music: true })
+  const [addingDirectory, setAddingDirectory] = useState(false)
   const drawer = useMobileDrawer()
 
   const refreshDirectories = async () => {
@@ -131,15 +134,38 @@ function DirectoriesPage() {
       if (api?.addDirectory) {
         const path = await api.addDirectory()
         if (path) {
-          const { addDirectory } = await import('../api')
-          await addDirectory(path, { library_id: libraryId })
-          await refreshDirectories()
+          setNewDirectoryMedia({ show_images: false, show_videos: false, show_music: true })
+          setPendingDirectory({ path, libraryId })
         }
       } else {
         toast.warning('Directory picker only available in desktop app')
       }
     } catch (error) {
       toast.error(`Failed to add directory: ${error.response?.data?.detail || error.message}`)
+    }
+  }
+
+  const confirmAddDirectory = async () => {
+    if (!pendingDirectory || !Object.values(newDirectoryMedia).some(Boolean)) return
+    setAddingDirectory(true)
+    try {
+      const { addDirectory, addParentDirectory } = await import('../api')
+      const add = pendingDirectory.isParent ? addParentDirectory : addDirectory
+      const result = await add(pendingDirectory.path, {
+        library_id: pendingDirectory.libraryId,
+        ...newDirectoryMedia,
+        auto_tag: newDirectoryMedia.show_images || newDirectoryMedia.show_videos,
+      })
+      if (pendingDirectory.isParent) {
+        toast.success(result.message)
+        await refreshParentDirs()
+      }
+      setPendingDirectory(null)
+      await refreshDirectories()
+    } catch (error) {
+      toast.error(`Failed to add directory: ${error.response?.data?.detail || error.message}`)
+    } finally {
+      setAddingDirectory(false)
     }
   }
 
@@ -150,11 +176,8 @@ function DirectoriesPage() {
       if (api?.addDirectory) {
         const path = await api.addDirectory()
         if (path) {
-          const { addParentDirectory } = await import('../api')
-          const result = await addParentDirectory(path, { library_id: libraryId })
-          toast.success(result.message)
-          await refreshDirectories()
-          await refreshParentDirs()
+          setNewDirectoryMedia({ show_images: false, show_videos: false, show_music: true })
+          setPendingDirectory({ path, libraryId, isParent: true })
         }
       } else {
         toast.warning('Directory picker only available in desktop app')
@@ -526,7 +549,7 @@ function DirectoriesPage() {
               </button>
               <h1>Watch Directories</h1>
             </div>
-            <p>Add folders to automatically import and tag images.</p>
+            <p>Add folders to your Images, Videos, or Music library.</p>
 
             <div className="directory-buttons">
               <label className="directory-library-target">
@@ -555,6 +578,36 @@ function DirectoriesPage() {
                 + Add Parent Directory
               </button>
             </div>
+
+            {pendingDirectory && (
+              <div className="directory-media-picker">
+                <strong>Include {pendingDirectory.isParent ? 'subfolders' : 'folder'} in libraries</strong>
+                <span className="directory-media-path" title={pendingDirectory.path}>{pendingDirectory.path}</span>
+                <div className="directory-media-options">
+                  {[
+                    ['show_images', 'Images'],
+                    ['show_videos', 'Videos'],
+                    ['show_music', 'Music'],
+                  ].map(([key, label]) => (
+                    <label key={key}>
+                      <input
+                        type="checkbox"
+                        checked={newDirectoryMedia[key]}
+                        onChange={event => setNewDirectoryMedia(current => ({ ...current, [key]: event.target.checked }))}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <p>Only selected media types will be indexed. Music cover images stay out of Images when Images is off.</p>
+                <div className="directory-media-actions">
+                  <button className="add-directory-btn" onClick={confirmAddDirectory} disabled={addingDirectory || !Object.values(newDirectoryMedia).some(Boolean)}>
+                    {addingDirectory ? 'Adding…' : 'Add & scan'}
+                  </button>
+                  <button onClick={() => setPendingDirectory(null)} disabled={addingDirectory}>Cancel</button>
+                </div>
+              </div>
+            )}
 
             {/* Library Tabs */}
             <div className="library-tabs" style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0', overflowX: 'auto' }}>
@@ -768,7 +821,11 @@ function DirectoriesPage() {
                       <div className="directory-info">
                         <strong>{dir.name}</strong>
                         <span className="directory-path">{dir.path}</span>
-                        <span className="directory-stats">{dir.image_count} images</span>
+                        <span className="directory-stats">
+                          {(dir.show_images || dir.show_videos) && `${dir.image_count} gallery items`}
+                          {(dir.show_images || dir.show_videos) && dir.show_music && ' · '}
+                          {dir.show_music && `${dir.music_count || 0} songs`}
+                        </span>
                       </div>
                       <div className="directory-status">
                         {!dir.path_exists && <span className="warning">Path not found</span>}
@@ -777,7 +834,7 @@ function DirectoriesPage() {
                     </div>
 
                     {/* Stats row: read-only metrics */}
-                    <div className="directory-stats-row">
+                    {(dir.show_images || dir.show_videos) && <div className="directory-stats-row">
                       <span className="stat" title="Images with age detection">
                         Age: {dir.age_detected_pct}%
                       </span>
@@ -787,7 +844,7 @@ function DirectoriesPage() {
                       <span className="stat" title="Favorited images">
                         Favorites: {dir.favorited_count}
                       </span>
-                    </div>
+                    </div>}
 
                     {/* Toggles row: actionable settings */}
                     <div className="directory-toggles">
@@ -887,6 +944,23 @@ function DirectoriesPage() {
                         title="Show videos from this directory in gallery"
                       >
                         {dir.show_videos ? '☑' : '☐'} Videos
+                      </button>
+                      <button
+                        className={`toggle-btn ${dir.show_music ? 'active' : ''}`}
+                        onClick={() => {
+                          const newValue = !dir.show_music
+                          setDirectories(dirs => dirs.map(d =>
+                            makeDirKey(d) === dirKey ? {...d, show_music: newValue} : d
+                          ))
+                          updateDirectory(dir.id, { show_music: newValue }, dir.library_id)
+                            .catch(err => {
+                              console.error('Failed to update:', err)
+                              refreshDirectories()
+                            })
+                        }}
+                        title="Include audio from this directory in Music"
+                      >
+                        {dir.show_music ? '☑' : '☐'} Music
                       </button>
                       <button
                         className={`toggle-btn ${dir.family_safe ? 'active' : ''}`}

@@ -16,7 +16,7 @@ use crate::db::schema::init_directory_db;
 use crate::server::error::AppError;
 use crate::server::middleware::AccessTier;
 use crate::server::state::AppState;
-use crate::services::{file_tracker, importer, metadata, task_queue};
+use crate::services::{file_tracker, importer, metadata, music, task_queue};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -96,6 +96,12 @@ pub struct DirectoryCreate {
     pub auto_tag: bool,
     #[serde(default)]
     pub auto_age_detect: bool,
+    #[serde(default = "default_true")]
+    pub show_images: bool,
+    #[serde(default = "default_true")]
+    pub show_videos: bool,
+    #[serde(default = "default_true")]
+    pub show_music: bool,
     pub library_id: Option<String>,
 }
 
@@ -115,6 +121,7 @@ pub struct DirectoryUpdate {
     pub public_access: Option<bool>,
     pub show_images: Option<bool>,
     pub show_videos: Option<bool>,
+    pub show_music: Option<bool>,
     pub family_safe: Option<bool>,
     pub lan_visible: Option<bool>,
 }
@@ -128,6 +135,12 @@ pub struct ParentDirectoryCreate {
     pub auto_tag: bool,
     #[serde(default)]
     pub auto_age_detect: bool,
+    #[serde(default = "default_true")]
+    pub show_images: bool,
+    #[serde(default = "default_true")]
+    pub show_videos: bool,
+    #[serde(default = "default_true")]
+    pub show_music: bool,
     pub library_id: Option<String>,
 }
 
@@ -205,7 +218,9 @@ async fn list_directories(
                 "SELECT id, path, name, enabled, recursive, auto_tag, auto_age_detect,
                         last_scanned_at, created_at, public_access, show_images, show_videos,
                         parent_path, metadata_format, family_safe, lan_visible,
-                        image_count, tagged_count, favorited_count
+                        image_count, tagged_count, favorited_count, show_music,
+                        (SELECT COUNT(*) FROM music_tracks
+                         WHERE directory_id = watch_directories.id AND is_available = 1)
                  FROM watch_directories",
             )?;
 
@@ -233,6 +248,8 @@ async fn list_directories(
                     let image_count: i64 = row.get::<_, Option<i64>>(16)?.unwrap_or(0);
                     let tagged_count: i64 = row.get::<_, Option<i64>>(17)?.unwrap_or(0);
                     let favorited_count: i64 = row.get::<_, Option<i64>>(18)?.unwrap_or(0);
+                    let show_music: bool = row.get::<_, Option<bool>>(19)?.unwrap_or(true);
+                    let music_count: i64 = row.get(20)?;
 
                     let display_name = name.unwrap_or_else(|| {
                         Path::new(&path)
@@ -274,6 +291,8 @@ async fn list_directories(
                         "public_access": public_access,
                         "show_images": show_images,
                         "show_videos": show_videos,
+                        "show_music": show_music,
+                        "music_count": music_count,
                         "metadata_format": metadata_format.unwrap_or_else(|| "auto".into()),
                         "family_safe": family_safe,
                         "lan_visible": lan_visible,
@@ -324,6 +343,11 @@ async fn add_directory(
     State(state): State<AppState>,
     Json(data): Json<DirectoryCreate>,
 ) -> Result<Json<Value>, AppError> {
+    if !data.show_images && !data.show_videos && !data.show_music {
+        return Err(AppError::BadRequest(
+            "Select at least one media type for this directory".into(),
+        ));
+    }
     let resolved_path = std::fs::canonicalize(&data.path)
         .map_err(|_| AppError::BadRequest(format!("Path does not exist: {}", data.path)))?;
 
@@ -346,6 +370,9 @@ async fn add_directory(
     let recursive = data.recursive;
     let auto_tag = data.auto_tag;
     let auto_age_detect = data.auto_age_detect;
+    let show_images = data.show_images;
+    let show_videos = data.show_videos;
+    let show_music = data.show_music;
 
     // Check for duplicates across ALL libraries
     let path_clone = path_str.clone();
@@ -374,9 +401,9 @@ async fn add_directory(
 
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO watch_directories (path, name, enabled, recursive, auto_tag, auto_age_detect, created_at)
-             VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6)",
-            params![&path_clone, &name_clone, recursive, auto_tag, auto_age_detect, &now],
+            "INSERT INTO watch_directories (path, name, enabled, recursive, auto_tag, auto_age_detect, show_images, show_videos, show_music, created_at)
+             VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![&path_clone, &name_clone, recursive, auto_tag, auto_age_detect, show_images, show_videos, show_music, &now],
         )?;
 
         let dir_id = conn.last_insert_rowid();
@@ -427,6 +454,11 @@ async fn add_parent_directory(
     State(state): State<AppState>,
     Json(data): Json<ParentDirectoryCreate>,
 ) -> Result<Json<Value>, AppError> {
+    if !data.show_images && !data.show_videos && !data.show_music {
+        return Err(AppError::BadRequest(
+            "Select at least one media type for this directory".into(),
+        ));
+    }
     let parent_path = std::fs::canonicalize(&data.path)
         .map_err(|_| AppError::BadRequest(format!("Path does not exist: {}", data.path)))?;
 
@@ -454,6 +486,9 @@ async fn add_parent_directory(
     let recursive = data.recursive;
     let auto_tag = data.auto_tag;
     let auto_age_detect = data.auto_age_detect;
+    let show_images = data.show_images;
+    let show_videos = data.show_videos;
+    let show_music = data.show_music;
 
     let state_clone = state.clone();
     let parent_path_str = parent_path.to_string_lossy().to_string();
@@ -496,14 +531,17 @@ async fn add_parent_directory(
 
             let now = chrono::Utc::now().to_rfc3339();
             conn.execute(
-                "INSERT INTO watch_directories (path, name, enabled, recursive, auto_tag, auto_age_detect, parent_path, created_at)
-                 VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO watch_directories (path, name, enabled, recursive, auto_tag, auto_age_detect, show_images, show_videos, show_music, parent_path, created_at)
+                 VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     &path_str,
                     &name,
                     recursive,
                     auto_tag,
                     auto_age_detect,
+                    show_images,
+                    show_videos,
+                    show_music,
                     parent_path.to_string_lossy().as_ref(),
                     &now,
                 ],
@@ -564,6 +602,9 @@ async fn add_parent_directory(
             recursive,
             data.auto_tag,
             data.auto_age_detect,
+            show_images,
+            show_videos,
+            show_music,
             lib,
         );
     }
@@ -735,7 +776,7 @@ async fn get_directory(
         let dir = conn.query_row(
             "SELECT id, path, name, enabled, recursive, auto_tag, auto_age_detect,
                     last_scanned_at, created_at, public_access, show_images, show_videos,
-                    metadata_format, family_safe, lan_visible
+                    metadata_format, family_safe, lan_visible, show_music
              FROM watch_directories WHERE id = ?1",
             params![directory_id],
             |row| {
@@ -752,6 +793,7 @@ async fn get_directory(
                     "public_access": row.get::<_, Option<bool>>(9)?.unwrap_or(false),
                     "show_images": row.get::<_, Option<bool>>(10)?.unwrap_or(true),
                     "show_videos": row.get::<_, Option<bool>>(11)?.unwrap_or(true),
+                    "show_music": row.get::<_, Option<bool>>(15)?.unwrap_or(true),
                     "metadata_format": row.get::<_, Option<String>>(12)?.unwrap_or_else(|| "auto".into()),
                     "family_safe": row.get::<_, Option<bool>>(13)?.unwrap_or(true),
                     "lan_visible": row.get::<_, Option<bool>>(14)?.unwrap_or(true),
@@ -783,6 +825,7 @@ async fn update_directory(
     let watcher_refresh_needed = data.enabled.is_some() || data.recursive.is_some();
 
     let lib = state.resolve_library(q.library_id.as_deref())?;
+    let scan_state = state.clone();
     let result = tokio::task::spawn_blocking(move || {
         let conn = lib.main_pool.get()?;
 
@@ -822,6 +865,10 @@ async fn update_directory(
             sets.push("show_videos = ?");
             sql_params.push(Box::new(show_videos));
         }
+        if let Some(show_music) = data.show_music {
+            sets.push("show_music = ?");
+            sql_params.push(Box::new(show_music));
+        }
         if let Some(family_safe) = data.family_safe {
             sets.push("family_safe = ?");
             sql_params.push(Box::new(family_safe));
@@ -847,6 +894,39 @@ async fn update_directory(
 
         if updated == 0 {
             return Err(AppError::NotFound("Directory not found".into()));
+        }
+
+        let needs_scan = data.show_images == Some(true)
+            || data.show_videos == Some(true)
+            || data.show_music == Some(true);
+        let scan_info: Option<(String, bool)> = if needs_scan {
+            Some(conn.query_row(
+                "SELECT path, recursive FROM watch_directories WHERE id = ?1",
+                params![directory_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?)
+        } else {
+            None
+        };
+        drop(conn);
+
+        if data.show_music == Some(false) {
+            music::mark_directory_unavailable(&lib, directory_id)?;
+        }
+        if let Some((directory_path, recursive)) = scan_info {
+            task_queue::enqueue_task(
+                &scan_state,
+                task_queue::TASK_SCAN_DIRECTORY,
+                &json!({
+                    "directory_id": directory_id,
+                    "directory_path": directory_path,
+                    "recursive": recursive,
+                    "library_id": lib.uuid,
+                    "fast_import": true
+                }),
+                task_queue::PRIORITY_INDEX,
+                None,
+            )?;
         }
 
         Ok(Json(json!({

@@ -604,6 +604,9 @@ export async function addDirectory(path, options = {}) {
     name: options.name,
     recursive: options.recursive ?? true,
     auto_tag: options.auto_tag ?? true,
+    show_images: options.show_images ?? true,
+    show_videos: options.show_videos ?? true,
+    show_music: options.show_music ?? true,
     library_id: options.library_id
   })
   invalidateDirectoriesCache()
@@ -615,6 +618,9 @@ export async function addParentDirectory(path, options = {}) {
     path,
     recursive: options.recursive ?? true,
     auto_tag: options.auto_tag ?? true,
+    show_images: options.show_images ?? true,
+    show_videos: options.show_videos ?? true,
+    show_music: options.show_music ?? true,
     library_id: options.library_id
   })
   invalidateDirectoriesCache()

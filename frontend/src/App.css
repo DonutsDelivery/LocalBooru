@@ -169,6 +169,41 @@
   margin-bottom: 20px;
 }
 
+.directory-media-picker {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.directory-media-path {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.directory-media-options,
+.directory-media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.directory-media-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.directory-media-picker p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
 .directory-library-target {
   display: flex;
   flex-direction: column;

@@ -275,6 +275,7 @@ pub struct WatchDirectory {
     pub public_access: bool,
     pub show_images: bool,
     pub show_videos: bool,
+    pub show_music: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

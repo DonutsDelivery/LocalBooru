@@ -46,6 +46,7 @@ pub fn init_main_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             public_access INTEGER NOT NULL DEFAULT 0,
             show_images INTEGER NOT NULL DEFAULT 1,
             show_videos INTEGER NOT NULL DEFAULT 1,
+            show_music INTEGER NOT NULL DEFAULT 1,
             family_safe INTEGER NOT NULL DEFAULT 1,
             lan_visible INTEGER NOT NULL DEFAULT 1,
             image_count INTEGER NOT NULL DEFAULT 0,

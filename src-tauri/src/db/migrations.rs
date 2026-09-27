@@ -330,6 +330,12 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
                   ON collection_items(collection_id,library_id,directory_id,image_id) \
                   WHERE library_id IS NOT NULL AND directory_id IS NOT NULL;",
     },
+    // v21: Let watched folders opt into the music library independently.
+    // Existing folders keep their previously indexed music by default.
+    Migration {
+        description: "Add music visibility to watch directories",
+        sql: "ALTER TABLE watch_directories ADD COLUMN show_music INTEGER NOT NULL DEFAULT 1;",
+    },
 ];
 
 /// Run all pending migrations on the main library database.
