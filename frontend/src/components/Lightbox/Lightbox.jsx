@@ -1563,6 +1563,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     return getMediaUrl(image.url)
   }, [shouldPlayDirect, image?.url, image?.file_path, image?.is_local_direct_file])
 
+  const videoMediaKey = `${currentImageKey}-${svpPipelineGeneration}`
+  const [videoFrameReadyKey, setVideoFrameReadyKey] = useState(null)
+  const videoPosterUrl = image?.thumbnail_url ? getMediaUrl(image.thumbnail_url) : null
+  const videoTitle = image?.title || image?.original_filename || image?.filename || 'Video'
+
   const directFileStartedRef = useRef(false)
   const directFileLastTimeRef = useRef(0)
   useEffect(() => {
@@ -1621,6 +1626,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         </filter>
       </svg>
       {/* Top toolbar */}
+      {isVideoFile && !debugBare && (
+        <div className="lightbox-video-title" title={videoTitle}>{videoTitle}</div>
+      )}
       {!debugBare && <div className={`lightbox-toolbar ${showMobileActions ? 'mobile-actions-open' : ''}`}>
         <button
           className="lightbox-btn lightbox-menu"
@@ -2105,8 +2113,18 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             onTouchEnd={casting.isCasting || curationMode || vrActive || !svpControlsReady ? undefined : gestures.handleTouchEnd}
             onTouchCancel={casting.isCasting || curationMode || vrActive || !svpControlsReady ? cancelRevealTap : gestures.handleTouchCancel}
           >
+            {videoPosterUrl && videoFrameReadyKey !== videoMediaKey && (
+              <img
+                key={videoMediaKey}
+                className="lightbox-video-loading-poster"
+                src={videoPosterUrl}
+                alt=""
+                aria-hidden="true"
+                onError={event => { event.currentTarget.hidden = true }}
+              />
+            )}
             <video
-              key={`${currentImageKey}-${svpPipelineGeneration}`}
+              key={videoMediaKey}
               ref={mediaRef}
               src={directVideoSrc}
               crossOrigin="anonymous"
@@ -2124,7 +2142,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 reportSvpPlayback(event.currentTarget)
                 reportDirectFileStage('play', event.currentTarget)
               }}
-              onPlaying={(event) => reportDirectFileStage('playing', event.currentTarget)}
+              onPlaying={(event) => {
+                reportDirectFileStage('playing', event.currentTarget)
+                const video = event.currentTarget
+                video.requestVideoFrameCallback?.(() => {
+                  if (mediaRef.current === video) setVideoFrameReadyKey(videoMediaKey)
+                })
+              }}
               onPause={(event) => {
                 playback.handleVideoPause(event)
                 reportSvpPlayback(event.currentTarget)
@@ -2151,6 +2175,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 }
                 const previousTime = directFileLastTimeRef.current
                 const nextTime = event.currentTarget.currentTime
+                if (nextTime > 0.1) setVideoFrameReadyKey(videoMediaKey)
                 if (image?.is_local_direct_file && previousTime > 1 && nextTime < previousTime - 1) {
                   reportDirectFileStage(`time-reset-from-${previousTime.toFixed(3)}`, event.currentTarget)
                 }
