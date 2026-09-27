@@ -2,10 +2,13 @@
 
 # Platform build and acceptance
 
-Before release, packaging, Sonoma VM, or WinBoat work, read
+Before release, packaging, Sonoma VM, or Windows acceptance work, read
 `docs/agents/release-and-infrastructure.md`. Linux and Windows release artifacts
-use the pinned local wrappers; WinBoat is runtime-only. macOS must be built with
-Apple tooling and VM/CI success does not establish stable real-Mac support.
+use the pinned local wrappers. On this PC, the real Windows 11 test laptop is
+available through `ssh windse` for PowerShell-based runtime validation; SSH
+alone does not expose its graphical desktop. WinBoat is runtime-only fallback.
+macOS must be built with Apple tooling and VM/CI success does not establish
+stable real-Mac support.
 
 ## Repository privacy boundary
 

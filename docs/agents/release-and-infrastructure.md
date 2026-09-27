@@ -97,11 +97,43 @@ hardware, including representative GPU/video acceleration, real audio, large
 library/import workloads, permissions, signing/notarization, updater, helpers,
 and sustained use.
 
-## WinBoat lifecycle and LocalBooru acceptance
+## Windows 11 laptop acceptance (preferred)
 
-Windows artifacts come only from `scripts/build-windows-local.sh`; WinBoat is
-runtime-only. Stage the exact `dist-windows-local` installer/ZIP by source SHA and
-artifact hash—never rebuild in Windows.
+Windows artifacts come only from `scripts/build-windows-local.sh`. On this PC,
+the real Windows 11 test laptop is available over the configured SSH alias
+`windse` (the `t3remote` account). It is a runtime-validation target, **not** a
+build host. Agents on another machine need their own Tailscale access and SSH
+key setup; do not copy credentials or hard-code the laptop's address.
+
+```bash
+ssh windse whoami
+ssh windse 'powershell.exe -NoProfile -NonInteractive -Command "Get-ComputerInfo | Select-Object WindowsProductName, OsVersion"'
+scp ./LocalBooru-Windows-Setup.exe 'windse:C:/Users/t3remote/Downloads/'
+scp ./LocalBooru-Windows.zip 'windse:C:/Users/t3remote/Downloads/'
+```
+
+Stage the exact locally built installer/ZIP by source SHA and artifact hash in a
+new disposable location under `t3remote`; verify its SHA-256 on the laptop before
+extracting or installing. Use a separate portable data directory and unused port
+for tests, and never launch against or replace a user's existing library or app.
+Set `LOCALBOORU_PORTABLE_DATA`, `LOCALBOORU_PORT`, and
+`LOCALBOORU_DISABLE_SINGLE_INSTANCE=1` for a disposable run, but leave Windows
+known-folder variables (`USERPROFILE`, `APPDATA`, `LOCALAPPDATA`) intact: spoofing
+them can make Tauri plug-in initialization fail before the server starts.
+PowerShell through SSH can inspect packages, install, and test headless commands.
+**SSH alone does not give access to the graphical desktop**: a process started
+from SSH and a healthy HTTP endpoint do not prove a visible Windows UI. Record
+interactive desktop screenshots and gallery/video observations separately, or
+mark GUI acceptance unverified. Run the database/import/gallery/video/server
+and restart-persistence matrix, plus installer/portable parity, WebView/runtime
+prerequisites, path/Unicode behavior, file locks, Defender/SmartScreen and
+Authenticode state. Clean up only the disposable candidate and test data.
+
+## WinBoat fallback lifecycle and LocalBooru acceptance
+
+WinBoat remains a runtime-only fallback if the real laptop is unavailable. Stage
+the exact `dist-windows-local` installer/ZIP by source SHA and artifact hash—never
+rebuild in Windows. Do not start or stop WinBoat for the laptop path.
 
 ```bash
 docker compose -f /home/user/.winboat/docker-compose.yml ps
