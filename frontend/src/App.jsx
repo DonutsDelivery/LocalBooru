@@ -7,7 +7,6 @@ import { BrowserRouter, Routes, Route, useSearchParams, useNavigate, useLocation
 
 import { isMobileApp, LOCAL_SERVER } from './serverManager'
 import MasonryGrid from './components/MasonryGrid'
-import MediaSectionsNav from './components/MediaSectionsNav'
 import { MusicPlayerProvider, MusicPage, PersistentMusicPlayer } from './components/Music/MusicExperience'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
@@ -705,7 +704,6 @@ function Gallery({ mediaType = 'image' }) {
   useEffect(() => {
     const url = `${window.location.pathname}${window.location.search}`
     sessionStorage.setItem(`donutMediaCenter_gallery_url_${mediaType}`, url)
-    sessionStorage.setItem(`donutMediaCenter_section_url_${mediaType}`, url)
   }, [mediaType, searchParams])
 
   useEffect(() => {
@@ -1798,7 +1796,6 @@ function Gallery({ mediaType = 'image' }) {
             sessionStorage.setItem(`donutMediaCenter_gallery_scroll_${mediaType}`, String(event.target.scrollTop))
           }
         }}>
-          <MediaSectionsNav />
           {currentFolder && (
             <div className="folder-breadcrumb">
               <button className="folder-back-btn" onClick={handleBackToFolders}>

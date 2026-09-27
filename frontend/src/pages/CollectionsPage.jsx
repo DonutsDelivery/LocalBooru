@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { fetchCollections, createCollection, deleteCollection, getMediaUrl } from '../api'
 import Sidebar from '../components/Sidebar'
-import MediaSectionsNav from '../components/MediaSectionsNav'
 import { useMobileDrawer } from '../hooks/useMobileDrawer'
 import './CollectionsPage.css'
 
@@ -34,10 +33,6 @@ export default function CollectionsPage() {
       })
     return () => { active = false }
   }, [mediaType])
-
-  useEffect(() => {
-    sessionStorage.setItem(`donutMediaCenter_section_url_${mediaType}`, `${window.location.pathname}${window.location.search}`)
-  }, [mediaType, searchParams])
 
   useEffect(() => {
     if (loading || loadedMediaType !== mediaType || restoredScrollTypeRef.current === mediaType) return
@@ -79,7 +74,6 @@ export default function CollectionsPage() {
         {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
         <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={drawer.close} />
         <main className="content with-sidebar collections-page">
-        <MediaSectionsNav />
         <div className="collections-header">
           <div className="collections-title-row">
             <button className="menu-btn mobile-only" onClick={drawer.open} aria-label="Open menu">

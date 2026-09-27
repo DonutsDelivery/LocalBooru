@@ -5,6 +5,7 @@ import { getDesktopAPI, isDesktopApp } from '../../tauriAPI'
 import PromptSection from './PromptSection'
 import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_OPTIONS, ORIENTATION_OPTIONS, DURATION_OPTIONS, SORT_OPTIONS } from './FilterControls'
 import TagSearch from './TagSearch'
+import MediaSectionsNav from '../MediaSectionsNav'
 import FamilyModeLock from '../FamilyModeLock'
 import '../Sidebar.css'
 
@@ -45,6 +46,7 @@ function Sidebar({
 }) {
   const location = useLocation()
   const isGalleryPage = location.pathname === '/' || location.pathname === '/videos'
+  const isCollectionPage = location.pathname === '/collections' || location.pathname.startsWith('/collections/')
   const isSettingsPage = location.pathname === '/settings'
   const [hovering, setHovering] = useState(false)
   const [directories, setDirectories] = useState([])
@@ -98,9 +100,9 @@ function Sidebar({
   }, [refreshDirectories])
 
   useEffect(() => {
-    if (!isGalleryPage) return
+    if (!isGalleryPage && !isCollectionPage) return
     fetchCollections(mediaType).then(data => setCollections(data.collections || [])).catch(console.error)
-  }, [isGalleryPage, mediaType])
+  }, [isGalleryPage, isCollectionPage, mediaType])
 
   // Load saved searches
   useEffect(() => {
@@ -455,29 +457,11 @@ function Sidebar({
           </div>
         )}
 
-        <nav className="sidebar-nav">
-          <NavLink to="/" end className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Images">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              {/* Picture icon with sun and mountain - matches app logo */}
-              <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="2"/>
-              <circle cx="8.5" cy="8.5" r="2.5"/>
-              <path d="M21 15l-5-5L5 21h14a2 2 0 002-2v-4z"/>
-            </svg>
-          </NavLink>
-          <NavLink to="/videos" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Videos" aria-label="Videos">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 6 4-6 4z"/></svg>
-          </NavLink>
-          <NavLink to="/music" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Music" aria-label="Music">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13M9 9l12-2"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-          </NavLink>
+        <nav className="sidebar-nav" aria-label="Navigation">
+          <MediaSectionsNav />
           <NavLink to="/directories" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Directories">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
-            </svg>
-          </NavLink>
-          <NavLink to={`/collections?media_type=${mediaType}`} className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Collections">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/>
             </svg>
           </NavLink>
           <NavLink to="/settings" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Settings">
@@ -487,11 +471,11 @@ function Sidebar({
           </NavLink>
         </nav>
 
-        {isGalleryPage && (
+        {(isGalleryPage || isCollectionPage) && (
           <div className="sidebar-section media-collections-section">
             <div className="media-collections-heading">
               <h3>{mediaType === 'video' ? 'Video' : 'Image'} Collections</h3>
-              <NavLink to={`/collections?media_type=${mediaType}`}>Manage</NavLink>
+              <NavLink to={`/collections?media_type=${mediaType}`}>View all</NavLink>
             </div>
             {collections.length === 0 ? (
               <p className="media-collections-empty">No collections yet</p>

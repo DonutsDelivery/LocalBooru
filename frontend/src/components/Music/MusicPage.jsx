@@ -210,6 +210,7 @@ export default function MusicPage() {
 
   return <div className="music-page">
     <aside className="music-sidebar">
+      <nav className="sidebar-nav" aria-label="Media libraries"><MediaSectionsNav /></nav>
       <h1>Music</h1>
       <p>Your local albums and songs</p>
       <div className="music-side-section">
@@ -237,7 +238,6 @@ export default function MusicPage() {
       </div>
     </aside>
     <main className="music-main">
-      <MediaSectionsNav />
       <div className="music-toolbar">
         <div className="music-mode-switch" role="group" aria-label="Music view">
           <button className={mode === 'albums' ? 'active' : ''} onClick={() => switchMode('albums')}>Albums</button>

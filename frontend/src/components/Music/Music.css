@@ -15,6 +15,7 @@
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
 }
+.music-sidebar .sidebar-nav { margin: -26px -18px 20px; padding: 8px 18px; }
 .music-sidebar h1 { margin: 0; font-size: 1.7rem; }
 .music-sidebar > p { margin: 6px 0 25px; color: var(--text-muted); }
 .music-side-section { margin-bottom: 28px; }
@@ -36,9 +37,6 @@
 .music-filters label.music-check { flex-direction: row; align-items: center; color: var(--text-primary); }
 .music-filters input[type=checkbox], .music-shuffle-switch input { accent-color: var(--accent); }
 .music-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.music-media-nav { display: flex; gap: 7px; padding: 12px 22px; border-bottom: 1px solid var(--border); }
-.music-media-nav a { color: var(--text-muted); text-decoration: none; padding: 8px 15px; border-radius: 8px; }
-.music-media-nav a.active { background: var(--bg-tertiary); color: var(--accent); font-weight: 700; }
 .music-toolbar { display: flex; align-items: center; gap: 18px; padding: 18px 22px; }
 .music-mode-switch { display: flex; gap: 3px; background: var(--bg-tertiary); border-radius: 10px; padding: 3px; }
 .music-mode-switch button { border: 0; border-radius: 8px; background: none; color: var(--text-muted); padding: 9px 15px; }
@@ -113,6 +111,7 @@
 @media (max-width: 760px) {
   .music-page { flex-direction: column; }
   .music-sidebar { width: 100%; flex-basis: auto; max-height: 170px; padding: 10px 14px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .music-sidebar .sidebar-nav { margin: -10px -14px 10px; padding: 8px 14px; }
   .music-sidebar h1 { font-size: 1.2rem; }
   .music-sidebar > p { display: none; }
   .music-side-section { margin: 8px 0; }
@@ -122,7 +121,6 @@
   .music-toolbar { flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
   .music-result-count { display: none; }
   .music-toolbar > input { min-width: 160px; }
-  .music-media-nav { padding: 6px 12px; }
   .music-scroll { padding: 4px 12px 100px; }
   .music-masonry { columns: 150px; column-gap: 10px; }
   .music-lightbox { padding: 0; }

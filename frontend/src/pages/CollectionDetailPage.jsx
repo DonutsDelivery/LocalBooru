@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { fetchCollection, updateCollection, removeFromCollection } from '../api'
 import Sidebar from '../components/Sidebar'
-import MediaSectionsNav from '../components/MediaSectionsNav'
 import MasonryGrid from '../components/MasonryGrid'
 import Lightbox from '../components/Lightbox'
 import { adjustmentLocator, imageMatchesLocator, updateImagesByLocator } from '../utils/imageAdjustments.js'
@@ -92,10 +91,6 @@ export default function CollectionDetailPage() {
     })
   }, [loading, loadedCollectionKey, collectionStateKey])
 
-  useEffect(() => {
-    sessionStorage.setItem(`donutMediaCenter_section_url_${mediaType}`, `${window.location.pathname}${window.location.search}`)
-  }, [mediaType, searchParams])
-
   const handleLoadMore = useCallback(async () => {
     if (!hasMore || loading) return false
     const nextPage = page + 1
@@ -168,7 +163,6 @@ export default function CollectionDetailPage() {
             sessionStorage.setItem(`${collectionStateKey}_scroll`, String(event.target.scrollTop))
           }
         }}>
-        <MediaSectionsNav />
         <div className="collections-header collection-detail-header">
           <div className="collection-detail-title-row">
             <button className="menu-btn mobile-only" onClick={drawer.open} aria-label="Open menu">
