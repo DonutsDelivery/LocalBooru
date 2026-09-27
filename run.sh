@@ -40,19 +40,19 @@ if command -v busctl >/dev/null 2>&1; then
   done
 
   if busctl --user status "$SINGLE_INSTANCE_SERVICE" >/dev/null 2>&1; then
-    printf 'ERROR: Failed to activate the running LocalBooru instance\n' >&2
+    printf 'ERROR: Failed to activate the running DonutMediaCenter instance\n' >&2
     exit 1
   fi
 fi
 
 if [[ ! -x "$APP" || ! -s "$FRONTEND" ]]; then
   if command -v notify-send >/dev/null 2>&1; then
-    notify-send "LocalBooru" "Building the local app for first launch…"
+    notify-send "DonutMediaCenter" "Building the local app for first launch…"
   fi
 
   if ! "$ROOT/scripts/install-local-app.sh" --if-missing >>"$LOG" 2>&1; then
     if command -v notify-send >/dev/null 2>&1; then
-      notify-send -u critical "LocalBooru build failed" "See $LOG"
+      notify-send -u critical "DonutMediaCenter build failed" "See $LOG"
     fi
     exit 1
   fi

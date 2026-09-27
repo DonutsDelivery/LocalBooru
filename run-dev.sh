@@ -8,7 +8,7 @@ STATE_DIR="$STATE_HOME/localbooru"
 mkdir -p "$STATE_DIR"
 exec 7>"$STATE_DIR/dev-instance.lock"
 if ! flock -n 7; then
-    echo "A LocalBooru development session is already running." >&2
+    echo "A DonutMediaCenter development session is already running." >&2
     echo "Stop that session before starting another development launch." >&2
     exit 1
 fi
@@ -16,8 +16,8 @@ fi
 if command -v ss >/dev/null 2>&1; then
     for port in 5210 8790; do
         if ss -H -ltn "sport = :$port" 2>/dev/null | grep -q .; then
-            echo "Cannot start LocalBooru dev: port $port is already in use." >&2
-            echo "Stop the existing LocalBooru/Vite process and try again." >&2
+            echo "Cannot start DonutMediaCenter dev: port $port is already in use." >&2
+            echo "Stop the existing DonutMediaCenter/Vite process and try again." >&2
             exit 1
         fi
     done
@@ -54,5 +54,5 @@ export HOST_HEAVY_BUILD_WAIT_SECONDS="$DEV_BUILD_WAIT_SECONDS"
 export RUSTC_WRAPPER="${RUSTC_WRAPPER:-$ROOT/scripts/rustc-host-heavy-build-dev.sh}"
 export LOCALBOORU_TASK_QUEUE_WORKERS="${LOCALBOORU_TASK_QUEUE_WORKERS:-1}"
 DEV_LOG="${LOCALBOORU_DEV_LOG:-/tmp/localbooru-dev.log}"
-echo "LocalBooru dev output: $DEV_LOG"
+echo "DonutMediaCenter dev output: $DEV_LOG"
 exec npm run tauri:dev -- -- -- "$@" > >(tee -a "$DEV_LOG") 2>&1
