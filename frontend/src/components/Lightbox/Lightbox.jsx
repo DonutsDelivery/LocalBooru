@@ -150,7 +150,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const mediaRef = useRef(null)
   const containerRef = useRef(null)
   const svpResumeRef = useRef(null)
-  const svpUserSeekRevisionRef = useRef(0)
   const svpSourceFpsRef = useRef(null)
   const svpFpsProbePendingRef = useRef(null)
   const svpTransitionRef = useRef({ active: false, token: 0, timer: null })
@@ -316,9 +315,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     interactionReadyRef: svpInteractionReadyRef,
     svpDirectPlayback: svpPathEnabled,
     onSeekRequested: (time) => {
-      svpUserSeekRevisionRef.current += 1
       const resume = svpResumeRef.current
-      if (resume?.imageKey === currentImageKey) resume.currentTime = time
+      if (resume?.imageKey === currentImageKey) {
+        resume.currentTime = time
+        resume.awaitingSeek = true
+      }
     },
   }, libraryImageId, image?.directory_id, image?.library_id)
 
@@ -449,6 +450,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         transition.token += 1
         const token = transition.token
         if (transition.timer) clearTimeout(transition.timer)
+        transition.timer = null
+
+        // Manager may briefly remove the graph while rebuilding it. Keep the
+        // current media element until the replacement graph is ready; a reload
+        // here would start an ordinary stream at the beginning.
+        if (!enabled) return
 
         // Remount after the Manager graph settles. Calling video.load() here
         // synchronously tears down WebKit's active GStreamer pipeline while
@@ -459,6 +466,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               || activeImageKeyRef.current !== imageKey
               || mediaRef.current !== video) return
           svpTransitionRef.current.timer = null
+          const resume = svpResumeRef.current
+          if (resume?.media === video && !video.seeking) {
+            resume.currentTime = video.currentTime
+          }
           setSvpPipelineGeneration(generation => generation + 1)
         }, 150)
       },
@@ -511,6 +522,14 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     if (svpPathEnabled) return
     svpFilterActiveRef.current = false
     svpFailOpenRef.current = false
+    svpResumeRef.current = null
+    const transition = svpTransitionRef.current
+    transition.active = false
+    transition.token += 1
+    if (transition.timer) {
+      clearTimeout(transition.timer)
+      transition.timer = null
+    }
     getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(() => {})
   }, [svpPathEnabled, currentImageKey])
 
@@ -1533,6 +1552,21 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     || (svpPathEnabled && !svpFilterActiveRef.current)
   const videoTitle = image?.title || image?.original_filename || image?.filename || 'Video'
 
+  const finishSvpHandoff = (video) => {
+    const resume = svpResumeRef.current
+    if (!resume || resume.imageKey !== currentImageKey || mediaRef.current !== video) return false
+    if (resume.media === video || !svpFilterActiveRef.current) return false
+    if (resume.awaitingSeek) return false
+    if (Math.abs(video.currentTime - resume.currentTime) > 0.5) return false
+    svpResumeRef.current = null
+    svpTransitionRef.current.active = false
+    svpInteractionReadyRef.current = true
+    setSvpStartupReady(true)
+    if (video.readyState >= 2) setVideoFrameReadyKey(videoMediaKey)
+    if (!resume.paused) video.play().catch(() => {})
+    return true
+  }
+
   const directFileStartedRef = useRef(false)
   const directFileLastTimeRef = useRef(0)
   useEffect(() => {
@@ -2093,7 +2127,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               src={directVideoSrc}
               crossOrigin="anonymous"
               preload="auto"
-              autoPlay
+              autoPlay={!svpResumeRef.current}
               playsInline
               loop={false}
               className={`lightbox-media video-display-${playback.videoDisplayMode} ${vrActive ? 'vr-video-source' : ''} ${streaming.svpStreamUrl ? 'svp-streaming' : streaming.opticalFlowStreamUrl ? 'interpolated-streaming' : streaming.transcodeStreamUrl ? 'transcode-streaming' : ''}`}
@@ -2102,7 +2136,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onLoadStart={(event) => reportDirectFileStage('loadstart', event.currentTarget)}
               onLoadedData={(event) => {
                 reportDirectFileStage('loadeddata', event.currentTarget)
-                if (!svpPathEnabled || (svpFilterActiveRef.current && !svpTransitionRef.current.active)) {
+                if (svpResumeRef.current?.imageKey === currentImageKey
+                    && svpResumeRef.current.currentTime <= 0.05) {
+                  finishSvpHandoff(event.currentTarget)
+                }
+                if (!svpResumeRef.current && (!svpPathEnabled || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
                   setVideoFrameReadyKey(videoMediaKey)
                 }
               }}
@@ -2113,7 +2151,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               }}
               onPlaying={(event) => {
                 reportDirectFileStage('playing', event.currentTarget)
-                if (!svpPathEnabled || (svpFilterActiveRef.current && !svpTransitionRef.current.active)) {
+                if (!svpResumeRef.current && (!svpPathEnabled || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
                   setVideoFrameReadyKey(videoMediaKey)
                 }
               }}
@@ -2123,29 +2161,19 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 reportDirectFileStage('pause', event.currentTarget)
               }}
               onTimeUpdate={(event) => {
-                playback.handleTimeUpdate(event)
-                if (svpPathEnabled && svpFilterActiveRef.current && !svpInteractionReadyRef.current
+                if (!svpResumeRef.current || svpResumeRef.current.media === event.currentTarget) {
+                  playback.handleTimeUpdate(event)
+                }
+                if (svpPathEnabled && svpFilterActiveRef.current && !svpResumeRef.current && !svpInteractionReadyRef.current
                     && !svpTransitionRef.current.active
                     && event.currentTarget.readyState >= 3
                     && event.currentTarget.currentTime > 0.1) {
-                  const video = event.currentTarget
                   svpInteractionReadyRef.current = true
                   setSvpStartupReady(true)
-                  const resume = svpResumeRef.current
-                  svpResumeRef.current = null
-                  if (resume?.imageKey === currentImageKey) {
-                    const seekRevision = svpUserSeekRevisionRef.current
-                    setTimeout(() => {
-                      if (mediaRef.current !== video || !svpInteractionReadyRef.current
-                          || svpUserSeekRevisionRef.current !== seekRevision) return
-                      if (resume.currentTime > 0.1) video.currentTime = resume.currentTime
-                      if (resume.paused) video.pause()
-                    }, 0)
-                  }
                 }
                 const previousTime = directFileLastTimeRef.current
                 const nextTime = event.currentTarget.currentTime
-                if (nextTime > 0.1 && (!svpPathEnabled || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
+                if (!svpResumeRef.current && nextTime > 0.1 && (!svpPathEnabled || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
                   setVideoFrameReadyKey(videoMediaKey)
                 }
                 if (image?.is_local_direct_file && previousTime > 1 && nextTime < previousTime - 1) {
@@ -2160,25 +2188,40 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onLoadedMetadata={(event) => {
                 handleLoadedMetadataWithResolution(event)
                 const resume = svpResumeRef.current
-                if (resume && resume.imageKey === currentImageKey && svpInteractionReadyRef.current) {
-                  event.currentTarget.currentTime = resume.currentTime
-                  if (!resume.paused) event.currentTarget.play().catch(() => {})
-                  svpResumeRef.current = null
+                if (resume && resume.imageKey === currentImageKey
+                    && resume.media !== event.currentTarget && svpFilterActiveRef.current) {
+                  // The replacement element starts paused. Seek before any
+                  // playback so neither video nor audio can start at 00:00.
+                  if (resume.currentTime > 0.05) {
+                    resume.awaitingSeek = true
+                    event.currentTarget.currentTime = resume.currentTime
+                  }
                 } else if (resume && resume.imageKey !== currentImageKey) {
                   svpResumeRef.current = null
                 }
-                svpTransitionRef.current.active = false
-                measureAndReportSvpPlayback(event.currentTarget)
+                if (!svpResumeRef.current) measureAndReportSvpPlayback(event.currentTarget)
                 reportDirectFileStage('loadedmetadata', event.currentTarget)
               }}
               onCanPlay={(event) => {
-                handleVideoCanPlay(event)
+                if (svpResumeRef.current?.imageKey === currentImageKey) {
+                  finishSvpHandoff(event.currentTarget)
+                } else {
+                  handleVideoCanPlay(event)
+                }
                 reportDirectFileStage('canplay', event.currentTarget)
               }}
               onWaiting={(event) => reportDirectFileStage('waiting', event.currentTarget)}
               onStalled={(event) => reportDirectFileStage('stalled', event.currentTarget)}
               onSeeking={(event) => reportDirectFileStage('seeking', event.currentTarget)}
-              onSeeked={(event) => reportDirectFileStage('seeked', event.currentTarget)}
+              onSeeked={(event) => {
+                const resume = svpResumeRef.current
+                if (resume?.imageKey === currentImageKey
+                    && Math.abs(event.currentTarget.currentTime - resume.currentTime) <= 0.5) {
+                  resume.awaitingSeek = false
+                }
+                finishSvpHandoff(event.currentTarget)
+                reportDirectFileStage('seeked', event.currentTarget)
+              }}
               onEmptied={(event) => reportDirectFileStage('emptied', event.currentTarget)}
               onAbort={(event) => reportDirectFileStage('abort', event.currentTarget)}
               onEnded={(event) => reportDirectFileStage('ended', event.currentTarget)}
