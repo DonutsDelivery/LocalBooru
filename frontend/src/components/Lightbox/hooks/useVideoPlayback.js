@@ -25,7 +25,9 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     restartTranscodeFromPosition,
     setAudioOutputVolume,
     setAudioOutputMuted,
-    interactionReadyRef
+    interactionReadyRef,
+    onSeekRequested,
+    svpDirectPlayback
   } = streamState
 
   // Video player state
@@ -90,6 +92,14 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     setCurrentTime(absoluteTime)
   }, [mediaRef, setCurrentTime, setSvpPendingSeek, cancelPendingSVPRestart])
 
+  const seekDirect = useCallback((time, precise = false) => {
+    const video = mediaRef.current
+    if (!video) return
+    onSeekRequested?.(time)
+    if (!precise && video.fastSeek) video.fastSeek(time)
+    else video.currentTime = time
+  }, [mediaRef, onSeekRequested])
+
   // Direct DOM update for timeline elements (no React re-render)
   const updateTimeDisplay = useCallback((time) => {
     currentTimeRef.current = time
@@ -134,7 +144,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
 
   // Seek forward/backward
   const seekVideo = useCallback((seconds) => {
-    if (!mediaRef.current || interactionReadyRef?.current === false) return
+    if (!mediaRef.current) return
 
     // For HLS streams, currentTime is in HLS time, need to convert to absolute video time
     const currentAbsoluteTime = getCurrentAbsoluteTime()
@@ -172,17 +182,14 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
 
     // Normal video seek (direct play) - use fastSeek for speed when available
     const wasPlaying = !mediaRef.current.paused
-    if (mediaRef.current.fastSeek) {
-      mediaRef.current.fastSeek(newTime)
-    } else {
-      mediaRef.current.currentTime = newTime
-    }
+    seekDirect(newTime)
     setCurrentTime(newTime)
-    // Rapid seeks can cause the browser to stall in a paused state — nudge it back
-    if (wasPlaying) {
+    // SVP keeps the play state across a flush. A redundant play() during its
+    // graph reset can block the WebKit pipeline.
+    if (wasPlaying && !svpDirectPlayback) {
       mediaRef.current.play().catch(() => {})
     }
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, getCurrentAbsoluteTime, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
+  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, getCurrentAbsoluteTime, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime, seekDirect, svpDirectPlayback])
 
   // Toggle video play/pause
   const toggleVideoPlay = useCallback(() => {
@@ -285,60 +292,13 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     }
   }, [mediaRef, svpTotalDuration, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, transcodeTotalDuration])
 
-  // Handle seeking via timeline
-  const handleSeek = useCallback((e) => {
-    if (interactionReadyRef?.current === false || !mediaRef.current || !duration || !timelineRef.current) return
-    const rect = timelineRef.current.getBoundingClientRect()
-    const clickX = e.clientX - rect.left
-    const percent = Math.max(0, Math.min(1, clickX / rect.width))
-    const newTime = percent * duration  // Absolute video time
-
-    // For SVP streams, check if we need to restart from a new position
-    if (svpStreamUrl) {
-      if (!isStreamTimeBuffered(newTime, svpStartOffset, svpBufferedDuration)) {
-        console.log(`[SVP] Seeking to ${newTime.toFixed(1)}s outside browser buffer. Restarting stream...`)
-        setCurrentTime(newTime)
-        setSvpPendingSeek(newTime)
-        restartSVPFromPosition(newTime)
-        return
-      }
-
-      seekWithinStream(newTime, svpStartOffset)
-      return
-    }
-
-    // For transcode streams, check if we can seek within buffered content
-    if (transcodeStreamUrl) {
-      const bufferedEnd = transcodeStartOffset + transcodeBufferedDuration
-      const bufferedStart = transcodeStartOffset
-
-      if (newTime >= bufferedStart - 1 && newTime <= bufferedEnd + 2) {
-        // Seek within current stream
-        const hlsTime = newTime - transcodeStartOffset
-        mediaRef.current.currentTime = Math.max(0, hlsTime)
-        setCurrentTime(newTime)
-        return
-      }
-
-      console.log(`[Transcode] Seeking to ${newTime.toFixed(1)}s, buffered range: ${bufferedStart.toFixed(1)}-${bufferedEnd.toFixed(1)}s. Restarting stream...`)
-      restartTranscodeFromPosition(newTime)
-      return
-    }
-
-    // Normal video seek (direct playback) - use fastSeek for speed when available
-    if (mediaRef.current.fastSeek) {
-      mediaRef.current.fastSeek(newTime)
-    } else {
-      mediaRef.current.currentTime = newTime
-    }
-    setCurrentTime(newTime)
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
-
   const handleSeekStart = useCallback((e) => {
-    if (interactionReadyRef?.current === false) return
+    if (!mediaRef.current || !duration || !timelineRef.current) return
     setIsSeeking(true)
-    handleSeek(e)
-  }, [handleSeek])
+    const rect = timelineRef.current.getBoundingClientRect()
+    const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    setCurrentTime(percent * duration)
+  }, [mediaRef, duration, setCurrentTime])
 
   const handleSeekMove = useCallback((e) => {
     if (!isSeeking) return
@@ -354,7 +314,6 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
   const handleSeekEnd = useCallback(() => {
     if (!isSeeking) return
     setIsSeeking(false)
-    if (interactionReadyRef?.current === false) return
 
     // Seek to final position (read from ref — always in sync via setCurrentTime wrapper)
     if (!mediaRef.current || !duration) return
@@ -384,52 +343,19 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     }
 
     // Direct play - precise seek to final position
-    mediaRef.current.currentTime = seekTime
-  }, [isSeeking, mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
+    seekDirect(seekTime, true)
+  }, [isSeeking, mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime, seekDirect])
 
   // Touch handlers for video timeline (mobile)
   const handleSeekTouchStart = useCallback((e) => {
     e.preventDefault()
-    if (interactionReadyRef?.current === false) return
-    setIsSeeking(true)
     if (!mediaRef.current || !duration || !timelineRef.current) return
+    setIsSeeking(true)
     const rect = timelineRef.current.getBoundingClientRect()
     const touch = e.touches[0]
     const percent = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width))
-    const newTime = percent * duration
-
-    if (svpStreamUrl) {
-      if (!isStreamTimeBuffered(newTime, svpStartOffset, svpBufferedDuration)) {
-        setCurrentTime(newTime)
-        setSvpPendingSeek(newTime)
-        restartSVPFromPosition(newTime)
-        return
-      }
-      seekWithinStream(newTime, svpStartOffset)
-      return
-    }
-    if (transcodeStreamUrl) {
-      const bufferedEnd = transcodeStartOffset + transcodeBufferedDuration
-      const bufferedStart = transcodeStartOffset
-
-      if (newTime >= bufferedStart - 1 && newTime <= bufferedEnd + 2) {
-        const hlsTime = newTime - transcodeStartOffset
-        mediaRef.current.currentTime = Math.max(0, hlsTime)
-        setCurrentTime(newTime)
-        return
-      }
-
-      restartTranscodeFromPosition(newTime)
-      return
-    }
-    // Direct play - use fastSeek for speed when available
-    if (mediaRef.current.fastSeek) {
-      mediaRef.current.fastSeek(newTime)
-    } else {
-      mediaRef.current.currentTime = newTime
-    }
-    setCurrentTime(newTime)
-  }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
+    setCurrentTime(percent * duration)
+  }, [mediaRef, duration, setCurrentTime])
 
   const handleSeekTouchMove = useCallback((e) => {
     if (!isSeeking) return
@@ -449,7 +375,6 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     if (!isSeeking) return
     e.preventDefault()
     setIsSeeking(false)
-    if (interactionReadyRef?.current === false) return
 
     // Seek to final position (read from ref — always in sync via setCurrentTime wrapper)
     if (!mediaRef.current || !duration) return
@@ -479,8 +404,8 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
       return
     }
     // Direct play - precise seek to final position
-    mediaRef.current.currentTime = seekTime
-  }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
+    seekDirect(seekTime, true)
+  }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime, seekDirect])
 
   // Handle volume change
   const handleVolumeChange = useCallback((e) => {

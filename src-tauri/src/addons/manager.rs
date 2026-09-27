@@ -1131,6 +1131,18 @@ impl AddonManager {
         let app_dir = self.addon_dir(id);
         let port = manifest.port.expect("sidecar addons must have a port");
 
+        // A healthy orphan from a previous app instance must not be mistaken
+        // for the process we are about to start. It can otherwise make a
+        // failed bind look like a successful addon launch.
+        if tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
+            .await
+            .is_ok()
+        {
+            let message = format!("Addon '{}' cannot start: port {} is already in use", id, port);
+            self.set_status(id, AddonStatus::Error(message.clone()));
+            return Err(message);
+        }
+
         // Always deploy the latest embedded sources before starting.
         // This ensures installed addons pick up source updates on restart.
         if let Some(sources) = super::sources::get_addon_sources(id) {
@@ -1243,8 +1255,16 @@ impl AddonManager {
 
         // Wait for the addon to become healthy
         let healthy = sidecar::wait_for_healthy(port, Duration::from_secs(30)).await;
+        let child_exited = {
+            let mut child = process.lock().await;
+            match child.try_wait() {
+                Ok(Some(status)) => Some(format!("sidecar exited with {}", status)),
+                Ok(None) => None,
+                Err(error) => Some(format!("could not inspect sidecar: {}", error)),
+            }
+        };
 
-        if healthy {
+        if healthy && child_exited.is_none() {
             let accepted = if let Some(mut state) = self.addons.get_mut(id) {
                 let owns_process = state
                     .process
@@ -1290,7 +1310,9 @@ impl AddonManager {
                 }
                 let _ = child.start_kill();
             }
-            let msg = format!("Addon '{}' failed to become healthy within 30s", id);
+            let msg = child_exited.unwrap_or_else(|| {
+                format!("Addon '{}' failed to become healthy within 30s", id)
+            });
             let accepted = if let Some(mut state) = self.addons.get_mut(id) {
                 let owns_process = state
                     .process

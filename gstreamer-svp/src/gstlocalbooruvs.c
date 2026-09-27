@@ -635,9 +635,22 @@ static gboolean gst_localbooru_vs_sink_event(GstPad *pad, GstObject *parent,
         gst_event_unref(event);
         return TRUE;
     }
-    case GST_EVENT_FLUSH_START:
+    case GST_EVENT_FLUSH_START: {
+        /* A seek may find the output worker blocked in gst_pad_push(). Send
+         * FLUSH_START downstream before joining that worker so the sink can
+         * release the push. Joining first deadlocks the WebKit media pipeline. */
+        g_mutex_lock(&self->lock);
+        self->shutdown = TRUE;
+        g_cond_broadcast(&self->input_ready);
+        g_cond_broadcast(&self->output_ready);
+        g_mutex_unlock(&self->lock);
+        gboolean ok = gst_pad_push_event(self->src_pad, event);
         destroy_graph(self);
-        return gst_pad_push_event(self->src_pad, event);
+        g_mutex_lock(&self->lock);
+        self->shutdown = TRUE;
+        g_mutex_unlock(&self->lock);
+        return ok;
+    }
     case GST_EVENT_FLUSH_STOP: {
         gboolean ok = gst_pad_push_event(self->src_pad, event);
         if (ok && self->input_caps) {

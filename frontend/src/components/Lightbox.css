@@ -1101,12 +1101,6 @@ video.lightbox-media.vr-video-source {
   z-index: 20;
 }
 
-.lightbox-video-controls.svp-starting .video-timeline {
-  pointer-events: none;
-  opacity: 0.5;
-  cursor: wait;
-}
-
 .lightbox-video-controls.svp-starting button {
   pointer-events: none;
 }

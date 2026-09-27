@@ -150,6 +150,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const mediaRef = useRef(null)
   const containerRef = useRef(null)
   const svpResumeRef = useRef(null)
+  const svpUserSeekRevisionRef = useRef(0)
   const svpSourceFpsRef = useRef(null)
   const svpFpsProbePendingRef = useRef(null)
   const svpTransitionRef = useRef({ active: false, token: 0, timer: null })
@@ -313,6 +314,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setAudioOutputVolume: streaming.setAudioOutputVolume,
     setAudioOutputMuted: streaming.setAudioOutputMuted,
     interactionReadyRef: svpInteractionReadyRef,
+    svpDirectPlayback: svpPathEnabled,
+    onSeekRequested: (time) => {
+      svpUserSeekRevisionRef.current += 1
+      const resume = svpResumeRef.current
+      if (resume?.imageKey === currentImageKey) resume.currentTime = time
+    },
   }, libraryImageId, image?.directory_id, image?.library_id)
 
   const reportSvpPlayback = useCallback((video = mediaRef.current, fps = svpSourceFpsRef.current) => {
@@ -830,9 +837,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       }
       return
     }
-    if (!svpControlsReady) return
     gestures.handleVideoClick(e)
-  }, [image?.original_filename, gestures, casting, consumeRevealTap, svpControlsReady])
+  }, [image?.original_filename, gestures, casting, consumeRevealTap])
 
   // Collection picker handlers
   const handleOpenCollectionPicker = useCallback(async () => {
@@ -1243,9 +1249,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
       const isVideoFile = isVideo(image?.original_filename)
 
-      // The patched WebKit pipeline can block the window if pause or seek
-      // reaches it before SVP has produced a frame. Keep Escape available.
-      if (isVideoFile && !casting.isCasting && !svpControlsReady) {
+      // Pause remains guarded while the SVP graph starts. Seeking is handled
+      // by the filter's flush path and remains available once duration is known.
+      if (isVideoFile && !casting.isCasting && !svpControlsReady
+          && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
         if ((e.key === 'Enter' || e.key === ' ') && e.target?.closest?.('.svp-toggle-btn, .svp-fallback-btn')) return
         if (e.key === 'Escape') onClose()
         else e.preventDefault()
@@ -2066,10 +2073,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         ) : isVideoFile ? (
           <div
             className="lightbox-video-container"
-            onTouchStart={casting.isCasting || curationMode || vrActive || !svpControlsReady ? undefined : gestures.handleTouchStart}
-            onTouchMove={casting.isCasting || curationMode || vrActive || !svpControlsReady ? undefined : gestures.handleTouchMove}
-            onTouchEnd={casting.isCasting || curationMode || vrActive || !svpControlsReady ? undefined : gestures.handleTouchEnd}
-            onTouchCancel={casting.isCasting || curationMode || vrActive || !svpControlsReady ? cancelRevealTap : gestures.handleTouchCancel}
+            onTouchStart={casting.isCasting || curationMode || vrActive ? undefined : gestures.handleTouchStart}
+            onTouchMove={casting.isCasting || curationMode || vrActive ? undefined : gestures.handleTouchMove}
+            onTouchEnd={casting.isCasting || curationMode || vrActive ? undefined : gestures.handleTouchEnd}
+            onTouchCancel={casting.isCasting || curationMode || vrActive ? cancelRevealTap : gestures.handleTouchCancel}
           >
             {showVideoLoadingGrid && (
               <div className="lightbox-video-loading-grid" aria-hidden="true">
@@ -2127,8 +2134,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   const resume = svpResumeRef.current
                   svpResumeRef.current = null
                   if (resume?.imageKey === currentImageKey) {
+                    const seekRevision = svpUserSeekRevisionRef.current
                     setTimeout(() => {
-                      if (mediaRef.current !== video || !svpInteractionReadyRef.current) return
+                      if (mediaRef.current !== video || !svpInteractionReadyRef.current
+                          || svpUserSeekRevisionRef.current !== seekRevision) return
                       if (resume.currentTime > 0.1) video.currentTime = resume.currentTime
                       if (resume.paused) video.pause()
                     }, 0)
@@ -2233,23 +2242,23 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
                   casting.castSeek(pct * duration)
                 }) : undefined}
-                onMouseDown={casting.isCasting || !svpControlsReady ? undefined : playback.handleSeekStart}
+                onMouseDown={casting.isCasting ? undefined : playback.handleSeekStart}
                 onMouseMove={(e) => {
                   if (!casting.isCasting) {
-                    if (svpControlsReady) playback.handleSeekMove(e)
+                    playback.handleSeekMove(e)
                     timelinePreview.handleTimelineHover(e)
                   }
                 }}
-                onMouseUp={casting.isCasting || !svpControlsReady ? undefined : playback.handleSeekEnd}
+                onMouseUp={casting.isCasting ? undefined : playback.handleSeekEnd}
                 onMouseLeave={(e) => {
                   if (!casting.isCasting) {
-                    if (svpControlsReady) playback.handleSeekEnd(e)
+                    playback.handleSeekEnd(e)
                     timelinePreview.handleTimelineHoverEnd()
                   }
                 }}
-                onTouchStart={casting.isCasting || !svpControlsReady ? undefined : playback.handleSeekTouchStart}
-                onTouchMove={casting.isCasting || !svpControlsReady ? undefined : playback.handleSeekTouchMove}
-                onTouchEnd={casting.isCasting || !svpControlsReady ? undefined : playback.handleSeekTouchEnd}
+                onTouchStart={casting.isCasting ? undefined : playback.handleSeekTouchStart}
+                onTouchMove={casting.isCasting ? undefined : playback.handleSeekTouchMove}
+                onTouchEnd={casting.isCasting ? undefined : playback.handleSeekTouchEnd}
               >
                 {/* Timeline thumbnail preview */}
                 {timelinePreview.hoverTime !== null && timelinePreview.hasPreviewFrames && (
