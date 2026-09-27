@@ -860,31 +860,28 @@ video.lightbox-media {
   overflow: hidden;
 }
 
-.lightbox-video-loading-poster {
+.lightbox-video-loading-grid {
   position: absolute;
   inset: 0;
   z-index: 3;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-}
-
-.lightbox-video-loading-grid {
-  position: absolute;
-  z-index: 3;
-  width: min(90vw, 1600px);
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  background: #080808;
   pointer-events: none;
 }
 
-.lightbox-video-loading-grid img {
+.lightbox-video-loading-grid img,
+.lightbox-video-loading-tile {
   width: 100%;
-  aspect-ratio: 16 / 9;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   object-fit: cover;
-  border-radius: 6px;
+  background: #1b1b1b;
 }
 
 /* Video display modes - use video.lightbox-media for higher specificity */
@@ -2896,9 +2893,8 @@ video::cue {
   }
 
   .lightbox-video-loading-grid {
-    width: min(90vw, 440px);
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 5px;
+    grid-template-rows: repeat(4, minmax(0, 1fr));
   }
 
   .lightbox-more {
