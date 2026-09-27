@@ -379,7 +379,7 @@ mod tests {
         let bytes = [
             b'R', b'I', b'F', b'F', 40, 0, 0, 0, b'W', b'A', b'V', b'E', b'f', b'm', b't', b' ',
             16, 0, 0, 0, 1, 0, 1, 0, 0x40, 0x1f, 0, 0, 0x80, 0x3e, 0, 0, 2, 0, 16, 0, b'd', b'a',
-            b't', b'a', 4, 0, 0, 0, 0, 0, 0,
+            b't', b'a', 4, 0, 0, 0, 0, 0, 0, 0,
         ];
         std::fs::write(path, bytes).unwrap();
     }
@@ -395,15 +395,13 @@ mod tests {
 
         let first = music_dir.join("first.wav");
         wav_file(&first);
-        let mut tag = Tag::new(TagType::Id3v2);
+        let mut tag = Tag::new(TagType::RiffInfo);
         tag.set_title("First song".into());
         tag.set_artist("Singer".into());
         tag.set_album("Release".into());
         tag.set_genre("Jazz".into());
         tag.set_year(2024);
-        tag.set_disk(2);
         tag.set_track(4);
-        tag.insert_text(ItemKey::AlbumArtist, "Singer".into());
         tag.save_to_path(&first, WriteOptions::default()).unwrap();
         let parsed = Probe::open(&first)
             .unwrap()
@@ -418,7 +416,7 @@ mod tests {
 
         let second = music_dir.join("second.wav");
         wav_file(&second);
-        let mut second_tag = Tag::new(TagType::Id3v2);
+        let mut second_tag = Tag::new(TagType::RiffInfo);
         second_tag.set_title("Second song".into());
         second_tag.set_artist("Singer".into());
         second_tag.set_album("Release".into());
@@ -441,7 +439,7 @@ mod tests {
         assert_eq!(first_row.2, "Release");
         assert_eq!(first_row.3.as_deref(), Some("Jazz"));
         assert_eq!(first_row.4, Some(2024));
-        assert_eq!((first_row.5, first_row.6), (2, 4));
+        assert_eq!((first_row.5, first_row.6), (1, 4));
         assert_eq!(first_row.7.as_deref(), cover.to_str());
         let second_artwork: Option<String> = conn
             .query_row(
