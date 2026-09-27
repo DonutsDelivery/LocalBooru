@@ -311,8 +311,9 @@ mod tests {
             ))
             .unwrap();
         let response = app.clone().oneshot(add_request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
+        let status = response.status();
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
         let added: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(added["added"], 2);
         for (media_type, expected_hash) in [("image", "image-three"), ("video", "video-three")] {
@@ -717,13 +718,9 @@ async fn add_items(
                 params![added, chrono::Utc::now().to_rfc3339(), collection_id],
             )?;
 
-            // Auto-set cover if none set
-            if let Some(first_id) = body.items.first().map(|item| item.image_id).or_else(|| body.image_ids.first().copied()) {
-                conn.execute(
-                    "UPDATE collections SET cover_image_id = ?1 WHERE id = ?2 AND cover_image_id IS NULL",
-                    params![first_id, collection_id],
-                )?;
-            }
+            // Covers are derived from scoped members when listed. The legacy
+            // cover_image_id column points at the main DB's images table, but
+            // actual files live in per-directory databases.
         }
 
         Ok::<_, AppError>(Json(json!({ "success": true, "added": added })))
