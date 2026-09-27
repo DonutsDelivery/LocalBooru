@@ -51,7 +51,7 @@ export default function CollectionsPage() {
 
   const handleDelete = async (e, id) => {
     e.stopPropagation()
-    if (!confirm('Delete this collection? Images will not be deleted.')) return
+    if (!confirm(`Delete this collection? ${mediaType === 'video' ? 'Videos' : 'Images'} will not be deleted.`)) return
     try {
       await deleteCollection(id)
       setCollections(prev => prev.filter(c => c.id !== id))
