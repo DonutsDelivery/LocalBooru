@@ -791,11 +791,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       return
     }
     try {
-      const data = await fetchCollections()
+      const data = await fetchCollections(isVideoFile ? 'video' : 'image')
       setCollectionsList(data.collections || [])
     } catch (e) { /* ignore */ }
     setShowCollectionPicker(true)
-  }, [showCollectionPicker])
+  }, [showCollectionPicker, isVideoFile])
 
   const handleAddToCollection = useCallback(async (collectionId) => {
     if (!image) return
@@ -812,7 +812,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const handleQuickCreateCollection = useCallback(async () => {
     if (!newCollectionName.trim() || !image) return
     try {
-      const result = await createCollection(newCollectionName.trim())
+      const result = await createCollection(newCollectionName.trim(), null, isVideoFile ? 'video' : 'image')
       await addToCollection(result.id, [image.id])
       setCollectionFeedback('Created & added!')
       setTimeout(() => setCollectionFeedback(null), 1500)
@@ -1173,8 +1173,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
       const isVideoFile = isVideo(image?.original_filename)
 
-      // VLC-like video controls — seeking requires Ctrl/Shift modifiers.
-      // Bare arrow keys always navigate the gallery.
+      // Video arrows seek within the current clip; image arrows navigate.
       if (isVideoFile && mediaRef.current) {
         switch (e.key) {
           case ' ':
@@ -1200,8 +1199,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 : playback.seekVideo(-1)
               return
             }
-            // No modifier: gallery navigation (falls through below)
-            break
+            e.preventDefault()
+            casting.isCasting ? casting.castSeekRelative(-5) : playback.seekVideo(-5)
+            return
           case 'ArrowRight':
             if (e.ctrlKey || e.metaKey) {
               e.preventDefault()
@@ -1217,8 +1217,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 : playback.seekVideo(1)
               return
             }
-            // No modifier: gallery navigation (falls through below)
-            break
+            e.preventDefault()
+            casting.isCasting ? casting.castSeekRelative(5) : playback.seekVideo(5)
+            return
           case 'ArrowUp':
             e.preventDefault()
             casting.isCasting ? casting.castVolumeRelative(0.05) : playback.adjustVolume(0.05)
@@ -1724,7 +1725,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           className="lightbox-btn lightbox-delete lightbox-secondary-action"
           onClick={() => setShowDeleteConfirm(true)}
           disabled={processing}
-          title="Delete image"
+          title={isVideoFile ? 'Delete video' : 'Delete image'}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -2545,7 +2546,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       {showDeleteConfirm && (
         <div className="lightbox-confirm-overlay" onClick={() => setShowDeleteConfirm(false)}>
           <div className="lightbox-confirm-dialog" onClick={e => e.stopPropagation()}>
-            <h3>Delete Image?</h3>
+            <h3>Delete {isVideoFile ? 'Video' : 'Image'}?</h3>
             <p>This will permanently delete the file from your filesystem. This action cannot be undone.</p>
             <div className="lightbox-confirm-actions">
               <button

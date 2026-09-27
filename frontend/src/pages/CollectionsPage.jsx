@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { fetchCollections, createCollection, deleteCollection, getMediaUrl } from '../api'
 import Sidebar from '../components/Sidebar'
+import MediaSectionsNav from '../components/MediaSectionsNav'
 import { useMobileDrawer } from '../hooks/useMobileDrawer'
 import './CollectionsPage.css'
 
 export default function CollectionsPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const mediaType = searchParams.get('media_type') === 'video' ? 'video' : 'image'
   const [collections, setCollections] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -16,11 +19,11 @@ export default function CollectionsPage() {
 
   useEffect(() => {
     loadCollections()
-  }, [])
+  }, [mediaType])
 
   async function loadCollections() {
     try {
-      const data = await fetchCollections()
+      const data = await fetchCollections(mediaType)
       setCollections(data.collections || [])
     } catch (e) {
       console.error('Failed to load collections:', e)
@@ -32,7 +35,7 @@ export default function CollectionsPage() {
     if (!newName.trim() || creating) return
     setCreating(true)
     try {
-      const result = await createCollection(newName.trim())
+      const result = await createCollection(newName.trim(), null, mediaType)
       setCollections(prev => [result, ...prev])
       setNewName('')
       setShowCreate(false)
@@ -57,8 +60,9 @@ export default function CollectionsPage() {
     <div className="app">
       <div className="main-container">
         {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
-        <Sidebar mobileOpen={drawer.isOpen} onClose={drawer.close} />
+        <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={drawer.close} />
         <main className="content with-sidebar">
+        <MediaSectionsNav />
         <div className="collections-header">
           <div className="collections-title-row">
             <button className="menu-btn mobile-only" onClick={drawer.open} aria-label="Open menu">
@@ -66,7 +70,7 @@ export default function CollectionsPage() {
                 <path d="M3 12h18M3 6h18M3 18h18"/>
               </svg>
             </button>
-            <h1>Collections</h1>
+            <h1>{mediaType === 'video' ? 'Video' : 'Image'} Collections</h1>
           </div>
           <button className="collections-create-btn" onClick={() => setShowCreate(!showCreate)}>
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
@@ -96,7 +100,7 @@ export default function CollectionsPage() {
         ) : collections.length === 0 ? (
           <div className="collections-empty">
             <h2>No collections yet</h2>
-            <p>Create a collection to organize your media into albums.</p>
+            <p>Create a collection to organize your {mediaType === 'video' ? 'videos' : 'images'}.</p>
           </div>
         ) : (
           <div className="collections-grid">
@@ -106,12 +110,12 @@ export default function CollectionsPage() {
                 className="collection-card"
                 role="button"
                 tabIndex={0}
-                onClick={() => navigate(`/collections/${c.id}`)}
+                onClick={() => navigate(`/collections/${c.id}?media_type=${mediaType}`)}
                 onKeyDown={(event) => {
                   if (event.target !== event.currentTarget) return
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
-                    navigate(`/collections/${c.id}`)
+                    navigate(`/collections/${c.id}?media_type=${mediaType}`)
                   }
                 }}
               >

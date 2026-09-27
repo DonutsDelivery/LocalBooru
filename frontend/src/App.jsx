@@ -1,5 +1,5 @@
 /**
- * LocalBooru - Local image library with auto-tagging
+ * DonutMediaCenter - Local media library
  * Simplified single-user version
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
@@ -444,7 +444,7 @@ function SettingsPage() {
                 <h2>Application</h2>
                 <AutostartToggle />
                 <button onClick={async () => {
-                  if (!confirm('Quit LocalBooru completely?\n\nThis will stop the background server and close the application.')) return
+                  if (!confirm('Quit DonutMediaCenter completely?\n\nThis will stop the background server and close the application.')) return
                   const { getDesktopAPI } = await import('./tauriAPI')
                   const api = getDesktopAPI()
                   if (api?.quitApp) api.quitApp()
@@ -559,6 +559,7 @@ function Gallery({ mediaType = 'image' }) {
       : null
   )
   const restoredGalleryRef = useRef(false)
+  const restoredScrollRef = useRef(false)
   const { isInstalled: isAddonInstalled } = useAllAddonStatuses()
   const [searchParams, setSearchParams] = useSearchParams()
   const [images, setImages] = useState(() => cachedGalleryRef.current?.images || [])
@@ -717,7 +718,8 @@ function Gallery({ mediaType = 'image' }) {
   }, [mediaType, galleryViewKey, images, page, total, hasMore, loading])
 
   useEffect(() => {
-    if (loading) return
+    if (loading || restoredScrollRef.current) return
+    restoredScrollRef.current = true
     const scroll = Number(sessionStorage.getItem(`donutMediaCenter_gallery_scroll_${mediaType}`) || 0)
     if (scroll <= 0) return
     requestAnimationFrame(() => {
@@ -971,7 +973,7 @@ function Gallery({ mediaType = 'image' }) {
         setLoading(false)
       }
     }
-  }, [mediaType, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders, galleryViewKey])
+  }, [mediaType, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, tileSize, groupByFolders, currentFolder, loadFolders, galleryViewKey])
 
   const curation = useCurationGame({
     loadedImages: images,
@@ -1057,7 +1059,7 @@ function Gallery({ mediaType = 'image' }) {
       }
     }
     loadImages(1, false)
-  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, groupByFolders, currentFolder, loadImages])
+  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, groupByFolders, currentFolder, loadImages])
 
   useEffect(() => {
     loadTags()
@@ -1184,7 +1186,7 @@ function Gallery({ mediaType = 'image' }) {
       }
       return false
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey])
 
   refreshNewImagesRef.current = refreshNewImages
 
@@ -1353,7 +1355,7 @@ function Gallery({ mediaType = 'image' }) {
         setIsJumping(false)
       }
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, total, tileSize, galleryViewKey])
+  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, total, tileSize, galleryViewKey])
 
   // Handle jump by offset (for +/- 100 buttons)
   const handleJumpByOffset = useCallback((offset) => {
@@ -1852,7 +1854,7 @@ function Gallery({ mediaType = 'image' }) {
                   className="nav-jump-btn"
                   onClick={() => handleJumpByOffset(-100)}
                   disabled={isJumping || page === 1}
-                  title="Jump back 100 images"
+                  title={`Jump back 100 ${sectionName.toLowerCase()}`}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="18 15 12 9 6 15"/>
@@ -1878,7 +1880,7 @@ function Gallery({ mediaType = 'image' }) {
                   className="nav-jump-btn"
                   onClick={() => handleJumpByOffset(100)}
                   disabled={isJumping || page * 50 >= total}
-                  title="Jump forward 100 images"
+                  title={`Jump forward 100 ${sectionName.toLowerCase()}`}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="6 9 12 15 18 9"/>
@@ -1923,7 +1925,7 @@ function Gallery({ mediaType = 'image' }) {
               {selectedImages.size} selected
             </div>
             <div className="batch-action-buttons">
-              {isAddonInstalled('auto-tagger') && (
+              {mediaType === 'image' && isAddonInstalled('auto-tagger') && (
               <button
                 className="batch-btn"
                 onClick={handleBatchRetag}
@@ -1937,7 +1939,7 @@ function Gallery({ mediaType = 'image' }) {
                 Retag
               </button>
               )}
-              {isAddonInstalled('age-detector') && (
+              {mediaType === 'image' && isAddonInstalled('age-detector') && (
               <button
                 className="batch-btn"
                 onClick={handleBatchAgeDetect}
@@ -2093,8 +2095,8 @@ function Gallery({ mediaType = 'image' }) {
       {curation.complete && (
         <div className="modal-overlay curation-complete-overlay">
           <div className="modal-content curation-complete-dialog">
-            <h2>No more media left to curate</h2>
-            <p>You’ve reviewed every non-favorited image and video in this view.</p>
+            <h2>No more {sectionName.toLowerCase()} left to curate</h2>
+            <p>You’ve reviewed every non-favorited {sectionName.toLowerCase().slice(0, -1)} in this view.</p>
             {curation.matchingFavoriteCount > 0 && (
               <p>Unfavorite all {curation.matchingFavoriteCount.toLocaleString()} matching items and start another curation run?</p>
             )}
@@ -2274,7 +2276,7 @@ function AppShell() {
     return (
       <div className="app loading-screen">
         <div className="loading-content">
-          <h1>LocalBooru</h1>
+          <h1>DonutMediaCenter</h1>
           <p>Starting backend...</p>
           {startupLogs.length > 0 && (
             <pre style={{ fontSize: '10px', textAlign: 'left', maxHeight: '200px', overflow: 'auto', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '4px', marginTop: '12px', maxWidth: '90vw', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
@@ -2291,7 +2293,7 @@ function AppShell() {
     return (
       <div className="app loading-screen">
         <div className="loading-content">
-          <h1>LocalBooru</h1>
+          <h1>DonutMediaCenter</h1>
           <p>Loading...</p>
           {startupLogs.length > 0 && (
             <pre style={{ fontSize: '10px', textAlign: 'left', maxHeight: '200px', overflow: 'auto', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '4px', marginTop: '12px', maxWidth: '90vw', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>

@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::collections::HashSet;
 
 use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::response::Json;
@@ -33,6 +34,7 @@ pub fn router() -> Router<AppState> {
 struct CollectionCreate {
     name: String,
     description: Option<String>,
+    media_type: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -51,35 +53,98 @@ struct CollectionItemsBody {
 struct PaginationParams {
     page: Option<i64>,
     per_page: Option<i64>,
+    media_type: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CollectionListQuery {
+    media_type: Option<String>,
+}
+
+fn validate_media_type(media_type: Option<&str>) -> Result<(), AppError> {
+    if matches!(media_type, None | Some("image") | Some("video")) {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest("media_type must be image or video".into()))
+    }
+}
+
+// Legacy collections have no type. Read their actual members so a mixed
+// collection remains visible in both sections without changing membership.
+fn matching_media_ids(state: &AppState, media_type: &str) -> Result<HashSet<i64>, AppError> {
+    let extensions = match media_type {
+        "video" => crate::routes::images::helpers::VIDEO_EXTENSIONS,
+        _ => crate::routes::images::helpers::IMAGE_EXTENSIONS,
+    };
+    let quoted = extensions.iter().map(|ext| format!("'{}'", ext.trim_start_matches('.'))).collect::<Vec<_>>().join(",");
+    let mut ids = HashSet::new();
+    for directory_id in state.directory_db().get_all_directory_ids() {
+        let pool = state.directory_db().get_pool(directory_id)?;
+        let conn = pool.get()?;
+        let sql = format!(
+            "SELECT DISTINCT image_id FROM image_files WHERE file_extension IN ({}) AND file_status != 'missing' AND curation_discarded_at IS NULL",
+            quoted
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        for id in stmt.query_map([], |row| row.get::<_, i64>(0))?.filter_map(Result::ok) {
+            ids.insert(id);
+        }
+    }
+    Ok(ids)
 }
 
 /// GET /api/collections
-async fn list_collections(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn list_collections(State(state): State<AppState>, Query(query): Query<CollectionListQuery>) -> Result<Json<Value>, AppError> {
+    validate_media_type(query.media_type.as_deref())?;
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;
+        let matching_ids = query.media_type.as_deref().map(|media_type| matching_media_ids(&state_clone, media_type)).transpose()?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, cover_image_id, item_count, created_at, updated_at
+            "SELECT id, name, description, cover_image_id, item_count, created_at, updated_at, media_type
              FROM collections ORDER BY COALESCE(updated_at, created_at) DESC",
         )?;
 
         let collections: Vec<Value> = stmt
             .query_map([], |row| {
+                let collection_id: i64 = row.get(0)?;
+                let declared_type: Option<String> = row.get(7)?;
                 let cover_image_id: Option<i64> = row.get(3)?;
                 let cover_thumbnail_url =
                     cover_image_id.map(|id| format!("/api/images/{}/thumbnail", id));
                 Ok(json!({
-                    "id": row.get::<_, i64>(0)?,
+                    "id": collection_id,
                     "name": row.get::<_, String>(1)?,
                     "description": row.get::<_, Option<String>>(2)?,
                     "cover_image_id": cover_image_id,
                     "cover_thumbnail_url": cover_thumbnail_url,
                     "item_count": row.get::<_, i64>(4)?,
                     "created_at": row.get::<_, Option<String>>(5)?,
-                    "updated_at": row.get::<_, Option<String>>(6)?
+                    "updated_at": row.get::<_, Option<String>>(6)?,
+                    "media_type": declared_type,
                 }))
             })?
             .filter_map(|r| r.ok())
+            .filter_map(|mut collection| {
+                let Some(ref ids) = matching_ids else { return Some(collection) };
+                let requested = query.media_type.as_deref().unwrap_or_default();
+                if collection["media_type"].as_str().is_some_and(|kind| kind != requested) {
+                    return None;
+                }
+                let collection_id = collection["id"].as_i64()?;
+                let mut members = conn.prepare("SELECT image_id FROM collection_items WHERE collection_id = ?1").ok()?;
+                let member_ids = members.query_map(params![collection_id], |row| row.get::<_, i64>(0)).ok()?;
+                let matching = member_ids.filter_map(Result::ok).filter(|id| ids.contains(id)).collect::<Vec<_>>();
+                if matching.is_empty() && collection["media_type"].is_null() {
+                    return None;
+                }
+                collection["item_count"] = json!(matching.len());
+                if !collection["cover_image_id"].as_i64().is_some_and(|id| ids.contains(&id)) {
+                    collection["cover_image_id"] = json!(matching.first());
+                    collection["cover_thumbnail_url"] = matching.first().map(|id| json!(format!("/api/images/{}/thumbnail", id))).unwrap_or(Value::Null);
+                }
+                Some(collection)
+            })
             .collect();
 
         Ok::<_, AppError>(Json(json!({ "collections": collections })))
@@ -92,19 +157,21 @@ async fn create_collection(
     State(state): State<AppState>,
     Json(body): Json<CollectionCreate>,
 ) -> Result<Json<Value>, AppError> {
+    validate_media_type(body.media_type.as_deref())?;
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO collections (name, description, item_count, created_at) VALUES (?1, ?2, 0, ?3)",
-            params![&body.name, &body.description, &now],
+            "INSERT INTO collections (name, description, media_type, item_count, created_at) VALUES (?1, ?2, ?3, 0, ?4)",
+            params![&body.name, &body.description, &body.media_type, &now],
         )?;
         let id = conn.last_insert_rowid();
         Ok::<_, AppError>(Json(json!({
             "id": id,
             "name": body.name,
             "description": body.description,
+            "media_type": body.media_type,
             "item_count": 0
         })))
     })
@@ -118,6 +185,7 @@ async fn get_collection(
     AxumPath(collection_id): AxumPath<i64>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<Value>, AppError> {
+    validate_media_type(params.media_type.as_deref())?;
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(50).clamp(1, 200);
     let offset = (page - 1) * per_page;
@@ -134,7 +202,7 @@ async fn get_collection(
 
         // Get collection info
         let collection = conn.query_row(
-            "SELECT id, name, description, cover_image_id, item_count, created_at, updated_at FROM collections WHERE id = ?1",
+            "SELECT id, name, description, cover_image_id, item_count, created_at, updated_at, media_type FROM collections WHERE id = ?1",
             params![collection_id],
             |row| {
                 Ok(json!({
@@ -144,27 +212,44 @@ async fn get_collection(
                     "cover_image_id": row.get::<_, Option<i64>>(3)?,
                     "item_count": row.get::<_, i64>(4)?,
                     "created_at": row.get::<_, Option<String>>(5)?,
-                    "updated_at": row.get::<_, Option<String>>(6)?
+                    "updated_at": row.get::<_, Option<String>>(6)?,
+                    "media_type": row.get::<_, Option<String>>(7)?,
                 }))
             },
         ).map_err(|_| AppError::NotFound("Collection not found".into()))?;
+        if let Some(ref requested) = params.media_type {
+            if collection["media_type"].as_str().is_some_and(|kind| kind != requested) {
+                return Err(AppError::NotFound("Collection not found in this library".into()));
+            }
+        }
 
         // Get item IDs
-        let mut stmt = conn.prepare(
-            "SELECT ci.image_id FROM collection_items ci
-             WHERE ci.collection_id = ?1
-             ORDER BY ci.sort_order
-             LIMIT ?2 OFFSET ?3",
-        )?;
-        let image_ids: Vec<i64> = stmt
-            .query_map(params![collection_id, per_page, offset], |row| row.get(0))?
+        let matching_ids = params.media_type.as_deref().map(|kind| matching_media_ids(&state_clone, kind)).transpose()?;
+        let mut stmt = conn.prepare("SELECT ci.image_id FROM collection_items ci WHERE ci.collection_id = ?1 ORDER BY ci.sort_order")?;
+        let all_ids: Vec<i64> = stmt
+            .query_map(params![collection_id], |row| row.get(0))?
             .filter_map(|r| r.ok())
             .collect();
+        let visible_ids = all_ids.into_iter().filter(|id| matching_ids.as_ref().is_none_or(|matches| matches.contains(id))).collect::<Vec<_>>();
+        let scoped_count = visible_ids.len();
+        let image_ids = visible_ids.into_iter().skip(offset as usize).take(per_page as usize).collect::<Vec<_>>();
 
         // Hydrate image objects from directory DBs
         let library_id = state_clone.library_manager().primary().uuid.clone();
         let encoded_library_id =
             crate::routes::images::adjustments::encode_query_component(&library_id);
+        let extension_clause = match params.media_type.as_deref() {
+            Some("video") => Some(crate::routes::images::helpers::VIDEO_EXTENSIONS),
+            Some("image") => Some(crate::routes::images::helpers::IMAGE_EXTENSIONS),
+            _ => None,
+        }.map(|extensions| extensions.iter().map(|ext| format!("'{}'", ext.trim_start_matches('.'))).collect::<Vec<_>>().join(","));
+        let media_file_clause = extension_clause.as_ref().map(|extensions| format!("AND file_extension IN ({})", extensions)).unwrap_or_default();
+        let image_sql = format!(
+            "SELECT id, filename, file_hash, width, height, file_size, duration, rating, is_favorite, view_count, \
+             (SELECT original_path FROM image_files WHERE image_id = images.id AND file_status != 'missing' {} LIMIT 1) \
+             FROM images WHERE id = ?1 AND EXISTS (SELECT 1 FROM image_files WHERE image_id = images.id AND file_status != 'missing' {})",
+            media_file_clause, media_file_clause
+        );
         let mut images: Vec<Value> = Vec::new();
         for &img_id in &image_ids {
             let mut found = false;
@@ -189,15 +274,17 @@ async fn get_collection(
                     Err(_) => continue,
                 };
                 if let Ok(img) = dir_conn.query_row(
-                    "SELECT id, filename, file_hash, width, height, file_size, duration,
-                            rating, is_favorite, view_count
-                     FROM images WHERE id = ?1",
+                    &image_sql,
                     params![img_id],
                     |row| {
                         let hash: String = row.get(2)?;
+                        let file_path: Option<String> = row.get(10)?;
+                        let original_filename = file_path.as_deref().and_then(|path| std::path::Path::new(path).file_name()).and_then(|name| name.to_str());
                         Ok(json!({
                             "id": row.get::<_, i64>(0)?,
                             "filename": row.get::<_, String>(1)?,
+                            "original_filename": original_filename,
+                            "file_path": file_path,
                             "file_hash": hash.clone(),
                             "width": row.get::<_, Option<i32>>(3)?,
                             "height": row.get::<_, Option<i32>>(4)?,
@@ -218,7 +305,7 @@ async fn get_collection(
                     break;
                 }
             }
-            if !found {
+            if !found && params.media_type.is_none() {
                 // Fallback: include stub with ID so frontend knows something exists
                 images.push(json!({"id": img_id}));
             }
@@ -226,9 +313,10 @@ async fn get_collection(
 
         let mut result = collection;
         result["images"] = json!(images);
+        result["item_count"] = json!(scoped_count);
         result["page"] = json!(page);
         result["per_page"] = json!(per_page);
-        result["has_more"] = json!(image_ids.len() as i64 == per_page);
+        result["has_more"] = json!((offset as usize + image_ids.len()) < scoped_count);
 
         Ok::<_, AppError>(Json(result))
     })
@@ -312,6 +400,17 @@ async fn add_items(
     let state_clone = state.clone();
     tokio::task::spawn_blocking(move || {
         let conn = state_clone.main_db().get()?;
+        let collection_type: Option<String> = conn.query_row(
+            "SELECT media_type FROM collections WHERE id = ?1",
+            params![collection_id],
+            |row| row.get(0),
+        ).map_err(|_| AppError::NotFound("Collection not found".into()))?;
+        if let Some(ref media_type) = collection_type {
+            let matching = matching_media_ids(&state_clone, media_type)?;
+            if body.image_ids.iter().any(|id| !matching.contains(id)) {
+                return Err(AppError::BadRequest(format!("Collection accepts {} media only", media_type)));
+            }
+        }
 
         // Get current max sort order
         let max_order: i64 = conn

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { fetchCollection, updateCollection, removeFromCollection, getMediaUrl } from '../api'
 import Sidebar from '../components/Sidebar'
+import MediaSectionsNav from '../components/MediaSectionsNav'
 import MasonryGrid from '../components/MasonryGrid'
 import Lightbox from '../components/Lightbox'
 import { adjustmentLocator, imageMatchesLocator, updateImagesByLocator } from '../utils/imageAdjustments.js'
@@ -10,6 +11,8 @@ import { useMobileDrawer } from '../hooks/useMobileDrawer'
 export default function CollectionDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const mediaType = searchParams.get('media_type') === 'video' ? 'video' : 'image'
   const [collection, setCollection] = useState(null)
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -22,7 +25,7 @@ export default function CollectionDetailPage() {
 
   const loadCollection = useCallback(async (pageNum = 1, append = false) => {
     try {
-      const data = await fetchCollection(id, pageNum)
+      const data = await fetchCollection(id, pageNum, 50, mediaType)
       setCollection(data)
       if (append) {
         setImages(prev => [...prev, ...data.images])
@@ -34,7 +37,7 @@ export default function CollectionDetailPage() {
       console.error('Failed to load collection:', e)
     }
     setLoading(false)
-  }, [id])
+  }, [id, mediaType])
 
   useEffect(() => {
     loadCollection()
@@ -101,8 +104,9 @@ export default function CollectionDetailPage() {
     <div className="app">
       <div className="main-container">
         {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
-        <Sidebar mobileOpen={drawer.isOpen} onClose={drawer.close} />
+        <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={drawer.close} />
         <main className="content with-sidebar">
+        <MediaSectionsNav />
         <div className="collections-header collection-detail-header">
           <div className="collection-detail-title-row">
             <button className="menu-btn mobile-only" onClick={drawer.open} aria-label="Open menu">
@@ -112,7 +116,7 @@ export default function CollectionDetailPage() {
             </button>
             <button
               className="collections-create-btn collection-back-btn"
-              onClick={() => navigate('/collections')}
+              onClick={() => navigate(`/collections?media_type=${mediaType}`)}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
               Back
@@ -143,7 +147,7 @@ export default function CollectionDetailPage() {
         ) : images.length === 0 ? (
           <div className="collections-empty">
             <h2>Empty collection</h2>
-            <p>Add images from the gallery lightbox.</p>
+            <p>Add {mediaType === 'video' ? 'videos' : 'images'} from the gallery lightbox.</p>
           </div>
         ) : (
           <MasonryGrid

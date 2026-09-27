@@ -105,9 +105,9 @@ function Sidebar({
   // Load saved searches
   useEffect(() => {
     getSavedSearches().then(data => {
-      setSavedSearches(data.searches || [])
+      setSavedSearches((data.searches || []).filter(search => (search.filters?.media_type || 'image') === mediaType))
     }).catch(console.error)
-  }, [])
+  }, [mediaType])
 
   // Persist filters expanded state
   useEffect(() => {
@@ -248,6 +248,7 @@ function Sidebar({
   const handleSaveSearch = async () => {
     if (!saveSearchName.trim()) return
     const filters = {
+      media_type: mediaType,
       tags: currentTags || '',
       rating: selectedRatings.join(','),
       sort: sortBy,
@@ -680,6 +681,13 @@ function Sidebar({
                 </>
               )}
 
+              {mediaType === 'video' && Number.isFinite(selectedImage.duration) && (
+                <>
+                  <span className="info-label">Duration</span>
+                  <span className="info-value">{Math.floor(selectedImage.duration / 60)}:{String(Math.floor(selectedImage.duration % 60)).padStart(2, '0')}</span>
+                </>
+              )}
+
               <span className="info-label">Rating</span>
               <span className={`info-value copyable rating-${selectedImage.rating}`} onClick={() => copyInfoValue('Rating', selectedImage.rating)} title="Click to copy">
                 {copiedField === 'Rating' ? '✓ Copied' : selectedImage.rating}
@@ -741,7 +749,7 @@ function Sidebar({
                 </>
               )}
 
-              {selectedImage.num_faces !== null && selectedImage.num_faces !== undefined && (
+              {mediaType === 'image' && selectedImage.num_faces !== null && selectedImage.num_faces !== undefined && (
                 <>
                   <span className="info-label">Faces</span>
                   <span className="info-value copyable" onClick={() => copyInfoValue('Faces', selectedImage.num_faces)} title="Click to copy">
@@ -780,7 +788,7 @@ function Sidebar({
             )}
 
             {/* AI Generation Prompts */}
-            {(selectedImage.prompt || selectedImage.negative_prompt) && (
+            {mediaType === 'image' && (selectedImage.prompt || selectedImage.negative_prompt) && (
               <div className="image-prompts">
                 <h4>AI Generation</h4>
 

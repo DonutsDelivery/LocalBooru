@@ -1231,18 +1231,20 @@ export function subscribeToMigrationEvents(onEvent) {
 }
 
 // Collections API
-export async function fetchCollections() {
-  const response = await api.get('/collections')
+export async function fetchCollections(mediaType = null) {
+  const response = await api.get('/collections', { params: mediaType ? { media_type: mediaType } : {} })
   return response.data
 }
 
-export async function createCollection(name, description = null) {
-  const response = await api.post('/collections', { name, description })
+export async function createCollection(name, description = null, mediaType = null) {
+  const response = await api.post('/collections', { name, description, media_type: mediaType })
   return response.data
 }
 
-export async function fetchCollection(id, page = 1, perPage = 50) {
-  const response = await api.get(`/collections/${id}?page=${page}&per_page=${perPage}`)
+export async function fetchCollection(id, page = 1, perPage = 50, mediaType = null) {
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) })
+  if (mediaType) params.set('media_type', mediaType)
+  const response = await api.get(`/collections/${id}?${params}`)
   return response.data
 }
 
