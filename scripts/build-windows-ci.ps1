@@ -54,20 +54,20 @@ Write-Host "Standalone Authenticode status: $($Signature.Status)"
 $InstallerSignature = Get-AuthenticodeSignature $Installer.FullName
 Write-Host "Installer Authenticode status: $($InstallerSignature.Status)"
 
-$PortableDir = Join-Path $env:RUNNER_TEMP 'LocalBooru-Windows'
+$PortableDir = Join-Path $env:RUNNER_TEMP 'DonutMediaCenter-Windows'
 Remove-Item -Recurse -Force $PortableDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $PortableDir | Out-Null
-Copy-Item $Binary (Join-Path $PortableDir 'LocalBooru.exe')
+Copy-Item $Binary (Join-Path $PortableDir 'DonutMediaCenter.exe')
 Copy-Item (Join-Path $Root 'LICENSE') $PortableDir
 
-$Zip = Join-Path $DistDir 'LocalBooru-Windows.zip'
+$Zip = Join-Path $DistDir 'DonutMediaCenter-Windows.zip'
 Compress-Archive -Path (Join-Path $PortableDir '*') -DestinationPath $Zip -CompressionLevel Optimal
-Copy-Item $Installer.FullName (Join-Path $DistDir 'LocalBooru-Windows-Setup.exe')
+Copy-Item $Installer.FullName (Join-Path $DistDir 'DonutMediaCenter-Windows-Setup.exe')
 
-$ExtractDir = Join-Path $env:RUNNER_TEMP 'LocalBooru-Windows-verify'
+$ExtractDir = Join-Path $env:RUNNER_TEMP 'DonutMediaCenter-Windows-verify'
 Remove-Item -Recurse -Force $ExtractDir -ErrorAction SilentlyContinue
 Expand-Archive -Path $Zip -DestinationPath $ExtractDir
-if (-not (Test-Path (Join-Path $ExtractDir 'LocalBooru.exe') -PathType Leaf)) { throw 'Portable ZIP is missing LocalBooru.exe' }
+if (-not (Test-Path (Join-Path $ExtractDir 'DonutMediaCenter.exe') -PathType Leaf)) { throw 'Portable ZIP is missing DonutMediaCenter.exe' }
 if (-not (Test-Path (Join-Path $ExtractDir 'LICENSE') -PathType Leaf)) { throw 'Portable ZIP is missing LICENSE' }
 
 $Forbidden = @('/home/user', '/mnt/storage', '/build/worktree', '/source/', 'C:\a\LocalBooru\LocalBooru')
@@ -77,7 +77,7 @@ foreach ($Needle in $Forbidden) {
 }
 
 $Artifacts = @(
-  (Join-Path $DistDir 'LocalBooru-Windows-Setup.exe'),
+  (Join-Path $DistDir 'DonutMediaCenter-Windows-Setup.exe'),
   $Zip
 )
 $Manifest = Join-Path $DistDir 'SHA256SUMS-Windows'

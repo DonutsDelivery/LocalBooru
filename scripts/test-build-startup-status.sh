@@ -31,11 +31,11 @@ if [[ "${1:-}" == run ]]; then
     if [[ "$argument" == *:/dist ]]; then
       dist="${argument%:/dist}"
       mkdir -p "$dist"
-      printf 'test installer\n' >"$dist/LocalBooru-Windows-Setup.exe"
-      printf 'test archive\n' >"$dist/LocalBooru-Windows.zip"
+      printf 'test installer\n' >"$dist/DonutMediaCenter-Windows-Setup.exe"
+      printf 'test archive\n' >"$dist/DonutMediaCenter-Windows.zip"
       (
         cd "$dist"
-        sha256sum LocalBooru-Windows-Setup.exe LocalBooru-Windows.zip >SHA256SUMS-Windows
+        sha256sum DonutMediaCenter-Windows-Setup.exe DonutMediaCenter-Windows.zip >SHA256SUMS-Windows
       )
     fi
   done

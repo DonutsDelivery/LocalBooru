@@ -42,47 +42,47 @@ verify_runtime_tree() {
   fi
 }
 
-require_file "$DIST/LocalBooru-Native-Runtime-Sources.tar.xz"
-tar -tJf "$DIST/LocalBooru-Native-Runtime-Sources.tar.xz" \
+require_file "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz"
+tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep 'webkitgtk-2.52.3.tar.xz' >/dev/null
-tar -tJf "$DIST/LocalBooru-Native-Runtime-Sources.tar.xz" \
+tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep '2.52.3-playbin-video-filter.patch' >/dev/null
-tar -tJf "$DIST/LocalBooru-Native-Runtime-Sources.tar.xz" \
+tar -tJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
   | grep 'vapoursynth-R75.tar.gz' >/dev/null
 
 if has_bundle deb; then
-  require_file "$DIST/LocalBooru-Linux.deb"
-  dpkg-deb --info "$DIST/LocalBooru-Linux.deb" >/dev/null
+  require_file "$DIST/DonutMediaCenter-Linux.deb"
+  dpkg-deb --info "$DIST/DonutMediaCenter-Linux.deb" >/dev/null
   mkdir -p "$WORK/deb"
-  dpkg-deb -x "$DIST/LocalBooru-Linux.deb" "$WORK/deb"
+  dpkg-deb -x "$DIST/DonutMediaCenter-Linux.deb" "$WORK/deb"
   require_file "$WORK/deb/usr/bin/localbooru"
   require_file "$WORK/deb/usr/lib/localbooru/localbooru"
-  [[ "$(dpkg-deb -f "$DIST/LocalBooru-Linux.deb" Installed-Size)" -gt 200000 ]]
+  [[ "$(dpkg-deb -f "$DIST/DonutMediaCenter-Linux.deb" Installed-Size)" -gt 200000 ]]
   verify_runtime_tree "$WORK/deb"
 fi
 
 if has_bundle rpm; then
-  require_file "$DIST/LocalBooru-Linux.rpm"
-  rpm -K "$DIST/LocalBooru-Linux.rpm" 2>&1 | grep -E 'digests OK|NOT OK|NOKEY' >/dev/null
-  rpm -qpl "$DIST/LocalBooru-Linux.rpm" | grep '/usr/bin/localbooru' >/dev/null
-  rpm -qpl "$DIST/LocalBooru-Linux.rpm" \
+  require_file "$DIST/DonutMediaCenter-Linux.rpm"
+  rpm -K "$DIST/DonutMediaCenter-Linux.rpm" 2>&1 | grep -E 'digests OK|NOT OK|NOKEY' >/dev/null
+  rpm -qpl "$DIST/DonutMediaCenter-Linux.rpm" | grep '/usr/bin/localbooru' >/dev/null
+  rpm -qpl "$DIST/DonutMediaCenter-Linux.rpm" \
     | grep '/usr/lib/localbooru/native-svp/bin/mpv' >/dev/null
-  rpm -qpR "$DIST/LocalBooru-Linux.rpm" | grep '^gtk3$' >/dev/null
-  rpm -qpR "$DIST/LocalBooru-Linux.rpm" | grep '^webkit2gtk4\.1$' >/dev/null
+  rpm -qpR "$DIST/DonutMediaCenter-Linux.rpm" | grep '^gtk3$' >/dev/null
+  rpm -qpR "$DIST/DonutMediaCenter-Linux.rpm" | grep '^webkit2gtk4\.1$' >/dev/null
 fi
 
 if has_bundle appimage; then
-  require_file "$DIST/LocalBooru-Linux.AppImage"
-  file "$DIST/LocalBooru-Linux.AppImage" | grep 'ELF 64-bit' >/dev/null
-  test -x "$DIST/LocalBooru-Linux.AppImage"
-  (cd "$WORK" && "$DIST/LocalBooru-Linux.AppImage" --appimage-extract >/dev/null)
+  require_file "$DIST/DonutMediaCenter-Linux.AppImage"
+  file "$DIST/DonutMediaCenter-Linux.AppImage" | grep 'ELF 64-bit' >/dev/null
+  test -x "$DIST/DonutMediaCenter-Linux.AppImage"
+  (cd "$WORK" && "$DIST/DonutMediaCenter-Linux.AppImage" --appimage-extract >/dev/null)
   test -x "$WORK/squashfs-root/AppRun"
   bash -n "$WORK/squashfs-root/AppRun"
   verify_runtime_tree "$WORK/squashfs-root"
 
-  require_file "$DIST/LocalBooru-Linux.zip"
-  unzip -tq "$DIST/LocalBooru-Linux.zip" >/dev/null
-  unzip -l "$DIST/LocalBooru-Linux.zip" | grep 'LocalBooru-Linux.AppImage' >/dev/null
+  require_file "$DIST/DonutMediaCenter-Linux.zip"
+  unzip -tq "$DIST/DonutMediaCenter-Linux.zip" >/dev/null
+  unzip -l "$DIST/DonutMediaCenter-Linux.zip" | grep 'DonutMediaCenter-Linux.AppImage' >/dev/null
 fi
 
 # Report, but do not hide, the actual portability floor of the final app.

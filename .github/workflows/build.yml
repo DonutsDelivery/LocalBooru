@@ -77,13 +77,13 @@ jobs:
       - name: Audit Windows base release boundary
         shell: bash
         run: |
-          node scripts/list-release-inventory.js "${{ runner.temp }}/LocalBooru-Windows-verify" \
+          node scripts/list-release-inventory.js "${{ runner.temp }}/DonutMediaCenter-Windows-verify" \
             | PYTHONPATH=addons/lada/src python -m localbooru_lada audit-base --inventory -
 
       - name: Upload verified Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: LocalBooru-Windows-x64
+          name: DonutMediaCenter-Windows-x64
           path: dist-windows/
           if-no-files-found: error
           retention-days: 14
@@ -131,7 +131,7 @@ jobs:
       - name: Upload verified artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: LocalBooru-Linux
+          name: DonutMediaCenter-Linux
           path: dist-linux-local/
           if-no-files-found: error
           retention-days: 14
@@ -182,13 +182,13 @@ jobs:
       - name: Audit macOS base release boundary
         run: |
           node scripts/list-release-inventory.js \
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/LocalBooru.app \
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/DonutMediaCenter.app \
             | PYTHONPATH=addons/lada/src python3 -m localbooru_lada audit-base --inventory -
 
       - name: Upload verified macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: LocalBooru-macOS-universal
+          name: DonutMediaCenter-macOS-universal
           path: dist-macos/
           if-no-files-found: error
           retention-days: 14

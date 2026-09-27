@@ -106,20 +106,20 @@ STAGE="$BUILD_ROOT/portable-stage"
 INSTALLER_PAYLOAD="$BUILD_ROOT/nsis-payload"
 rm -rf "$STAGE" "$INSTALLER_PAYLOAD"
 mkdir -p "$STAGE" "$INSTALLER_PAYLOAD"
-cp "$BINARY" "$STAGE/LocalBooru.exe"
+cp "$BINARY" "$STAGE/DonutMediaCenter.exe"
 cp LICENSE "$STAGE/LICENSE"
 
 (
   cd "$STAGE"
-  zip -9 -q "$DIST_DIR/LocalBooru-Windows.zip" LocalBooru.exe LICENSE
+  zip -9 -q "$DIST_DIR/DonutMediaCenter-Windows.zip" DonutMediaCenter.exe LICENSE
 )
-cp "$INSTALLER" "$DIST_DIR/LocalBooru-Windows-Setup.exe"
+cp "$INSTALLER" "$DIST_DIR/DonutMediaCenter-Windows-Setup.exe"
 
-unzip -t "$DIST_DIR/LocalBooru-Windows.zip"
-7z t "$DIST_DIR/LocalBooru-Windows-Setup.exe"
-7z x -y -o"$INSTALLER_PAYLOAD" "$DIST_DIR/LocalBooru-Windows-Setup.exe" >/dev/null
+unzip -t "$DIST_DIR/DonutMediaCenter-Windows.zip"
+7z t "$DIST_DIR/DonutMediaCenter-Windows-Setup.exe"
+7z x -y -o"$INSTALLER_PAYLOAD" "$DIST_DIR/DonutMediaCenter-Windows-Setup.exe" >/dev/null
 
-python3 - "$STAGE/LocalBooru.exe" "$INSTALLER_PAYLOAD" <<'PY'
+python3 - "$STAGE/DonutMediaCenter.exe" "$INSTALLER_PAYLOAD" <<'PY'
 import pathlib, struct, sys
 standalone = pathlib.Path(sys.argv[1])
 payload = pathlib.Path(sys.argv[2])
@@ -156,12 +156,12 @@ PY
 
 (
   cd "$DIST_DIR"
-  sha256sum LocalBooru-Windows-Setup.exe LocalBooru-Windows.zip > SHA256SUMS-Windows
+  sha256sum DonutMediaCenter-Windows-Setup.exe DonutMediaCenter-Windows.zip > SHA256SUMS-Windows
   sha256sum -c SHA256SUMS-Windows
 )
 
 printf 'Windows Authenticode state (unsigned is expected for local builds):\n'
-file "$STAGE/LocalBooru.exe" "$DIST_DIR/LocalBooru-Windows-Setup.exe"
+file "$STAGE/DonutMediaCenter.exe" "$DIST_DIR/DonutMediaCenter-Windows-Setup.exe"
 sccache --show-stats || true
 printf 'Windows Docker artifacts verified:\n'
 find "$DIST_DIR" -maxdepth 1 -type f -printf '  %f (%s bytes)\n' | sort

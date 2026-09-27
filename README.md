@@ -1,6 +1,8 @@
 # DonutMediaCenter
 
-A local image library with automatic AI tagging, designed for organizing and browsing large image collections.
+A local library for images, videos, and music, with automatic image tagging and browsing built around each media type.
+
+DonutMediaCenter keeps the existing LocalBooru application identifier and data directory so current libraries, favorites, and settings remain available after upgrading. Published releases may still carry the LocalBooru filename until the next release is built.
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/ZhvPhXrdZ4) - Help, feature requests, and discussions
 

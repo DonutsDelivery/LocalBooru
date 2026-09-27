@@ -48,11 +48,11 @@ git -c safe.directory="$SOURCE" -C "$SOURCE" archive --format=tar "$RESOLVED_SOU
 # inherit the mounted source worktree as GIT_WORK_TREE/GIT_DIR.
 unset GIT_DIR GIT_WORK_TREE
 
-rm -f "$DIST/SHA256SUMS" "$DIST/LocalBooru-Native-Runtime-Sources.tar.xz"
+rm -f "$DIST/SHA256SUMS" "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz"
 [[ ",$BUNDLES," == *",appimage,"* ]] && \
-  rm -f "$DIST/LocalBooru-Linux.AppImage" "$DIST/LocalBooru-Linux.zip"
-[[ ",$BUNDLES," == *",deb,"* ]] && rm -f "$DIST/LocalBooru-Linux.deb"
-[[ ",$BUNDLES," == *",rpm,"* ]] && rm -f "$DIST/LocalBooru-Linux.rpm"
+  rm -f "$DIST/DonutMediaCenter-Linux.AppImage" "$DIST/DonutMediaCenter-Linux.zip"
+[[ ",$BUNDLES," == *",deb,"* ]] && rm -f "$DIST/DonutMediaCenter-Linux.deb"
+[[ ",$BUNDLES," == *",rpm,"* ]] && rm -f "$DIST/DonutMediaCenter-Linux.rpm"
 
 has_bundle() {
   [[ ",$BUNDLES," == *",$1,"* ]]
@@ -219,7 +219,7 @@ stage_native_runtime() {
   cp -a "$vs_package" "$runtime/python-home/lib/python3.12/site-packages/"
   cp "$BUILD/vapoursynth-r75/COPYING.LESSER" "$runtime/licenses/VapourSynth-COPYING.LESSER"
   cp "$ROOT/release/linux/THIRD_PARTY_NOTICES.md" "$runtime/licenses/"
-  cp "$ROOT/LICENSE" "$runtime/licenses/LocalBooru-LICENSE"
+  cp "$ROOT/LICENSE" "$runtime/licenses/DonutMediaCenter-LICENSE"
   if [[ -f /usr/share/doc/python3.12/copyright ]]; then
     cp /usr/share/doc/python3.12/copyright "$runtime/licenses/Python-copyright"
   fi
@@ -280,7 +280,7 @@ package_deb() {
   installed_size="$(du -sk "$stage/usr" | cut -f1)"
   python3 -c 'import pathlib,sys,re; p=pathlib.Path(sys.argv[1]); s=p.read_text(); p.write_text(re.sub(r"(?m)^Installed-Size:.*$", "Installed-Size: " + sys.argv[2], s))' \
     "$stage/DEBIAN/control" "$installed_size"
-  dpkg-deb --root-owner-group --build "$stage" "$DIST/LocalBooru-Linux.deb"
+  dpkg-deb --root-owner-group --build "$stage" "$DIST/DonutMediaCenter-Linux.deb"
 }
 
 package_rpm() {
@@ -314,12 +314,12 @@ package_rpm() {
   fpm -s dir -t rpm -C "$stage" \
     -n localbooru -v "$version" --iteration 1 \
     --license MIT --category Graphics \
-    --description 'Local image library with automatic tagging' \
+    --description 'Local image, video, and music library' \
     --url 'https://github.com/DonutsDelivery/LocalBooru' \
     --depends gtk3 --depends webkit2gtk4.1 \
     --depends gstreamer1-plugins-base --depends gstreamer1-plugins-good \
     --depends gstreamer1-plugins-bad-free \
-    -p "$DIST/LocalBooru-Linux.rpm" .
+    -p "$DIST/DonutMediaCenter-Linux.rpm" .
 }
 
 package_appimage() {
@@ -340,10 +340,10 @@ package_appimage() {
     'https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage' \
     "$tool" "$APPIMAGETOOL_SHA256"
   chmod +x "$tool"
-  rm -f "$DIST/LocalBooru-Linux.AppImage"
+  rm -f "$DIST/DonutMediaCenter-Linux.AppImage"
   set +e
   env -u SOURCE_DATE_EPOCH ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
-    "$tool" "$stage" "$DIST/LocalBooru-Linux.AppImage"
+    "$tool" "$stage" "$DIST/DonutMediaCenter-Linux.AppImage"
   tool_status=$?
   set -e
   # The 2023 continuous appimagetool wrapper can propagate SIGPIPE (141)
@@ -351,8 +351,8 @@ package_appimage() {
   if [[ "$tool_status" -ne 0 && "$tool_status" -ne 141 ]]; then
     return "$tool_status"
   fi
-  test -s "$DIST/LocalBooru-Linux.AppImage"
-  chmod +x "$DIST/LocalBooru-Linux.AppImage"
+  test -s "$DIST/DonutMediaCenter-Linux.AppImage"
+  chmod +x "$DIST/DonutMediaCenter-Linux.AppImage"
 }
 
 package_source_offer() {
@@ -366,7 +366,7 @@ package_source_offer() {
   cp "$ROOT/Dockerfile.linux-release" "$source_stage/"
   cp "$ROOT/scripts/build-linux-docker.sh" "$source_stage/"
   cp "$ROOT/release/linux/THIRD_PARTY_NOTICES.md" "$source_stage/"
-  tar -cJf "$DIST/LocalBooru-Native-Runtime-Sources.tar.xz" \
+  tar -cJf "$DIST/DonutMediaCenter-Native-Runtime-Sources.tar.xz" \
     -C "$source_stage" .
 }
 
@@ -380,11 +380,11 @@ package_appimage
 package_source_offer
 
 if has_bundle appimage; then
-  rm -f "$DIST/LocalBooru-Linux.zip"
-  (cd "$DIST" && zip -q LocalBooru-Linux.zip \
-    LocalBooru-Linux.AppImage LocalBooru-Native-Runtime-Sources.tar.xz)
+  rm -f "$DIST/DonutMediaCenter-Linux.zip"
+  (cd "$DIST" && zip -q DonutMediaCenter-Linux.zip \
+    DonutMediaCenter-Linux.AppImage DonutMediaCenter-Native-Runtime-Sources.tar.xz)
 fi
 
 bash "$ROOT/scripts/verify-linux-release.sh" "$DIST" "$BUNDLES"
-(cd "$DIST" && sha256sum LocalBooru-* | sort -k2 > SHA256SUMS)
+(cd "$DIST" && sha256sum DonutMediaCenter-* | sort -k2 > SHA256SUMS)
 ccache --show-stats

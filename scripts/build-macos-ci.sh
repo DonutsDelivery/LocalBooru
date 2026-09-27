@@ -38,7 +38,7 @@ cargo check --locked --manifest-path "$ROOT/src-tauri/Cargo.toml"
 )
 git -C "$ROOT" diff --exit-code -- Cargo.lock
 
-APP="$BUNDLE_DIR/macos/LocalBooru.app"
+APP="$BUNDLE_DIR/macos/DonutMediaCenter.app"
 DMG="$(find "$BUNDLE_DIR/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
 BINARY="$APP/Contents/MacOS/localbooru"
 INFO_PLIST="$APP/Contents/Info.plist"
@@ -65,16 +65,16 @@ printf '%s\n' "$SIGNATURE_INFO"
 }
 echo "macOS app ad-hoc signature verification passed"
 
-cp "$DMG" "$DIST_DIR/LocalBooru-macOS-universal.dmg"
+cp "$DMG" "$DIST_DIR/DonutMediaCenter-macOS-universal.dmg"
 ditto -c -k --sequesterRsrc --keepParent \
-  "$APP" "$DIST_DIR/LocalBooru-macOS-universal.zip"
+  "$APP" "$DIST_DIR/DonutMediaCenter-macOS-universal.zip"
 
 (
   cd "$DIST_DIR"
-  unzip -t LocalBooru-macOS-universal.zip
+  unzip -t DonutMediaCenter-macOS-universal.zip
   shasum -a 256 \
-    LocalBooru-macOS-universal.dmg \
-    LocalBooru-macOS-universal.zip \
+    DonutMediaCenter-macOS-universal.dmg \
+    DonutMediaCenter-macOS-universal.zip \
     > SHA256SUMS-macOS
   shasum -a 256 -c SHA256SUMS-macOS
 )

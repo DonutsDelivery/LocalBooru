@@ -88,7 +88,7 @@ async fn download_update(State(state): State<AppState>) -> Result<Response, AppE
         .header(header::CONTENT_LENGTH, metadata.len())
         .header(
             header::CONTENT_DISPOSITION,
-            "attachment; filename=\"LocalBooru.apk\"",
+            "attachment; filename=\"DonutMediaCenter.apk\"",
         )
         .body(body)
         .unwrap())
@@ -96,28 +96,24 @@ async fn download_update(State(state): State<AppState>) -> Result<Response, AppE
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Look for `LocalBooru.apk` in known locations:
-/// 1. `{data_dir}/../updates/LocalBooru.apk`
-/// 2. Next to the current executable
+/// Prefer the current APK name while still finding previously staged updates.
 fn find_apk_path(state: &AppState) -> Option<PathBuf> {
     // Try data_dir parent's updates/ folder (e.g. ~/.localbooru/../updates/)
     let updates_dir = state.data_dir().parent()?.join("updates");
-    let candidate = updates_dir.join("LocalBooru.apk");
-    if candidate.exists() {
-        return Some(candidate);
-    }
-
-    // Try next to the current executable
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            let candidate = exe_dir.join("LocalBooru.apk");
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(PathBuf::from));
+    for directory in [Some(updates_dir.as_path()), exe_dir.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        for filename in ["DonutMediaCenter.apk", "LocalBooru.apk"] {
+            let candidate = directory.join(filename);
             if candidate.exists() {
                 return Some(candidate);
             }
         }
     }
 
-    // Return the preferred path even if it doesn't exist yet,
-    // so check_update can report apk_available = false
-    Some(updates_dir.join("LocalBooru.apk"))
+    Some(updates_dir.join("DonutMediaCenter.apk"))
 }

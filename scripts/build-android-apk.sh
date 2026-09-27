@@ -29,7 +29,7 @@ KEYSTORE="${ANDROID_KEYSTORE:-$HOME/.android/debug.keystore}"
 KEY_ALIAS="${ANDROID_KEY_ALIAS:-androiddebugkey}"
 KEY_PASS="${ANDROID_KEY_PASS:-android}"
 STORE_PASS="${ANDROID_STORE_PASS:-android}"
-OUTPUT_APK="$PROJECT_ROOT/LocalBooru.apk"
+OUTPUT_APK="$PROJECT_ROOT/DonutMediaCenter.apk"
 
 if ! command -v zipalign >/dev/null || ! command -v apksigner >/dev/null; then
   SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
@@ -87,7 +87,7 @@ cleanup_staging() {
 trap cleanup_staging EXIT
 
 ALIGNED_APK="$STAGING_DIR/app-universal-release-aligned.apk"
-STAGED_APK="$STAGING_DIR/LocalBooru.apk"
+STAGED_APK="$STAGING_DIR/DonutMediaCenter.apk"
 
 echo "[build-android-apk] Aligning…"
 zipalign -f -p 4 "$UNSIGNED_APK" "$ALIGNED_APK"

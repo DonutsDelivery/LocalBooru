@@ -1,5 +1,5 @@
-; LocalBooru Portable Self-Extractor
-; On first run: extracts app files to LocalBooru\ subfolder, launches app,
+; DonutMediaCenter Portable Self-Extractor
+; On first run: extracts app files to DonutMediaCenter\ subfolder, launches app,
 ; then replaces itself with a tiny stub for instant subsequent launches.
 ;
 ; Build with:
@@ -13,8 +13,8 @@
     !define ICON_FILE "..\assets\icon.ico"
 !endif
 
-Name "LocalBooru ${VERSION} Portable"
-OutFile "..\dist\LocalBooru-Portable.exe"
+Name "DonutMediaCenter ${VERSION} Portable"
+OutFile "..\dist\DonutMediaCenter-Portable.exe"
 Icon "${ICON_FILE}"
 RequestExecutionLevel user
 SilentInstall silent
@@ -22,7 +22,7 @@ SetCompressor /SOLID lzma
 
 Section
     ; Target directory for extracted files
-    StrCpy $INSTDIR "$EXEDIR\LocalBooru"
+    StrCpy $INSTDIR "$EXEDIR\DonutMediaCenter"
 
     ; --- Check if already extracted with matching version ---
     IfFileExists "$INSTDIR\.portable-version" 0 extract
@@ -36,7 +36,7 @@ Section
     StrCmp $2 "${VERSION}" launch
 
 extract:
-    ; Extract all files to LocalBooru\ subfolder
+    ; Extract all files to DonutMediaCenter\ subfolder
     SetOutPath $INSTDIR
     File /r "${APP_FILES}\*.*"
 
@@ -63,12 +63,12 @@ extract:
 
 launch:
     ; Launch the actual app
-    IfFileExists "$INSTDIR\LocalBooru.exe" 0 error
-    Exec '"$INSTDIR\LocalBooru.exe"'
+    IfFileExists "$INSTDIR\DonutMediaCenter.exe" 0 error
+    Exec '"$INSTDIR\DonutMediaCenter.exe"'
     Goto done
 
 error:
-    MessageBox MB_OK|MB_ICONSTOP "LocalBooru.exe not found after extraction. The archive may be corrupted. Please re-download."
+    MessageBox MB_OK|MB_ICONSTOP "DonutMediaCenter.exe not found after extraction. The archive may be corrupted. Please re-download."
 
 done:
 SectionEnd
