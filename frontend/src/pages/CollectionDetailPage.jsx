@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { fetchCollection, updateCollection, removeFromCollection, getMediaUrl } from '../api'
+import { fetchCollection, updateCollection, removeFromCollection } from '../api'
 import Sidebar from '../components/Sidebar'
 import MediaSectionsNav from '../components/MediaSectionsNav'
 import MasonryGrid from '../components/MasonryGrid'
@@ -21,6 +21,7 @@ export default function CollectionDetailPage() {
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState('')
+  const removingRef = useRef(false)
   const drawer = useMobileDrawer()
 
   const loadCollection = useCallback(async (pageNum = 1, append = false) => {
@@ -90,15 +91,20 @@ export default function CollectionDetailPage() {
     }
   }
 
-  const handleRemoveFromCollection = useCallback(async (imageId) => {
+  const handleRemoveFromCollection = useCallback(async (image) => {
+    if (removingRef.current) return
+    removingRef.current = true
     try {
-      await removeFromCollection(id, [imageId])
-      setImages(prev => prev.filter(img => img.id !== imageId))
+      await removeFromCollection(id, [image.collection_legacy_member ? image.id : image])
+      handleLightboxClose()
+      setImages(prev => prev.filter(img => !(imageMatchesLocator(img, adjustmentLocator(image)) && img.collection_legacy_member === image.collection_legacy_member)))
       setCollection(prev => prev ? { ...prev, item_count: Math.max(0, (prev.item_count || 1) - 1) } : prev)
     } catch (e) {
       console.error('Failed to remove from collection:', e)
+    } finally {
+      removingRef.current = false
     }
-  }, [id])
+  }, [id, handleLightboxClose])
 
   const lightboxImageIndex = lightboxIndex !== null
     ? images.findIndex(image => imageMatchesLocator(image, lightboxIndex))
@@ -180,6 +186,7 @@ export default function CollectionDetailPage() {
             onImageUpdate={(locator, updates) => {
               setImages(previous => updateImagesByLocator(previous, locator, updates))
             }}
+            onRemoveFromCollection={() => handleRemoveFromCollection(images[lightboxImageIndex])}
           />
         )}
         </main>

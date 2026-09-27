@@ -276,6 +276,7 @@ mod tests {
             let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
             let detail: Value = serde_json::from_slice(&body).unwrap();
             assert_eq!(detail["images"][0]["id"], expected_id);
+            assert_eq!(detail["images"][0]["collection_legacy_member"], true);
             assert_eq!(detail["item_count"], 1);
         }
         for (collection_id, media_type, directory_id, hash) in [
@@ -294,6 +295,7 @@ mod tests {
             let detail: Value = serde_json::from_slice(&body).unwrap();
             assert_eq!(detail["images"][0]["directory_id"], directory_id);
             assert_eq!(detail["images"][0]["file_hash"], hash);
+            assert_eq!(detail["images"][0]["collection_legacy_member"], false);
         }
         let add_request = Request::builder()
             .method("POST")
@@ -329,6 +331,31 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|image| image["file_hash"] == expected_hash));
+        }
+        let remove_request = Request::builder()
+            .method("DELETE")
+            .uri("/api/collections/1/items")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({"items": [{"image_id": 3, "directory_id": 12, "library_id": library_id}], "image_ids": [1]})
+                    .to_string(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(remove_request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        for (media_type, hash) in [("image", "image-three"), ("video", "hash-2")] {
+            let response = app
+                .clone()
+                .oneshot(request(&format!(
+                    "/api/collections/1?media_type={media_type}"
+                )))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let detail: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(detail["item_count"], 1);
+            assert_eq!(detail["images"][0]["file_hash"], hash);
         }
         let _ = std::fs::remove_dir_all(root);
     }
@@ -524,6 +551,7 @@ async fn get_collection(
                             "view_count": row.get::<_, i32>(9)?,
                             "library_id": library_id,
                             "directory_id": dir_id,
+                            "collection_legacy_member": locator.is_none(),
                             "thumbnail_url": format!("/api/images/{}/thumbnail?directory_id={}&library_id={}&file_hash={}", member.image_id, dir_id, encoded_library_id, hash),
                             "url": format!("/api/images/{}/file?directory_id={}&library_id={}&file_hash={}", member.image_id, dir_id, encoded_library_id, hash),
                         }))
@@ -536,7 +564,7 @@ async fn get_collection(
                 if found { break; }
             }
             if !found && params.media_type.is_none() && locator.is_none() {
-                images.push(json!({"id": member.image_id}));
+                images.push(json!({"id": member.image_id, "collection_legacy_member": true}));
             }
         }
 

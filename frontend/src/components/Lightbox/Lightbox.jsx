@@ -90,7 +90,7 @@ function FPSMonitor({ videoRef, visible, onToggleBare }) {
   }}>Loading...</pre>
 }
 
-function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete, curationMode = null }) {
+function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete, onRemoveFromCollection, curationMode = null }) {
   const [processing, setProcessing] = useState(false)
   const [isFavorited, setIsFavorited] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -1561,6 +1561,20 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           )}
           {collectionFeedback && <div className="collection-feedback">{collectionFeedback}</div>}
         </div>
+        {onRemoveFromCollection && (
+          <button
+            className="lightbox-btn lightbox-remove-collection"
+            onClick={onRemoveFromCollection}
+            title="Remove from this collection"
+            aria-label="Remove from this collection"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6z"/>
+              <rect x="6" y="2" width="16" height="16" rx="2"/>
+              <path d="M10 10h8"/>
+            </svg>
+          </button>
+        )}
         {castInstalled && isVideo(image?.original_filename) && casting.castConfig?.enabled && (
           <div className="lightbox-cast-container lightbox-secondary-action">
             <button
