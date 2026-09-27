@@ -1081,6 +1081,7 @@ function Gallery() {
           const canonical = await fetchImage(currentLocator.imageId, {
             directoryId: currentLocator.directoryId,
             libraryId: currentLocator.libraryId,
+            optional: true,
           })
           if (!galleryRequestOwnerRef.current.owns(request)) return false
           result.images.push(canonical)
