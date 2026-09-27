@@ -1815,3 +1815,71 @@ export async function getFileInfo(filePath) {
   })
   return response.data
 }
+
+// Music library. Keep all requests on the configured API client so paired
+// devices use the same authentication and remote-server routing as galleries.
+export async function fetchMusicAlbums(params = {}) {
+  const response = await api.get('/music/albums', { params })
+  return response.data
+}
+
+export async function fetchMusicTracks(params = {}) {
+  const response = await api.get('/music/tracks', { params })
+  return response.data
+}
+
+export async function fetchMusicAlbum(id, libraryId) {
+  const response = await api.get(`/music/albums/${id}`, { params: { library_id: libraryId } })
+  return response.data
+}
+
+export async function fetchRelatedMusic(track, excludeIds = [], limit = 20) {
+  const response = await api.get(`/music/tracks/${track.id}/related`, {
+    params: { library_id: track.library_id, exclude_ids: excludeIds.join(','), limit }
+  })
+  return response.data
+}
+
+export async function setMusicFavorite(track, isFavorite) {
+  const response = await api.patch(`/music/tracks/${track.id}/favorite`, {
+    is_favorite: isFavorite,
+  }, { params: { library_id: track.library_id } })
+  return response.data
+}
+
+export async function fetchMusicFacets(params = {}) {
+  const response = await api.get('/music/facets', { params })
+  return response.data
+}
+
+export async function fetchMusicCollections(libraryId = null) {
+  const response = await api.get('/music/collections', { params: { library_id: libraryId } })
+  return response.data
+}
+
+export async function createMusicCollection(name, libraryId = null) {
+  const response = await api.post('/music/collections', { name, library_id: libraryId })
+  return response.data
+}
+
+export async function fetchMusicCollection(id, libraryId = null) {
+  const response = await api.get(`/music/collections/${id}`, { params: { library_id: libraryId } })
+  return response.data
+}
+
+export async function addMusicCollectionItem(collectionId, itemType, itemId, libraryId) {
+  const response = await api.post(`/music/collections/${collectionId}/items`, {
+    item_type: itemType,
+    item_id: itemId,
+    library_id: libraryId,
+  }, { params: { library_id: libraryId } })
+  return response.data
+}
+
+export async function removeMusicCollectionItem(collectionId, itemType, itemId, libraryId) {
+  const response = await api.delete(`/music/collections/${collectionId}/items`, {
+    params: { library_id: libraryId },
+    data: { item_type: itemType, item_id: itemId, library_id: libraryId },
+  })
+  return response.data
+}
