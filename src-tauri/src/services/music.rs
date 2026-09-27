@@ -2,11 +2,12 @@
 //! best effort: an untagged or malformed file still appears in Songs.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::UNIX_EPOCH;
 
+use lofty::file::TaggedFileExt;
+use lofty::picture::{Picture, PictureType};
+use lofty::tag::{Accessor, ItemKey};
 use rusqlite::{params, OptionalExtension};
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::db::library::LibraryContext;
@@ -22,17 +23,6 @@ pub fn is_audio_file(path: &Path) -> bool {
         .is_some_and(|ext| AUDIO_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
 }
 
-fn tag<'a>(tags: &'a Value, names: &[&str]) -> Option<&'a str> {
-    let obj = tags.as_object()?;
-    obj.iter()
-        .find(|(key, value)| {
-            names.iter().any(|name| key.eq_ignore_ascii_case(name))
-                && value.as_str().is_some_and(|s| !s.trim().is_empty())
-        })
-        .and_then(|(_, value)| value.as_str())
-        .map(str::trim)
-}
-
 fn number(value: Option<&str>, fallback: i64) -> i64 {
     value
         .and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next())
@@ -40,42 +30,81 @@ fn number(value: Option<&str>, fallback: i64) -> i64 {
         .unwrap_or(fallback)
 }
 
-fn artwork_for(path: &Path, lib: &LibraryContext, has_embedded_art: bool) -> Option<String> {
+fn folder_artwork(path: &Path) -> Option<String> {
     let parent = path.parent()?;
     for name in [
         "cover.jpg",
+        "cover.jpeg",
         "folder.jpg",
+        "folder.jpeg",
         "front.jpg",
+        "front.jpeg",
         "cover.png",
         "folder.png",
         "front.png",
+        "cover.webp",
+        "folder.webp",
+        "front.webp",
     ] {
         let candidate = parent.join(name);
         if candidate.is_file() {
             return Some(candidate.to_string_lossy().to_string());
         }
     }
-    if !has_embedded_art {
-        return None;
+    None
+}
+
+fn artwork_for(path: &Path, lib: &LibraryContext, picture: Option<&Picture>) -> Option<String> {
+    if let Some(cover) = folder_artwork(path) {
+        return Some(cover);
     }
+    let picture = picture?;
+    // Convert once to a browser-supported image format. This also avoids
+    // trusting a tag's MIME label, which is sometimes absent or incorrect.
     let digest = Sha256::digest(path.to_string_lossy().as_bytes());
     let art_dir = lib.data_dir.join("music-artwork");
     std::fs::create_dir_all(&art_dir).ok()?;
-    let art_path = art_dir.join(format!("{:x}.jpg", digest));
+    let art_path = art_dir.join(format!("{:x}.png", digest));
     if !art_path.is_file() {
-        let status = Command::new("ffmpeg")
-            .args(["-v", "error", "-y", "-i"])
-            .arg(path)
-            .args(["-map", "0:v:0", "-frames:v", "1"])
-            .arg(&art_path)
-            .status()
+        let image = image::load_from_memory(picture.data()).ok()?;
+        image
+            .save_with_format(&art_path, image::ImageFormat::Png)
             .ok()?;
-        if !status.success() {
-            let _ = std::fs::remove_file(&art_path);
-            return None;
-        }
     }
     Some(art_path.to_string_lossy().to_string())
+}
+
+fn refresh_album_artwork(tx: &rusqlite::Transaction<'_>, album_id: i64) -> Result<(), AppError> {
+    let mut stmt = tx.prepare(
+        "SELECT id, artwork_path FROM music_tracks
+         WHERE album_id=?1 AND is_available=1 ORDER BY disc_number,track_number,id",
+    )?;
+    let artwork = stmt
+        .query_map(params![album_id], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+    let mut cover: Option<String> = None;
+    for (track_id, path) in artwork {
+        if let Some(path) = path {
+            if Path::new(&path).is_file() {
+                if cover.is_none() {
+                    cover = Some(path);
+                }
+            } else {
+                tx.execute(
+                    "UPDATE music_tracks SET artwork_path=NULL WHERE id=?1",
+                    params![track_id],
+                )?;
+            }
+        }
+    }
+    tx.execute(
+        "UPDATE music_albums SET artwork_path=?1 WHERE id=?2",
+        params![cover, album_id],
+    )?;
+    Ok(())
 }
 
 pub fn index_audio_file(
@@ -92,84 +121,84 @@ pub fn index_audio_file(
         .modified()
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_secs() as i64);
+        .map(|duration| duration.as_millis() as i64);
     let path_string = path.to_string_lossy().to_string();
     let mut conn = lib.main_pool.get()?;
-    let current: Option<(i64, Option<i64>)> = conn
+    let current: Option<(i64, Option<i64>, Option<String>, i64)> = conn
         .query_row(
-            "SELECT file_size, modified_at FROM music_tracks WHERE path = ?1 AND is_available = 1",
+            "SELECT file_size, modified_at, artwork_path, album_id FROM music_tracks WHERE path = ?1 AND is_available = 1",
             params![path_string],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    if current == Some((size, modified)) {
-        return Ok(());
+    if let Some((old_size, old_modified, old_artwork, _)) = &current {
+        let current_cover = folder_artwork(path);
+        let cover_changed = current_cover.as_deref() != old_artwork.as_deref()
+            && (current_cover.is_some()
+                || old_artwork
+                    .as_deref()
+                    .is_some_and(|art| !Path::new(art).is_file()));
+        if *old_size == size && *old_modified == modified && !cover_changed {
+            return Ok(());
+        }
     }
 
-    let probe = Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_format",
-            "-show_streams",
-            "-of",
-            "json",
-        ])
-        .arg(path)
-        .output();
-    let data: Value = probe
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| serde_json::from_slice(&output.stdout).ok())
-        .unwrap_or(Value::Null);
-    let format = &data["format"];
-    let tags = &format["tags"];
-    let stream_tags = data["streams"]
-        .as_array()
-        .and_then(|streams| {
-            streams
-                .iter()
-                .find(|stream| stream["codec_type"] == "audio")
-        })
-        .map(|stream| &stream["tags"])
-        .unwrap_or(&Value::Null);
-    let field = |names: &[&str]| tag(tags, names).or_else(|| tag(stream_tags, names));
+    let tagged = lofty::read_from_path(path).ok();
+    let tag = tagged
+        .as_ref()
+        .and_then(|file| file.primary_tag().or_else(|| file.first_tag()));
     let fallback_title = path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("Untitled");
-    let title = field(&["title"]).unwrap_or(fallback_title).to_string();
-    let artist = field(&["artist", "ARTIST"])
+    let title = tag
+        .and_then(|tag| tag.title())
+        .as_deref()
+        .unwrap_or(fallback_title)
+        .to_string();
+    let artist = tag
+        .and_then(|tag| tag.artist())
+        .as_deref()
         .unwrap_or("Unknown Artist")
         .to_string();
-    let album_artist = field(&["album_artist", "albumartist"])
+    let album_artist = tag
+        .and_then(|tag| tag.get_string(&ItemKey::AlbumArtist))
         .unwrap_or(&artist)
         .to_string();
-    let album = field(&["album"]).unwrap_or("Unknown Album").to_string();
-    let genre = field(&["genre"]).map(str::to_string);
-    let year = number(field(&["date", "year"]), 0);
-    let year = (year > 0).then_some(year);
-    let disc = number(field(&["disc", "discnumber"]), 1);
-    let track = number(field(&["track", "tracknumber"]), 0);
-    let duration = format["duration"]
-        .as_str()
-        .and_then(|s| s.parse::<f64>().ok())
-        .or_else(|| {
-            data["streams"].as_array().and_then(|streams| {
-                streams.iter().find_map(|stream| {
-                    stream["duration"]
-                        .as_str()
-                        .and_then(|s| s.parse::<f64>().ok())
-                })
-            })
+    let album = tag
+        .and_then(|tag| tag.album())
+        .as_deref()
+        .unwrap_or("Unknown Album")
+        .to_string();
+    let genre = tag
+        .and_then(|tag| tag.genre())
+        .map(|value| value.to_string());
+    let year = tag
+        .and_then(|tag| tag.year())
+        .map(i64::from)
+        .unwrap_or_else(|| {
+            number(
+                tag.and_then(|tag| tag.get_string(&ItemKey::RecordingDate)),
+                0,
+            )
         });
-    let has_embedded_art = data["streams"].as_array().is_some_and(|streams| {
-        streams.iter().any(|stream| {
-            stream["codec_type"] == "video"
-                && (stream["disposition"]["attached_pic"] == 1 || stream["codec_name"].is_string())
-        })
+    let year = (year > 0).then_some(year);
+    let disc = tag
+        .and_then(|tag| tag.disk())
+        .map(i64::from)
+        .unwrap_or_else(|| number(tag.and_then(|tag| tag.get_string(&ItemKey::DiscNumber)), 1));
+    let track = tag
+        .and_then(|tag| tag.track())
+        .map(i64::from)
+        .unwrap_or_else(|| number(tag.and_then(|tag| tag.get_string(&ItemKey::TrackNumber)), 0));
+    let duration = tagged
+        .as_ref()
+        .map(|file| file.properties().duration().as_secs_f64());
+    let picture = tag.and_then(|tag| {
+        tag.get_picture_type(PictureType::CoverFront)
+            .or_else(|| tag.pictures().first())
     });
-    let artwork_path = artwork_for(path, lib, has_embedded_art);
+    let artwork_path = artwork_for(path, lib, picture);
     // Untagged files are separate fallback albums, so Songs never disappear
     // into an arbitrary folder grouping.
     let album_key = if album == "Unknown Album" {
@@ -227,6 +256,12 @@ pub fn index_audio_file(
             artwork_path
         ],
     )?;
+    refresh_album_artwork(&tx, album_id)?;
+    if let Some((_, _, _, previous_album_id)) = current {
+        if previous_album_id != album_id {
+            refresh_album_artwork(&tx, previous_album_id)?;
+        }
+    }
     tx.commit()?;
     Ok(())
 }
@@ -270,4 +305,118 @@ pub fn mark_directory_unavailable(lib: &LibraryContext, directory_id: i64) -> Re
         params![directory_id],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lofty::config::WriteOptions;
+    use lofty::tag::{Tag, TagExt, TagType};
+
+    fn wav_file(path: &Path) {
+        // Two silent PCM samples in a canonical mono 8 kHz WAV container.
+        let bytes = [
+            b'R', b'I', b'F', b'F', 40, 0, 0, 0, b'W', b'A', b'V', b'E', b'f', b'm', b't', b' ',
+            16, 0, 0, 0, 1, 0, 1, 0, 0x40, 0x1f, 0, 0, 0x80, 0x3e, 0, 0, 2, 0, 16, 0, b'd', b'a',
+            b't', b'a', 4, 0, 0, 0, 0, 0, 0,
+        ];
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn indexes_tags_and_shared_cover_without_external_tools() {
+        let root = tempfile::tempdir().unwrap();
+        let lib = LibraryContext::create(root.path(), "Music test").unwrap();
+        let music_dir = root.path().join("album");
+        std::fs::create_dir(&music_dir).unwrap();
+        let cover = music_dir.join("cover.png");
+        image::RgbImage::new(2, 2).save(&cover).unwrap();
+
+        let first = music_dir.join("first.wav");
+        wav_file(&first);
+        let mut tag = Tag::new(TagType::Id3v2);
+        tag.set_title("First song".into());
+        tag.set_artist("Singer".into());
+        tag.set_album("Release".into());
+        tag.set_genre("Jazz".into());
+        tag.set_year(2024);
+        tag.set_disk(2);
+        tag.set_track(4);
+        tag.insert_text(ItemKey::AlbumArtist, "Singer".into());
+        tag.save_to_path(&first, WriteOptions::default()).unwrap();
+        index_audio_file(&lib, 7, &first).unwrap();
+
+        let second = music_dir.join("second.wav");
+        wav_file(&second);
+        let mut second_tag = Tag::new(TagType::Id3v2);
+        second_tag.set_title("Second song".into());
+        second_tag.set_artist("Singer".into());
+        second_tag.set_album("Release".into());
+        second_tag.set_year(2024);
+        second_tag
+            .save_to_path(&second, WriteOptions::default())
+            .unwrap();
+        index_audio_file(&lib, 7, &second).unwrap();
+
+        let conn = lib.main_pool.get().unwrap();
+        let first_row: (String, String, String, Option<String>, Option<i64>, i64, i64, Option<String>) = conn
+            .query_row(
+                "SELECT t.title,t.artist,a.title,t.genre,t.year,t.disc_number,t.track_number,t.artwork_path
+                 FROM music_tracks t JOIN music_albums a ON a.id=t.album_id WHERE t.path=?1",
+                params![first.to_string_lossy()],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?)),
+            ).unwrap();
+        assert_eq!(first_row.0, "First song");
+        assert_eq!(first_row.1, "Singer");
+        assert_eq!(first_row.2, "Release");
+        assert_eq!(first_row.3.as_deref(), Some("Jazz"));
+        assert_eq!(first_row.4, Some(2024));
+        assert_eq!((first_row.5, first_row.6), (2, 4));
+        assert_eq!(first_row.7.as_deref(), cover.to_str());
+        let second_artwork: Option<String> = conn
+            .query_row(
+                "SELECT artwork_path FROM music_tracks WHERE path=?1",
+                params![second.to_string_lossy()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(second_artwork.as_deref(), cover.to_str());
+        drop(conn);
+
+        std::fs::remove_file(&cover).unwrap();
+        index_audio_file(&lib, 7, &first).unwrap();
+        let conn = lib.main_pool.get().unwrap();
+        let remaining_art: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM music_tracks WHERE artwork_path IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(remaining_art, 0);
+        let album_art: Option<String> = conn
+            .query_row(
+                "SELECT artwork_path FROM music_albums WHERE title='Release'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(album_art, None);
+        drop(conn);
+
+        let fallback = music_dir.join("untagged.wav");
+        wav_file(&fallback);
+        index_audio_file(&lib, 7, &fallback).unwrap();
+        let conn = lib.main_pool.get().unwrap();
+        let (title, album): (String, String) = conn
+            .query_row(
+                "SELECT t.title,a.title FROM music_tracks t JOIN music_albums a ON a.id=t.album_id
+             WHERE t.path=?1",
+                params![fallback.to_string_lossy()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(title, "untagged");
+        assert_eq!(album, "Unknown Album");
+    }
 }

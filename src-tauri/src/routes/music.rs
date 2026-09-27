@@ -5,6 +5,7 @@ use axum::extract::{Path, Query, Request, State};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
+use rand::seq::SliceRandom;
 use rusqlite::{params, params_from_iter, OptionalExtension, Row};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -100,9 +101,18 @@ fn track_json(row: &Row<'_>, library_id: &str) -> rusqlite::Result<Value> {
 fn album_json(row: &Row<'_>, library_id: &str) -> rusqlite::Result<Value> {
     let id: i64 = row.get(0)?;
     let art_track: Option<i64> = row.get(6)?;
+    let title: String = row.get(1)?;
+    let album_key: String = row.get(7)?;
+    let fallback_title: String = row.get(8)?;
+    let display_title = if album_key.starts_with("untagged:") {
+        fallback_title
+    } else {
+        title.clone()
+    };
     Ok(json!({
         "id": id,
-        "title": row.get::<_, String>(1)?,
+        "title": title,
+        "display_title": display_title,
         "artist": row.get::<_, String>(2)?,
         "genre": row.get::<_, Option<String>>(3)?,
         "year": row.get::<_, Option<i64>>(4)?,
@@ -113,7 +123,8 @@ fn album_json(row: &Row<'_>, library_id: &str) -> rusqlite::Result<Value> {
 }
 
 const ALBUM_SELECT: &str = "SELECT a.id, a.title, a.artist, a.genre, a.year,
-    COUNT(t.id), MIN(CASE WHEN COALESCE(t.artwork_path,a.artwork_path) IS NOT NULL THEN t.id END)
+    COUNT(t.id), MIN(CASE WHEN COALESCE(t.artwork_path,a.artwork_path) IS NOT NULL THEN t.id END),
+    a.album_key, MIN(t.title)
     FROM music_albums a JOIN music_tracks t ON t.album_id = a.id AND t.is_available = 1";
 
 fn filters(q: &MusicQuery, albums: bool) -> (String, Vec<rusqlite::types::Value>) {
@@ -364,11 +375,10 @@ async fn related_tracks(
             Some((score, candidate))
         })
         .collect();
-    scored.sort_by(|(a_score, a), (b_score, b)| {
-        b_score
-            .cmp(a_score)
-            .then_with(|| a["id"].as_i64().cmp(&b["id"].as_i64()))
-    });
+    // Stable sorting after a shuffle varies equally relevant candidates
+    // between listening sessions while preserving the similarity ranking.
+    scored.shuffle(&mut rand::thread_rng());
+    scored.sort_by(|(a_score, _), (b_score, _)| b_score.cmp(a_score));
     let limit = q.limit.unwrap_or(20).clamp(1, 100);
     let mut result = Vec::new();
     let mut recent_artists = Vec::<String>::new();
@@ -682,4 +692,143 @@ async fn collection_detail(
     Ok(Json(
         json!({"collection":collection,"albums":albums,"tracks":tracks}),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn untagged_album_uses_song_title_for_display() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::new(root.path(), 0).unwrap();
+        let lib = state.library_manager().primary();
+        let conn = lib.main_pool.get().unwrap();
+        conn.execute(
+            "INSERT INTO music_albums (id,album_key,title,artist) VALUES (9,'untagged:/a','Unknown Album','Unknown Artist')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO music_tracks (path,directory_id,album_id,title,artist)
+             VALUES ('/a',1,9,'My song','Unknown Artist')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let Json(result) = album_detail(State(state), Path(9), Query(MusicQuery::default()))
+            .await
+            .unwrap();
+        assert_eq!(result["album"]["title"], "Unknown Album");
+        assert_eq!(result["album"]["display_title"], "My song");
+        assert_eq!(result["tracks"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn related_tracks_require_similarity_and_respect_exclusions() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::new(root.path(), 0).unwrap();
+        let lib = state.library_manager().primary();
+        let conn = lib.main_pool.get().unwrap();
+        conn.execute(
+            "INSERT INTO music_albums (id,album_key,title,artist) VALUES (1,'a','A','Seed')",
+            [],
+        )
+        .unwrap();
+        for (id, artist, genre) in [
+            (1, "Seed", "Jazz"),
+            (2, "Another", "Jazz"),
+            (3, "Seed", "Classical"),
+            (4, "Stranger", "Metal"),
+            (5, "Third", "Jazz"),
+        ] {
+            conn.execute(
+                "INSERT INTO music_tracks (id,path,directory_id,album_id,title,artist,genre)
+                 VALUES (?1,?2,1,1,?3,?4,?5)",
+                params![
+                    id,
+                    format!("/track/{id}"),
+                    format!("Track {id}"),
+                    artist,
+                    genre
+                ],
+            )
+            .unwrap();
+        }
+        drop(conn);
+
+        let q = MusicQuery {
+            exclude_ids: Some("2".into()),
+            ..MusicQuery::default()
+        };
+        let Json(result) = related_tracks(State(state.clone()), Path(1), Query(q))
+            .await
+            .unwrap();
+        let ids: Vec<i64> = result["tracks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|track| track["id"].as_i64())
+            .collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&3));
+        assert!(ids.contains(&5));
+        assert!(!ids.contains(&4));
+
+        let q = MusicQuery {
+            exclude_ids: Some("2,3,5".into()),
+            ..MusicQuery::default()
+        };
+        let Json(result) = related_tracks(State(state), Path(1), Query(q))
+            .await
+            .unwrap();
+        assert_eq!(result["tracks"].as_array().unwrap().len(), 0);
+        assert!(result["reason"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn equally_related_tracks_vary_between_sessions() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::new(root.path(), 0).unwrap();
+        let lib = state.library_manager().primary();
+        let conn = lib.main_pool.get().unwrap();
+        conn.execute(
+            "INSERT INTO music_albums (id,album_key,title,artist) VALUES (1,'a','A','Seed')",
+            [],
+        )
+        .unwrap();
+        for id in 1..=7 {
+            conn.execute(
+                "INSERT INTO music_tracks (id,path,directory_id,album_id,title,artist,genre)
+                 VALUES (?1,?2,1,1,?3,?4,'Jazz')",
+                params![
+                    id,
+                    format!("/track/{id}"),
+                    format!("Track {id}"),
+                    if id == 1 {
+                        "Seed".to_string()
+                    } else {
+                        format!("Artist {id}")
+                    }
+                ],
+            )
+            .unwrap();
+        }
+        drop(conn);
+        let mut orders = HashSet::new();
+        for _ in 0..10 {
+            let Json(result) =
+                related_tracks(State(state.clone()), Path(1), Query(MusicQuery::default()))
+                    .await
+                    .unwrap();
+            let ids: Vec<i64> = result["tracks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|track| track["id"].as_i64())
+                .collect();
+            assert_eq!(ids.len(), 6);
+            orders.insert(ids);
+        }
+        assert!(orders.len() > 1, "shuffle should vary tied relevant tracks");
+    }
 }

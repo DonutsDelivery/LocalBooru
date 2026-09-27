@@ -43,6 +43,7 @@ r2d2_sqlite = "0.25"
 # Image processing
 image = "0.25"
 image_hasher = "3"
+lofty = "=0.21.1"
 
 # Hashing (xxhash for quick file hash, compatible with Python impl)
 xxhash-rust = { version = "0.8", features = ["xxh64"] }

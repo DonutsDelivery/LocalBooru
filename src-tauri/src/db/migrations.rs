@@ -306,11 +306,97 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
         description: "Scope new image and video collections by media type",
         sql: "ALTER TABLE collections ADD COLUMN media_type TEXT CHECK(media_type IN ('image','video'));",
     },
+    // v20: A local image ID is unique only within its directory database.
+    // Keep legacy NULL identities for best-effort resolution while allowing
+    // the same ID from different directories in one collection.
+    Migration {
+        description: "Store exact directory and library identity for collection items",
+        sql: "CREATE TABLE collection_items_exact (\
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,\
+                  image_id INTEGER NOT NULL,\
+                  directory_id INTEGER,\
+                  library_id TEXT,\
+                  sort_order INTEGER NOT NULL DEFAULT 0,\
+                  added_at TEXT NOT NULL DEFAULT (datetime('now'))\
+              );\
+              INSERT INTO collection_items_exact (id,collection_id,image_id,sort_order,added_at)\
+                  SELECT id,collection_id,image_id,sort_order,added_at FROM collection_items;\
+              DROP TABLE collection_items;\
+              ALTER TABLE collection_items_exact RENAME TO collection_items;\
+              CREATE INDEX idx_collection_items_collection_id ON collection_items(collection_id);\
+              CREATE INDEX idx_collection_items_image_id ON collection_items(image_id);\
+              CREATE UNIQUE INDEX idx_collection_items_exact_identity\
+                  ON collection_items(collection_id,library_id,directory_id,image_id)\
+                  WHERE library_id IS NOT NULL AND directory_id IS NOT NULL;",
+    },
 ];
 
 /// Run all pending migrations on the main library database.
 pub fn run_main_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     run_migrations(conn, MAIN_MIGRATIONS)
+}
+
+#[cfg(test)]
+mod music_scope_tests {
+    use super::*;
+
+    #[test]
+    fn collection_migrations_preserve_legacy_and_allow_exact_membership() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+             INSERT INTO schema_version VALUES (18);
+             CREATE TABLE collections (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+             INSERT INTO collections (id,name) VALUES (7,'Mixed legacy collection');
+             CREATE TABLE collection_items (
+                 id INTEGER PRIMARY KEY, collection_id INTEGER NOT NULL,
+                 image_id INTEGER NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0,
+                 added_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 UNIQUE(collection_id,image_id)
+             );
+             INSERT INTO collection_items (id,collection_id,image_id,sort_order)
+                 VALUES (11,7,42,3);",
+        )
+        .unwrap();
+        run_main_migrations(&conn).unwrap();
+        let (name, media_type): (String, Option<String>) = conn
+            .query_row(
+                "SELECT name,media_type FROM collections WHERE id=7",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(name, "Mixed legacy collection");
+        assert_eq!(media_type, None);
+        let (image_id, directory_id, library_id, sort_order): (i64, Option<i64>, Option<String>, i64) = conn.query_row(
+            "SELECT image_id,directory_id,library_id,sort_order FROM collection_items WHERE id=11",
+            [], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+        ).unwrap();
+        assert_eq!(
+            (image_id, directory_id, library_id, sort_order),
+            (42, None, None, 3)
+        );
+        conn.execute(
+            "INSERT INTO collection_items (collection_id,image_id,library_id,directory_id)
+             VALUES (7,42,'primary',1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO collection_items (collection_id,image_id,library_id,directory_id)
+             VALUES (7,42,'primary',2)",
+            [],
+        )
+        .unwrap();
+        assert!(conn
+            .execute(
+                "INSERT INTO collection_items (collection_id,image_id,library_id,directory_id)
+             VALUES (7,42,'primary',1)",
+                [],
+            )
+            .is_err());
+    }
 }
 
 // ─── Directory DB migrations ────────────────────────────────────────────────
