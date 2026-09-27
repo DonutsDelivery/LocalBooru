@@ -18,22 +18,21 @@ export default function CollectionsPage() {
   const drawer = useMobileDrawer()
 
   useEffect(() => {
-    loadCollections()
+    let active = true
+    fetchCollections(mediaType)
+      .then(data => {
+        if (active) setCollections(data.collections || [])
+      })
+      .catch(error => console.error('Failed to load collections:', error))
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
   }, [mediaType])
 
   useEffect(() => {
     sessionStorage.setItem(`donutMediaCenter_section_url_${mediaType}`, `${window.location.pathname}${window.location.search}`)
   }, [mediaType, searchParams])
-
-  async function loadCollections() {
-    try {
-      const data = await fetchCollections(mediaType)
-      setCollections(data.collections || [])
-    } catch (e) {
-      console.error('Failed to load collections:', e)
-    }
-    setLoading(false)
-  }
 
   const handleCreate = async () => {
     if (!newName.trim() || creating) return

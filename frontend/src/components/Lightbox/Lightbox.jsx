@@ -821,7 +821,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     } catch (e) {
       console.error('Failed to create collection:', e)
     }
-  }, [newCollectionName, image])
+  }, [newCollectionName, image, isVideoFile])
 
   // Share stream handlers
   const handleToggleSharePopover = useCallback(() => {
