@@ -92,6 +92,15 @@ export default function MusicPage() {
               artwork_url: track.artwork_url, library_id: track.library_id,
             }))
             for (const album of albumRefs) if (!ids.has(itemKey(album))) { ids.add(itemKey(album)); collectionAlbums.push(album) }
+            // A track with no album still needs an Albums-mode entry so its
+            // collection never disappears when switching music views.
+            for (const track of collectionTracks.filter(track => !track.album_id)) {
+              collectionAlbums.push({
+                id: `single-${track.id}`, title: track.title || 'Untitled track',
+                artist: track.artist, artwork_url: track.artwork_url,
+                library_id: track.library_id, track_count: 1, _standaloneTrack: track,
+              })
+            }
           }
           const unique = (items) => [...new Map(items.map(item => [itemKey(item), item])).values()]
           collectionAlbums = unique(collectionAlbums)
@@ -150,6 +159,7 @@ export default function MusicPage() {
 
   const openItem = useCallback(async item => {
     if (mode === 'songs') { startSong(item); return }
+    if (item._standaloneTrack) { openAlbum(item, [item._standaloneTrack]); return }
     try {
       const detail = await fetchMusicAlbum(item.id, item.library_id)
       openAlbum(detail.album || item, detail.tracks || [])
@@ -172,9 +182,11 @@ export default function MusicPage() {
   const changeCollectionMembership = async (item, add) => {
     if (!filters.collection && !collectionTarget) return
     const collectionId = filters.collection || collectionTarget
+    const member = item._standaloneTrack || item
+    const memberType = item._standaloneTrack ? 'track' : mode === 'albums' ? 'album' : 'track'
     try {
-      if (add) await addMusicCollectionItem(collectionId, mode === 'albums' ? 'album' : 'track', item.id, item.library_id)
-      else await removeMusicCollectionItem(collectionId, mode === 'albums' ? 'album' : 'track', item.id, item.library_id)
+      if (add) await addMusicCollectionItem(collectionId, memberType, member.id, member.library_id)
+      else await removeMusicCollectionItem(collectionId, memberType, member.id, member.library_id)
       setRefresh(value => value + 1)
     } catch { setError('Could not update the collection.') }
   }
@@ -244,7 +256,7 @@ export default function MusicPage() {
             <div className="music-card-actions">
               {mode === 'songs' && <button onClick={event => toggleFavorite(event, item)} aria-label={item.is_favorite ? 'Remove favorite' : 'Add favorite'} title="Favorite">{item.is_favorite ? '♥' : '♡'}</button>}
               {session && <button onClick={() => mode === 'songs' ? queueTrack(item) : openItem(item)} aria-label={mode === 'songs' ? `Queue ${item.title}` : `Open ${item.title}`} title={mode === 'songs' ? 'Add to queue' : 'Open album'}>{mode === 'songs' ? '＋ Queue' : 'Tracks'}</button>}
-              {filters.collection ? directMembers.has(`${mode === 'albums' ? 'album' : 'track'}:${itemKey(item)}`)
+              {filters.collection ? directMembers.has(`${item._standaloneTrack ? 'track' : mode === 'albums' ? 'album' : 'track'}:${itemKey(item._standaloneTrack || item)}`)
                 ? <button onClick={() => changeCollectionMembership(item, false)} title="Remove from collection">Remove</button>
                 : <small>{mode === 'songs' ? 'From album' : 'Contains a collection song'}</small>
                 : collections.length > 0 && <span className="music-add-to-collection"><select value={collectionTarget} onChange={event => setCollectionTarget(event.target.value)} aria-label="Choose music collection"><option value="">Collection…</option>{collections.map(collection => <option value={collection.id} key={collection.id}>{collection.name}</option>)}</select><button disabled={!collectionTarget} onClick={() => changeCollectionMembership(item, true)} aria-label="Add to collection">＋</button></span>}

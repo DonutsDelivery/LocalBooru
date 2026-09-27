@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { getMediaUrl, fetchRelatedMusic } from '../../api'
+import { nativeVideoAPI, videoControlAPI, isTauri } from '../../tauriAPI'
 import { advanceMusicSession, appendRelatedTracks, musicTrackKey, nextMusicTrack, orderedAlbumTracks, upcomingAlbumTracks } from './musicQueue'
 import MusicLightbox from './MusicLightbox'
 import './Music.css'
@@ -87,7 +88,9 @@ export function MusicPlayerProvider({ children }) {
       setSession(previous => advanceMusicSession(previous, choice))
       setPosition(0)
       setPlaying(true)
-    } else if (current?.loadingRelated) {
+    } else if (current && !current.relatedExhausted) {
+      // Prefetch starts in an effect, so Next can arrive before loadingRelated
+      // turns true. Wait for that first result instead of declaring exhaustion.
       waitingForNextRef.current = true
     } else {
       waitingForNextRef.current = false
@@ -162,6 +165,22 @@ export function MusicPlayerProvider({ children }) {
     }
     document.addEventListener('play', onMediaPlay, true)
     return () => document.removeEventListener('play', onMediaPlay, true)
+  }, [])
+
+  useEffect(() => {
+    if (!isTauri()) return
+    let disposed = false
+    let cleanupNative = () => {}
+    let cleanupVfr = () => {}
+    nativeVideoAPI.subscribe({
+      onSnapshot: snapshot => {
+        if (snapshot?.presentation === 'native_video' && snapshot.playback?.paused === false) setPlaying(false)
+      },
+    }).then(cleanup => { if (disposed) cleanup(); else cleanupNative = cleanup }).catch(() => {})
+    videoControlAPI.subscribeToEvents(event => {
+      if (event?.type === 'state_changed' && event.state === 'Playing') setPlaying(false)
+    }).then(cleanup => { if (disposed) cleanup(); else cleanupVfr = cleanup }).catch(() => {})
+    return () => { disposed = true; cleanupNative(); cleanupVfr() }
   }, [])
 
   useEffect(() => {
