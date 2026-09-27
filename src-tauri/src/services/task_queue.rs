@@ -825,6 +825,7 @@ fn complete_directory_imports(
         use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
         let next_idx = AtomicUsize::new(0);
+        let processed = AtomicUsize::new(0);
         let generated = AtomicUsize::new(0);
         let available = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -848,32 +849,37 @@ fn complete_directory_imports(
                         let hash_prefix = &file_hash[..16.min(file_hash.len())];
                         let thumb_path = thumbnails_dir.join(format!("{}.webp", hash_prefix));
 
-                        if importer::is_video_file(original_path) {
+                        let success = if importer::is_video_file(original_path) {
                             importer::generate_video_thumbnail(
                                 original_path,
                                 &thumb_path.to_string_lossy(),
                                 400,
-                            );
+                            )
                         } else {
                             importer::generate_thumbnail(
                                 original_path,
                                 &thumb_path.to_string_lossy(),
                                 400,
-                            );
-                        }
+                            )
+                        };
 
-                        let count = generated.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                        let count = processed.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                        if success {
+                            generated.fetch_add(1, AtomicOrdering::SeqCst);
+                        }
 
                         // Broadcast thumbnail ready + progress
                         if let Some(events) = state.events() {
-                            events.library.broadcast(
-                                event_type::IMAGE_UPDATED,
-                                serde_json::json!({
-                                    "image_id": image_id,
-                                    "directory_id": directory_id,
-                                    "thumbnail_ready": true
-                                }),
-                            );
+                            if success {
+                                events.library.broadcast(
+                                    event_type::IMAGE_UPDATED,
+                                    serde_json::json!({
+                                        "image_id": image_id,
+                                        "directory_id": directory_id,
+                                        "thumbnail_ready": true
+                                    }),
+                                );
+                            }
                             if count % 5 == 0 || count == total_thumbs {
                                 events.library.broadcast(
                                     event_type::TASK_PROGRESS,

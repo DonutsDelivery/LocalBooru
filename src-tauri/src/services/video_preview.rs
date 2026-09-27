@@ -363,6 +363,7 @@ fn publish_preview_staging(
 /// Seeks to the middle of the video and extracts a single keyframe.
 pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) -> bool {
     if !check_ffmpeg_available() {
+        log::warn!("Cannot generate video thumbnail: ffmpeg is unavailable");
         return false;
     }
 
@@ -371,40 +372,57 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
         .map(|d| if d > 1.0 { d / 2.0 } else { 0.5 })
         .unwrap_or(0.5);
 
-    let mut cmd_args = get_low_priority_prefix();
-    cmd_args.push("ffmpeg".into());
-    cmd_args.extend(["-y".into(), "-skip_frame".into(), "nokey".into()]);
-    cmd_args.extend(get_hwaccel_args());
-    cmd_args.extend([
-        "-ss".into(),
-        format!("{:.3}", seek_time),
-        "-i".into(),
-        video_path.into(),
-        "-vframes".into(),
-        "1".into(),
-        "-vsync".into(),
-        "passthrough".into(),
-        "-vf".into(),
-        format!("scale={}:-1", size),
-        "-c:v".into(),
-        "libwebp".into(),
-        "-quality".into(),
-        "85".into(),
-        output_path.into(),
-    ]);
+    // Decode in software. ffmpeg advertising CUDA does not mean a usable GPU
+    // exists, and keyframe-only decoding can leave no frame at the seek time.
+    // A single output frame needs neither -vsync (removed in newer ffmpeg) nor
+    // hardware acceleration.
+    for position in [seek_time, 0.0] {
+        let mut cmd_args = get_low_priority_prefix();
+        cmd_args.push("ffmpeg".into());
+        cmd_args.extend([
+            "-hide_banner".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-y".into(),
+            "-ss".into(),
+            format!("{:.3}", position),
+            "-i".into(),
+            video_path.into(),
+            "-frames:v".into(),
+            "1".into(),
+            "-an".into(),
+            "-sn".into(),
+            "-vf".into(),
+            format!("scale={}:-1", size),
+            "-c:v".into(),
+            "libwebp".into(),
+            "-quality".into(),
+            "85".into(),
+            output_path.into(),
+        ]);
 
-    let (program, args) = (cmd_args[0].clone(), cmd_args[1..].to_vec());
-
-    let mut command = Command::new(&program);
-    command
-        .args(&args)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    suppress_console_window(&mut command);
-    command
-        .status()
-        .map(|s| s.success() && Path::new(output_path).exists())
-        .unwrap_or(false)
+        let mut command = Command::new(&cmd_args[0]);
+        command.args(&cmd_args[1..]);
+        suppress_console_window(&mut command);
+        match command.output() {
+            Ok(output) if output.status.success() && Path::new(output_path).is_file() => {
+                return true;
+            }
+            Ok(output) => log::warn!(
+                "Video thumbnail extraction failed for {} at {:.3}s: {}",
+                video_path,
+                position,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+            Err(error) => log::warn!(
+                "Cannot start ffmpeg for video thumbnail {}: {}",
+                video_path,
+                error
+            ),
+        }
+        let _ = std::fs::remove_file(output_path);
+    }
+    false
 }
 
 #[cfg(test)]
