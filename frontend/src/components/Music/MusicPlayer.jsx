@@ -31,6 +31,7 @@ export function MusicPlayerProvider({ children }) {
   const [volume, setVolume] = useState(0.8)
   const audioRef = useRef(null)
   const currentTrack = session?.current
+  const playbackToken = session?.playbackToken
   const sessionRef = useRef(session)
   const relatedRequestRef = useRef(null)
   const waitingForNextRef = useRef(false)
@@ -56,6 +57,7 @@ export function MusicPlayerProvider({ children }) {
     relatedRequestRef.current = null
     setSession({
       kind: 'album', album, albumTracks: ordered, albumCursor,
+      playbackToken: generationRef.current,
       seed: start, current: start, relatedShuffle: false,
       explicitQueue: [], recommendations: [], history: [],
       playedKeys: [musicTrackKey(start)], relatedExhausted: false, loadingRelated: false, notice: null, playbackError: null,
@@ -72,6 +74,7 @@ export function MusicPlayerProvider({ children }) {
     relatedRequestRef.current = null
     setSession({
       kind: 'mix', album: null, albumTracks: [], albumCursor: -1,
+      playbackToken: generationRef.current,
       seed: track, current: track, relatedShuffle: true,
       explicitQueue: [], recommendations: [], history: [],
       playedKeys: [musicTrackKey(track)], relatedExhausted: false, loadingRelated: false, notice: null, playbackError: null,
@@ -167,14 +170,15 @@ export function MusicPlayerProvider({ children }) {
     if (!audio || !currentTrack) return
     audio.src = getMediaUrl(currentTrack.stream_url)
     audio.load()
-  }, [currentTrack])
+    audio.currentTime = 0
+  }, [currentTrack, playbackToken])
 
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
     if (playing && currentTrack) audio.play().catch(error => reportPlaybackError(currentTrack, error))
     else audio.pause()
-  }, [playing, currentTrack, reportPlaybackError])
+  }, [playing, currentTrack, playbackToken, reportPlaybackError])
 
   // Video playback pauses music at the actual play event, not on gallery open.
   useEffect(() => {

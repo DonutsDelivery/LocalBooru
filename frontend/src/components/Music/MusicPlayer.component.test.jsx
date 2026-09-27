@@ -24,9 +24,12 @@ const song = (id, artist = 'Artist A') => ({
   id, title: `Song ${id}`, artist, library_id: 'library-a',
   stream_url: `/api/music/tracks/${id}/file`, artwork_url: null,
 })
+const selectedSong = song(1)
+const albumSongs = [selectedSong, song(2)]
+const album = { id: 10, title: 'Album A', artist: 'Artist A', library_id: 'library-a' }
 
 function PlayerHarness({ immediateNext = false }) {
-  const { session, playing, startSong, advance, queueTrack } = useMusicPlayer()
+  const { session, playing, startSong, startAlbum, advance, queueTrack, setRelatedShuffle } = useMusicPlayer()
   const advanced = useRef(false)
   // A layout effect can press Next after the selected song renders but before
   // the recommendation prefetch effect has marked the request as loading.
@@ -37,7 +40,9 @@ function PlayerHarness({ immediateNext = false }) {
     }
   }, [immediateNext, session, advance])
   return <>
-    <button onClick={() => startSong(song(1))}>Start song</button>
+    <button onClick={() => startSong(selectedSong)}>Start song</button>
+    <button onClick={() => startAlbum(album, albumSongs)}>Start album</button>
+    <button onClick={() => setRelatedShuffle(true)}>Shuffle related</button>
     <button onClick={advance}>Skip</button>
     <button onClick={() => queueTrack(song(80))}>Queue song 80</button>
     <button onClick={() => queueTrack(song(81))}>Queue song 81</button>
@@ -135,4 +140,36 @@ test('a rejected audio play request reports an actionable playback notice', asyn
   await waitFor(() => expect(screen.getByTestId('playback-error').textContent).toMatch(/Press Play to try again/))
   expect(screen.getByTestId('playing').textContent).toBe('false')
   expect(screen.getByTestId('current').textContent).toBe('1')
+})
+
+test('explicitly replaying the same song restarts it while queue edits leave its position alone', async () => {
+  api.fetchRelatedMusic.mockResolvedValue({ tracks: [2, 3, 4, 5, 6, 7].map(id => song(id)) })
+  const { container } = render(<MusicPlayerProvider><PlayerHarness /></MusicPlayerProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Start song' }))
+  const audio = container.querySelector('audio')
+  audio.currentTime = 37
+  const loads = HTMLMediaElement.prototype.load.mock.calls.length
+  fireEvent.click(screen.getByRole('button', { name: 'Queue song 80' }))
+  expect(audio.currentTime).toBe(37)
+  expect(HTMLMediaElement.prototype.load.mock.calls.length).toBe(loads)
+  fireEvent.click(screen.getByRole('button', { name: 'Start song' }))
+  expect(audio.currentTime).toBe(0)
+  expect(HTMLMediaElement.prototype.load.mock.calls.length).toBe(loads + 1)
+  expect(screen.getByTestId('current').textContent).toBe('1')
+  expect(screen.getByTestId('seed').textContent).toBe('1')
+})
+
+test('replaying the same album track restarts it while shuffle changes do not', async () => {
+  api.fetchRelatedMusic.mockResolvedValue({ tracks: [3, 4, 5, 6, 7, 8].map(id => song(id)) })
+  const { container } = render(<MusicPlayerProvider><PlayerHarness /></MusicPlayerProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Start album' }))
+  const audio = container.querySelector('audio')
+  audio.currentTime = 24
+  const loads = HTMLMediaElement.prototype.load.mock.calls.length
+  fireEvent.click(screen.getByRole('button', { name: 'Shuffle related' }))
+  expect(audio.currentTime).toBe(24)
+  expect(HTMLMediaElement.prototype.load.mock.calls.length).toBe(loads)
+  fireEvent.click(screen.getByRole('button', { name: 'Start album' }))
+  expect(audio.currentTime).toBe(0)
+  expect(HTMLMediaElement.prototype.load.mock.calls.length).toBe(loads + 1)
 })
