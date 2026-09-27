@@ -1,16 +1,16 @@
 [Desktop Entry]
-Name=LocalBooru
-Comment=Local image library with automatic AI tagging
-GenericName=Image Library
+Name=DonutMediaCenter
+Comment=Browse images and videos and listen to local music
+GenericName=Local Media Library
 Exec=localbooru %U
 Icon=com.localbooru.app
 Terminal=false
 Type=Application
-Categories=Graphics;Photography;Viewer;
-Keywords=image;gallery;booru;tagger;ai;
-MimeType=image/jpeg;image/png;image/gif;image/webp;image/bmp;image/tiff;
+Categories=AudioVideo;Player;
+Keywords=images;videos;music;albums;gallery;media;
+MimeType=image/bmp;image/gif;image/jpeg;image/png;image/tiff;image/webp;video/3gpp;video/avi;video/mp4;video/mpeg;video/ogg;video/quicktime;video/webm;video/x-flv;video/x-matroska;video/x-ms-wmv;
 StartupNotify=true
-StartupWMClass=LocalBooru
+StartupWMClass=localbooru
 Actions=NewWindow;
 
 [Desktop Action NewWindow]
