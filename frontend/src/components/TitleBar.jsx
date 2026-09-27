@@ -96,10 +96,10 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
         <div className="title-bar mobile">
           <div className="title-bar-drag">
             <div className="title-bar-icon">
-              <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
-                <rect x="10" y="10" width="44" height="44" rx="6" fill="var(--bg-tertiary)" stroke="currentColor" strokeWidth="3"/>
-                <circle cx="22" cy="22" r="6" fill="currentColor"/>
-                <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="currentColor" opacity="0.85"/>
+              <svg width="18" height="18" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+                <circle cx="32" cy="32" r="25" fill="currentColor"/>
+                <circle cx="32" cy="32" r="11" fill="var(--bg-tertiary)"/>
+                <path d="m29 25 11 7-11 7V25Z" fill="currentColor"/>
               </svg>
             </div>
             <span className="title-bar-title">DonutMediaCenter</span>
@@ -178,10 +178,10 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
         data-tauri-drag-region
       >
         <div className="title-bar-icon">
-          <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
-            <rect x="10" y="10" width="44" height="44" rx="6" fill="var(--bg-tertiary)" stroke="currentColor" strokeWidth="3"/>
-            <circle cx="22" cy="22" r="6" fill="currentColor"/>
-            <path d="M10 46 L26 28 L34 38 L46 24 L54 46 Z" fill="currentColor" opacity="0.85"/>
+          <svg width="18" height="18" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <circle cx="32" cy="32" r="25" fill="currentColor"/>
+            <circle cx="32" cy="32" r="11" fill="var(--bg-tertiary)"/>
+            <path d="m29 25 11 7-11 7V25Z" fill="currentColor"/>
           </svg>
         </div>
         <span className="title-bar-title">DonutMediaCenter</span>
