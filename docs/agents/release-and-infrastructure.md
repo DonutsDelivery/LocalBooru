@@ -107,27 +107,37 @@ key setup; do not copy credentials or hard-code the laptop's address.
 
 ```bash
 ssh windse whoami
+ssh -o User=peter windse whoami
 ssh windse 'powershell.exe -NoProfile -NonInteractive -Command "Get-ComputerInfo | Select-Object WindowsProductName, OsVersion"'
 scp ./LocalBooru-Windows-Setup.exe 'windse:C:/Users/t3remote/Downloads/'
 scp ./LocalBooru-Windows.zip 'windse:C:/Users/t3remote/Downloads/'
 ```
 
 Stage the exact locally built installer/ZIP by source SHA and artifact hash in a
-new disposable location under `t3remote`; verify its SHA-256 on the laptop before
-extracting or installing. Use a separate portable data directory and unused port
-for tests, and never launch against or replace a user's existing library or app.
-Set `LOCALBOORU_PORTABLE_DATA`, `LOCALBOORU_PORT`, and
+new disposable location under `t3remote` or `peter`; verify its SHA-256 on the
+laptop before extracting or installing. Use a separate portable data directory
+and never launch against or replace a user's existing library or app. For a
+packaged GUI candidate, first prove the embedded server's default port `8790`
+is free and use that port: the frozen frontend is built to contact `8790`, so a
+backend-only `LOCALBOORU_PORT` override makes the GUI show an empty gallery even
+when the alternate port's API contains images. Do not displace an existing
+listener. Set `LOCALBOORU_PORTABLE_DATA` and
 `LOCALBOORU_DISABLE_SINGLE_INSTANCE=1` for a disposable run, but leave Windows
 known-folder variables (`USERPROFILE`, `APPDATA`, `LOCALAPPDATA`) intact: spoofing
 them can make Tauri plug-in initialization fail before the server starts.
 PowerShell through SSH can inspect packages, install, and test headless commands.
-**SSH alone does not give access to the graphical desktop**: a process started
-from SSH and a healthy HTTP endpoint do not prove a visible Windows UI. Record
-interactive desktop screenshots and gallery/video observations separately, or
-mark GUI acceptance unverified. Run the database/import/gallery/video/server
-and restart-persistence matrix, plus installer/portable parity, WebView/runtime
+Even `ssh -o User=peter windse` runs in Windows session 0, not Peter's active
+console session 1. For GUI acceptance, a disposable Task Scheduler task with
+`TASK_LOGON_INTERACTIVE_TOKEN` under Peter can launch the verified candidate in
+that existing console session without a password. Assert the launched PID's
+path and session ID, then capture **only its application window** and exercise
+its gallery/lightbox; never treat SSH health as GUI proof or capture the whole
+personal desktop. Remove the temporary task and test data when done. Record
+interactive screenshots and gallery/video observations separately, or mark GUI
+acceptance unverified. Run the database/import/gallery/video/server and
+restart-persistence matrix, plus installer/portable parity, WebView/runtime
 prerequisites, path/Unicode behavior, file locks, Defender/SmartScreen and
-Authenticode state. Clean up only the disposable candidate and test data.
+Authenticode state.
 
 ## WinBoat fallback lifecycle and LocalBooru acceptance
 
