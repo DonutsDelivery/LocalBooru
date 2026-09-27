@@ -10,7 +10,12 @@ export function orderedAlbumTracks(tracks) {
 
 export function upcomingAlbumTracks(session) {
   if (session?.kind !== 'album' || session.relatedShuffle) return []
+  const unavailable = new Set([
+    ...session.playedKeys,
+    ...session.explicitQueue.map(musicTrackKey),
+  ])
   return session.albumTracks.slice(session.albumCursor + 1)
+    .filter(track => !unavailable.has(musicTrackKey(track)))
 }
 
 export function nextMusicTrack(session) {
@@ -31,7 +36,9 @@ export function advanceMusicSession(session, choice) {
   const { track, source } = choice
   const explicitQueue = source === 'queued' ? session.explicitQueue.slice(1) : session.explicitQueue
   const recommendations = source === 'related' ? session.recommendations.slice(1) : session.recommendations
-  const albumCursor = source === 'album' ? session.albumCursor + 1 : session.albumCursor
+  const albumCursor = source === 'album'
+    ? session.albumTracks.findIndex(item => musicTrackKey(item) === musicTrackKey(track))
+    : session.albumCursor
   return {
     ...session,
     current: track,

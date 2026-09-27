@@ -59,6 +59,22 @@ test('explicit queue takes precedence and recommendations do not repeat played o
   assert.deepEqual(session.recommendations.map(item => item.id), [90, 91])
 })
 
+test('an explicitly queued album track plays once and remaining album tracks stay in order', () => {
+  const tracks = [track(4), track(5), track(6), track(7), track(8)]
+  const playFromQueue = queued => {
+    let session = albumSession(tracks)
+    session.explicitQueue = queued
+    const played = [session.current.id]
+    while (nextMusicTrack(session)) {
+      session = advanceMusicSession(session, nextMusicTrack(session))
+      played.push(session.current.id)
+    }
+    return played
+  }
+  assert.deepEqual(playFromQueue([tracks[1]]), [4, 5, 6, 7, 8])
+  assert.deepEqual(playFromQueue([tracks[3], tracks[1]]), [4, 7, 5, 6, 8])
+})
+
 test('song mix keeps its selected seed while advancing through recommendations', () => {
   const selected = track(1)
   let session = {
