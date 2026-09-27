@@ -4,8 +4,10 @@
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use lofty::config::ParseOptions;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::picture::{Picture, PictureType};
+use lofty::probe::Probe;
 use lofty::tag::{Accessor, ItemKey};
 use rusqlite::{params, OptionalExtension};
 use sha2::{Digest, Sha256};
@@ -158,9 +160,29 @@ pub fn index_audio_file(
     }
 
     let tagged = lofty::read_from_path(path).ok();
+    // Some containers have usable tags but malformed or missing audio properties.
+    // Keep their metadata even when the full properties pass cannot complete.
+    let tags_only = if tagged.as_ref().is_none_or(|file| file.tags().is_empty()) {
+        Probe::open(path).ok().and_then(|probe| {
+            probe
+                .options(ParseOptions::new().read_properties(false))
+                .read()
+                .ok()
+        })
+    } else {
+        None
+    };
     let tag = tagged
         .as_ref()
-        .and_then(|file| file.primary_tag().or_else(|| file.first_tag()));
+        .filter(|file| !file.tags().is_empty())
+        .or(tags_only.as_ref())
+        .and_then(|file| {
+            file.tags()
+                .iter()
+                .find(|tag| tag.title().is_some() || tag.artist().is_some() || tag.album().is_some())
+                .or_else(|| file.primary_tag())
+                .or_else(|| file.first_tag())
+        });
     let fallback_title = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -383,6 +405,15 @@ mod tests {
         tag.set_track(4);
         tag.insert_text(ItemKey::AlbumArtist, "Singer".into());
         tag.save_to_path(&first, WriteOptions::default()).unwrap();
+        let parsed = Probe::open(&first)
+            .unwrap()
+            .options(ParseOptions::new().read_properties(false))
+            .read()
+            .unwrap();
+        assert_eq!(
+            parsed.tags().iter().find_map(|tag| tag.title()).as_deref(),
+            Some("First song")
+        );
         index_audio_file(&lib, 7, &first).unwrap();
 
         let second = music_dir.join("second.wav");
