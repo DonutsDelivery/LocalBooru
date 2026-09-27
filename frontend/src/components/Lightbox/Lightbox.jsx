@@ -169,6 +169,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }
   const mountedRef = useRef(true)
   const svpPathEnabledRef = useRef(false)
+  const svpPreflightTaskRef = useRef(null)
+  const [svpStartupCancelPending, setSvpStartupCancelPending] = useState(false)
   const [svpPipelineGeneration, setSvpPipelineGeneration] = useState(0)
 
   const image = images[currentIndex]
@@ -239,7 +241,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     svpInteractionKeyRef.current = svpInteractionKey
     svpInteractionReadyRef.current = !svpPathEnabled
   }
-  const svpControlsReady = !svpPathEnabled || (svpInteractionReadyRef.current && svpStartupReady)
+  const svpControlsReady = !svpStartupCancelPending
+    && (!svpPathEnabled || (svpInteractionReadyRef.current && svpStartupReady))
   useEffect(() => {
     setSvpStartupReady(!svpPathEnabled)
   }, [svpInteractionKey, svpPathEnabled])
@@ -295,7 +298,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         release()
       }
     }
-    prepare()
+    const task = { imageKey: currentImageKey, promise: prepare() }
+    svpPreflightTaskRef.current = task
     return () => {
       cancelled = true
       clearTimeout(fallback)
@@ -946,8 +950,30 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     const desiredEnabled = svpDesiredEnabledRef.current ?? confirmedEnabled
     const newEnabled = !desiredEnabled
     const generation = ++svpToggleGenerationRef.current
-    const playbackIntent = streaming.capturePlaybackIntent()
+    const cancelingStartup = streaming.nativeSvpPlayback && !svpControlsReady && !newEnabled
+    const playbackIntent = cancelingStartup ? null : streaming.capturePlaybackIntent()
     svpDesiredEnabledRef.current = newEnabled
+
+    if (cancelingStartup) {
+      setSvpStartupCancelPending(true)
+      streaming.setSvpConfig(previous => previous ? { ...previous, enabled: false } : previous)
+      const desktopAPI = getDesktopAPI()
+      const disable = () => desktopAPI?.updateSvpManagerPlayback?.({ enabled: false })
+        .catch(error => console.warn('[SVPManager] failed to cancel startup:', error))
+      const initialDisable = disable()
+      // The button must work even if the metadata probe or Manager stalls.
+      // Let direct playback start after a brief grace period at most.
+      Promise.race([
+        initialDisable,
+        new Promise(resolve => setTimeout(resolve, 500)),
+      ]).finally(() => {
+        if (mountedRef.current) setSvpStartupCancelPending(false)
+      })
+      const pending = svpPreflightTaskRef.current?.promise
+      if (pending) Promise.resolve(pending).catch(() => {}).then(() => {
+        if (svpDesiredEnabledRef.current === false) return disable()
+      })
+    }
 
     const write = svpToggleWriteRef.current
       .catch(() => {})
@@ -968,9 +994,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         } else {
           setCurrentQuality('original')
           localStorage.setItem('video_quality_preference', 'original')
-          streaming.handleQualityChange('original', playbackIntent).catch(error => {
-            console.error('Failed to restore original playback:', error)
-          })
+          if (!cancelingStartup) {
+            streaming.handleQualityChange('original', playbackIntent).catch(error => {
+              console.error('Failed to restore original playback:', error)
+            })
+          }
           streaming.setSvpError(null)
           streaming.setSvpLoading(false)
         }
@@ -992,7 +1020,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           streaming.setSvpConfig(actualConfig)
           if (actualEnabled && !streaming.nativeSvpPlayback) {
             streaming.startSVPStream(playbackIntent.position, playbackIntent, true).catch(() => {})
-          } else if (!actualEnabled) {
+          } else if (!actualEnabled && !cancelingStartup) {
             streaming.handleQualityChange('original', playbackIntent).catch(() => {})
           }
         } catch (reconcileError) {
@@ -1004,7 +1032,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       })
 
     svpToggleWriteRef.current = write
-  }, [streaming])
+  }, [streaming, svpControlsReady])
 
   // Generate preview of adjustments
   const handleGeneratePreview = useCallback(async () => {
@@ -1259,6 +1287,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       // The patched WebKit pipeline can block the window if pause or seek
       // reaches it before SVP has produced a frame. Keep Escape available.
       if (isVideoFile && !casting.isCasting && !svpControlsReady) {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target?.closest?.('.svp-toggle-btn')) return
         if (e.key === 'Escape') onClose()
         else e.preventDefault()
         return
@@ -1498,8 +1527,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Determine if we should play the video directly (no streaming)
   const shouldPlayDirect = useMemo(() => {
-    if (image?.is_local_direct_file) return true
-    return streaming.svpConfigLoaded
+    if (image?.is_local_direct_file) return !svpStartupCancelPending
+    return !svpStartupCancelPending
+      && streaming.svpConfigLoaded
       && svpPreflightReady
       && !streaming.svpStreamUrl
       && !streaming.opticalFlowStreamUrl
@@ -1514,7 +1544,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     streaming.transcodeStreamUrl, streaming.svpLoading, streaming.codecFallbackActive,
     currentQuality, streaming.svpConfig?.enabled, streaming.nativeSvpPlayback, streaming.svpError,
     streaming.opticalFlowConfig?.enabled, streaming.opticalFlowError,
-    image?.is_local_direct_file, svpPreflightReady
+    image?.is_local_direct_file, svpPreflightReady, svpStartupCancelPending
   ])
 
   // On Tauri mobile with local server, use asset protocol to serve videos directly from disk.
@@ -2198,7 +2228,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             >
               {/* Timeline and playback controls */}
               <div className="video-controls-row">
-              {!svpControlsReady && <span className="svp-starting-label" role="status">SVP starting…</span>}
+              {!svpControlsReady && <span className="svp-starting-label" role="status">{svpStartupCancelPending ? 'Turning SVP off…' : 'SVP starting…'}</span>}
               <span className="video-time" ref={casting.isCasting ? null : playback.timeDisplayRef}>
                 {formatTime(casting.isCasting ? (casting.castStatus?.current_time || 0) : playback.currentTime)}
               </span>
@@ -2350,9 +2380,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 </button>
               </div>
               )}
-              {!casting.isCasting && svpInstalled && (
+              {!casting.isCasting && (svpInstalled || svpPathEnabled) && (
               <button
                 className={`video-control-btn svp-toggle-btn ${streaming.svpConfig?.enabled ? 'active' : ''} ${streaming.svpLoading ? 'loading' : ''}`}
+                disabled={svpStartupCancelPending}
                 onClick={(e) => {
                   e.stopPropagation()
                   handleToggleSVP()

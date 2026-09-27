@@ -1063,8 +1063,12 @@ video.lightbox-media.vr-video-source {
   cursor: wait;
 }
 
-.lightbox-video-controls.svp-starting {
+.lightbox-video-controls.svp-starting button {
   pointer-events: none;
+}
+
+.lightbox-video-controls.svp-starting .svp-toggle-btn:not(:disabled) {
+  pointer-events: auto;
 }
 
 .lightbox-video-controls.svp-starting button:disabled {
