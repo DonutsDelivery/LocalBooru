@@ -326,8 +326,8 @@ pub static MAIN_MIGRATIONS: &[Migration] = &[
               ALTER TABLE collection_items_exact RENAME TO collection_items;\
               CREATE INDEX idx_collection_items_collection_id ON collection_items(collection_id);\
               CREATE INDEX idx_collection_items_image_id ON collection_items(image_id);\
-              CREATE UNIQUE INDEX idx_collection_items_exact_identity\
-                  ON collection_items(collection_id,library_id,directory_id,image_id)\
+              CREATE UNIQUE INDEX idx_collection_items_exact_identity \
+                  ON collection_items(collection_id,library_id,directory_id,image_id) \
                   WHERE library_id IS NOT NULL AND directory_id IS NOT NULL;",
     },
 ];

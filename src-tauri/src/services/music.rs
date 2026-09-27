@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use lofty::file::TaggedFileExt;
+use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::picture::{Picture, PictureType};
 use lofty::tag::{Accessor, ItemKey};
 use rusqlite::{params, OptionalExtension};
@@ -61,15 +61,29 @@ fn artwork_for(path: &Path, lib: &LibraryContext, picture: Option<&Picture>) -> 
     let picture = picture?;
     // Convert once to a browser-supported image format. This also avoids
     // trusting a tag's MIME label, which is sometimes absent or incorrect.
-    let digest = Sha256::digest(path.to_string_lossy().as_bytes());
+    let mut hasher = Sha256::new();
+    hasher.update(path.to_string_lossy().as_bytes());
+    hasher.update(picture.data());
+    let digest = hasher.finalize();
     let art_dir = lib.data_dir.join("music-artwork");
     std::fs::create_dir_all(&art_dir).ok()?;
     let art_path = art_dir.join(format!("{:x}.png", digest));
     if !art_path.is_file() {
         let image = image::load_from_memory(picture.data()).ok()?;
-        image
-            .save_with_format(&art_path, image::ImageFormat::Png)
-            .ok()?;
+        let temp_path = art_dir.join(format!("{}.tmp", uuid::Uuid::new_v4()));
+        if image
+            .save_with_format(&temp_path, image::ImageFormat::Png)
+            .is_err()
+        {
+            let _ = std::fs::remove_file(&temp_path);
+            return None;
+        }
+        if std::fs::rename(&temp_path, &art_path).is_err() {
+            let _ = std::fs::remove_file(&temp_path);
+            if !art_path.is_file() {
+                return None;
+            }
+        }
     }
     Some(art_path.to_string_lossy().to_string())
 }
@@ -270,11 +284,23 @@ pub fn mark_audio_missing(lib: &LibraryContext, path: &Path) -> Result<(), AppEr
     if !is_audio_file(path) {
         return Ok(());
     }
-    let conn = lib.main_pool.get()?;
-    conn.execute(
+    let mut conn = lib.main_pool.get()?;
+    let tx = conn.transaction()?;
+    let album_id: Option<i64> = tx
+        .query_row(
+            "SELECT album_id FROM music_tracks WHERE path=?1",
+            params![path.to_string_lossy()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    tx.execute(
         "UPDATE music_tracks SET is_available = 0 WHERE path = ?1",
         params![path.to_string_lossy()],
     )?;
+    if let Some(album_id) = album_id {
+        refresh_album_artwork(&tx, album_id)?;
+    }
+    tx.commit()?;
     Ok(())
 }
 
@@ -299,11 +325,23 @@ pub fn reconcile_audio_files(lib: &LibraryContext, directory_id: i64) -> Result<
 /// Hide tracks when a watched folder is removed. Keep the rows so favorites
 /// and music collection memberships return if the same files are watched again.
 pub fn mark_directory_unavailable(lib: &LibraryContext, directory_id: i64) -> Result<(), AppError> {
-    let conn = lib.main_pool.get()?;
-    conn.execute(
+    let mut conn = lib.main_pool.get()?;
+    let tx = conn.transaction()?;
+    let mut stmt = tx.prepare(
+        "SELECT DISTINCT album_id FROM music_tracks WHERE directory_id=?1 AND is_available=1",
+    )?;
+    let album_ids = stmt
+        .query_map(params![directory_id], |row| row.get::<_, i64>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+    tx.execute(
         "UPDATE music_tracks SET is_available = 0 WHERE directory_id = ?1",
         params![directory_id],
     )?;
+    for album_id in album_ids {
+        refresh_album_artwork(&tx, album_id)?;
+    }
+    tx.commit()?;
     Ok(())
 }
 
@@ -311,6 +349,7 @@ pub fn mark_directory_unavailable(lib: &LibraryContext, directory_id: i64) -> Re
 mod tests {
     use super::*;
     use lofty::config::WriteOptions;
+    use lofty::picture::MimeType;
     use lofty::tag::{Tag, TagExt, TagType};
 
     fn wav_file(path: &Path) {
@@ -418,5 +457,72 @@ mod tests {
             .unwrap();
         assert_eq!(title, "untagged");
         assert_eq!(album, "Unknown Album");
+    }
+
+    #[test]
+    fn embedded_artwork_cache_changes_with_picture_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let lib = LibraryContext::create(root.path(), "Art test").unwrap();
+        let source = root.path().join("song.mp3");
+        let picture = |color: image::Rgb<u8>| {
+            let image = image::RgbImage::from_pixel(2, 2, color);
+            let mut bytes = std::io::Cursor::new(Vec::new());
+            image::DynamicImage::ImageRgb8(image)
+                .write_to(&mut bytes, image::ImageFormat::Png)
+                .unwrap();
+            Picture::new_unchecked(
+                PictureType::CoverFront,
+                Some(MimeType::Png),
+                None,
+                bytes.into_inner(),
+            )
+        };
+        let first = artwork_for(&source, &lib, Some(&picture(image::Rgb([255, 0, 0])))).unwrap();
+        let second = artwork_for(&source, &lib, Some(&picture(image::Rgb([0, 0, 255])))).unwrap();
+        assert_ne!(first, second);
+        assert!(Path::new(&first).is_file());
+        assert!(Path::new(&second).is_file());
+        assert_ne!(
+            std::fs::read(first).unwrap(),
+            std::fs::read(second).unwrap()
+        );
+    }
+
+    #[test]
+    fn missing_cover_track_clears_album_artwork() {
+        let root = tempfile::tempdir().unwrap();
+        let lib = LibraryContext::create(root.path(), "Missing art test").unwrap();
+        let art = root.path().join("art.png");
+        image::RgbImage::new(2, 2).save(&art).unwrap();
+        let conn = lib.main_pool.get().unwrap();
+        conn.execute(
+            "INSERT INTO music_albums (id,album_key,title,artist,artwork_path)
+             VALUES (1,'album','Release','Artist',?1)",
+            params![art.to_string_lossy()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO music_tracks (id,path,directory_id,album_id,title,artist,artwork_path)
+             VALUES (1,'/track/first.mp3',1,1,'First','Artist',?1)",
+            params![art.to_string_lossy()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO music_tracks (id,path,directory_id,album_id,title,artist)
+             VALUES (2,'/track/second.mp3',1,1,'Second','Artist')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        mark_audio_missing(&lib, Path::new("/track/first.mp3")).unwrap();
+        let conn = lib.main_pool.get().unwrap();
+        let album_art: Option<String> = conn
+            .query_row(
+                "SELECT artwork_path FROM music_albums WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(album_art, None);
     }
 }
