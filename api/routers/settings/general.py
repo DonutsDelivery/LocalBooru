@@ -47,16 +47,45 @@ async def get_file_dimensions(file_path: str):
 
     Used to fetch dimensions on-the-fly without storing in DB.
     """
+    import os
+    import subprocess
+
     from ...services.importer import get_image_dimensions
 
     try:
         dims = get_image_dimensions(file_path)
         if dims:
-            return {
+            result = {
                 "success": True,
                 "width": dims[0],
                 "height": dims[1]
             }
+            if os.path.splitext(file_path)[1].lower() in {
+                '.mp4', '.mkv', '.webm', '.avi', '.mov', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp'
+            }:
+                probe = subprocess.run(
+                    ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                     '-show_entries', 'stream=avg_frame_rate,r_frame_rate:format=duration',
+                     '-of', 'json', file_path],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if probe.returncode == 0:
+                    import json
+                    metadata = json.loads(probe.stdout)
+                    stream = next(iter(metadata.get('streams', [])), {})
+                    for rate in (stream.get('avg_frame_rate'), stream.get('r_frame_rate')):
+                        try:
+                            numerator, denominator = map(float, rate.split('/'))
+                            if denominator > 0 and numerator > 0:
+                                result['fps'] = numerator / denominator
+                                break
+                        except (AttributeError, ValueError, ZeroDivisionError):
+                            continue
+                    try:
+                        result['duration'] = float(metadata.get('format', {}).get('duration', 0))
+                    except (TypeError, ValueError):
+                        pass
+            return result
         else:
             return {
                 "success": False,

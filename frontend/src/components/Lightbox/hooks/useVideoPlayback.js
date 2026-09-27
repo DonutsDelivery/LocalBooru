@@ -24,7 +24,8 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     cancelPendingSVPRestart,
     restartTranscodeFromPosition,
     setAudioOutputVolume,
-    setAudioOutputMuted
+    setAudioOutputMuted,
+    interactionReadyRef
   } = streamState
 
   // Video player state
@@ -133,7 +134,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
 
   // Seek forward/backward
   const seekVideo = useCallback((seconds) => {
-    if (!mediaRef.current) return
+    if (!mediaRef.current || interactionReadyRef?.current === false) return
 
     // For HLS streams, currentTime is in HLS time, need to convert to absolute video time
     const currentAbsoluteTime = getCurrentAbsoluteTime()
@@ -185,7 +186,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
 
   // Toggle video play/pause
   const toggleVideoPlay = useCallback(() => {
-    if (!mediaRef.current) return
+    if (!mediaRef.current || interactionReadyRef?.current === false) return
     const video = mediaRef.current
     if (video.paused) {
       video.play().catch(() => {})
@@ -286,7 +287,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
 
   // Handle seeking via timeline
   const handleSeek = useCallback((e) => {
-    if (!mediaRef.current || !duration || !timelineRef.current) return
+    if (interactionReadyRef?.current === false || !mediaRef.current || !duration || !timelineRef.current) return
     const rect = timelineRef.current.getBoundingClientRect()
     const clickX = e.clientX - rect.left
     const percent = Math.max(0, Math.min(1, clickX / rect.width))
@@ -334,6 +335,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
   }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime])
 
   const handleSeekStart = useCallback((e) => {
+    if (interactionReadyRef?.current === false) return
     setIsSeeking(true)
     handleSeek(e)
   }, [handleSeek])
@@ -352,6 +354,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
   const handleSeekEnd = useCallback(() => {
     if (!isSeeking) return
     setIsSeeking(false)
+    if (interactionReadyRef?.current === false) return
 
     // Seek to final position (read from ref — always in sync via setCurrentTime wrapper)
     if (!mediaRef.current || !duration) return
@@ -387,6 +390,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
   // Touch handlers for video timeline (mobile)
   const handleSeekTouchStart = useCallback((e) => {
     e.preventDefault()
+    if (interactionReadyRef?.current === false) return
     setIsSeeking(true)
     if (!mediaRef.current || !duration || !timelineRef.current) return
     const rect = timelineRef.current.getBoundingClientRect()
@@ -445,6 +449,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     if (!isSeeking) return
     e.preventDefault()
     setIsSeeking(false)
+    if (interactionReadyRef?.current === false) return
 
     // Seek to final position (read from ref — always in sync via setCurrentTime wrapper)
     if (!mediaRef.current || !duration) return
@@ -534,7 +539,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
 
   // Frame advance (when paused)
   const frameAdvance = useCallback(() => {
-    if (!mediaRef.current || isPlaying) return
+    if (!mediaRef.current || isPlaying || interactionReadyRef?.current === false) return
     const newTime = Math.min(duration, mediaRef.current.currentTime + (1/30))
     mediaRef.current.currentTime = newTime
     setCurrentTime(newTime)
@@ -615,10 +620,10 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     setVideoDisplayMode('fit')
     setVideoNaturalSize({ width: 0, height: 0 })
     setPlaybackSpeed(1.0)
-    if (mediaRef.current) {
+    if (mediaRef.current && interactionReadyRef?.current !== false) {
       mediaRef.current.playbackRate = 1.0
     }
-  }, [mediaRef, setCurrentTime])
+  }, [mediaRef, interactionReadyRef, setCurrentTime])
 
   return {
     isPlaying,

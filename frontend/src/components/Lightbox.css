@@ -1057,6 +1057,27 @@ video.lightbox-media.vr-video-source {
   z-index: 20;
 }
 
+.lightbox-video-controls.svp-starting .video-timeline {
+  pointer-events: none;
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.lightbox-video-controls.svp-starting {
+  pointer-events: none;
+}
+
+.lightbox-video-controls.svp-starting button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.svp-starting-label {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
 /* Show controls when UI is visible */
 .lightbox:not(.ui-hidden) .lightbox-video-controls {
   opacity: 1;

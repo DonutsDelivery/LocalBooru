@@ -228,8 +228,80 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     && !streaming.opticalFlowStreamUrl
     && !streaming.transcodeStreamUrl
   )
+  const [svpPreflight, setSvpPreflight] = useState(null)
+  const svpPreflightReady = !svpPathEnabled
+    || (svpPreflight?.imageKey === currentImageKey && svpPreflight.ready)
+  const svpInteractionReadyRef = useRef(true)
+  const svpInteractionKeyRef = useRef(null)
+  const [svpStartupReady, setSvpStartupReady] = useState(false)
+  const svpInteractionKey = svpPathEnabled ? currentImageKey : null
+  if (svpInteractionKeyRef.current !== svpInteractionKey) {
+    svpInteractionKeyRef.current = svpInteractionKey
+    svpInteractionReadyRef.current = !svpPathEnabled
+  }
+  const svpControlsReady = !svpPathEnabled || (svpInteractionReadyRef.current && svpStartupReady)
+  useEffect(() => {
+    setSvpStartupReady(!svpPathEnabled)
+  }, [svpInteractionKey, svpPathEnabled])
   const libraryImageId = image?.is_local_direct_file ? null : image?.id
   svpPathEnabledRef.current = svpPathEnabled
+
+  useEffect(() => {
+    if (!svpPathEnabled || !image?.file_path) return
+    const desktopAPI = getDesktopAPI()
+    if (!desktopAPI?.subscribeToSvpManager || !desktopAPI?.updateSvpManagerPlayback) {
+      setSvpPreflight({ imageKey: currentImageKey, ready: true })
+      return
+    }
+
+    let cancelled = false
+    let unsubscribe = () => {}
+    const release = () => {
+      if (!cancelled) setSvpPreflight({ imageKey: currentImageKey, ready: true })
+    }
+    setSvpPreflight({ imageKey: currentImageKey, ready: false })
+    const fallback = setTimeout(release, 8000)
+    const prepare = async () => {
+      try {
+        unsubscribe = await desktopAPI.subscribeToSvpManager({
+          onFilterChanged: ({ enabled, mediaKey }) => {
+            if (enabled && mediaKey === currentImageKey) release()
+          },
+        })
+        if (cancelled) {
+          unsubscribe()
+          return
+        }
+        const info = await getFileDimensions(image.file_path)
+        if (cancelled) return
+        const fps = Number(info?.fps || image?.video_fps || image?.frame_rate || image?.fps)
+        if (!info?.success || !Number.isFinite(fps) || fps <= 0) {
+          release()
+          return
+        }
+        svpSourceFpsRef.current = fps
+        await desktopAPI.updateSvpManagerPlayback({
+          enabled: true,
+          mediaKey: currentImageKey,
+          path: image.file_path,
+          width: info.width,
+          height: info.height,
+          fps,
+          duration: info.duration || 0,
+          paused: false,
+        })
+      } catch (error) {
+        console.warn('[SVPManager] could not prepare graph before playback:', error)
+        release()
+      }
+    }
+    prepare()
+    return () => {
+      cancelled = true
+      clearTimeout(fallback)
+      unsubscribe()
+    }
+  }, [svpPathEnabled, currentImageKey, image?.file_path, image?.video_fps, image?.frame_rate, image?.fps])
 
   useEffect(() => {
     if (streaming.svpConfig?.enabled !== undefined) {
@@ -279,7 +351,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     cancelPendingSVPRestart: streaming.cancelPendingSVPRestart,
     restartTranscodeFromPosition: streaming.restartTranscodeFromPosition,
     setAudioOutputVolume: streaming.setAudioOutputVolume,
-    setAudioOutputMuted: streaming.setAudioOutputMuted
+    setAudioOutputMuted: streaming.setAudioOutputMuted,
+    interactionReadyRef: svpInteractionReadyRef,
   }, libraryImageId, image?.directory_id, image?.library_id)
 
   const reportSvpPlayback = useCallback((video = mediaRef.current, fps = svpSourceFpsRef.current) => {
@@ -380,9 +453,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       onFilterChanged: ({ enabled, mediaKey }) => {
         if (!svpPathEnabledRef.current) return
         if (mediaKey && mediaKey !== activeImageKeyRef.current) return
+        svpInteractionReadyRef.current = false
+        setSvpStartupReady(false)
         svpFilterActiveRef.current = Boolean(enabled)
         const video = mediaRef.current
-        if (!isVideoMediaElement(video)) return
+        // The first graph can arrive before the video has a source. In that
+        // case the source will open on the prepared graph; no remount is needed.
+        if (!isVideoMediaElement(video) || (!video.currentSrc && video.readyState === 0)) return
         const imageKey = activeImageKeyRef.current
         if (!svpResumeRef.current) {
           svpResumeRef.current = {
@@ -420,7 +497,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         if (!isVideoMediaElement(video)) return
         const imageKey = activeImageKeyRef.current
         const resume = svpResumeRef.current
-        if (resume && (resume.imageKey !== imageKey || resume.media !== video)) {
+        if (resume && resume.imageKey !== imageKey) {
           svpResumeRef.current = null
         }
         if (paused) {
@@ -432,8 +509,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               media: video,
             }
           }
-          video.pause()
+          svpResumeRef.current.paused = true
+          if (svpInteractionReadyRef.current) video.pause()
         } else if (svpTransitionRef.current.active) {
+          if (svpResumeRef.current) svpResumeRef.current.paused = false
+        } else if (!svpInteractionReadyRef.current) {
           if (svpResumeRef.current) svpResumeRef.current.paused = false
         } else {
           video.play().catch(() => {})
@@ -464,7 +544,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     if (!svpPathEnabled || !svpFilterActiveRef.current || svpFailOpenRef.current) return
     svpFailOpenRef.current = true
     svpFilterActiveRef.current = false
-    if (isVideoMediaElement(video)) video.pause()
+    if (svpInteractionReadyRef.current && isVideoMediaElement(video)) video.pause()
     getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(error => {
       console.warn('[SVPManager] failed to disable broken native graph:', error)
     })
@@ -783,8 +863,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       }
       return
     }
+    if (!svpControlsReady) return
     gestures.handleVideoClick(e)
-  }, [image?.original_filename, gestures, casting, consumeRevealTap])
+  }, [image?.original_filename, gestures, casting, consumeRevealTap, svpControlsReady])
 
   // Collection picker handlers
   const handleOpenCollectionPicker = useCallback(async () => {
@@ -1175,6 +1256,14 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
       const isVideoFile = isVideo(image?.original_filename)
 
+      // The patched WebKit pipeline can block the window if pause or seek
+      // reaches it before SVP has produced a frame. Keep Escape available.
+      if (isVideoFile && !casting.isCasting && !svpControlsReady) {
+        if (e.key === 'Escape') onClose()
+        else e.preventDefault()
+        return
+      }
+
       // Video arrows seek within the current clip; image arrows navigate.
       if (isVideoFile && mediaRef.current) {
         switch (e.key) {
@@ -1316,7 +1405,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, playback, image?.original_filename, handleToggleFullscreen, subtitles, curationMode])
+  }, [onNav, onClose, handleToggleFavorite, handleCopyImage, handleDelete, showDeleteConfirm, playback, image?.original_filename, handleToggleFullscreen, subtitles, curationMode, casting, svpControlsReady])
 
   // Auto-focus Cancel button when delete dialog opens
   useEffect(() => {
@@ -1411,6 +1500,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const shouldPlayDirect = useMemo(() => {
     if (image?.is_local_direct_file) return true
     return streaming.svpConfigLoaded
+      && svpPreflightReady
       && !streaming.svpStreamUrl
       && !streaming.opticalFlowStreamUrl
       && !streaming.transcodeStreamUrl
@@ -1424,7 +1514,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     streaming.transcodeStreamUrl, streaming.svpLoading, streaming.codecFallbackActive,
     currentQuality, streaming.svpConfig?.enabled, streaming.nativeSvpPlayback, streaming.svpError,
     streaming.opticalFlowConfig?.enabled, streaming.opticalFlowError,
-    image?.is_local_direct_file
+    image?.is_local_direct_file, svpPreflightReady
   ])
 
   // On Tauri mobile with local server, use asset protocol to serve videos directly from disk.
@@ -1980,10 +2070,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         ) : isVideoFile ? (
           <div
             className="lightbox-video-container"
-            onTouchStart={casting.isCasting || curationMode || vrActive ? undefined : gestures.handleTouchStart}
-            onTouchMove={casting.isCasting || curationMode || vrActive ? undefined : gestures.handleTouchMove}
-            onTouchEnd={casting.isCasting || curationMode || vrActive ? undefined : gestures.handleTouchEnd}
-            onTouchCancel={casting.isCasting || curationMode || vrActive ? cancelRevealTap : gestures.handleTouchCancel}
+            onTouchStart={casting.isCasting || curationMode || vrActive || !svpControlsReady ? undefined : gestures.handleTouchStart}
+            onTouchMove={casting.isCasting || curationMode || vrActive || !svpControlsReady ? undefined : gestures.handleTouchMove}
+            onTouchEnd={casting.isCasting || curationMode || vrActive || !svpControlsReady ? undefined : gestures.handleTouchEnd}
+            onTouchCancel={casting.isCasting || curationMode || vrActive || !svpControlsReady ? cancelRevealTap : gestures.handleTouchCancel}
           >
             <video
               key={`${currentImageKey}-${svpPipelineGeneration}`}
@@ -2012,6 +2102,23 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               }}
               onTimeUpdate={(event) => {
                 playback.handleTimeUpdate(event)
+                if (svpPathEnabled && !svpInteractionReadyRef.current
+                    && !svpTransitionRef.current.active
+                    && event.currentTarget.readyState >= 3
+                    && event.currentTarget.currentTime > 0.1) {
+                  const video = event.currentTarget
+                  svpInteractionReadyRef.current = true
+                  setSvpStartupReady(true)
+                  const resume = svpResumeRef.current
+                  svpResumeRef.current = null
+                  if (resume?.imageKey === currentImageKey) {
+                    setTimeout(() => {
+                      if (mediaRef.current !== video || !svpInteractionReadyRef.current) return
+                      if (resume.currentTime > 0.1) video.currentTime = resume.currentTime
+                      if (resume.paused) video.pause()
+                    }, 0)
+                  }
+                }
                 const previousTime = directFileLastTimeRef.current
                 const nextTime = event.currentTarget.currentTime
                 if (image?.is_local_direct_file && previousTime > 1 && nextTime < previousTime - 1) {
@@ -2026,11 +2133,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onLoadedMetadata={(event) => {
                 handleLoadedMetadataWithResolution(event)
                 const resume = svpResumeRef.current
-                if (resume && resume.imageKey === currentImageKey) {
+                if (resume && resume.imageKey === currentImageKey && svpInteractionReadyRef.current) {
                   event.currentTarget.currentTime = resume.currentTime
                   if (!resume.paused) event.currentTarget.play().catch(() => {})
                   svpResumeRef.current = null
-                } else if (resume) {
+                } else if (resume && resume.imageKey !== currentImageKey) {
                   svpResumeRef.current = null
                 }
                 svpTransitionRef.current.active = false
@@ -2083,7 +2190,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
             {/* Custom video controls */}
             {!debugBare && <div
-              className="lightbox-video-controls"
+              className={`lightbox-video-controls ${!svpControlsReady ? 'svp-starting' : ''}`}
               onClick={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
               onTouchMove={(e) => e.stopPropagation()}
@@ -2091,6 +2198,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             >
               {/* Timeline and playback controls */}
               <div className="video-controls-row">
+              {!svpControlsReady && <span className="svp-starting-label" role="status">SVP starting…</span>}
               <span className="video-time" ref={casting.isCasting ? null : playback.timeDisplayRef}>
                 {formatTime(casting.isCasting ? (casting.castStatus?.current_time || 0) : playback.currentTime)}
               </span>
@@ -2104,23 +2212,23 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                   const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
                   casting.castSeek(pct * duration)
                 }) : undefined}
-                onMouseDown={casting.isCasting ? undefined : playback.handleSeekStart}
+                onMouseDown={casting.isCasting || !svpControlsReady ? undefined : playback.handleSeekStart}
                 onMouseMove={(e) => {
                   if (!casting.isCasting) {
-                    playback.handleSeekMove(e)
+                    if (svpControlsReady) playback.handleSeekMove(e)
                     timelinePreview.handleTimelineHover(e)
                   }
                 }}
-                onMouseUp={casting.isCasting ? undefined : playback.handleSeekEnd}
+                onMouseUp={casting.isCasting || !svpControlsReady ? undefined : playback.handleSeekEnd}
                 onMouseLeave={(e) => {
                   if (!casting.isCasting) {
-                    playback.handleSeekEnd(e)
+                    if (svpControlsReady) playback.handleSeekEnd(e)
                     timelinePreview.handleTimelineHoverEnd()
                   }
                 }}
-                onTouchStart={casting.isCasting ? undefined : playback.handleSeekTouchStart}
-                onTouchMove={casting.isCasting ? undefined : playback.handleSeekTouchMove}
-                onTouchEnd={casting.isCasting ? undefined : playback.handleSeekTouchEnd}
+                onTouchStart={casting.isCasting || !svpControlsReady ? undefined : playback.handleSeekTouchStart}
+                onTouchMove={casting.isCasting || !svpControlsReady ? undefined : playback.handleSeekTouchMove}
+                onTouchEnd={casting.isCasting || !svpControlsReady ? undefined : playback.handleSeekTouchEnd}
               >
                 {/* Timeline thumbnail preview */}
                 {timelinePreview.hoverTime !== null && timelinePreview.hasPreviewFrames && (
@@ -2168,12 +2276,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               </div>
               <span className="video-time">{formatTime(casting.isCasting ? (casting.castStatus?.duration || 0) : playback.duration, true)}</span>
               <div className="video-playback-controls">
-                {!curationMode && <button className="video-nav-btn" onClick={() => onNav(-1)} title="Previous video" aria-label="Previous video">
+                {!curationMode && <button className="video-nav-btn" onClick={() => onNav(-1)} disabled={!svpControlsReady} title="Previous video" aria-label="Previous video">
                   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z"/></svg>
                 </button>}
                 <button
                   className="video-play-btn-center"
                   onClick={casting.isCasting ? (() => casting.castStatus?.state === 'playing' ? casting.castPause() : casting.castResume()) : playback.toggleVideoPlay}
+                  disabled={!svpControlsReady}
                   title={(casting.isCasting ? casting.castStatus?.state === 'playing' : playback.isPlaying) ? 'Pause (Space)' : 'Play (Space)'}
                   aria-label={(casting.isCasting ? casting.castStatus?.state === 'playing' : playback.isPlaying) ? 'Pause' : 'Play'}
                 >
@@ -2183,7 +2292,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                   )}
                 </button>
-                {!curationMode && <button className="video-nav-btn" onClick={() => onNav(1)} title="Next video" aria-label="Next video">
+                {!curationMode && <button className="video-nav-btn" onClick={() => onNav(1)} disabled={!svpControlsReady} title="Next video" aria-label="Next video">
                   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6v12h2V6h-2zm-3.5 6l-8.5 6V6l8.5 6z"/></svg>
                 </button>}
               </div>
@@ -2439,7 +2548,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               <div className="resume-toast" data-curation-gesture-block onClick={(e) => e.stopPropagation()}>
                 <span>Resume from {formatTime(resumePosition.position)}?</span>
                 <div className="resume-toast-actions">
-                  <button className="resume-toast-btn" onClick={() => {
+                  <button className="resume-toast-btn" disabled={!svpControlsReady} onClick={() => {
                     playback.seekVideo(resumePosition.position - playback.currentTimeRef.current)
                     setResumePosition(null)
                   }}>Resume</button>
