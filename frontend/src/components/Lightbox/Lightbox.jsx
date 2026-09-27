@@ -23,6 +23,7 @@ import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
 import { curationActionForSwipe } from '../../utils/lightboxGestures.js'
 import { isVideoMediaElement, releaseVideoMedia } from '../../utils/lightboxMedia.js'
+import { diagnoseImageLoad } from '../../utils/imageLoadDiagnostics.js'
 import { adjustmentControlState, adjustmentLocator, appendCacheBuster, commitAdjustmentSourceTransition, createAdjustmentOperationOwner, createImageSourceOwner, imageFileHash } from '../../utils/imageAdjustments.js'
 
 // Video diagnostics overlay — press I to toggle, B for bare mode (video only)
@@ -2458,11 +2459,18 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               <path d="M15 9l-6 6M9 9l6 6"/>
             </svg>
             <h3>Image Could Not Be Loaded</h3>
-            <p>The media request failed or this image could not be decoded.</p>
+            <p aria-live="polite">{imageLoadError.reason}</p>
+            <p className="lightbox-error-context">
+              {imageLoadError.pending ? 'Rechecking… · ' : imageLoadError.status ? `Recheck HTTP ${imageLoadError.status} · ` : 'Recheck unavailable · '}
+              {previewUrl ? 'Preview' : 'Original'} · image {image?.id ?? 'unknown'} · directory {image?.directory_id ?? 'unknown'} · library {image?.library_id ?? 'unknown'}
+              {imageLoadError.mediaType ? ` · ${imageLoadError.mediaType}` : ''}
+              {imageLoadError.contentLength ? ` · ${imageLoadError.contentLength} bytes` : ''}
+            </p>
             <button
               className="lightbox-confirm-cancel"
               onClick={(event) => {
                 event.stopPropagation()
+                imageSourceOwnerRef.current.activate(null)
                 setImageLoadError(false)
                 setImageRetryKey(value => value + 1)
               }}
@@ -2479,16 +2487,22 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             className="lightbox-media"
             style={{ ...(previewUrl ? {} : getFilterStyle()), ...zoomPan.getZoomTransform() }}
             onContextMenu={handleImageContextMenu}
-            onError={(event) => {
-              console.warn('[Lightbox] Media load failed', {
-                imageId: image.id,
-                directoryId: image.directory_id,
-                libraryId: image.library_id,
-                source: event.currentTarget.currentSrc || event.currentTarget.src,
-              })
-              if (imageSourceOwnerRef.current.owns(renderedImageSource)) {
-                setImageLoadError(true)
+            onError={async (event) => {
+              if (!imageSourceOwnerRef.current.owns(renderedImageSource)) return
+              const source = event.currentTarget.currentSrc || event.currentTarget.src
+              const context = {
+                imageId: image?.id,
+                directoryId: image?.directory_id,
+                libraryId: image?.library_id,
+                sourceKind: previewUrl ? 'preview' : 'original',
               }
+              setImageLoadError({ reason: 'Checking the media request…', status: null, pending: true })
+              const diagnostic = source
+                ? await diagnoseImageLoad(source)
+                : { status: null, reason: 'No image source was provided for this item.' }
+              if (!imageSourceOwnerRef.current.owns(renderedImageSource)) return
+              console.warn('[Lightbox] Media load failed', { ...context, ...diagnostic })
+              setImageLoadError(diagnostic)
             }}
           />
         )}

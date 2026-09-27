@@ -217,10 +217,23 @@ fn resolve_exact_media(
     match paths.as_slice() {
         [path] => Ok((path.clone(), hash)),
         [] => Err(AppError::NotFound("Image file not found".into())),
-        _ => Err(AppError::BadRequest(
-            "Media target is ambiguous because multiple existing file paths share this image"
-                .into(),
-        )),
+        // Import groups identical files under one image. Reading one matching
+        // path is unambiguous; only mutating the source requires a unique path.
+        candidates => {
+            if let Some(path) = candidates
+                .iter()
+                .find(|path| path.is_file() && media_path_matches_hash(path, &hash))
+            {
+                return Ok((path.clone(), hash));
+            }
+            if candidates.iter().any(|path| path.is_file()) {
+                return Err(AppError::NotFound(
+                    "No file matches the current image version".into(),
+                ));
+            }
+            // Keep the route's missing/offline distinction when no copy is present.
+            Ok((candidates[0].clone(), hash))
+        }
     }
 }
 
@@ -1282,23 +1295,79 @@ mod tests {
 
         let exact = resolve_exact_media(&library, 2, 7).unwrap();
         assert_eq!(exact.1, "two");
+        assert_eq!(exact.0, root.join("2.png"));
         assert!(resolve_exact_media(&library, 3, 7).is_err());
-
-        let pool = library.directory_db.get_pool(2).unwrap();
-        let connection = pool.get().unwrap();
-        connection
-            .execute(
-                "INSERT INTO image_files (image_id, original_path, file_extension) VALUES (7, ?1, 'png')",
-                params![root.join("duplicate.png").to_string_lossy()],
-            )
-            .unwrap();
-        assert!(matches!(
-            resolve_exact_media(&library, 2, 7),
-            Err(AppError::BadRequest(message)) if message.contains("ambiguous")
-        ));
 
         drop(library);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn duplicate_imports_keep_thumbnail_and_full_image_readable() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::new(root.path(), 0).unwrap();
+        let library = state.library_manager().primary().clone();
+        let first_path = root.path().join("first.png");
+        let second_path = root.path().join("second.png");
+        image::DynamicImage::new_rgb8(2, 2)
+            .save(&first_path)
+            .unwrap();
+        std::fs::copy(&first_path, &second_path).unwrap();
+
+        let first =
+            importer::import_image(&state, &library, &first_path.to_string_lossy(), 11, false)
+                .unwrap();
+        let second =
+            importer::import_image(&state, &library, &second_path.to_string_lossy(), 11, false)
+                .unwrap();
+        assert_eq!(first.status, importer::ImportStatus::Imported);
+        assert_eq!(second.status, importer::ImportStatus::Duplicate);
+        assert_eq!(first.image_id, second.image_id);
+
+        let image_id = first.image_id.unwrap();
+        let hash = importer::calculate_quick_hash(&first_path.to_string_lossy()).unwrap();
+        let query = format!(
+            "directory_id=11&library_id={}&file_hash={}",
+            library.uuid, hash
+        );
+        let request = |kind| {
+            Request::builder()
+                .uri(format!("/api/images/{image_id}/{kind}?{query}"))
+                .body(Body::empty())
+                .unwrap()
+        };
+        let app = Router::new()
+            .route("/api/images/{image_id}/thumbnail", get(get_image_thumbnail))
+            .route("/api/images/{image_id}/file", get(get_image_file))
+            .with_state(state);
+        let thumbnail = app.clone().oneshot(request("thumbnail")).await.unwrap();
+        assert_eq!(thumbnail.status(), StatusCode::OK);
+        let response = app.clone().oneshot(request("file")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), usize::MAX).await.unwrap(),
+            std::fs::read(&first_path).unwrap()
+        );
+
+        std::fs::write(&first_path, b"changed since import").unwrap();
+        let response = app.clone().oneshot(request("file")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), usize::MAX).await.unwrap(),
+            std::fs::read(&second_path).unwrap()
+        );
+
+        std::fs::remove_file(&first_path).unwrap();
+        let response = app.clone().oneshot(request("file")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), usize::MAX).await.unwrap(),
+            std::fs::read(&second_path).unwrap()
+        );
+
+        std::fs::write(&second_path, b"also changed since import").unwrap();
+        let response = app.oneshot(request("file")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     // AC: @identity-safe-timeline-previews ac-exact-preview-identity
