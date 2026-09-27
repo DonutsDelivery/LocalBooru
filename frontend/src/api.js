@@ -1858,7 +1858,9 @@ export async function fetchMusicCollections(libraryId = null) {
 }
 
 export async function createMusicCollection(name, libraryId = null) {
-  const response = await api.post('/music/collections', { name, library_id: libraryId })
+  const response = await api.post('/music/collections', { name }, {
+    params: { library_id: libraryId },
+  })
   return response.data
 }
 
