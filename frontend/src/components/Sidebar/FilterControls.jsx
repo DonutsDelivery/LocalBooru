@@ -64,6 +64,7 @@ export const DURATION_OPTIONS = [
 ]
 
 function FilterControls({
+  mediaType = 'image',
   // Directory filter
   directories,
   selectedDirectory,
@@ -100,6 +101,8 @@ function FilterControls({
   // Duration
   duration,
   onDurationChange,
+  watchedStatus,
+  onWatchedStatusChange,
   // Search results
   total,
   // Family mode
@@ -109,11 +112,12 @@ function FilterControls({
 
   // Count active advanced filters
   const activeAdvancedCount = [
-    minAge !== null || maxAge !== null, // Age range modified
+    mediaType === 'image' && (minAge !== null || maxAge !== null),
     timeframe !== null,                  // Timeframe set
     resolution !== null,                 // Resolution set
-    orientation !== null,                // Orientation set
-    duration !== null                    // Duration set
+    mediaType === 'image' && orientation !== null,
+    mediaType === 'video' && duration !== null,
+    mediaType === 'video' && watchedStatus !== null,
   ].filter(Boolean).length
 
   return (
@@ -245,7 +249,7 @@ function FilterControls({
       <div className={`advanced-filters-content ${advancedExpanded ? 'expanded' : ''}`}>
         <div className="advanced-filters-inner">
           {/* Age Range Slider */}
-          <div className="age-filter">
+          {mediaType === 'image' && <div className="age-filter">
             <div className="age-filter-header">
               <span className="age-filter-label">Age Range:</span>
               <span className="age-filter-value">
@@ -282,7 +286,7 @@ function FilterControls({
                 className="age-slider age-slider-max"
               />
             </div>
-          </div>
+          </div>}
 
           {/* Timeframe Filter */}
           <div className="timeframe-filter">
@@ -326,7 +330,7 @@ function FilterControls({
           </div>
 
           {/* Orientation Filter */}
-          <div className="orientation-filter">
+          {mediaType === 'image' && <div className="orientation-filter">
             <span className="filter-label">Orientation</span>
             <div className="orientation-buttons">
               {ORIENTATION_OPTIONS.map(option => {
@@ -343,10 +347,10 @@ function FilterControls({
                 )
               })}
             </div>
-          </div>
+          </div>}
 
           {/* Duration Filter (for videos) */}
-          <div className="duration-filter">
+          {mediaType === 'video' && <div className="duration-filter">
             <span className="filter-label">Video Duration</span>
             <div className="duration-buttons">
               {DURATION_OPTIONS.map(option => {
@@ -365,7 +369,26 @@ function FilterControls({
                 )
               })}
             </div>
-          </div>
+          </div>}
+
+          {mediaType === 'video' && <div className="watched-filter">
+            <span className="filter-label">Watched Status</span>
+            <div className="duration-buttons">
+              {[
+                { value: null, label: 'Any' },
+                { value: 'unwatched', label: 'Unwatched' },
+                { value: 'in_progress', label: 'In progress' },
+                { value: 'watched', label: 'Watched' },
+              ].map(option => (
+                <button
+                  key={option.label}
+                  type="button"
+                  className={`duration-btn ${watchedStatus === option.value ? 'active' : ''}`}
+                  onClick={() => onWatchedStatusChange(option.value)}
+                >{option.label}</button>
+              ))}
+            </div>
+          </div>}
         </div>
       </div>
 

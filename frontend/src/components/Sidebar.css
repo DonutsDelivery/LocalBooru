@@ -2213,3 +2213,34 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+.media-collections-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.media-collections-heading a,
+.media-collection-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.media-collection-link {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.media-collection-link:hover,
+.media-collection-link.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.media-collections-empty {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}

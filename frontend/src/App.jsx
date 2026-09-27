@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, useSearchParams, useNavigate, useLocation
 
 import { isMobileApp, LOCAL_SERVER } from './serverManager'
 import MasonryGrid from './components/MasonryGrid'
+import MediaSectionsNav from './components/MediaSectionsNav'
 import Sidebar from './components/Sidebar'
 import Lightbox from './components/Lightbox'
 import TitleBar from './components/TitleBar'
@@ -54,6 +55,9 @@ function calculatePerPage(tileSize) {
   // Minimum 50, maximum 400 (enough for 4K with small tiles)
   return Math.min(400, Math.max(50, needed))
 }
+
+// Preserve loaded pages while switching libraries during this app session.
+const gallerySnapshots = new Map()
 
 // Autostart toggle for Tauri desktop builds
 function AutostartToggle() {
@@ -546,15 +550,23 @@ function DirectFilePlayer() {
   />
 }
 
-function Gallery() {
+function Gallery({ mediaType = 'image' }) {
+  const sectionName = mediaType === 'video' ? 'Videos' : 'Images'
+  const filterStorageKey = mediaType === 'video' ? 'localbooru_video_filters' : 'localbooru_filters'
+  const cachedGalleryRef = useRef(
+    gallerySnapshots.get(mediaType)?.search === window.location.search
+      ? gallerySnapshots.get(mediaType)
+      : null
+  )
+  const restoredGalleryRef = useRef(false)
   const { isInstalled: isAddonInstalled } = useAllAddonStatuses()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [images, setImages] = useState([])
+  const [images, setImages] = useState(() => cachedGalleryRef.current?.images || [])
   const [tags, setTags] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(1)
-  const [hasMore, setHasMore] = useState(true)
-  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(!cachedGalleryRef.current)
+  const [page, setPage] = useState(() => cachedGalleryRef.current?.page || 1)
+  const [hasMore, setHasMore] = useState(() => cachedGalleryRef.current?.hasMore ?? true)
+  const [total, setTotal] = useState(() => cachedGalleryRef.current?.total || 0)
   const [filtersInitialized, setFiltersInitialized] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
 
@@ -665,6 +677,7 @@ function Gallery() {
   const currentTimeframe = searchParams.get('timeframe') || null
   const currentFilename = searchParams.get('filename') || ''
   const currentOrientation = searchParams.get('orientation') || null
+  const currentWatchedStatus = mediaType === 'video' ? searchParams.get('watched') : null
   // Resolution is stored as "widthxheight" in URL, e.g., "1920x1080"
   const resolutionParam = searchParams.get('resolution')
   const currentResolution = useMemo(() => {
@@ -688,6 +701,32 @@ function Gallery() {
   galleryRequestOwnerRef.current.activate(galleryViewKey)
 
   useEffect(() => {
+    sessionStorage.setItem(`donutMediaCenter_gallery_url_${mediaType}`, `${window.location.pathname}${window.location.search}`)
+  }, [mediaType, searchParams])
+
+  useEffect(() => {
+    if (loading || publishedGalleryViewRef.current !== galleryViewKey) return
+    gallerySnapshots.set(mediaType, {
+      search: window.location.search,
+      viewKey: galleryViewKey,
+      images,
+      page,
+      total,
+      hasMore,
+    })
+  }, [mediaType, galleryViewKey, images, page, total, hasMore, loading])
+
+  useEffect(() => {
+    if (loading) return
+    const scroll = Number(sessionStorage.getItem(`donutMediaCenter_gallery_scroll_${mediaType}`) || 0)
+    if (scroll <= 0) return
+    requestAnimationFrame(() => {
+      const container = document.querySelector('.gallery-view .masonry-container')
+      if (container) container.scrollTop = scroll
+    })
+  }, [mediaType, loading])
+
+  useEffect(() => {
     galleryForegroundBusyRef.current = false
     loadingMoreRef.current = false
     lightboxPaginationGenerationRef.current += 1
@@ -695,6 +734,7 @@ function Gallery() {
   }, [galleryViewKey])
 
   const galleryQuery = useMemo(() => ({
+    media_type: mediaType,
     tags: currentTags,
     rating: currentRating,
     favorites_only: favoritesOnly,
@@ -709,9 +749,10 @@ function Gallery() {
     orientation: currentOrientation,
     min_duration: currentDuration?.min,
     max_duration: currentDuration?.max,
+    watched_status: currentWatchedStatus,
     import_source: currentFolder,
     sort: currentSort,
-  }), [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentFolder, currentSort])
+  }), [mediaType, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, currentSort])
 
   // Track if we're waiting for localStorage params to be applied to URL
   const [pendingParamsFromStorage, setPendingParamsFromStorage] = useState(false)
@@ -719,7 +760,7 @@ function Gallery() {
   // Load saved filters from localStorage on mount (intentionally runs once)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const saved = localStorage.getItem('localbooru_filters')
+    const saved = localStorage.getItem(filterStorageKey)
     const hasUrlParams = searchParams.toString().length > 0
     if (saved && !hasUrlParams) {
       try {
@@ -736,6 +777,7 @@ function Gallery() {
         if (filters.resolution) params.resolution = `${filters.resolution.width}x${filters.resolution.height}`
         if (filters.orientation) params.orientation = filters.orientation
         if (filters.duration) params.duration = `${filters.duration.min ?? 'null'}-${filters.duration.max ?? 'null'}`
+        if (mediaType === 'video' && filters.watchedStatus) params.watched = filters.watchedStatus
         if (filters.groupByFolders) params.group = 'folders'
         if (Object.keys(params).length > 0) {
           setPendingParamsFromStorage(true)
@@ -772,10 +814,11 @@ function Gallery() {
       resolution: currentResolution,
       orientation: currentOrientation,
       duration: currentDuration,
+      watchedStatus: currentWatchedStatus,
       groupByFolders: groupByFolders
     }
-    localStorage.setItem('localbooru_filters', JSON.stringify(filters))
-  }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentResolution, currentOrientation, currentDuration, groupByFolders])
+    localStorage.setItem(filterStorageKey, JSON.stringify(filters))
+  }, [filterStorageKey, filtersInitialized, currentTags, currentRating, favoritesOnly, currentSort, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, groupByFolders])
 
   // Touch handling for mobile sidebar
   const touchStartX = useRef(null)
@@ -803,6 +846,7 @@ function Gallery() {
     if (!append) setLoading(true)
     try {
       const result = await fetchFolders({
+        media_type: mediaType,
         directory_id: currentDirectoryId,
         library_id: currentLibraryId,
         rating: currentRating,
@@ -846,7 +890,7 @@ function Gallery() {
         if (!append) setLoading(false)
       }
     }
-  }, [currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags, galleryViewKey])
+  }, [mediaType, currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags, galleryViewKey])
 
   // Load images
   const loadImages = useCallback(async (pageNum = 1, append = false) => {
@@ -866,6 +910,8 @@ function Gallery() {
     setLoading(true)
     try {
       const result = await fetchImages({
+        media_type: mediaType,
+        watched_status: currentWatchedStatus,
         tags: currentTags,
         rating: currentRating,
         favorites_only: favoritesOnly,
@@ -925,7 +971,7 @@ function Gallery() {
         setLoading(false)
       }
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders, galleryViewKey])
+  }, [mediaType, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, tileSize, groupByFolders, currentFolder, loadFolders, galleryViewKey])
 
   const curation = useCurationGame({
     loadedImages: images,
@@ -1003,6 +1049,13 @@ function Gallery() {
 
   useEffect(() => {
     if (!filtersInitialized) return
+    if (!restoredGalleryRef.current) {
+      restoredGalleryRef.current = true
+      if (cachedGalleryRef.current?.viewKey === galleryViewKey) {
+        publishedGalleryViewRef.current = galleryViewKey
+        return
+      }
+    }
     loadImages(1, false)
   }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, groupByFolders, currentFolder, loadImages])
 
@@ -1042,6 +1095,8 @@ function Gallery() {
 
     try {
       const query = {
+        media_type: mediaType,
+        watched_status: currentWatchedStatus,
         tags: currentTags,
         rating: currentRating,
         favorites_only: favoritesOnly,
@@ -1251,6 +1306,8 @@ function Gallery() {
       const appended = []
       for (let nextPage = currentPage + 1; nextPage <= targetPage; nextPage++) {
         const result = await fetchImages({
+          media_type: mediaType,
+          watched_status: currentWatchedStatus,
           tags: currentTags,
           rating: currentRating,
           favorites_only: favoritesOnly,
@@ -1335,12 +1392,13 @@ function Gallery() {
     if (currentLibraryId) params.library = currentLibraryId
     if (currentMinAge !== null) params.min_age = currentMinAge
     if (currentMaxAge !== null) params.max_age = currentMaxAge
+    if (currentWatchedStatus) params.watched = currentWatchedStatus
     if (groupByFolders) params.group = 'folders'
     if (currentFolder) params.folder = currentFolder
     setSearchParams(params)
   }
 
-  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe, filename, resolution, orientation, duration, libraryId) => {
+  const handleSearch = (tags, rating, sort, favOnly, directoryId, minAge, maxAge, timeframe, filename, resolution, orientation, duration, libraryId, watchedStatus = undefined) => {
     const params = {}
     if (tags) params.tags = tags
     if (rating && rating !== 'pg,pg13,r,x,xxx') params.rating = rating
@@ -1355,6 +1413,8 @@ function Gallery() {
     if (resolution) params.resolution = `${resolution.width}x${resolution.height}`
     if (orientation) params.orientation = orientation
     if (duration) params.duration = `${duration.min ?? 'null'}-${duration.max ?? 'null'}`
+    const nextWatchedStatus = watchedStatus === undefined ? currentWatchedStatus : watchedStatus
+    if (mediaType === 'video' && nextWatchedStatus) params.watched = nextWatchedStatus
     // Preserve grouped mode across filters, but a folder belongs to one exact
     // library/directory scope and must not leak into a newly selected scope.
     if (groupByFolders) params.group = 'folders'
@@ -1468,6 +1528,8 @@ function Gallery() {
       }
       try {
         const result = await fetchImages({
+          media_type: mediaType,
+          watched_status: currentWatchedStatus,
           tags: currentTags,
           rating: currentRating,
           favorites_only: favoritesOnly,
@@ -1699,6 +1761,8 @@ function Gallery() {
           initialResolution={currentResolution}
           initialOrientation={currentOrientation}
           initialDuration={currentDuration}
+          initialWatchedStatus={currentWatchedStatus}
+          mediaType={mediaType}
           initialGroupByFolders={groupByFolders}
           onToggleGroupByFolders={handleToggleGroupByFolders}
           total={total}
@@ -1717,7 +1781,12 @@ function Gallery() {
           </button>
         )}
 
-        <main className="content with-sidebar">
+        <main className="content with-sidebar" onScrollCapture={(event) => {
+          if (event.target.classList?.contains('masonry-container')) {
+            sessionStorage.setItem(`donutMediaCenter_gallery_scroll_${mediaType}`, String(event.target.scrollTop))
+          }
+        }}>
+          <MediaSectionsNav />
           {currentFolder && (
             <div className="folder-breadcrumb">
               <button className="folder-back-btn" onClick={handleBackToFolders}>
@@ -1731,11 +1800,11 @@ function Gallery() {
             </div>
           )}
           {/* Continue Watching row */}
-          {showContinueWatching && <ContinueWatching onImageClick={handleImageClick} />}
+          {mediaType === 'video' && showContinueWatching && <ContinueWatching onImageClick={handleImageClick} />}
 
           {!loading && images.length === 0 ? (
             <div className="no-results">
-              <h2>{groupByFolders && !currentFolder ? 'No folders found' : 'No images found'}</h2>
+              <h2>{groupByFolders && !currentFolder ? 'No folders found' : `No ${sectionName.toLowerCase()} found`}</h2>
               <p>Try adjusting your search filters or add some directories to watch.</p>
             </div>
           ) : (
@@ -2270,7 +2339,8 @@ function AppShell() {
       <BrowserRouter>
         <BackButtonHandler />
         <Routes>
-          <Route path="/" element={<Gallery />} />
+          <Route path="/" element={<Gallery mediaType="image" />} />
+          <Route path="/videos" element={<Gallery mediaType="video" />} />
           <Route path="/directories" element={<DirectoriesPage />} />
           <Route path="/collections" element={<CollectionsPage />} />
           <Route path="/collections/:id" element={<CollectionDetailPage />} />

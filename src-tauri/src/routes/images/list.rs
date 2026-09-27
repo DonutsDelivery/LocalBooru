@@ -39,6 +39,8 @@ pub struct ListImagesQuery {
     pub min_duration: Option<i32>,
     pub max_duration: Option<i32>,
     pub import_source: Option<String>,
+    pub media_type: Option<String>,
+    pub watched_status: Option<String>,
     #[serde(default = "default_sort")]
     pub sort: String,
 }
@@ -515,6 +517,12 @@ pub async fn list_images(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<ListImagesQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    if !matches!(q.media_type.as_deref(), None | Some("image") | Some("video")) {
+        return Err(AppError::BadRequest("media_type must be image or video".into()));
+    }
+    if !matches!(q.watched_status.as_deref(), None | Some("unwatched") | Some("in_progress") | Some("watched")) {
+        return Err(AppError::BadRequest("watched_status must be unwatched, in_progress, or watched".into()));
+    }
     if q.favorites_only && q.exclude_favorites {
         return Err(AppError::BadRequest(
             "favorites_only and exclude_favorites cannot both be true".into(),
@@ -573,8 +581,9 @@ pub async fn list_images(
         sort: q.sort.clone(),
         limit: per_page,
         offset,
-        show_images: true,
-        show_videos: true,
+        show_images: q.media_type.as_deref() != Some("video"),
+        show_videos: q.media_type.as_deref() != Some("image"),
+        watched_status: q.watched_status.clone(),
     };
 
     // Determine visibility based on access tier + family mode
@@ -633,8 +642,8 @@ pub async fn list_images(
                     .ok();
 
                 let mut query_params = params;
-                query_params.show_images = show_images;
-                query_params.show_videos = show_videos;
+                query_params.show_images &= show_images;
+                query_params.show_videos &= show_videos;
 
                 let dir_pool = lib.directory_db.get_pool(dir_id)?;
                 return query_directory_images(
@@ -697,8 +706,8 @@ pub async fn list_images(
                     .ok();
 
                 let mut query_params = params.clone();
-                query_params.show_images = show_images;
-                query_params.show_videos = show_videos;
+                query_params.show_images &= show_images;
+                query_params.show_videos &= show_videos;
                 query_params.limit = offset + per_page;
                 query_params.offset = 0;
 
@@ -773,6 +782,9 @@ pub async fn list_folders(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<ListFoldersQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    if !matches!(q.media_type.as_deref(), None | Some("image") | Some("video")) {
+        return Err(AppError::BadRequest("media_type must be image or video".into()));
+    }
     let tag_names: Vec<String> = q
         .tags
         .as_deref()
@@ -798,6 +810,7 @@ pub async fn list_folders(
     let library_id = q.library_id.clone();
     let page = q.page.max(1);
     let per_page = q.per_page.clamp(1, 500);
+    let media_type = q.media_type.clone();
 
     let state_clone = state.clone();
     let total = tokio::task::spawn_blocking(move || {
@@ -901,6 +914,23 @@ pub async fn list_folders(
                     "i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing' AND curation_discarded_at IS NULL)"
                         .into(),
                 );
+
+                let extensions = match media_type.as_deref() {
+                    Some("image") => Some(super::helpers::IMAGE_EXTENSIONS),
+                    Some("video") => Some(super::helpers::VIDEO_EXTENSIONS),
+                    _ => None,
+                };
+                if let Some(extensions) = extensions {
+                    let quoted = extensions
+                        .iter()
+                        .map(|ext| format!("'{}'", ext.trim_start_matches('.')))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    where_parts.push(format!(
+                        "i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}))",
+                        quoted
+                    ));
+                }
 
                 if favorites_only {
                     where_parts.push("i.is_favorite = 1".into());
@@ -1116,6 +1146,7 @@ pub struct ListFoldersQuery {
     pub page: i64,
     #[serde(default = "default_per_page")]
     pub per_page: i64,
+    pub media_type: Option<String>,
 }
 
 /// Fallback: query images from the main/legacy database.
@@ -1130,6 +1161,26 @@ fn query_main_db_images(
     // Exclude missing files
     where_clauses
         .push("i.id IN (SELECT image_id FROM image_files WHERE file_status != 'missing' AND curation_discarded_at IS NULL)".into());
+
+    let extensions = if !params.show_images {
+        Some(super::helpers::VIDEO_EXTENSIONS)
+    } else if !params.show_videos {
+        Some(super::helpers::IMAGE_EXTENSIONS)
+    } else {
+        None
+    };
+    if let Some(extensions) = extensions {
+        let quoted = extensions.iter().map(|ext| format!("'{}'", ext.trim_start_matches('.'))).collect::<Vec<_>>().join(",");
+        where_clauses.push(format!("i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}))", quoted));
+    }
+    if let Some(ref status) = params.watched_status {
+        let subquery = match status.as_str() {
+            "watched" => "SELECT image_id FROM watch_history WHERE completed = 1",
+            "in_progress" => "SELECT image_id FROM watch_history WHERE completed = 0 AND playback_position > 0",
+            _ => "SELECT image_id FROM watch_history",
+        };
+        where_clauses.push(format!("i.id {} ({})", if status == "unwatched" { "NOT IN" } else { "IN" }, subquery));
+    }
 
     // Access control: only images from public directories when accessed from public IP
     if let Some(visible_ids) = visible_dir_ids {

@@ -258,6 +258,8 @@ api.interceptors.response.use(
 
 // Images API
 export async function fetchImages({
+  media_type,
+  watched_status,
   tags,
   exclude_tags,
   rating,
@@ -281,6 +283,8 @@ export async function fetchImages({
   per_page = 50
 }) {
   const params = new URLSearchParams()
+  if (media_type) params.append('media_type', media_type)
+  if (watched_status) params.append('watched_status', watched_status)
   if (tags) params.append('tags', tags)
   if (exclude_tags) params.append('exclude_tags', exclude_tags)
   if (rating) params.append('rating', rating)
@@ -307,8 +311,9 @@ export async function fetchImages({
   return response.data
 }
 
-export async function fetchFolders({ directory_id, library_id, rating, favorites_only, tags, page = 1, per_page = 100 } = {}) {
+export async function fetchFolders({ directory_id, library_id, rating, favorites_only, tags, media_type, page = 1, per_page = 100 } = {}) {
   const params = new URLSearchParams()
+  if (media_type) params.append('media_type', media_type)
   if (directory_id) params.append('directory_id', directory_id)
   if (library_id) params.append('library_id', library_id)
   if (rating) params.append('rating', rating)

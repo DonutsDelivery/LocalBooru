@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { fetchDirectories, getFileDimensions, getSavedSearches, createSavedSearch, deleteSavedSearch } from '../../api'
+import { fetchCollections, fetchDirectories, getFileDimensions, getSavedSearches, createSavedSearch, deleteSavedSearch } from '../../api'
 import { getDesktopAPI, isDesktopApp } from '../../tauriAPI'
 import PromptSection from './PromptSection'
 import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_OPTIONS, ORIENTATION_OPTIONS, DURATION_OPTIONS, SORT_OPTIONS } from './FilterControls'
@@ -31,6 +31,8 @@ function Sidebar({
   initialOrientation,
   initialDuration,
   initialGroupByFolders,
+  mediaType = 'image',
+  initialWatchedStatus,
   onToggleGroupByFolders,
   total,
   stats,
@@ -42,7 +44,7 @@ function Sidebar({
   onFamilyModeChange
 }) {
   const location = useLocation()
-  const isGalleryPage = location.pathname === '/'
+  const isGalleryPage = location.pathname === '/' || location.pathname === '/videos'
   const isSettingsPage = location.pathname === '/settings'
   const [hovering, setHovering] = useState(false)
   const [directories, setDirectories] = useState([])
@@ -66,6 +68,8 @@ function Sidebar({
   const [resolution, setResolution] = useState(initialResolution || null)
   const [orientation, setOrientation] = useState(initialOrientation || null)
   const [duration, setDuration] = useState(initialDuration || null)
+  const [watchedStatus, setWatchedStatus] = useState(initialWatchedStatus || null)
+  const [collections, setCollections] = useState([])
   const [fetchedDimensions, setFetchedDimensions] = useState(null)
   const [copiedField, setCopiedField] = useState(null)
   const [filtersExpanded, setFiltersExpanded] = useState(() => {
@@ -92,6 +96,11 @@ function Sidebar({
   useEffect(() => {
     refreshDirectories()
   }, [refreshDirectories])
+
+  useEffect(() => {
+    if (!isGalleryPage) return
+    fetchCollections(mediaType).then(data => setCollections(data.collections || [])).catch(console.error)
+  }, [isGalleryPage, mediaType])
 
   // Load saved searches
   useEffect(() => {
@@ -138,8 +147,9 @@ function Sidebar({
     setResolution(initialResolution || null)
     setOrientation(initialOrientation || null)
     setDuration(initialDuration || null)
+    setWatchedStatus(initialWatchedStatus || null)
     if (initialSort) setSortBy(initialSort)
-  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialLibraryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe, initialFilename, initialResolution, initialOrientation, initialDuration])
+  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialLibraryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe, initialFilename, initialResolution, initialOrientation, initialDuration, initialWatchedStatus])
 
   // Fetch dimensions for selected image when it changes
   useEffect(() => {
@@ -227,10 +237,11 @@ function Sidebar({
     setResolution(null)
     setOrientation(null)
     setDuration(null)
+    setWatchedStatus(null)
     if (initialGroupByFolders && onToggleGroupByFolders) {
       onToggleGroupByFolders()
     }
-    onSearch('', defaultRatings.join(','), 'newest', false, null, null, null, null, '', null, null, null, null)
+    onSearch('', defaultRatings.join(','), 'newest', false, null, null, null, null, '', null, null, null, null, null)
   }
 
   // Save current filters as a named search
@@ -248,6 +259,7 @@ function Sidebar({
       timeframe,
       filename: filenameSearch,
       orientation,
+      watched_status: watchedStatus,
     }
     // Only include non-null resolution/duration
     if (resolution) filters.resolution = resolution
@@ -279,6 +291,7 @@ function Sidebar({
     setResolution(f.resolution || null)
     setOrientation(f.orientation || null)
     setDuration(f.duration || null)
+    setWatchedStatus(f.watched_status || null)
     onSearch(
       f.tags || '',
       ratings,
@@ -292,7 +305,8 @@ function Sidebar({
       f.resolution || null,
       f.orientation || null,
       f.duration || null,
-      f.library_id || null
+      f.library_id || null,
+      f.watched_status || null
     )
   }
 
@@ -441,7 +455,7 @@ function Sidebar({
         )}
 
         <nav className="sidebar-nav">
-          <NavLink to="/" end className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Gallery">
+          <NavLink to="/" end className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Images">
             <svg viewBox="0 0 24 24" fill="currentColor">
               {/* Picture icon with sun and mountain - matches app logo */}
               <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="2"/>
@@ -449,12 +463,18 @@ function Sidebar({
               <path d="M21 15l-5-5L5 21h14a2 2 0 002-2v-4z"/>
             </svg>
           </NavLink>
+          <NavLink to="/videos" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Videos" aria-label="Videos">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 6 4-6 4z"/></svg>
+          </NavLink>
+          <NavLink to="/music" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Music" aria-label="Music">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13M9 9l12-2"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          </NavLink>
           <NavLink to="/directories" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Directories">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
             </svg>
           </NavLink>
-          <NavLink to="/collections" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Collections">
+          <NavLink to={`/collections?media_type=${mediaType}`} className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Collections">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/>
             </svg>
@@ -465,6 +485,27 @@ function Sidebar({
             </svg>
           </NavLink>
         </nav>
+
+        {isGalleryPage && (
+          <div className="sidebar-section media-collections-section">
+            <div className="media-collections-heading">
+              <h3>{mediaType === 'video' ? 'Video' : 'Image'} Collections</h3>
+              <NavLink to={`/collections?media_type=${mediaType}`}>Manage</NavLink>
+            </div>
+            {collections.length === 0 ? (
+              <p className="media-collections-empty">No collections yet</p>
+            ) : collections.map(collection => (
+              <NavLink
+                key={collection.id}
+                to={`/collections/${collection.id}?media_type=${mediaType}`}
+                className="media-collection-link"
+              >
+                <span>{collection.name}</span>
+                <span>{collection.item_count}</span>
+              </NavLink>
+            ))}
+          </div>
+        )}
 
         {/* Settings Navigation */}
         {isSettingsPage && onSettingsTabChange && (
@@ -512,7 +553,7 @@ function Sidebar({
                 onChange={(e) => handleSortChange(e.target.value)}
                 className="sort-select"
               >
-                {SORT_OPTIONS.map(option => (
+                {SORT_OPTIONS.filter(option => mediaType === 'video' || option.group !== 'Duration').map(option => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -540,6 +581,7 @@ function Sidebar({
             <div className={`filters-content ${filtersExpanded ? 'expanded' : ''}`}>
               <div className="filters-inner">
                 <FilterControls
+                  mediaType={mediaType}
                   directories={directories}
                   selectedDirectory={selectedDirectory}
                   selectedLibrary={selectedLibrary}
@@ -567,6 +609,11 @@ function Sidebar({
                   onOrientationChange={handleOrientationChange}
                   duration={duration}
                   onDurationChange={handleDurationChange}
+                  watchedStatus={watchedStatus}
+                  onWatchedStatusChange={(status) => {
+                    setWatchedStatus(status)
+                    onSearch(currentTags || '', getEffectiveRatings().join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary, status)
+                  }}
                   total={0}
                   familyLocked={familyLocked}
                 />

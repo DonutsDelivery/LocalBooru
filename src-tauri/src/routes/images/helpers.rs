@@ -58,6 +58,32 @@ pub fn query_directory_images(
         ));
     }
 
+    if let Some(ref status) = params.watched_status {
+        let predicate = match status.as_str() {
+            "watched" => "completed = 1",
+            "in_progress" => "completed = 0 AND playback_position > 0",
+            _ => "1 = 1",
+        };
+        let mut stmt = main_conn.prepare(&format!(
+            "SELECT image_id FROM watch_history WHERE directory_id = ?1 AND library_id = ?2 AND {}",
+            predicate
+        ))?;
+        let watched_ids = stmt
+            .query_map(params![directory_id, library_id], |row| row.get::<_, i64>(0))?
+            .filter_map(Result::ok)
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>();
+        if status == "unwatched" {
+            if !watched_ids.is_empty() {
+                where_clauses.push(format!("i.id NOT IN ({})", watched_ids.join(",")));
+            }
+        } else if watched_ids.is_empty() {
+            return Ok((vec![], 0));
+        } else {
+            where_clauses.push(format!("i.id IN ({})", watched_ids.join(",")));
+        }
+    }
+
     // Favorites
     if params.favorites_only {
         where_clauses.push("i.is_favorite = 1".into());
@@ -608,6 +634,7 @@ pub struct ImageQueryParams {
     pub offset: i64,
     pub show_images: bool,
     pub show_videos: bool,
+    pub watched_status: Option<String>,
 }
 
 /// Internal struct for reading image rows from SQLite.
