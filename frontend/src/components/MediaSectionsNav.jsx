@@ -11,8 +11,9 @@ export default function MediaSectionsNav() {
   return (
     <nav className="media-sections-nav" aria-label="Media libraries">
       {sections.map(({ path, label, key }) => {
-        const saved = sessionStorage.getItem(`donutMediaCenter_gallery_url_${key}`)
-        const target = saved?.startsWith(path + '?') ? saved : path
+        const target = sessionStorage.getItem(`donutMediaCenter_section_url_${key}`)
+          || sessionStorage.getItem(`donutMediaCenter_gallery_url_${key}`)
+          || path
         return (
           <NavLink
             key={key}

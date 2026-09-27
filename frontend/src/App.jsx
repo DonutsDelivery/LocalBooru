@@ -703,7 +703,9 @@ function Gallery({ mediaType = 'image' }) {
   galleryRequestOwnerRef.current.activate(galleryViewKey)
 
   useEffect(() => {
-    sessionStorage.setItem(`donutMediaCenter_gallery_url_${mediaType}`, `${window.location.pathname}${window.location.search}`)
+    const url = `${window.location.pathname}${window.location.search}`
+    sessionStorage.setItem(`donutMediaCenter_gallery_url_${mediaType}`, url)
+    sessionStorage.setItem(`donutMediaCenter_section_url_${mediaType}`, url)
   }, [mediaType, searchParams])
 
   useEffect(() => {
@@ -850,6 +852,13 @@ function Gallery({ mediaType = 'image' }) {
     try {
       const result = await fetchFolders({
         media_type: mediaType,
+        watched_status: currentWatchedStatus,
+        timeframe: currentTimeframe,
+        filename: currentFilename,
+        min_height: currentResolution?.height,
+        orientation: currentOrientation,
+        min_duration: currentDuration?.min,
+        max_duration: currentDuration?.max,
         directory_id: currentDirectoryId,
         library_id: currentLibraryId,
         rating: currentRating,
@@ -893,7 +902,7 @@ function Gallery({ mediaType = 'image' }) {
         if (!append) setLoading(false)
       }
     }
-  }, [mediaType, currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags, galleryViewKey])
+  }, [mediaType, currentDirectoryId, currentLibraryId, currentRating, favoritesOnly, currentTags, currentFilename, currentTimeframe, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, galleryViewKey])
 
   // Load images
   const loadImages = useCallback(async (pageNum = 1, append = false) => {
@@ -1187,7 +1196,7 @@ function Gallery({ mediaType = 'image' }) {
       }
       return false
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey])
+  }, [mediaType, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey])
 
   refreshNewImagesRef.current = refreshNewImages
 
@@ -1356,7 +1365,7 @@ function Gallery({ mediaType = 'image' }) {
         setIsJumping(false)
       }
     }
-  }, [currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, total, tileSize, galleryViewKey])
+  }, [mediaType, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, total, tileSize, galleryViewKey])
 
   // Handle jump by offset (for +/- 100 buttons)
   const handleJumpByOffset = useCallback((offset) => {
@@ -2343,8 +2352,8 @@ function AppShell() {
         <BackButtonHandler />
         <MusicPlayerProvider>
           <Routes>
-            <Route path="/" element={<Gallery mediaType="image" />} />
-            <Route path="/videos" element={<Gallery mediaType="video" />} />
+            <Route path="/" element={<Gallery key="image" mediaType="image" />} />
+            <Route path="/videos" element={<Gallery key="video" mediaType="video" />} />
             <Route path="/music" element={<MusicPage />} />
             <Route path="/directories" element={<DirectoriesPage />} />
             <Route path="/collections" element={<CollectionsPage />} />

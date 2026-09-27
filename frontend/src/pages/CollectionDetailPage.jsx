@@ -43,6 +43,10 @@ export default function CollectionDetailPage() {
     loadCollection()
   }, [loadCollection])
 
+  useEffect(() => {
+    sessionStorage.setItem(`donutMediaCenter_section_url_${mediaType}`, `${window.location.pathname}${window.location.search}`)
+  }, [mediaType, searchParams])
+
   const handleLoadMore = useCallback(() => {
     if (!hasMore || loading) return
     const nextPage = page + 1

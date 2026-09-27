@@ -311,9 +311,16 @@ export async function fetchImages({
   return response.data
 }
 
-export async function fetchFolders({ directory_id, library_id, rating, favorites_only, tags, media_type, page = 1, per_page = 100 } = {}) {
+export async function fetchFolders({ directory_id, library_id, rating, favorites_only, tags, media_type, filename, min_height, orientation, min_duration, max_duration, watched_status, timeframe, page = 1, per_page = 100 } = {}) {
   const params = new URLSearchParams()
   if (media_type) params.append('media_type', media_type)
+  if (filename) params.append('filename', filename)
+  if (min_height != null) params.append('min_height', min_height)
+  if (orientation) params.append('orientation', orientation)
+  if (min_duration != null) params.append('min_duration', min_duration)
+  if (max_duration != null) params.append('max_duration', max_duration)
+  if (watched_status) params.append('watched_status', watched_status)
+  if (timeframe) params.append('timeframe', timeframe)
   if (directory_id) params.append('directory_id', directory_id)
   if (library_id) params.append('library_id', library_id)
   if (rating) params.append('rating', rating)
@@ -1258,13 +1265,19 @@ export async function deleteCollection(id) {
   return response.data
 }
 
-export async function addToCollection(collectionId, imageIds) {
-  const response = await api.post(`/collections/${collectionId}/items`, { image_ids: imageIds })
+function collectionItemsPayload(items) {
+  return items.length > 0 && typeof items[0] === 'object' && items.every(image => image.directory_id != null && image.library_id)
+    ? { items: items.map(image => ({ image_id: image.id, directory_id: image.directory_id, library_id: image.library_id })) }
+    : { image_ids: items.map(item => typeof item === 'object' ? item.id : item) }
+}
+
+export async function addToCollection(collectionId, items) {
+  const response = await api.post(`/collections/${collectionId}/items`, collectionItemsPayload(items))
   return response.data
 }
 
-export async function removeFromCollection(collectionId, imageIds) {
-  const response = await api.delete(`/collections/${collectionId}/items`, { data: { image_ids: imageIds } })
+export async function removeFromCollection(collectionId, items) {
+  const response = await api.delete(`/collections/${collectionId}/items`, { data: collectionItemsPayload(items) })
   return response.data
 }
 

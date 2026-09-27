@@ -800,7 +800,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const handleAddToCollection = useCallback(async (collectionId) => {
     if (!image) return
     try {
-      await addToCollection(collectionId, [image.id])
+      await addToCollection(collectionId, [image])
       setCollectionFeedback('Added!')
       setTimeout(() => setCollectionFeedback(null), 1500)
       setShowCollectionPicker(false)
@@ -813,7 +813,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     if (!newCollectionName.trim() || !image) return
     try {
       const result = await createCollection(newCollectionName.trim(), null, isVideoFile ? 'video' : 'image')
-      await addToCollection(result.id, [image.id])
+      await addToCollection(result.id, [image])
       setCollectionFeedback('Created & added!')
       setTimeout(() => setCollectionFeedback(null), 1500)
       setShowCollectionPicker(false)
@@ -2152,7 +2152,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               </div>
               <span className="video-time">{formatTime(casting.isCasting ? (casting.castStatus?.duration || 0) : playback.duration, true)}</span>
               <div className="video-playback-controls">
-                {!curationMode && <button className="video-nav-btn" onClick={() => onNav(-1)} title="Previous (Left Arrow)" aria-label="Previous media">
+                {!curationMode && <button className="video-nav-btn" onClick={() => onNav(-1)} title="Previous video" aria-label="Previous video">
                   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z"/></svg>
                 </button>}
                 <button
@@ -2167,7 +2167,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                   )}
                 </button>
-                {!curationMode && <button className="video-nav-btn" onClick={() => onNav(1)} title="Next (Right Arrow)" aria-label="Next media">
+                {!curationMode && <button className="video-nav-btn" onClick={() => onNav(1)} title="Next video" aria-label="Next video">
                   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6v12h2V6h-2zm-3.5 6l-8.5 6V6l8.5 6z"/></svg>
                 </button>}
               </div>

@@ -121,6 +121,106 @@ mod tests {
         request
     }
 
+    #[tokio::test]
+    async fn media_galleries_scope_results_and_folder_counts() {
+        let root = std::env::temp_dir().join(format!(
+            "dmc-media-galleries-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let state = AppState::new(&root, 0).unwrap();
+        let library = state.library_manager().primary().clone();
+        for id in 1..=4 {
+            insert_image(
+                &library,
+                11,
+                id,
+                &format!("hash-{id}"),
+                "/shared",
+                "2026-09-01 12:00:00",
+                &[&format!("/shared/{id}.png")],
+            );
+        }
+        let pool = library.directory_db.get_pool(11).unwrap();
+        let conn = pool.get().unwrap();
+        conn.execute(
+            "UPDATE image_files SET file_extension = 'mp4' WHERE image_id IN (3, 4)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let app = Router::new()
+            .route("/api/images", get(list_images))
+            .route("/api/images/folders", get(list_folders))
+            .with_state(state);
+        for (media_type, expected_ids) in [("image", [1, 2]), ("video", [3, 4])] {
+            let response = app
+                .clone()
+                .oneshot(request(&format!("/api/images?media_type={media_type}")))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let catalog: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(catalog["total"], 2);
+            let ids = catalog["images"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| item["id"].as_i64().unwrap())
+                .collect::<HashSet<_>>();
+            assert_eq!(ids, expected_ids.into_iter().collect());
+
+            let response = app
+                .clone()
+                .oneshot(request(&format!(
+                    "/api/images/folders?media_type={media_type}"
+                )))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let folders: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(folders["folders"][0]["count"], 2);
+        }
+
+        // The same numeric image ID in another directory has independent watch history.
+        insert_image(
+            &library,
+            12,
+            3,
+            "other-video",
+            "/other",
+            "2026-09-01 12:00:00",
+            &["/other/3.mp4"],
+        );
+        let other_pool = library.directory_db.get_pool(12).unwrap();
+        other_pool
+            .get()
+            .unwrap()
+            .execute(
+                "UPDATE image_files SET file_extension = 'mp4' WHERE image_id = 3",
+                [],
+            )
+            .unwrap();
+        let main = library.main_pool.get().unwrap();
+        main.execute(
+            "INSERT INTO watch_history (image_id, directory_id, library_id, completed) VALUES (3, 11, ?1, 1)",
+            params![library.uuid],
+        ).unwrap();
+        drop(main);
+        for (directory_id, expected_total) in [(11, 1), (12, 0)] {
+            let response = app.clone().oneshot(request(&format!("/api/images?media_type=video&watched_status=watched&directory_id={directory_id}"))).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let catalog: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(catalog["total"], expected_total);
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     // AC: @grouped-folder-catalog-scale ac-many-folders-many-images
     // A single directory with hundreds of thousands of images across
     // thousands of folders must serve a paginated catalog quickly, in
@@ -517,11 +617,21 @@ pub async fn list_images(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<ListImagesQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if !matches!(q.media_type.as_deref(), None | Some("image") | Some("video")) {
-        return Err(AppError::BadRequest("media_type must be image or video".into()));
+    if !matches!(
+        q.media_type.as_deref(),
+        None | Some("image") | Some("video")
+    ) {
+        return Err(AppError::BadRequest(
+            "media_type must be image or video".into(),
+        ));
     }
-    if !matches!(q.watched_status.as_deref(), None | Some("unwatched") | Some("in_progress") | Some("watched")) {
-        return Err(AppError::BadRequest("watched_status must be unwatched, in_progress, or watched".into()));
+    if !matches!(
+        q.watched_status.as_deref(),
+        None | Some("unwatched") | Some("in_progress") | Some("watched")
+    ) {
+        return Err(AppError::BadRequest(
+            "watched_status must be unwatched, in_progress, or watched".into(),
+        ));
     }
     if q.favorites_only && q.exclude_favorites {
         return Err(AppError::BadRequest(
@@ -584,6 +694,8 @@ pub async fn list_images(
         show_images: q.media_type.as_deref() != Some("video"),
         show_videos: q.media_type.as_deref() != Some("image"),
         watched_status: q.watched_status.clone(),
+        directory_id: q.directory_id,
+        library_id: q.library_id.clone(),
     };
 
     // Determine visibility based on access tier + family mode
@@ -782,8 +894,21 @@ pub async fn list_folders(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<ListFoldersQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if !matches!(q.media_type.as_deref(), None | Some("image") | Some("video")) {
-        return Err(AppError::BadRequest("media_type must be image or video".into()));
+    if !matches!(
+        q.media_type.as_deref(),
+        None | Some("image") | Some("video")
+    ) {
+        return Err(AppError::BadRequest(
+            "media_type must be image or video".into(),
+        ));
+    }
+    if !matches!(
+        q.watched_status.as_deref(),
+        None | Some("unwatched") | Some("in_progress") | Some("watched")
+    ) {
+        return Err(AppError::BadRequest(
+            "watched_status must be unwatched, in_progress, or watched".into(),
+        ));
     }
     let tag_names: Vec<String> = q
         .tags
@@ -811,6 +936,13 @@ pub async fn list_folders(
     let page = q.page.max(1);
     let per_page = q.per_page.clamp(1, 500);
     let media_type = q.media_type.clone();
+    let filename = q.filename.clone();
+    let min_height = q.min_height;
+    let orientation = q.orientation.clone();
+    let min_duration = q.min_duration;
+    let max_duration = q.max_duration;
+    let watched_status = q.watched_status.clone();
+    let timeframe = q.timeframe.clone();
 
     let state_clone = state.clone();
     let total = tokio::task::spawn_blocking(move || {
@@ -930,6 +1062,57 @@ pub async fn list_folders(
                         "i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}))",
                         quoted
                     ));
+                }
+
+                if let Some(ref filename) = filename {
+                    let safe = filename.replace('\'', "''");
+                    where_parts.push(format!("LOWER(i.filename) LIKE LOWER('%{}%')", safe));
+                }
+                if let Some(min_height) = min_height {
+                    where_parts.push(format!("MIN(i.width, i.height) >= {}", min_height.max(1)));
+                }
+                if let Some(ref orientation) = orientation {
+                    match orientation.as_str() {
+                        "landscape" => where_parts.push("i.width > i.height".into()),
+                        "portrait" => where_parts.push("i.height > i.width".into()),
+                        "square" => where_parts.push("i.width = i.height".into()),
+                        _ => {},
+                    }
+                }
+                if let Some(min_duration) = min_duration {
+                    where_parts.push(format!("i.duration >= {}", min_duration.max(0)));
+                }
+                if let Some(max_duration) = max_duration {
+                    where_parts.push(format!("i.duration <= {}", max_duration.max(0)));
+                }
+                if let Some(ref timeframe) = timeframe {
+                    let start = match timeframe.as_str() {
+                        "today" => Some(chrono::Local::now().date_naive().format("%Y-%m-%d").to_string()),
+                        "week" => Some((chrono::Local::now() - chrono::Duration::days(7)).format("%Y-%m-%d").to_string()),
+                        "month" => Some((chrono::Local::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string()),
+                        "year" => Some((chrono::Local::now() - chrono::Duration::days(365)).format("%Y-%m-%d").to_string()),
+                        _ => None,
+                    };
+                    if let Some(start) = start {
+                        where_parts.push(format!("i.created_at >= '{}'", start));
+                    }
+                }
+                if let Some(ref status) = watched_status {
+                    let condition = match status.as_str() {
+                        "watched" => "completed = 1",
+                        "in_progress" => "completed = 0 AND playback_position > 0",
+                        _ => "1 = 1",
+                    };
+                    let mut stmt = main_conn.prepare(&format!("SELECT image_id FROM watch_history WHERE directory_id = ?1 AND library_id = ?2 AND {}", condition))?;
+                    let ids = stmt.query_map(rusqlite::params![dir_id, lib.uuid], |row| row.get::<_, i64>(0))?
+                        .filter_map(Result::ok).map(|id| id.to_string()).collect::<Vec<_>>();
+                    if status == "unwatched" {
+                        if !ids.is_empty() { where_parts.push(format!("i.id NOT IN ({})", ids.join(","))); }
+                    } else if ids.is_empty() {
+                        where_parts.push("1 = 0".into());
+                    } else {
+                        where_parts.push(format!("i.id IN ({})", ids.join(",")));
+                    }
                 }
 
                 if favorites_only {
@@ -1147,6 +1330,13 @@ pub struct ListFoldersQuery {
     #[serde(default = "default_per_page")]
     pub per_page: i64,
     pub media_type: Option<String>,
+    pub filename: Option<String>,
+    pub min_height: Option<i32>,
+    pub orientation: Option<String>,
+    pub min_duration: Option<i32>,
+    pub max_duration: Option<i32>,
+    pub watched_status: Option<String>,
+    pub timeframe: Option<String>,
 }
 
 /// Fallback: query images from the main/legacy database.
@@ -1170,16 +1360,40 @@ fn query_main_db_images(
         None
     };
     if let Some(extensions) = extensions {
-        let quoted = extensions.iter().map(|ext| format!("'{}'", ext.trim_start_matches('.'))).collect::<Vec<_>>().join(",");
-        where_clauses.push(format!("i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}))", quoted));
+        let quoted = extensions
+            .iter()
+            .map(|ext| format!("'{}'", ext.trim_start_matches('.')))
+            .collect::<Vec<_>>()
+            .join(",");
+        where_clauses.push(format!(
+            "i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}))",
+            quoted
+        ));
     }
     if let Some(ref status) = params.watched_status {
-        let subquery = match status.as_str() {
-            "watched" => "SELECT image_id FROM watch_history WHERE completed = 1",
-            "in_progress" => "SELECT image_id FROM watch_history WHERE completed = 0 AND playback_position > 0",
-            _ => "SELECT image_id FROM watch_history",
-        };
-        where_clauses.push(format!("i.id {} ({})", if status == "unwatched" { "NOT IN" } else { "IN" }, subquery));
+        let mut subquery = String::from("SELECT image_id FROM watch_history WHERE ");
+        subquery.push_str(match status.as_str() {
+            "watched" => "completed = 1",
+            "in_progress" => "completed = 0 AND playback_position > 0",
+            _ => "1 = 1",
+        });
+        if let Some(directory_id) = params.directory_id {
+            sql_params.push(Box::new(directory_id));
+            subquery.push_str(&format!(" AND directory_id = ?{}", sql_params.len()));
+        }
+        if let Some(ref library_id) = params.library_id {
+            sql_params.push(Box::new(library_id.clone()));
+            subquery.push_str(&format!(" AND library_id = ?{}", sql_params.len()));
+        }
+        where_clauses.push(format!(
+            "i.id {} ({})",
+            if status == "unwatched" {
+                "NOT IN"
+            } else {
+                "IN"
+            },
+            subquery
+        ));
     }
 
     // Access control: only images from public directories when accessed from public IP

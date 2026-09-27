@@ -21,6 +21,10 @@ export default function CollectionsPage() {
     loadCollections()
   }, [mediaType])
 
+  useEffect(() => {
+    sessionStorage.setItem(`donutMediaCenter_section_url_${mediaType}`, `${window.location.pathname}${window.location.search}`)
+  }, [mediaType, searchParams])
+
   async function loadCollections() {
     try {
       const data = await fetchCollections(mediaType)

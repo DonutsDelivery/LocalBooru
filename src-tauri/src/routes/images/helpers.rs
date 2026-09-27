@@ -69,7 +69,9 @@ pub fn query_directory_images(
             predicate
         ))?;
         let watched_ids = stmt
-            .query_map(params![directory_id, library_id], |row| row.get::<_, i64>(0))?
+            .query_map(params![directory_id, library_id], |row| {
+                row.get::<_, i64>(0)
+            })?
             .filter_map(Result::ok)
             .map(|id| id.to_string())
             .collect::<Vec<_>>();
@@ -635,6 +637,8 @@ pub struct ImageQueryParams {
     pub show_images: bool,
     pub show_videos: bool,
     pub watched_status: Option<String>,
+    pub directory_id: Option<i64>,
+    pub library_id: Option<String>,
 }
 
 /// Internal struct for reading image rows from SQLite.
