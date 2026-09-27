@@ -870,6 +870,23 @@ video.lightbox-media {
   pointer-events: none;
 }
 
+.lightbox-video-loading-grid {
+  position: absolute;
+  z-index: 3;
+  width: min(90vw, 1600px);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  pointer-events: none;
+}
+
+.lightbox-video-loading-grid img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
 /* Video display modes - use video.lightbox-media for higher specificity */
 video.lightbox-media.video-display-fit {
   width: 100%;
@@ -1099,6 +1116,20 @@ video.lightbox-media.vr-video-source {
 
 .lightbox-video-controls.svp-starting .svp-toggle-btn:not(:disabled) {
   pointer-events: auto;
+}
+
+.lightbox-video-controls.svp-starting .svp-fallback-btn {
+  pointer-events: auto;
+}
+
+.svp-fallback-btn {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 7px 10px;
+  cursor: pointer;
 }
 
 .lightbox-video-controls.svp-starting button:disabled {
@@ -2862,6 +2893,12 @@ video::cue {
     top: max(64px, calc(var(--safe-top) + 56px));
     left: max(12px, var(--safe-left));
     max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right));
+  }
+
+  .lightbox-video-loading-grid {
+    width: min(90vw, 440px);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
   }
 
   .lightbox-more {

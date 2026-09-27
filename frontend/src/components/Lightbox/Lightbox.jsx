@@ -233,6 +233,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [svpPreflight, setSvpPreflight] = useState(null)
   const svpPreflightReady = !svpPathEnabled
     || (svpPreflight?.imageKey === currentImageKey && svpPreflight.ready)
+  const svpPreflightIssue = svpPathEnabled && svpPreflight?.imageKey === currentImageKey
+    ? svpPreflight.issue
+    : null
   const svpInteractionReadyRef = useRef(true)
   const svpInteractionKeyRef = useRef(null)
   const [svpStartupReady, setSvpStartupReady] = useState(false)
@@ -250,7 +253,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   svpPathEnabledRef.current = svpPathEnabled
 
   useEffect(() => {
-    if (!svpPathEnabled || !image?.file_path) return
+    if (!svpPathEnabled) return
+    if (!image?.file_path) {
+      setSvpPreflight({ imageKey: currentImageKey, ready: false, issue: 'SVP cannot find this video.' })
+      return
+    }
     const desktopAPI = getDesktopAPI()
     if (!desktopAPI?.subscribeToSvpManager || !desktopAPI?.updateSvpManagerPlayback) {
       setSvpPreflight({ imageKey: currentImageKey, ready: true })
@@ -259,11 +266,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
     let cancelled = false
     let unsubscribe = () => {}
+    let slowTimer
     const release = () => {
+      clearTimeout(slowTimer)
       if (!cancelled) setSvpPreflight({ imageKey: currentImageKey, ready: true })
     }
+    const showIssue = (issue) => {
+      if (!cancelled) setSvpPreflight({ imageKey: currentImageKey, ready: false, issue })
+    }
     setSvpPreflight({ imageKey: currentImageKey, ready: false })
-    const fallback = setTimeout(release, 8000)
+    slowTimer = setTimeout(() => showIssue('SVP is taking longer than expected.'), 12000)
     const prepare = async () => {
       try {
         unsubscribe = await desktopAPI.subscribeToSvpManager({
@@ -279,7 +291,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         if (cancelled) return
         const fps = Number(info?.fps || image?.video_fps || image?.frame_rate || image?.fps)
         if (!info?.success || !Number.isFinite(fps) || fps <= 0) {
-          release()
+          clearTimeout(slowTimer)
+          showIssue('SVP could not read this video.')
           return
         }
         svpSourceFpsRef.current = fps
@@ -295,14 +308,15 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         })
       } catch (error) {
         console.warn('[SVPManager] could not prepare graph before playback:', error)
-        release()
+        clearTimeout(slowTimer)
+        showIssue('SVP could not prepare this video.')
       }
     }
     const task = { imageKey: currentImageKey, promise: prepare() }
     svpPreflightTaskRef.current = task
     return () => {
       cancelled = true
-      clearTimeout(fallback)
+      clearTimeout(slowTimer)
       unsubscribe()
     }
   }, [svpPathEnabled, currentImageKey, image?.file_path, image?.video_fps, image?.frame_rate, image?.fps])
@@ -1287,7 +1301,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       // The patched WebKit pipeline can block the window if pause or seek
       // reaches it before SVP has produced a frame. Keep Escape available.
       if (isVideoFile && !casting.isCasting && !svpControlsReady) {
-        if ((e.key === 'Enter' || e.key === ' ') && e.target?.closest?.('.svp-toggle-btn')) return
+        if ((e.key === 'Enter' || e.key === ' ') && e.target?.closest?.('.svp-toggle-btn, .svp-fallback-btn')) return
         if (e.key === 'Escape') onClose()
         else e.preventDefault()
         return
@@ -2113,7 +2127,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             onTouchEnd={casting.isCasting || curationMode || vrActive || !svpControlsReady ? undefined : gestures.handleTouchEnd}
             onTouchCancel={casting.isCasting || curationMode || vrActive || !svpControlsReady ? cancelRevealTap : gestures.handleTouchCancel}
           >
-            {videoPosterUrl && videoFrameReadyKey !== videoMediaKey && (
+            {timelinePreview.previewFrames.length > 0 && videoFrameReadyKey !== videoMediaKey ? (
+              <div className="lightbox-video-loading-grid" aria-hidden="true">
+                {timelinePreview.previewFrames.slice(0, 8).map((frameUrl, index) => (
+                  <img key={`${frameUrl}-${index}`} src={frameUrl} alt="" onError={event => { event.currentTarget.hidden = true }} />
+                ))}
+              </div>
+            ) : videoPosterUrl && videoFrameReadyKey !== videoMediaKey && (
               <img
                 key={videoMediaKey}
                 className="lightbox-video-loading-poster"
@@ -2253,7 +2273,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             >
               {/* Timeline and playback controls */}
               <div className="video-controls-row">
-              {!svpControlsReady && <span className="svp-starting-label" role="status">{svpStartupCancelPending ? 'Turning SVP off…' : 'SVP starting…'}</span>}
+              {!svpControlsReady && <span className="svp-starting-label" role="status">{svpStartupCancelPending ? 'Turning SVP off…' : svpPreflightIssue || 'SVP starting…'}</span>}
+              {svpPreflightIssue && !svpStartupCancelPending && (
+                <button className="svp-fallback-btn" onClick={handleToggleSVP}>Play without SVP</button>
+              )}
               <span className="video-time" ref={casting.isCasting ? null : playback.timeDisplayRef}>
                 {formatTime(casting.isCasting ? (casting.castStatus?.current_time || 0) : playback.currentTime)}
               </span>
