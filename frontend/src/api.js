@@ -247,7 +247,7 @@ api.interceptors.response.use(
 
       // Show toast with error details
       import('./components/Toast').then(m => m.toast.error(message))
-    } else {
+    } else if (!suppressOptionalNotFound) {
       // Log transient errors to console instead
       console.warn(`[API] Transient error (${duringStartup ? 'startup' : 'network'}): ${method} ${url}`, error.message)
     }
@@ -334,11 +334,11 @@ export async function fetchFolders({ directory_id, library_id, rating, favorites
   return response.data
 }
 
-export async function fetchImage(id, { directoryId = null, libraryId = null } = {}) {
+export async function fetchImage(id, { directoryId = null, libraryId = null, suppressNotFoundToast = false } = {}) {
   const params = {}
   if (directoryId != null) params.directory_id = directoryId
   if (libraryId) params.library_id = libraryId
-  const response = await api.get(`/images/${id}`, { params })
+  const response = await api.get(`/images/${id}`, { params, suppressErrorToast: suppressNotFoundToast })
   return response.data
 }
 

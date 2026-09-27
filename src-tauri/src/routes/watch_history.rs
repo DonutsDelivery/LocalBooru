@@ -1,10 +1,11 @@
 use std::net::SocketAddr;
+use std::path::Path;
 
 use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::response::Json;
 use axum::routing::{delete, get};
 use axum::Router;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -333,14 +334,25 @@ async fn continue_watching(
             } else {
                 continue;
             };
-            let visible = {
+            let (visible, directory_path) = {
                 let main_conn = library.main_pool.get()?;
-                get_visible_directory_ids(&main_conn, tier, family_locked)?
+                let visible = get_visible_directory_ids(&main_conn, tier, family_locked)?;
+                let path = main_conn
+                    .query_row(
+                        "SELECT path FROM watch_directories WHERE id = ?1",
+                        params![directory_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()?;
+                (visible, path)
             };
             if visible
                 .as_ref()
                 .is_some_and(|directories| !directories.contains(&directory_id))
             {
+                continue;
+            }
+            if !directory_path.is_some_and(|path| Path::new(&path).is_dir()) {
                 continue;
             }
             let progress = if duration > 0.0 {

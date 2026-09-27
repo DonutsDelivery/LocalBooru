@@ -311,9 +311,9 @@ pub async fn get_image(
                             "width": row.get::<_, Option<i32>>(4)?,
                             "height": row.get::<_, Option<i32>>(5)?,
                             "file_size": row.get::<_, Option<i64>>(6)?,
-                            "rating": row.get::<_, String>(8)?,
-                            "is_favorite": row.get::<_, bool>(9)?,
-                            "view_count": row.get::<_, i32>(23)?,
+                            "rating": row.get::<_, Option<String>>(8)?,
+                            "is_favorite": row.get::<_, Option<bool>>(9)?.unwrap_or(false),
+                            "view_count": row.get::<_, Option<i32>>(23)?.unwrap_or(0),
                             "prompt": row.get::<_, Option<String>>(10)?,
                             "negative_prompt": row.get::<_, Option<String>>(11)?,
                             "model_name": row.get::<_, Option<String>>(12)?,
@@ -330,10 +330,11 @@ pub async fn get_image(
                     },
                 );
 
-                if let Ok(mut data) = image {
+                match image {
+                  Ok(mut data) => {
                     // Increment view count
                     let _ = dir_conn.execute(
-                        "UPDATE images SET view_count = view_count + 1 WHERE id = ?1",
+                        "UPDATE images SET view_count = COALESCE(view_count, 0) + 1 WHERE id = ?1",
                         params![image_id],
                     );
 
@@ -379,6 +380,9 @@ pub async fn get_image(
                     ));
 
                     return Ok(data);
+                  }
+                  Err(rusqlite::Error::QueryReturnedNoRows) => {}
+                  Err(error) => return Err(error.into()),
                 }
             }
             return Err(AppError::NotFound(format!(
@@ -392,7 +396,7 @@ pub async fn get_image(
             let dir_pool = lib.directory_db.get_pool(found_dir)?;
             let dir_conn = dir_pool.get()?;
 
-            if let Ok(mut data) = dir_conn.query_row(
+            match dir_conn.query_row(
                 "SELECT id, filename, original_filename, file_hash, width, height,
                         file_size, duration, rating, is_favorite, prompt, negative_prompt,
                         model_name, sampler, seed, steps, cfg_scale, source_url,
@@ -409,9 +413,9 @@ pub async fn get_image(
                         "width": row.get::<_, Option<i32>>(4)?,
                         "height": row.get::<_, Option<i32>>(5)?,
                         "file_size": row.get::<_, Option<i64>>(6)?,
-                        "rating": row.get::<_, String>(8)?,
-                        "is_favorite": row.get::<_, bool>(9)?,
-                        "view_count": row.get::<_, i32>(23)?,
+                        "rating": row.get::<_, Option<String>>(8)?,
+                        "is_favorite": row.get::<_, Option<bool>>(9)?.unwrap_or(false),
+                        "view_count": row.get::<_, Option<i32>>(23)?.unwrap_or(0),
                         "prompt": row.get::<_, Option<String>>(10)?,
                         "negative_prompt": row.get::<_, Option<String>>(11)?,
                         "model_name": row.get::<_, Option<String>>(12)?,
@@ -427,8 +431,9 @@ pub async fn get_image(
                     }))
                 },
             ) {
+              Ok(mut data) => {
                 let _ = dir_conn.execute(
-                    "UPDATE images SET view_count = view_count + 1 WHERE id = ?1",
+                    "UPDATE images SET view_count = COALESCE(view_count, 0) + 1 WHERE id = ?1",
                     params![image_id],
                 );
                 let tags = get_image_tags_from_directory(
@@ -470,6 +475,9 @@ pub async fn get_image(
                 };
 
                 return Ok(data);
+              }
+              Err(rusqlite::Error::QueryReturnedNoRows) => {}
+              Err(error) => return Err(error.into()),
             }
         }
 
@@ -492,9 +500,9 @@ pub async fn get_image(
                     "width": row.get::<_, Option<i32>>(4)?,
                     "height": row.get::<_, Option<i32>>(5)?,
                     "file_size": row.get::<_, Option<i64>>(6)?,
-                    "rating": row.get::<_, String>(8)?,
-                    "is_favorite": row.get::<_, bool>(9)?,
-                    "view_count": row.get::<_, i32>(23)?,
+                    "rating": row.get::<_, Option<String>>(8)?,
+                    "is_favorite": row.get::<_, Option<bool>>(9)?.unwrap_or(false),
+                    "view_count": row.get::<_, Option<i32>>(23)?.unwrap_or(0),
                     "thumbnail_url": format!("/api/images/{}/thumbnail", row.get::<_, i64>(0)?),
                     "url": format!("/api/images/{}/file", row.get::<_, i64>(0)?),
                     "prompt": row.get::<_, Option<String>>(10)?,
@@ -519,12 +527,15 @@ pub async fn get_image(
         match data {
             Ok(d) => {
                 let _ = main_conn.execute(
-                    "UPDATE images SET view_count = view_count + 1 WHERE id = ?1",
+                    "UPDATE images SET view_count = COALESCE(view_count, 0) + 1 WHERE id = ?1",
                     params![image_id],
                 );
                 Ok(d)
             }
-            Err(_) => Err(AppError::NotFound("Image not found".into())),
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                Err(AppError::NotFound("Image not found".into()))
+            }
+            Err(error) => Err(error.into()),
         }
     })
     .await??;
@@ -735,7 +746,7 @@ pub async fn toggle_favorite(
         let connection = pool.get()?;
         let current = connection
             .query_row(
-                "SELECT is_favorite FROM images WHERE id = ?1",
+                "SELECT COALESCE(is_favorite, 0) FROM images WHERE id = ?1",
                 params![image_id],
                 |row| row.get::<_, bool>(0),
             )
