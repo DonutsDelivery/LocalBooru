@@ -1,6 +1,7 @@
 //! Local audio indexing for watched folders. Metadata extraction is deliberately
 //! best effort: an untagged or malformed file still appears in Songs.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -124,15 +125,109 @@ fn folder_artwork(path: &Path) -> Option<String> {
         .then(|| square.to_string_lossy().to_string())
 }
 
-fn artwork_for(path: &Path, lib: &LibraryContext, picture: Option<&Picture>) -> Option<String> {
-    if let Some(cover) = folder_artwork(path) {
-        return Some(cover);
+fn normalized_artwork_name(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|ch| ch.to_lowercase())
+        .filter(|ch| ch.is_alphanumeric())
+        .collect()
+}
+
+fn folder_artwork_for_album(
+    conn: &rusqlite::Connection,
+    path: &Path,
+    album: &str,
+) -> Result<Option<String>, AppError> {
+    let Some(parent) = path.parent() else {
+        return Ok(None);
+    };
+    let album_name = normalized_artwork_name(album);
+    if album_name.len() >= 5 && album_name != "unknownalbum" {
+        // A release-specific filename can be used even in a mixed music folder.
+        if let Ok(entries) = std::fs::read_dir(parent) {
+            let mut images = entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|candidate| {
+                    candidate.is_file()
+                        && candidate
+                            .extension()
+                            .and_then(|ext| ext.to_str())
+                            .is_some_and(|ext| {
+                                matches!(
+                                    ext.to_ascii_lowercase().as_str(),
+                                    "jpg" | "jpeg" | "png" | "webp"
+                                )
+                            })
+                })
+                .collect::<Vec<_>>();
+            images.sort();
+            if let Some(candidate) = images.iter().find(|candidate| {
+                candidate
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .is_some_and(|stem| {
+                        let name = normalized_artwork_name(stem);
+                        name.len() >= 5
+                            && !matches!(name.as_str(), "cover" | "folder" | "front" | "albumart")
+                            && (name.contains(&album_name) || album_name.contains(&name))
+                    })
+            }) {
+                return Ok(Some(candidate.to_string_lossy().to_string()));
+            }
+        }
     }
+    let Some(cover) = folder_artwork(path) else {
+        return Ok(None);
+    };
+    let folder_name = parent
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    if album_name.len() >= 5
+        && album_name != "unknownalbum"
+        && normalized_artwork_name(folder_name).contains(&album_name)
+    {
+        return Ok(Some(cover));
+    }
+
+    // Generic cover names apply only when this physical folder contains one
+    // release. A compilation folder can hold many unrelated album tags.
+    let prefix = format!("{}/%", parent.to_string_lossy().trim_end_matches('/'));
+    let mut stmt = conn.prepare(
+        "SELECT t.path,a.title FROM music_tracks t JOIN music_albums a ON a.id=t.album_id
+         WHERE t.is_available=1 AND t.path LIKE ?1",
+    )?;
+    let rows = stmt.query_map(params![prefix], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut titles = HashSet::new();
+    if album_name != "unknownalbum" {
+        titles.insert(album_name);
+    }
+    for row in rows {
+        let (other_path, other_title) = row?;
+        if Path::new(&other_path) != path
+            && Path::new(&other_path).parent() == Some(parent)
+            && Path::new(&other_path).is_file()
+        {
+            let other_name = normalized_artwork_name(&other_title);
+            if other_name != "unknownalbum" {
+                titles.insert(other_name);
+                if titles.len() > 1 {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+    Ok(Some(cover))
+}
+
+fn artwork_for(path: &Path, lib: &LibraryContext, picture: Option<&Picture>) -> Option<String> {
     let picture = picture?;
     // Convert once to a browser-supported image format. This also avoids
     // trusting a tag's MIME label, which is sometimes absent or incorrect.
     let mut hasher = Sha256::new();
-    hasher.update(path.to_string_lossy().as_bytes());
     hasher.update(picture.data());
     let digest = hasher.finalize();
     let art_dir = lib.data_dir.join("music-artwork");
@@ -196,6 +291,15 @@ pub fn index_audio_file(
     directory_id: i64,
     path: &Path,
 ) -> Result<(), AppError> {
+    index_audio_file_with_artwork_refresh(lib, directory_id, path, false)
+}
+
+pub fn index_audio_file_with_artwork_refresh(
+    lib: &LibraryContext,
+    directory_id: i64,
+    path: &Path,
+    refresh_artwork: bool,
+) -> Result<(), AppError> {
     if !is_audio_file(path) || !path.is_file() {
         return Ok(());
     }
@@ -208,21 +312,40 @@ pub fn index_audio_file(
         .map(|duration| duration.as_millis() as i64);
     let path_string = path.to_string_lossy().to_string();
     let mut conn = lib.main_pool.get()?;
-    let current: Option<(i64, Option<i64>, Option<String>, i64)> = conn
+    let current: Option<(i64, Option<i64>, Option<String>, i64, String)> = conn
         .query_row(
-            "SELECT file_size, modified_at, artwork_path, album_id FROM music_tracks WHERE path = ?1 AND is_available = 1",
+            "SELECT t.file_size,t.modified_at,t.artwork_path,t.album_id,a.title
+             FROM music_tracks t JOIN music_albums a ON a.id=t.album_id
+             WHERE t.path = ?1 AND t.is_available = 1",
             params![path_string],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .optional()?;
-    if let Some((old_size, old_modified, old_artwork, _)) = &current {
-        let current_cover = folder_artwork(path);
-        let cover_changed = current_cover.as_deref() != old_artwork.as_deref()
-            && (current_cover.is_some()
-                || old_artwork
-                    .as_deref()
-                    .is_some_and(|art| !Path::new(art).is_file()));
-        if *old_size == size && *old_modified == modified && !cover_changed {
+    if let Some((old_size, old_modified, old_artwork, _, old_album)) = &current {
+        let old_art = old_artwork.as_deref();
+        let cached_embedded = old_art
+            .is_some_and(|art| Path::new(art).starts_with(lib.data_dir.join("music-artwork")));
+        let current_cover = if cached_embedded {
+            None
+        } else {
+            folder_artwork_for_album(&conn, path, old_album)?
+        };
+        let cover_changed = !cached_embedded && current_cover.as_deref() != old_art;
+        let art_missing = old_art.is_some_and(|art| !Path::new(art).is_file());
+        if *old_size == size
+            && *old_modified == modified
+            && !refresh_artwork
+            && !cover_changed
+            && !art_missing
+        {
             return Ok(());
         }
     }
@@ -317,7 +440,10 @@ pub fn index_audio_file(
                     })
                 })
         });
-    let artwork_path = artwork_for(path, lib, picture);
+    let artwork_path = match artwork_for(path, lib, picture) {
+        Some(embedded) => Some(embedded),
+        None => folder_artwork_for_album(&conn, path, &album)?,
+    };
     // Untagged files are separate fallback albums, so Songs never disappear
     // into an arbitrary folder grouping.
     let album_key = if album == "Unknown Album" {
@@ -376,7 +502,7 @@ pub fn index_audio_file(
         ],
     )?;
     refresh_album_artwork(&tx, album_id)?;
-    if let Some((_, _, _, previous_album_id)) = current {
+    if let Some((_, _, _, previous_album_id, _)) = current {
         if previous_album_id != album_id {
             refresh_album_artwork(&tx, previous_album_id)?;
         }
@@ -422,6 +548,29 @@ pub fn reconcile_audio_files(lib: &LibraryContext, directory_id: i64) -> Result<
     for path in paths {
         if !path.is_file() {
             mark_audio_missing(lib, &path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Revisit sidecar artwork after the first full scan. Early tracks in a new
+/// folder may have been indexed before another album in that folder appeared.
+pub fn reconcile_audio_artwork(lib: &LibraryContext, directory_id: i64) -> Result<(), AppError> {
+    let conn = lib.main_pool.get()?;
+    let mut stmt = conn.prepare(
+        "SELECT path,artwork_path FROM music_tracks
+         WHERE directory_id=?1 AND is_available=1 AND artwork_path IS NOT NULL",
+    )?;
+    let paths = stmt
+        .query_map(params![directory_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+    drop(conn);
+    for (path, artwork) in paths {
+        if !Path::new(&artwork).starts_with(lib.data_dir.join("music-artwork")) {
+            index_audio_file(lib, directory_id, Path::new(&path))?;
         }
     }
     Ok(())

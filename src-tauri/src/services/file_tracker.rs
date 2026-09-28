@@ -127,6 +127,9 @@ pub fn scan_directory(
         )));
     }
     let media = directory_media_settings(lib, directory_id)?;
+    let artwork_marker = lib.data_dir.join(format!("music-artwork-v2-{directory_id}"));
+    let refresh_music_artwork = media.music && !artwork_marker.is_file();
+    let mut music_errors = 0;
 
     // Walk the directory for media files
     let walker: Box<dyn Iterator<Item = walkdir::DirEntry>> = if recursive {
@@ -163,13 +166,19 @@ pub fn scan_directory(
                 continue;
             }
             stats.found += 1;
-            if let Err(error) = music::index_audio_file(lib, directory_id, entry.path()) {
+            if let Err(error) = music::index_audio_file_with_artwork_refresh(
+                lib,
+                directory_id,
+                entry.path(),
+                refresh_music_artwork,
+            ) {
                 log::warn!(
                     "Music import error for {}: {}",
                     entry.path().display(),
                     error
                 );
                 stats.errors += 1;
+                music_errors += 1;
             } else {
                 stats.imported += 1;
             }
@@ -193,6 +202,11 @@ pub fn scan_directory(
                 stats.errors += 1;
             }
         }
+    }
+
+    if refresh_music_artwork && music_errors == 0 {
+        music::reconcile_audio_artwork(lib, directory_id)?;
+        std::fs::write(artwork_marker, b"2")?;
     }
 
     // Clean stale paths only after discovery/import. If a file was moved while
