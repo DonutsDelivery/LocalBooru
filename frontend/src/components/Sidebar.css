@@ -51,6 +51,13 @@
   backdrop-filter: blur(4px);
 }
 
+.sidebar:has(.music-mini-player--sidebar) .version-info {
+  position: static;
+  order: 100;
+  align-self: flex-start;
+  margin-top: auto;
+}
+
 .version-number {
   font-size: 0.75rem;
   color: var(--text-muted);

@@ -47,7 +47,7 @@ export function MusicPlayerProvider({ children }) {
     } }))
   }, [])
 
-  const startAlbum = useCallback((album, tracks, selectedTrack = null) => {
+  const startAlbum = useCallback((album, tracks, selectedTrack = null, { openViewer = true } = {}) => {
     const ordered = orderedAlbumTracks(tracks)
     const start = selectedTrack || ordered[0]
     if (!start) return
@@ -65,7 +65,8 @@ export function MusicPlayerProvider({ children }) {
     setPosition(0)
     setDuration(Number(start.duration) || 0)
     setPlaying(true)
-    setViewer({ kind: 'session' })
+    if (openViewer) setViewer({ kind: 'session' })
+    else setViewer(null)
   }, [])
 
   const startSong = useCallback(track => {
@@ -264,25 +265,6 @@ export function useMusicPlayer() {
   const value = useContext(MusicPlayerContext)
   if (!value) throw new Error('MusicPlayerProvider is required')
   return value
-}
-
-export function PersistentMusicPlayer() {
-  const { session, viewer, playing, setPlaying, advance, previous, openSession } = useMusicPlayer()
-  if (!session || viewer) return null
-  const track = session.current
-  return <div className="music-mini-player" role="region" aria-label="Music player">
-    <button className="music-mini-track" onClick={openSession} aria-label="Open music player">
-      {track.artwork_url ? <img src={getMediaUrl(track.artwork_url)} alt="" /> : <span className="music-art-fallback">♫</span>}
-      <span><strong>{track.title}</strong><small>{track.artist || 'Unknown artist'}</small>
-        {session.playbackError && <small className="music-mini-error" role="alert">Playback error · Open player</small>}
-      </span>
-    </button>
-    <div className="music-mini-controls">
-      <button onClick={previous} aria-label="Previous track">⏮</button>
-      <button onClick={() => setPlaying(!playing)} aria-label={playing ? 'Pause music' : 'Play music'}>{playing ? '⏸' : '▶'}</button>
-      <button onClick={advance} aria-label="Next track">⏭</button>
-    </div>
-  </div>
 }
 
 export { upcomingAlbumTracks }

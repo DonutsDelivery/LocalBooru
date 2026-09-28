@@ -54,7 +54,8 @@ export default function MusicLightbox() {
     return () => window.removeEventListener('keydown', onKey)
   }, [closeViewer, playing, position, seek, session, setPlaying])
 
-  return <div className="music-lightbox" role="dialog" aria-modal="true" aria-label="Music player">
+  return <div className="music-lightbox" role="dialog" aria-modal="true" aria-label="Music player"
+    onClick={event => { if (event.target === event.currentTarget) closeViewer() }}>
     <div className="music-lightbox-shell">
       <header className="music-lightbox-header">
         <div><span className="music-eyebrow">Music</span><h2>{isPreview ? albumTitle || 'Album' : session?.kind === 'mix' ? `Mix based on ${session.seed.title}` : albumTitle || 'Now playing'}</h2></div>

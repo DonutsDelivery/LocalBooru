@@ -7,6 +7,7 @@ import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_O
 import TagSearch from './TagSearch'
 import SidebarNavigation from '../SidebarNavigation'
 import FamilyModeLock from '../FamilyModeLock'
+import PersistentMusicPlayer from '../Music/PersistentMusicPlayer'
 import '../Sidebar.css'
 
 function Sidebar({
@@ -827,6 +828,7 @@ function Sidebar({
           </a>
         </div>
       </div>
+      <PersistentMusicPlayer />
     </aside>
   )
 }

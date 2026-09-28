@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import SidebarNavigation from '../SidebarNavigation'
 import {
   addMusicCollectionItem, createMusicCollection, fetchLibraries, fetchMusicAlbum,
@@ -6,6 +7,7 @@ import {
   fetchMusicTracks, getMediaUrl, removeMusicCollectionItem, setMusicFavorite,
 } from '../../api'
 import { useMusicPlayer } from './MusicPlayer'
+import PersistentMusicPlayer from './PersistentMusicPlayer'
 import './Music.css'
 
 const defaultFacets = { artists: [], albums: [], genres: [], years: [], folders: [] }
@@ -30,11 +32,70 @@ function MusicArtwork({ item }) {
     : <div className="music-card-fallback" aria-label="No artwork">♫</div>
 }
 
+function MusicFilterDropdown({ name, label, value, options, openFilter, setOpenFilter, onChange }) {
+  const triggerRef = useRef(null)
+  const [menuPosition, setMenuPosition] = useState(null)
+  const open = openFilter === name
+  const selected = options.find(option => String(option.value) === String(value)) || options[0]
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const positionMenu = () => {
+      const rect = triggerRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const below = window.innerHeight - rect.bottom - 8
+      const above = rect.top - 8
+      const placeAbove = below < 220 && above > below
+      setMenuPosition({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
+        width: rect.width,
+        maxHeight: Math.min(260, Math.max(80, placeAbove ? above : below)),
+        top: placeAbove ? undefined : rect.bottom + 4,
+        bottom: placeAbove ? window.innerHeight - rect.top + 4 : undefined,
+      })
+    }
+    positionMenu()
+    window.addEventListener('resize', positionMenu)
+    window.addEventListener('scroll', positionMenu, true)
+    return () => {
+      window.removeEventListener('resize', positionMenu)
+      window.removeEventListener('scroll', positionMenu, true)
+    }
+  }, [open])
+
+  return <div className="music-filter-dropdown">
+    <span className="music-filter-label">{label}</span>
+    <button ref={triggerRef} type="button" className="music-filter-trigger"
+      aria-label={`${label} filter`} aria-haspopup="listbox" aria-expanded={open}
+      onClick={() => setOpenFilter(current => current === name ? null : name)}
+      onKeyDown={event => {
+        if (event.key === 'Escape') { setOpenFilter(null); triggerRef.current?.focus() }
+        if (event.key === 'ArrowDown' && !open) { event.preventDefault(); setOpenFilter(name) }
+      }}>
+      <span>{selected.label}</span><span className="music-filter-chevron" aria-hidden="true">▾</span>
+    </button>
+    {open && menuPosition && createPortal(<div className="music-filter-options" role="listbox" aria-label={label} style={menuPosition}
+      onKeyDown={event => {
+        if (event.key === 'Escape') { setOpenFilter(null); triggerRef.current?.focus() }
+      }}>
+      {options.map(option => <button key={String(option.value)} type="button" role="option"
+        aria-selected={String(option.value) === String(value)}
+        onClick={() => { onChange(option.value); setOpenFilter(null); triggerRef.current?.focus() }}>
+        {option.label}
+      </button>)}
+    </div>, document.body)}
+  </div>
+}
+
 export default function MusicPage() {
-  const { browse, setBrowse, updateBrowse, startSong, openAlbum, queueTrack, session } = useMusicPlayer()
+  const { browse, setBrowse, updateBrowse, startAlbum, startSong, openAlbum, queueTrack, session } = useMusicPlayer()
   const mode = browse.mode
   const filters = browse.byMode[mode]
   const scrollRef = useRef(null)
+  const loadMoreRef = useRef(null)
+  const loadedQueryRef = useRef(null)
+  const paginationPendingRef = useRef(false)
+  const albumPlayRequestRef = useRef(0)
   const restoredRef = useRef('')
   const [albums, setAlbums] = useState([])
   const [tracks, setTracks] = useState([])
@@ -47,6 +108,7 @@ export default function MusicPage() {
   const [newCollection, setNewCollection] = useState('')
   const [addingCollection, setAddingCollection] = useState(false)
   const [collectionTarget, setCollectionTarget] = useState('')
+  const [openFilter, setOpenFilter] = useState(null)
   const [directMembers, setDirectMembers] = useState(new Set())
   const [refresh, setRefresh] = useState(0)
 
@@ -56,6 +118,14 @@ export default function MusicPage() {
 
   useEffect(() => {
     fetchLibraries().then(data => setLibraries(data.libraries || [])).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const closeOutside = event => {
+      if (!event.target.closest?.('.music-filter-dropdown, .music-filter-options')) setOpenFilter(null)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
   }, [])
 
   useEffect(() => {
@@ -70,6 +140,7 @@ export default function MusicPage() {
 
   useEffect(() => {
     let alive = true
+    loadedQueryRef.current = null
     const load = async () => {
       setLoading(true)
       setError('')
@@ -134,10 +205,14 @@ export default function MusicPage() {
           else setTracks(results.flatMap(result => result.tracks || []))
           setTotal(results[0]?.total || 0)
         }
+        loadedQueryRef.current = queryKey
       } catch (cause) {
         if (alive) setError(cause.response?.data?.detail || 'Could not load the music library.')
       } finally {
-        if (alive) setLoading(false)
+        if (alive) {
+          paginationPendingRef.current = false
+          setLoading(false)
+        }
       }
     }
     load()
@@ -154,6 +229,21 @@ export default function MusicPage() {
     requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = savedScroll || 0 })
   }, [mode, filters.library, filters.collection, page, activeItems.length, loading, savedScroll])
 
+  useEffect(() => {
+    const root = scrollRef.current
+    const marker = loadMoreRef.current
+    if (!root || !marker || loading || error || filters.collection
+        || !activeItems.length || activeItems.length >= total
+        || loadedQueryRef.current !== queryKey) return
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting || paginationPendingRef.current || loadedQueryRef.current !== queryKey) return
+      paginationPendingRef.current = true
+      updateBrowse(mode, { page: page + 1, scroll: root.scrollTop })
+    }, { root, rootMargin: '600px 0px' })
+    observer.observe(marker)
+    return () => observer.disconnect()
+  }, [activeItems.length, error, filters.collection, loading, mode, page, queryKey, total, updateBrowse])
+
   const updateFilter = (key, value) => {
     updateBrowse(mode, { [key]: value, scroll: 0, page: 1 })
     if (scrollRef.current) scrollRef.current.scrollTop = 0
@@ -166,6 +256,7 @@ export default function MusicPage() {
   }
 
   const openItem = useCallback(async item => {
+    albumPlayRequestRef.current += 1
     if (mode === 'songs') { startSong(item); return }
     if (item._standaloneTrack) { openAlbum(item, [item._standaloneTrack]); return }
     try {
@@ -173,6 +264,22 @@ export default function MusicPage() {
       openAlbum(detail.album || item, detail.tracks || [])
     } catch { setError('Could not open this album.') }
   }, [mode, openAlbum, startSong])
+
+  const playAlbum = useCallback(async item => {
+    const request = ++albumPlayRequestRef.current
+    try {
+      const detail = item._standaloneTrack
+        ? { album: item, tracks: [item._standaloneTrack] }
+        : await fetchMusicAlbum(item.id, item.library_id)
+      if (request !== albumPlayRequestRef.current) return
+      const tracks = detail.tracks || []
+      if (!tracks.length) {
+        setError('This album has no playable tracks.')
+        return
+      }
+      startAlbum(detail.album || item, tracks, null, { openViewer: false })
+    } catch { if (request === albumPlayRequestRef.current) setError('Could not play this album.') }
+  }, [startAlbum])
 
   const createCollection = async event => {
     event.preventDefault()
@@ -210,6 +317,7 @@ export default function MusicPage() {
 
   return <div className="music-page">
     <aside className="music-sidebar">
+      <div className="music-sidebar-content">
       <SidebarNavigation />
       <h1>Music</h1>
       <p>Your local albums and songs</p>
@@ -226,16 +334,16 @@ export default function MusicPage() {
       </div>
       <div className="music-side-section music-filters">
         <h2>Filters</h2>
-        {libraries.length > 1 && <label>Library<select value={filters.library} onChange={event => updateFilter('library', event.target.value)}>
-          <option value="">Primary library</option>{libraries.map(library => <option key={library.uuid || library.id} value={library.uuid || library.id}>{library.name}</option>)}
-        </select></label>}
-        <label>Artist<select value={filters.artist} onChange={event => updateFilter('artist', event.target.value)}><option value="">All artists</option>{facets.artists.map(value => <option key={value}>{value}</option>)}</select></label>
-        <label>Album<select value={filters.album} onChange={event => updateFilter('album', event.target.value)}><option value="">All albums</option>{facets.albums.map(value => <option key={value}>{value}</option>)}</select></label>
-        <label>Genre<select value={filters.genre} onChange={event => updateFilter('genre', event.target.value)}><option value="">All genres</option>{facets.genres.map(value => <option key={value}>{value}</option>)}</select></label>
-        <label>Year<select value={filters.year} onChange={event => updateFilter('year', event.target.value)}><option value="">All years</option>{facets.years.map(value => <option key={value}>{value}</option>)}</select></label>
-        <label>Folder<select value={filters.folder} onChange={event => updateFilter('folder', event.target.value)}><option value="">All folders</option>{facets.folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label>
+        {libraries.length > 1 && <MusicFilterDropdown name="library" label="Library" value={filters.library} options={[{ value: '', label: 'Primary library' }, ...libraries.map(library => ({ value: library.uuid || library.id, label: library.name }))]} openFilter={openFilter} setOpenFilter={setOpenFilter} onChange={value => updateFilter('library', value)} />}
+        <MusicFilterDropdown name="artist" label="Artist" value={filters.artist} options={[{ value: '', label: 'All artists' }, ...facets.artists.map(value => ({ value, label: value }))]} openFilter={openFilter} setOpenFilter={setOpenFilter} onChange={value => updateFilter('artist', value)} />
+        <MusicFilterDropdown name="album" label="Album" value={filters.album} options={[{ value: '', label: 'All albums' }, ...facets.albums.map(value => ({ value, label: value }))]} openFilter={openFilter} setOpenFilter={setOpenFilter} onChange={value => updateFilter('album', value)} />
+        <MusicFilterDropdown name="genre" label="Genre" value={filters.genre} options={[{ value: '', label: 'All genres' }, ...facets.genres.map(value => ({ value, label: value }))]} openFilter={openFilter} setOpenFilter={setOpenFilter} onChange={value => updateFilter('genre', value)} />
+        <MusicFilterDropdown name="year" label="Year" value={filters.year} options={[{ value: '', label: 'All years' }, ...facets.years.map(value => ({ value, label: String(value) }))]} openFilter={openFilter} setOpenFilter={setOpenFilter} onChange={value => updateFilter('year', value)} />
+        <MusicFilterDropdown name="folder" label="Folder" value={filters.folder} options={[{ value: '', label: 'All folders' }, ...facets.folders.map(folder => ({ value: folder.id, label: folder.name }))]} openFilter={openFilter} setOpenFilter={setOpenFilter} onChange={value => updateFilter('folder', value)} />
         <label className="music-check"><input type="checkbox" checked={filters.favorites} onChange={event => updateFilter('favorites', event.target.checked)} /> Favorites</label>
       </div>
+      </div>
+      <PersistentMusicPlayer />
     </aside>
     <main className="music-main">
       <div className="music-toolbar">
@@ -246,7 +354,7 @@ export default function MusicPage() {
         <input type="search" value={filters.query} onChange={event => updateFilter('query', event.target.value)} placeholder={`Search ${mode}`} aria-label={`Search ${mode}`} />
         <span className="music-result-count">{total.toLocaleString()} {mode}</span>
       </div>
-      {error && <div className="music-error" role="alert">{error}</div>}
+      {error && <div className="music-error" role="alert">{error} <button onClick={() => setRefresh(value => value + 1)}>Retry</button></div>}
       <div className="music-scroll" ref={scrollRef} onScroll={event => {
         const top = event.currentTarget.scrollTop
         // Keep scroll position in provider so route switches restore this view.
@@ -260,6 +368,7 @@ export default function MusicPage() {
               <span className="music-card-details"><strong>{labelFor(musicItemTitle(item, mode), mode === 'albums' ? 'Unknown album' : 'Untitled track')}</strong><small>{labelFor(item.artist, 'Unknown artist')}</small></span>
             </button>
             <div className="music-card-actions">
+              {mode === 'albums' && <button className="music-card-play" onClick={() => playAlbum(item)} aria-label={`Play ${musicItemTitle(item, mode)}`} title="Play album">▶</button>}
               {mode === 'songs' && <button onClick={event => toggleFavorite(event, item)} aria-label={item.is_favorite ? 'Remove favorite' : 'Add favorite'} title="Favorite">{item.is_favorite ? '♥' : '♡'}</button>}
               {session && <button onClick={() => mode === 'songs' ? queueTrack(item) : openItem(item)} aria-label={mode === 'songs' ? `Queue ${item.title}` : `Open ${musicItemTitle(item, mode)}`} title={mode === 'songs' ? 'Add to queue' : 'Open album'}>{mode === 'songs' ? '＋ Queue' : 'Tracks'}</button>}
               {filters.collection ? directMembers.has(`${item._standaloneTrack ? 'track' : mode === 'albums' ? 'album' : 'track'}:${itemKey(item._standaloneTrack || item)}`)
@@ -269,7 +378,7 @@ export default function MusicPage() {
             </div>
           </article>)}
         </div>
-        {!filters.collection && activeItems.length < total && <button className="music-load-more" disabled={loading} onClick={() => updateBrowse(mode, { page: page + 1 })}>{loading ? 'Loading…' : 'Load more'}</button>}
+        {!filters.collection && activeItems.length < total && <div ref={loadMoreRef} className="music-load-sentinel" aria-live="polite">{loading && activeItems.length ? 'Loading more music…' : ''}</div>}
         {loading && !activeItems.length && <div className="music-loading">Loading music…</div>}
       </div>
     </main>

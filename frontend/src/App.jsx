@@ -2351,7 +2351,7 @@ function AppShell() {
             <Route path="/watch/:token" element={<WatchPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
-          <PersistentMusicPlayer />
+          <PersistentMusicPlayer placement="mobile" />
         </MusicPlayerProvider>
       </BrowserRouter>
     </>
