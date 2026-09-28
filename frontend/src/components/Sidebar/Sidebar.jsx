@@ -50,6 +50,7 @@ function Sidebar({
   const isSettingsPage = location.pathname === '/settings'
   const [hovering, setHovering] = useState(false)
   const [directories, setDirectories] = useState([])
+  const [directoriesMediaType, setDirectoriesMediaType] = useState(null)
   const [selectedDirectory, setSelectedDirectory] = useState(initialDirectoryId || null)
   const [selectedLibrary, setSelectedLibrary] = useState(initialLibraryId || null)
   const [selectedRatings, setSelectedRatings] = useState(() => {
@@ -90,6 +91,7 @@ function Sidebar({
   const refreshDirectories = useCallback(() => {
     fetchDirectories(false, null, mediaType).then(data => {
       setDirectories(data.directories || [])
+      setDirectoriesMediaType(mediaType)
     }).catch(console.error)
   }, [mediaType])
 
@@ -323,6 +325,16 @@ function Sidebar({
     const ratingParam = getEffectiveRatings().join(',')
     onSearch(currentTags || '', ratingParam, sortBy, favoritesOnly, newDirId, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, newLibId)
   }
+
+  // A saved gallery URL may still reference a directory whose media type was changed.
+  useEffect(() => {
+    if (!isGalleryPage || directoriesMediaType !== mediaType || !initialDirectoryId) return
+    const selectedDirectoryExists = directories.some(dir =>
+      String(dir.id) === String(initialDirectoryId) &&
+      (dir.library_id || null) === (initialLibraryId || null)
+    )
+    if (!selectedDirectoryExists) handleDirectoryChange('')
+  }, [directories, directoriesMediaType, mediaType, isGalleryPage, initialDirectoryId, initialLibraryId])
 
   const handleTimeframeChange = (newTimeframe) => {
     setTimeframe(newTimeframe)
