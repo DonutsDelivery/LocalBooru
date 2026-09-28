@@ -331,7 +331,7 @@ function Sidebar({
     if (!isGalleryPage || directoriesMediaType !== mediaType || !initialDirectoryId) return
     const selectedDirectoryExists = directories.some(dir =>
       String(dir.id) === String(initialDirectoryId) &&
-      (dir.library_id || null) === (initialLibraryId || null)
+      (!initialLibraryId || dir.library_id === initialLibraryId)
     )
     if (!selectedDirectoryExists) handleDirectoryChange('')
   }, [directories, directoriesMediaType, mediaType, isGalleryPage, initialDirectoryId, initialLibraryId])
