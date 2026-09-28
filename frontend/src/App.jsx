@@ -1072,8 +1072,8 @@ function Gallery({ mediaType = 'image' }) {
   }, [filtersInitialized, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentSort, currentMinAge, currentMaxAge, currentTimeframe, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, groupByFolders, currentFolder, loadImages])
 
   useEffect(() => {
-    loadTags()
-  }, [loadTags])
+    if (mediaType === 'image') loadTags()
+  }, [loadTags, mediaType])
 
   useEffect(() => {
     getLibraryStats().then(setStats).catch(console.error)

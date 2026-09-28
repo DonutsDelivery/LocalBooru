@@ -88,10 +88,10 @@ function Sidebar({
 
   // Load directories
   const refreshDirectories = useCallback(() => {
-    fetchDirectories().then(data => {
+    fetchDirectories(false, null, mediaType).then(data => {
       setDirectories(data.directories || [])
     }).catch(console.error)
-  }, [])
+  }, [mediaType])
 
   useEffect(() => {
     refreshDirectories()
@@ -681,7 +681,7 @@ function Sidebar({
               )}
             </div>
 
-            {selectedImage.tags?.length > 0 && (
+            {mediaType === 'image' && selectedImage.tags?.length > 0 && (
               <div className="image-tags">
                 <h4>Tags</h4>
                 <div className="tag-list">
@@ -745,7 +745,7 @@ function Sidebar({
         )}
 
         {/* Tag Browser */}
-        {isGalleryPage && !selectedImage && (
+        {isGalleryPage && mediaType === 'image' && !selectedImage && (
           <TagSearch
             tags={tags}
             activeTags={activeTags}
