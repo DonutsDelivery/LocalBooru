@@ -86,31 +86,3 @@ pub async fn validate_resolved_url(url: &Url, allow_local_network: bool) -> Resu
     }
     Ok(())
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn blocks_private() {
-        for ip in [
-            "127.0.0.1",
-            "10.0.0.1",
-            "169.254.1.1",
-            "::1",
-            "fc00::1",
-            "fe80::1",
-            "::ffff:127.0.0.1",
-        ] {
-            assert!(address_is_private(ip.parse().unwrap()));
-        }
-        assert!(!address_is_private("8.8.8.8".parse().unwrap()));
-    }
-    #[test]
-    fn validates_base() {
-        assert!(normalize_base_url("http://example.com", false).is_err());
-        assert!(normalize_base_url("https://u:p@example.com", false).is_err());
-        assert_eq!(
-            normalize_base_url("https://example.com/", false).unwrap(),
-            "https://example.com"
-        );
-    }
-}

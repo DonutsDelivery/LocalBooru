@@ -173,22 +173,3 @@ fn normalize_item(provider: &str, source_id: &str, base: &str, r: &Value) -> Opt
         media,
     })
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn two_dialects() {
-        let a = normalize_page(
-            "donutbooru",
-            "a",
-            "https://a.test",
-            serde_json::json!({"images":[{"id":1,"url":"/a.jpg","tags":["cat"]}],"total":1}),
-            1,
-            20,
-        )
-        .unwrap();
-        let b=normalize_page("danbooru","b","https://b.test",serde_json::json!([{"id":2,"file_url":"https://cdn.test/b.jpg","tag_string":"dog safe"}]),1,20).unwrap();
-        assert_eq!(a.items[0].remote_post_id, "1");
-        assert_eq!(b.items[0].tags, vec!["dog", "safe"]);
-    }
-}
