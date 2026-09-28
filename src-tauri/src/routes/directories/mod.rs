@@ -111,6 +111,20 @@ pub struct LibraryQuery {
     pub library_id: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum DirectoryMediaType {
+    Image,
+    Video,
+    Music,
+}
+
+#[derive(Debug, Deserialize)]
+struct DirectoryListQuery {
+    library_id: Option<String>,
+    media_type: Option<DirectoryMediaType>,
+}
+
 #[derive(Deserialize)]
 pub struct DirectoryUpdate {
     pub name: Option<String>,
@@ -191,10 +205,10 @@ fn default_true() -> bool {
 /// GET /api/directories — List all watch directories with stats.
 ///
 /// Public IP clients only see directories with `public_access = true`.
-/// Accepts optional `library_id` query param to target a specific library.
+/// Accepts optional `library_id` and `media_type` query params.
 async fn list_directories(
     State(state): State<AppState>,
-    Query(q): Query<LibraryQuery>,
+    Query(q): Query<DirectoryListQuery>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Result<Json<Value>, AppError> {
     let client_ip = addr.ip();
@@ -313,6 +327,15 @@ async fn list_directories(
         let mut filtered: Vec<Value> = all_dirs
             .into_iter()
             .filter(|d| {
+                let visible_for_media = match q.media_type {
+                    Some(DirectoryMediaType::Image) => d["show_images"].as_bool().unwrap_or(true),
+                    Some(DirectoryMediaType::Video) => d["show_videos"].as_bool().unwrap_or(true),
+                    Some(DirectoryMediaType::Music) => d["show_music"].as_bool().unwrap_or(true),
+                    None => true,
+                };
+                if !visible_for_media {
+                    return false;
+                }
                 // Family mode: hide non-family-safe when locked
                 if family_locked && !d["family_safe"].as_bool().unwrap_or(true) {
                     return false;

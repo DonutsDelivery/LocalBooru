@@ -578,15 +578,18 @@ let directoriesCache = null
 let directoriesCacheTime = 0
 const DIRECTORIES_CACHE_TTL = 5000 // 5 seconds
 
-export async function fetchDirectories(forceRefresh = false, libraryId = null) {
+export async function fetchDirectories(forceRefresh = false, libraryId = null, mediaType = null) {
   const now = Date.now()
-  if (!forceRefresh && !libraryId && directoriesCache && (now - directoriesCacheTime) < DIRECTORIES_CACHE_TTL) {
+  if (!forceRefresh && !libraryId && !mediaType && directoriesCache && (now - directoriesCacheTime) < DIRECTORIES_CACHE_TTL) {
     return directoriesCache
   }
-  let url = '/directories'
-  if (libraryId) url += `?library_id=${libraryId}`
+  const params = new URLSearchParams()
+  if (libraryId) params.set('library_id', libraryId)
+  if (mediaType) params.set('media_type', mediaType)
+  const query = params.toString()
+  const url = `/directories${query ? `?${query}` : ''}`
   const response = await api.get(url)
-  if (!libraryId) {
+  if (!libraryId && !mediaType) {
     directoriesCache = response.data
     directoriesCacheTime = now
   }
