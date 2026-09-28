@@ -7,6 +7,7 @@ import MusicLightbox from './MusicLightbox'
 import './Music.css'
 
 const MusicPlayerContext = createContext(null)
+const MusicBrowserContext = createContext(null)
 
 const emptyBrowse = () => ({ mode: 'albums', byMode: {
   albums: { query: '', artist: '', album: '', genre: '', year: '', favorites: false, folder: '', collection: '', library: '', scroll: 0, page: 1 },
@@ -248,8 +249,15 @@ export function MusicPlayerProvider({ children }) {
     startAlbum, startSong, advance, previous, queueTrack, removeQueuedTrack, setRelatedShuffle,
     openAlbum, openSession, closeViewer, seek])
 
+  // Browsing does not need the changing playback clock. Keep its context
+  // stable during time updates so scrolling a large gallery stays responsive.
+  const browserValue = useMemo(() => ({
+    browse, setBrowse, updateBrowse, session, playing, setPlaying,
+    startAlbum, startSong, openAlbum, queueTrack,
+  }), [browse, updateBrowse, session, playing, startAlbum, startSong, openAlbum, queueTrack])
+
   return <MusicPlayerContext.Provider value={value}>
-    {children}
+    <MusicBrowserContext.Provider value={browserValue}>{children}</MusicBrowserContext.Provider>
     <audio ref={audioRef} preload="metadata"
       onTimeUpdate={event => setPosition(event.currentTarget.currentTime)}
       onDurationChange={event => setDuration(event.currentTarget.duration || 0)}
@@ -263,6 +271,12 @@ export function MusicPlayerProvider({ children }) {
 
 export function useMusicPlayer() {
   const value = useContext(MusicPlayerContext)
+  if (!value) throw new Error('MusicPlayerProvider is required')
+  return value
+}
+
+export function useMusicBrowser() {
+  const value = useContext(MusicBrowserContext)
   if (!value) throw new Error('MusicPlayerProvider is required')
   return value
 }

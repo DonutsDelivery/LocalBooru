@@ -34,7 +34,7 @@ fn number(value: Option<&str>, fallback: i64) -> i64 {
 
 fn folder_artwork(path: &Path) -> Option<String> {
     let parent = path.parent()?;
-    for name in [
+    const PREFERRED_NAMES: &[&str] = &[
         "cover.jpg",
         "cover.jpeg",
         "folder.jpg",
@@ -47,13 +47,81 @@ fn folder_artwork(path: &Path) -> Option<String> {
         "cover.webp",
         "folder.webp",
         "front.webp",
-    ] {
+        "albumart.jpg",
+        "albumart.jpeg",
+        "albumart.png",
+        "albumart.webp",
+    ];
+    for name in PREFERRED_NAMES {
         let candidate = parent.join(name);
         if candidate.is_file() {
             return Some(candidate.to_string_lossy().to_string());
         }
     }
-    None
+    // Filesystems on Linux are case-sensitive, while album art often arrives
+    // with names such as Folder.jpg or Front.jpg.
+    let mut images = std::fs::read_dir(parent)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|candidate| {
+            candidate.is_file()
+                && candidate
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| {
+                        matches!(
+                            ext.to_ascii_lowercase().as_str(),
+                            "jpg" | "jpeg" | "png" | "webp"
+                        )
+                    })
+        })
+        .collect::<Vec<_>>();
+    images.sort();
+    let named = |candidate: &Path| candidate.file_name()?.to_str().map(str::to_lowercase);
+    for name in PREFERRED_NAMES {
+        if let Some(candidate) = images
+            .iter()
+            .find(|candidate| named(candidate).as_deref() == Some(*name))
+        {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+    if let Some(candidate) = images.iter().find(|candidate| {
+        named(candidate).is_some_and(|name| {
+            (name.contains("cover") || name.contains("front") || name.contains("albumart"))
+                && !name.contains("back")
+                && !name.contains("inside")
+                && !name.contains("booklet")
+        })
+    }) {
+        return Some(candidate.to_string_lossy().to_string());
+    }
+    let plausible = |candidate: &Path| {
+        named(candidate).is_some_and(|name| {
+            !name.contains("back") && !name.contains("inside") && !name.contains("booklet")
+        })
+    };
+    // A single image alongside the tracks is useful when the cover uses the
+    // album title or catalog number as its filename.
+    if images.len() == 1 && plausible(&images[0]) {
+        return Some(images[0].to_string_lossy().to_string());
+    }
+    // When several images remain, use a uniquely square one. Otherwise a
+    // random booklet or scan could be mistaken for the front cover.
+    let mut square_images = images
+        .iter()
+        .filter(|candidate| plausible(candidate))
+        .filter(|candidate| {
+            image::image_dimensions(candidate).is_ok_and(|(width, height)| {
+                height > 0 && ((width as f64 / height as f64) - 1.0).abs() <= 0.05
+            })
+        });
+    let square = square_images.next()?;
+    square_images
+        .next()
+        .is_none()
+        .then(|| square.to_string_lossy().to_string())
 }
 
 fn artwork_for(path: &Path, lib: &LibraryContext, picture: Option<&Picture>) -> Option<String> {
@@ -179,7 +247,9 @@ pub fn index_audio_file(
         .and_then(|file| {
             file.tags()
                 .iter()
-                .find(|tag| tag.title().is_some() || tag.artist().is_some() || tag.album().is_some())
+                .find(|tag| {
+                    tag.title().is_some() || tag.artist().is_some() || tag.album().is_some()
+                })
                 .or_else(|| file.primary_tag())
                 .or_else(|| file.first_tag())
         });
@@ -230,10 +300,23 @@ pub fn index_audio_file(
     let duration = tagged
         .as_ref()
         .map(|file| file.properties().duration().as_secs_f64());
-    let picture = tag.and_then(|tag| {
-        tag.get_picture_type(PictureType::CoverFront)
-            .or_else(|| tag.pictures().first())
-    });
+    let picture = tag
+        .and_then(|tag| {
+            tag.get_picture_type(PictureType::CoverFront)
+                .or_else(|| tag.pictures().first())
+        })
+        .or_else(|| {
+            tagged
+                .as_ref()
+                .filter(|file| !file.tags().is_empty())
+                .or(tags_only.as_ref())
+                .and_then(|file| {
+                    file.tags().iter().find_map(|tag| {
+                        tag.get_picture_type(PictureType::CoverFront)
+                            .or_else(|| tag.pictures().first())
+                    })
+                })
+        });
     let artwork_path = artwork_for(path, lib, picture);
     // Untagged files are separate fallback albums, so Songs never disappear
     // into an arbitrary folder grouping.

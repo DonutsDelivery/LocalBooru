@@ -6,7 +6,7 @@ import {
   fetchMusicAlbums, fetchMusicCollection, fetchMusicCollections, fetchMusicFacets,
   fetchMusicTracks, getMediaUrl, removeMusicCollectionItem, setMusicFavorite,
 } from '../../api'
-import { useMusicPlayer } from './MusicPlayer'
+import { useMusicBrowser } from './MusicPlayer'
 import PersistentMusicPlayer from './PersistentMusicPlayer'
 import './Music.css'
 
@@ -88,13 +88,16 @@ function MusicFilterDropdown({ name, label, value, options, openFilter, setOpenF
 }
 
 export default function MusicPage() {
-  const { browse, setBrowse, updateBrowse, startAlbum, startSong, openAlbum, queueTrack, session } = useMusicPlayer()
+  const { browse, setBrowse, updateBrowse, startAlbum, startSong, openAlbum, queueTrack, session, playing, setPlaying } = useMusicBrowser()
   const mode = browse.mode
   const filters = browse.byMode[mode]
   const scrollRef = useRef(null)
   const loadMoreRef = useRef(null)
   const loadedQueryRef = useRef(null)
+  const loadedPagesRef = useRef(null)
   const paginationPendingRef = useRef(false)
+  const scrollSaveTimerRef = useRef(null)
+  const scrollPositionRef = useRef(filters.scroll || 0)
   const albumPlayRequestRef = useRef(0)
   const restoredRef = useRef('')
   const [albums, setAlbums] = useState([])
@@ -113,6 +116,7 @@ export default function MusicPage() {
   const [refresh, setRefresh] = useState(0)
 
   const { scroll: savedScroll, page = 1, ...queryFilters } = filters
+  const baseQueryKey = JSON.stringify({ mode, filters: queryFilters, refresh })
   const queryKey = JSON.stringify({ mode, filters: queryFilters, page, refresh })
   const activeItems = mode === 'albums' ? albums : tracks
 
@@ -195,15 +199,18 @@ export default function MusicPage() {
             directory_id: filters.folder || undefined, library_id: filters.library || undefined,
             per_page: 60,
           }
-          const results = await Promise.all(Array.from({ length: page }, (_, index) =>
+          const appendPage = page > 1 && loadedPagesRef.current?.baseQueryKey === baseQueryKey && loadedPagesRef.current.page === page - 1
+          const firstPage = appendPage ? page : 1
+          const results = await Promise.all(Array.from({ length: page - firstPage + 1 }, (_, index) =>
             mode === 'albums'
-              ? fetchMusicAlbums({ ...params, page: index + 1 })
-              : fetchMusicTracks({ ...params, page: index + 1 })
+              ? fetchMusicAlbums({ ...params, page: firstPage + index })
+              : fetchMusicTracks({ ...params, page: firstPage + index })
           ))
           if (!alive) return
-          if (mode === 'albums') setAlbums(results.flatMap(result => result.albums || []))
-          else setTracks(results.flatMap(result => result.tracks || []))
+          if (mode === 'albums') setAlbums(previous => [...(appendPage ? previous : []), ...results.flatMap(result => result.albums || [])])
+          else setTracks(previous => [...(appendPage ? previous : []), ...results.flatMap(result => result.tracks || [])])
           setTotal(results[0]?.total || 0)
+          loadedPagesRef.current = { baseQueryKey, page }
         }
         loadedQueryRef.current = queryKey
       } catch (cause) {
@@ -222,12 +229,17 @@ export default function MusicPage() {
   }, [queryKey])
 
   useEffect(() => {
-    if (loading || !activeItems.length) return
-    const marker = `${mode}:${filters.library}:${filters.collection}:${page}:${activeItems.length}`
-    if (restoredRef.current === marker) return
-    restoredRef.current = marker
+    if (loading || !activeItems.length || loadedQueryRef.current !== queryKey) return
+    if (restoredRef.current === baseQueryKey) return
+    restoredRef.current = baseQueryKey
+    scrollPositionRef.current = savedScroll || 0
     requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = savedScroll || 0 })
-  }, [mode, filters.library, filters.collection, page, activeItems.length, loading, savedScroll])
+  }, [baseQueryKey, queryKey, activeItems.length, loading, savedScroll])
+
+  useEffect(() => () => {
+    clearTimeout(scrollSaveTimerRef.current)
+    updateBrowse(mode, { scroll: scrollPositionRef.current })
+  }, [mode, updateBrowse])
 
   useEffect(() => {
     const root = scrollRef.current
@@ -245,13 +257,16 @@ export default function MusicPage() {
   }, [activeItems.length, error, filters.collection, loading, mode, page, queryKey, total, updateBrowse])
 
   const updateFilter = (key, value) => {
+    clearTimeout(scrollSaveTimerRef.current)
+    scrollPositionRef.current = 0
     updateBrowse(mode, { [key]: value, scroll: 0, page: 1 })
     if (scrollRef.current) scrollRef.current.scrollTop = 0
   }
 
   const switchMode = nextMode => {
     if (nextMode === mode) return
-    if (scrollRef.current) updateBrowse(mode, { scroll: scrollRef.current.scrollTop })
+    clearTimeout(scrollSaveTimerRef.current)
+    updateBrowse(mode, { scroll: scrollPositionRef.current })
     setBrowse(previous => ({ ...previous, mode: nextMode }))
   }
 
@@ -321,6 +336,14 @@ export default function MusicPage() {
       <SidebarNavigation />
       <h1>Music</h1>
       <p>Your local albums and songs</p>
+      <div className="music-browse-controls">
+        <div className="music-mode-switch" role="group" aria-label="Music view">
+          <button className={mode === 'albums' ? 'active' : ''} onClick={() => switchMode('albums')}>Albums</button>
+          <button className={mode === 'songs' ? 'active' : ''} onClick={() => switchMode('songs')}>Songs</button>
+        </div>
+        <input className="music-browse-search" type="search" value={filters.query} onChange={event => updateFilter('query', event.target.value)} placeholder={`Search ${mode}`} aria-label={`Search ${mode}`} />
+        <span className="music-result-count">{total.toLocaleString()} {mode}</span>
+      </div>
       <div className="music-side-section">
         <h2>Browse</h2>
         <button className={!filters.collection ? 'active' : ''} onClick={() => updateFilter('collection', '')}>All music</button>
@@ -346,23 +369,21 @@ export default function MusicPage() {
       <PersistentMusicPlayer />
     </aside>
     <main className="music-main">
-      <div className="music-toolbar">
-        <div className="music-mode-switch" role="group" aria-label="Music view">
-          <button className={mode === 'albums' ? 'active' : ''} onClick={() => switchMode('albums')}>Albums</button>
-          <button className={mode === 'songs' ? 'active' : ''} onClick={() => switchMode('songs')}>Songs</button>
-        </div>
-        <input type="search" value={filters.query} onChange={event => updateFilter('query', event.target.value)} placeholder={`Search ${mode}`} aria-label={`Search ${mode}`} />
-        <span className="music-result-count">{total.toLocaleString()} {mode}</span>
-      </div>
       {error && <div className="music-error" role="alert">{error} <button onClick={() => setRefresh(value => value + 1)}>Retry</button></div>}
       <div className="music-scroll" ref={scrollRef} onScroll={event => {
         const top = event.currentTarget.scrollTop
-        // Keep scroll position in provider so route switches restore this view.
-        if (Math.abs(top - (filters.scroll || 0)) > 60) updateBrowse(mode, { scroll: top })
+        scrollPositionRef.current = top
+        // Save after scrolling settles so the masonry grid does not rerender on every movement.
+        clearTimeout(scrollSaveTimerRef.current)
+        scrollSaveTimerRef.current = setTimeout(() => updateBrowse(mode, { scroll: top }), 250)
       }}>
         {!loading && !activeItems.length && <div className="music-empty"><span>♫</span><h2>No {mode} found</h2><p>Try another search or add a music folder in Directories.</p></div>}
         <div className="music-masonry">
-          {activeItems.map(item => <article className="music-card" key={itemKey(item)}>
+          {activeItems.map(item => {
+            const activeAlbum = mode === 'albums' && session?.kind === 'album' && session.album && itemKey(session.album) === itemKey(item)
+            const albumTitle = labelFor(musicItemTitle(item, mode), 'album')
+            const playLabel = activeAlbum ? `${playing ? 'Pause' : 'Resume'} ${albumTitle}` : `Play ${albumTitle} in track order`
+            return <article className="music-card" key={itemKey(item)}>
             <button className="music-card-open" onClick={() => openItem(item)} aria-label={`Open ${musicItemTitle(item, mode)}`}>
               <MusicArtwork item={item} />
               <span className="music-card-details"><strong>{labelFor(musicItemTitle(item, mode), mode === 'albums' ? 'Unknown album' : 'Untitled track')}</strong><small>{labelFor(item.artist, 'Unknown artist')}</small></span>
@@ -374,11 +395,13 @@ export default function MusicPage() {
                 ? <button onClick={() => changeCollectionMembership(item, false)} title="Remove from collection">Remove</button>
                 : <small>{mode === 'songs' ? 'From album' : 'Contains a collection song'}</small>
                 : collections.length > 0 && <span className="music-add-to-collection"><select value={collectionTarget} onChange={event => setCollectionTarget(event.target.value)} aria-label="Choose music collection"><option value="">Collection…</option>{collections.map(collection => <option value={collection.id} key={collection.id}>{collection.name}</option>)}</select><button disabled={!collectionTarget} onClick={() => changeCollectionMembership(item, true)} aria-label="Add to collection">＋</button></span>}
-              {mode === 'albums' && <button className="music-card-play" onClick={() => playAlbum(item)} aria-label={`Play ${labelFor(musicItemTitle(item, mode), 'album')} in order`} title="Play album in track order">
-                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M8 5.75c0-.78.85-1.26 1.52-.86l10.1 6.25a1 1 0 0 1 0 1.72l-10.1 6.25c-.67.4-1.52-.08-1.52-.86V5.75Z" fill="currentColor" /></svg>
+              {mode === 'albums' && <button className="music-card-play" onClick={() => activeAlbum ? setPlaying(current => !current) : playAlbum(item)} aria-label={playLabel} title={playLabel}>
+                {activeAlbum && playing
+                  ? <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6.5 5h3v14h-3zm8 0h3v14h-3z" fill="currentColor" /></svg>
+                  : <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M8 5.75c0-.78.85-1.26 1.52-.86l10.1 6.25a1 1 0 0 1 0 1.72l-10.1 6.25c-.67.4-1.52-.08-1.52-.86V5.75Z" fill="currentColor" /></svg>}
               </button>}
             </div>
-          </article>)}
+          </article>})}
         </div>
         {!filters.collection && activeItems.length < total && <div ref={loadMoreRef} className="music-load-sentinel" aria-live="polite">{loading && activeItems.length ? 'Loading more music…' : ''}</div>}
         {loading && !activeItems.length && <div className="music-loading">Loading music…</div>}
