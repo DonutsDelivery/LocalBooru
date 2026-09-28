@@ -60,7 +60,7 @@ notify = "7"
 notify-debouncer-mini = "0.5"
 
 # HTTP client (for addon proxy, updates)
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "multipart"] }
 
 # Async streams (for SSE)
 async-stream = "0.3"

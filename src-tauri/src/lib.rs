@@ -15,6 +15,7 @@ mod commands;
 pub mod db;
 mod direct_file;
 pub mod native_video;
+pub mod online;
 pub mod routes;
 pub mod server;
 pub mod services;

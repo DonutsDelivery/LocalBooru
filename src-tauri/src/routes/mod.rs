@@ -11,6 +11,7 @@ pub mod migration;
 pub mod models;
 pub mod music;
 pub mod network;
+pub mod online;
 pub mod settings;
 pub mod share;
 pub mod svp_web;

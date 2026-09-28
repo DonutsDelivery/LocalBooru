@@ -912,6 +912,11 @@ export async function getPublications() {
   return response.data
 }
 
+export async function deliverPublication(publicationId) {
+  const response = await api.post(`/online/publications/${encodeURIComponent(publicationId)}/deliver`)
+  return response.data
+}
+
 export async function simulatePublication(publicationId) {
   const response = await api.post(`/online/publications/${encodeURIComponent(publicationId)}/simulate`)
   return response.data

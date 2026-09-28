@@ -40,8 +40,8 @@
 .sidebar-nav {
   display: flex;
   flex-direction: row;
-  padding: 8px 12px;
-  gap: 6px;
+  padding: 8px;
+  gap: 4px;
   margin: -12px -12px 0 -12px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
@@ -53,7 +53,7 @@
   align-items: center;
   justify-content: center;
   height: 40px;
-  min-width: 40px;
+  min-width: 32px;
   padding: 0;
   border-radius: 8px;
   color: var(--text-secondary);

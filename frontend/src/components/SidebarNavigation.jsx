@@ -5,6 +5,12 @@ import './Sidebar.css'
 export default function SidebarNavigation() {
   return <nav className="sidebar-nav" aria-label="Navigation">
     <MediaSectionsNav />
+    <NavLink to="/online" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Nodes & Fediverse" aria-label="Nodes & Fediverse">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="12" cy="5" r="2" /><circle cx="5" cy="18" r="2" /><circle cx="19" cy="18" r="2" />
+        <path d="M10.8 6.7 6.2 16.2M13.2 6.7l4.6 9.5M7 18h10" />
+      </svg>
+    </NavLink>
     <NavLink to="/directories" className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`} title="Directories" aria-label="Directories">
       <svg viewBox="0 0 24 24" fill="currentColor">
         <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />

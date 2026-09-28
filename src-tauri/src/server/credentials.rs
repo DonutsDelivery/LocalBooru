@@ -47,6 +47,14 @@ pub(crate) fn load_or_generate_jwt_secret(data_dir: &Path) -> io::Result<String>
     load_or_migrate_jwt_secret(data_dir, &PlatformSecretStore::new(data_dir))
 }
 
+pub(crate) fn store_application_secret(path: &Path, secret: &[u8]) -> io::Result<()> {
+    write_private_atomic(path, &protect_secret(secret)?)
+}
+
+pub(crate) fn load_application_secret(path: &Path) -> io::Result<Vec<u8>> {
+    unprotect_secret(&fs::read(path)?)
+}
+
 fn load_or_migrate_jwt_secret(data_dir: &Path, store: &dyn SecretStore) -> io::Result<String> {
     let settings_path = data_dir.join("settings.json");
     let mut settings = load_settings_object(&settings_path)?;

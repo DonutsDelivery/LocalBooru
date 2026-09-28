@@ -28,6 +28,7 @@ import { fetchImage, fetchImages, fetchFolders, fetchTags, getLibraryStats, subs
 import DirectoriesPage from './pages/DirectoriesPage'
 import CollectionsPage from './pages/CollectionsPage'
 import CollectionDetailPage from './pages/CollectionDetailPage'
+import OnlinePage from './pages/OnlinePage'
 import WatchPage from './pages/WatchPage'
 import { getColumnCount, tileWidths } from './utils/gridLayout'
 import { completeAuthoritativeRefresh, createViewRequestOwner, galleryScopePreservesFolder, isUnexpectedEmptyPage, libraryRefreshMode, mergeAuthoritativePages, mergeFirstPage, reconcileAuthoritativeGallery, refreshGroupedFolderCatalog } from './utils/galleryState'
@@ -2345,6 +2346,7 @@ function AppShell() {
             <Route path="/" element={<Gallery key="image" mediaType="image" />} />
             <Route path="/videos" element={<Gallery key="video" mediaType="video" />} />
             <Route path="/music" element={<MusicPage />} />
+            <Route path="/online" element={<OnlinePage />} />
             <Route path="/directories" element={<DirectoriesPage />} />
             <Route path="/collections" element={<CollectionsPage />} />
             <Route path="/collections/:id" element={<CollectionDetailPage />} />
