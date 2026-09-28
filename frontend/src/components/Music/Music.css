@@ -95,7 +95,7 @@
 .music-seek-row input { flex: 1; }
 .music-transport { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 16px; }
 .music-transport button { border: 0; background: none; color: var(--text-primary); font-size: 1.25rem; }
-.music-transport .music-play-button { border-radius: 50%; width: 54px; height: 54px; background: var(--accent); color: white; }
+.music-transport .music-play-button { display: grid; place-items: center; border-radius: 50%; width: 54px; height: 54px; background: var(--accent); color: #111; }
 .music-volume { display: flex; align-items: center; gap: 12px; font-size: .8rem; color: var(--text-muted); }
 .music-shuffle-switch { margin-top: 18px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
 .music-shuffle-switch label { display: flex; gap: 8px; align-items: center; font-weight: 700; }
@@ -170,7 +170,7 @@
 .music-mini-controls { display: flex; align-items: center; justify-content: center; gap: 17px; width: 100%; }
 .music-mini-controls button { min-width: 34px; height: 34px; border: 0; border-radius: 8px; background: none; color: var(--text-primary); font-size: 1rem; }
 .music-mini-controls button:hover { background: var(--bg-tertiary); color: var(--accent); }
-.music-mini-controls button:nth-child(2) { background: var(--accent); color: #111; }
+.music-mini-controls button:nth-child(2) { display: grid; place-items: center; background: var(--accent); color: #111; }
 .music-mini-volume { display: flex; align-items: center; gap: 9px; width: 100%; color: var(--text-muted); font-size: .7rem; }
 .music-mini-volume input { flex: 1; min-width: 0; height: 12px; accent-color: var(--accent); }
 @media (max-height: 700px) and (min-width: 1025px) {

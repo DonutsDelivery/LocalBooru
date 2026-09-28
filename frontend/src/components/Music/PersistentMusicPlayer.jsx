@@ -1,5 +1,6 @@
 import { getMediaUrl } from '../../api'
 import { useMusicPlayer } from './MusicPlayer'
+import PlayPauseIcon from './PlayPauseIcon'
 
 const formatTime = seconds => {
   if (!Number.isFinite(seconds)) return '0:00'
@@ -30,7 +31,7 @@ export default function PersistentMusicPlayer({ placement = 'sidebar' }) {
     </div>
     <div className="music-mini-controls">
       <button onClick={previous} aria-label="Previous track">⏮</button>
-      <button onClick={() => setPlaying(!playing)} aria-label={playing ? 'Pause music' : 'Play music'}>{playing ? '⏸' : '▶'}</button>
+      <button onClick={() => setPlaying(!playing)} aria-label={playing ? 'Pause music' : 'Play music'}><PlayPauseIcon playing={playing} /></button>
       <button onClick={advance} aria-label="Next track">⏭</button>
     </div>
     <label className="music-mini-volume">

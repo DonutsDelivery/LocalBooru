@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { getMediaUrl } from '../../api'
 import { useMusicPlayer, upcomingAlbumTracks } from './MusicPlayer'
+import PlayPauseIcon from './PlayPauseIcon'
 
 const formatTime = seconds => {
   if (!Number.isFinite(seconds)) return '0:00'
@@ -77,7 +78,7 @@ export default function MusicLightbox() {
             <div className="music-seek-row"><span>{formatTime(position)}</span><input type="range" min="0" max={Math.max(duration, 1)} step="0.1" value={Math.min(position, Math.max(duration, 1))} onChange={event => seek(Number(event.target.value))} aria-label="Seek music" /><span>{formatTime(duration)}</span></div>
             <div className="music-transport">
               <button onClick={previous} aria-label="Previous track">⏮</button>
-              <button className="music-play-button" onClick={() => setPlaying(!playing)} aria-label={playing ? 'Pause music' : 'Play music'}>{playing ? '⏸' : '▶'}</button>
+              <button className="music-play-button" onClick={() => setPlaying(!playing)} aria-label={playing ? 'Pause music' : 'Play music'}><PlayPauseIcon playing={playing} /></button>
               <button onClick={advance} aria-label="Next track">⏭</button>
             </div>
             <label className="music-volume">Volume <input type="range" min="0" max="1" step="0.01" value={volume} onChange={event => setVolume(Number(event.target.value))} /></label>
