@@ -368,13 +368,15 @@ export default function MusicPage() {
               <span className="music-card-details"><strong>{labelFor(musicItemTitle(item, mode), mode === 'albums' ? 'Unknown album' : 'Untitled track')}</strong><small>{labelFor(item.artist, 'Unknown artist')}</small></span>
             </button>
             <div className="music-card-actions">
-              {mode === 'albums' && <button className="music-card-play" onClick={() => playAlbum(item)} aria-label={`Play ${musicItemTitle(item, mode)}`} title="Play album">▶</button>}
               {mode === 'songs' && <button onClick={event => toggleFavorite(event, item)} aria-label={item.is_favorite ? 'Remove favorite' : 'Add favorite'} title="Favorite">{item.is_favorite ? '♥' : '♡'}</button>}
               {session && <button onClick={() => mode === 'songs' ? queueTrack(item) : openItem(item)} aria-label={mode === 'songs' ? `Queue ${item.title}` : `Open ${musicItemTitle(item, mode)}`} title={mode === 'songs' ? 'Add to queue' : 'Open album'}>{mode === 'songs' ? '＋ Queue' : 'Tracks'}</button>}
               {filters.collection ? directMembers.has(`${item._standaloneTrack ? 'track' : mode === 'albums' ? 'album' : 'track'}:${itemKey(item._standaloneTrack || item)}`)
                 ? <button onClick={() => changeCollectionMembership(item, false)} title="Remove from collection">Remove</button>
                 : <small>{mode === 'songs' ? 'From album' : 'Contains a collection song'}</small>
                 : collections.length > 0 && <span className="music-add-to-collection"><select value={collectionTarget} onChange={event => setCollectionTarget(event.target.value)} aria-label="Choose music collection"><option value="">Collection…</option>{collections.map(collection => <option value={collection.id} key={collection.id}>{collection.name}</option>)}</select><button disabled={!collectionTarget} onClick={() => changeCollectionMembership(item, true)} aria-label="Add to collection">＋</button></span>}
+              {mode === 'albums' && <button className="music-card-play" onClick={() => playAlbum(item)} aria-label={`Play ${labelFor(musicItemTitle(item, mode), 'album')} in order`} title="Play album in track order">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M8 5.75c0-.78.85-1.26 1.52-.86l10.1 6.25a1 1 0 0 1 0 1.72l-10.1 6.25c-.67.4-1.52-.08-1.52-.86V5.75Z" fill="currentColor" /></svg>
+              </button>}
             </div>
           </article>)}
         </div>
