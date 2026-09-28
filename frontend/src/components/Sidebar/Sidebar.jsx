@@ -1,7 +1,6 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { fetchCollections, fetchDirectories, getFileDimensions, getSavedSearches, createSavedSearch, deleteSavedSearch } from '../../api'
-import { getDesktopAPI, isDesktopApp } from '../../tauriAPI'
 import PromptSection from './PromptSection'
 import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_OPTIONS, ORIENTATION_OPTIONS, DURATION_OPTIONS, SORT_OPTIONS } from './FilterControls'
 import TagSearch from './TagSearch'
@@ -53,8 +52,6 @@ function Sidebar({
   const [directories, setDirectories] = useState([])
   const [selectedDirectory, setSelectedDirectory] = useState(initialDirectoryId || null)
   const [selectedLibrary, setSelectedLibrary] = useState(initialLibraryId || null)
-  const [appVersion, setAppVersion] = useState(null)
-  const [updateStatus, setUpdateStatus] = useState(null)
   const [selectedRatings, setSelectedRatings] = useState(() => {
     if (initialRating) {
       let ratings = initialRating.split(',').filter(r => ALL_RATINGS.includes(r))
@@ -116,24 +113,6 @@ function Sidebar({
   useEffect(() => {
     localStorage.setItem('filtersExpanded', JSON.stringify(filtersExpanded))
   }, [filtersExpanded])
-
-  // Get app version and listen for updates (desktop only)
-  useEffect(() => {
-    const api = getDesktopAPI()
-    if (api) {
-      // Get version
-      if (api.getVersion) {
-        api.getVersion().then(setAppVersion).catch(console.error)
-      }
-      // Listen for update status (Electron only for now)
-      if (api.onUpdaterStatus) {
-        const unsubscribe = api.onUpdaterStatus((status) => {
-          setUpdateStatus(status)
-        })
-        return () => unsubscribe?.()
-      }
-    }
-  }, [])
 
   useEffect(() => {
     if (initialRating) {
@@ -417,47 +396,6 @@ function Sidebar({
       )}
 
       <div className="sidebar-content">
-        {/* Version info */}
-        {appVersion && (
-          <div className="version-info">
-            <span className="version-number">v{appVersion}</span>
-            {updateStatus?.status === 'available' && (
-              <button
-                className="update-badge"
-                onClick={() => {
-                  const api = getDesktopAPI()
-                  api?.downloadUpdate?.()
-                }}
-                title={`Update to v${updateStatus.version}`}
-              >
-                Update
-              </button>
-            )}
-            {updateStatus?.status === 'downloading' && (
-              <span className="update-badge downloading">
-                {Math.round(updateStatus.progress || 0)}%
-              </span>
-            )}
-            {updateStatus?.status === 'extracting' && (
-              <span className="update-badge downloading">
-                Extracting...
-              </span>
-            )}
-            {updateStatus?.status === 'downloaded' && (
-              <button
-                className="update-badge ready"
-                onClick={() => {
-                  const api = getDesktopAPI()
-                  api?.installUpdate?.()
-                }}
-                title="Click to restart and install"
-              >
-                Restart
-              </button>
-            )}
-          </div>
-        )}
-
         <SidebarNavigation />
 
         {(isGalleryPage || isCollectionPage) && (

@@ -22,15 +22,32 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
   const usesNativeMacChrome = isDesktop && /Mac/i.test(navigator.platform || '');
   const apiRef = useRef(null);
   const [desktopServers, setDesktopServers] = useState([]);
+  const [appVersion, setAppVersion] = useState(null);
+  const [updateStatus, setUpdateStatus] = useState(null);
 
   useEffect(() => {
     if (!isDesktop || isMobile) return;
     import('../serverManager').then(({ getServers }) => getServers().then(setDesktopServers)).catch(() => {});
   }, [isDesktop, isMobile]);
 
-  // Get desktop API on mount
+  // Keep the version and update state next to the app title on every route.
   useEffect(() => {
-    apiRef.current = getDesktopAPI();
+    const api = getDesktopAPI();
+    apiRef.current = api;
+    if (!api) return;
+    let active = true;
+    if (api.getVersion) {
+      api.getVersion().then(version => {
+        if (active) setAppVersion(version);
+      }).catch(console.error);
+    }
+    const unsubscribe = api.onUpdaterStatus?.(status => {
+      if (active) setUpdateStatus(status);
+    });
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
   }, []);
 
   // Set the live title bar offset and desktop transparency class.
@@ -103,6 +120,7 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
               </svg>
             </div>
             <span className="title-bar-title">DonutMediaCenter</span>
+            {appVersion && <span className="title-bar-version">v{appVersion}</span>}
           </div>
 
           <div className="title-bar-controls">
@@ -185,7 +203,23 @@ export default function TitleBar({ onSwitchServer, onOpenFile }) {
           </svg>
         </div>
         <span className="title-bar-title">DonutMediaCenter</span>
+        {appVersion && <span className="title-bar-version">v{appVersion}</span>}
       </div>
+
+      {updateStatus?.status === 'available' && (
+        <button className="title-bar-update" onClick={() => apiRef.current?.downloadUpdate?.()}
+          title={`Update to v${updateStatus.version}`}>Update</button>
+      )}
+      {updateStatus?.status === 'downloading' && (
+        <span className="title-bar-update busy">{Math.round(updateStatus.progress || 0)}%</span>
+      )}
+      {updateStatus?.status === 'extracting' && (
+        <span className="title-bar-update busy">Extracting…</span>
+      )}
+      {updateStatus?.status === 'downloaded' && (
+        <button className="title-bar-update ready" onClick={() => apiRef.current?.installUpdate?.()}
+          title="Restart and install update">Restart</button>
+      )}
 
       <div className="title-bar-controls">
         {desktopServers.length > 0 && (
