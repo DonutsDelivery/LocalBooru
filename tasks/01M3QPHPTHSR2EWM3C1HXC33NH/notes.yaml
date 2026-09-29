@@ -11,3 +11,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-29T23:03:41.840Z
+  - _ulid: 01M3QQQN6ANQZCCNEG6E5FAGRN
+    content: Re-read updated HERMES.md and linked safety/release/kspec instructions. Scoped helpers
+      remain within this tracked feature; no daemon dispatch started. Root added write-protected
+      scoped HTTP/WebSocket studio transport, remote transport support and qualified no-overwrite
+      PNG import/provenance with synthetic tests. Host-wide heavy-build gate currently occupied by
+      DonutStudio; no compiler started or gate bypassed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-29T23:24:25.162Z
