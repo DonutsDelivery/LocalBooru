@@ -1,0 +1,21 @@
+_ulid: 01M3QR2STP8AH1ZC2RE30NWTWY
+slugs:
+  - task-agent-reasoning-high
+title: Set High reasoning defaults for repository agents
+type: task
+description: User requested clear reasoning controls in HERMES.md and AGENTS.md. Document High
+  default/ceiling for delegated agents, explicit authorization for higher effort, distinction
+  between instructions and runtime controls, and preserve already running agents. Documentation-only
+  verification and local integration; no push.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+created_at: 2026-09-29T23:30:30.358Z
+todos: []
