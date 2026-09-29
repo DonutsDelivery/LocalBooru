@@ -1,5 +1,16 @@
 # LocalBooru Agent Rules
 
+## OpenAI/Codex harness reasoning (including T3 Code)
+
+These rules apply to OpenAI agents in the Codex harness. Other harnesses must
+use their own supported controls; do not send them OpenAI reasoning parameters.
+
+- Use `high` reasoning for new delegated OpenAI agents. Do not select `xhigh`, `max`, or `ultra`, or escalate to another model, without explicit user authorization for that work.
+- With `collaboration.spawn_agent`, set `reasoning_effort: "high"` explicitly when overrides are supported. Use `fork_turns: "none"` or a bounded history fork with a self-contained task; full-history forks inherit the parent setting and reject overrides. Inherit only when the parent is confirmed to use `high`.
+- Preserve already running agents. Do not kill or restart them merely to correct their reasoning setting.
+- Main-session reasoning is controlled by the T3/Codex runtime. These Markdown instructions do not change the runtime setting. Report a mismatch and use the supported spawn controls for new agents; do not claim runtime enforcement from a prompt rule.
+- For kspec daemon dispatch, use the daemon's worker configuration rather than substituting `collaboration.spawn_agent`. Verify that harness's supported setting before claiming it is applied.
+
 ## Repository lifecycle
 
 - Treat `main` as the integration branch. A worktree task is not complete merely because it is committed on its own branch.

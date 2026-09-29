@@ -1,5 +1,16 @@
 
 
+# OpenAI/Codex harness reasoning (including T3 Code)
+
+For OpenAI agents running through the Codex harness, use `high` reasoning for
+new delegated agents. Higher effort (`xhigh`, `max`, `ultra`) or a model
+escalation requires explicit user authorization. Follow the supported spawn
+controls and inheritance rules in `AGENTS.md`; keep already running agents.
+
+This is a harness-specific instruction. It does not set the main session's
+runtime effort and must not be translated into unsupported settings for other
+harnesses. T3/Codex configuration supplies the actual runtime value.
+
 # Platform build and acceptance
 
 Before release, packaging, Sonoma VM, or WinBoat work, read
