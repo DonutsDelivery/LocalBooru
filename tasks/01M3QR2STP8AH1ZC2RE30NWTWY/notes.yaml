@@ -1,1 +1,9 @@
-notes: []
+notes:
+  - _ulid: 01M3QR62T9KKCQF3EQTCR9ZZC4
+    content: User clarified rules must be OpenAI/Codex-harness-specific. Added High default, explicit
+      supported collaboration spawn controls, bounded fork requirement, preserve running agents,
+      daemon dispatch distinction, and honest runtime/prompt distinction to main
+      HERMES.md/AGENTS.md. Verified current T3 runtime now High; global Codex config not changed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-29T23:32:17.866Z
