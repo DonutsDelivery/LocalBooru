@@ -20,3 +20,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-29T23:24:25.162Z
+  - _ulid: 01M3QSMZVX0THG3DX1W7JAVSD3
+    content: "Focused verification currently passes: 21 installer tests, 5 executed browser-adapter
+      behavior tests, 27 frontend component tests including existing WD14 checks and 3 Node checks.
+      Independent review found and drove fixes for runtime cache isolation, constructed wildcard
+      file access, linked v5 seed metadata, cancellation error visibility, and optional capability
+      discovery. Managed Comfy remains isolated on 18010 (controller 18009), never adopts 8188. Rust
+      compile mismatch fixed; focused Rust rerun waits behind the shared host token. No model
+      downloads, user library writes, services, pushes or agent kills."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-29T23:57:54.941Z
