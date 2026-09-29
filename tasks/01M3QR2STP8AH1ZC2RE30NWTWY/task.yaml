@@ -10,13 +10,21 @@ description: User requested clear reasoning controls in HERMES.md and AGENTS.md.
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 2
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-09-29T23:32:41.503Z
+  commit: 24bae2417b1a223a12eebfca203d44514caa11fe
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -28,6 +36,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-09-29T23:32:17.744Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-09-29T23:32:41.503Z
+          commit: 24bae2417b1a223a12eebfca203d44514caa11fe
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-09-29T23:32:41.511Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-09-29T23:32:41.511Z
 created_at: 2026-09-29T23:30:30.358Z
 started_at: 2026-09-29T23:32:17.744Z
+submitted_at: 2026-09-29T23:32:41.511Z
 todos: []
