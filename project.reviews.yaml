@@ -2916,7 +2916,20 @@ reviews:
     slugs: []
     title: Review Codex High reasoning instructions
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Both files explicitly scope to OpenAI/Codex/T3; High default with supported spawn
+          parameter and fork rules; preserves running agents; no assertion that Markdown changes
+          runtime; no OpenAI settings for other harnesses. Documentation-only; diff whitespace check
+          passed; no build required.
+        name: documentation-review
+        required: true
+        runner: manual diff review + git diff --check
+        created_at: 2026-09-29T23:33:20.343Z
+        completed_at: 2026-09-29T23:33:20.343Z
     events:
       - _ulid: 01M3QR6V3QQKZ44QRR4JDE9MCV
         actor: DonutsDelivery
@@ -2924,9 +2937,39 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-09-29T23:32:42.743Z
+      - _ulid: 01M3QR7ZR18Y25RR7AARD85P8N
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-29T23:33:20.257Z
+      - _ulid: 01M3QR7ZVGHSTZVMHXQ2C7AAQQ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: documentation-review
+        timestamp: 2026-09-29T23:33:20.368Z
+      - _ulid: 01M3QR7ZYGF3FJ4DC8DVX8GJZ7
+        actor: codex-root
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: approve
+        timestamp: 2026-09-29T23:33:20.464Z
+      - _ulid: 01M3QR7ZYGZ2WQ1H4RGVYHR9G6
+        actor: codex-root
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-09-29T23:33:20.464Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs: []
     subject:
       type: task
@@ -2934,7 +2977,14 @@ reviews:
       ref: "@task-agent-reasoning-high"
       shadow_commit: ""
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: approve
+        reviewer: codex-root
+        role: reviewer
+        created_at: 2026-09-29T23:33:20.464Z
     created_at: 2026-09-29T23:32:42.743Z
-    updated_at: null
+    updated_at: 2026-09-29T23:33:20.464Z
     notes: []
