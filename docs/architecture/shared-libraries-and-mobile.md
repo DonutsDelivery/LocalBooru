@@ -2,9 +2,10 @@
 
 Date: 2026-09-29
 
-Status: architecture proposal based on repository and device inventory. The
-navigation requirements below come from the user. Protocol selection and the
-delivery sequence are recommendations. This document records planned acceptance;
+Status: architecture proposal based on repository and device inventory, revised
+with the user's distinction between QR-paired private libraries and creator
+collections. The navigation requirements below come from the user. Protocol
+selection and the delivery sequence are recommendations. This document records planned acceptance;
 it does not claim mobile playback or the sharing architecture has passed it.
 
 ## Product direction
@@ -33,14 +34,30 @@ There are four primary destinations: **Images | Videos | Music | Settings**.
 
 - Settings opens **Directories** by default. Local directories remain immediately
   accessible; shared sources and hosting have their own settings sections.
-- Each media sidebar has **Local** and **Shared** source groups. Only sources with
-  the appropriate media capability appear. A connected source behaves like a
-  browsable folder while retaining its remote identity and read-only controls.
-- Shared items show their creator/source and availability. A combined view is an
-  explicit choice; connecting a source does not silently add its media to Local.
-- Servers continues to mean administration of remote app installations. Connected
-  shared libraries, publishing destinations, and server administration are
-  separate operations with separate credentials.
+- Immediately above each gallery's directory/source list, offer two buttons. The
+  proposed labels are **My libraries | Shared collections**. This is a trust and
+  organization boundary: personal devices can be physically remote, and creator
+  collections can be invite-only.
+- **My libraries** appends directories from explicitly QR-paired personal servers
+  after this device's directories. All these sources remain attached at the same
+  time. Preserve server/library grouping or badges and offer a server filter when
+  useful. Only directories enabled for the active media type appear.
+- **Shared collections** shows a unified list of authorized published collections
+  from creators the user has added. The default has no creator filter; filtering
+  by creator narrows the same list. Public and granted invite-only collections
+  belong here. Public network discovery does not automatically add creators.
+- The two panes retain independent selection, filters, and scroll position. Their
+  switch changes the visible source tools without replacing the application's
+  backend or interrupting playback. Personal collections/favorites remain available.
+- QR-paired installed servers retain their granted capabilities. Separate browsing
+  and administration contexts during migration. Creator catalogs are read-only to visitors, with private viewer-owned
+  favorites/collections. Connecting a source does not import media into a local
+  directory or transfer ownership.
+- Servers continues to mean administration of remote app installations. Treat
+  browsing, publishing, and administration as separate roles. Preserve established
+  device-pairing credentials during migration; creator invitations always use
+  independently scoped grants. Current paired-server browsing and administration
+  share a credential context.
 - Settings sections and directory details use routes. Back closes the top overlay
   first, then returns from detail to list, and from Settings to the originating
   gallery with its filters, scroll position, and playback intact.
@@ -95,8 +112,9 @@ proposal becomes implementation scope.
 
 Keep four concepts explicit:
 
-1. **Source:** a local directory, an app-hosted shared library, or a web-hosted
-   library. It advertises media capabilities and carries connection state.
+1. **Source:** a directory on this device, a directory on a paired personal server,
+   or a creator's published collection hosted by an app or web node. It advertises
+   media capabilities and carries connection state and relationship type.
 2. **Publication:** stable publisher/creator identity plus a stable media ID and a
    signed revision. Hosts can change without changing the user's saved reference.
 3. **Representation:** the actual original, transcode, artwork, thumbnail, or other
@@ -104,6 +122,102 @@ Keep four concepts explicit:
    has its own hash. Albums contain ordered track references and disc/track numbers.
 4. **Provider:** an endpoint currently serving an authorized representation. The
    publisher, catalog host, and byte-serving mirror can be different parties.
+
+### Paired private libraries without switching the whole application
+
+Saved servers already form a list, but `frontend/src/serverManager.js` stores one
+active server. `frontend/src/api.js` uses one mutable URL/authentication context
+and one Tauri remote proxy. Changing servers can reload the desktop app. Startup
+also selects a remote backend automatically in some mobile/desktop cases. This
+prevents simultaneous source browsing and can change how a media reference resolves.
+
+Introduce a stable source ID and a per-source client or embedded gateway:
+
+- Keep the embedded API anchored to this device. Gallery scope changes do not
+  change the global active server, API base URL, or settings backend.
+- Register existing QR-paired servers as personal sources. Append their directories
+  to this device's list while preserving remote libraries, media flags, permissions,
+  and a visible source label. LAN, Tailscale, and approved public URLs are connection
+  methods for the same personal source.
+- Resolve credentials, certificate pins, fallback addresses, tokens, and capabilities
+  independently for each source. A keyed gateway resolves registered sources; it
+  must not accept arbitrary proxy destinations. Forward ranges and artwork through
+  immutable source-qualified media URLs. Verify the same remote identity and
+  certificate/key expectations for every added or fallback address before sending
+  credentials. The current health probe alone does not establish that identity.
+- Qualify cards, directories, collections, lightboxes, queue items, request ownership,
+  caches, and scroll state with source ID as well as library/media IDs. Current
+  locators omit the server namespace. Paired server IDs derive from a library UUID,
+  so cloned libraries and multiple endpoint aliases need explicit identity handling.
+- Keep playing tracks tied to their original source while browsing another device
+  or creator. Queue continuation resolves against the session's own sources.
+- Migrate the saved active server into the selected personal source without losing
+  its credentials or history. Startup must leave local and paired sources attached
+  rather than silently rerouting the entire app to one server.
+
+Directory list aggregation can happen independently of gallery result aggregation.
+The combined directory list is the required default in My libraries. Clicking a
+directory scopes results to that source. An All private directories view needs
+independent cursors, supported filters, and failure state per source. During migration,
+one selected source or explicitly grouped results can be delivered first; a fully
+combined sorted masonry view needs a stable merge across all source cursors.
+Concatenating first pages would misrepresent sorting and pagination. Offline devices
+must not blank healthy sources, and incomplete totals need clear labeling.
+
+This source-routing work applies to existing personal servers before introducing
+any P2P network. Settings > Servers remains available for connection administration.
+
+The existing Axum server can bind to LAN when local-network access is enabled, and
+client records support primary/fallback URLs such as LAN and Tailscale. The public
+access setting alone does not establish outside reachability: code currently does
+not advertise a public URL or create a separate public-port listener. The UPnP
+configuration must also target the actual listener port. A configured reverse proxy
+or router mapping could expose the service; outside-network behavior has not been
+verified in this audit.
+
+### Creator collections as the publication unit
+
+Collections provide the deliberate boundary between personal organization and a
+creator's published catalog. Keep three states:
+
+| State | Behavior |
+| --- | --- |
+| Unpublished | Personal organization, with no publication or network announcement |
+| Invite only | Visible to authorized recipients with collection-scoped access |
+| Public / Global | Published collection eligible for public network discovery |
+
+A published collection has a stable creator/collection ID, title, description,
+cover, ordered membership, media capabilities, and signed revision. Visibility
+does not automatically grant downloading or mirroring. Public discovery can be
+enabled for Public collections; invite-only metadata and availability stay private.
+
+An added creator exposes their permitted collections as entries resembling
+directories. The list combines collections from all added creators by default;
+clearing the creator filter restores it. Discovering a node does not automatically
+follow its creator or grant access to their invite-only collections.
+
+An album remains an ordered release. A music collection can contain albums and
+individual tracks without redefining album identity. Preserve current collections
+through explicit adapters and scope contents/counts to Images, Videos, or Music.
+Albums and Songs remain two views of the same organization.
+
+Publishing records exact membership, metadata, and representations in a revision.
+Local scans, dynamic searches, or new tracks discovered in a referenced album must
+not silently enlarge it. Stage changes for an explicit Publish update; an eventual
+automatic-update policy would need a deliberate choice. Pin the exact track and
+disc order for each published album revision.
+
+Bytes may be deduplicated across collections while grants remain collection-scoped.
+Withdrawing one collection must not revoke another valid grant, delete storage
+still referenced elsewhere, or erase an independent local copy. Republishing
+another person's media requires applicable permission and retained provenance;
+membership in an existing collection does not establish authorship.
+
+Creator invitations need separate enrollment. Existing DMC device QR pairing issues
+a write-capable session; it must not double as a read-only collection invitation.
+Collection lists, counts, covers, membership, variants, and range requests all need
+the same audience checks. Current music endpoints and some collection list/count
+paths require policy enforcement work before they can serve this purpose.
 
 Sign manifests that bind publication identity, revision, metadata, representation
 hashes, and publication policy or grant references. Keep recipient credentials and
@@ -166,8 +280,10 @@ without changing publication IDs or library behavior.
 | Technology | Proposed role |
 | --- | --- |
 | HTTPS and byte ranges | Initial catalog, stream, download, and authorized mirror interoperability |
+| zrok / OpenZiti | Optional internet ingress or private service transport for a scoped publication endpoint, using a hosted or self-hosted service deployment |
 | Iroh | Candidate for direct app-to-app connectivity with NAT traversal and relay fallback; evaluate on desktop, Android, and iOS before committing |
-| IPFS/libp2p | Alternative public content/provider routing worth evaluating if open distribution becomes the priority |
+| libp2p | Candidate networking stack when decentralized peer discovery, DHT provider lookup, and gossip are central requirements |
+| IPFS | Optional public distribution through its existing content/provider ecosystem |
 | ActivityPub | Later interoperability for creator profiles, follows, and publication announcements |
 
 [Iroh](https://github.com/n0-computer/iroh) offers key-addressed QUIC connections,
@@ -186,6 +302,61 @@ activities and delivery. Our design needs a separate availability lookup for
 exact media copies. [PeerTube redundancy](https://docs.joinpeertube.org/admin/following-instances)
 is an existing example of cooperating hosts serving video segments, with controls
 over which hosts may mirror.
+
+### zrok and our application protocol
+
+[zrok public sharing](https://netfoundry.io/docs/zrok/concepts/public-shares/)
+provides HTTP/HTTPS access to a running service, including stable names. Its
+[private sharing](https://netfoundry.io/docs/zrok/concepts/private-shares/) uses
+share tokens and requires clients on the same service instance. It is
+[self-hostable](https://netfoundry.io/docs/zrok/category/host-your-own-zrok/).
+[OpenZiti](https://netfoundry.io/docs/openziti/intro/) supplies controllers, a router
+fabric, and authenticated endpoints underneath it.
+
+Evaluate zrok as an optional way to reach the DMC publication API through NAT.
+Expose only the policy-enforcing publication service, excluding raw directories
+and unrestricted management endpoints. Check ranges, seeking, large transfers,
+reconnect, deployment overhead, and mobile integration with a disposable prototype.
+Creator catalogs, hash-to-provider lookup, and persistent offline-author copies
+remain application responsibilities.
+
+Define a versioned DonutMediaCenter protocol for collection catalogs, revisions,
+invitations, provider announcements, and verified media requests. Use established
+encrypted transports and routing implementations beneath it. This keeps product
+semantics under our control while reusing cryptography, NAT traversal, congestion
+control, and connection recovery.
+
+### Discovery through other connected nodes
+
+The requested larger network is an overlay in which a node learns contacts through
+nodes it already knows. Separate four jobs:
+
+1. **Bootstrap:** start with an invitation, cached peer, local discovery, or one of
+   several independent public entry points. A new node needs a reachable first
+   contact; continued operation should not require one mandatory central directory.
+2. **Peer/address lookup:** exchange bounded, signed public contact records and
+   resolve a known peer's address. Learned contacts receive no implicit trust,
+   private invitations, or access to QR-paired personal servers.
+3. **Creator/catalog discovery:** use opt-in announcements and subscribable indexes
+   for creator/collection metadata. Each peer need not store every public catalog.
+4. **Provider lookup:** find online authorized hosts for a known representation
+   hash, then connect directly or through a relay to request the media bytes.
+
+[libp2p rendezvous](https://libp2p.io/docs/rendezvous/) provides peer registration
+and discovery; its [DHT](https://libp2p.io/docs/dht/) provides
+key-based routing. [Iroh address lookup](https://www.iroh.computer/blog/the-road-to-iroh-1-0)
+can use signed records and a DHT for known endpoint identities; broader creator
+and media discovery still needs our protocol. Freenet's
+[small-world routing](https://freenet.org/build/manual/architecture/p2p-network/)
+illustrates an overlay approach. Adopting its application/storage runtime would
+require a separate suitability evaluation.
+
+Compare Iroh and libp2p against the same prototype criteria: bootstrap loss, address
+changes, NAT/relay paths, Android/iOS lifecycle, playback startup/seeking, stale or
+hostile advertisements, bandwidth, and operation without one mandatory directory.
+Use verification, expiration, resource limits, and user block lists for discovery.
+Avoid unbounded network-wide query flooding. A key-based lookup does not implement
+keyword search or guarantee that every peer is reachable.
 
 An offline-author fallback should work as follows:
 
@@ -247,13 +418,14 @@ acceptance. Simulators alone do not establish all hardware behavior.
 
 | Milestone | Deliverable | Acceptance evidence |
 | --- | --- | --- |
-| 1. Navigation and directories | Four primary destinations; Directories opens inside Settings; grouped directory details and correct Back behavior | Desktop plus a newly built APK from the exact milestone commit on a dedicated Android emulator; return to each gallery without losing state; all existing directory operations and legacy routes reachable |
+| 1a. Navigation and directories | Four primary destinations; Directories opens inside Settings; grouped directory details and correct Back behavior | Desktop plus a newly built APK from the exact milestone commit on a dedicated Android emulator; return to each gallery without losing state; all existing directory operations and legacy routes reachable |
+| 1b. Attached private sources | My libraries appends directories from QR-paired personal servers; per-source requests/media; no whole-backend switch | Two servers with colliding numeric/library IDs remain distinct; browsing another source leaves playback attached to its origin; offline sources do not blank healthy ones; credentials, pagination, filters, scroll state, and startup migration remain scoped correctly |
 | 2. Mobile music | Phone storage/import, playback from an existing paired personal server, native background player, persistent queue, and suitable formats | Android and iOS album/song playback matrix, screen-off and interruptions, exact artifact identity; physical-device limitations recorded |
-| 3. Direct sharing | DMC hosts selected content; QR/link connects another client; shared-source gallery and explicit save/import; shared catalog contract | On a specified reachable LAN or HTTPS setup, first prove one image with private favorites, permission withdrawal, and verified offline copy; then an ordered album and seekable video on the same contract, including thumbnail and byte-range policy enforcement |
+| 3. Direct collection sharing | DMC publishes Public or Invite-only collections; a scoped invitation connects another client; Shared collections pane unifies added creators; explicit save/import | On a reachable LAN or HTTPS setup, first gate on one image collection with invitation, private favorites, withdrawal, and verified offline copy. Follow-on gates cover ordered albums and seekable video, creator filters, exact membership, cover/count policy, and ranges. QR creator invites never grant device-admin access |
 | 4. Public creator hosting and friends | Reuse DonutBooru profiles/storage/publication history; add audio catalogs and authorized mirrors | Creator shuts down DMC while another permitted host keeps the album/video available; hash mismatch rejected; source attribution, revisions, and permissions preserved |
 | 5. Wider connectivity | Proven P2P transport, optional provider discovery, and ActivityPub adapter | Cross-network NAT/relay and mobile lifecycle evidence; discovery respects publication scope; actual interoperability before compatibility claims |
 
-Milestones 1 and 2 can progress while the catalog contract is designed. Avoid
+Milestones 1a, 1b, and 2 can progress while the catalog contract is designed. Avoid
 coupling the immediate navigation fixes to selection of a decentralized network.
 For direct sharing over the internet in milestone 3, either an explicitly reachable
 HTTP endpoint or an earlier successful P2P transport slice is necessary.
@@ -272,8 +444,17 @@ reachable through Settings until the remote media classification contract suppor
 equivalent browsing in the correct gallery. Personal-server playback in milestone 2
 uses existing pairing; shared-source permissions and playback are milestone 3 work.
 
+In parallel, introduce source-qualified clients and media resolution in
+`frontend/src/api.js`, `frontend/src/serverManager.js`, and the Rust remote-proxy
+state/routes. Reuse existing paired credentials for the authorized personal-device
+relationship. Migrate image/video locators and music queues before attaching a
+second backend to a gallery. The sidebar toggle must not call the current global
+server switch or reload the app. Establish the combined private directory list
+before adding creator discovery; no networking-stack decision is required for it.
+
 When formalizing this proposal, update the existing Online specs with explicit
-migration requirements, then create dependent tasks for navigation, mobile storage
-and playback, catalog/authorization, embedded hosting, web-host audio, and mirrors.
+migration requirements, then create dependent tasks for navigation, attached private
+sources, mobile storage/playback, catalog/authorization, embedded hosting, web-host
+audio, discovery, and mirrors.
 Integrate verified product commits into `main`. Track observable user outcomes and
 exact tested artifacts for each milestone.
