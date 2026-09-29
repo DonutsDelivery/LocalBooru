@@ -2912,3 +2912,29 @@ reviews:
     created_at: 2026-07-21T21:47:07.124Z
     updated_at: 2026-07-21T21:47:41.180Z
     notes: []
+  - _ulid: 01M3QR6V3QP36CV3VN3S0MKSG5
+    slugs: []
+    title: Review Codex High reasoning instructions
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3QR6V3QQKZ44QRR4JDE9MCV
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-09-29T23:32:42.743Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs: []
+    subject:
+      type: task
+      content_hash: ""
+      ref: "@task-agent-reasoning-high"
+      shadow_commit: ""
+    threads: []
+    verdicts: []
+    created_at: 2026-09-29T23:32:42.743Z
+    updated_at: null
+    notes: []
