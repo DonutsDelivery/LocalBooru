@@ -1,0 +1,38 @@
+_ulid: 01M3QPHPTHSR2EWM3C1HXC33NH
+slugs:
+  - task-donut-create-plugin
+title: Implement Donut Create image generation plugin
+type: task
+description: Implement the user-approved optional Create add-on using the audited DonutUI ComfyUI
+  wrapper and genuine DonutNodes v5 graph. Worktree feat/donut-create-plugin from local main. Use
+  existing compiled addon registry and Python sidecar lifecycle; isolate managed Comfy runtime and
+  model downloads; preserve existing Comfy installations. Add scoped studio HTTP/WebSocket proxy,
+  owned job tracking/cancel/reconnect, image-directory output import with provenance and
+  idempotence, image-only UI entry/setup/studio/results. Test using synthetic data outside
+  repository; desktop verification must use npm run app:test-isolated. No push/publish or production
+  library testing.
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-09-29T23:03:41.729Z
+        previous: null
+    command: task-start
+    timestamp: 2026-09-29T23:03:41.729Z
+created_at: 2026-09-29T23:03:41.649Z
+started_at: 2026-09-29T23:03:41.729Z
+todos: []
+automation: manual_only

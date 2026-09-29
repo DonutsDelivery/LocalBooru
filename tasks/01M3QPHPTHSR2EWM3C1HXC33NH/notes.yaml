@@ -1,0 +1,13 @@
+notes:
+  - _ulid: 01M3QPHQ0G7F9J4J33PFHB0RTF
+    content: "User selected implementation over architecture-only planning. Initial audit found DonutUI
+      is a thin ComfyUI webview wrapper; DMC Comfy hooks currently only extract metadata. Existing
+      addon manager provides isolated sidecars. Approach: bundled static Donut Create adapter,
+      retain actual v5 editor/panel path, own setup/job/import transactions. Behavioral tests will
+      cover download integrity/cancel/conflicts, session jobs and scoped cancellation, route
+      permissions/import idempotence, and image-only UI. Worktree created from main at 23e3857.
+      Original workers paused with zero edits after user requested updated HERMES.md. No model
+      downloads or user data mutations occurred."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-29T23:03:41.840Z

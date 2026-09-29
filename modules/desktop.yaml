@@ -991,6 +991,62 @@ features:
         notes: []
     created: 2026-07-16T23:26:05.987Z
     notes: []
+  - _ulid: 01M3QPHNQWY7Q1XRBEAJKNK4E5
+    slugs:
+      - donut-create-plugin
+    title: Donut Create image generation add-on
+    type: feature
+    description: An optional image creation studio using DonutUI and DonutNodes workflow v5, with
+      managed backend setup, generation progress, and saving completed images into an explicitly
+      selected local image library.
+    status:
+      maturity: draft
+      implementation: in_progress
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    acceptance_criteria:
+      - given: The user is browsing the Images gallery
+        id: ac-image-entry
+        then: The creation studio opens without losing gallery position; creation entry controls are absent
+          from Videos and Music.
+        when: The user chooses Create
+      - given: The creator add-on is installed on a supported desktop
+        id: ac-managed-setup
+        then: The app prepares an isolated ComfyUI runtime, the required node packs, and selected workflow
+          models, and reports readiness only after checking required files and capabilities.
+        when: The user starts managed setup
+      - given: Setup is downloading dependencies or models
+        id: ac-setup-recovery
+        then: Progress and failures are visible, completed verified files remain reusable, existing
+          conflicting files are preserved, and access tokens are not persisted.
+        when: The user cancels, retries, or encounters a failed download
+      - given: The user edits the v5 studio controls
+        id: ac-workflow-state
+        then: Generation uses the edited workflow values and the studio retains the saved draft; saved
+          output retains workflow and execution metadata.
+        when: The user generates, closes, and reopens the studio
+      - given: The studio has queued images while the backend may also serve other clients
+        id: ac-job-ownership
+        then: Progress and completed results belong to this studio and cancellation leaves other clients
+          jobs running.
+        when: The user inspects, reconnects to, or cancels studio jobs
+      - given: A studio image has completed and the user selects an available image-enabled directory
+        id: ac-save-gallery
+        then: The image is installed without overwriting existing files, appears in the selected library and
+          directory with its generation metadata, and repeated save requests identify the same
+          imported result.
+        when: The user saves the image into the library
+      - given: A network client lacks write permission or a studio link is invalid or expired
+        id: ac-access-boundary
+        then: Unauthorized creation requests are rejected and the studio link grants access only to its own
+          creation session and outputs.
+        when: The client attempts creation or studio access
+    tags: []
+    created: 2026-09-29T23:03:40.541Z
+    notes: []
 requirements:
   - _ulid: 01KXZ8WBKRATXEJJGTV9QSQ2MS
     slugs:
