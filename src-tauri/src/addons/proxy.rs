@@ -18,6 +18,16 @@ pub async fn proxy_to_addon(
     AxumPath((addon_id, rest)): AxumPath<(String, String)>,
     request: Request,
 ) -> Result<Response, AppError> {
+    let request = if addon_id == "donut-create" {
+        let (mut parts, body) = request.into_parts();
+        crate::routes::create::require_write(&state, &mut parts).await?;
+        // Studio/output capabilities use their dedicated transport routes.
+        // Management must never hand the desktop credential to an addon.
+        parts.headers.remove("authorization");
+        Request::from_parts(parts, body)
+    } else {
+        request
+    };
     // 1. Get the addon's base URL (checks addon is running and has a port)
     let base_url = state.addon_manager().addon_url(&addon_id).ok_or_else(|| {
         AppError::ServiceUnavailable(format!("Addon '{}' is not running or not found", addon_id))

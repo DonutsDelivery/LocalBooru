@@ -21,6 +21,7 @@ import MigrationSettings from './components/MigrationSettings'
 
 import AddonManager from './components/AddonManager'
 import AddonSettings from './components/AddonSettings'
+import CreateStudioHost from './components/CreateStudioHost'
 import TaskManager from './components/TaskManager'
 import QRConnect from './components/QRConnect'
 import ContinueWatching from './components/ContinueWatching'
@@ -1246,6 +1247,18 @@ function Gallery({ mediaType = 'image' }) {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [triggerDebouncedRefresh])
 
+  useEffect(() => {
+    if (mediaType !== 'image') return
+    const imported = () => {
+      gallerySnapshots.delete('image')
+      authoritativeRefreshGenerationRef.current += 1
+      authoritativeRefreshRetryDelayRef.current = 750
+      triggerDebouncedRefresh(0)
+    }
+    window.addEventListener('donut-create-imported', imported)
+    return () => window.removeEventListener('donut-create-imported', imported)
+  }, [mediaType, triggerDebouncedRefresh])
+
   // SSE events also trigger the same debounce
   useEffect(() => {
     const unsubscribe = subscribeToLibraryEvents((event) => {
@@ -2354,6 +2367,7 @@ function AppShell() {
             <Route path="/watch/:token" element={<WatchPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
+          <CreateStudioHost />
           <PersistentMusicPlayer placement="mobile" />
         </MusicPlayerProvider>
       </BrowserRouter>

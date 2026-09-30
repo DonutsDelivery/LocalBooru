@@ -1,0 +1,418 @@
+{
+  "version": 1,
+  "comfyui": {
+    "repo": "Comfy-Org/ComfyUI",
+    "commit": "3c80da7f87ee359b2d06f107cb3c0797079dfbbb",
+    "url": "https://codeload.github.com/Comfy-Org/ComfyUI/tar.gz/3c80da7f87ee359b2d06f107cb3c0797079dfbbb",
+    "sha256": "4ef527e40b8dd3e114d90eb32ac7ca039b9c39fa7e035ec22f5b238c8dd6e752",
+    "size": 12498784,
+    "version": "0.36.0",
+    "frontend": "1.53.6"
+  },
+  "node_packs": [
+    {
+      "directory": "donutnodes",
+      "repo": "DonutsDelivery/ComfyUI-DonutNodes",
+      "commit": "2806ebe12caada993e6305e3f441ce61ab22a11c",
+      "url": "https://codeload.github.com/DonutsDelivery/ComfyUI-DonutNodes/tar.gz/2806ebe12caada993e6305e3f441ce61ab22a11c",
+      "sha256": "115a901c1c8b63272aeb2b48e13d52b91ac7b91bc054f8dcd19b3e58b8664467",
+      "size": 16179717,
+      "optional": false,
+      "required_for_models": []
+    },
+    {
+      "directory": "ComfyUI-bleh",
+      "repo": "blepping/ComfyUI-bleh",
+      "commit": "5af35d2366bb3e4ed413daa52867000f3d1ac7ad",
+      "url": "https://codeload.github.com/blepping/ComfyUI-bleh/tar.gz/5af35d2366bb3e4ed413daa52867000f3d1ac7ad",
+      "sha256": "f7c383f2021223f4c42e96017c6a4f5cc51dfac04a9b7cd378ae9e10a2cd8d0c",
+      "size": 213160,
+      "optional": false,
+      "required_for_models": []
+    },
+    {
+      "directory": "comfyui-impact-pack",
+      "repo": "ltdrdata/ComfyUI-Impact-Pack",
+      "commit": "429d0159ad429e64d2b3916e6e7be9c22d025c3c",
+      "url": "https://codeload.github.com/ltdrdata/ComfyUI-Impact-Pack/tar.gz/429d0159ad429e64d2b3916e6e7be9c22d025c3c",
+      "sha256": "ce8a1224cf48dfdb3c9ca7929ea44534f79e3700b4083ac7015b4df1bcf4456d",
+      "size": 2612534,
+      "optional": false,
+      "required_for_models": []
+    },
+    {
+      "directory": "comfyui-impact-subpack",
+      "repo": "ltdrdata/ComfyUI-Impact-Subpack",
+      "commit": "50c7b71a6a224734cc9b21963c6d1926816a97f1",
+      "url": "https://codeload.github.com/ltdrdata/ComfyUI-Impact-Subpack/tar.gz/50c7b71a6a224734cc9b21963c6d1926816a97f1",
+      "sha256": "c5bacc8bc45157378227f50f6803509bde8d3c6b471a1bd2d375b8e6cad99918",
+      "size": 22933,
+      "optional": false,
+      "required_for_models": []
+    },
+    {
+      "directory": "derfuu_comfyui_moddednodes",
+      "repo": "Derfuu/Derfuu_ComfyUI_ModdedNodes",
+      "commit": "d0905bed31249f2bd0814c67585cf4fe3c77c015",
+      "url": "https://codeload.github.com/Derfuu/Derfuu_ComfyUI_ModdedNodes/tar.gz/d0905bed31249f2bd0814c67585cf4fe3c77c015",
+      "sha256": "23f8d946f083c80c3bb6609d60c3b97ca99be030aaad151096aba8f9690f7047",
+      "size": 12546,
+      "optional": false,
+      "required_for_models": []
+    },
+    {
+      "directory": "comfyui-krea2edit",
+      "repo": "lbouaraba/comfyui-krea2edit",
+      "commit": "86f886dac23013d88996e3a2e99093ba44d322fb",
+      "url": "https://codeload.github.com/lbouaraba/comfyui-krea2edit/tar.gz/86f886dac23013d88996e3a2e99093ba44d322fb",
+      "sha256": "de43b5529a916a3bdca0bcebe9420a314f2ee0f8c55603a5c419fdd62be57a17",
+      "size": 50646,
+      "optional": false,
+      "required_for_models": []
+    },
+    {
+      "directory": "krea2-nag",
+      "repo": "iljung1106/ComfyUI-Krea2-NAG",
+      "commit": "0afb38dfc4ae4040d621ac5a46e1761b83fa2a43",
+      "url": "https://codeload.github.com/iljung1106/ComfyUI-Krea2-NAG/tar.gz/0afb38dfc4ae4040d621ac5a46e1761b83fa2a43",
+      "sha256": "7715a8202b978044e8d427c1c991dae5b9567b84b7cc5a821d2d309730b48584",
+      "size": 1376879,
+      "optional": false,
+      "required_for_models": []
+    },
+    {
+      "directory": "krea-seed-variance-enhancer",
+      "repo": "harukimix/KreaSeedVarianceEnhancer",
+      "commit": "1515d23a5b399a44ccd97482e1105a43937268ae",
+      "url": "https://codeload.github.com/harukimix/KreaSeedVarianceEnhancer/tar.gz/1515d23a5b399a44ccd97482e1105a43937268ae",
+      "sha256": "28b2a2d030c8f14623242090e5c6a4ab666f6042262584f55c989ac98f5ad492",
+      "size": 10724,
+      "optional": false,
+      "required_for_models": []
+    },
+    {
+      "directory": "ComfyUI-VAE-Utils",
+      "repo": "spacepxl/ComfyUI-VAE-Utils",
+      "commit": "4c62ea005897fafbc593d69bedb8308ec9f932fd",
+      "url": "https://codeload.github.com/spacepxl/ComfyUI-VAE-Utils/tar.gz/4c62ea005897fafbc593d69bedb8308ec9f932fd",
+      "sha256": "44ddde6fbc9fcde729abefb042a56af64f09cb45fb3d47f4249acc387b770252",
+      "size": 13108776,
+      "optional": true,
+      "required_for_models": [
+        "vae/Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors"
+      ]
+    }
+  ],
+  "python": {
+    "minimum": "3.12",
+    "maximum_exclusive": "3.13",
+    "reason": "The audited v5 runtime and native package wheels use Python 3.12."
+  },
+  "runtimes": {
+    "cuda": {
+      "systems": [
+        "Linux",
+        "Windows"
+      ],
+      "machines": [
+        "x86_64",
+        "AMD64"
+      ],
+      "index_url": "https://download.pytorch.org/whl/cu128",
+      "packages": [
+        "torch==2.9.1",
+        "torchvision==0.24.1",
+        "torchaudio==2.9.1"
+      ],
+      "description": "NVIDIA CUDA 12.8; a compatible NVIDIA driver and CUDA-capable GPU are required."
+    },
+    "cpu": {
+      "systems": [
+        "Linux",
+        "Windows",
+        "Darwin"
+      ],
+      "machines": [
+        "x86_64",
+        "AMD64",
+        "arm64",
+        "aarch64"
+      ],
+      "index_url": "https://download.pytorch.org/whl/cpu",
+      "packages": [
+        "torch==2.9.1",
+        "torchvision==0.24.1",
+        "torchaudio==2.9.1"
+      ],
+      "darwin_index_url": "https://pypi.org/simple",
+      "description": "CPU inference, including Mac CPU; large v5 models require substantial memory.",
+      "platform_machines": {
+        "Linux": [
+          "x86_64",
+          "aarch64"
+        ],
+        "Windows": [
+          "AMD64"
+        ],
+        "Darwin": [
+          "arm64"
+        ]
+      }
+    },
+    "mps": {
+      "systems": [
+        "Darwin"
+      ],
+      "machines": [
+        "arm64"
+      ],
+      "index_url": "https://pypi.org/simple",
+      "packages": [
+        "torch==2.9.1",
+        "torchvision==0.24.1",
+        "torchaudio==2.9.1"
+      ],
+      "description": "Apple Silicon with available Metal/MPS; GPU generation has not been certified."
+    }
+  },
+  "default_profile": "base",
+  "profiles": {
+    "base": {
+      "label": "Neutral starter",
+      "description": "Krea2 base model, single model mode, neutral prompt, no aesthetic LoRA. Other v5 controls and wiring remain available.",
+      "required_models": [
+        {
+          "folder": "diffusion_models",
+          "filename": "krea2_turbo_bf16.safetensors"
+        },
+        {
+          "folder": "text_encoders",
+          "filename": "qwen3vl_4b_fp8_scaled.safetensors"
+        },
+        {
+          "folder": "vae",
+          "filename": "qwen-image/qwen_image_vae.safetensors"
+        },
+        {
+          "folder": "upscale_models",
+          "filename": "4x_NickelbackFS_72000_G.pth"
+        },
+        {
+          "folder": "sams",
+          "filename": "sam_vit_b_01ec64.pth"
+        },
+        {
+          "folder": "ultralytics",
+          "filename": "bbox/face_yolov8m.pt"
+        }
+      ],
+      "model_count": 6,
+      "total_bytes": 32273722868,
+      "requires_auth": false,
+      "required_bytes": 49453592052,
+      "download_bytes": 32273722868
+    },
+    "workflow": {
+      "label": "Original v5 model choices",
+      "description": "Original v5 two-model merge and enabled aesthetic LoRA, with a neutral prompt. Civitai access may require a key and account permissions.",
+      "required_models": [
+        {
+          "folder": "diffusion_models",
+          "filename": "krea2_turbo_bf16.safetensors"
+        },
+        {
+          "folder": "text_encoders",
+          "filename": "qwen3vl_4b_fp8_scaled.safetensors"
+        },
+        {
+          "folder": "vae",
+          "filename": "qwen-image/qwen_image_vae.safetensors"
+        },
+        {
+          "folder": "upscale_models",
+          "filename": "4x_NickelbackFS_72000_G.pth"
+        },
+        {
+          "folder": "sams",
+          "filename": "sam_vit_b_01ec64.pth"
+        },
+        {
+          "folder": "ultralytics",
+          "filename": "bbox/face_yolov8m.pt"
+        },
+        {
+          "folder": "diffusion_models",
+          "filename": "finepornV4INT8NVFP4BF16_v4.safetensors"
+        },
+        {
+          "folder": "loras",
+          "filename": "krea2/Krea2_NSFW_Aesthetics_V1.safetensors"
+        }
+      ],
+      "model_count": 8,
+      "total_bytes": 45872604519,
+      "requires_auth": true,
+      "required_bytes": 63052473703,
+      "download_bytes": 45872604519
+    },
+    "all": {
+      "label": "Complete model catalog",
+      "description": "Original v5 model choices plus every optional catalog model for editing, SeedVR2, background removal, SAM3 and alternate VAE.",
+      "required_models": [
+        {
+          "folder": "diffusion_models",
+          "filename": "krea2_turbo_bf16.safetensors"
+        },
+        {
+          "folder": "text_encoders",
+          "filename": "qwen3vl_4b_fp8_scaled.safetensors"
+        },
+        {
+          "folder": "vae",
+          "filename": "qwen-image/qwen_image_vae.safetensors"
+        },
+        {
+          "folder": "vae",
+          "filename": "Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors"
+        },
+        {
+          "folder": "loras",
+          "filename": "krea2/krea2_identity_edit_v1_2.safetensors"
+        },
+        {
+          "folder": "loras",
+          "filename": "krea2/krea2_turbo_sda_v1.0_comfy.safetensors"
+        },
+        {
+          "folder": "upscale_models",
+          "filename": "4x_NickelbackFS_72000_G.pth"
+        },
+        {
+          "folder": "sams",
+          "filename": "sam_vit_b_01ec64.pth"
+        },
+        {
+          "folder": "ultralytics",
+          "filename": "bbox/face_yolov8m.pt"
+        },
+        {
+          "folder": "diffusion_models",
+          "filename": "finepornV4INT8NVFP4BF16_v4.safetensors"
+        },
+        {
+          "folder": "loras",
+          "filename": "krea2/Krea2_NSFW_Aesthetics_V1.safetensors"
+        },
+        {
+          "folder": "diffusion_models",
+          "filename": "seedvr2_3b_int8_convrot.safetensors"
+        },
+        {
+          "folder": "diffusion_models",
+          "filename": "seedvr2_7b_int8_convrot.safetensors"
+        },
+        {
+          "folder": "vae",
+          "filename": "seedvr2_ema_vae_fp16.safetensors"
+        },
+        {
+          "folder": "background_removal",
+          "filename": "birefnet.safetensors"
+        },
+        {
+          "folder": "checkpoints",
+          "filename": "sam3.1_multiplex_fp16.safetensors"
+        }
+      ],
+      "model_count": 16,
+      "total_bytes": 63162364113,
+      "requires_auth": true,
+      "required_bytes": 80342233297,
+      "download_bytes": 63162364113
+    }
+  },
+  "required_nodes": [
+    "BlehSetSamplerPreset",
+    "CLIPLoader",
+    "DF_Text_Box",
+    "DifferentialDiffusion",
+    "DonutEditStudio",
+    "DonutFaceDetailer",
+    "DonutImageSave",
+    "DonutInpaintComposite",
+    "DonutKrea2FusionControl",
+    "DonutLoRALoader",
+    "DonutModelMergeKrea2",
+    "DonutPromptConditioning",
+    "DonutReferenceStudio",
+    "DonutSampler",
+    "DonutSeedPlan",
+    "DonutSeedVR2Upscale",
+    "DonutText",
+    "DonutTiledUpscale",
+    "DonutVAEDecode",
+    "DonutVAELoader",
+    "EmptyLatentImage",
+    "ImageScaleBy",
+    "Krea2EditModelPatch",
+    "Krea2NormalizedAttentionGuidance",
+    "KreaSeedVarianceEnhancer",
+    "ModelSamplingAuraFlow",
+    "PreviewImage",
+    "SAMLoader",
+    "SamplerER_SDE",
+    "SaveImage",
+    "SeedNode",
+    "StringConcatenate",
+    "UNETLoader",
+    "UltralyticsDetectorProvider",
+    "UpscaleModelLoader",
+    "VAEDecode",
+    "VAELoader"
+  ],
+  "sam2": {
+    "repo": "facebookresearch/sam2",
+    "commit": "2b90b9f5ceec907a1c18123530e92e794ad901a4",
+    "url": "https://codeload.github.com/facebookresearch/sam2/tar.gz/2b90b9f5ceec907a1c18123530e92e794ad901a4",
+    "sha256": "1f2fbfad3ffa38110368abac76c6ef9df9c282a66d5c2807bc94abf4d2fb30f8",
+    "size": 55645345
+  },
+  "environment_reserve_bytes": 17179869184,
+  "provenance": {
+    "verified_at": "2026-09-30",
+    "source_commit_checks": "GitHub commit API resolved each full commit; codeload archive SHA-256 and byte count verified independently.",
+    "workflow": {
+      "repository": "https://github.com/DonutsDelivery/ComfyUI-DonutNodes",
+      "commit": "2806ebe12caada993e6305e3f441ce61ab22a11c",
+      "path": "workflows/v5/DonutWF_v5.json",
+      "source_sha256": "f06309a40fff7f8ff82fc9d7c23303814f940898842fa3d98be40f3fd8525383",
+      "bundled_sha256": "f00193911149dd97a98119a38d56aad91e4306261f139154f73b2c4f0f580dc0"
+    },
+    "catalog": {
+      "path": "model_sources.json",
+      "commit": "2806ebe12caada993e6305e3f441ce61ab22a11c",
+      "source_sha256": "ed76e898953e8b9393118671581e416d05a081b0878cf572bce95c375a5cc179",
+      "total_models": 16,
+      "total_bytes": 63162364113
+    },
+    "donutui": {
+      "version": "0.1.0",
+      "files": {
+        "src-tauri/src/init_script.rs": "577365c0288298882769a6a0c6908265dcb642cd312933406b1da5e903ca508e",
+        "src-tauri/inject/donut-bridge.js": "eaa417f2123e49eb0ed557bcaf58edd10ae9dc47b349929d3f65821c4e083c44",
+        "src-tauri/inject/donut-api.js": "33c10dc59eb23127aefc63ad437ebd48bc37cbdb46fd79ecae408757e94657d8"
+      },
+      "browser_assets": {
+        "assets/base-workflow.json": "8af29c42593029eab87befdae691aff5314084ff352265970e582be9139b892e",
+        "assets/donut-create.css": "45057b6e702e49117e69bf177205da386f96f0e4d796021ee1062e14a2b57fcb",
+        "assets/donut-create.js": "09adce581dd23f34800aadac8cccc52bf3531a4cfdbfa8a8e0d4af2e81bc051d"
+      }
+    }
+  },
+  "frontend_nodes": [
+    "DonutWorkflowPanel",
+    "DonutModelDownloads",
+    "DonutLatestPreview",
+    "Note"
+  ]
+}
