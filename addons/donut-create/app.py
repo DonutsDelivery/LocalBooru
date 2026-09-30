@@ -193,14 +193,19 @@ class Controller:
         self.sessions = {sid: session for sid, session in persisted.items()
                          if CAPABILITY.fullmatch(sid) and isinstance(session, dict)
                          and session.get("expires_at", 0) > self.clock()}
+        workspaces = read_json(self.state_dir / "workspaces.json", {})
+        self.workspaces = {key: value for key, value in workspaces.items()
+                           if re.fullmatch(r"[a-f0-9]{32}", key) and isinstance(value, dict)}
         self.client = httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False,
                                        timeout=httpx.Timeout(60.0, connect=5.0))
         self.process: asyncio.subprocess.Process | None = None
         self.backend_error: str | None = None
         self.mutation_lock = asyncio.Lock()
+        self.workspace_streams: dict[str, dict[str, Any]] = {}
 
     def persist(self) -> None:
         private_json(self.state_dir / "sessions.json", self.sessions)
+        private_json(self.state_dir / "workspaces.json", self.workspaces)
 
     def session(self, sid: str) -> dict[str, Any]:
         if not CAPABILITY.fullmatch(sid):
@@ -357,19 +362,113 @@ class Controller:
             except asyncio.TimeoutError:
                 self.process.kill()
                 await self.process.wait()
+        stream_tasks = [stream["task"] for stream in self.workspace_streams.values()]
+        for task in stream_tasks:
+            task.cancel()
+        await asyncio.gather(*stream_tasks, return_exceptions=True)
         await self.client.aclose()
 
-    async def create_session(self) -> dict[str, Any]:
+    def workspace_events(self, session: dict[str, Any]) -> tuple[dict[str, Any], asyncio.Queue]:
+        """One upstream client per shared workspace, with bounded per-device delivery."""
+        sid = session["id"]
+        stream = self.workspace_streams.get(sid)
+        if stream is None:
+            stream = {"subscribers": set()}
+            self.workspace_streams[sid] = stream
+            stream["task"] = asyncio.create_task(self.relay_workspace_events(session, stream))
+        subscriber: asyncio.Queue = asyncio.Queue(maxsize=64)
+        stream["subscribers"].add(subscriber)
+        return stream, subscriber
+
+    async def relay_workspace_events(self, session: dict[str, Any], stream: dict[str, Any]) -> None:
+        sid = session["id"]
+        parts = urlsplit(session["backend_url"])
+        backend = urlunsplit(("wss" if parts.scheme == "https" else "ws", parts.netloc, "/ws",
+                              urlencode({"clientId": "donut-create-" + sid}), ""))
+
+        def broadcast(message):
+            for subscriber in tuple(stream["subscribers"]):
+                if subscriber.full():
+                    # A slow device reconnects and restores state via scoped HTTP polling.
+                    stream["subscribers"].discard(subscriber)
+                    while not subscriber.empty():
+                        subscriber.get_nowait()
+                    subscriber.put_nowait(None)
+                else:
+                    subscriber.put_nowait(message)
+
+        try:
+            async with websockets.connect(backend, proxy=None, max_size=MAX_BODY, open_timeout=5) as upstream:
+                queue = await self.reconcile(session)
+                active = next(iter(queue_ids(queue, "queue_running") & set(session["jobs"])), None)
+                while True:
+                    self.session(sid)
+                    try:
+                        message = await asyncio.wait_for(upstream.recv(), timeout=30)
+                    except asyncio.TimeoutError:
+                        if not stream["subscribers"]:
+                            return
+                        continue
+                    if isinstance(message, bytes):
+                        if active in session["jobs"] and session["jobs"][active]["status"] == "running":
+                            broadcast(message)
+                        continue
+                    try:
+                        event = json.loads(message)
+                    except (ValueError, TypeError):
+                        continue
+                    if not isinstance(event, dict):
+                        continue
+                    if event.get("type") == "status":
+                        queue = await self.reconcile(session)
+                        own = self.owned_queue(session, queue)
+                        event = {"type": "status", "data": {"sid": "donut-create-" + sid,
+                                 "status": {"exec_info": {"queue_remaining": sum(len(rows) for rows in own.values())}}}}
+                        active = next(iter(queue_ids(queue, "queue_running") & set(session["jobs"])), None)
+                    else:
+                        if not self.observe_event(session, event):
+                            continue
+                        if event.get("type") == "execution_start":
+                            active = event["data"]["prompt_id"]
+                        if event.get("type") in {"execution_error", "execution_interrupted", "execution_success"} or (event.get("type") == "executing" and event["data"].get("node") is None):
+                            active = None
+                    broadcast(json.dumps(event))
+        except (HTTPException, OSError, httpx.HTTPError, websockets.WebSocketException):
+            pass  # Each device reconnects; scoped polling remains authoritative.
+        finally:
+            broadcast(None)
+            if self.workspace_streams.get(sid) is stream:
+                self.workspace_streams.pop(sid)
+
+    async def create_session(self, workspace: bool = False) -> dict[str, Any]:
         readiness = await self.readiness()
         if not readiness["ready"]:
             raise HTTPException(409, readiness.get("error") or "ComfyUI is not ready for this workflow.")
+        backend_key = self.backend_key(self.config["backend_url"], self.config["mode"])
+        previous = self.workspaces.get(backend_key, {}) if workspace else {}
+        shared = self.sessions.get(previous.get("session_id"))
+        if (workspace and shared and shared.get("workspace")
+                and shared.get("backend_key") == backend_key
+                and shared["expires_at"] > self.clock()
+                and (len(shared["jobs"]) < 256 or any(job["status"] in {"queued", "running"} for job in shared["jobs"].values()))):
+            shared["expires_at"] = self.clock() + self.ttl
+            self.persist()
+            return self.public_session(shared)
         sid = secrets.token_urlsafe(32)
         self.sessions[sid] = {"id": sid, "backend_url": self.config["backend_url"],
-                              "backend_key": self.backend_key(self.config["backend_url"], self.config["mode"]),
+                              "backend_key": backend_key, "workspace": workspace,
                               "profile": self.installer.status().get("profile") or "base",
                               "created_at": self.clock(), "expires_at": self.clock() + self.ttl,
                               "jobs": {}, "outputs": {}, "uploads": [], "references": [],
                               "masks": [], "settings": {}, "userdata": {}}
+        if workspace:
+            session = self.sessions[sid]
+            session["uploads"] = list(previous.get("uploads", []))
+            session["references"] = list(previous.get("references", []))
+            session["masks"] = list(previous.get("masks", []))
+            session["latest_run_revision"] = previous.get("revision", 0)
+            session["latest_run_workflow"] = previous.get("workflow")
+            self.workspaces[backend_key] = {**previous, "session_id": sid}
         self.persist()
         return self.public_session(self.sessions[sid])
 
@@ -381,7 +480,9 @@ class Controller:
         sid = session["id"]
         return {"id": sid, "backend_url": session["backend_url"],
                 "studio_path": f"/api/create/studio/{sid}/", "expires_at": session["expires_at"],
-                "jobs": list(session["jobs"].values()), "outputs": list(session["outputs"].values())}
+                "workspace": session.get("workspace", False), "latest_run_revision": session.get("latest_run_revision", 0),
+                "jobs": [{key: value for key, value in job.items() if not session.get("workspace") or key not in {"prompt", "workflow"}}
+                         for job in session["jobs"].values()], "outputs": list(session["outputs"].values())}
 
     def owned_queue(self, session: dict[str, Any], queue: dict[str, Any]) -> dict[str, Any]:
         return {key: [row for row in queue.get(key, [])
@@ -589,6 +690,10 @@ class Controller:
                                 safe_prompt_text(value)
             for key, value in inputs.items():
                 path_input = any(word in key.lower() for word in ("path", "filename", "model_name", "lora_name", "vae_name", "ckpt_name", "unet_name", "mask_b_model"))
+                # DonutSeedPlan consumes an INT here, not a filesystem location.
+                # v5 links it to the same SeedNode used by text and sampling.
+                if node["class_type"] == "DonutSeedPlan" and key == "filename_seed":
+                    path_input = False
                 if key == "filename_prefix" and node["class_type"] in {"DonutImageSave", "SaveImage"} and isinstance(value, list):
                     # v5 derives its filename from a model-name output. A linked
                     # name cannot be checked until execution, so give the save
@@ -639,6 +744,12 @@ class Controller:
         if len(session["jobs"]) >= 256:
             raise HTTPException(409, "This studio has reached its prompt limit. Open a new studio.")
         self.validate_prompt(session, body)
+        extra = body.get("extra_data")
+        metadata = extra.get("extra_pnginfo") if isinstance(extra, dict) else None
+        workflow = metadata.get("workflow") if isinstance(metadata, dict) else None
+        if workflow is not None and (not isinstance(workflow, dict) or not isinstance(workflow.get("nodes"), list)
+                                     or len(json.dumps(workflow).encode()) > MAX_PROMPT):
+            raise HTTPException(400, "Provide a valid workflow with the generation request.")
         body["client_id"] = "donut-create-" + session["id"]
         body["prompt_id"] = str(uuid.uuid4())
         response = await self.request_backend(session["backend_url"], "POST", "prompt", json=body)
@@ -652,7 +763,17 @@ class Controller:
             if any(prompt_id in entry["jobs"] for entry in self.sessions.values()):
                 raise HTTPException(502, "ComfyUI returned a prompt ID already owned by a studio.")
             session["jobs"][prompt_id] = {"id": prompt_id, "status": "queued", "created_at": self.clock(),
-                "prompt": body["prompt"], "workflow": body.get("extra_data", {}).get("extra_pnginfo", {}).get("workflow")}
+                "prompt": body["prompt"], "workflow": workflow}
+            if workflow is not None:
+                session["latest_run_revision"] = session.get("latest_run_revision", 0) + 1
+                session["latest_run_workflow"] = workflow
+                if session.get("workspace"):
+                    key = session["backend_key"]
+                    if self.workspaces.get(key, {}).get("session_id") == session["id"]:
+                        self.workspaces[key] = {"session_id": session["id"], "revision": session["latest_run_revision"],
+                                                "workflow": workflow, "uploads": list(session["uploads"]),
+                                                "references": list(session["references"]),
+                                                "masks": list(session["masks"])}
             self.persist()
         return response
 
@@ -797,7 +918,7 @@ XMLHttpRequest.prototype.open=function(method,url,...args){return originalOpen.c
 
 def allowed_route(method: str, route: str) -> bool:
     if method in {"GET", "HEAD"}:
-        if route in {"", "index.html", "favicon.ico", "materialdesignicons.min.css", "user.css", "object_info", "embeddings", "models", "experiment/models", "extensions", "features", "system_stats", "prompt", "queue", "history", "view", "settings", "users", "userdata", "donut/config", "api/jobs"}:
+        if route in {"", "index.html", "favicon.ico", "materialdesignicons.min.css", "user.css", "object_info", "embeddings", "models", "experiment/models", "extensions", "features", "system_stats", "prompt", "queue", "history", "view", "settings", "users", "userdata", "donut/config", "api/jobs", "dmc/workflow"}:
             return True
         if re.fullmatch(r"(?:object_info|models|history)/[A-Za-z0-9_.-]+", route):
             return True
@@ -835,6 +956,13 @@ def query_params(route: str, request: Request) -> dict[str, str]:
 
 
 async def studio_local(controller: Controller, session: dict[str, Any], route: str, request: Request) -> Response | None:
+    if route == "dmc/workflow" and request.method in {"GET", "HEAD"}:
+        if set(request.query_params) - {"revision_only"}:
+            raise HTTPException(400, "Invalid workflow query.")
+        result = {"revision": session.get("latest_run_revision", 0)}
+        if request.query_params.get("revision_only") != "1":
+            result["workflow"] = session.get("latest_run_workflow")
+        return JSONResponse(result)
     if route == "experiment/models" and request.method in {"GET", "HEAD"}:
         # The optional model-manager API exposes host folders. ComfyUI supports
         # a 404 fallback; workflow model selectors use the scoped /models API.
@@ -939,13 +1067,23 @@ def create_app(controller: Controller | None = None) -> FastAPI:
         return await current().stop_backend()
 
     @application.post("/create/sessions")
-    async def create_session():
-        return await current().create_session()
+    async def create_session(request: Request):
+        raw = await limited_body(request, 1024)
+        try:
+            options = json.loads(raw) if raw else {}
+        except ValueError:
+            raise HTTPException(400, "Invalid studio options.") from None
+        if not isinstance(options, dict) or set(options) - {"workspace"} or not isinstance(options.get("workspace", False), bool):
+            raise HTTPException(400, "Choose a valid studio workspace.")
+        return await current().create_session(workspace=options.get("workspace", False))
 
     @application.get("/create/sessions/{sid}")
     async def get_session(sid: str):
         session = current().session(sid)
         await current().reconcile(session)
+        if session.get("workspace") and session["expires_at"] - current().clock() < current().ttl / 2:
+            session["expires_at"] = current().clock() + current().ttl
+            current().persist()
         return current().public_session(session)
 
     @application.post("/create/sessions/{sid}/cancel")
@@ -1174,6 +1312,46 @@ def create_app(controller: Controller | None = None) -> FastAPI:
             session = ctrl.session(sid)
         except HTTPException:
             await socket.close(code=1008, reason="Studio session is invalid or expired.")
+            return
+        if session.get("workspace"):
+            await socket.accept()
+            stream, subscriber = ctrl.workspace_events(session)
+
+            async def deliver_workspace_events():
+                while True:
+                    message = await subscriber.get()
+                    if message is None:
+                        await socket.close(code=1011, reason="ComfyUI connection unavailable; reconnect to restore job state.")
+                        return
+                    if isinstance(message, bytes):
+                        await socket.send_bytes(message)
+                    else:
+                        await socket.send_text(message)
+
+            async def watch_workspace_device():
+                while True:
+                    remaining = max(0, session["expires_at"] - ctrl.clock())
+                    try:
+                        event = await asyncio.wait_for(socket.receive(), timeout=min(remaining, 30))
+                        if event["type"] == "websocket.disconnect":
+                            return
+                    except asyncio.TimeoutError:
+                        if ctrl.clock() >= session["expires_at"]:
+                            await socket.close(code=1008, reason="Studio session expired.")
+                            return
+
+            tasks = [asyncio.create_task(deliver_workspace_events()), asyncio.create_task(watch_workspace_device())]
+            try:
+                done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    task.result()
+            except (WebSocketDisconnect, RuntimeError):
+                pass
+            finally:
+                stream["subscribers"].discard(subscriber)
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
             return
         parts = urlsplit(session["backend_url"])
         backend = urlunsplit(("wss" if parts.scheme == "https" else "ws", parts.netloc, "/ws",

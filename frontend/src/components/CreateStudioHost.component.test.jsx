@@ -157,6 +157,8 @@ describe('Donut Create studio', () => {
     expect(frame.hidden).toBe(true)
     await screen.findByRole('button', { name: 'Return to studio' })
     fireEvent.click(screen.getByRole('button', { name: 'Return to studio' }))
+    expect(frame.hidden).toBe(true) // Basic view retains the workflow engine without showing its graph.
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced editor', exact: true }))
     expect(frame.hidden).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Close studio' }))
     openStudio()

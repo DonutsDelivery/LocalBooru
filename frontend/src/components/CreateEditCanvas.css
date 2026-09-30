@@ -1,0 +1,76 @@
+.create-edit-workspace {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-secondary);
+  margin-bottom: 24px;
+}
+
+.create-edit-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.create-edit-heading h2 { margin: 0 0 5px; font-size: 1.1rem; }
+.create-edit-heading p,
+.create-edit-hint { color: var(--text-secondary); font-size: 0.83rem; line-height: 1.5; margin: 0; }
+.create-edit-hint { margin-top: 14px; }
+
+.create-edit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 16px;
+}
+
+.create-edit-toolbar button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
+  color: var(--accent);
+}
+
+.create-brush-size { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--text-secondary); padding: 0 8px; }
+.create-brush-size input { width: 90px; accent-color: var(--accent); }
+.create-brush-size span { min-width: 30px; }
+
+.create-edit-stage-wrap {
+  display: flex;
+  justify-content: center;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.create-edit-stage { position: relative; width: 100%; min-height: 40px; }
+.create-edit-stage img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.create-edit-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.42; pointer-events: none; }
+.create-edit-stage canvas.can-paint { pointer-events: auto; cursor: crosshair; touch-action: none; }
+
+.create-studio-dialog .create-edit-empty {
+  display: flex;
+  width: 100%;
+  min-height: 300px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px;
+  border-style: dashed;
+  border-radius: 10px;
+  background: var(--bg-primary);
+}
+
+.create-edit-empty span { font-size: 2rem; color: var(--accent); }
+.create-edit-empty strong { font-size: 1rem; font-weight: 600; }
+.create-edit-empty small { color: var(--text-secondary); }
+
+@media (max-width: 760px) {
+  .create-edit-workspace { padding: 14px; }
+  .create-edit-heading { flex-wrap: wrap; }
+  .create-studio-dialog .create-edit-empty { min-height: 220px; }
+}

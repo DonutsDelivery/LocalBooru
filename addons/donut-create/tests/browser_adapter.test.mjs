@@ -7,6 +7,8 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
+assert.equal(typeof vm.SourceTextModule, 'function', 'Run this fixture with node --experimental-vm-modules --test.');
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(path.join(root, 'assets/donut-create.js'), 'utf8');
 const preset = JSON.parse(fs.readFileSync(path.join(root, 'workflow.json'), 'utf8'));
@@ -64,7 +66,8 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   };
   const api = {
     async fetchApi(route) {
-      const value = route === '/object_info' ? Object.fromEntries(manifest.required_nodes.map(node=>[node,{}])) : models[route.slice('/models/'.length)];
+      const value = route.startsWith('/dmc/workflow') ? {revision:0,workflow:null}
+        : route === '/object_info' ? Object.fromEntries(manifest.required_nodes.map(node=>[node,{}])) : models[route.slice('/models/'.length)];
       return {ok:true,json:async()=>copy(value)};
     },
     async queuePrompt(...args) { queued.push(copy(args)); return {prompt_id:'synthetic-prompt-id'}; },
