@@ -4329,7 +4329,45 @@ reviews:
       - create-v5-controls-review
     title: Review full v5 creation controls and editing panes
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 0d8ae56
+        evidence: Independent source approval for exact frozen0d8ae56 based ae908b1; clean worktree, no
+          source blockers. Browser/native/GPU explicitly pending.
+        name: source-review
+        required: true
+        runner: donut_create_review
+        created_at: 2026-09-30T21:45:17.970Z
+        completed_at: 2026-09-30T21:45:17.970Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 0d8ae56
+        evidence: Existing Python35/browser adapter5/focused ESLint pass. Disposable VM and actual51-node
+          boundary pass, including final mutationChanged/no-op/style assertions, nativeLoRA
+          model/text strengths, typed crop/mask/reference, rollback and face-only metadata/final64
+          markers.
+        name: controller-adapter-serialization
+        required: true
+        runner: root
+        created_at: 2026-09-30T21:45:18.102Z
+        completed_at: 2026-09-30T21:45:18.102Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 0d8ae56
+        evidence: Focused existing Vitest and synthetic real-browser desktop/mobile layout and lifecycle
+          checks pending host gate. No GPU execution claimed.
+        name: frontend-and-browser
+        required: true
+        runner: root
+        created_at: 2026-09-30T21:45:18.223Z
+        completed_at: null
     events:
       - _ulid: 01M3T4DDGB4Y4NYWK77VJYR14J
         actor: DonutsDelivery
@@ -4337,6 +4375,27 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-09-30T21:44:29.963Z
+      - _ulid: 01M3T4EWDGRCY81RV89CM88N28
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-review
+        timestamp: 2026-09-30T21:45:18.000Z
+      - _ulid: 01M3T4EWHPNGGHX9EHGA4KRT4S
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: controller-adapter-serialization
+        timestamp: 2026-09-30T21:45:18.134Z
+      - _ulid: 01M3T4EWNV4KCVYBN0HS4X07KB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: frontend-and-browser
+        timestamp: 2026-09-30T21:45:18.268Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -4351,5 +4410,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-09-30T21:44:29.965Z
-    updated_at: null
+    updated_at: 2026-09-30T21:45:18.223Z
     notes: []
