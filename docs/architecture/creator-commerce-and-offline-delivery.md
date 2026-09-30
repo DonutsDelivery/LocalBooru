@@ -193,4 +193,4 @@ These are proposed gates, not current test results:
 
 Commerce remains a separately scoped future feature. It must not block the
 immediate gallery/settings/private-source improvements or be silently added to
-the creation-plugin implementation.
+the creation-add-on implementation.
