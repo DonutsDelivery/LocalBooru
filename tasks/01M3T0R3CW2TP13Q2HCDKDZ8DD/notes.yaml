@@ -19,3 +19,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T20:41:24.651Z
+  - _ulid: 01M3T1TQRKJ3HYJTJPQY8KG5HT
+    content: Swarm-style central latest preview with left prompt/reference pane, right collapsed effects
+      and lower models/LoRAs/history; mobile pane tabs. Root Python adds128 owned temp
+      previews/scoped view, final-save marker and main/face metadata separation. Existing35
+      controller+5adapter checks pass on current partial source; disposable own-temp/foreign
+      rejection/final classification/main-face metadata/preflight checks pass. ToneLab bundled r12
+      verified at pinned DonutNodes2806ebe; no new download. UI and workflow agents still editing;
+      no full approval/build claimed. Heavy gate busy DonutStudio; normal DMC remains alive.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T20:59:20.723Z
