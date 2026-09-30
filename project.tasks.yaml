@@ -1591,13 +1591,14 @@ tasks:
     title: Expose v5 model effects, full edit tools, live preview and automatic run/save
     type: task
     spec_ref: "@donut-create-plugin"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
     tags: []
     review_ref: "@create-v5-controls-review"
-    notes_count: 8
+    notes_count: 9
     todos_count: 0
     created_at: 2026-09-30T20:40:25.756Z
     started_at: 2026-09-30T20:41:24.541Z
+    submitted_at: 2026-09-30T22:37:03.897Z

@@ -4536,6 +4536,27 @@ reviews:
         runner: root-host-gate
         created_at: 2026-09-30T22:25:40.319Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 1b91d69c984876d1420b43d2937184c50b06e10e
+        evidence: "Exact1b91d69: hostgate3931 exit0, existing22/22 frontendcases bothbranches
+          and2Vitebundles passed. ActualReact+scopedrealComfyUI+syntheticownedbackend:
+          validReferenceA800px upload no nullBcrash, 600x600crop, maskinvertalpha255,
+          Rightoutpaintserialized1600x640; ArrowRightNAG acknowledged0.26/Generateunlocked,
+          LoRA0.7model/0.3text submitted, pending0.9draft recipe-load remount then Instant
+          singlechangedprompt9→10jobs/noendlessrun; NAG0 collapses, blankFaceDenoise
+          expliciterror/nojob, corrected0.36 submissionsuccess. Latestcompletedpreview800px.
+          Mobile390x844nohorizontaloverflow5panes/fixedfooter. Priorautosave2newfinalonly,
+          livebinarypreview, owncancelturnsInstantoff stillvalid unchangedhost/controller.
+          Screenshots desktopmuooop6u/mobilemuoopddw outside repo.
+          RealGPUgeneration/physicalmobile/nativeacceleration notclaimed."
+        name: frontend-and-browser
+        required: true
+        runner: root-host-gate-t3
+        created_at: 2026-09-30T22:37:03.611Z
+        completed_at: 2026-09-30T22:37:03.611Z
     events:
       - _ulid: 01M3T4DDGB4Y4NYWK77VJYR14J
         actor: DonutsDelivery
@@ -4629,9 +4650,40 @@ reviews:
           status: running
           name: frontend-and-browser
         timestamp: 2026-09-30T22:25:40.476Z
+      - _ulid: 01M3T7DN8WQTQ523NBC5EGNE5D
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-and-browser
+        timestamp: 2026-09-30T22:37:03.644Z
+      - _ulid: 01M3T7DNN9RAV8A3Y4XFFYFSPE
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-30T22:37:04.041Z
+      - _ulid: 01M3T7DNRV8AWS90ZWGHDA0EE2
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: ae908b1
+            head_commit: 1b91d69c984876d1420b43d2937184c50b06e10e
+          decision: approve
+        timestamp: 2026-09-30T22:37:04.155Z
+      - _ulid: 01M3T7DNRVXRM7KZM800GZMRVF
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-09-30T22:37:04.155Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-v5-controls"
     subject:
@@ -4641,7 +4693,15 @@ reviews:
       head_branch: feat/create-v5-controls
       head_commit: 1b91d69c984876d1420b43d2937184c50b06e10e
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 1b91d69c984876d1420b43d2937184c50b06e10e
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-09-30T22:37:04.155Z
     created_at: 2026-09-30T21:44:29.965Z
-    updated_at: 2026-09-30T22:25:40.319Z
+    updated_at: 2026-09-30T22:37:04.155Z
     notes: []
