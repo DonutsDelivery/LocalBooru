@@ -31,3 +31,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-29T23:57:54.941Z
+  - _ulid: 01M3QTQX9S1AWJ8GQ08Q33DZ1T
+    content: "Candidate committed as 2394773e32ff0671575208a71906363a8be881b5 and submitted for review
+      @review-donut-create-plugin. Final independent review found no remaining confirmed source
+      blockers; 56 Python, 27 focused frontend component, 5 full browser-adapter, and 3 Node checks
+      pass, plus targeted lint/staged hygiene. Integration blocker: native rerun timed out after
+      1800 seconds waiting for host token; external DonutStudio CMake/Ninja writer remains active
+      and no Rust compiler started. Main remains 08b4174. Worktree is clean and intentionally
+      retained; no pushes, user library writes, models downloaded, or running agents killed. Native
+      test/source-deploy suite, frontend build, and isolated desktop smoke remain unverified."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T00:16:59.193Z
