@@ -3806,3 +3806,31 @@ reviews:
     created_at: 2026-09-30T03:57:28.086Z
     updated_at: 2026-09-30T03:58:23.314Z
     notes: []
+  - _ulid: 01M3RCGMB8EZS0ACB65E0VCTB0
+    slugs: []
+    title: Review Donut Create existing ComfyUI startup fix
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3RCGMB88TNNWXKW2B1DE9DH
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-09-30T05:27:35.016Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@fix-create-studio-frame"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 7a88812a043f5c4cf4693139f215e4dc39e67236
+      head_branch: fix/create-studio-frame
+      head_commit: 4eab1e9405e4ba1128866910afc068b8cb2c2612
+    threads: []
+    verdicts: []
+    created_at: 2026-09-30T05:27:35.016Z
+    updated_at: null
+    notes: []
