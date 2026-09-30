@@ -225,7 +225,7 @@ describe('Donut Create studio', () => {
     api.apiClient.post.mockResolvedValueOnce({ data: { cancelled: [], errors: [message] } })
     fireEvent.click(cancel)
     expect((await screen.findByRole('alert')).textContent).toBe(message)
-    expect(screen.getByRole('status').textContent).toBe(message)
+    expect(screen.getAllByRole('status').some(element => element.textContent === message)).toBe(true)
     expect(screen.getByText('running')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Cancel studio jobs' }).disabled).toBe(false)
     expect(screen.queryByText(/Cancellation requested|Cancelled \d+ studio job/)).toBeNull()
