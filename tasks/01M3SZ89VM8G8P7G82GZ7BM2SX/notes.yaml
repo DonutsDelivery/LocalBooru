@@ -1,1 +1,16 @@
-notes: []
+notes:
+  - _ulid: 01M3SZ9YGM8FGZT4HX4EFYG8H8
+    content: "Plan: isolated worktree /tmp/dmc-create-sidecars from main40b4f52. Root owns Rust create
+      routes/metadata and addon Python/bridge; existing high UI agent owns frontend. Add POST
+      qualified output-directory using normal watched-directory initialization, idempotent
+      image-only Created Images beneath chosen library. PNG untouched; atomic hidden
+      .donut-create/<image filename>.json sidecar carries schema/hash/full graph/execution and
+      normalized generation fields, database remains searchable cache. Gallery qualified GET
+      workflow checks exact image/file path/hash and sidecar; fallback embedded graph for old PNGs.
+      Load into existing scoped frame without generation. Reindex reads verified hidden companion.
+      Verify existing focused Rust create+metadata, Python/controller and frontend checks using
+      synthetic fixtures only; no new tests per developer instruction. Preserve current running
+      DMC."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T20:15:13.428Z
