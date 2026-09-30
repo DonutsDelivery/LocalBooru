@@ -3,14 +3,11 @@
  * Extracted from App.jsx
  */
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import Sidebar from '../components/Sidebar'
 import ComfyUIConfigModal from '../components/ComfyUIConfigModal'
-import { getLibraryStats, updateDirectory, tagUntagged, clearDirectoryTagQueue, fetchLibraries, addLibrary, mountLibrary, unmountLibrary, removeLibrary, listParentDirectories, removeParentDirectory, subscribeToLibraryEvents } from '../api'
+import { updateDirectory, tagUntagged, clearDirectoryTagQueue, fetchLibraries, addLibrary, mountLibrary, unmountLibrary, removeLibrary, listParentDirectories, removeParentDirectory, subscribeToLibraryEvents } from '../api'
 import { getDesktopAPI, isDesktopApp } from '../tauriAPI'
 import { toast } from '../components/Toast'
 import { useAddonStatus } from '../hooks/useAddonStatus'
-import { useMobileDrawer } from '../hooks/useMobileDrawer'
 import { directoryLibraryTargetValue, resolveDirectoryLibraryTarget } from '../utils/directoryLibraryTarget'
 
 // Helper to create composite key for directory (avoids ID collisions across libraries)
@@ -25,13 +22,11 @@ const parseDirKey = (key) => {
 }
 
 function DirectoriesPage() {
-  const navigate = useNavigate()
   const [directories, setDirectories] = useState([])
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState({})
   const [pruning, setPruning] = useState({})
   const [comfyuiConfigDir, setComfyuiConfigDir] = useState(null)
-  const [stats, setStats] = useState(null)
   const [relocating, setRelocating] = useState({})
   const [selectedDirs, setSelectedDirs] = useState(new Set())
   const [batchLoading, setBatchLoading] = useState(false)
@@ -50,7 +45,6 @@ function DirectoriesPage() {
   const [pendingDirectory, setPendingDirectory] = useState(null)
   const [newDirectoryMedia, setNewDirectoryMedia] = useState({ show_images: false, show_videos: false, show_music: true })
   const [addingDirectory, setAddingDirectory] = useState(false)
-  const drawer = useMobileDrawer()
 
   const refreshDirectories = async () => {
     const { fetchDirectories } = await import('../api')
@@ -89,7 +83,6 @@ function DirectoriesPage() {
     refreshDirectories()
       .catch(console.error)
       .finally(() => setLoading(false))
-    getLibraryStats().then(setStats).catch(console.error)
     refreshLibraries()
     refreshParentDirs()
   }, [])
@@ -246,7 +239,6 @@ function DirectoriesPage() {
       const result = await pruneDirectory(dir.id, savedDumpsterPath, dir.library_id)
       toast.success(`Pruned ${result.pruned} images to:\n${result.dumpster_path}`)
       await refreshDirectories()
-      getLibraryStats().then(setStats).catch(console.error)
     } catch (error) {
       console.error('Prune failed:', error)
       toast.error('Prune failed: ' + error.message)
@@ -369,7 +361,6 @@ function DirectoriesPage() {
       }
       toast.success(`Pruned ${totalPruned} images total`)
       await refreshDirectories()
-      getLibraryStats().then(setStats).catch(console.error)
     } finally {
       setPruning({})
       setBatchLoading(false)
@@ -530,25 +521,9 @@ function DirectoriesPage() {
   }
 
   return (
-    <div className="app">
-      <div className="main-container">
-        {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
-        <Sidebar stats={stats} mobileOpen={drawer.isOpen} onClose={drawer.close} />
-        <main className="content with-sidebar">
-          <div className="page directories-page">
-            <div className="page-header">
-              <button className="menu-btn mobile-only" onClick={drawer.open} aria-label="Open menu">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 12h18M3 6h18M3 18h18"/>
-                </svg>
-              </button>
-              <button className="back-btn mobile-only" onClick={() => navigate('/')} aria-label="Back to gallery">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H5M12 19l-7-7 7-7"/>
-                </svg>
-              </button>
-              <h1>Watch Directories</h1>
-            </div>
+    <>
+          <div className="directories-page">
+            <h2>Watch Directories</h2>
             <p>Add folders to your Images, Videos, or Music library.</p>
 
             <div className="directory-buttons">
@@ -1102,8 +1077,6 @@ function DirectoriesPage() {
               </div>
             )}
           </div>
-        </main>
-      </div>
 
       {/* ComfyUI Configuration Modal */}
       {comfyuiConfigDir && (
@@ -1115,7 +1088,7 @@ function DirectoriesPage() {
           onSave={refreshDirectories}
         />
       )}
-    </div>
+    </>
   )
 }
 

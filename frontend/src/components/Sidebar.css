@@ -42,13 +42,14 @@
   flex-direction: row;
   padding: 8px;
   gap: 4px;
+  box-sizing: border-box;
   margin: -12px -12px 0 -12px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
 }
 
 .sidebar-nav .nav-btn {
-  flex: 1;
+  flex: 1 1 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -360,13 +361,17 @@
   opacity: 1;
 }
 
+.sidebar-content,
+.music-sidebar-content {
+  scrollbar-gutter: stable;
+}
+
 .sidebar-content {
   padding: 12px;
   padding-right: 12px;
   flex: 1;
   overflow-y: auto;
   scrollbar-width: auto;
-  scrollbar-gutter: stable;
   scrollbar-color: var(--border) transparent;
   display: flex;
   flex-direction: column;
@@ -1775,7 +1780,7 @@
     padding-bottom: max(12px, var(--safe-bottom));
   }
 
-  .sidebar-nav {
+  .sidebar .sidebar-nav {
     padding-right: calc(20px + var(--touch-target));
   }
 
