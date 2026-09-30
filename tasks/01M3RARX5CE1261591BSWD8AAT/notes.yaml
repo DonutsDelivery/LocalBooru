@@ -25,3 +25,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T05:27:34.829Z
+  - _ulid: 01M3RCPYF9ZQVZH8KSVKCBSN50
+    content: Global kspec validate exits 4 on pre-existing invalid Android spec records/old @claude
+      author references and missing unrelated verify skill description; none belongs to this
+      three-file fix. Required product-focused checks pass. Synthetic probes stopped cleanly; user
+      DMC, controller, ComfyUI and all agents preserved. Native install waits behind active
+      DonutStudio host build gate.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T05:31:01.993Z
