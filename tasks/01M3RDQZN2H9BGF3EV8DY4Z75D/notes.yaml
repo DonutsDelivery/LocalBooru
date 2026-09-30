@@ -1,0 +1,15 @@
+notes:
+  - _ulid: 01M3RDQZVBV27ARW2PG6RAND8K
+    content: "Plan: reuse existing session-scoped ComfyUI runtime and current graph; render DMC-native
+      simple controls and result gallery, keep same advanced editor mounted as workflow engine. Bind
+      a whitelist of basic controls to existing v5 live widgets; serialize parent commands, validate
+      exact frame source/origin/capability, preserve advanced settings. Reference upload uses
+      existing scoped DonutEditStudio endpoint. Draw on SwarmUI Generate/custom workflow editor
+      pattern and ComfyUI App Mode basic-input/output pattern. Shared worktree
+      /tmp/dmc-create-simple from main171eb7a. Existing UI/controller agents are reused with
+      explicit surface ownership. Root will inspect actual edited execution prompt with disposable
+      synthetic client without real generation, lifecycle/source boundaries, responsive rendering
+      and focused checks. No third-party code copied and no new backend dependency."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T05:49:04.747Z

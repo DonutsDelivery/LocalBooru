@@ -1,0 +1,36 @@
+_ulid: 01M3RDQZN2H9BGF3EV8DY4Z75D
+slugs:
+  - create-simple-studio
+title: Build beginner-friendly Donut Create web UI with advanced v5 access
+type: task
+description: "Replace default graph view with a real easy-to-use website interface in DMC:
+  prompt/model/shape/generate, reference-image editing, queue/results/save. Advanced v5 editor
+  remains available for fine tuning with a single canonical workflow and drafts. Study existing
+  ComfyUI wrappers for patterns. Preserve existing session/job/access boundaries; no live generation
+  or user-profile testing. Verify focused behavior with synthetic data, review, integrate main and
+  refresh installation."
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-09-30T05:49:04.632Z
+        previous: null
+    command: task-start
+    timestamp: 2026-09-30T05:49:04.632Z
+created_at: 2026-09-30T05:49:04.545Z
+started_at: 2026-09-30T05:49:04.632Z
+todos: []
+automation: manual_only
