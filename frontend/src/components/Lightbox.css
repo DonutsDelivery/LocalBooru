@@ -204,6 +204,13 @@ video.lightbox-media {
   color: var(--text-muted);
 }
 
+.lightbox-unavailable .lightbox-error-context {
+  max-width: 100%;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .lightbox-unavailable.drive_offline svg {
   color: #ff9800;
 }

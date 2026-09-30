@@ -33,7 +33,7 @@ export default function ContinueWatching({ onImageClick }) {
             const image = await fetchImage(locator.imageId, {
               directoryId: locator.directoryId,
               libraryId: locator.libraryId,
-              suppressNotFoundToast: true,
+              optional: true,
             })
             return canonicalWatchItem(item, image)
           } catch (error) {

@@ -5,7 +5,7 @@ import axios from 'axios'
 import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 import { adjustmentQuery } from './utils/imageAdjustments.js'
-import { shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
+import { createUnavailableLibraryToastGate, shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
 import { remoteMediaProxyUrl } from './utils/remoteMediaRouting.js'
 import { splitTagFilters } from './utils/tagFilters.js'
 import { runtimeDiagnosticTimeoutMs } from './components/autoTaggerRuntime.js'
@@ -18,6 +18,8 @@ let currentMediaToken = null   // Short-lived, read-only token for media src URL
 let mediaTokenExpiry = 0       // epoch ms when currentMediaToken expires
 let currentCertFingerprint = null  // TLS certificate fingerprint for pinning
 let certValidated = false  // Whether certificate has been validated this session
+let unavailableToastServerId = null
+let suppressRepeatedUnavailableLibraryToast = createUnavailableLibraryToastGate()
 
 const LOCAL_SERVER_PORT = import.meta.env?.VITE_LOCALBOORU_PORT || '8790'
 
@@ -63,6 +65,11 @@ export async function updateServerConfig(workingUrl = null) {
   mediaTokenExpiry = 0
 
   const server = await getActiveServer()
+  const serverId = server?.id ?? LOCAL_SERVER.id
+  if (serverId !== unavailableToastServerId) {
+    unavailableToastServerId = serverId
+    suppressRepeatedUnavailableLibraryToast = createUnavailableLibraryToastGate()
+  }
   if (server) {
     // Local embedded server — use relative URLs like desktop
     if (server.isLocal || server.id === LOCAL_SERVER.id) {
@@ -224,9 +231,11 @@ api.interceptors.response.use(
     const isTransient = isNetworkError || status === 503 || error.code === 'ECONNABORTED'
 
     const suppressOptionalNotFound = shouldSuppressOptionalNotFound(error.config, status)
+    const suppressUnavailableLibrary = !duringStartup && !isTransient && !suppressOptionalNotFound
+      && suppressRepeatedUnavailableLibraryToast(error.config, status, data?.detail)
 
     // Only show popup for real errors after startup
-    if (!duringStartup && !isTransient && !suppressOptionalNotFound) {
+    if (!duringStartup && !isTransient && !suppressOptionalNotFound && !suppressUnavailableLibrary) {
       let message = `API Error: ${method} ${url}\n\nStatus: ${status || 'Network Error'}`
 
       if (data) {
@@ -247,9 +256,9 @@ api.interceptors.response.use(
 
       // Show toast with error details
       import('./components/Toast').then(m => m.toast.error(message))
-    } else if (!suppressOptionalNotFound) {
-      // Log transient errors to console instead
-      console.warn(`[API] Transient error (${duringStartup ? 'startup' : 'network'}): ${method} ${url}`, error.message)
+    } else if (!suppressOptionalNotFound && !suppressUnavailableLibrary) {
+      // Unexpected transient errors remain visible in the console without query data.
+      console.warn(`[API] ${duringStartup ? 'Startup' : 'Transient'} error: ${method} ${url.split('?')[0]} (${status || 'network'})`, error.message)
     }
 
     // Still reject so calling code can handle it
@@ -334,11 +343,11 @@ export async function fetchFolders({ directory_id, library_id, rating, favorites
   return response.data
 }
 
-export async function fetchImage(id, { directoryId = null, libraryId = null, suppressNotFoundToast = false } = {}) {
+export async function fetchImage(id, { directoryId = null, libraryId = null, optional = false, suppressNotFoundToast = false } = {}) {
   const params = {}
   if (directoryId != null) params.directory_id = directoryId
   if (libraryId) params.library_id = libraryId
-  const response = await api.get(`/images/${id}`, { params, suppressErrorToast: suppressNotFoundToast })
+  const response = await api.get(`/images/${id}`, { params, suppressErrorToast: optional || suppressNotFoundToast })
   return response.data
 }
 
@@ -1343,7 +1352,7 @@ export async function getPlaybackPosition(imageId, directoryId = null, libraryId
   const params = {}
   if (directoryId != null) params.directory_id = directoryId
   if (libraryId) params.library_id = libraryId
-  const response = await api.get(`/watch-history/${imageId}`, { params })
+  const response = await api.get(`/watch-history/${imageId}`, { params, suppressErrorToast: true })
   return response.data
 }
 

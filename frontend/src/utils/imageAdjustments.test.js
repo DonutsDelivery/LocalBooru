@@ -85,6 +85,16 @@ test('stale preview media errors cannot claim the committed source', () => {
   assert.equal(owner.owns(committed), true)
 })
 
+test('retry invalidates an in-flight error probe even when the URL stays the same', () => {
+  const owner = createImageSourceOwner()
+  const failedSource = owner.activate('committed:same-url')
+  owner.activate(null) // Retry invalidates before React renders the replacement image.
+  assert.equal(owner.owns(failedSource), false)
+  const retriedSource = owner.activate('committed:same-url')
+  assert.equal(owner.owns(failedSource), false)
+  assert.equal(owner.owns(retriedSource), true)
+})
+
 // AC: @identity-safe-image-adjustments ac-2
 test('adjustment request ownership rejects slider and navigation responses that became stale', () => {
   const owner = createAdjustmentOperationOwner()
