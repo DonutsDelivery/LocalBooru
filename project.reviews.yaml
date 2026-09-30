@@ -4324,3 +4324,32 @@ reviews:
     created_at: 2026-09-30T20:53:53.982Z
     updated_at: 2026-09-30T20:55:57.083Z
     notes: []
+  - _ulid: 01M3T4DDGDBPYZWRRQQ2DNCP9K
+    slugs:
+      - create-v5-controls-review
+    title: Review full v5 creation controls and editing panes
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3T4DDGB4Y4NYWK77VJYR14J
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-09-30T21:44:29.963Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-v5-controls"
+    subject:
+      type: code
+      base_branch: feat/create-output-sidecars
+      base_commit: ae908b1
+      head_branch: feat/create-v5-controls
+      head_commit: 0d8ae56
+    threads: []
+    verdicts: []
+    created_at: 2026-09-30T21:44:29.965Z
+    updated_at: null
+    notes: []

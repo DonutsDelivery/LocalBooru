@@ -52,3 +52,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T21:22:17.477Z
+  - _ulid: 01M3T4DDT2K9DHEZ17F75PDBT2
+    content: Frozen product commit0d8ae56 based ae908b1. Latest adapter mutationChanged/style assertions
+      and actual51-node boundary pass; existing adapter5/controller35 and focused ESLint pass.
+      Independent exact-head source confirmation requested. Rust/frontend/browser checks wait
+      host-wide gate; no native/GPU completion or installation claimed. App PID3447966 remains
+      alive.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T21:44:30.274Z
