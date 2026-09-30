@@ -3543,7 +3543,73 @@ reviews:
       - review-donut-create-addon-current
     title: Review Donut Create add-on current-main integration
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d44d0eb
+          head_commit: 56d8174
+        evidence: On current combined candidate56d8174:56 Python controller/installer cases and5 full
+          browser adapter behavior cases pass with synthetic fixtures outside repository; no
+          realmodeldownloads.
+        name: creation-python-and-browser-contracts
+        required: true
+        runner: unittest-and-node-vm
+        created_at: 2026-09-30T03:42:37.194Z
+        completed_at: 2026-09-30T03:42:37.194Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d44d0eb
+          head_commit: 56d8174
+        evidence: Native2.0.5 candidate56d8174 compiled successfully; all5 routes::create::tests plus2
+          addons::sources::tests pass using shared host build token and capped jobs. Confirmed each
+          nativewriterexited before startingnextbuild.
+        name: creation-native-routes-and-deployment
+        required: true
+        runner: scripts/run-cargo.sh
+        created_at: 2026-09-30T03:42:37.297Z
+        completed_at: 2026-09-30T03:42:37.297Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d44d0eb
+          head_commit: 56d8174
+        evidence: 27 focused component cases (22Create and5WD14 compatibility),10 Node catalog/runtime cases
+          pass; production Vite build succeeds. FirstVitest attempt inherited productionNODE_ENV and
+          lacked React.act; explicit NODE_ENV=test rerun passes, no code/testchanges needed.
+        name: creation-frontend-components-and-build
+        required: true
+        runner: vitest-node-vite-under-host-gate
+        created_at: 2026-09-30T03:42:37.402Z
+        completed_at: 2026-09-30T03:42:37.402Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d44d0eb
+          head_commit: 56d8174
+        evidence: Original creation2394773 independent review had no confirmed sourceblockers. High reviewer
+          approves ad88d03 current-main integration delta (Create sourceunchanged,
+          APIcombineseventsandcooldown, currentnav/mediaflags qualifiedsave preserved); separately
+          approved launcher5f068177 inherited unchanged in56d8174. No remaining sourcefindings.
+        name: creation-independent-source-integration-review
+        required: true
+        runner: main_sync_review-and-prior-create-review
+        created_at: 2026-09-30T03:42:37.496Z
+        completed_at: 2026-09-30T03:42:37.496Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: d44d0eb
+          head_commit: 56d8174
+        evidence: Isolated candidate56d8174 now starts correcthostgate and freshnativecompilation with
+          portable data/tmpHOME/XDG on18790. Waiting forhealth/nativewindowreadiness beforeT3preview
+          UI check; no normalprofilefallback.
+        name: creation-isolated-desktop-smoke
+        required: true
+        runner: npm run app:test-isolated
+        created_at: 2026-09-30T03:42:37.603Z
+        completed_at: null
     events:
       - _ulid: 01M3R6GCKJKY141NYC3979B7SG
         actor: DonutsDelivery
@@ -3551,9 +3617,51 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-09-30T03:42:35.634Z
+      - _ulid: 01M3R6GE1DRNBMDZD480N9ZEVQ
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-30T03:42:37.101Z
+      - _ulid: 01M3R6GE526GQW4F2MF7SACAGN
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: creation-python-and-browser-contracts
+        timestamp: 2026-09-30T03:42:37.218Z
+      - _ulid: 01M3R6GE8BPZ66SYB6Z3QN9FXS
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: creation-native-routes-and-deployment
+        timestamp: 2026-09-30T03:42:37.323Z
+      - _ulid: 01M3R6GEBKXRW8JZ16ZDVM5SJB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: creation-frontend-components-and-build
+        timestamp: 2026-09-30T03:42:37.427Z
+      - _ulid: 01M3R6GEEGQDYG656JTFT63E3A
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: creation-independent-source-integration-review
+        timestamp: 2026-09-30T03:42:37.520Z
+      - _ulid: 01M3R6GEHZSF31M322HV26G0WB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: creation-isolated-desktop-smoke
+        timestamp: 2026-09-30T03:42:37.631Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@task-donut-create-plugin"
       - "@donut-create-plugin"
@@ -3566,5 +3674,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-09-30T03:42:35.634Z
-    updated_at: null
+    updated_at: 2026-09-30T03:42:37.603Z
     notes: []
