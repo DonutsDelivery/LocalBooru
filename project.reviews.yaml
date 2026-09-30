@@ -4286,6 +4286,22 @@ reviews:
         runner: root
         created_at: 2026-09-30T21:51:30.760Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 40b4f527b47ea2e48c0f6070046de8fd2b8bb915
+          head_commit: ae908b1
+        evidence: FinalRust creation5+metadata9 pass; disposableactualRust
+          outputfolder/unchangedPNG/hashidentity/sidecarreindex/boundedPNG checks pass.
+          Existingfocused frontend22pass. T3realReact+Comfy browser:galleryhookloads
+          exactsidecarprompt withoutqueue/latest run,
+          creates/selectsimages-onlydestination;390x844nohorizontaloverflow. Syntheticfixture only,
+          noGPU/native completion claimed.
+        name: final-rust-and-browser
+        required: true
+        runner: root
+        created_at: 2026-09-30T21:57:25.166Z
+        completed_at: 2026-09-30T21:57:25.166Z
     events:
       - _ulid: 01M3T1GRNKP3CTZQA6XM429152
         actor: DonutsDelivery
@@ -4328,9 +4344,40 @@ reviews:
           status: running
           name: final-rust-and-browser
         timestamp: 2026-09-30T21:51:30.789Z
+      - _ulid: 01M3T552JDBJ3PVSYKDWDP2ERR
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: final-rust-and-browser
+        timestamp: 2026-09-30T21:57:25.197Z
+      - _ulid: 01M3T552XRTCKQE18M2JM6BWFN
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-30T21:57:25.560Z
+      - _ulid: 01M3T553102HTA8BF4HHX8NRHJ
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 40b4f527b47ea2e48c0f6070046de8fd2b8bb915
+            head_commit: ae908b1
+          decision: approve
+        timestamp: 2026-09-30T21:57:25.664Z
+      - _ulid: 01M3T55310XV6TVCDFJ1XSDDVM
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-09-30T21:57:25.664Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-output-sidecars"
     subject:
@@ -4340,9 +4387,17 @@ reviews:
       head_branch: feat/create-output-sidecars
       head_commit: ae908b1
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 40b4f527b47ea2e48c0f6070046de8fd2b8bb915
+          head_commit: ae908b1
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-09-30T21:57:25.664Z
     created_at: 2026-09-30T20:53:53.982Z
-    updated_at: 2026-09-30T21:51:30.760Z
+    updated_at: 2026-09-30T21:57:25.664Z
     notes: []
   - _ulid: 01M3T4DDGDBPYZWRRQQ2DNCP9K
     slugs:
