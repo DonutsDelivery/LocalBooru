@@ -1,0 +1,26 @@
+_ulid: 01M3T0R3CW2TP13Q2HCDKDZ8DD
+slugs:
+  - create-v5-controls
+title: Expose v5 model effects, full edit tools, live preview and automatic run/save
+type: task
+description: User requested detailed basic controls list, separate face-only prompt routing in
+  original v5 subgraphs, full Edit Studio and Create reference guidance, separate panels rather than
+  a long single pane. Add backend-synchronized LoRA stacks/model-text strengths, upscale/detailer
+  toggles/scale/denoise, global sampler/scheduler, compatibility/TAB/decensor, single/multi-model
+  blend and secondarychoice, NAG zerooff, SDA strength, ToneLab model/strength, latest running
+  preview, save-output toggle and Run Instant. Preserve exact advancedgraph and prior sidecars;
+  existingmodels/dependencies only. Stage in separate branch stacked on reviewed sidecar candidate
+  while hostbuildlock isoccupied.
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on:
+  - "@create-output-sidecars"
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-09-30T20:40:25.756Z
+todos: []

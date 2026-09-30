@@ -1083,6 +1083,30 @@ features:
         then: Create opens with that workflow and its saved settings without automatically generating;
           unavailable or invalid workflows show a useful error.
         when: The user chooses Load workflow
+      - given: The user opens the basic creator with the v5 workflow
+        id: ac-basic-model-effects
+        then: The basic UI provides LoRA add/remove with separate model/text strengths, global
+          sampler/scheduler, single or multi-model choices, compatibility and decensor controls,
+          NAG/SDA/Tone Lab and enabled upscaler/detailer controls; disabled options hide or collapse
+          and use the same live graph as Advanced.
+        when: They adjust models, LoRAs, sampling or optional enhancement effects
+      - given: The user supplies a main prompt and optionally describes a face while face detail is enabled
+        id: ac-face-prompt-routing
+        then: The main prompt describes the whole image and the separate face description conditions only
+          face detail rather than being appended to the main prompt.
+        when: They generate
+      - given: A ready creator session has a selected output directory
+        id: ac-live-preview-auto-output
+        then: The studio displays the latest execution preview before final output, completed final outputs
+          save automatically when enabled, and Run Instant queues the current acknowledged settings
+          when the queue becomes empty without duplicate requests.
+        when: The user enables automatic output saving or Run Instant and generates images
+      - given: A user is creating or editing an image
+        id: ac-full-edit-reference
+        then: Reference guidance is accessible from Create and Edit exposes the full existing reference,
+          crop, mask, layout and outpainting capabilities through organized panels that remain
+          usable on mobile.
+        when: They use reference guidance or Edit Studio tools
     tags: []
     created: 2026-09-29T23:03:40.541Z
     notes: []
