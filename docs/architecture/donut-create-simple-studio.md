@@ -13,6 +13,13 @@ Basic changes update only their specific widget bindings. Model selection is
 limited to the current workflow's supported backend catalog; selecting a file
 does not convert a Krea2 workflow into an arbitrary model architecture.
 
+Advanced is still a scoped editor: an imported workflow must use the supported
+node packs and routes, and the basic controls bind specifically to v5. Entirely
+different workflows are not generally supported by this addon yet. A future
+custom workflow profile should check its node/model requirements, open in
+Advanced by default, and optionally expose selected inputs as basic controls
+without replacing the retained v5 recipe.
+
 ## Existing interfaces studied
 
 - [SwarmUI advanced usage](https://github.com/mcmonkeyprojects/SwarmUI/blob/master/docs/Advanced%20Usage.md)
@@ -73,16 +80,55 @@ cancels the delayed load. Missing backend models, node packs or reference assets
 must still be supplied; the companion describes the recipe rather than embedding
 those dependencies. Loading an image recipe does not change the shared latest run.
 
-## Editing scope
+## Studio panes and controls
 
-The basic view has separate Create, Edit and Tuning tabs. Edit supports uploading
-a reference, describing a change, and painting or erasing a selected area with
-undo and clear actions. Selections use the existing DonutEditStudio normalized
-stroke format, so the same mask remains editable in the v5 editor. Fine crop,
-multiple references, canvas placement and the full v5 tuning controls remain
-available through Advanced editor. Starting an edit must enable the editing
-branch without discarding the generation recipe; returning to Create disables
-that branch explicitly. Ordinary previewing never queues a generation.
+The expanded studio uses a large latest-result view in the center, prompt and
+reference tools on the left, optional effects on the right, and models, LoRAs
+and result history in a lower pane. Narrow screens expose these areas through
+pane tabs. Disabled effects remain collapsed; turning one on reveals its
+relevant settings. Advanced editor still exposes the complete live v5 graph.
+
+Model controls include separate primary and secondary choices, a blend slider,
+and LoRA add/remove with individual model and text strengths. Sampling exposes
+the global sampler and scheduler. Optional effects include each upscale stage
+and its scale/denoise, face detail, compatibility/TAB and decensor weights,
+NAG, SDA and Tone Lab. Zero strength disables the effects that support it.
+Choices come from the connected backend and preserve its workflow constraints.
+Prompt brace choices are supported; arbitrary filesystem wildcard macros remain
+outside the scoped studio interface.
+
+Edit exposes the existing reference, crop, painted selection, mask, canvas
+placement and outpainting capabilities through organized tools. Reference
+guidance is also available from Create. Selections use DonutEditStudio's
+normalized geometry so they remain editable in the v5 editor. Starting an edit
+enables the editing branch without discarding the generation recipe; returning
+to Create disables that branch explicitly. Ordinary previewing never queues a
+generation.
+
+The main prompt describes the complete image. When face detail is enabled,
+an optional **Describe only the face** input supplies additional instructions
+only to the face branch. It does not enter the base image or upscale prompts.
+Executed metadata retains the main prompt separately from that face override.
+
+## Live results and automatic actions
+
+The controller registers temporary stage images only from its owned executed
+events or history. The scoped image route serves those registered previews,
+uploaded references and owned completed outputs. The bounded preview ledger
+supports reconnecting devices; arbitrary backend temporary files stay outside
+the studio. Filtered binary previews also stream through the existing shared
+workspace socket without replacing the graph editor's connection.
+
+Final save nodes are identified separately from intermediate outputs. **Save
+output** imports only completed final images into the selected directory and
+writes the same hidden companion used for manual saving. Intermediate and
+live previews remain display-only. Errors remain visible and do not silently
+change the destination.
+
+**Run (Instant)** is explicit opt-in. It submits an acknowledged changed draft
+when the owned queue becomes empty, with one pending submission at a time.
+It does not repeatedly submit an unchanged draft. Errors, cancellation,
+workflow loading and backend changes pause the automatic run behavior.
 
 ## Verification limits
 
@@ -102,7 +148,7 @@ bounded device buffers reconnect instead of delaying other devices. Legacy isola
 remain separate. Switching backend selects a different workspace; expired
 workspaces retain only their own latest recipe and reference ownership.
 
-The basic layout switches to full-width Controls and Results on narrow screens.
+The basic layout switches to full-width pane tabs on narrow screens.
 Full application reopening bootstraps from the latest submitted graph, with local
 draft fallback when no run exists. Closing and reopening the mounted studio keeps
 the current unsubmitted draft. A later run exposes Load latest run; it does not replace an

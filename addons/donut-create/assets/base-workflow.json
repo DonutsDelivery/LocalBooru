@@ -1,8 +1,8 @@
 {
   "id": "af40cf96-e217-4ea4-ac49-1fe5b69d531a",
   "revision": 9,
-  "last_node_id": 1177,
-  "last_link_id": 1115412,
+  "last_node_id": 1181,
+  "last_link_id": 1115427,
   "nodes": [
     {
       "id": 912,
@@ -34,7 +34,7 @@
           "links": []
         }
       ],
-      "title": "07 \u00b7 Result \u00b7 base",
+      "title": "07 · Result · base",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.28.0",
@@ -78,7 +78,7 @@
           "links": []
         }
       ],
-      "title": "Result \u00b7 first upscale",
+      "title": "Result · first upscale",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.28.0",
@@ -124,7 +124,7 @@
           ]
         }
       ],
-      "title": "Result \u00b7 final",
+      "title": "Result · final",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.28.0",
@@ -193,7 +193,8 @@
           },
           "version": "7.8",
           "input_ue_unconnectable": {}
-        }
+        },
+        "dmc_final_output": true
       },
       "widgets_values": [
         "output",
@@ -314,7 +315,8 @@
           "widget_ue_connectable": {},
           "version": "7.8",
           "input_ue_unconnectable": {}
-        }
+        },
+        "dmc_final_output": false
       },
       "widgets_values": [
         "DonutCreate/preview"
@@ -436,7 +438,7 @@
           "links": null
         }
       ],
-      "title": "09 \u00b7 Image setup & editing",
+      "title": "09 · Image setup & editing",
       "properties": {
         "cnr_id": "donutnodes",
         "ver": "d9a9cd7417dd31932be0cc7595b386f329dc919f",
@@ -701,6 +703,38 @@
           "link": 1115349
         },
         {
+          "name": "turbo_mode",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "turbo_mode"
+          }
+        },
+        {
+          "name": "steps",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "steps"
+          }
+        },
+        {
+          "name": "sampler_name",
+          "type": "COMBO",
+          "link": null,
+          "widget": {
+            "name": "sampler_name"
+          }
+        },
+        {
+          "name": "scheduler",
+          "type": "COMBO",
+          "link": null,
+          "widget": {
+            "name": "scheduler"
+          }
+        },
+        {
           "label": "CFG",
           "name": "cfg_start",
           "type": "FLOAT",
@@ -719,6 +753,22 @@
           "link": null
         },
         {
+          "name": "tiled_diffusion",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "tiled_diffusion"
+          }
+        },
+        {
+          "name": "rescale_factor",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "rescale_factor"
+          }
+        },
+        {
           "label": "denoise_face",
           "name": "denoise_1",
           "type": "FLOAT",
@@ -726,6 +776,14 @@
             "name": "denoise_1"
           },
           "link": null
+        },
+        {
+          "name": "max_faces",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "max_faces"
+          }
         },
         {
           "label": "denoise_upscale_2",
@@ -821,7 +879,7 @@
           "link": null
         },
         {
-          "label": "Reference B \u00b7 subject",
+          "label": "Reference B · subject",
           "name": "edit_source_image_b",
           "shape": 7,
           "type": "IMAGE",
@@ -890,6 +948,19 @@
           "shape": 7,
           "type": "DONUT_INPAINT",
           "link": 1115398
+        },
+        {
+          "name": "face_instruction",
+          "type": "STRING",
+          "link": 1115416
+        },
+        {
+          "name": "rescale_factor_2",
+          "type": "FLOAT",
+          "widget": {
+            "name": "rescale_factor_2"
+          },
+          "link": null
         }
       ],
       "outputs": [
@@ -916,7 +987,7 @@
           ]
         }
       ],
-      "title": "Generation engine \u00b7 open to inspect wiring",
+      "title": "Generation engine · open to inspect wiring",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -950,7 +1021,8 @@
           "variance_enabled",
           "variance_randomize_percent",
           "variance_auto_strength_factor",
-          "native_reference_enabled"
+          "native_reference_enabled",
+          "rescale_factor_2"
         ],
         "donut_stage_controls": true,
         "ue_properties": {
@@ -982,7 +1054,8 @@
             "upscale_2_enabled": true,
             "variance_enabled": true,
             "variance_randomize_percent": true,
-            "variance_auto_strength_factor": true
+            "variance_auto_strength_factor": true,
+            "rescale_factor_2": true
           },
           "version": "7.8",
           "input_ue_unconnectable": {}
@@ -1017,7 +1090,8 @@
         true,
         50,
         1,
-        false
+        false,
+        1.5
       ],
       "widgets_values_named": {
         "edit_mode": true,
@@ -1048,7 +1122,8 @@
         "variance_enabled": true,
         "variance_randomize_percent": 50,
         "variance_auto_strength_factor": 1,
-        "native_reference_enabled": false
+        "native_reference_enabled": false,
+        "rescale_factor_2": 1.5
       }
     },
     {
@@ -1176,9 +1251,16 @@
           "links": [
             1115349
           ]
+        },
+        {
+          "name": "face_instruction",
+          "type": "STRING",
+          "links": [
+            1115416
+          ]
         }
       ],
-      "title": "Sources \u00b7 open to inspect wiring",
+      "title": "Sources · open to inspect wiring",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.35.1",
@@ -1207,7 +1289,7 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "10 \u00b7 Prompts",
+      "title": "10 · Prompts",
       "properties": {
         "donut_app_controls": {
           "groups": [
@@ -1222,7 +1304,7 @@
                     1125
                   ],
                   "widget": "Text",
-                  "title": "Face and general style",
+                  "title": "Whole-image style",
                   "ui": {
                     "prompt": true,
                     "autosize": true,
@@ -1235,7 +1317,7 @@
                     1126
                   ],
                   "widget": "Text",
-                  "title": "Prompt \u00b7 subject and scene",
+                  "title": "Whole-image prompt · subject and scene",
                   "ui": {
                     "prompt": true,
                     "autosize": true,
@@ -1253,6 +1335,19 @@
                     "prompt": true,
                     "autosize": true,
                     "min_height": 90
+                  }
+                },
+                {
+                  "path": [
+                    1138,
+                    1178
+                  ],
+                  "widget": "Text",
+                  "title": "Optional face-only prompt",
+                  "ui": {
+                    "prompt": true,
+                    "autosize": true,
+                    "min_height": 70
                   }
                 }
               ],
@@ -1337,7 +1432,7 @@
                 }
               ],
               "color": "#bea8ff",
-              "donut_source_title": "Advanced \u00b7 Subject and scene expansion",
+              "donut_source_title": "Advanced · Subject and scene expansion",
               "donut_category_rank": 50,
               "donut_category_fixed": true
             },
@@ -1374,7 +1469,7 @@
                 }
               ],
               "color": "#bea8ff",
-              "donut_source_title": "Advanced \u00b7 Face and style expansion",
+              "donut_source_title": "Advanced · Face and style expansion",
               "donut_category_rank": 50,
               "donut_category_fixed": true
             },
@@ -1411,12 +1506,12 @@
                 }
               ],
               "color": "#bea8ff",
-              "donut_source_title": "Advanced \u00b7 Negative expansion",
+              "donut_source_title": "Advanced · Negative expansion",
               "donut_category_rank": 50,
               "donut_category_fixed": true
             },
             {
-              "title": "Prompt composition \u00b7 editing override and separator",
+              "title": "Prompt composition · editing override and separator",
               "advanced": true,
               "controls": [
                 {
@@ -1437,7 +1532,7 @@
                 }
               ],
               "color": "#f2cb76",
-              "donut_source_title": "Prompt composition \u00b7 editing override and separator",
+              "donut_source_title": "Prompt composition · editing override and separator",
               "donut_category_fixed": true,
               "donut_category_rank": 50
             }
@@ -1483,7 +1578,7 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "11 \u00b7 Seed & guidance",
+      "title": "11 · Seed & guidance",
       "properties": {
         "donut_app_controls": {
           "groups": [
@@ -1518,7 +1613,7 @@
               "donut_category_fixed": true
             },
             {
-              "title": "Negative attention guidance \u00b7 NAG",
+              "title": "Negative attention guidance · NAG",
               "advanced": false,
               "controls": [
                 {
@@ -1535,7 +1630,7 @@
               "donut_category_fixed": true
             },
             {
-              "title": "Negative attention guidance \u00b7 NAG",
+              "title": "Negative attention guidance · NAG",
               "advanced": true,
               "donut_category_fixed": true,
               "description": "Experimental text-fusion compatibility controls. Both default Off.",
@@ -1557,12 +1652,12 @@
                   "title": "Batch equal-length text fusion"
                 }
               ],
-              "donut_source_title": "Advanced \u00b7 NAG experiments",
+              "donut_source_title": "Advanced · NAG experiments",
               "donut_category_rank": 10
             },
             {
               "donut_txtfusion_internal_guard": true,
-              "title": "Experimental \u00b7 checkpoint txtfusion guard",
+              "title": "Experimental · checkpoint txtfusion guard",
               "advanced": true,
               "donut_category_fixed": true,
               "donut_category_rank": 12,
@@ -1618,7 +1713,7 @@
               "donut_category_fixed": true
             },
             {
-              "title": "Seed variance \u00b7 advanced",
+              "title": "Seed variance · advanced",
               "advanced": true,
               "controls": [
                 {
@@ -1687,7 +1782,7 @@
                 }
               ],
               "color": "#f2cb76",
-              "donut_source_title": "Advanced \u00b7 Prompt conditioning and variance",
+              "donut_source_title": "Advanced · Prompt conditioning and variance",
               "donut_category_rank": 21,
               "donut_category_fixed": true
             }
@@ -1733,7 +1828,7 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "03 \u00b7 Generation setup",
+      "title": "03 · Generation setup",
       "properties": {
         "donut_app_controls": {
           "groups": [
@@ -1813,7 +1908,7 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 Latent batch",
+              "donut_source_title": "Advanced · Latent batch",
               "donut_category_rank": 5,
               "donut_category_fixed": true
             },
@@ -1910,7 +2005,7 @@
               "donut_category_rank": 12
             },
             {
-              "title": "Base sampling \u00b7 advanced",
+              "title": "Base sampling · advanced",
               "advanced": true,
               "controls": [
                 {
@@ -2003,12 +2098,12 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 Base pass",
+              "donut_source_title": "Advanced · Base pass",
               "donut_category_rank": 13,
               "donut_category_fixed": true
             },
             {
-              "title": "Base sampling \u00b7 NAG",
+              "title": "Base sampling · NAG",
               "advanced": true,
               "controls": [
                 {
@@ -2093,12 +2188,12 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 Base pass",
+              "donut_source_title": "Advanced · Base pass",
               "donut_category_rank": 13,
               "donut_category_fixed": true
             },
             {
-              "title": "Base sampling \u00b7 er sde sampler",
+              "title": "Base sampling · er sde sampler",
               "advanced": true,
               "controls": [
                 {
@@ -2130,12 +2225,12 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 ER SDE sampler",
+              "donut_source_title": "Advanced · ER SDE sampler",
               "donut_category_rank": 14,
               "donut_category_fixed": true
             },
             {
-              "title": "Base sampling \u00b7 sampler preset",
+              "title": "Base sampling · sampler preset",
               "advanced": true,
               "controls": [
                 {
@@ -2158,7 +2253,7 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 Sampler preset",
+              "donut_source_title": "Advanced · Sampler preset",
               "donut_category_rank": 14,
               "donut_category_fixed": true
             }
@@ -2204,7 +2299,7 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "02 \u00b7 LoRAs & block weights",
+      "title": "02 · LoRAs & block weights",
       "properties": {
         "donut_app_controls": {
           "groups": [
@@ -2313,7 +2408,7 @@
               "donut_category_fixed": true
             },
             {
-              "title": "Experimental \u00b7 low VRAM",
+              "title": "Experimental · low VRAM",
               "advanced": true,
               "donut_category_fixed": true,
               "controls": [
@@ -2385,7 +2480,7 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "01 \u00b7 Models",
+      "title": "01 · Models",
       "properties": {
         "donut_app_controls": {
           "groups": [
@@ -2558,7 +2653,7 @@
               "donut_category_fixed": true
             },
             {
-              "title": "Face-detail segmentation \u00b7 SAM",
+              "title": "Face-detail segmentation · SAM",
               "advanced": false,
               "controls": [
                 {
@@ -2621,7 +2716,7 @@
                 }
               ],
               "color": "#e9a16d",
-              "donut_source_title": "Advanced \u00b7 Fusion controls",
+              "donut_source_title": "Advanced · Fusion controls",
               "donut_category_rank": 70.5,
               "donut_category_fixed": true
             },
@@ -2639,12 +2734,12 @@
                     "1118"
                   ],
                   "widget": "txtfusion_rms_guard",
-                  "title": "Normalize txtfusion changes \u00b7 all stages"
+                  "title": "Normalize txtfusion changes · all stages"
                 }
               ]
             },
             {
-              "title": "Fusion \u00b7 image taps",
+              "title": "Fusion · image taps",
               "advanced": true,
               "controls": [
                 {
@@ -2706,12 +2801,12 @@
                 }
               ],
               "color": "#e9a16d",
-              "donut_source_title": "Advanced \u00b7 Fusion controls",
+              "donut_source_title": "Advanced · Fusion controls",
               "donut_category_rank": 71,
               "donut_category_fixed": true
             },
             {
-              "title": "Fusion \u00b7 projector",
+              "title": "Fusion · projector",
               "advanced": true,
               "controls": [
                 {
@@ -2767,12 +2862,12 @@
                 }
               ],
               "color": "#e9a16d",
-              "donut_source_title": "Advanced \u00b7 Fusion controls",
+              "donut_source_title": "Advanced · Fusion controls",
               "donut_category_rank": 72,
               "donut_category_fixed": true
             },
             {
-              "title": "Fusion \u00b7 transformer",
+              "title": "Fusion · transformer",
               "advanced": true,
               "controls": [
                 {
@@ -2793,12 +2888,12 @@
                 }
               ],
               "color": "#e9a16d",
-              "donut_source_title": "Advanced \u00b7 Fusion controls",
+              "donut_source_title": "Advanced · Fusion controls",
               "donut_category_rank": 73,
               "donut_category_fixed": true
             },
             {
-              "title": "Fusion \u00b7 execution and interface",
+              "title": "Fusion · execution and interface",
               "advanced": true,
               "controls": [
                 {
@@ -2819,12 +2914,12 @@
                 }
               ],
               "color": "#e9a16d",
-              "donut_source_title": "Advanced \u00b7 Fusion controls",
+              "donut_source_title": "Advanced · Fusion controls",
               "donut_category_rank": 74,
               "donut_category_fixed": true
             },
             {
-              "title": "Model merge \u00b7 ratios and execution",
+              "title": "Model merge · ratios and execution",
               "advanced": true,
               "controls": [
                 {
@@ -2874,12 +2969,12 @@
                 "widget": "model_mode",
                 "value": "Merge two models"
               },
-              "donut_source_title": "Advanced \u00b7 Model merge",
+              "donut_source_title": "Advanced · Model merge",
               "donut_category_rank": 80,
               "donut_category_fixed": true
             },
             {
-              "title": "Model merge \u00b7 input and conditioning weights",
+              "title": "Model merge · input and conditioning weights",
               "advanced": true,
               "controls": [
                 {
@@ -3023,12 +3118,12 @@
                 "widget": "model_mode",
                 "value": "Merge two models"
               },
-              "donut_source_title": "Advanced \u00b7 Model merge",
+              "donut_source_title": "Advanced · Model merge",
               "donut_category_rank": 81,
               "donut_category_fixed": true
             },
             {
-              "title": "Model merge \u00b7 diffusion blocks",
+              "title": "Model merge · diffusion blocks",
               "advanced": true,
               "controls": [
                 {
@@ -3406,7 +3501,7 @@
                 "widget": "model_mode",
                 "value": "Merge two models"
               },
-              "donut_source_title": "Advanced \u00b7 Model merge",
+              "donut_source_title": "Advanced · Model merge",
               "donut_category_rank": 82,
               "donut_category_fixed": true
             }
@@ -3452,7 +3547,7 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "08 \u00b7 Save images",
+      "title": "08 · Save images",
       "properties": {
         "donut_app_controls": {
           "groups": [
@@ -3742,7 +3837,7 @@
           ]
         }
       ],
-      "title": "Optional \u00b7 Reference guidance",
+      "title": "Optional · Reference guidance",
       "properties": {
         "cnr_id": "donutnodes",
         "ver": "d9a9cd7417dd31932be0cc7595b386f329dc919f",
@@ -3845,7 +3940,7 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "12 \u00b7 Latest result",
+      "title": "12 · Latest result",
       "properties": {
         "panel_min_width": 1000,
         "sources": {
@@ -3984,12 +4079,12 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "04 \u00b7 First upscale",
+      "title": "04 · First upscale",
       "properties": {
         "donut_app_controls": {
           "groups": [
             {
-              "title": "Donut hires \u00b7 first upscale",
+              "title": "Donut hires · first upscale",
               "advanced": false,
               "controls": [
                 {
@@ -4027,7 +4122,7 @@
               "donut_category_fixed": true
             },
             {
-              "title": "Donut hires \u00b7 first upscale \u00b7 advanced",
+              "title": "Donut hires · first upscale · advanced",
               "advanced": true,
               "controls": [
                 {
@@ -4064,12 +4159,12 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 First upscale",
+              "donut_source_title": "Advanced · First upscale",
               "donut_category_rank": 31,
               "donut_category_fixed": true
             },
             {
-              "title": "Donut hires \u00b7 first upscale \u00b7 NAG",
+              "title": "Donut hires · first upscale · NAG",
               "advanced": true,
               "controls": [
                 {
@@ -4082,12 +4177,12 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 First upscale",
+              "donut_source_title": "Advanced · First upscale",
               "donut_category_rank": 32,
               "donut_category_fixed": true
             },
             {
-              "title": "Donut hires \u00b7 first upscale \u00b7 alternative engine",
+              "title": "Donut hires · first upscale · alternative engine",
               "advanced": true,
               "description": "Donut preserves the existing upscale + diffusion recipe. SeedVR2 shares the stage seed, scale and resize filter, but uses its own model, VAE and sampling settings.",
               "controls": [
@@ -4102,12 +4197,12 @@
                 }
               ],
               "donut_seedvr2": true,
-              "donut_source_title": "Donut hires \u00b7 first upscale \u00b7 advanced \u00b7 engine",
+              "donut_source_title": "Donut hires · first upscale · advanced · engine",
               "donut_category_rank": 33,
               "donut_category_fixed": true
             },
             {
-              "title": "Donut hires \u00b7 first upscale \u00b7 SeedVR2 replacement settings",
+              "title": "Donut hires · first upscale · SeedVR2 replacement settings",
               "advanced": true,
               "donut_seedvr2": true,
               "visible_when": {
@@ -4189,7 +4284,7 @@
                   "fallback_type": "DonutTiledUpscale"
                 }
               ],
-              "donut_source_title": "Donut hires \u00b7 first upscale \u00b7 advanced \u00b7 SeedVR2",
+              "donut_source_title": "Donut hires · first upscale · advanced · SeedVR2",
               "donut_category_rank": 34,
               "donut_category_fixed": true
             }
@@ -4198,7 +4293,7 @@
             1138,
             1137
           ],
-          "title": "07 \u00b7 First upscale"
+          "title": "07 · First upscale"
         },
         "panel_height": 460,
         "panel_width": 480,
@@ -4236,7 +4331,7 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "06 \u00b7 Face detail",
+      "title": "06 · Face detail",
       "properties": {
         "donut_app_controls": {
           "groups": [
@@ -4275,7 +4370,7 @@
               "donut_category_fixed": true
             },
             {
-              "title": "Face detail \u00b7 sampling",
+              "title": "Face detail · sampling",
               "advanced": true,
               "controls": [
                 {
@@ -4384,12 +4479,12 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 Face detail",
+              "donut_source_title": "Advanced · Face detail",
               "donut_category_rank": 41,
               "donut_category_fixed": true
             },
             {
-              "title": "Face detail \u00b7 detection and masks",
+              "title": "Face detail · detection and masks",
               "advanced": true,
               "controls": [
                 {
@@ -4474,12 +4569,12 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 Face detail",
+              "donut_source_title": "Advanced · Face detail",
               "donut_category_rank": 42,
               "donut_category_fixed": true
             },
             {
-              "title": "Face detail \u00b7 NAG",
+              "title": "Face detail · NAG",
               "advanced": true,
               "controls": [
                 {
@@ -4492,7 +4587,7 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 Face detail",
+              "donut_source_title": "Advanced · Face detail",
               "donut_category_rank": 43,
               "donut_category_fixed": true
             }
@@ -4501,7 +4596,7 @@
             1138,
             1137
           ],
-          "title": "08 \u00b7 Face detail"
+          "title": "08 · Face detail"
         },
         "panel_height": 460,
         "panel_width": 480,
@@ -4539,12 +4634,12 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "05 \u00b7 Second upscale",
+      "title": "05 · Second upscale",
       "properties": {
         "donut_app_controls": {
           "groups": [
             {
-              "title": "Donut hires \u00b7 second upscale",
+              "title": "Donut hires · second upscale",
               "advanced": false,
               "controls": [
                 {
@@ -4553,6 +4648,13 @@
                   ],
                   "widget": "upscale_2_enabled",
                   "title": "Second upscale"
+                },
+                {
+                  "path": [
+                    1014
+                  ],
+                  "widget": "rescale_factor_2",
+                  "title": "Second upscale scale"
                 },
                 {
                   "path": [
@@ -4568,7 +4670,7 @@
               "donut_category_fixed": true
             },
             {
-              "title": "Donut hires \u00b7 second upscale \u00b7 advanced",
+              "title": "Donut hires · second upscale · advanced",
               "advanced": true,
               "controls": [
                 {
@@ -4605,12 +4707,12 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 Second upscale",
+              "donut_source_title": "Advanced · Second upscale",
               "donut_category_rank": 51,
               "donut_category_fixed": true
             },
             {
-              "title": "Donut hires \u00b7 second upscale \u00b7 NAG",
+              "title": "Donut hires · second upscale · NAG",
               "advanced": true,
               "controls": [
                 {
@@ -4623,12 +4725,12 @@
                 }
               ],
               "color": "#88b8f3",
-              "donut_source_title": "Advanced \u00b7 Second upscale",
+              "donut_source_title": "Advanced · Second upscale",
               "donut_category_rank": 52,
               "donut_category_fixed": true
             },
             {
-              "title": "Donut hires \u00b7 second upscale \u00b7 alternative engine",
+              "title": "Donut hires · second upscale · alternative engine",
               "advanced": true,
               "description": "Donut preserves the existing upscale + diffusion recipe. SeedVR2 shares the stage seed, scale and resize filter, but uses its own model, VAE and sampling settings.",
               "controls": [
@@ -4643,12 +4745,12 @@
                 }
               ],
               "donut_seedvr2": true,
-              "donut_source_title": "Donut hires \u00b7 second upscale \u00b7 advanced \u00b7 engine",
+              "donut_source_title": "Donut hires · second upscale · advanced · engine",
               "donut_category_rank": 53,
               "donut_category_fixed": true
             },
             {
-              "title": "Donut hires \u00b7 second upscale \u00b7 SeedVR2 replacement settings",
+              "title": "Donut hires · second upscale · SeedVR2 replacement settings",
               "advanced": true,
               "donut_seedvr2": true,
               "visible_when": {
@@ -4730,7 +4832,7 @@
                   "fallback_type": "DonutTiledUpscale"
                 }
               ],
-              "donut_source_title": "Donut hires \u00b7 second upscale \u00b7 advanced \u00b7 SeedVR2",
+              "donut_source_title": "Donut hires · second upscale · advanced · SeedVR2",
               "donut_category_rank": 54,
               "donut_category_fixed": true
             }
@@ -4739,7 +4841,7 @@
             1138,
             1137
           ],
-          "title": "09 \u00b7 Second upscale"
+          "title": "09 · Second upscale"
         },
         "panel_height": 460,
         "panel_width": 480,
@@ -4777,12 +4879,12 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "07 \u00b7 SeedVR2 upscale",
+      "title": "07 · SeedVR2 upscale",
       "properties": {
         "donut_app_controls": {
           "groups": [
             {
-              "title": "SeedVR2 \u00b7 post upscale",
+              "title": "SeedVR2 · post upscale",
               "controls": [
                 {
                   "path": [
@@ -4826,12 +4928,12 @@
                 }
               ],
               "advanced": false,
-              "donut_source_title": "SeedVR2 \u00b7 post upscale",
+              "donut_source_title": "SeedVR2 · post upscale",
               "donut_category_rank": 60,
               "donut_category_fixed": true
             },
             {
-              "title": "SeedVR2 \u00b7 post upscale \u00b7 advanced",
+              "title": "SeedVR2 · post upscale · advanced",
               "controls": [
                 {
                   "path": [
@@ -4883,16 +4985,55 @@
                 }
               ],
               "advanced": true,
-              "donut_source_title": "SeedVR2 \u00b7 post upscale",
+              "donut_source_title": "SeedVR2 · post upscale",
               "donut_category_rank": 61,
               "donut_category_fixed": true
+            },
+            {
+              "title": "Tone Lab · final image",
+              "advanced": false,
+              "donut_category_rank": 70,
+              "controls": [
+                {
+                  "path": [
+                    1014,
+                    1181
+                  ],
+                  "widget": "enabled",
+                  "title": "Tone Lab"
+                },
+                {
+                  "path": [
+                    1014,
+                    1181
+                  ],
+                  "widget": "model_name",
+                  "title": "Tone model"
+                },
+                {
+                  "path": [
+                    1014,
+                    1181
+                  ],
+                  "widget": "strength",
+                  "title": "Tone strength"
+                },
+                {
+                  "path": [
+                    1014,
+                    1181
+                  ],
+                  "widget": "apply_to_edits",
+                  "title": "Apply to edits"
+                }
+              ]
             }
           ],
           "seed_path": [
             1138,
             1137
           ],
-          "title": "10 \u00b7 SeedVR2 upscale"
+          "title": "10 · SeedVR2 upscale"
         },
         "panel_height": 460,
         "panel_width": 480,
@@ -5089,7 +5230,7 @@
       1138,
       7,
       1014,
-      27,
+      34,
       "INT"
     ],
     [
@@ -5105,7 +5246,7 @@
       1138,
       9,
       1014,
-      24,
+      31,
       "INT"
     ],
     [
@@ -5113,7 +5254,7 @@
       1138,
       10,
       1014,
-      25,
+      32,
       "INT"
     ],
     [
@@ -5121,7 +5262,7 @@
       1138,
       11,
       1014,
-      26,
+      33,
       "INT"
     ],
     [
@@ -5153,7 +5294,7 @@
       881,
       1,
       1014,
-      30,
+      37,
       "IMAGE"
     ],
     [
@@ -5169,7 +5310,7 @@
       1150,
       0,
       1014,
-      35,
+      42,
       "IMAGE"
     ],
     [
@@ -5177,7 +5318,7 @@
       1150,
       1,
       1014,
-      36,
+      43,
       "IMAGE"
     ],
     [
@@ -5185,7 +5326,7 @@
       1150,
       2,
       1014,
-      37,
+      44,
       "BOOLEAN"
     ],
     [
@@ -5209,8 +5350,16 @@
       881,
       8,
       1014,
-      38,
+      45,
       "DONUT_INPAINT"
+    ],
+    [
+      1115416,
+      1138,
+      15,
+      1014,
+      46,
+      "STRING"
     ]
   ],
   "groups": [],
@@ -5221,11 +5370,11 @@
         "version": 1,
         "state": {
           "lastGroupId": 2,
-          "lastNodeId": 1177,
-          "lastLinkId": 1115412,
+          "lastNodeId": 1181,
+          "lastLinkId": 1115427,
           "lastRerouteId": 1
         },
-        "revision": 2,
+        "revision": 3,
         "config": {},
         "name": "Very useful settings..",
         "inputNode": {
@@ -5300,7 +5449,8 @@
               1073538,
               1073540,
               1073542,
-              1115322
+              1115322,
+              1115417
             ],
             "localized_name": "clip",
             "shape": 7,
@@ -5351,7 +5501,8 @@
               1073554,
               1073555,
               1073556,
-              1079908
+              1079908,
+              1115427
             ],
             "localized_name": "edit_mode",
             "shape": 7,
@@ -5424,7 +5575,8 @@
             "type": "INT",
             "linkIds": [
               1073561,
-              1115371
+              1115371,
+              1115424
             ],
             "localized_name": "seed",
             "pos": [
@@ -5489,7 +5641,8 @@
             "name": "text",
             "type": "STRING",
             "linkIds": [
-              1115325
+              1115325,
+              1115419
             ],
             "label": "neg",
             "pos": [
@@ -5605,8 +5758,7 @@
             "name": "rescale_factor",
             "type": "FLOAT",
             "linkIds": [
-              1073747,
-              1077503
+              1073747
             ],
             "pos": [
               2266.196796870656,
@@ -5737,7 +5889,8 @@
             "name": "text_seed",
             "type": "INT",
             "linkIds": [
-              1115326
+              1115326,
+              1115420
             ],
             "label": "text_seed",
             "pos": [
@@ -5781,7 +5934,7 @@
               1115356,
               1115357
             ],
-            "label": "Reference B \u00b7 subject",
+            "label": "Reference B · subject",
             "shape": 7,
             "pos": [
               2266.196796870656,
@@ -5805,7 +5958,8 @@
             "name": "variance_enabled",
             "type": "BOOLEAN",
             "linkIds": [
-              1115368
+              1115368,
+              1115421
             ],
             "label": "Seed variance",
             "pos": [
@@ -5818,7 +5972,8 @@
             "name": "variance_randomize_percent",
             "type": "FLOAT",
             "linkIds": [
-              1115369
+              1115369,
+              1115422
             ],
             "label": "Variance percent",
             "pos": [
@@ -5831,7 +5986,8 @@
             "name": "variance_auto_strength_factor",
             "type": "FLOAT",
             "linkIds": [
-              1115370
+              1115370,
+              1115423
             ],
             "label": "Variance strength",
             "pos": [
@@ -5890,6 +6046,30 @@
             "pos": [
               -500,
               1000
+            ]
+          },
+          {
+            "id": "cc04f8ab-2565-5698-be2e-49ef061bfe36",
+            "name": "face_instruction",
+            "type": "STRING",
+            "linkIds": [
+              1115418
+            ],
+            "pos": [
+              -500,
+              1050
+            ]
+          },
+          {
+            "id": "124d1ced-8f92-576e-adff-025c0f70d45f",
+            "name": "rescale_factor_2",
+            "type": "FLOAT",
+            "linkIds": [
+              1077503
+            ],
+            "pos": [
+              -500,
+              1050
             ]
           }
         ],
@@ -7306,16 +7486,15 @@
                 "links": [
                   1073491,
                   1073508,
-                  1073517
+                  1073517,
+                  1115425
                 ]
               },
               {
                 "localized_name": "face_text",
                 "name": "face_text",
                 "type": "STRING",
-                "links": [
-                  1073498
-                ]
+                "links": []
               },
               {
                 "localized_name": "edit_negative",
@@ -7340,9 +7519,7 @@
                 "localized_name": "face_positive",
                 "name": "face_positive",
                 "type": "CONDITIONING",
-                "links": [
-                  1115059
-                ]
+                "links": []
               },
               {
                 "localized_name": "negative_zeroed",
@@ -7375,11 +7552,12 @@
                 "widget_ue_connectable": {},
                 "version": "7.8",
                 "input_ue_unconnectable": {}
-              }
+              },
+              "dmc_prompt_role": "main"
             },
             "widgets_values": [
               "",
-              " ",
+              "",
               180238363061690,
               true,
               50,
@@ -8135,7 +8313,7 @@
                 "name": "image",
                 "type": "IMAGE",
                 "links": [
-                  1079868
+                  1115426
                 ]
               }
             ],
@@ -8183,7 +8361,7 @@
                 ]
               }
             ],
-            "title": "SeedVR2 \u00b7 post upscale",
+            "title": "SeedVR2 · post upscale",
             "properties": {
               "cnr_id": "donutnodes",
               "ver": "d9a9cd7417dd31932be0cc7595b386f329dc919f",
@@ -8255,7 +8433,7 @@
                 "links": null
               }
             ],
-            "title": "Result \u00b7 second upscale",
+            "title": "Result · second upscale",
             "properties": {
               "cnr_id": "comfy-core",
               "ver": "0.35.1",
@@ -8309,7 +8487,7 @@
                 ]
               }
             ],
-            "title": "Face preview \u00b7 keep surroundings",
+            "title": "Face preview · keep surroundings",
             "properties": {
               "cnr_id": "donutnodes",
               "ver": "d9a9cd7417dd31932be0cc7595b386f329dc919f",
@@ -8354,7 +8532,7 @@
                 "links": null
               }
             ],
-            "title": "Result \u00b7 Face Detailer",
+            "title": "Result · Face Detailer",
             "properties": {
               "cnr_id": "comfy-core",
               "ver": "0.35.1",
@@ -8365,6 +8543,313 @@
                 "version": "7.8",
                 "input_ue_unconnectable": {}
               }
+            }
+          },
+          {
+            "id": 1180,
+            "type": "DonutPromptConditioning",
+            "pos": [
+              3000,
+              1850
+            ],
+            "size": [
+              270,
+              268
+            ],
+            "flags": {
+              "collapsed": true
+            },
+            "order": 17,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "clip",
+                "name": "clip",
+                "type": "CLIP",
+                "link": 1115417
+              },
+              {
+                "localized_name": "face",
+                "name": "face",
+                "type": "STRING",
+                "link": 1115425
+              },
+              {
+                "localized_name": "scene",
+                "name": "scene",
+                "type": "STRING",
+                "link": 1115418
+              },
+              {
+                "localized_name": "negative",
+                "name": "negative",
+                "type": "STRING",
+                "link": 1115419
+              },
+              {
+                "localized_name": "native_reference_a",
+                "name": "native_reference_a",
+                "shape": 7,
+                "type": "IMAGE",
+                "link": null
+              },
+              {
+                "localized_name": "native_reference_b",
+                "name": "native_reference_b",
+                "shape": 7,
+                "type": "IMAGE",
+                "link": null
+              },
+              {
+                "localized_name": "text_seed",
+                "name": "text_seed",
+                "type": "INT",
+                "widget": {
+                  "name": "text_seed"
+                },
+                "link": 1115420
+              },
+              {
+                "localized_name": "variance_enabled",
+                "name": "variance_enabled",
+                "shape": 7,
+                "type": "BOOLEAN",
+                "widget": {
+                  "name": "variance_enabled"
+                },
+                "link": 1115421
+              },
+              {
+                "localized_name": "variance_randomize_percent",
+                "name": "variance_randomize_percent",
+                "shape": 7,
+                "type": "FLOAT",
+                "widget": {
+                  "name": "variance_randomize_percent"
+                },
+                "link": 1115422
+              },
+              {
+                "localized_name": "variance_auto_strength_factor",
+                "name": "variance_auto_strength_factor",
+                "shape": 7,
+                "type": "FLOAT",
+                "widget": {
+                  "name": "variance_auto_strength_factor"
+                },
+                "link": 1115423
+              },
+              {
+                "localized_name": "variance_seed",
+                "name": "variance_seed",
+                "shape": 7,
+                "type": "INT",
+                "widget": {
+                  "name": "variance_seed"
+                },
+                "link": 1115424
+              },
+              {
+                "localized_name": "native_reference_enabled",
+                "name": "native_reference_enabled",
+                "shape": 7,
+                "type": "BOOLEAN",
+                "widget": {
+                  "name": "native_reference_enabled"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "prompt_sets_json",
+                "name": "prompt_sets_json",
+                "shape": 7,
+                "type": "STRING",
+                "widget": {
+                  "name": "prompt_sets_json"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "prompt_set_index",
+                "name": "prompt_set_index",
+                "shape": 7,
+                "type": "INT",
+                "widget": {
+                  "name": "prompt_set_index"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "full_text",
+                "name": "full_text",
+                "type": "STRING",
+                "links": [
+                  1073498
+                ]
+              },
+              {
+                "localized_name": "face_text",
+                "name": "face_text",
+                "type": "STRING",
+                "links": []
+              },
+              {
+                "localized_name": "edit_negative",
+                "name": "edit_negative",
+                "type": "STRING",
+                "links": []
+              },
+              {
+                "localized_name": "positive",
+                "name": "positive",
+                "type": "CONDITIONING",
+                "links": [
+                  1115059
+                ]
+              },
+              {
+                "localized_name": "face_positive",
+                "name": "face_positive",
+                "type": "CONDITIONING",
+                "links": []
+              },
+              {
+                "localized_name": "negative_zeroed",
+                "name": "negative_zeroed",
+                "type": "CONDITIONING",
+                "links": []
+              },
+              {
+                "localized_name": "negative_raw",
+                "name": "negative_raw",
+                "type": "CONDITIONING",
+                "links": []
+              }
+            ],
+            "properties": {
+              "cnr_id": "donutnodes",
+              "ver": "f5b0b2a3dd10f36c902ff0f3c504b8625e3cb84b",
+              "Node name for S&R": "DonutPromptConditioning",
+              "aux_id": "DonutsDelivery/ComfyUI-DonutNodes",
+              "ue_properties": {
+                "widget_ue_connectable": {},
+                "version": "7.8",
+                "input_ue_unconnectable": {}
+              },
+              "dmc_prompt_role": "face"
+            },
+            "widgets_values": [
+              "",
+              "\n",
+              180238363061690,
+              true,
+              50,
+              1,
+              20,
+              "noise on beginning steps",
+              25,
+              344544240929102,
+              "beginning",
+              0,
+              false,
+              "uniform",
+              "values",
+              false,
+              "[]",
+              1,
+              "fixed"
+            ],
+            "widgets_values_named": {
+              "edit_negative": "",
+              "separator": "\n",
+              "text_seed": 180238363061690,
+              "variance_enabled": true,
+              "variance_randomize_percent": 50,
+              "variance_auto_strength_factor": 1,
+              "variance_strength": 20,
+              "variance_noise_insert": "noise on beginning steps",
+              "variance_steps_switchover_percent": 25,
+              "variance_seed": 344544240929102,
+              "variance_mask_starts_at": "beginning",
+              "variance_mask_percent": 0,
+              "variance_log_to_console": false,
+              "variance_noise_distribution": "uniform",
+              "variance_granularity": "values",
+              "native_reference_enabled": false,
+              "prompt_sets_json": "[]",
+              "prompt_set_index": 1,
+              "control_after_generate": "fixed"
+            },
+            "title": "Face-only conditioning · whole-image context + optional face instruction"
+          },
+          {
+            "id": 1181,
+            "type": "DonutToneLab",
+            "pos": [
+              3300,
+              2200
+            ],
+            "size": [
+              310,
+              170
+            ],
+            "flags": {
+              "collapsed": true
+            },
+            "order": 18,
+            "mode": 0,
+            "inputs": [
+              {
+                "name": "image",
+                "type": "IMAGE",
+                "link": 1115426
+              },
+              {
+                "name": "edit_mode",
+                "type": "BOOLEAN",
+                "shape": 7,
+                "link": 1115427
+              }
+            ],
+            "outputs": [
+              {
+                "name": "image",
+                "type": "IMAGE",
+                "links": [
+                  1079868
+                ]
+              },
+              {
+                "name": "report",
+                "type": "STRING",
+                "links": []
+              }
+            ],
+            "title": "Final image · Tone Lab",
+            "properties": {
+              "cnr_id": "donutnodes",
+              "Node name for S&R": "DonutToneLab",
+              "donut_widget_order": [
+                "enabled",
+                "model_name",
+                "strength",
+                "apply_to_edits"
+              ],
+              "donut_tone_lab_stage": true
+            },
+            "widgets_values": [
+              false,
+              "donut-tone-v4-r12.json",
+              1,
+              false
+            ],
+            "widgets_values_named": {
+              "enabled": false,
+              "model_name": "donut-tone-v4-r12.json",
+              "strength": 1,
+              "apply_to_edits": false
             }
           }
         ],
@@ -8445,8 +8930,8 @@
           },
           {
             "id": 1073498,
-            "origin_id": 996,
-            "origin_slot": 1,
+            "origin_id": 1180,
+            "origin_slot": 0,
             "target_id": 984,
             "target_slot": 11,
             "type": "STRING"
@@ -8966,7 +9451,7 @@
           {
             "id": 1077503,
             "origin_id": -10,
-            "origin_slot": 24,
+            "origin_slot": 47,
             "target_id": 983,
             "target_slot": 21,
             "type": "FLOAT"
@@ -9069,7 +9554,7 @@
           },
           {
             "id": 1079868,
-            "origin_id": 1163,
+            "origin_id": 1181,
             "origin_slot": 0,
             "target_id": -20,
             "target_slot": 0,
@@ -9133,8 +9618,8 @@
           },
           {
             "id": 1115059,
-            "origin_id": 996,
-            "origin_slot": 4,
+            "origin_id": 1180,
+            "origin_slot": 3,
             "target_id": 1118,
             "target_slot": 2,
             "type": "CONDITIONING"
@@ -9530,6 +10015,94 @@
             "target_id": 1177,
             "target_slot": 0,
             "type": "IMAGE"
+          },
+          {
+            "id": 1115417,
+            "origin_id": -10,
+            "origin_slot": 3,
+            "target_id": 1180,
+            "target_slot": 0,
+            "type": "CLIP"
+          },
+          {
+            "id": 1115418,
+            "origin_id": -10,
+            "origin_slot": 46,
+            "target_id": 1180,
+            "target_slot": 2,
+            "type": "STRING"
+          },
+          {
+            "id": 1115419,
+            "origin_id": -10,
+            "origin_slot": 16,
+            "target_id": 1180,
+            "target_slot": 3,
+            "type": "STRING"
+          },
+          {
+            "id": 1115420,
+            "origin_id": -10,
+            "origin_slot": 34,
+            "target_id": 1180,
+            "target_slot": 6,
+            "type": "INT"
+          },
+          {
+            "id": 1115421,
+            "origin_id": -10,
+            "origin_slot": 39,
+            "target_id": 1180,
+            "target_slot": 7,
+            "type": "BOOLEAN"
+          },
+          {
+            "id": 1115422,
+            "origin_id": -10,
+            "origin_slot": 40,
+            "target_id": 1180,
+            "target_slot": 8,
+            "type": "FLOAT"
+          },
+          {
+            "id": 1115423,
+            "origin_id": -10,
+            "origin_slot": 41,
+            "target_id": 1180,
+            "target_slot": 9,
+            "type": "FLOAT"
+          },
+          {
+            "id": 1115424,
+            "origin_id": -10,
+            "origin_slot": 11,
+            "target_id": 1180,
+            "target_slot": 10,
+            "type": "INT"
+          },
+          {
+            "id": 1115425,
+            "origin_id": 996,
+            "origin_slot": 0,
+            "target_id": 1180,
+            "target_slot": 1,
+            "type": "STRING"
+          },
+          {
+            "id": 1115426,
+            "origin_id": 1163,
+            "origin_slot": 0,
+            "target_id": 1181,
+            "target_slot": 0,
+            "type": "IMAGE"
+          },
+          {
+            "id": 1115427,
+            "origin_id": -10,
+            "origin_slot": 6,
+            "target_id": 1181,
+            "target_slot": 1,
+            "type": "BOOLEAN"
           }
         ],
         "extra": {
@@ -10010,7 +10583,7 @@
                 ]
               }
             ],
-            "title": "Primary model \u00b7 optional Krea2 merge",
+            "title": "Primary model · optional Krea2 merge",
             "properties": {
               "cnr_id": "donutnodes",
               "ver": "9a6b90788a41f2f5f4dc6f448872fe83b8368942",
@@ -10303,7 +10876,7 @@
                 ]
               }
             ],
-            "title": "Shared seed \u00b7 text / sampling / filename",
+            "title": "Shared seed · text / sampling / filename",
             "properties": {
               "cnr_id": "donutnodes",
               "ver": "f5b0b2a3dd10f36c902ff0f3c504b8625e3cb84b",
@@ -10654,11 +11227,11 @@
         "version": 1,
         "state": {
           "lastGroupId": 2,
-          "lastNodeId": 1177,
-          "lastLinkId": 1115412,
+          "lastNodeId": 1181,
+          "lastLinkId": 1115427,
           "lastRerouteId": 1
         },
-        "revision": 0,
+        "revision": 1,
         "config": {},
         "name": "Models, prompts and seed sources",
         "inputNode": {
@@ -10859,6 +11432,18 @@
             "pos": [
               1040,
               380
+            ]
+          },
+          {
+            "id": "f9f9a8fd-a175-567e-a3a3-a0bc8bf9a694",
+            "name": "face_instruction",
+            "type": "STRING",
+            "linkIds": [
+              1115415
+            ],
+            "pos": [
+              -500,
+              1050
             ]
           }
         ],
@@ -11202,7 +11787,7 @@
                 ]
               }
             ],
-            "title": "Krea2 base model \u00b7 neutral starter",
+            "title": "Krea2 base model · neutral starter",
             "properties": {
               "cnr_id": "comfy-core",
               "ver": "0.25.0",
@@ -11291,7 +11876,7 @@
                 ]
               }
             ],
-            "title": "Face Prompt and general style:",
+            "title": "Optional whole-image style",
             "properties": {
               "cnr_id": "derfuu_comfyui_moddednodes",
               "ver": "1.0.1",
@@ -11303,10 +11888,10 @@
               }
             },
             "widgets_values": [
-              "High-quality photograph. "
+              ""
             ],
             "widgets_values_named": {
-              "Text": "High-quality photorealistic candid photo of a 24-year-old woman with enormous round glasses, wildly curly ginger hair escaping from under a tiny yellow bucket hat, and an intensely suspicious expression, as if she has just realized someone stole her sandwich. She has one eyebrow raised and is trying very badly to look inconspicuous."
+              "Text": ""
             },
             "color": "#232",
             "bgcolor": "#353"
@@ -11336,7 +11921,7 @@
                 ]
               }
             ],
-            "title": "Body+image contains:",
+            "title": "Whole-image prompt · subject and scene",
             "properties": {
               "cnr_id": "derfuu_comfyui_moddednodes",
               "ver": "1.0.1",
@@ -11348,10 +11933,10 @@
               }
             },
             "widgets_values": [
-              "A ceramic teapot on a wooden table in soft daylight."
+              "High-quality photograph.  A ceramic teapot on a wooden table in soft daylight."
             ],
             "widgets_values_named": {
-              "Text": "She is wearing a ridiculously bright purple tracksuit covered in tiny banana prints, mismatched rainbow socks, and oversized hiking boots. She carries a miniature pink umbrella in one hand and a baguette like a sword in the other.\n\nWide-angle photograph of an extremely crowded medieval village festival where absolute chaos is unfolding. Hundreds of people fill the scene: knights arguing with tourists, a marching band going the wrong direction, someone chasing three escaped geese, a confused magician performing beside a vegetable stall, children carrying enormous balloons, and an elderly man calmly drinking tea while everything goes wrong around him.\n\nHide the woman deep inside the crowd so she is genuinely difficult to spot at first glance, but clearly recognizable once found. Make the image packed with funny little background details and visual distractions, like a photorealistic \u201cWhere\u2019s Waldo?\u201d puzzle."
+              "Text": "High-quality photograph.  A ceramic teapot on a wooden table in soft daylight."
             },
             "color": "#323",
             "bgcolor": "#535"
@@ -11377,11 +11962,12 @@
                 "name": "seed",
                 "type": "INT",
                 "links": [
-                  1115353
+                  1115353,
+                  1115414
                 ]
               }
             ],
-            "title": "Shared seed \u00b7 Fixed / Randomize",
+            "title": "Shared seed · Fixed / Randomize",
             "properties": {
               "cnr_id": "comfy-core",
               "ver": "0.34.0",
@@ -11572,9 +12158,9 @@
               387487092046446
             ],
             "widgets_values_named": {
-              "text": " ",
+              "text": "A ceramic teapot on a wooden table in soft daylight.",
               "text_1": "",
-              "text_2": "pov, 4k high quality flash photo",
+              "text_2": "High-quality photograph. ",
               "text_seed": 387487092046446
             }
           },
@@ -11697,7 +12283,7 @@
                 "links": []
               }
             ],
-            "title": "LoRAs \u00b7 add / remove / reorder",
+            "title": "LoRAs · add / remove / reorder",
             "properties": {
               "cnr_id": "donutnodes",
               "ver": "f5b0b2a3dd10f36c902ff0f3c504b8625e3cb84b",
@@ -11737,6 +12323,145 @@
               "chunk_edit_mlp": false,
               "chunk_edit_norm": false
             }
+          },
+          {
+            "id": 1178,
+            "type": "DF_Text_Box",
+            "pos": [
+              2800,
+              3400
+            ],
+            "size": [
+              458.7128874131124,
+              417.64486452690767
+            ],
+            "flags": {},
+            "order": 15,
+            "mode": 0,
+            "inputs": [],
+            "outputs": [
+              {
+                "localized_name": "STRING",
+                "name": "STRING",
+                "type": "STRING",
+                "links": [
+                  1115413
+                ]
+              }
+            ],
+            "title": "Optional face detail prompt",
+            "properties": {
+              "cnr_id": "derfuu_comfyui_moddednodes",
+              "ver": "1.0.1",
+              "Node name for S&R": "DF_Text_Box",
+              "ue_properties": {
+                "widget_ue_connectable": {},
+                "input_ue_unconnectable": {},
+                "version": "7.8"
+              },
+              "dmc_prompt_role": "face"
+            },
+            "widgets_values": [
+              ""
+            ],
+            "widgets_values_named": {
+              "Text": ""
+            },
+            "color": "#323",
+            "bgcolor": "#535"
+          },
+          {
+            "id": 1179,
+            "type": "DonutText",
+            "pos": [
+              3050,
+              3400
+            ],
+            "size": [
+              460,
+              54
+            ],
+            "flags": {
+              "collapsed": true
+            },
+            "order": 16,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "prefix",
+                "name": "prefix",
+                "shape": 7,
+                "type": "STRING",
+                "link": null
+              },
+              {
+                "localized_name": "suffix",
+                "name": "suffix",
+                "shape": 7,
+                "type": "STRING",
+                "link": null
+              },
+              {
+                "localized_name": "text",
+                "name": "text",
+                "type": "STRING",
+                "widget": {
+                  "name": "text"
+                },
+                "link": 1115413
+              },
+              {
+                "localized_name": "seed",
+                "name": "seed",
+                "type": "INT",
+                "widget": {
+                  "name": "seed"
+                },
+                "link": 1115414
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "text",
+                "name": "text",
+                "type": "STRING",
+                "links": [
+                  1115415
+                ]
+              }
+            ],
+            "title": "Optional face instruction expansion",
+            "properties": {
+              "cnr_id": "donutnodes",
+              "ver": "f5b0b2a3dd10f36c902ff0f3c504b8625e3cb84b",
+              "Node name for S&R": "DonutText",
+              "ue_properties": {
+                "widget_ue_connectable": {
+                  "seed": true
+                },
+                "version": "7.8",
+                "input_ue_unconnectable": {}
+              },
+              "aux_id": "DonutsDelivery/ComfyUI-DonutNodes"
+            },
+            "widgets_values": [
+              "",
+              180238363061690,
+              "fixed",
+              128,
+              "error",
+              ""
+            ],
+            "widgets_values_named": {
+              "text": "",
+              "seed": 180238363061690,
+              "control_after_generate": "fixed",
+              "max_depth": 128,
+              "missing": "error",
+              "separator": ""
+            },
+            "color": "#9551b0",
+            "bgcolor": "#813d9c"
           }
         ],
         "groups": [],
@@ -11932,6 +12657,30 @@
             "target_id": 1128,
             "target_slot": 5,
             "type": "INT"
+          },
+          {
+            "id": 1115413,
+            "origin_id": 1178,
+            "origin_slot": 0,
+            "target_id": 1179,
+            "target_slot": 2,
+            "type": "STRING"
+          },
+          {
+            "id": 1115414,
+            "origin_id": 1137,
+            "origin_slot": 0,
+            "target_id": 1179,
+            "target_slot": 3,
+            "type": "INT"
+          },
+          {
+            "id": 1115415,
+            "origin_id": 1179,
+            "origin_slot": 0,
+            "target_id": -20,
+            "target_slot": 15,
+            "type": "STRING"
           }
         ],
         "extra": {
@@ -12009,7 +12758,7 @@
                 "links": null
               }
             ],
-            "title": "Required pack \u00b7 krea-seed-variance-enhancer",
+            "title": "Required pack · krea-seed-variance-enhancer",
             "properties": {
               "cnr_id": "krea-seed-variance-enhancer",
               "ver": "1.2.0",
@@ -12085,7 +12834,7 @@
                 "links": null
               }
             ],
-            "title": "Required pack \u00b7 krea2-nag",
+            "title": "Required pack · krea2-nag",
             "properties": {
               "cnr_id": "krea2-nag",
               "ver": "1.0.2",
@@ -12189,7 +12938,7 @@
                 "links": null
               }
             ],
-            "title": "Required pack \u00b7 comfyui-krea2edit",
+            "title": "Required pack · comfyui-krea2edit",
             "properties": {
               "cnr_id": "comfyui-krea2edit",
               "ver": "1.2.5",
@@ -12294,8 +13043,16 @@
       "panel_order": "setup-finish-iterate-v2"
     },
     "donut_workflow": {
-      "name": "Donut Create \u00b7 neutral starter v5",
+      "name": "Donut Create · neutral starter v5",
       "release": "V5"
+    },
+    "donut_tone_lab_v1": {
+      "node_id": 1181,
+      "path": [
+        1014,
+        1181
+      ],
+      "version": 1
     }
   },
   "version": 0.4

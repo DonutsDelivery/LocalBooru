@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchDirectories, fetchLibraries, getAddon } from '../api'
 import {
   cancelStudioJobs,
@@ -11,6 +11,9 @@ import {
   getStudioSession,
   importStudioOutput,
   outputUrl,
+  readStudioPreview,
+  stagePreviewUrl,
+  studioEventsUrl,
   studioUrl,
 } from '../services/donutCreate'
 import CreateSettings from './CreateSettings'
@@ -36,6 +39,7 @@ export default function CreateStudioHost() {
   const [saving, setSaving] = useState(null)
   const [cancelling, setCancelling] = useState(false)
   const [saved, setSaved] = useState({})
+  const [autoSave, setAutoSave] = useState(false)
   const [error, setError] = useState('')
   const [announcement, setAnnouncement] = useState('')
   const [switchingServer, setSwitchingServer] = useState(false)
@@ -49,6 +53,18 @@ export default function CreateStudioHost() {
   const [controlsRevision, setControlsRevision] = useState(0)
   const [editRevision, setEditRevision] = useState(0)
   const [mobilePane, setMobilePane] = useState('controls')
+  const [selectedOutputId, setSelectedOutputId] = useState('')
+  const [runInstant, setRunInstant] = useState(false)
+  const [graphRevision, setGraphRevision] = useState(0)
+  const [draftPending, setDraftPending] = useState(false)
+  const [livePreview, setLivePreview] = useState(null)
+  const [liveProgress, setLiveProgress] = useState(null)
+  const [previewConnecting, setPreviewConnecting] = useState(false)
+  const [canvasScope, setCanvasScope] = useState('edit')
+  const [canvasReference, setCanvasReference] = useState('A')
+  const [centerView, setCenterView] = useState('preview')
+  const [failedPreview, setFailedPreview] = useState('')
+  const [previewRetry, setPreviewRetry] = useState(0)
   const sessionRef = useRef(null)
   const generation = useRef(0)
   const requests = useRef(new AbortController())
@@ -56,6 +72,8 @@ export default function CreateStudioHost() {
   const initialLaunch = useRef(false)
   const openingLock = useRef(false)
   const saveLock = useRef(false)
+  const saveAttempts = useRef(new Map())
+  const saveBaselines = useRef(new Map())
   const directoryCreateLock = useRef(false)
   const directoryRequestVersion = useRef(0)
   const pendingWorkflow = useRef(null)
@@ -71,7 +89,21 @@ export default function CreateStudioHost() {
   const studioActions = useRef(Promise.resolve())
   const pendingActions = useRef(0)
   const actionErrorVisible = useRef(false)
+  const instantEnabled = useRef(false)
+  const instantEpoch = useRef(0)
+  const authoredRevision = useRef(0)
+  const instantVersion = useRef(null)
+  const draftsWaiting = useRef(false)
+  const draftSources = useRef(new Set())
+  const generateLock = useRef(false)
+  const acknowledgedPrompts = useRef(new Set())
   const studioSessionId = session?.id
+
+  const stopInstant = useCallback(() => {
+    instantEnabled.current = false
+    instantEpoch.current += 1
+    setRunInstant(false)
+  }, [])
 
   useEffect(() => {
     mounted.current = true
@@ -86,6 +118,7 @@ export default function CreateStudioHost() {
       if (serverChanging.current) return
       const workflow = event.detail?.workflow
       if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) return
+      stopInstant()
       pendingWorkflow.current = { workflow, generation: generation.current, loading: false }
       setWorkflowPending(true)
       setError('')
@@ -104,9 +137,10 @@ export default function CreateStudioHost() {
       window.removeEventListener('donut-create-open', openStudio)
       window.removeEventListener('donut-create-load-workflow', loadWorkflow)
     }
-  }, [])
+  }, [stopInstant])
 
   function closeStudio() {
+    stopInstant()
     visible.current = false
     pendingWorkflow.current = null
     setWorkflowPending(false)
@@ -122,6 +156,7 @@ export default function CreateStudioHost() {
     closeButton.current?.focus()
     const escape = event => {
       if (event.key === 'Escape') {
+        stopInstant()
         visible.current = false
         pendingWorkflow.current = null
         setWorkflowPending(false)
@@ -134,9 +169,10 @@ export default function CreateStudioHost() {
       siblings.forEach(({ element, inert }) => { element.inert = inert })
       trigger.current?.focus?.()
     }
-  }, [opened])
+  }, [opened, stopInstant])
 
   const invalidateSession = useCallback(message => {
+    stopInstant()
     generation.current += 1
     requests.current.abort()
     requests.current = new AbortController()
@@ -147,9 +183,17 @@ export default function CreateStudioHost() {
     studioActions.current = Promise.resolve()
     pendingActions.current = 0
     actionErrorVisible.current = false
+    authoredRevision.current = 0
+    instantVersion.current = null
+    draftsWaiting.current = false
+    draftSources.current.clear()
+    generateLock.current = false
+    acknowledgedPrompts.current.clear()
     initialLaunch.current = true
     openingLock.current = false
     saveLock.current = false
+    saveAttempts.current.clear()
+    saveBaselines.current.clear()
     directoryCreateLock.current = false
     directoryRequestVersion.current += 1
     pendingWorkflow.current = null
@@ -158,12 +202,21 @@ export default function CreateStudioHost() {
     setSession(null)
     setFrameUrl('')
     setSaved({})
+    setAutoSave(false)
+    setSelectedOutputId('')
+    setLivePreview(null)
+    setLiveProgress(null)
+    setCanvasScope('edit')
+    setCanvasReference('A')
+    setCenterView('preview')
     setOpening(false)
     setSaving(null)
     setCancelling(false)
     setCreatingDirectory(false)
     setWorkflowPending(false)
     setSnapshot(null)
+    setGraphRevision(0)
+    setDraftPending(false)
     setBridgeBusy('')
     setBridgeConnecting(true)
     setBridgeError('')
@@ -172,7 +225,7 @@ export default function CreateStudioHost() {
     setMobilePane('controls')
     setShowSetup(true)
     setError(message)
-  }, [])
+  }, [stopInstant])
 
   const launchStudio = useCallback(async () => {
     if (openingLock.current || serverChanging.current) return
@@ -275,6 +328,7 @@ export default function CreateStudioHost() {
         if (current) {
           const nextSession = await getStudioSession(current.id, signal)
           if (active && requestGeneration === generation.current && sessionRef.current?.id === current.id) {
+            for (const job of nextSession.jobs || []) acknowledgedPrompts.current.delete(job.id)
             sessionRef.current = nextSession
             setSession(nextSession)
           }
@@ -310,6 +364,7 @@ export default function CreateStudioHost() {
     if (select) {
       const key = `${select.library_id}:${select.directory_id}`
       if (!directoryOptions.some(directory => directory.key === key)) throw new Error('The output directory was created, but is not available for saving. Refresh the studio destinations to try again.')
+      saveBaselines.current.set(`${sessionRef.current?.id}:${key}`, new Set((sessionRef.current?.outputs || []).map(output => output.id)))
       setDestinationKey(key)
     }
   }, [])
@@ -378,6 +433,7 @@ export default function CreateStudioHost() {
   }, [studioSessionId, frameUrl, syncSnapshot])
 
   const studioAction = useCallback((action, payload, ownsRequest) => {
+    if (['load-workflow', 'load-latest', 'load-preset'].includes(action)) stopInstant()
     if (action !== 'load-workflow' && pendingWorkflow.current) {
       pendingWorkflow.current = null
       setWorkflowPending(false)
@@ -396,9 +452,13 @@ export default function CreateStudioHost() {
         setBridgeBusy(action)
         actionErrorVisible.current = false
         setBridgeError('')
-        const nextSnapshot = await currentBridge.request(action, payload, { timeout: action === 'upload-reference' ? 120000 : ['generate', 'load-workflow'].includes(action) ? 60000 : 15000 })
+        const nextSnapshot = await currentBridge.request(action, payload, { timeout: ['upload-reference', 'upload-mask'].includes(action) ? 120000 : ['generate', 'load-workflow'].includes(action) ? 60000 : 15000 })
         if (!mounted.current || generation.current !== requestGeneration || bridge.current !== currentBridge) throw new DOMException('The studio session changed.', 'AbortError')
         acceptSnapshot(nextSnapshot)
+        if (['patch', 'upload-reference', 'upload-mask'].includes(action) && nextSnapshot.mutationChanged === true) {
+          authoredRevision.current += 1
+          setGraphRevision(authoredRevision.current)
+        }
         if (action === 'load-workflow') {
           setControlsRevision(previous => previous + 1)
           setEditRevision(previous => previous + 1)
@@ -407,6 +467,7 @@ export default function CreateStudioHost() {
         return nextSnapshot
       } catch (actionError) {
         if (mounted.current && generation.current === requestGeneration && actionError.name !== 'AbortError') {
+          stopInstant()
           actionErrorVisible.current = true
           setBridgeError(actionError.message)
         }
@@ -420,7 +481,7 @@ export default function CreateStudioHost() {
     })
     studioActions.current = request
     return request
-  }, [acceptSnapshot])
+  }, [acceptSnapshot, stopInstant])
 
   const loadPendingWorkflow = useCallback(async () => {
     const request = pendingWorkflow.current
@@ -445,17 +506,142 @@ export default function CreateStudioHost() {
   }, [opened, workflowPending, snapshot?.ready, status?.backend?.ready, bridgeConnecting, bridgeBusy, switchingServer, loadPendingWorkflow])
 
   const patchStudio = useCallback(patch => studioAction('patch', patch), [studioAction])
-  const generateImage = useCallback(async () => {
-    const nextSnapshot = await studioAction('generate')
+  const generateImage = useCallback(async (instantRequest) => {
+    if (generateLock.current) throw new Error('An image is already being added to the queue.')
+    const requestGeneration = generation.current
+    const epoch = instantEpoch.current
+    const version = authoredRevision.current
+    const isInstant = instantRequest === true
+    generateLock.current = true
+    instantVersion.current = version
+    try {
+      const ownsRequest = isInstant ? () => instantEnabled.current && instantEpoch.current === epoch
+        && authoredRevision.current === version && !draftsWaiting.current && visible.current
+        && !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)) : undefined
+      const nextSnapshot = await studioAction('generate', undefined, ownsRequest)
+      for (const id of nextSnapshot.lastQueuedPromptIds || []) acknowledgedPrompts.current.add(id)
+      if (!isInstant) setMobilePane('results')
+      return nextSnapshot
+    } catch (generateError) {
+      if (requestGeneration === generation.current && generateError.name !== 'AbortError') stopInstant()
+      throw generateError
+    } finally {
+      if (requestGeneration === generation.current) generateLock.current = false
+    }
+  }, [studioAction, stopInstant])
+  const uploadReference = useCallback(async (file, target = 'referenceA') => {
+    const nextSnapshot = await studioAction('upload-reference', { file, target })
+    if (!target.startsWith('guidance')) setControlTab('edit')
+    setCanvasScope(target.startsWith('guidance') ? 'guidance' : 'edit')
+    setCanvasReference(target.endsWith('B') ? 'B' : 'A')
+    setCenterView('canvas')
     setMobilePane('results')
     return nextSnapshot
   }, [studioAction])
-  const uploadReference = useCallback(async file => {
-    const nextSnapshot = await studioAction('upload-reference', { file })
-    setControlTab('edit')
-    setMobilePane('results')
-    return nextSnapshot
-  }, [studioAction])
+
+  const uploadSubjectMask = useCallback(file => studioAction('upload-mask', { file }), [studioAction])
+
+  useEffect(() => {
+    if (!studioSessionId || !status?.backend?.ready || switchingServer) return
+    const requestGeneration = generation.current
+    let active = true, socket, retry, failures = 0, ownPreviewUrl = null
+    const signal = requests.current.signal
+    const valid = () => active && !signal.aborted && generation.current === requestGeneration
+      && sessionRef.current?.id === studioSessionId
+    const receive = async event => {
+      if (!valid()) return
+      if (typeof event.data === 'string') {
+        let message
+        try { message = JSON.parse(event.data) } catch { return }
+        if (message.type === 'progress' && Number.isFinite(message.data?.value) && Number.isFinite(message.data?.max) && message.data.max > 0) {
+          setLiveProgress({ value: Math.max(0, Math.min(message.data.value, message.data.max)), max: message.data.max })
+        } else if (message.type === 'execution_start') {
+          if (ownPreviewUrl) URL.revokeObjectURL(ownPreviewUrl)
+          ownPreviewUrl = null
+          setLivePreview(previous => previous?.sessionId === studioSessionId ? null : previous)
+          setLiveProgress(null)
+        }
+        else if (message.type === 'executing' && message.data?.node === null) setLiveProgress(null)
+        return
+      }
+      const buffer = event.data instanceof Blob ? await event.data.arrayBuffer() : event.data
+      if (!valid()) return
+      const image = readStudioPreview(buffer)
+      if (!image) return
+      const url = URL.createObjectURL(image)
+      const previous = ownPreviewUrl
+      ownPreviewUrl = url
+      setLivePreview({ url, sessionId: studioSessionId })
+      if (previous) URL.revokeObjectURL(previous)
+    }
+    const connect = () => {
+      if (!valid()) return
+      setPreviewConnecting(true)
+      try { socket = new WebSocket(studioEventsUrl(studioSessionId)) }
+      catch {
+        retry = setTimeout(connect, Math.min(10000, 1000 * 2 ** failures++))
+        return
+      }
+      socket.binaryType = 'arraybuffer'
+      socket.onopen = () => { if (valid()) { failures = 0; setPreviewConnecting(false) } }
+      socket.onmessage = event => { receive(event).catch(() => {}) }
+      socket.onclose = () => {
+        if (!valid()) return
+        setPreviewConnecting(true)
+        retry = setTimeout(connect, Math.min(10000, 1000 * 2 ** failures++))
+      }
+      socket.onerror = () => { if (valid()) setPreviewConnecting(true) }
+    }
+    const close = () => {
+      if (valid()) {
+        const url = ownPreviewUrl
+        setLivePreview(previous => previous?.sessionId === studioSessionId && previous.url === url ? null : previous)
+        setLiveProgress(null)
+      }
+      active = false
+      clearTimeout(retry)
+      if (socket) { socket.onclose = null; socket.close() }
+      if (ownPreviewUrl) URL.revokeObjectURL(ownPreviewUrl)
+      ownPreviewUrl = null
+    }
+    connect()
+    signal.addEventListener('abort', close, { once: true })
+    return () => { signal.removeEventListener('abort', close); close() }
+  }, [studioSessionId, status?.backend?.ready, switchingServer])
+
+  const reportDrafts = useCallback((pending, source) => {
+    if (pending) draftSources.current.add(source)
+    else draftSources.current.delete(source)
+    draftsWaiting.current = draftSources.current.size > 0
+    setDraftPending(draftsWaiting.current)
+  }, [])
+  const reportControlDrafts = useCallback(pending => reportDrafts(pending, 'controls'), [reportDrafts])
+  const reportCanvasDrafts = useCallback(pending => reportDrafts(pending, 'canvas'), [reportDrafts])
+
+  function changeRunInstant(enabled) {
+    instantEpoch.current += 1
+    instantEnabled.current = enabled
+    instantVersion.current = null
+    setRunInstant(enabled)
+    if (enabled) {
+      actionErrorVisible.current = false
+      setBridgeError('')
+      setAnnouncement('Run Instant is on. The current acknowledged draft will run when the studio queue is empty.')
+    }
+  }
+
+  useEffect(() => {
+    if (!runInstant || !opened || showSetup || studioView !== 'simple' || workflowPending || switchingServer
+      || draftPending || bridgeBusy || bridgeConnecting || bridgeError || !snapshot?.ready || !status?.backend?.ready
+      || instantVersion.current === graphRevision || acknowledgedPrompts.current.size
+      || (session?.jobs || []).some(job => ['queued', 'running'].includes(job.status))) return
+    const timer = setTimeout(() => {
+      if (pendingActions.current || generateLock.current || serverChanging.current || !instantEnabled.current) return
+      generateImage(true).catch(() => {})
+    }, 650)
+    return () => clearTimeout(timer)
+  }, [runInstant, opened, showSetup, studioView, workflowPending, switchingServer, draftPending, bridgeBusy,
+    bridgeConnecting, bridgeError, snapshot?.ready, status?.backend?.ready, graphRevision, session?.jobs, generateImage])
 
   function refreshControls() {
     const requestGeneration = generation.current
@@ -477,6 +663,7 @@ export default function CreateStudioHost() {
   }
 
   function showAdvancedStudio() {
+    stopInstant()
     if (pendingWorkflow.current && !pendingWorkflow.current.loading) {
       pendingWorkflow.current = null
       setWorkflowPending(false)
@@ -496,7 +683,19 @@ export default function CreateStudioHost() {
     } catch { /* The host reports the error without replacing the current draft. */ }
   }
 
+  async function loadUpdatedV5() {
+    try {
+      const nextSnapshot = await studioAction('load-preset')
+      setControlsRevision(previous => previous + 1)
+      setEditRevision(previous => previous + 1)
+      setControlTab(nextSnapshot.fields?.editing?.value === true ? 'edit' : 'create')
+      setCenterView('preview')
+      setAnnouncement('Updated v5 recipe loaded. Review its controls before generating.')
+    } catch { /* Keep the previous draft and show the bridge error. */ }
+  }
+
   function frameLoaded() {
+    stopInstant()
     snapshotRef.current = null
     setSnapshot(null)
     setBridgeConnecting(true)
@@ -508,6 +707,7 @@ export default function CreateStudioHost() {
     const payload = { ...patch }
     if (payload.editMask && typeof payload.editMask === 'object') payload.editMask = JSON.stringify(payload.editMask)
     if (payload.editMask === undefined) delete payload.editMask
+    if (!snapshotRef.current?.fields?.outputCanvas || snapshotRef.current.fields.outputCanvas.available === false) delete payload.outputCanvas
     try {
       await patchStudio(payload)
     } catch {
@@ -518,28 +718,98 @@ export default function CreateStudioHost() {
     }
   }
 
-  async function saveOutput(output) {
+  async function changeCrop(value) {
+    const prefix = canvasScope === 'guidance' ? 'guidance' : ''
+    const key = prefix ? `${prefix}Crop${canvasReference}` : `crop${canvasReference}`
+    const mode = prefix ? 'guidanceGeometryMode' : 'geometryMode'
+    const payload = { [key]: value }
+    if (snapshotRef.current?.fields?.[mode]?.options?.includes('Independent crops')) payload[mode] = 'Independent crops'
+    await changeMask(payload)
+  }
+
+  function openReferenceTools(scope, reference) {
+    setCanvasScope(scope)
+    setCanvasReference(reference)
+    setCenterView('canvas')
+    setMobilePane('results')
+  }
+
+  function changeControlTab(tab) {
+    setControlTab(tab)
+    if (tab === 'edit') openReferenceTools('edit', 'A')
+    else if (tab === 'create') setCenterView('preview')
+  }
+
+  const saveOutput = useCallback(async (output, automatic = false) => {
     const destination = directories.find(directory => directory.key === destinationKey)
     const current = sessionRef.current
     if (!destination || !current || saveLock.current || serverChanging.current) return
+    const key = `${current.id}:${output.id}:${destination.key}`
+    if (automatic && saveAttempts.current.has(key)) return
     saveLock.current = true
+    saveAttempts.current.set(key, 'saving')
     setSaving(output.id)
     setError('')
     const requestGeneration = generation.current
     try {
       const result = await importStudioOutput(current.id, output.id, destination, requests.current.signal)
       if (mounted.current && requestGeneration === generation.current) {
+        saveAttempts.current.set(key, 'saved')
         setSaved(previous => ({ ...previous, [`${output.id}:${destination.key}`]: result }))
         setAnnouncement(`Image saved to ${destination.label}.`)
       }
     } catch (saveError) {
-      if (mounted.current && requestGeneration === generation.current) setError(createErrorMessage(saveError))
+      if (mounted.current && requestGeneration === generation.current) {
+        saveAttempts.current.set(key, 'error')
+        setError(createErrorMessage(saveError))
+        if (automatic) {
+          setAutoSave(false)
+          setAnnouncement('Automatic saving paused. Check the error and try saving again.')
+        }
+      }
     } finally {
       if (requestGeneration === generation.current) {
         saveLock.current = false
         if (mounted.current) setSaving(null)
       }
     }
+  }, [directories, destinationKey])
+
+  const outputs = useMemo(() => (session?.outputs || []).filter(output => !output.media_type
+    || output.media_type === 'image' || output.media_type.startsWith('image/')), [session?.outputs])
+
+  useEffect(() => {
+    if (!autoSave || saving !== null || creatingDirectory || switchingServer || !session || !destinationKey) return
+    const context = `${session.id}:${destinationKey}`
+    if (!saveBaselines.current.has(context)) {
+      saveBaselines.current.set(context, new Set(outputs.map(output => output.id)))
+      return
+    }
+    const baseline = saveBaselines.current.get(context)
+    const next = outputs.find(output => output.final === true && !baseline.has(output.id) && !saved[`${output.id}:${destinationKey}`]
+      && !saveAttempts.current.has(`${session.id}:${output.id}:${destinationKey}`))
+    if (next) saveOutput(next, true)
+  }, [autoSave, saving, creatingDirectory, switchingServer, session, destinationKey, outputs, saved, saveOutput])
+
+  function changeAutoSave(enabled) {
+    if (enabled) {
+      const current = sessionRef.current
+      if (!current || !destinationKey) return
+      const context = `${current.id}:${destinationKey}`
+      const baseline = saveBaselines.current.get(context) || new Set()
+      for (const output of current.outputs || []) {
+        const key = `${current.id}:${output.id}:${destinationKey}`
+        if (saveAttempts.current.get(key) === 'error') saveAttempts.current.delete(key)
+        else baseline.add(output.id)
+      }
+      saveBaselines.current.set(context, baseline)
+    }
+    setAutoSave(enabled)
+  }
+
+  function changeDestination(key) {
+    if (key && key !== destinationKey) saveBaselines.current.set(`${sessionRef.current?.id}:${key}`, new Set((sessionRef.current?.outputs || []).map(output => output.id)))
+    setDestinationKey(key)
   }
 
   async function createSaveDirectory() {
@@ -566,6 +836,7 @@ export default function CreateStudioHost() {
   }
 
   async function cancelJobs() {
+    stopInstant()
     const current = sessionRef.current
     if (!current || cancelling || serverChanging.current) return
     setCancelling(true)
@@ -598,32 +869,151 @@ export default function CreateStudioHost() {
 
   if (!started) return null
   const jobs = session?.jobs || []
-  const outputs = (session?.outputs || []).filter(output => !output.media_type
-    || output.media_type === 'image' || output.media_type.startsWith('image/'))
-  const hasActiveJobs = jobs.some(job => job.status === 'queued' || job.status === 'running')
   const activeJobs = jobs.filter(job => job.status === 'queued' || job.status === 'running')
+  const hasActiveJobs = activeJobs.length > 0
   const destination = directories.find(directory => directory.key === destinationKey)
   const connected = !!status?.backend?.ready && !!snapshot?.ready && !bridgeConnecting && !switchingServer
-  const reference = snapshot?.fields?.referenceA?.value || ''
-  const referenceId = typeof reference === 'string' && /^donutref:[a-f0-9]{64}$/.test(reference) ? reference.slice('donutref:'.length) : null
-  const referenceUrl = referenceId && frameUrl ? new URL(`donut/edit-studio/reference/${referenceId}`, new URL(frameUrl, window.location.href)).href : ''
-  const maskData = snapshot?.fields?.editMask?.value || null
-  const canMask = snapshot?.fields?.editing?.value === true && snapshot?.fields?.inpaint?.available !== false && !!snapshot?.fields?.inpaint
+  const fields = snapshot?.fields || {}
   const simpleView = !showSetup && studioView === 'simple'
+  const referenceUrls = {}
+  for (const key of ['referenceA', 'referenceB', 'guidanceReferenceA', 'guidanceReferenceB']) {
+    const reference = fields[key]?.value
+    if (typeof reference === 'string' && /^donutref:[a-f0-9]{64}$/.test(reference) && frameUrl) {
+      referenceUrls[key] = new URL('donut/edit-studio/reference/' + reference.slice('donutref:'.length), new URL(frameUrl, window.location.href)).href
+    }
+  }
+  const referenceKey = canvasScope === 'guidance' ? 'guidanceReference' + canvasReference : 'reference' + canvasReference
+  const cropKey = canvasScope === 'guidance' ? 'guidanceCrop' + canvasReference : 'crop' + canvasReference
+  const reference = fields[referenceKey]?.value || ''
+  const canMask = canvasScope === 'edit' && canvasReference === 'A' && fields.editing?.value === true
+    && fields.inpaint?.available !== false && !!fields.inpaint
+  const canCrop = !!fields[cropKey] && fields[cropKey].available !== false
+  const latestOutput = outputs.slice().reverse().find(output => output.final === true) || outputs.at(-1)
+  const selectedOutput = outputs.find(output => output.id === selectedOutputId) || latestOutput
+  const stagePreview = (session?.previews || []).slice().reverse().find(preview => activeJobs.some(job => job.id === preview.prompt_id))
+  const liveImage = !selectedOutputId && hasActiveJobs && status?.backend?.ready
+    ? livePreview?.sessionId === session?.id ? livePreview.url : stagePreview ? stagePreviewUrl(session.id, stagePreview) : '' : ''
+  const previewUrl = liveImage || (selectedOutput ? outputUrl(session.id, selectedOutput.id) : '')
+  const imported = selectedOutput && saved[selectedOutput.id + ':' + destinationKey]
+  const settings = Object.fromEntries(['editing', 'geometryMode', 'outputCanvas', 'resolutionMode', 'aspectRatio', 'megapixels', 'width', 'height', 'pixelGrid', 'outputMultiple', 'referenceB']
+    .map(key => [key, fields[key]?.value]))
+
+  const saveTools = <details className="create-save-tools">
+    <summary><span>Save destination</span><strong>{destination?.label || 'Choose a directory'}</strong></summary>
+    <div className="create-save-popover">
+      <label className="create-field create-destination">Save to image directory
+        <select value={destination ? destinationKey : ''} disabled={creatingDirectory || switchingServer} onChange={event => changeDestination(event.target.value)}>
+          <option value="">Choose a directory</option>
+          {directories.map(directory => <option key={directory.key} value={directory.key}>{directory.label}</option>)}
+        </select>
+      </label>
+      {!destination && libraries.length > 0 && <label className="create-field create-output-library">Output library
+        <select value={outputLibraryId} disabled={creatingDirectory} onChange={event => setOutputLibraryId(event.target.value)}>
+          {libraries.map(library => <option key={library.id} value={library.id}>{library.label}</option>)}
+        </select>
+      </label>}
+      <button type="button" className="create-directory-button" title="Create or reuse an image-only Created Images folder in this library"
+        disabled={creatingDirectory || switchingServer || (!destination && !outputLibraryId)} onClick={createSaveDirectory}>
+        {creatingDirectory ? 'Creating output directory…' : 'Create output directory'}
+      </button>
+      {directories.length === 0 && <p className="create-control-note">Create an output directory here, or enable an Images directory in Directories.</p>}
+    </div>
+  </details>
+
+  const historyContent = <div className="create-history-grid">
+    {outputs.length === 0 && <div className="create-history-empty"><strong>Your image history starts here</strong><p>Completed images stay in this workspace until the session expires.</p></div>}
+    {outputs.slice().reverse().map(output => {
+      const result = saved[output.id + ':' + destinationKey]
+      return <article className="create-history-item" key={output.id}>
+        <button type="button" className="create-history-preview" aria-label={'Preview ' + (output.filename || 'generated image')}
+          aria-pressed={selectedOutput?.id === output.id && !liveImage} onClick={() => { setSelectedOutputId(output.id); setCenterView('preview'); setMobilePane('results') }}>
+          <img src={outputUrl(session.id, output.id)} alt={output.filename || 'Generated image'} loading="lazy" />
+          {result && <span className="create-saved-badge">Saved</span>}
+          {output.final === false && <span className="create-stage-badge">Stage</span>}
+        </button>
+        <div className="create-history-footer"><span title={output.filename}>{output.filename || 'Generated image'}</span>
+          <button type="button" disabled={!destination || saving !== null || creatingDirectory || !!result} onClick={() => saveOutput(output)}>
+            {saving === output.id ? 'Saving…' : result ? 'Saved to library' : 'Save to library'}
+          </button>
+        </div>
+      </article>
+    })}
+  </div>
+
+  const resultsContent = <section className="create-results" aria-label="Creation results">
+    <div className="create-results-toolbar">
+      <div className="create-center-tabs" role="group" aria-label="Center workspace">
+        <button type="button" aria-pressed={centerView === 'preview'} onClick={() => setCenterView('preview')}>Preview <span className="create-count">{outputs.length}</span></button>
+        {simpleView && <button type="button" aria-pressed={centerView === 'canvas'} onClick={() => setCenterView('canvas')}>Image tools</button>}
+      </div>
+      <div className="create-save-toolbar">
+        <label className="create-auto-save"><input type="checkbox" role="switch" checked={autoSave} disabled={!destination || creatingDirectory || switchingServer}
+          onChange={event => changeAutoSave(event.target.checked)} />Save output</label>
+        {saveTools}
+      </div>
+    </div>
+    <div className="create-results-scroll">
+      {snapshot?.workflowUpgradeAvailable && <div className="create-latest-note"><div><strong>Updated v5 controls are available</strong><span>Load the updated preset to replace this recipe.</span></div>
+        <button type="button" disabled={!connected || !!bridgeBusy || workflowPending} onClick={loadUpdatedV5}>{bridgeBusy === 'load-preset' ? 'Loading updated v5…' : 'Load updated v5'}</button>
+      </div>}
+      {snapshot?.latestAvailable && <div className="create-latest-note"><div><strong>A newer run is available</strong><span>Load it to replace this working draft.</span></div>
+        <button type="button" disabled={!connected || !!bridgeBusy || workflowPending} onClick={loadLatestRun}>{bridgeBusy === 'load-latest' ? 'Loading latest run…' : 'Load latest run'}</button>
+      </div>}
+      {(jobs.length > 0 || hasActiveJobs) && <div className="create-queue-bar">
+        <details className="create-queue-details"><summary><span className={hasActiveJobs ? 'create-spinner' : 'create-connection-dot'} aria-hidden="true" /><span>Studio jobs</span>
+          <strong>{hasActiveJobs ? activeJobs.length + ' active' : jobs.length + ' recent'}</strong></summary>
+          <ul className="create-job-list">{jobs.map(job => <li key={job.id}><span>{job.id.slice(0, 8)}</span><strong>{job.status}</strong>{job.error && <p role="alert">{job.error}</p>}</li>)}</ul>
+        </details>
+        {hasActiveJobs && <button type="button" disabled={cancelling} onClick={cancelJobs}>{cancelling ? 'Cancelling jobs…' : 'Cancel studio jobs'}</button>}
+      </div>}
+      {simpleView && centerView === 'canvas' ? <CreateEditCanvas key={session.id + ':' + editRevision + ':' + canvasScope + ':' + canvasReference}
+        reference={reference} imageUrl={referenceUrls[referenceKey] || ''} maskData={canMask ? fields.editMask?.value : null}
+        enabled={canMask} selectedArea={canMask && fields.inpaint?.value === true} disabled={!connected || !!bridgeBusy || workflowPending}
+        cropData={fields[cropKey]?.value} cropEnabled={canCrop} onCropChange={changeCrop}
+        referenceLabel={(canvasScope === 'guidance' ? 'Guidance reference ' : 'Reference ') + canvasReference}
+        referenceOptions={['A', ...(fields[canvasScope === 'guidance' ? 'guidanceUseReferenceB' : 'useReferenceB']?.value === true ? ['B'] : [])].map(id => ({ id, label: id, active: id === canvasReference }))}
+        onReferenceChange={setCanvasReference} onChange={changeMask} onUpload={file => uploadReference(file, referenceKey).catch(() => {})}
+        onDraftChange={reportCanvasDrafts} outputSettings={settings} referenceBUrl={referenceUrls.referenceB || ''} cropBData={fields.cropB?.value}
+        outputSize={[Number(fields.width?.value) || 1152, Number(fields.height?.value) || 896]} pixelGrid={Number(fields.pixelGrid?.value || fields.outputMultiple?.value) || 64}
+      /> : <div className="create-large-preview">
+        <div className="create-preview-heading"><div><h2>{liveImage ? 'Live preview' : selectedOutputId ? 'Selected image' : 'Latest result'}</h2>
+          <span>{liveImage ? 'Your image is taking shape' : selectedOutput?.filename || 'Your creative canvas'}</span></div>
+          {selectedOutputId && <button type="button" onClick={() => setSelectedOutputId('')}>Follow latest</button>}
+        </div>
+        {previewUrl ? <div className="create-preview-image-wrap">
+          {failedPreview === previewUrl ? <div className="create-preview-error"><strong>The preview could not be loaded.</strong><p>Your workflow and completed results are still available.</p>
+            <button type="button" onClick={() => { setFailedPreview(''); setPreviewRetry(previous => previous + 1) }}>Retry preview</button></div>
+            : <img key={previewUrl + ':' + previewRetry} className="create-preview-image" src={previewUrl} alt={liveImage ? 'Live generation preview' : selectedOutput?.filename || 'Generated image'} onError={() => setFailedPreview(previewUrl)} />}
+          {!liveImage && imported && <span className="create-saved-badge">Saved</span>}
+          {hasActiveJobs && !selectedOutputId && <div className="create-preview-run-status"><span className="create-spinner" aria-hidden="true" />
+            {liveProgress ? Math.round(liveProgress.value / liveProgress.max * 100) + '% · Generating' : activeJobs.some(job => job.status === 'running') ? 'Generating' : 'Queued'}
+            {previewConnecting && <small>Live preview reconnecting…</small>}</div>}
+        </div> : <div className="create-results-empty">
+          <div className="create-empty-art" aria-hidden="true"><svg width="62" height="62" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="8" y="10" width="44" height="44" rx="7" /><path d="m9 44 12-12 11 10 8-8 12 12" /><circle cx="39" cy="24" r="4" /><path d="m55 5 1.5 4.5L61 11l-4.5 1.5L55 17l-1.5-4.5L49 11l4.5-1.5L55 5Z" /></svg></div>
+          <h3>{hasActiveJobs ? 'Your idea is taking shape' : 'Your next favorite image starts here'}</h3>
+          <p>{hasActiveJobs ? 'Live previews appear while your image runs. Completed results stay in History.' : 'Describe an image and choose Generate. Your latest result appears here.'}</p>
+        </div>}
+        {hasActiveJobs && liveProgress && <progress className="create-live-progress" value={liveProgress.value} max={liveProgress.max} aria-label="Generation progress" />}
+        {selectedOutput && !liveImage && <div className="create-preview-actions"><span>{selectedOutput.final === false ? 'Workflow stage result' : 'Completed image'}{imported ? ' · Saved to library' : ''}</span>
+          <button type="button" className="create-primary" disabled={!destination || saving !== null || creatingDirectory || !!imported} onClick={() => saveOutput(selectedOutput)}>
+            {saving === selectedOutput.id ? 'Saving…' : imported ? 'Saved to library' : 'Save to library'}
+          </button>
+        </div>}
+      </div>}
+      {!simpleView && historyContent}
+    </div>
+  </section>
 
   return (
     <div className="create-studio-host" hidden={!opened} ref={host}>
       <section className="create-studio-dialog" role="dialog" aria-modal="true" aria-labelledby="create-studio-title">
         <header className="create-studio-header">
-          <div className="create-studio-brand"><div className="create-brand-mark" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4L12 3Z" /></svg>
-          </div><div><h1 id="create-studio-title">Create images</h1><span>Donut workflow v5 <span aria-hidden="true">·</span> Your creative workspace</span></div></div>
+          <div className="create-studio-brand"><div className="create-brand-mark" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4L12 3Z" /></svg></div>
+            <div><h1 id="create-studio-title">Create images</h1><span>Donut workflow v5 <span aria-hidden="true">·</span> Your creative workspace</span></div></div>
           <div className="create-actions">
-            {session && <div className="create-view-switch">
-              <button type="button" aria-pressed={simpleView} onClick={showSimpleStudio}>Simple studio</button>
-              <button type="button" aria-pressed={!showSetup && studioView === 'advanced'} onClick={showAdvancedStudio}>Advanced editor</button>
-            </div>}
-            <button type="button" aria-pressed={showSetup} onClick={() => setShowSetup(true)}>Setup</button>
+            {session && <div className="create-view-switch"><button type="button" aria-pressed={simpleView} onClick={showSimpleStudio}>Simple studio</button>
+              <button type="button" aria-pressed={!showSetup && studioView === 'advanced'} onClick={showAdvancedStudio}>Advanced editor</button></div>}
+            <button type="button" aria-pressed={showSetup} onClick={() => { stopInstant(); setShowSetup(true) }}>Setup</button>
             <button type="button" ref={closeButton} onClick={closeStudio}>Close studio</button>
           </div>
         </header>
@@ -633,18 +1023,20 @@ export default function CreateStudioHost() {
         {switchingServer && <p className="create-message" role="status">Connecting to the selected server…</p>}
         {workflowPending && <p className="create-message" role="status">{bridgeBusy === 'load-workflow' ? 'Loading the saved workflow…' : 'The saved workflow is waiting for the studio to be ready.'}</p>}
         {session && simpleView && <div className="create-mobile-workspace-nav" role="group" aria-label="Workspace panel">
-          <button type="button" aria-pressed={mobilePane === 'controls'} onClick={() => setMobilePane('controls')}>Controls</button>
-          <button type="button" aria-pressed={mobilePane === 'results'} onClick={() => setMobilePane('results')}>{controlTab === 'edit' ? 'Canvas & results' : `Results${outputs.length ? ` (${outputs.length})` : ''}`}</button>
+          {[['controls', 'Prompt'], ['results', 'Preview'], ['effects', 'Effects'], ['models', 'Models'], ['history', 'History']].map(([pane, label]) =>
+            <button type="button" key={pane} aria-pressed={mobilePane === pane} onClick={() => setMobilePane(pane)}>{label}</button>)}
         </div>}
-        <div className={`create-studio-body create-view-${showSetup ? 'setup' : studioView} create-mobile-${mobilePane}`}>
+        <div className={'create-studio-body create-view-' + (showSetup ? 'setup' : studioView) + ' create-mobile-' + mobilePane}>
           {session && <div className="create-controls-slot" hidden={!simpleView}>
-            <SimpleCreateControls key={`${session.id}:${controlsRevision}`} snapshot={snapshot} activeTab={controlTab} onTabChange={setControlTab}
-              connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : bridgeBusy} error={bridgeError}
-              onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onRetry={refreshControls} onAdvanced={showAdvancedStudio} />
+            <SimpleCreateControls key={session.id + ':' + controlsRevision} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
+              connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
+              onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={refreshControls} onAdvanced={showAdvancedStudio}
+              runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null}>
+              {simpleView ? resultsContent : null}
+            </SimpleCreateControls>
           </div>}
           <div className="create-studio-main" hidden={!!session && simpleView}>
-            {/* One live workflow backs both views. Hiding this frame preserves
-                advanced edits and keeps its bridge and websocket connected. */}
+            {/* The same mounted graph backs simple controls and the advanced editor. */}
             {session && <iframe ref={studioFrame} title="DonutUI creation studio" src={frameUrl} className="create-studio-frame" hidden={showSetup || studioView !== 'advanced'} referrerPolicy="no-referrer" onLoad={frameLoaded} />}
             <div className="create-studio-setup" hidden={!showSetup && !!session}>
               {showSetup && !switchingServer && <CreateSettings key={serverRevision} onStatusChange={handleStatus} />}
@@ -654,69 +1046,7 @@ export default function CreateStudioHost() {
               {!showSetup && !session && <p>Connecting to the creator…</p>}
             </div>
           </div>
-          {session && (
-            <section className="create-results" aria-label="Creation results">
-              <div className="create-results-toolbar">
-                <div><h2>{simpleView && controlTab === 'edit' ? 'Editing workspace' : 'Results'} <span className="create-count">{outputs.length}</span></h2>
-                  <p>{outputs.length ? 'Save your favorites to the library.' : 'Images from this workspace will appear here.'}</p></div>
-                <div className="create-save-tools">
-                  <label className="create-field create-destination">Save to image directory
-                    <select value={destination ? destinationKey : ''} disabled={creatingDirectory} onChange={event => setDestinationKey(event.target.value)}>
-                      <option value="">Choose a directory</option>
-                      {directories.map(directory => <option key={directory.key} value={directory.key}>{directory.label}</option>)}
-                    </select>
-                  </label>
-                  {!destination && libraries.length > 0 && <label className="create-field create-output-library">Output library
-                    <select value={outputLibraryId} disabled={creatingDirectory} onChange={event => setOutputLibraryId(event.target.value)}>
-                      {libraries.map(library => <option key={library.id} value={library.id}>{library.label}</option>)}
-                    </select>
-                  </label>}
-                  <button type="button" className="create-directory-button" title="Create or reuse an image-only Created Images folder in this library"
-                    disabled={creatingDirectory || switchingServer || (!destination && !outputLibraryId)} onClick={createSaveDirectory}>
-                    {creatingDirectory ? 'Creating output directory…' : 'Create output directory'}
-                  </button>
-                </div>
-              </div>
-              <div className="create-results-scroll">
-                {snapshot?.latestAvailable && <div className="create-latest-note"><div><strong>A newer run is available</strong><span>Load it to replace this working draft.</span></div>
-                  <button type="button" disabled={!connected || !!bridgeBusy} onClick={loadLatestRun}>{bridgeBusy === 'load-latest' ? 'Loading latest run…' : 'Load latest run'}</button>
-                </div>}
-                {directories.length === 0 && <p className="create-control-note">Add or enable an Images directory in Directories to save results.</p>}
-                {(jobs.length > 0 || hasActiveJobs) && <div className="create-queue-bar">
-                  <details className="create-queue-details">
-                    <summary><span className={hasActiveJobs ? 'create-spinner' : 'create-connection-dot'} aria-hidden="true" />
-                      <span>Studio jobs</span><strong>{hasActiveJobs ? `${activeJobs.length} active` : `${jobs.length} recent`}</strong></summary>
-                    <ul className="create-job-list">{jobs.map(job => (
-                      <li key={job.id}><span>{job.id.slice(0, 8)}</span><strong>{job.status}</strong>{job.error && <p role="alert">{job.error}</p>}</li>
-                    ))}</ul>
-                  </details>
-                  {hasActiveJobs && <button type="button" disabled={cancelling} onClick={cancelJobs}>{cancelling ? 'Cancelling jobs…' : 'Cancel studio jobs'}</button>}
-                </div>}
-                {simpleView && controlTab === 'edit' && <CreateEditCanvas key={`${session.id}:${editRevision}`} reference={reference} imageUrl={referenceUrl} maskData={maskData}
-                  enabled={canMask} selectedArea={snapshot?.fields?.inpaint?.value === true} disabled={!connected || !!bridgeBusy || workflowPending}
-                  onChange={changeMask} onUpload={file => uploadReference(file).catch(() => {})} />}
-                {simpleView && controlTab === 'edit' && outputs.length > 0 && <h3 className="create-results-heading">Your results</h3>}
-                {outputs.length === 0 && (controlTab !== 'edit' || !simpleView) && <div className="create-results-empty">
-                  <div className="create-empty-art" aria-hidden="true"><svg width="62" height="62" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="8" y="10" width="44" height="44" rx="7" /><path d="m9 44 12-12 11 10 8-8 12 12" /><circle cx="39" cy="24" r="4" /><path d="m55 5 1.5 4.5L61 11l-4.5 1.5L55 17l-1.5-4.5L49 11l4.5-1.5L55 5Z" /></svg></div>
-                  <h3>{hasActiveJobs ? 'Your idea is taking shape' : 'Your next favorite image starts here'}</h3>
-                  <p>{hasActiveJobs ? 'You can keep creating while your images are in the queue.' : 'Write a prompt and choose Generate. Your images will appear here, ready to save.'}</p>
-                  {!hasActiveJobs && <span className="create-empty-tip">Try a subject, a setting, and a little atmosphere.</span>}
-                </div>}
-                <div className="create-output-list">{outputs.slice().reverse().map(output => {
-                const imported = saved[`${output.id}:${destinationKey}`]
-                return <article className="create-output" key={output.id}>
-                  <div className="create-output-preview"><img src={outputUrl(session.id, output.id)} alt={output.filename || 'Generated image'} loading="lazy" />
-                    {imported && <span className="create-saved-badge">Saved</span>}</div>
-                  <div className="create-output-footer"><span className="create-output-name">{output.filename || 'Generated image'}</span>
-                    <button type="button" className="create-primary" disabled={!destination || saving !== null || creatingDirectory || !!imported} onClick={() => saveOutput(output)}>
-                      {saving === output.id ? 'Saving…' : imported ? 'Saved to library' : 'Save to library'}
-                    </button>
-                  </div>
-                </article>
-                })}</div>
-              </div>
-            </section>
-          )}
+          {session && !simpleView && resultsContent}
         </div>
       </section>
     </div>

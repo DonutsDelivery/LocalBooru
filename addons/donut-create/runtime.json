@@ -350,6 +350,7 @@
     "DonutSeedVR2Upscale",
     "DonutText",
     "DonutTiledUpscale",
+    "DonutToneLab",
     "DonutVAEDecode",
     "DonutVAELoader",
     "EmptyLatentImage",

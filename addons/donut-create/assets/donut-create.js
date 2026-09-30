@@ -694,7 +694,9 @@
   let defaultGraph;
   let lastError = '', parentOrigin = null, bridgeQueue = Promise.resolve(), queueAttempt = null;
   let latestRun = {revision: 0, workflow: null}, loadedRunRevision = 0;
+  let nodeInfo = {}, loraNames = [], lastQueuedPromptIds = [];
   const uploadedReferences = new Set();
+  const uploadedMasks = new Map();
 
   function notice(message, error = false) {
     let bar = document.getElementById('donut-create-status');
@@ -742,6 +744,7 @@
     // are checked exactly as ComfyUI will submit them from the Run button.
     const graph = await app.graphToPrompt();
     const info = await (await api.fetchApi('/object_info')).json();
+    nodeInfo = info;
     const missingNodes = new Set(), missingModels = new Set(), catalogs = new Map();
     const fileWidgets = {
       UNETLoader: ['diffusion_models', 'unet_name'], CLIPLoader: ['text_encoders', 'clip_name'],
@@ -755,6 +758,7 @@
         const response = await api.fetchApi('/models/' + folder);
         if (!response.ok) throw new Error('Model discovery failed for ' + folder + '. Check backend readiness.');
         catalogs.set(folder, await response.json());
+        if (folder === 'loras') loraNames = catalogs.get(folder);
       }
       if (!catalogs.get(folder).includes(filename)) missingModels.add(folder + '/' + filename);
     }
@@ -773,6 +777,10 @@
           await hasModel('background_removal', inputs.mask_b_model);
           for (const nodeType of ['LoadBackgroundRemovalModel', 'RemoveBackground']) if (!info[nodeType]) missingNodes.add(nodeType);
         }
+        if (inputs.use_reference_b && inputs.mask_b_mode === 'Prompt selection') {
+          await hasModel('checkpoints', 'sam3.1_multiplex_fp16.safetensors');
+          if (!info.SAM3_Detect) missingNodes.add('SAM3_Detect');
+        }
       }
       if (type === 'DonutVAELoader' && inputs.vae_name === 'Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors' && !info.VAEUtils_PatchWanUpscaleVAE) missingNodes.add('VAEUtils_PatchWanUpscaleVAE');
       if (type === 'DonutSampler' && inputs.sda_enabled) await hasModel('loras', 'krea2/krea2_turbo_sda_v1.0_comfy.safetensors');
@@ -789,7 +797,7 @@
   }
   async function finishLoad() {
     initialized = true;
-    try { await checkCapabilities(); lastError = ''; notice('Draft is saved locally for this backend.'); }
+    try { await checkCapabilities(); await refreshFieldCatalogs(); lastError = ''; notice('Draft is saved locally for this backend.'); }
     catch (error) { showError(error); }
     saveDraft();
   }
@@ -844,12 +852,15 @@
   // Only these named v5 controls are exposed to the parent. The controls panel
   // supplies live paths/options; verified paths also support its initial load.
   const basicFields = {
-    prompt: ['Text', [1138, 1126], 'text', 'Prompt · subject and scene'],
-    stylePrompt: ['Text', [1138, 1125], 'text', 'Face and general style'],
+    prompt: ['Text', [1138, 1126], 'text', 'Whole-image prompt · subject and scene'],
+    stylePrompt: ['Text', [1138, 1125], 'text', 'Whole-image style'],
+    facePrompt: ['Text', [1138, 1178], 'text', 'Optional face-only prompt'],
     negativePrompt: ['Text', [1138, 1127], 'text', 'Negative prompt'],
+    loras: ['slots_json', [1138, 1055], 'loras'],
     model: ['unet_name', [1138, 1122], 'select', 'Primary model file'],
     secondaryModel: ['unet_name', [1138, 1120], 'select', 'Secondary model file'],
     modelMode: ['model_mode', [1138, 1128, 1124], 'select', 'Model mode'],
+    modelBlend: ['body_ratio', [1138, 1128, 1124], 'number'],
     width: ['width', [881], 'number', 'Custom output width'],
     height: ['height', [881], 'number', 'Custom output height'],
     aspectRatio: ['aspect_ratio', [881], 'select', 'Output aspect ratio'],
@@ -858,20 +869,97 @@
     batchSize: ['batch_size', [1014, 999], 'number', 'Batch size'],
     steps: ['steps', [1014], 'number', 'Steps'],
     guidance: ['cfg_start', [1014], 'number', 'Cfg start'],
+    sampler: ['sampler_name', [1014], 'select', 'Sampler'],
+    scheduler: ['scheduler', [1014], 'select', 'Scheduler'],
+    upscale1: ['upscale_1_enabled', [1014], 'boolean'],
+    upscale2: ['upscale_2_enabled', [1014], 'boolean'],
+    upscale1Scale: ['rescale_factor', [1014], 'number'],
+    upscale2Scale: ['rescale_factor_2', [1014], 'number'],
+    upscale1Denoise: ['denoise', [1014], 'number'],
+    upscale2Denoise: ['denoise_2', [1014], 'number'],
+    upscaleModel: ['model_name', [1138, 942], 'select'],
+    upscale1Engine: ['upscale_engine', [1014, 989], 'select'],
+    upscale2Engine: ['upscale_engine', [1014, 983], 'select'],
+    upscale1Model: ['seedvr2_model_name', [1014, 989], 'select'],
+    upscale2Model: ['seedvr2_model_name', [1014, 983], 'select'],
+    upscale1Vae: ['seedvr2_vae_name', [1014, 989], 'select'],
+    upscale2Vae: ['seedvr2_vae_name', [1014, 983], 'select'],
+    upscale1SeedVrSteps: ['seedvr2_steps', [1014, 989], 'number'],
+    upscale2SeedVrSteps: ['seedvr2_steps', [1014, 983], 'number'],
+    upscale1SeedVrDenoise: ['seedvr2_denoise', [1014, 989], 'number'],
+    upscale2SeedVrDenoise: ['seedvr2_denoise', [1014, 983], 'number'],
+    postUpscale: ['enabled', [1014, 1170], 'boolean'],
+    postUpscaleScale: ['seedvr2_upscale_factor', [1014, 1170], 'number'],
+    postUpscaleModel: ['seedvr2_model_name', [1014, 1170], 'select'],
+    postUpscaleVae: ['seedvr2_vae_name', [1014, 1170], 'select'],
+    postUpscaleSteps: ['seedvr2_steps', [1014, 1170], 'number'],
+    postUpscaleDenoise: ['seedvr2_denoise', [1014, 1170], 'number'],
+    postUpscaleColorCorrection: ['seedvr2_color_correction', [1014, 1170], 'select'],
+    faceDetail: ['$mode', [1014, 984], 'boolean', 'Face detail'],
+    faceDenoise: ['denoise_1', [1014], 'number'],
+    maxFaces: ['max_faces', [1014], 'number'],
+    compatibilityPreset: ['compatibility_preset', [1014], 'select'],
+    tapStrength: ['tap_strength', [1014], 'number'],
+    decensor: ['uncensorfix_controls', [1014, 1118], 'boolean'],
+    decensorWeight: ['uncensorfix_strength', [1014, 1118], 'number'],
+    nagStrength: ['alpha', [1014], 'number'],
+    sdaStrength: ['sda_strength', [1014, 993], 'number'],
+    toneStrength: ['strength', [1014, 1181], 'number'],
+    toneModel: ['model_name', [1014, 1181], 'select'],
+    toneApplyToEdits: ['apply_to_edits', [1014, 1181], 'boolean'],
     seed: ['seed', [1138, 1137], 'number', 'Shared seed'],
     seedMode: ['fixed', [1138, 1137], 'select', 'After generation'],
     editing: ['enabled', [881], 'boolean'],
     editPrompt: ['prompt', [881], 'text'],
     referenceA: ['image_a', [881], 'text'],
+    referenceB: ['image_b', [881], 'text'],
+    useReferenceB: ['use_reference_b', [881], 'boolean'],
+    cropA: ['crop_data_a', [881], 'text'],
+    cropB: ['crop_data_b', [881], 'text'],
+    geometryMode: ['geometry_mode', [881], 'select'],
+    outputCanvas: ['output_canvas', [881], 'select'],
+    cropAX: ['crop_a_x', [881], 'number'],
+    cropAY: ['crop_a_y', [881], 'number'],
+    cropBX: ['crop_b_x', [881], 'number'],
+    cropBY: ['crop_b_y', [881], 'number'],
+    outputMultiple: ['multiple', [881], 'select'],
+    pixelGrid: ['multiple', [881], 'select'],
+    groundingPx: ['grounding_px', [881], 'number'],
+    groundingSchedule: ['grounding_schedule', [881], 'select'],
+    groundingStartPx: ['grounding_start_px', [881], 'number'],
+    groundingEndPx: ['grounding_end_px', [881], 'number'],
+    editLora: ['lora_name', [881], 'select'],
+    editLoraStrength: ['lora_strength', [881], 'number'],
     inpaint: ['inpaint_enabled', [881], 'boolean'],
     editMask: ['mask_data', [881], 'text'],
     maskFeather: ['mask_feather', [881], 'number'],
+    maskBMode: ['mask_b_mode', [881], 'select'],
+    maskBModel: ['mask_b_model', [881], 'select'],
+    maskBData: ['mask_b_data', [881], 'text'],
+    maskBGrow: ['mask_b_grow', [881], 'number'],
+    maskBFeather: ['mask_b_feather', [881], 'number'],
+    maskBBackground: ['mask_b_background', [881], 'select'],
+    maskBPrompt: ['mask_b_prompt', [881], 'text'],
+    maskBThreshold: ['mask_b_threshold', [881], 'number'],
+    referenceGuidance: ['enabled', [1150], 'boolean'],
+    guidanceReferenceA: ['image_a', [1150], 'text'],
+    guidanceReferenceB: ['image_b', [1150], 'text'],
+    guidanceUseReferenceB: ['use_reference_b', [1150], 'boolean'],
+    guidanceGeometryMode: ['geometry_mode', [1150], 'select'],
+    guidanceCropA: ['crop_data_a', [1150], 'text'],
+    guidanceCropB: ['crop_data_b', [1150], 'text'],
   };
-  const integerFields = new Set(['width', 'height', 'batchSize', 'steps', 'seed', 'maskFeather']);
+  const integerFields = new Set(['width', 'height', 'batchSize', 'steps', 'seed', 'maskFeather', 'maxFaces',
+    'upscale1SeedVrSteps', 'upscale2SeedVrSteps', 'postUpscaleSteps', 'groundingPx', 'groundingStartPx', 'groundingEndPx', 'maskBGrow', 'maskBFeather']);
+  const referenceFields = new Set(['referenceA', 'referenceB', 'guidanceReferenceA', 'guidanceReferenceB']);
+  const cropReferences = {cropA: 'referenceA', cropB: 'referenceB', guidanceCropA: 'guidanceReferenceA', guidanceCropB: 'guidanceReferenceB'};
   const channel = 'donut-create-basic-v1';
-  const actions = new Set(['snapshot', 'patch', 'generate', 'upload-reference', 'load-preset', 'load-latest', 'load-workflow']);
+  const actions = new Set(['snapshot', 'patch', 'generate', 'upload-reference', 'upload-mask', 'load-preset', 'load-latest', 'load-workflow']);
   const referencePattern = /^donutref:[a-f0-9]{64}$/;
+  const maskPattern = /^donutmask:[a-f0-9]{64}$/;
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const canonical = value => JSON.stringify(value, (key, item) => object(item)
+    ? Object.fromEntries(Object.keys(item).sort().map(name => [name, item[name]])) : item);
   const graphNodes = graph => graph?.nodes || graph?._nodes || [];
 
   function liveNodes(graph = app?.rootGraph || app?.graph, seen = new Set()) {
@@ -891,14 +979,18 @@
     const controls = liveNodes().flatMap(node => (node.properties?.donut_app_controls?.groups || []).flatMap(group => group.controls || []));
     const result = {};
     for (const [key, [name, path, kind, title]] of Object.entries(basicFields)) {
-      const control = controls.find(item => item.widget === name && item.path?.length === path.length && item.path.every((id, index) => String(id) === String(path[index])))
+      const samePath = item => item.path?.length === path.length && item.path.every((id, index) => String(id) === String(path[index]));
+      const control = controls.find(item => (name === '$mode' ? item.mode === 'bypass' : item.widget === name) && samePath(item))
         || (title && controls.find(item => item.widget === name && item.title === title));
       let node = resolveControl(control?.path || path);
       if (!node && control?.fallback_type) {
         const graph = resolveControl(control.path.slice(0, -1))?.subgraph;
         node = Array.from(graphNodes(graph)).find(item => item.type === control.fallback_type || item.properties?.['Node name for S&R'] === control.fallback_type);
       }
-      const widget = node?.widgets?.find(item => item.name === name);
+      const widget = name === '$mode' && node ? {
+        name, get value() { return node.mode !== 4 && node.mode !== 2; },
+        set value(value) { node.mode = value ? 0 : 4; },
+      } : node?.widgets?.find(item => item.name === name);
       if (widget) result[key] = {node, widget, control, kind};
     }
     // V5 executes the shared scene/style conditioning, rather than the unused
@@ -906,34 +998,148 @@
     if (resolveControl([881])?.properties?.donut_shared_prompt && result.prompt) result.editPrompt = result.prompt;
     return result;
   }
+  function inputSpec(binding, seen = new Set()) {
+    if (!binding || seen.has(binding.widget)) return null;
+    seen.add(binding.widget);
+    const {node, widget} = binding;
+    const info = nodeInfo[node.type] || nodeInfo[node.properties?.['Node name for S&R']];
+    const direct = info?.input?.required?.[widget.name] || info?.input?.optional?.[widget.name];
+    if (direct) return direct;
+    // A promoted widget inherits its schema from the real destination. The
+    // runtime interface can have a distinct name, such as rescale_factor_2.
+    const graph = node.subgraph, port = graph?.inputs?.find(item => item.name === widget.name);
+    for (const id of port?.linkIds || []) {
+      const edge = graph.links?.get?.(id) || graph.links?.[id] || (Array.isArray(graph.links) && graph.links.find(item => item.id === id));
+      const target = graph.getNodeById?.(edge?.target_id) || Array.from(graphNodes(graph)).find(item => String(item.id) === String(edge?.target_id));
+      const name = target?.inputs?.[edge?.target_slot]?.name;
+      const child = target?.widgets?.find(item => item.name === name);
+      const spec = inputSpec(child && {node: target, widget: child}, seen);
+      if (spec) return spec;
+    }
+    return null;
+  }
+  const cropAspects = ['Free', 'Original', '1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'];
+  const pairSchema = {type: 'array', minItems: 2, maxItems: 2, items: {type: 'number', minimum: 0, maximum: 1}};
+  const cropSchema = {type: 'object', additionalProperties: false,
+    required: ['version', 'image', 'source_size', 'aspect', 'bounds'], properties: {
+      version: {const: 1}, image: {type: 'string', pattern: referencePattern.source},
+      source_size: {type: 'array', minItems: 2, maxItems: 2, items: {type: 'integer', minimum: 1, maximum: 32768}},
+      aspect: {enum: cropAspects}, bounds: {type: 'array', minItems: 4, maxItems: 4, items: {type: 'number', minimum: 0, maximum: 1}},
+    }};
+  const maskSchema = {type: 'object', additionalProperties: false, required: ['version', 'image', 'strokes'], properties: {
+    version: {const: 1}, image: {type: 'string', pattern: referencePattern.source}, inverted: {type: 'boolean'},
+    strokes: {type: 'array', maxItems: 1000, items: {type: 'object', additionalProperties: false, required: ['size', 'points'], properties: {
+      size: {type: 'number', exclusiveMinimum: 0, maximum: 1}, erase: {type: 'boolean'}, shape: {const: 'rectangle'},
+      points: {type: 'array', minItems: 1, maxItems: 10000, items: pairSchema},
+    }}}, outpaint: {type: 'object', additionalProperties: false, required: ['scale', 'x', 'y', 'overlap'], properties: {
+      scale: {type: 'number', minimum: 0.1, maximum: 1}, x: {type: 'number', minimum: 0, maximum: 1},
+      y: {type: 'number', minimum: 0, maximum: 1}, overlap: {type: 'number', minimum: 0, maximum: 128},
+    }},
+  }};
+  const subjectMaskSchema = {type: 'object', additionalProperties: false,
+    required: ['version', 'image', 'source', 'mask', 'width', 'height'], properties: {
+      version: {const: 1}, image: {type: 'string', pattern: referencePattern.source}, source: {type: 'string', pattern: '^[a-f0-9]{64}$'},
+      mask: {type: 'string', pattern: maskPattern.source}, width: {type: 'integer', minimum: 1, maximum: 32768}, height: {type: 'integer', minimum: 1, maximum: 32768},
+    }};
+  function readLoras(value) {
+    if (typeof value !== 'string' || value.length > 2 * 1024 * 1024) throw new Error('The LoRA rows are invalid.');
+    const rows = JSON.parse(value);
+    if (!Array.isArray(rows) || rows.length > 128 || rows.some(row => !object(row))) throw new Error('Use at most 128 LoRA rows.');
+    const ids = new Set();
+    return rows.map((source, index) => {
+      // Match the native editor's restored IDs and the backend slot defaults.
+      // Imported older rows may omit strengths/enabled or carry numeric IDs.
+      const row = {enabled: true, lora_name: 'None', model_weight: 1, clip_weight: 1,
+        block_preset: 'None', block_vector: '', inherit_block_vector: false, lora_hash: '', ...source};
+      row.id = String(source.id ?? index + 1);
+      if (!row.id || row.id.length > 128 || ids.has(row.id) || typeof row.enabled !== 'boolean' || typeof row.inherit_block_vector !== 'boolean'
+        || ['lora_name', 'block_preset', 'block_vector', 'lora_hash'].some(key => typeof row[key] !== 'string')) throw new Error('The LoRA rows are invalid.');
+      ids.add(row.id);
+      for (const key of ['model_weight', 'clip_weight']) {
+        if (!['string', 'number'].includes(typeof row[key]) || typeof row[key] === 'string' && !row[key].trim()) throw new Error('The LoRA strengths are invalid.');
+        row[key] = Number(row[key]);
+        if (!Number.isFinite(row[key]) || row[key] < -1000 || row[key] > 1000) throw new Error('The LoRA strengths are invalid.');
+      }
+      return row;
+    });
+  }
+  async function refreshFieldCatalogs() {
+    if (!bindings().loras && !bindings().editLora) return;
+    const response = await api.fetchApi('/models/loras');
+    if (!response.ok) throw new Error('The installed LoRA list could not be read.');
+    const names = await response.json();
+    if (!Array.isArray(names) || names.some(name => typeof name !== 'string')) throw new Error('The backend returned an invalid LoRA list.');
+    loraNames = names;
+  }
   function descriptor(key, binding) {
     const kind = basicFields[key][2];
     const result = {value: null, kind, options: [], min: null, max: null, step: null, available: Boolean(binding)};
     if (!binding) return result;
-    const {widget, control} = binding;
+    const {widget, control, node} = binding, spec = inputSpec(binding);
+    const settings = {...(object(spec?.[1]) ? spec[1] : {}), ...widget.options};
     const value = widget.value;
     // A legacy reference path stays in the advanced graph but never crosses
     // this narrow bridge. New references are controller-scoped opaque tokens.
-    result.value = key === 'referenceA' ? (referencePattern.test(value) ? value : '')
+    result.value = referenceFields.has(key) ? (referencePattern.test(value) ? value : '')
       : kind === 'boolean' ? Boolean(value)
       : ['string', 'number', 'boolean'].includes(typeof value) ? value : null;
+    if (key === 'decensor') result.value = value !== 'Fusion only';
+    if (key === 'sdaStrength' && !node.widgets.find(item => item.name === 'sda_enabled')?.value
+      || key === 'toneStrength' && !node.widgets.find(item => item.name === 'enabled')?.value) result.value = 0;
+    if (key === 'nagStrength' && !resolveControl([1014, 993])?.widgets?.find(item => item.name === 'nag_enabled')?.value) result.value = 0;
+    if (key === 'modelBlend') result.mixed = node.widgets.find(item => item.name === 'ratio_mode')?.value !== 'Grouped'
+      || node.widgets.find(item => item.name === 'fusion_ratio')?.value !== value;
+    if (kind === 'loras') {
+      try {
+        result.value = readLoras(value).map(row => Object.fromEntries(['id', 'enabled', 'lora_name', 'model_weight', 'clip_weight',
+          'block_preset', 'block_vector', 'inherit_block_vector', 'lora_hash'].filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]])));
+        if (result.value.some(row => typeof row.lora_name !== 'string' || row.lora_name.startsWith('/') || row.lora_name.includes('\\')
+          || row.lora_name.includes(':') || row.lora_name.split('/').includes('..'))) throw new Error('Use backend-relative LoRA names.');
+      }
+      catch { result.value = []; result.available = false; }
+      result.options = ['None', ...new Set(loraNames)]; result.min = -1000; result.max = 1000; result.step = 0.01;
+      result.schema = {type: 'array', maxItems: 128, items: {type: 'object', required: ['id', 'enabled', 'lora_name', 'model_weight', 'clip_weight'], properties: {
+        id: {type: 'string', maxLength: 128}, enabled: {type: 'boolean'}, lora_name: {enum: result.options},
+        model_weight: {type: 'number', minimum: -1000, maximum: 1000}, clip_weight: {type: 'number', minimum: -1000, maximum: 1000},
+        block_preset: {type: 'string', readOnly: true}, block_vector: {type: 'string', readOnly: true},
+        inherit_block_vector: {type: 'boolean', readOnly: true}, lora_hash: {type: 'string', readOnly: true},
+      }}};
+    }
     if (key === 'editMask' && value) {
       try { validateMask(value, binding.node.widgets.find(item => item.name === 'image_a')?.value, true); }
       catch { result.value = ''; }
+      result.schema = maskSchema;
+    }
+    if (key === 'editMask') result.schema = maskSchema;
+    if (Object.hasOwn(cropReferences, key)) {
+      result.schema = cropSchema;
+      try { validateCrop(value, node.widgets.find(item => item.name === (key.endsWith('B') ? 'image_b' : 'image_a'))?.value); }
+      catch { result.value = ''; }
+    }
+    if (key === 'maskBData') {
+      result.schema = subjectMaskSchema;
+      try { validateSubjectMask(value, node.widgets.find(item => item.name === 'image_b')?.value); }
+      catch { result.value = ''; }
     }
     if (kind === 'select') {
-      let values = control?.choices || widget.options?.values;
+      let values = control?.choices || widget.options?.values || (Array.isArray(spec?.[0]) ? spec[0] : null);
+      if (key === 'editLora') values = ['None', ...new Set(loraNames)];
       if (typeof values === 'function') values = values.call(widget);
       if (Array.isArray(values)) result.options = values.filter(item => ['string', 'number', 'boolean'].includes(typeof item));
+      // An uploaded mask uses Saved mask. The raw External mask option needs
+      // an actual advanced MASK connection and cannot be invented by the UI.
+      if (key === 'maskBMode' && !node.inputs?.find(item => item.name === 'mask_b')?.link) result.options = result.options.filter(item => item !== 'External mask');
       result.available = result.options.length > 0;
     }
     if (kind === 'number') {
-      result.min = Number.isFinite(widget.options?.min) ? widget.options.min : 0;
-      result.max = Number.isFinite(widget.options?.max) ? widget.options.max : Number.MAX_SAFE_INTEGER;
+      result.min = Number.isFinite(settings.min) ? settings.min : 0;
+      result.max = Number.isFinite(settings.max) ? settings.max : Number.MAX_SAFE_INTEGER;
       if (key === 'seed') result.max = Math.min(result.max, Number.MAX_SAFE_INTEGER);
+      if (key === 'modelBlend' || key === 'toneStrength') { result.min = 0; result.max = 1; }
+      if (key === 'nagStrength' || key === 'sdaStrength') result.min = Math.max(0, result.min);
       if (key === 'maskFeather') { result.min = Math.max(0, result.min); result.max = Math.min(128, result.max); }
       // LiteGraph number widgets store increments scaled by ten.
-      const step = widget.options?.step2 ?? (widget.options?.step / 10);
+      const step = widget.options?.step2 ?? (Number.isFinite(widget.options?.step) ? widget.options.step / 10 : settings.step);
       result.step = integerFields.has(key) ? 1 : Number.isFinite(step) && step > 0 ? step : 0.01;
     }
     return result;
@@ -942,11 +1148,68 @@
     const current = bindings();
     return {ready: Boolean(ready && initialized && !loading),
       fields: Object.fromEntries(Object.keys(basicFields).map(key => [key, descriptor(key, current[key])])),
+      lastQueuedPromptIds: [...lastQueuedPromptIds],
+      workflowUpgradeAvailable: Boolean(current.prompt && resolveControl([1014])
+        && (!current.facePrompt || !current.toneStrength || !current.upscale2Scale || !resolveControl([1014, 1180]))),
       latestRunRevision: latestRun.revision, latestAvailable: latestRun.revision > loadedRunRevision,
       ...(lastError ? {error: lastError} : {})};
   }
   function requireEditor() {
     if (!ready || !initialized || loading || !app?.graph) throw new Error('The ComfyUI editor is still loading.');
+  }
+  function jsonDocument(value, limit, message) {
+    if (value === '') return null;
+    if (typeof value !== 'string' || value.length > limit) throw new Error(message);
+    try { return JSON.parse(value); } catch { throw new Error(message); }
+  }
+  function validateCrop(value, reference) {
+    const crop = jsonDocument(value, 16384, 'The crop is invalid. Select it again.');
+    if (crop === null) return null;
+    if (!object(crop) || crop.version !== 1 || !referencePattern.test(reference) || crop.image !== reference
+      || Object.keys(crop).some(key => !['version', 'image', 'source_size', 'aspect', 'bounds'].includes(key))
+      || !cropAspects.includes(crop.aspect) || !Array.isArray(crop.source_size) || crop.source_size.length !== 2
+      || crop.source_size.some(size => !Number.isSafeInteger(size) || size < 1 || size > 32768)
+      || !Array.isArray(crop.bounds) || crop.bounds.length !== 4 || crop.bounds.some(value => !Number.isFinite(value) || value < 0 || value > 1)
+      || crop.bounds[0] >= crop.bounds[2] || crop.bounds[1] >= crop.bounds[3]) {
+      throw new Error('Select a nonempty crop for the current reference image.');
+    }
+    return crop;
+  }
+  function validateSubjectMask(value, reference) {
+    const mask = jsonDocument(value, 16384, 'The saved Reference B mask is invalid. Upload it again.');
+    if (mask === null) return null;
+    if (!object(mask) || mask.version !== 1 || !referencePattern.test(reference) || mask.image !== reference
+      || Object.keys(mask).some(key => !['version', 'image', 'source', 'mask', 'width', 'height'].includes(key))
+      || !maskPattern.test(mask.mask) || !/^[a-f0-9]{64}$/.test(mask.source)
+      || !['width', 'height'].every(key => Number.isSafeInteger(mask[key]) && mask[key] > 0 && mask[key] <= 32768)) {
+      throw new Error('Upload a mask for the current Reference B image.');
+    }
+    return mask;
+  }
+  function validateLoras(value, binding) {
+    if (!Array.isArray(value) || value.length > 128 || JSON.stringify(value).length > 2 * 1024 * 1024) throw new Error('Use at most 128 LoRA rows.');
+    const previous = new Map(readLoras(binding.widget.value).map(row => [String(row.id), row]));
+    const ids = new Set(), names = new Set(['None', ...loraNames]);
+    const defaults = {enabled: true, lora_name: 'None', model_weight: 1, clip_weight: 1,
+      block_preset: 'None', block_vector: '', inherit_block_vector: false, lora_hash: ''};
+    const publicKeys = ['id', 'enabled', 'lora_name', 'model_weight', 'clip_weight'];
+    const retainedKeys = ['block_preset', 'block_vector', 'inherit_block_vector', 'lora_hash'];
+    const rows = value.map(row => {
+      if (!object(row) || typeof row.id !== 'string' || !row.id.length || row.id.length > 128 || ids.has(row.id)
+        || typeof row.enabled !== 'boolean' || typeof row.lora_name !== 'string'
+        || ['model_weight', 'clip_weight'].some(key => !Number.isFinite(row[key]) || row[key] < -1000 || row[key] > 1000)
+        || Object.keys(row).some(key => !publicKeys.includes(key) && !retainedKeys.includes(key))) {
+        throw new Error('The LoRA rows contain invalid controls or duplicate IDs.');
+      }
+      ids.add(row.id);
+      const old = previous.get(row.id), original = old || defaults;
+      if (!names.has(row.lora_name) && row.lora_name !== old?.lora_name) throw new Error('Choose an installed LoRA from the list.');
+      for (const key of retainedKeys) if (Object.hasOwn(row, key) && row[key] !== original[key]) throw new Error('Edit advanced LoRA block controls in the Advanced editor.');
+      const next = {...original, ...Object.fromEntries(publicKeys.map(key => [key, row[key]]))};
+      if (next.lora_name !== original.lora_name) next.lora_hash = '';
+      return next;
+    });
+    return JSON.stringify(rows);
   }
   function validateMask(value, reference, advanced = false) {
     if (value === '') return null;
@@ -1009,76 +1272,214 @@
     requireEditor();
     if (!object(payload) || !Object.keys(payload).length) throw new Error('Choose a supported control to change.');
     const current = bindings(), updates = new Map();
-    const reference = Object.hasOwn(payload, 'referenceA') ? payload.referenceA : current.referenceA?.widget.value;
+    const nextValue = key => Object.hasOwn(payload, key) ? payload[key] : current[key]?.widget.value;
+    const knownReferences = new Set([...uploadedReferences, ...[...referenceFields].map(key => current[key]?.widget.value)]);
+    const add = (binding, value, key, force = false) => {
+      if (!binding) throw new Error('This workflow does not expose ' + key + '.');
+      const existing = updates.get(binding.widget);
+      if (existing && !Object.is(existing.value, value)) throw new Error('Prompt and edit instruction share the same workflow control. Choose one value.');
+      updates.set(binding.widget, {...binding, value, key, force});
+    };
+    const named = (node, name) => {
+      const widget = node?.widgets?.find(item => item.name === name);
+      return widget && {node, widget};
+    };
     for (const [key, value] of Object.entries(payload)) {
       if (!Object.hasOwn(basicFields, key)) throw new Error('Unsupported control: ' + key);
       const binding = current[key], field = descriptor(key, binding);
       if (!field.available) throw new Error('This workflow does not expose ' + key + '. Open the Advanced editor.');
+      const textLimit = key === 'editMask' ? 2 * 1024 * 1024 : key === 'maskBPrompt' ? 2048 : 65536;
       if (field.kind === 'boolean' && typeof value !== 'boolean'
-        || field.kind === 'text' && (typeof value !== 'string' || value.length > (key === 'editMask' ? 2 * 1024 * 1024 : 65536))
+        || field.kind === 'text' && (typeof value !== 'string' || value.length > textLimit)
         || field.kind === 'select' && !field.options.includes(value)
         || field.kind === 'number' && (typeof value !== 'number' || !Number.isFinite(value) || value < field.min || value > field.max || integerFields.has(key) && !Number.isSafeInteger(value))) {
         throw new Error('Invalid value for ' + key + '.');
       }
-      if (key === 'referenceA' && value !== '' && (!referencePattern.test(value) || value !== binding.widget.value && !uploadedReferences.has(value))) {
+      if (referenceFields.has(key) && value !== '' && (!referencePattern.test(value) || !knownReferences.has(value))) {
         throw new Error('Upload a reference in this studio before selecting it.');
       }
-      if (key === 'editMask') validateMask(value, reference);
-      if (updates.has(binding.widget) && updates.get(binding.widget).value !== value) throw new Error('Prompt and edit instruction share the same workflow control. Choose one value.');
-      updates.set(binding.widget, {...binding, value});
+      if (Object.hasOwn(cropReferences, key)) validateCrop(value, nextValue(cropReferences[key]));
+      if (key === 'editMask') validateMask(value, nextValue('referenceA'), true);
+      if (key === 'maskBData') {
+        const mask = validateSubjectMask(value, nextValue('referenceB'));
+        if (mask) {
+          let old;
+          try { old = validateSubjectMask(binding.widget.value, current.referenceB?.widget.value); } catch { old = null; }
+          const allowed = uploadedMasks.get(mask.mask) || old;
+          if (!allowed || ['version', 'image', 'source', 'mask', 'width', 'height'].some(key => mask[key] !== allowed[key])) throw new Error('Upload this Reference B mask through the studio.');
+        }
+      }
+      let applied = field.kind === 'loras' ? validateLoras(value, binding) : value;
+      if (key === 'decensor') {
+        applied = value ? 'Fusion + UncensorFix weights' : 'Fusion only';
+        const options = inputSpec(binding)?.[0] || binding.widget.options?.values;
+        if (!Array.isArray(options) || !options.includes(applied)) throw new Error('This backend does not support the independent decensor control.');
+      }
+      add(binding, applied, key);
     }
-    if (Object.hasOwn(payload, 'referenceA') && payload.referenceA !== current.referenceA?.widget.value) {
-      if (current.editMask) updates.set(current.editMask.widget, {...current.editMask, value: Object.hasOwn(payload, 'editMask') ? payload.editMask : ''});
-      if (current.inpaint && !Object.hasOwn(payload, 'inpaint')) updates.set(current.inpaint.widget, {...current.inpaint, value: false});
-      const node = current.referenceA.node, crop = node.widgets.find(item => item.name === 'crop_data_a');
-      if (crop) updates.set(crop, {node, widget: crop, value: ''});
+    // Changing an image invalidates only the selections owned by that image.
+    // Explicit matching crop/mask documents were validated above as a unit.
+    for (const key of referenceFields) {
+      if (!Object.hasOwn(payload, key) || payload[key] === current[key]?.widget.value) continue;
+      for (const [crop, reference] of Object.entries(cropReferences)) {
+        if (reference === key && current[crop] && !Object.hasOwn(payload, crop)) add(current[crop], '', crop);
+      }
+      if (key === 'referenceA') {
+        if (current.editMask && !Object.hasOwn(payload, 'editMask')) add(current.editMask, '', 'editMask');
+        if (current.inpaint && !Object.hasOwn(payload, 'inpaint')) add(current.inpaint, false, 'inpaint');
+      }
+      if (key === 'referenceB') {
+        if (current.maskBData && !Object.hasOwn(payload, 'maskBData')) add(current.maskBData, '', 'maskBData');
+        if (current.maskBMode?.widget.value === 'Saved mask' && !Object.hasOwn(payload, 'maskBMode')) add(current.maskBMode, 'Off', 'maskBMode');
+      }
+    }
+    if (Object.hasOwn(payload, 'modelBlend')) {
+      const node = current.modelBlend.node;
+      add(named(node, 'ratio_mode'), 'Grouped', 'modelBlend');
+      add(named(node, 'fusion_ratio'), payload.modelBlend, 'modelBlend');
+      // The grouped backend leaves these embeddings separate. A uniform basic
+      // blend explicitly sets them too; advanced block ratios otherwise stay.
+      for (const name of ['tmlp.', 'txtmlp.', 'tproj.']) add(named(node, name), payload.modelBlend, 'modelBlend');
+    }
+    if (Object.hasOwn(payload, 'nagStrength')) {
+      for (const id of [993, 984, 989, 983]) {
+        const node = resolveControl([1014, id]);
+        if (!node) continue;
+        add(named(node, 'nag_alpha'), payload.nagStrength, 'nagStrength');
+        add(named(node, 'nag_enabled'), payload.nagStrength > 0, 'nagStrength');
+      }
+    }
+    if (Object.hasOwn(payload, 'sdaStrength')) add(named(current.sdaStrength.node, 'sda_enabled'), payload.sdaStrength > 0, 'sdaStrength');
+    if (Object.hasOwn(payload, 'toneStrength')) add(named(current.toneStrength.node, 'enabled'), payload.toneStrength > 0, 'toneStrength');
+    if (Object.hasOwn(payload, 'stylePrompt') && payload.stylePrompt.length) {
+      const main = resolveControl([1014, 996]), separator = named(main, 'separator');
+      // New presets keep their original full factory text in one main field.
+      // An explicit style edit adds word separation, preserving any separator
+      // already chosen in Advanced and the semantics of older untagged graphs.
+      if (main?.properties?.dmc_prompt_role === 'main' && separator?.widget.value === '') add(separator, ' ', 'stylePrompt');
     }
     // Prevalidation above is complete before touching any live widget. Keep a
     // graph rollback for callback failures, including promoted sibling updates.
-    const before = (app.rootGraph || app.graph).serialize();
+    const before = (app.rootGraph || app.graph).serialize(), beforeCanonical = canonical(before);
+    let changed;
+    const commit = ({node, widget, value, force}) => {
+      if (!force && Object.is(widget.value, value)) return;
+      node.graph?.beforeChange?.();
+      try { widget.value = value; widget.callback?.(value, app.canvas, node); }
+      finally { node.graph?.afterChange?.(); }
+      node.setDirtyCanvas?.(true, true);
+    };
     try {
-      for (const {node, widget, value} of updates.values()) {
-        if (widget.value === value) continue;
-        node.graph?.beforeChange?.();
-        try { widget.value = value; widget.callback?.(value, app.canvas, node); }
-        finally { node.graph?.afterChange?.(); }
-        node.setDirtyCanvas?.(true, true);
+      // Fusion presets run the genuine inner widget callback, just as the v5
+      // panel does after editing its promoted root control. Apply presets first
+      // so an explicitly supplied strength/composition wins within this patch.
+      if (Object.hasOwn(payload, 'compatibilityPreset')) {
+        commit(updates.get(current.compatibilityPreset.widget));
+        const fusion = resolveControl([1014, 1118]), target = named(fusion, 'compatibility_preset');
+        if (!target?.widget.callback) throw new Error('The backend preset controls are still loading.');
+        commit({...target, value: payload.compatibilityPreset, force: true});
+        if (!['Off', 'Custom'].includes(payload.compatibilityPreset) && !Object.hasOwn(payload, 'tapStrength')) {
+          const rootStrength = current.tapStrength, innerStrength = named(fusion, 'tap_strength');
+          if (rootStrength && innerStrength) commit({...rootStrength, value: innerStrength.widget.value});
+        }
+      }
+      for (const update of updates.values()) if (update.key !== 'compatibilityPreset') commit(update);
+      if (Object.hasOwn(payload, 'tapStrength')) {
+        const fusion = resolveControl([1014, 1118]), target = named(fusion, 'tap_strength');
+        if (target) commit({...target, value: payload.tapStrength, force: true});
       }
       await Promise.resolve();
-      for (const node of new Set([...updates.values()].map(item => item.node))) node._donutEditStudio?.render?.();
+      if (Object.hasOwn(payload, 'loras')) current.loras.node._donutNativeLoras?.restore?.();
+      for (const node of new Set([...updates.values()].map(item => item.node))) {
+        node._donutEditStudio?.render?.(); node._donutReferenceStudio?.refresh?.();
+      }
+      for (const node of liveNodes()) node._donutAppControls?.render?.();
+      changed = canonical((app.rootGraph || app.graph).serialize()) !== beforeCanonical;
     } catch (error) {
       loading = true;
       try { await app._donutCreateLoadGraphData(before); } finally { loading = false; }
       throw error;
     }
     lastError = ''; saveDraft();
+    return changed;
   }
   async function uploadReference(payload) {
     requireEditor();
-    if (!object(payload) || Object.keys(payload).some(key => key !== 'file') || typeof File === 'undefined' || !(payload.file instanceof File)
+    const target = payload?.target || 'referenceA';
+    if (!object(payload) || Object.keys(payload).some(key => !['file', 'target'].includes(key)) || !referenceFields.has(target)
+      || typeof File === 'undefined' || !(payload.file instanceof File)
       || !/^image\/(png|jpeg|webp|gif|bmp|tiff)$/.test(payload.file.type) || payload.file.size <= 0 || payload.file.size > 32 * 1024 * 1024) {
       throw new Error('Choose an image file up to 32 MiB.');
     }
     const current = bindings();
-    if (!current.referenceA || !current.editing) throw new Error('This workflow has no reference editing controls. Load the setup preset.');
+    if (!current[target]) throw new Error('This workflow has no selected reference controls. Load the setup preset.');
     const form = new FormData(); form.append('image', payload.file, 'reference');
     const response = await api.fetchApi('/donut/edit-studio/reference', {method: 'POST', body: form});
     if (!response.ok) throw new Error('The reference upload failed (' + response.status + ').');
     const saved = await response.json();
     if (!referencePattern.test(saved?.reference)) throw new Error('The backend did not return a scoped reference.');
     uploadedReferences.add(saved.reference);
-    await applyPatch({referenceA: saved.reference, editing: true,
-      ...(current.editMask ? {editMask: ''} : {}), ...(current.inpaint ? {inpaint: false} : {})});
+    const patch = {[target]: saved.reference};
+    if (target === 'referenceA' || target === 'referenceB') {
+      if (current.editing) patch.editing = true;
+      if (target === 'referenceB' && current.useReferenceB) patch.useReferenceB = true;
+    } else {
+      if (current.referenceGuidance) patch.referenceGuidance = true;
+      if (target === 'guidanceReferenceB' && current.guidanceUseReferenceB) patch.guidanceUseReferenceB = true;
+    }
+    // Even a content-identical reupload explicitly starts a fresh selection.
+    if (target === 'referenceA') {
+      if (current.editMask) patch.editMask = '';
+      if (current.inpaint) patch.inpaint = false;
+    }
+    const crop = Object.keys(cropReferences).find(key => cropReferences[key] === target);
+    if (current[crop]) patch[crop] = '';
+    if (target === 'referenceB') {
+      if (current.maskBData) patch.maskBData = '';
+      if (current.maskBMode?.widget.value === 'Saved mask') patch.maskBMode = 'Off';
+    }
+    return applyPatch(patch);
+  }
+  async function uploadMask(payload) {
+    requireEditor();
+    if (!object(payload) || Object.keys(payload).some(key => key !== 'file') || typeof File === 'undefined' || !(payload.file instanceof File)
+      || !/^image\/(png|jpeg|webp|gif|bmp|tiff)$/.test(payload.file.type) || payload.file.size <= 0 || payload.file.size > 32 * 1024 * 1024) {
+      throw new Error('Choose a mask image up to 32 MiB, matching the original Reference B dimensions.');
+    }
+    const current = bindings(), reference = current.referenceB?.widget.value;
+    if (!referencePattern.test(reference) || !current.maskBData || !current.maskBMode) throw new Error('Upload Reference B before adding its subject mask.');
+    const form = new FormData(); form.append('reference', reference); form.append('mask', payload.file, 'mask.png');
+    const response = await api.fetchApi('/donut/edit-studio/subject-mask', {method: 'POST', body: form});
+    if (!response.ok) throw new Error('The Reference B mask upload failed (' + response.status + '). Check its dimensions and selection.');
+    const saved = await response.json(); validateSubjectMask(JSON.stringify(saved), reference);
+    uploadedMasks.set(saved.mask, saved);
+    return applyPatch({maskBData: JSON.stringify(saved), maskBMode: 'Saved mask',
+      ...(current.useReferenceB ? {useReferenceB: true} : {})});
   }
   async function generate() {
     requireEditor();
     const current = bindings();
     if (current.editing?.widget.value) {
       if (!referencePattern.test(current.referenceA?.widget.value)) throw new Error('Upload a reference image before editing.');
+      if (current.useReferenceB?.widget.value && !referencePattern.test(current.referenceB?.widget.value)) throw new Error('Upload Reference B or turn the second reference off.');
       if (current.inpaint?.widget.value) {
         const mask = validateMask(current.editMask?.widget.value, current.referenceA.widget.value, true);
         if (!hasSelection(mask)) throw new Error('Paint an area to edit, or turn the selection off.');
       }
+      if (current.useReferenceB?.widget.value && current.maskBMode?.widget.value === 'Saved mask'
+        && !validateSubjectMask(current.maskBData?.widget.value, current.referenceB.widget.value)) throw new Error('Upload a Reference B subject mask or turn its masking off.');
+      if (current.useReferenceB?.widget.value && current.maskBMode?.widget.value === 'Prompt selection' && !current.maskBPrompt?.widget.value?.trim()) throw new Error('Describe the subject to select from Reference B.');
+    }
+    if (!current.editing?.widget.value && current.referenceGuidance?.widget.value) {
+      if (!referencePattern.test(current.guidanceReferenceA?.widget.value)) throw new Error('Upload Reference Guidance A or turn guidance off.');
+      if (current.guidanceUseReferenceB?.widget.value && !referencePattern.test(current.guidanceReferenceB?.widget.value)) throw new Error('Upload Reference Guidance B or turn its second reference off.');
+    }
+    const activeCrops = current.editing?.widget.value && current.geometryMode?.widget.value === 'Independent crops'
+      ? ['cropA', ...(current.useReferenceB?.widget.value || current.aspectRatio?.widget.value === 'Auto · Reference B' ? ['cropB'] : [])]
+      : !current.editing?.widget.value && current.referenceGuidance?.widget.value && current.guidanceGeometryMode?.widget.value === 'Independent crops'
+        ? ['guidanceCropA', ...(current.guidanceUseReferenceB?.widget.value ? ['guidanceCropB'] : [])] : [];
+    for (const crop of activeCrops) {
+      if (current[crop]?.widget.value) validateCrop(current[crop].widget.value, current[cropReferences[crop]]?.widget.value);
     }
     if (typeof app.queuePrompt !== 'function') throw new Error('The ComfyUI Run action is not available yet.');
     await checkCapabilities(); saveDraft();
@@ -1107,6 +1508,7 @@
     const reply = value => event.source.postMessage({channel, sessionId: config.sessionId, requestId: message.requestId, ...value}, event.origin);
     bridgeQueue = bridgeQueue.then(async () => {
       try {
+        let mutationChanged;
         if (message.action === 'snapshot' && initialized && !loading && !queueAttempt) {
           const latest = await readLatest(true);
           if (latest.revision > latestRun.revision) {
@@ -1114,13 +1516,14 @@
             notice('A newer run is available in this workspace. Load it from the basic controls to replace this draft.');
           }
         }
-        else if (message.action === 'patch') await applyPatch(message.payload);
+        else if (message.action === 'patch') mutationChanged = await applyPatch(message.payload);
         else if (message.action === 'generate') await generate();
-        else if (message.action === 'upload-reference') await uploadReference(message.payload);
+        else if (message.action === 'upload-reference') mutationChanged = await uploadReference(message.payload);
+        else if (message.action === 'upload-mask') mutationChanged = await uploadMask(message.payload);
         else if (message.action === 'load-preset') await loadPreset();
         else if (message.action === 'load-latest') await loadLatest();
         else if (message.action === 'load-workflow') await loadWorkflow(message.payload);
-        reply({ok: true, snapshot: snapshot()});
+        reply({ok: true, snapshot: {...snapshot(), ...(mutationChanged !== undefined ? {mutationChanged} : {})}});
       } catch (error) { showError(error); reply({ok: false, error: error?.message || String(error)}); }
     }).catch(showError);
   });
@@ -1178,9 +1581,9 @@
         if (result?.error || result?.node_errors && Object.keys(result.node_errors).length) throw new Error(result.error?.message || 'The backend rejected this workflow. Check the Advanced editor for node errors.');
         if (attempt && result?.prompt_id) attempt.accepted++;
         if (result?.prompt_id) {
+          lastQueuedPromptIds = [...new Set([...lastQueuedPromptIds, result.prompt_id])].slice(-128);
           try {
             const latest = await readLatest();
-            const canonical = value => JSON.stringify(value, (key, item) => object(item) ? Object.fromEntries(Object.keys(item).sort().map(name => [name, item[name]])) : item);
             if (latest.workflow && canonical(latest.workflow) === canonical(args[1]?.workflow)) loadedRunRevision = latest.revision;
             latestRun = {revision: latest.revision, workflow: null};
           }
