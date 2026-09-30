@@ -34,3 +34,20 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T05:31:01.993Z
+  - _ulid: 01M3RDAFNF661868F3R5W4AGMW
+    content: Independent reviewer main_sync_review reran 35 controller checks and approved review
+      01M3RCGMB8EZS0ACB65E0VCTB0, closed/approved/passing. Integrated product
+      4eab1e9405e4ba1128866910afc068b8cb2c2612 via main merge
+      171eb7afc3c7cbf8239b079c2b607c325ba97f71, pushed and ls-remote verified. Installer waited
+      shared host build gate, then frontend build passed and release native build finished 4m16s.
+      Installed executable exactly matches main build and contains CSP/proxy fixes; binary SHA256
+      d54ffebac960dbc11c895f6f80fce976c2a85182631363584cfc4f23ff67be3c; installed frontend files
+      match. Compiler/build writer exited (only Docker daemon remains). Clean merged task
+      worktree/branch and owned disposable probes removed; unrelated untracked MediaNavigation
+      component test retained. User should fully restart DMC to load new native CSP and redeploy
+      embedded addon sources. Native GUI after restart and GPU generation remain unverified. Current
+      studio is integrated DonutUI/DonutNodes custom v5 panels within ComfyUI shell, not a separate
+      DMC-native creation page.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T05:41:42.191Z
