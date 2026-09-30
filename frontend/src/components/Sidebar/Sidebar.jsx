@@ -410,6 +410,18 @@ function Sidebar({
       <div className="sidebar-content">
         <SidebarNavigation />
 
+        {location.pathname === '/' && mediaType === 'image' && (
+          <div className="sidebar-section create-entry-section">
+            <button type="button" className="sidebar-create-button" onClick={() => {
+              window.dispatchEvent(new CustomEvent('donut-create-open'))
+              if (onClose) onClose()
+            }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m3 18 10-10 4 4L7 22zM13 8l3-3 4 4-3 3M6 3v4M4 5h4M19 17v4M17 19h4" /></svg>
+              Create
+            </button>
+          </div>
+        )}
+
         {(isGalleryPage || isCollectionPage) && (
           <div className="sidebar-section media-collections-section">
             <div className="media-collections-heading">

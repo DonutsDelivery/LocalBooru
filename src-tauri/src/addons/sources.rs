@@ -5,9 +5,51 @@
 
 pub type AddonSource = (&'static str, &'static str);
 
+pub fn write_source(root: &std::path::Path, name: &str, source: &str) -> std::io::Result<()> {
+    let path = root.join(name);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, source)
+}
+
 /// Get the embedded Python sources for an addon, if available.
 pub fn get_addon_sources(id: &str) -> Option<&'static [AddonSource]> {
     match id {
+        "donut-create" => Some(&[
+            (
+                "app.py",
+                include_str!("../../../addons/donut-create/app.py"),
+            ),
+            (
+                "installer.py",
+                include_str!("../../../addons/donut-create/installer.py"),
+            ),
+            (
+                "runtime.json",
+                include_str!("../../../addons/donut-create/runtime.json"),
+            ),
+            (
+                "workflow.json",
+                include_str!("../../../addons/donut-create/workflow.json"),
+            ),
+            (
+                "model_sources.json",
+                include_str!("../../../addons/donut-create/model_sources.json"),
+            ),
+            (
+                "assets/donut-create.js",
+                include_str!("../../../addons/donut-create/assets/donut-create.js"),
+            ),
+            (
+                "assets/donut-create.css",
+                include_str!("../../../addons/donut-create/assets/donut-create.css"),
+            ),
+            (
+                "assets/base-workflow.json",
+                include_str!("../../../addons/donut-create/assets/base-workflow.json"),
+            ),
+        ]),
         "auto-tagger" => Some(&[
             ("app.py", include_str!("../../../addons/auto-tagger/app.py")),
             (
@@ -68,5 +110,28 @@ mod tests {
             .map(|(name, _)| *name)
             .collect();
         assert_eq!(source_names, ["app.py", "runtime_probe.py"]);
+    }
+
+    // AC: @donut-create-plugin ac-managed-setup
+    #[test]
+    fn creation_sources_deploy_with_nested_assets_and_matching_base_preset() {
+        let temporary = tempfile::tempdir().unwrap();
+        let sources = get_addon_sources("donut-create").unwrap();
+        for (name, source) in sources {
+            super::write_source(temporary.path(), name, source).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(temporary.path().join(name)).unwrap(),
+                *source
+            );
+        }
+        let preset: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(temporary.path().join("assets/base-workflow.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(!preset["nodes"].as_array().unwrap().is_empty());
+        assert!(!preset["definitions"]["subgraphs"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 }

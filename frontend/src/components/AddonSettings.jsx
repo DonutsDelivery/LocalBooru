@@ -4,6 +4,7 @@ import AgeDetectionSettings from './AgeDetectionSettings'
 import AutoTaggerSettings from './AutoTaggerSettings'
 import CastSettings from './CastSettings'
 import CurationGameSettings from './CurationGameSettings'
+import CreateSettings from './CreateSettings'
 import SVPSettings from './SVPSettings'
 import WD14SidecarSettings from './WD14SidecarSettings'
 import WhisperSubtitleSettings from './WhisperSubtitleSettings'
@@ -18,6 +19,7 @@ const SETTINGS_COMPONENTS = {
   svp: SVPSettings,
   'curation-game': CurationGameSettings,
   'wd14-sidecar': WD14SidecarSettings,
+  'donut-create': CreateSettings,
 }
 
 export default function AddonSettings() {

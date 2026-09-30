@@ -77,6 +77,36 @@
   color: var(--accent);
 }
 
+.create-entry-section {
+  padding-top: 12px;
+}
+
+.sidebar-create-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent-glow);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sidebar-create-button:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sidebar-create-button svg {
+  width: 20px;
+  height: 20px;
+}
+
 /* Legacy nav-item - keep for compatibility */
 .sidebar-nav .nav-item {
   display: flex;

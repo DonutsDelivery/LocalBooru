@@ -1,0 +1,7 @@
+/* Donut Create integration chrome; DonutNodes owns the workflow panels. */
+#donut-create-status { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 9990; display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 40px); padding: 8px 12px; border: 1px solid #766394; border-radius: 10px; background: #211e2aee; color: #eeeaf5; font: 12px/1.4 system-ui,sans-serif; box-shadow: 0 3px 16px #0005; }
+#donut-create-status strong { white-space: nowrap; color: #eea6c9; }
+#donut-create-status .message { max-width: 660px; }
+#donut-create-status button { white-space: nowrap; padding: 4px 8px; background: #3c334c; color: inherit; border: 1px solid #78698f; border-radius: 5px; cursor: pointer; }
+#donut-create-status.error { border-color: #df7878; background: #361f29f5; }
+@media (max-width: 700px) { #donut-create-status { flex-wrap: wrap; min-width: 260px; } }
