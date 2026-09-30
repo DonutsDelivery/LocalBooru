@@ -22,6 +22,12 @@ const LABELS = {
   guidanceGeometryMode: 'Reference layout', cropAX: 'Horizontal placement', cropAY: 'Vertical placement', cropBX: 'Horizontal placement', cropBY: 'Vertical placement',
 }
 const EMPTY_FIELDS = {}
+const SLIDER_FIELDS = new Set([
+  'modelBlend', 'guidance', 'megapixels', 'tapStrength', 'decensorWeight', 'nagStrength', 'sdaStrength', 'toneStrength',
+  'editLoraStrength', 'maskBThreshold', 'cropAX', 'cropAY', 'cropBX', 'cropBY',
+  'upscale1Scale', 'upscale2Scale', 'postUpscaleScale', 'upscale1Denoise', 'upscale2Denoise', 'postUpscaleDenoise',
+  'upscale1SeedVrDenoise', 'upscale2SeedVrDenoise', 'faceDenoise',
+])
 
 function modelLabel(value) {
   return String(value).split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|gguf|pth)$/i, '').replace(/_/g, ' ')
@@ -32,6 +38,85 @@ function displayNumber(value) {
   const rounded = Number(value.toPrecision(12))
   // Hide arithmetic noise without rounding typed drafts or changing live widget values.
   return Math.abs(rounded - value) <= Number.EPSILON * Math.abs(value) * 8 ? rounded : value
+}
+
+function SliderNumberField({ label, value, bounds, sliderBounds, disabled, onChange, onCommit, onInteraction, className = '', context = '' }) {
+  const id = useId()
+  const [pending, setPending] = useState(false)
+  const dirty = useRef(false)
+  const interacting = useRef(false)
+  const committing = useRef(false)
+  const finishRequested = useRef(false)
+  const mounted = useRef(true)
+  const min = sliderBounds ? Math.max(bounds.min ?? sliderBounds[0], sliderBounds[0]) : bounds.min
+  const max = sliderBounds ? Math.min(bounds.max ?? sliderBounds[1], sliderBounds[1]) : bounds.max
+  const hasSlider = Number.isFinite(min) && Number.isFinite(max) && max > min
+  const numeric = value === '' ? NaN : Number(value)
+  const outside = hasSlider && Number.isFinite(numeric) && (numeric < min || numeric > max)
+  const sliderValue = Number.isFinite(numeric) ? Math.min(max, Math.max(min, numeric)) : min
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      onInteraction(id, false)
+    }
+  }, [id, onInteraction])
+
+  function begin() {
+    if (interacting.current) return
+    interacting.current = true
+    onInteraction(id, true)
+  }
+
+  function end() {
+    interacting.current = false
+    onInteraction(id, false)
+  }
+
+  async function finish() {
+    if (committing.current) {
+      finishRequested.current = true
+      return
+    }
+    if (!dirty.current) { end(); return }
+    // Consume before awaiting so pointerup, lost capture and blur cannot submit twice.
+    dirty.current = false
+    committing.current = true
+    setPending(true)
+    try { await onCommit() }
+    finally {
+      committing.current = false
+      if (mounted.current) {
+        setPending(false)
+        if (finishRequested.current) {
+          finishRequested.current = false
+          finish()
+        } else if (!dirty.current) end()
+      }
+    }
+  }
+
+  function change(next, slider = false) {
+    if (slider) begin()
+    dirty.current = true
+    onChange(next)
+  }
+
+  return <div className={`create-field create-slider-field ${className}`}>
+    <label htmlFor={`${id}-number`}>{label}</label>
+    <div className="create-slider-inputs">
+      {hasSlider && <input type="range" aria-label={`${label} slider${context ? ` for ${context}` : ''}`} aria-describedby={outside ? `${id}-range-note` : undefined}
+        value={displayNumber(sliderValue)} min={min} max={max} step={bounds.step ?? 'any'} disabled={disabled || pending}
+        onPointerDown={event => { begin(); event.currentTarget.setPointerCapture?.(event.pointerId) }}
+        onPointerUp={finish} onPointerCancel={finish} onLostPointerCapture={finish} onBlur={finish}
+        onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) begin() }}
+        onChange={event => change(event.target.value, true)} />}
+      <input id={`${id}-number`} type="number" value={displayNumber(value)} min={bounds.min ?? undefined} max={bounds.max ?? undefined}
+        step={bounds.step ?? 'any'} disabled={disabled || pending} onChange={event => change(event.target.value)} onBlur={finish} />
+    </div>
+    {outside && <small id={`${id}-range-note`} className="create-slider-note">Slider range {min} to {max}. Current value retained.</small>}
+  </div>
 }
 
 function SparkIcon() {
@@ -51,7 +136,9 @@ export default function SimpleCreateControls({
   const [inputError, setInputError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [lowerTab, setLowerTab] = useState('models')
+  const [sliding, setSliding] = useState(false)
   const draftRef = useRef({})
+  const sliderInteractions = useRef(new Set())
   const submission = useRef(false)
   const rememberedStrength = useRef({})
   const uploadId = useId()
@@ -77,7 +164,13 @@ export default function SimpleCreateControls({
   const usesShape = !followsCrop && (independentEditing ? !customSize : presetSize)
   const fixedSeed = /fixed|custom|manual|keep/i.test(String(value('seedMode')))
   const hasReference = key => /^donutref:[a-f0-9]{64}$/.test(String(value(key)))
-  const notifyDrafts = useCallback(next => onDraftChange?.(submission.current || Object.keys(next).length > 0), [onDraftChange])
+  const notifyDrafts = useCallback(next => onDraftChange?.(submission.current || sliderInteractions.current.size > 0 || Object.keys(next).length > 0), [onDraftChange])
+  const sliderInteraction = useCallback((id, active) => {
+    if (active) sliderInteractions.current.add(id)
+    else sliderInteractions.current.delete(id)
+    setSliding(sliderInteractions.current.size > 0)
+    notifyDrafts(draftRef.current)
+  }, [notifyDrafts])
   useEffect(() => () => onDraftChange?.(false), [onDraftChange])
 
   function stage(key, nextValue) {
@@ -134,13 +227,16 @@ export default function SimpleCreateControls({
   }, [fields, onPatch, onRunInstantChange, notifyDrafts])
 
   useEffect(() => {
-    if (!runInstant || !connected || busy || submitting || !Object.keys(drafts).length) return
-    const timer = setTimeout(() => commit({ ...draftRef.current }).catch(() => {}), 450)
+    if (!runInstant || !connected || busy || submitting || sliding || !Object.keys(drafts).length) return
+    const timer = setTimeout(() => {
+      if (sliderInteractions.current.size || submission.current) return
+      commit({ ...draftRef.current }).catch(() => {})
+    }, 450)
     return () => clearTimeout(timer)
-  }, [runInstant, connected, busy, submitting, drafts, commit])
+  }, [runInstant, connected, busy, submitting, sliding, drafts, commit])
 
   function commitField(key) {
-    if (Object.hasOwn(draftRef.current, key)) commit({ [key]: draftRef.current[key] }).catch(() => {})
+    if (Object.hasOwn(draftRef.current, key)) return commit({ [key]: draftRef.current[key] }).catch(() => {})
   }
 
   function choose(key, nextValue) {
@@ -162,7 +258,7 @@ export default function SimpleCreateControls({
 
   async function generate(event) {
     event.preventDefault()
-    if (submission.current || locked || (!!busy && busy !== 'patch')) return
+    if (submission.current || locked || sliding || (!!busy && busy !== 'patch')) return
     submission.current = true
     setSubmitting(true)
     notifyDrafts(draftRef.current)
@@ -219,6 +315,8 @@ export default function SimpleCreateControls({
   function numberField(key, label = LABELS[key]) {
     if (!available(key)) return null
     const field = fields[key]
+    if (SLIDER_FIELDS.has(key)) return <SliderNumberField key={key} label={label} value={value(key)} bounds={field} disabled={locked}
+      onChange={next => stage(key, next)} onCommit={() => commitField(key)} onInteraction={sliderInteraction} />
     return <label className="create-field" key={key}>{label}
       <input type="number" value={displayNumber(value(key))} min={field.min ?? undefined} max={field.max ?? undefined} step={field.step ?? 'any'} disabled={locked}
         onChange={event => stage(key, event.target.value)} onBlur={() => commitField(key)} />
@@ -250,7 +348,7 @@ export default function SimpleCreateControls({
           choose(key, event.target.checked ? Number(initial) : 0)
         }} />
       </label>
-      {active && <div className="create-effect-settings">{numberField(key)}{contents}{note && <p className="create-control-note">{note}</p>}</div>}
+      {(active || Object.hasOwn(drafts, key)) && <div className="create-effect-settings">{numberField(key)}{contents}{note && <p className="create-control-note">{note}</p>}</div>}
     </section>
   }
 
@@ -314,11 +412,11 @@ export default function SimpleCreateControls({
           {!choices.includes(row.lora_name) && <option value={row.lora_name || ''}>{row.lora_name ? modelLabel(row.lora_name) : 'Choose an installed LoRA'}</option>}
           {choices.map(choice => <option value={choice} key={choice}>{modelLabel(choice)}</option>)}
         </select></label>
-        {row.enabled !== false && ['model_weight', 'clip_weight'].map((key, strengthIndex) => <label className="create-field create-lora-strength" key={key}>{strengthIndex === 0 ? 'Model strength' : 'Text strength'}
-          <input type="number" value={displayNumber(row[key] ?? 1)} min={bounds.min ?? -1000} max={bounds.max ?? 1000} step={bounds.step ?? 0.01} disabled={locked}
-            onChange={event => stage('loras', rows.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: event.target.value } : item))}
-            onBlur={() => commitField('loras')} />
-        </label>)}
+        {row.enabled !== false && ['model_weight', 'clip_weight'].map((key, strengthIndex) => <SliderNumberField key={key}
+          className={`create-lora-strength create-lora-${strengthIndex === 0 ? 'model' : 'text'}-strength`} label={strengthIndex === 0 ? 'Model strength' : 'Text strength'} context={`LoRA ${index + 1}`}
+          value={row[key] ?? 1} bounds={{ min: bounds.min ?? -1000, max: bounds.max ?? 1000, step: bounds.step ?? 0.01 }} sliderBounds={[-2, 2]} disabled={locked}
+          onChange={next => stage('loras', rows.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: next } : item))}
+          onCommit={() => commitField('loras')} onInteraction={sliderInteraction} />)}
         <button type="button" className="create-lora-remove" disabled={locked} aria-label={`Remove LoRA ${index + 1}`} onClick={() => choose('loras', rows.filter((_, rowIndex) => rowIndex !== index))}>×</button>
       </div>)}</div>
     </section>
@@ -339,7 +437,7 @@ export default function SimpleCreateControls({
     <aside className="create-controls" aria-label="Image controls">
       <div className="create-control-tabs" role="tablist" aria-label="Studio controls">
         {['create', 'edit', 'tuning'].map(tab => <button type="button" role="tab" id={`create-tab-${tab}`} key={tab}
-          aria-selected={activeTab === tab} aria-controls={`create-panel-${tab}`} tabIndex={activeTab === tab ? 0 : -1} disabled={submitting || !!busy}
+          aria-selected={activeTab === tab} aria-controls={`create-panel-${tab}`} tabIndex={activeTab === tab ? 0 : -1} disabled={submitting || sliding || !!busy}
           onKeyDown={event => {
             const tabs = ['create', 'edit', 'tuning'], index = tabs.indexOf(tab)
             const next = event.key === 'ArrowRight' ? tabs[(index + 1) % tabs.length] : event.key === 'ArrowLeft' ? tabs[(index + tabs.length - 1) % tabs.length] : event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs.at(-1) : null
@@ -396,8 +494,8 @@ export default function SimpleCreateControls({
         {inputError && <p className="create-message error" role="alert">{inputError}</p>}
       </div>
       <footer className="create-generate-footer">
-        <label className="create-instant-toggle"><input type="checkbox" checked={runInstant === true} disabled={locked || !!busy || (editing && !hasReference('referenceA'))} onChange={event => onRunInstantChange?.(event.target.checked)} />Run Instant</label>
-        <button type="submit" className="create-primary create-generate" disabled={locked || (!!busy && busy !== 'patch') || (editing && !hasReference('referenceA'))}>
+        <label className="create-instant-toggle"><input type="checkbox" checked={runInstant === true} disabled={locked || sliding || !!busy || (editing && !hasReference('referenceA'))} onChange={event => onRunInstantChange?.(event.target.checked)} />Run Instant</label>
+        <button type="submit" className="create-primary create-generate" disabled={locked || sliding || (!!busy && busy !== 'patch') || (editing && !hasReference('referenceA'))}>
           <SparkIcon /><span>{busy === 'generate' ? 'Adding to queue…' : editing ? 'Generate edit' : 'Generate image'}</span>{Number(value('batchSize')) > 1 && <small>×{value('batchSize')}</small>}
         </button>
         <p>{busy === 'patch' ? 'Updating workflow…' : editing && !hasReference('referenceA') ? 'Add Reference A to begin.' : runInstant ? 'Runs the latest acknowledged draft when the queue is empty.' : connected ? 'Generate uses the current workflow.' : 'Connect the studio to generate.'}</p>
