@@ -13,3 +13,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T05:49:04.747Z
+  - _ulid: 01M3RFNNDEBF4QWKKJDQMRCKFK
+    content: "Additional user requirements implemented in candidate: responsive Controls/Results layout
+      for paired mobile; write-authorized clients reuse private per-backend workspace, with scoped
+      jobs/cancellation/results and latest successfully submitted graph. Later remote runs require
+      explicit Load latest run so unsaved edits survive. Basic Edit includes brush/erase/undo/clear
+      over owned reference with native normalized v5 mask; executed edit instruction uses actual
+      shared scene text. Normal DMC stays running. Frontend verification currently queued behind
+      shared host build gate; controller/adapter focused checks and synthetic workspace/lifecycle
+      checks passed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T06:22:45.678Z
