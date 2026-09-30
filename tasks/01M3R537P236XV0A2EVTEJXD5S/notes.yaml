@@ -35,3 +35,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T03:22:51.097Z
+  - _ulid: 01M3R5DBN46G3ZYT5Z96PVTF0S
+    content: Candidate commit 15a2ba6 (full hash available on fix/isolated-host-gate) is ready for
+      parent review. Final executable validation also rejects executable-permission directories via
+      -f, confirmed /tmp is rejected with actionable status 75 before launch. Worktree is clean;
+      task remains pending_review until parent review/integration. No pushed or integrated changes
+      from this helper.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:23:27.780Z
