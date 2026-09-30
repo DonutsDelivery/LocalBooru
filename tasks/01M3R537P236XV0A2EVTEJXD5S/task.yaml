@@ -10,13 +10,21 @@ description: Capture the host heavy-build executable and state directory before 
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-09-30T03:23:01.235Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -28,7 +36,28 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-09-30T03:18:40.330Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-09-30T03:23:01.235Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-09-30T03:23:01.241Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-09-30T03:23:01.241Z
 created_at: 2026-09-30T03:17:56.034Z
 started_at: 2026-09-30T03:18:40.330Z
+submitted_at: 2026-09-30T03:23:01.241Z
 todos: []
 automation: manual_only
