@@ -10,3 +10,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T03:18:41.415Z
+  - _ulid: 01M3R5B34FHJ6NXZ632617G6ZW
+    content: "Parent approved a narrowly scoped readiness extension: default 1800 seconds for the fresh
+      isolated target, configurable positive integer up to 14400 via
+      LOCALBOORU_TEST_READY_TIMEOUT_SECONDS. Use SECONDS deadline, preserve child-exit detection and
+      cleanup, and provide an actionable timeout. Initial gate/profile synthetic checks pass.
+      Existing test-host-build-integration.sh passes. test-run-dev.sh stops at its pre-existing
+      LocalBooru duplicate-launch message assertion; main currently reports DonutMediaCenter. Leave
+      that unrelated branding assertion unchanged."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:22:13.520Z
