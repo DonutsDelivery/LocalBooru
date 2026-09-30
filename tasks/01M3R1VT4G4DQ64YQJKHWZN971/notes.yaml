@@ -8,3 +8,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T02:21:43.773Z
+  - _ulid: 01M3R28J9JHZR5G8CBFHPXHCD3
+    content: Candidate a245131 adds product decision record and creator commerce/offline delivery
+      record, crosslinked with prior architecture. Preserves later corrections and distinguishes
+      requirements, user reports, proposals and open choices; explicitly discloses original
+      truncated text. Independent High-reasoning reviewer found no blockers and two P3 wording
+      issues, both corrected. Manual coverage review, 12 local document links/anchors verified, git
+      diff --check clean. No builds/tests or private media access needed for documentation-only
+      change.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T02:28:25.010Z
