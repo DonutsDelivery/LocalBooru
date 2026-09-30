@@ -4495,6 +4495,47 @@ reviews:
         runner: root
         created_at: 2026-09-30T21:54:44.851Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 1b91d69c984876d1420b43d2937184c50b06e10e
+        evidence: "Independent exact-head source approval1b91d69, clean worktree: strength sliders/raw
+          numeric preservation/pointer+keyboard end dedupe, dead-parent draft guard, optional B crop
+          guard and all prior backend/adapter/graphs reviewed. Root disposable canvasDimensions
+          behavior passed missingB/uncroppedA/B/croppedA/fallback."
+        name: source-review
+        required: true
+        runner: donut_create_review
+        created_at: 2026-09-30T22:25:39.415Z
+        completed_at: 2026-09-30T22:25:39.415Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 1b91d69c984876d1420b43d2937184c50b06e10e
+        evidence: Controller/adapter/graphs unchanged since prior passed35Python+5adapter+actual51node
+          serialized richcontrols/mainface/finalclassification and previewownership/preflight
+          runners. UI finalESLint2files zero warnings; no tracked tests added.
+        name: controller-adapter-serialization
+        required: true
+        runner: root-focused
+        created_at: 2026-09-30T22:25:39.922Z
+        completed_at: 2026-09-30T22:25:39.922Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 1b91d69c984876d1420b43d2937184c50b06e10e
+        evidence: "Final1b91d69 queued session3931: existing22 cases on bothsidecar/controls, then
+          actualReact+scopedComfy synthetic browser bundles. Retesting native numericvalidity,
+          keyboard/remount and validreferencecanvas after confirmed null-B crash fixed.
+          RealGPUgeneration and physicalmobile notclaimed."
+        name: frontend-and-browser
+        required: true
+        runner: root-host-gate
+        created_at: 2026-09-30T22:25:40.319Z
+        completed_at: null
     events:
       - _ulid: 01M3T4DDGB4Y4NYWK77VJYR14J
         actor: DonutsDelivery
@@ -4559,6 +4600,35 @@ reviews:
           status: running
           name: frontend-and-browser
         timestamp: 2026-09-30T21:54:44.889Z
+      - _ulid: 01M3T6RRM7TRX30N9E693SHWVT
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_base: ae908b1
+          new_head: 1b91d69c984876d1420b43d2937184c50b06e10e
+          previous_head: 3f2d063
+        timestamp: 2026-09-30T22:25:38.952Z
+      - _ulid: 01M3T6RS7BW6KZGQ7ZHSK2JC8M
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-review
+        timestamp: 2026-09-30T22:25:39.563Z
+      - _ulid: 01M3T6RSQ8239BMQP34FEQWX22
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: controller-adapter-serialization
+        timestamp: 2026-09-30T22:25:40.072Z
+      - _ulid: 01M3T6RT3WARXBWBV6JXKZHS1H
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: frontend-and-browser
+        timestamp: 2026-09-30T22:25:40.476Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -4569,9 +4639,9 @@ reviews:
       base_branch: feat/create-output-sidecars
       base_commit: ae908b1
       head_branch: feat/create-v5-controls
-      head_commit: 3f2d063
+      head_commit: 1b91d69c984876d1420b43d2937184c50b06e10e
     threads: []
     verdicts: []
     created_at: 2026-09-30T21:44:29.965Z
-    updated_at: 2026-09-30T21:54:44.851Z
+    updated_at: 2026-09-30T22:25:40.319Z
     notes: []
