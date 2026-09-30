@@ -56,3 +56,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T03:26:33.848Z
+  - _ulid: 01M3R5KV2WT58W234A3SZ6R8E7
+    content: "Review blocker fix in progress: an accepting but unresponsive /health endpoint could keep
+      curl alive past readiness deadline. Bound connection and total health-probe time to min(2
+      seconds, remaining startup budget). Keep child detection, cleanup, and all isolation. Actual
+      candidate branch is fix/isolated-host-gate in /tmp/dmc-isolated-host-gate; original-root
+      submit recorded unrelated splice/mac-pairing linkage, so review must use explicit candidate
+      commit from notes."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:27:00.188Z
