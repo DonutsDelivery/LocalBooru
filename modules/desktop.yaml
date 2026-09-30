@@ -1062,6 +1062,12 @@ features:
           preserve other advanced settings and queue the edited workflow without resetting the graph
           or draft.
         when: The user changes basic controls, fine-tunes the advanced panels and returns to the basic view
+      - given: Desktop and a write-authorized paired mobile client use the same creator backend
+        id: ac-mobile-shared-workspace
+        then: The basic interface fits mobile screens and both clients share owned queue/results/progress
+          and latest submitted workflow; explicit later workflow loading preserves in-progress edits
+          and cancellation cannot affect other studios.
+        when: They open the studio, submit runs, inspect jobs or cancel queued work
     tags: []
     created: 2026-09-29T23:03:40.541Z
     notes: []
