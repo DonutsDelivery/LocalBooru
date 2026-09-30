@@ -1,0 +1,10 @@
+notes:
+  - _ulid: 01M3RARXCE7NAYXDG08XEEYQ2Q
+    content: "Plan: inspect current ready existing-backend studio delivery; reproduce CSP frame-src
+      default-self block with synthetic two-origin fixtures; allow expected HTTP/HTTPS studio
+      origins and verify source-qualified save UI unchanged. Empty destination list matches current
+      absence of image-enabled directories, not a list bug. Review, merge main, install current
+      artifact for next user restart."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T04:57:09.262Z
