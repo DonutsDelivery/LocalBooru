@@ -14,3 +14,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T20:15:13.428Z
+  - _ulid: 01M3T1GRZ2X99WR6DRDM814V75
+    content: Candidate ae908b1 frozen and independently source-approved by donut_create_review. Existing
+      Python35 and adapter5 checks pass; earlier focused Rust create5+metadata9 pass. Final
+      synthetic Rust route/sidecar example queued via project build gate, waiting for DonutStudio
+      compiler; frontend/browser checks pending gate. Normal user DMC remains running, not used for
+      smoke testing. Candidate remains unmerged until final focused checks pass.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T20:53:54.274Z
