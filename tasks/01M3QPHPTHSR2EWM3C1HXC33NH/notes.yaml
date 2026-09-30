@@ -87,3 +87,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T03:32:24.754Z
+  - _ulid: 01M3R7FFNJZ267AWY598JPSGHG
+    content: Final review @review-donut-create-addon-final approved/gate passing.105 focused checks,
+      frontend production build, isolated native launch + browser smoke pass; controller
+      installed/runs18009,managed18010, Create scopedImages, unavailablebackend visible/OpenStudio
+      disabled, close/Escape preserves400px gallery scroll and focus. Full
+      model/runtime/GPU/platform generation unverified. Candidate56d8174
+      mergedmain7a88812a043f5c4cf4693139f215e4dc39e67236; origin/main and feature refs verified
+      live. User terminology corrected to add-on; historical branch/specslug preserved. Pre-Create
+      architecture docs also pushed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:59:34.578Z
