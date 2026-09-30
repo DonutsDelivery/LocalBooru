@@ -1,0 +1,33 @@
+_ulid: 01M3SZ89VM8G8P7G82GZ7BM2SX
+slugs:
+  - create-output-sidecars
+title: Create output directory and hidden workflow sidecars with gallery reload
+type: task
+description: Add a user-triggered dedicated Created Images directory; preserve PNG bytes and save
+  full JSON provenance in a hidden companion directory. Gallery reads sidecar metadata and exposes
+  Load workflow into the same live Create editor, no generation. Keep user app alive and preserve
+  unrelated files. Verify synthetic focused surfaces; integrate main.
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-09-30T20:14:19.589Z
+        previous: null
+    command: task-start
+    timestamp: 2026-09-30T20:14:19.590Z
+created_at: 2026-09-30T20:14:19.507Z
+started_at: 2026-09-30T20:14:19.589Z
+todos: []

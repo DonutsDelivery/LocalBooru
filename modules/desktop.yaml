@@ -1001,7 +1001,7 @@ features:
       selected local image library.
     status:
       maturity: draft
-      implementation: implemented
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
@@ -1068,6 +1068,21 @@ features:
           and latest submitted workflow; explicit later workflow loading preserves in-progress edits
           and cancellation cannot affect other studios.
         when: They open the studio, submit runs, inspect jobs or cancel queued work
+      - given: A write-authorized creator user needs a place to save generated images
+        id: ac-output-directory
+        then: The directory is created once, appears in Images only and is selected for saving; existing
+          directory choices remain available.
+        when: They choose to create a dedicated output directory in an available library
+      - given: A generated image is saved into the library
+        id: ac-output-sidecar
+        then: A hidden companion preserves its workflow and executed generation settings, corresponds to
+          that exact image and supplies gallery metadata without visible folder clutter.
+        when: The save finishes or the directory is reindexed
+      - given: A gallery image has an attached generation workflow
+        id: ac-gallery-workflow
+        then: Create opens with that workflow and its saved settings without automatically generating;
+          unavailable or invalid workflows show a useful error.
+        when: The user chooses Load workflow
     tags: []
     created: 2026-09-29T23:03:40.541Z
     notes: []
