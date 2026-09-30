@@ -3940,7 +3940,43 @@ reviews:
       - review-create-simple-studio
     title: Basic creation studio and paired workspace review
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+          head_commit: 4954f16d1434af24545397dcf2d234d3b99a2847
+        evidence: Queued behind host-wide build token; no broad build or user-profile smoke.
+        name: browser-layout-focused-checks
+        required: true
+        runner: isolated Vite fixture and existing Vitest
+        created_at: 2026-09-30T06:50:44.432Z
+        completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+          head_commit: 4954f16d1434af24545397dcf2d234d3b99a2847
+        evidence: 35 existing controller cases and 5 adapter cases pass; disposable live widget fixture
+          covers aliases/promoted values/rollback/scoped messages/references/errors/latest sync.
+        name: controller-and-adapter
+        required: true
+        runner: Python unittest and Node VM modules
+        created_at: 2026-09-30T06:50:44.734Z
+        completed_at: 2026-09-30T06:50:44.734Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+          head_commit: 4954f16d1434af24545397dcf2d234d3b99a2847
+        evidence: 26 actual v5 nodes; prompt/style/steps9 cfg1.5 seed42 verified in execution; image
+          reference/inpaint mask and actual edit instruction in queued graph; two-client latest-load
+          preserves unsaved edits then explicit load works. No real GPU generation.
+        name: modern-comfy-serialized-prompt
+        required: true
+        runner: T3 browser with synthetic controller mutations
+        created_at: 2026-09-30T06:50:44.831Z
+        completed_at: 2026-09-30T06:50:44.831Z
     events:
       - _ulid: 01M3RH6Y4ZGX5VYWNND8VF73NW
         actor: DonutsDelivery
@@ -3948,9 +3984,37 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-09-30T06:49:40.255Z
+      - _ulid: 01M3RH8WQR3GA1MBZ9ST531F78
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-30T06:50:44.344Z
+      - _ulid: 01M3RH8WVAF6S6Z2T09D4B0B0R
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: browser-layout-focused-checks
+        timestamp: 2026-09-30T06:50:44.458Z
+      - _ulid: 01M3RH8X4Q5FN57M3YC5H3YA0A
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: controller-and-adapter
+        timestamp: 2026-09-30T06:50:44.759Z
+      - _ulid: 01M3RH8X7QMYFB77WQF0RGWNPF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: modern-comfy-serialized-prompt
+        timestamp: 2026-09-30T06:50:44.855Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@create-simple-studio"
     subject:
@@ -3962,14 +4026,25 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-09-30T06:49:40.255Z
-    updated_at: null
+    updated_at: 2026-09-30T06:50:44.831Z
     notes: []
   - _ulid: 01M3RH6YAWR9KQJEN3V03ES1C1
     slugs:
       - review-settings-navigation
     title: Settings navigation review
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+          head_commit: 88de80d176cc370a2c37dead269d9248ed89d753
+        evidence: Queued behind host-wide build token; no broad build or user-profile smoke.
+        name: browser-layout-focused-checks
+        required: true
+        runner: isolated Vite fixture and existing Vitest
+        created_at: 2026-09-30T06:50:44.639Z
+        completed_at: null
     events:
       - _ulid: 01M3RH6YAWG1A3TS0WA0YTGKF8
         actor: DonutsDelivery
@@ -3977,9 +4052,23 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-09-30T06:49:40.444Z
+      - _ulid: 01M3RH8WYKMFANV6GJFQ3SC2CF
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-30T06:50:44.563Z
+      - _ulid: 01M3RH8X1RWND5KA5JAJ4PVMCB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: browser-layout-focused-checks
+        timestamp: 2026-09-30T06:50:44.664Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@settings-navigation-four-items"
     subject:
@@ -3991,5 +4080,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-09-30T06:49:40.444Z
-    updated_at: null
+    updated_at: 2026-09-30T06:50:44.639Z
     notes: []
