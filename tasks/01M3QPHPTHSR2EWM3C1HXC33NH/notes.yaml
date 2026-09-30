@@ -75,3 +75,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T03:22:41.768Z
+  - _ulid: 01M3R5XR1HNFX7KN6JPEE5SWNA
+    content: Candidate now56d8174, combines current main with add-on and reviewed isolated-launcher
+      fix5f068177. Ref source merge delta independently approved; Python56/browser-adapter5 checks
+      pass and release metadata2.0.5 consistent. User terminology correction committedmain676cd53.
+      Authorized atomic push verified origin/main=d44d0eb7e425efe01d29aa18de9a8058d606abc0 and
+      origin/feat/donut-create-plugin=56d8174fe0d13f4304b46d80ac4e49b645b8a65d. Local original feat
+      worktree remains2394773 intentionally while native command41702 waits shared gate, so
+      buildinputs do notchange. Add-on not integratedmain or markedcomplete; native/isolated smoke
+      pending.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:32:24.754Z
