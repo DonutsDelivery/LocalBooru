@@ -3145,7 +3145,33 @@ reviews:
       - review-pre-create-product-record
     title: Review pre-Create product and commerce records
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 08b41742232bb2ad17f65e735a173f33c16d58e9
+          head_commit: a245131
+        evidence: 12 local links/anchors verified; git diff --check clean. Documentation-only; no product
+          builds or tests required.
+        name: documentation-links-and-whitespace
+        required: true
+        runner: manual-link-audit-and-git-diff-check
+        created_at: 2026-09-30T02:28:51.025Z
+        completed_at: 2026-09-30T02:28:51.025Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 08b41742232bb2ad17f65e735a173f33c16d58e9
+          head_commit: a245131
+        evidence: Independent High reasoning reviewer approved committed a245131 against08b4174. Both P3
+          wording nits resolved. User requirements and reports distinguished from proposals and
+          verified implementation; latest private source correction and offline fulfillment limits
+          preserved.
+        name: independent-document-review
+        required: true
+        runner: pre_create_docs_review
+        created_at: 2026-09-30T02:28:51.112Z
+        completed_at: 2026-09-30T02:28:51.112Z
     events:
       - _ulid: 01M3R28KWK6SXMD118BPJC68QK
         actor: DonutsDelivery
@@ -3153,9 +3179,47 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-09-30T02:28:26.643Z
+      - _ulid: 01M3R29BM84GW5W8HWHTT2NA75
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-30T02:28:50.952Z
+      - _ulid: 01M3R29BQ7KAA997E1J61Y5R26
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: documentation-links-and-whitespace
+        timestamp: 2026-09-30T02:28:51.047Z
+      - _ulid: 01M3R29BSW0KD868KDXR945773
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-document-review
+        timestamp: 2026-09-30T02:28:51.132Z
+      - _ulid: 01M3R29BWNT47H3AYXD48TETF7
+        actor: /root/pre_create_docs_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 08b41742232bb2ad17f65e735a173f33c16d58e9
+            head_commit: a245131
+          decision: approve
+        timestamp: 2026-09-30T02:28:51.221Z
+      - _ulid: 01M3R29BWN5TC366VW3ZWZFPSX
+        actor: /root/pre_create_docs_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-09-30T02:28:51.221Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@task-pre-create-product-record"
     subject:
@@ -3165,7 +3229,15 @@ reviews:
       head_branch: docs/pre-create-product-record
       head_commit: a245131
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 08b41742232bb2ad17f65e735a173f33c16d58e9
+          head_commit: a245131
+        decision: approve
+        reviewer: /root/pre_create_docs_review
+        role: reviewer
+        created_at: 2026-09-30T02:28:51.221Z
     created_at: 2026-09-30T02:28:26.643Z
-    updated_at: null
+    updated_at: 2026-09-30T02:28:51.221Z
     notes: []
