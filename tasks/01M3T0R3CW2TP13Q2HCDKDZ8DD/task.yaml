@@ -14,13 +14,32 @@ description: User requested detailed basic controls list, separate face-only pro
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
-depends_on:
-  - "@create-output-sidecars"
+depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      depends_on:
+        new: []
+        previous:
+          - "@create-output-sidecars"
+    command: task-set
+    timestamp: 2026-09-30T20:41:24.445Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-09-30T20:41:24.541Z
+        previous: null
+    command: task-start
+    timestamp: 2026-09-30T20:41:24.541Z
 created_at: 2026-09-30T20:40:25.756Z
+started_at: 2026-09-30T20:41:24.541Z
 todos: []

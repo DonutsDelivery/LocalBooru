@@ -1,1 +1,21 @@
-notes: []
+notes:
+  - _ulid: 01M3T0SWPWSYR9HVCSVQGV4YSQ
+    content: "Dependencies cleared (was: @create-output-sidecars)"
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T20:41:24.444Z
+  - _ulid: 01M3T0SWXB28D65WYA2XF0Q2T6
+    content: "User expanded active scope and specified Swarm-style central latest-result preview with
+      separate surrounding panes and mobile tabs. Sidecars code dependency is
+      source-complete/committed ae908b1; formal task dependency removed to allow independent
+      implementation while DonutStudio holds host build gate. Controls worktree
+      /tmp/dmc-create-controls branch feat/create-v5-controls stacked on candidate. Integration
+      remains ordered: reviewed/verified sidecars into main, then reviewed/verified controls. Plan:
+      UI owner layout/model+effects+edit controls/autosave/Instant; controller owner whitelisted
+      live v5 bindings and original/preset workflow prompt routing; root shared live-preview
+      transport and coordination. Preserve disabled-statecollapse, advanced onegraph,
+      capability/outputscope, no automatic generation on load, no privatefiles. Existingfocused
+      checks and syntheticserialization/browser checks only, no newtestcases."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T20:41:24.651Z
