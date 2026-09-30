@@ -157,6 +157,8 @@ describe('Donut Create studio', () => {
     expect(frame.hidden).toBe(true)
     await screen.findByRole('button', { name: 'Return to studio' })
     fireEvent.click(screen.getByRole('button', { name: 'Return to studio' }))
+    expect(frame.hidden).toBe(true) // Basic view retains the workflow engine without showing its graph.
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced editor', exact: true }))
     expect(frame.hidden).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Close studio' }))
     openStudio()
@@ -223,7 +225,7 @@ describe('Donut Create studio', () => {
     api.apiClient.post.mockResolvedValueOnce({ data: { cancelled: [], errors: [message] } })
     fireEvent.click(cancel)
     expect((await screen.findByRole('alert')).textContent).toBe(message)
-    expect(screen.getByRole('status').textContent).toBe(message)
+    expect(screen.getAllByRole('status').some(element => element.textContent === message)).toBe(true)
     expect(screen.getByText('running')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Cancel studio jobs' }).disabled).toBe(false)
     expect(screen.queryByText(/Cancellation requested|Cancelled \d+ studio job/)).toBeNull()
