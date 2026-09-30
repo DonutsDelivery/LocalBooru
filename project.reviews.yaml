@@ -3001,9 +3001,16 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-09-30T00:03:39.879Z
+      - _ulid: 01M3QSZHYFRZAFAFPJ53J6Y652
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-30T00:03:41.135Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@task-donut-create-plugin"
       - "@donut-create-plugin"
@@ -3016,5 +3023,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-09-30T00:03:39.879Z
-    updated_at: null
+    updated_at: 2026-09-30T00:03:41.111Z
     notes: []
