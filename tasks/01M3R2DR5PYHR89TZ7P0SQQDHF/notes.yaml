@@ -11,3 +11,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T02:31:42.162Z
+  - _ulid: 01M3R2GDTVZ1GH6C739X1Y3ZNX
+    content: "Independent High reviewer main_sync_review approved staged mechanical merge: all five
+      conflicts resolved, DMC branding and remote2.0.5 metadata preserved, API flags and throttle
+      reset retained, image-only diagnosis guarded by source ownership, duplicate file helper
+      retained, no change to gallery media nav/policy wiring. All18 focused Node checks plus API
+      syntax/release consistency passed. Untracked MediaNavigation test remains unstaged. No native
+      build claim. Commit merge preserving both histories, then push explicit main and existing
+      creation branch."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T02:32:42.587Z
