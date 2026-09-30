@@ -3433,7 +3433,35 @@ reviews:
       - review-isolated-host-gate-v2
     title: Review isolated host gate fix cycle 2
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 2eab59d
+          head_commit: 5f068177
+        evidence: Worker verified default/override host gate path and state capture, temporary
+          profile/cleanup, delayed readiness, timeout/earlyexit, invalidconfig/filearg rejection;
+          actual stuck-health curl ended3.03s for3s budget and cleaned child/profile. Bash
+          syntax/diff and existing host-gate integration check pass. Existing dev test branding
+          mismatch independently confirmed pre-existing; no realapp/build used.
+        name: isolated-launcher-behavior
+        required: true
+        runner: disposable-fake-launch-and-curl-fixtures
+        created_at: 2026-09-30T03:30:08.348Z
+        completed_at: 2026-09-30T03:30:08.348Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 2eab59d
+          head_commit: 5f068177
+        evidence: Independent High reviewer approves5f068177 against2eab59d after P2bounded-probe fix.
+          Samehosttoken identity retained through isolation, no normalprofile fallback, deadline and
+          probe bounded. No remaining findings.
+        name: independent-launcher-source-review
+        required: true
+        runner: pre_create_docs_review
+        created_at: 2026-09-30T03:30:08.446Z
+        completed_at: 2026-09-30T03:30:08.446Z
     events:
       - _ulid: 01M3R5SH5VQNFJDXNH9YAMZ3B0
         actor: DonutsDelivery
@@ -3441,9 +3469,47 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-09-30T03:30:06.651Z
+      - _ulid: 01M3R5SJRAAKMMZYZ4KVJA9F1S
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-30T03:30:08.266Z
+      - _ulid: 01M3R5SJVJ07WNKWYR6WSRHZWV
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: isolated-launcher-behavior
+        timestamp: 2026-09-30T03:30:08.370Z
+      - _ulid: 01M3R5SJYQSEA1CHHBAQJQTPVT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-launcher-source-review
+        timestamp: 2026-09-30T03:30:08.471Z
+      - _ulid: 01M3R5SK1SAD2XH00TQMWE9C18
+        actor: /root/pre_create_docs_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 2eab59d
+            head_commit: 5f068177
+          decision: approve
+        timestamp: 2026-09-30T03:30:08.569Z
+      - _ulid: 01M3R5SK1S20HGME6WV0AGG39J
+        actor: /root/pre_create_docs_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-09-30T03:30:08.569Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@isolated-host-build-gate"
     subject:
@@ -3453,7 +3519,15 @@ reviews:
       head_branch: fix/isolated-host-gate
       head_commit: 5f068177
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 2eab59d
+          head_commit: 5f068177
+        decision: approve
+        reviewer: /root/pre_create_docs_review
+        role: reviewer
+        created_at: 2026-09-30T03:30:08.569Z
     created_at: 2026-09-30T03:30:06.651Z
-    updated_at: null
+    updated_at: 2026-09-30T03:30:08.569Z
     notes: []
