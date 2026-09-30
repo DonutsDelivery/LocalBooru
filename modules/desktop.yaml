@@ -1044,6 +1044,24 @@ features:
         then: Unauthorized creation requests are rejected and the studio link grants access only to its own
           creation session and outputs.
         when: The client attempts creation or studio access
+      - given: The creator backend and v5 studio session are ready
+        id: ac-basic-studio
+        then: The default view presents a beginner-friendly prompt, backend model choices, image shape and
+          Generate controls with queue and result gallery; the ComfyUI node graph is available
+          through a separate Advanced editor action.
+        when: A user opens Create from the image gallery
+      - given: A user has an image and a ready studio session
+        id: ac-basic-edit
+        then: The image is uploaded through the session-owned reference endpoint and the current v5 editing
+          workflow uses that reference and instruction; upload and generation errors are visible and
+          unrelated jobs remain outside the session.
+        when: They select Edit, upload that image, provide editing instructions and generate
+      - given: The basic view and advanced v5 editor share one studio session
+        id: ac-basic-advanced-sync
+        then: Both views reflect the same current workflow; basic changes update only their bound fields,
+          preserve other advanced settings and queue the edited workflow without resetting the graph
+          or draft.
+        when: The user changes basic controls, fine-tunes the advanced panels and returns to the basic view
     tags: []
     created: 2026-09-29T23:03:40.541Z
     notes: []
