@@ -1498,7 +1498,7 @@ tasks:
       - isolated-host-build-gate
     title: Preserve host build gate in isolated desktop launcher
     type: infra
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -1508,5 +1508,5 @@ tasks:
     todos_count: 0
     created_at: 2026-09-30T03:17:56.034Z
     started_at: 2026-09-30T03:28:00.206Z
-    submitted_at: 2026-09-30T03:23:01.241Z
+    submitted_at: 2026-09-30T03:29:00.948Z
     automation: manual_only
