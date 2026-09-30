@@ -1,0 +1,23 @@
+_ulid: 01M3R1VT4G4DQ64YQJKHWZN971
+slugs:
+  - task-pre-create-product-record
+title: Record product decisions before the creation integration
+type: infra
+description: "Consolidate the conversation before ComfyUI into durable documentation: gallery and
+  playback requirements, UX corrections, private paired sources versus public creator collections,
+  mobile/settings direction, discovery, permissions, paid collections and offline fulfillment.
+  Preserve existing architecture evidence; distinguish decisions, proposals and reported defects.
+  Documentation only; no implementation or completion claims."
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-09-30T02:21:27.056Z
+todos: []
+automation: manual_only

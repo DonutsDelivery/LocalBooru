@@ -1457,3 +1457,17 @@ tasks:
     started_at: 2026-09-29T23:32:17.744Z
     submitted_at: 2026-09-29T23:32:41.511Z
     completed_at: 2026-09-29T23:34:57.433Z
+  - _ulid: 01M3R1VT4G4DQ64YQJKHWZN971
+    slugs:
+      - task-pre-create-product-record
+    title: Record product decisions before the creation integration
+    type: infra
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 3
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-09-30T02:21:27.056Z
+    automation: manual_only
