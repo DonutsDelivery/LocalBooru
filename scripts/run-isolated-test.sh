@@ -93,7 +93,13 @@ APP_PID=$!
 
 READY_DEADLINE=$((SECONDS + READY_TIMEOUT_SECONDS))
 while (( SECONDS < READY_DEADLINE )); do
-  if curl --fail --silent "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+  PROBE_TIMEOUT_SECONDS=$((READY_DEADLINE - SECONDS))
+  (( PROBE_TIMEOUT_SECONDS > 0 )) || break
+  (( PROBE_TIMEOUT_SECONDS > 2 )) && PROBE_TIMEOUT_SECONDS=2
+  if curl --fail --silent \
+    --connect-timeout "$PROBE_TIMEOUT_SECONDS" \
+    --max-time "$PROBE_TIMEOUT_SECONDS" \
+    "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
     printf 'Isolated LocalBooru instance is ready on http://127.0.0.1:%s\n' "$PORT"
     wait "$APP_PID"
     exit $?
