@@ -823,6 +823,23 @@
     finally { loading = false; }
     await finishLoad();
   }
+  async function loadWorkflow(payload) {
+    requireEditor();
+    const workflow = payload?.workflow;
+    if (!object(workflow) || !Array.isArray(workflow.nodes) || !workflow.nodes.length
+      || JSON.stringify(workflow).length > 4 * 1024 * 1024) throw new Error('This image has no valid editable workflow.');
+    const before = (app.rootGraph || app.graph).serialize();
+    loading = true;
+    try {
+      if (await app._donutCreateLoadGraphData(workflow) === false) throw new Error('The attached workflow could not be loaded.');
+      // This is a saved image recipe, not an acknowledgement of the shared run.
+      loadedRunRevision = 0;
+    } catch (error) {
+      await app._donutCreateLoadGraphData(before);
+      throw error;
+    } finally { loading = false; }
+    await finishLoad();
+  }
 
   // Only these named v5 controls are exposed to the parent. The controls panel
   // supplies live paths/options; verified paths also support its initial load.
@@ -852,7 +869,7 @@
   };
   const integerFields = new Set(['width', 'height', 'batchSize', 'steps', 'seed', 'maskFeather']);
   const channel = 'donut-create-basic-v1';
-  const actions = new Set(['snapshot', 'patch', 'generate', 'upload-reference', 'load-preset', 'load-latest']);
+  const actions = new Set(['snapshot', 'patch', 'generate', 'upload-reference', 'load-preset', 'load-latest', 'load-workflow']);
   const referencePattern = /^donutref:[a-f0-9]{64}$/;
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   const graphNodes = graph => graph?.nodes || graph?._nodes || [];
@@ -1102,6 +1119,7 @@
         else if (message.action === 'upload-reference') await uploadReference(message.payload);
         else if (message.action === 'load-preset') await loadPreset();
         else if (message.action === 'load-latest') await loadLatest();
+        else if (message.action === 'load-workflow') await loadWorkflow(message.payload);
         reply({ok: true, snapshot: snapshot()});
       } catch (error) { showError(error); reply({ok: false, error: error?.message || String(error)}); }
     }).catch(showError);

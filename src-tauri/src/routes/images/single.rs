@@ -19,7 +19,7 @@ use crate::services::video_preview;
 
 use super::helpers::{find_image_directory, get_image_tags_from_directory};
 
-fn media_path_matches_hash(path: &Path, expected_hash: &str) -> bool {
+pub(crate) fn media_path_matches_hash(path: &Path, expected_hash: &str) -> bool {
     let path = path.to_string_lossy();
     importer::calculate_quick_hash(&path).is_ok_and(|hash| hash == expected_hash)
         || importer::calculate_file_hash(&path).is_ok_and(|hash| hash == expected_hash)
@@ -196,7 +196,7 @@ fn generate_video_previews_from_candidates(
     false
 }
 
-fn resolve_exact_media(
+pub(crate) fn resolve_exact_media(
     library: &crate::db::library::LibraryContext,
     directory_id: i64,
     image_id: i64,

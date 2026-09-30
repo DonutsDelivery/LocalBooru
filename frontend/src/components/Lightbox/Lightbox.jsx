@@ -21,6 +21,7 @@ import { useShareStream } from './hooks/useShareStream'
 import { useCastSession } from './hooks/useCastSession'
 import { useVideoGestures } from './hooks/useVideoGestures'
 import { useAddonStatus } from '../../hooks/useAddonStatus'
+import { useImageWorkflow } from '../../hooks/useImageWorkflow'
 import { curationActionForSwipe } from '../../utils/lightboxGestures.js'
 import { isVideoMediaElement, releaseVideoMedia } from '../../utils/lightboxMedia.js'
 import { diagnoseImageLoad } from '../../utils/imageLoadDiagnostics.js'
@@ -189,6 +190,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     adjustmentRequestOwnerRef.current.invalidatePreview()
   }, [])
   const isVideoFile = isVideo(image?.original_filename)
+  const workflow = useImageWorkflow(image, !isVideoFile && (!image?.file_status || image.file_status === 'available'))
   const detectedVRProjection = useMemo(
     () => detectVRProjection(image?.original_filename || image?.filename),
     [image?.original_filename, image?.filename]
@@ -1877,6 +1879,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <line x1="14" y1="11" x2="14" y2="17"/>
           </svg>
         </button>
+        {!isVideoFile && workflow.available && <button type="button" className="lightbox-btn lightbox-secondary-action" title="Load workflow" aria-label="Load workflow"
+          disabled={workflow.loading} onClick={async () => { if (await workflow.loadWorkflow()) onClose() }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="3" width="6" height="6" rx="1" /><rect x="15" y="15" width="6" height="6" rx="1" /><path d="M9 6h6a3 3 0 0 1 3 3v6M6 9v9h9" /></svg>
+        </button>}
         {!isVideoFile && (
           <div className="lightbox-adjust-container lightbox-secondary-action">
             <button
@@ -2922,6 +2928,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           position={contextMenu}
           onClose={() => setContextMenu(null)}
           items={[
+            ...(workflow.available && !isVideoFile ? [{
+              label: workflow.loading ? 'Loading workflow…' : 'Load workflow',
+              disabled: workflow.loading,
+              onClick: async () => { if (await workflow.loadWorkflow()) onClose() },
+            }, { separator: true }] : []),
             {
               label: 'Copy Image',
               onClick: handleCopyImage
