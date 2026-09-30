@@ -46,7 +46,7 @@ EXTENSION_ROOTS = {"core", "donutnodes", "comfyui-impact-pack", "comfyui-impact-
                    "ComfyUI_essentials", "ComfyUI-VAE-Utils", "ComfyUI-bleh", "RES4LYF", "mikey_nodes",
                    "derfuu_comfyui_moddednodes", "comfyui-krea2edit", "krea2-nag",
                    "krea-seed-variance-enhancer", "rgthree-comfy"}
-SAFE_EXTRA_NODES = {"SaveImage", "PreviewImage", "LoadImage", "DonutSubjectMaskPreview"}
+SAFE_EXTRA_NODES = {"SaveImage", "PreviewImage", "LoadImage", "DonutSubjectMaskPreview", "DonutToneLab"}
 FILE_MACRO = re.compile(r"__|(?<![\w/*])[A-Za-z][\w/-]*\*(?![\w*])")
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif"}
 
@@ -222,7 +222,7 @@ class Controller:
                    for name in model.get("requires_nodes", []) if isinstance(name, str)}
         # Donut's vetted wrappers call these helpers internally. Discovery
         # verifies optional model capabilities without widening queued graphs.
-        return self.allowed_nodes() | helpers
+        return self.allowed_nodes() | helpers | {"DonutLoRAStack"}
 
     def expected_capabilities(self) -> dict[str, Any]:
         if hasattr(self.installer, "expected_capabilities"):
@@ -750,11 +750,24 @@ def studio_prefix(request: Request, sid: str) -> str:
     return value
 
 
-def rewrite_asset(text: str, prefix: str) -> str:
-    # Absolute JS imports, HTML attributes and CSS resources must remain scoped.
-    text = re.sub(r"(?P<quote>[\"'`])/(?P<path>(?!/)[^\"'`\s<>]*)",
-                  lambda match: match["quote"] + (match[0][1:] if match["path"].startswith(prefix.lstrip("/")) else prefix + match["path"]), text)
-    return re.sub(r"url\(/(?!/)([^)\s]+)\)", lambda match: "url(" + prefix + match[1] + ")", text)
+def rewrite_asset(text: str, prefix: str, media_type: str) -> str:
+    # Rewrite resource locations, never arbitrary JS strings or regex literals.
+    # Fetch/XHR/WebSocket URLs are scoped separately by the bootstrap adapter.
+    location = r"(?P<quote>[\"'`])/(?P<path>(?!/)[^\"'`\s<>]*)(?P=quote)"
+    if "javascript" in media_type:
+        pattern = r"(?P<head>\bfrom\s*|\bimport\s*(?:\(\s*)?|\bnew\s+URL\s*\(\s*)" + location
+    elif "text/html" in media_type:
+        pattern = r"(?P<head>\b(?:src|href)\s*=\s*)" + location
+    else:
+        pattern = None
+    if pattern:
+        text = re.sub(pattern, lambda match: match["head"] + match["quote"]
+                      + ("/" + match["path"] if match["path"].startswith(prefix.lstrip("/")) else prefix + match["path"])
+                      + match["quote"], text)
+    if "text/css" in media_type or "text/html" in media_type:
+        text = re.sub(r"url\(\s*(?P<quote>[\"']?)/(?P<path>(?!/)[^)\s\"']+)(?P=quote)\s*\)",
+                      lambda match: "url(" + match["quote"] + prefix + match["path"] + match["quote"] + ")", text)
+    return text
 
 
 def bootstrap(prefix: str, sid: str, backend_key: str, profile: str) -> str:
@@ -764,8 +777,9 @@ const prefix=PREFIX, sid=SID;
 window.__DMC_CREATE__={prefix,sessionId:sid,backendKey:BACKEND_KEY,profile:PROFILE};
 function scoped(raw){const url=new URL(String(raw),location.href);
  if(url.origin===location.origin && !url.pathname.startsWith(prefix)){
-  let path=url.pathname; if(path.startsWith('/api/'))path=path.slice(4);
-  url.pathname=prefix+path.replace(/^\\//,''); }
+  let path=url.pathname;
+  while(path.startsWith('/api/') && !path.startsWith(prefix))path=path.slice(4);
+  url.pathname=path.startsWith(prefix)?path:prefix+path.replace(/^\\//,''); }
  return url.href;}
 const originalFetch=window.fetch.bind(window);
 window.fetch=function(input,options){
@@ -783,7 +797,7 @@ XMLHttpRequest.prototype.open=function(method,url,...args){return originalOpen.c
 
 def allowed_route(method: str, route: str) -> bool:
     if method in {"GET", "HEAD"}:
-        if route in {"", "index.html", "favicon.ico", "object_info", "embeddings", "models", "extensions", "features", "system_stats", "prompt", "queue", "history", "view", "settings", "users", "userdata", "donut/config", "api/jobs"}:
+        if route in {"", "index.html", "favicon.ico", "materialdesignicons.min.css", "user.css", "object_info", "embeddings", "models", "experiment/models", "extensions", "features", "system_stats", "prompt", "queue", "history", "view", "settings", "users", "userdata", "donut/config", "api/jobs"}:
             return True
         if re.fullmatch(r"(?:object_info|models|history)/[A-Za-z0-9_.-]+", route):
             return True
@@ -821,6 +835,12 @@ def query_params(route: str, request: Request) -> dict[str, str]:
 
 
 async def studio_local(controller: Controller, session: dict[str, Any], route: str, request: Request) -> Response | None:
+    if route == "experiment/models" and request.method in {"GET", "HEAD"}:
+        # The optional model-manager API exposes host folders. ComfyUI supports
+        # a 404 fallback; workflow model selectors use the scoped /models API.
+        return JSONResponse([], status_code=404)
+    if route == "user.css" and request.method in {"GET", "HEAD"}:
+        return Response(session["userdata"].get("user.css", ""), media_type="text/css")
     if route == "users":
         return JSONResponse({"storage": "server", "multi_user": False, "migrated": False})
     if route == "donut/config":
@@ -952,10 +972,16 @@ def create_app(controller: Controller | None = None) -> FastAPI:
         ctrl = current()
         session = ctrl.session(sid)
         route = clean_route(rest)
+        prefix = studio_prefix(request, sid)
+        # ComfyUI's fileURL may prepend its base to an already scoped extension
+        # URL before the browser adapter has initialized. Accept only duplicate
+        # prefixes for this exact capability, never another studio's link.
+        markers = {prefix.lstrip("/"), f"api/create/studio/{sid}/"}
+        while any(route.startswith(marker) for marker in markers):
+            route = next(route[len(marker):] for marker in markers if route.startswith(marker))
         # Current ComfyUI's API helper adds /api to older route names.
         if route.startswith("api/") and not route.startswith("api/jobs"):
             route = route[4:]
-        prefix = studio_prefix(request, sid)
         if route in {"workflow.json", "donut-create.js", "donut-create.css"} and request.method in {"GET", "HEAD"}:
             path = Path(ctrl.installer.workflow_path) if route == "workflow.json" else Path(ctrl.installer.assets_root) / route
             if not path.is_file():
@@ -1120,7 +1146,16 @@ def create_app(controller: Controller | None = None) -> FastAPI:
                 ctrl.persist()
             content = json.dumps(scrub_paths(data)).encode()
         elif any(kind in media_type for kind in ("text/html", "javascript", "text/css")):
-            text = rewrite_asset(content.decode("utf-8"), prefix)
+            text = rewrite_asset(content.decode("utf-8"), prefix, media_type)
+            # New ComfyUI frontends expose compatibility modules through a
+            # global namespace populated by their asynchronous main bundle.
+            # Do not evaluate those shims before that namespace is ready.
+            if "javascript" in media_type and route in {"scripts/app.js", "scripts/api.js", "scripts/defaultGraph.js"}:
+                namespaces = re.findall(r"window\.comfyAPI\.([A-Za-z_][A-Za-z0-9_]*)", text)
+                if namespaces:
+                    text = "await new Promise((resolve,reject)=>{const started=Date.now();const check=()=>{" \
+                        + "if(" + "&&".join("window.comfyAPI?." + name for name in sorted(set(namespaces))) \
+                        + "){resolve();return;}if(Date.now()-started>60000){reject(new Error('ComfyUI did not initialize its browser API.'));return;}setTimeout(check,100);};check();});\n" + text
             if "text/html" in media_type and route in {"", "index.html"}:
                 text = re.sub(r"<base\b[^>]*>", "", text, flags=re.IGNORECASE)
                 injection = f'<base href="{prefix}">' + bootstrap(prefix, sid, session.get("backend_key") or ctrl.backend_key(session["backend_url"], "existing"), session.get("profile", "base"))

@@ -757,7 +757,7 @@
     }
     for (const node of Object.values(graph.output || {})) {
       const type = node.class_type, inputs = node.inputs || {};
-      if (!info[type]) missingNodes.add(type);
+      if (!info[type]) missingNodes.add(type || 'Unregistered workflow node');
       const field = fileWidgets[type];
       if (field && typeof inputs[field[1]] === 'string') await hasModel(field[0], inputs[field[1]]);
       if (type === 'DonutLoRALoader') {
@@ -773,6 +773,7 @@
       }
       if (type === 'DonutVAELoader' && inputs.vae_name === 'Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors' && !info.VAEUtils_PatchWanUpscaleVAE) missingNodes.add('VAEUtils_PatchWanUpscaleVAE');
       if (type === 'DonutSampler' && inputs.sda_enabled) await hasModel('loras', 'krea2/krea2_turbo_sda_v1.0_comfy.safetensors');
+      if (type === 'DonutToneLab' && inputs.enabled) await hasModel('donut_tone', inputs.model_name);
       if ((type === 'DonutTiledUpscale' && inputs.upscale_engine === 'SeedVR2') || (type === 'DonutSeedVR2Upscale' && inputs.enabled)) {
         for (const nodeType of ['SeedVR2Preprocess', 'SeedVR2Conditioning', 'SeedVR2PostProcessing']) if (!info[nodeType]) missingNodes.add(nodeType);
         await hasModel('diffusion_models', inputs.seedvr2_model_name);
@@ -803,6 +804,16 @@
     // ComfyUI computes api_base from location.pathname. Keep it aligned with
     // the scoped proxy even when a host supplies a custom studio prefix.
     api.api_base = base.pathname.replace(/\/$/, '');
+    // Scoped extension links already include the API base. Newer ComfyUI
+    // helpers otherwise prepend it a second time during module loading.
+    for (const helper of ['apiURL', 'fileURL']) {
+      if (typeof api[helper] !== 'function') continue;
+      const originalURL = api[helper].bind(api);
+      api[helper] = function (route, ...args) {
+        return typeof route === 'string' && route.startsWith(base.pathname)
+          ? route : originalURL(route, ...args);
+      };
+    }
     try {
       const defaults = await import(new URL('scripts/defaultGraph.js', base).href);
       defaultGraph = defaults.defaultGraph;
