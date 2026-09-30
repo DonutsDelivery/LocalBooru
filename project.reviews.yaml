@@ -3356,9 +3356,40 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-09-30T03:26:32.252Z
+      - _ulid: 01M3R5K1241KSEDP9DTC5DZKM9
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-30T03:26:33.541Z
+      - _ulid: 01M3R5K15GDKDBXFF3ST0G41FJ
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01M3R5K14N06584SNK5XKQEP5T
+        timestamp: 2026-09-30T03:26:33.649Z
+      - _ulid: 01M3R5K18H5CKBWEEFM2EQWNNG
+        actor: /root/pre_create_docs_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 2eab59d
+            head_commit: c0d2965
+          decision: request_changes
+        timestamp: 2026-09-30T03:26:33.745Z
+      - _ulid: 01M3R5K18HS4ZRJE0TMFYDX2JZ
+        actor: /root/pre_create_docs_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-09-30T03:26:33.745Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@isolated-host-build-gate"
     subject:
@@ -3367,8 +3398,33 @@ reviews:
       base_commit: 2eab59d
       head_branch: fix/isolated-host-gate
       head_commit: c0d2965
-    threads: []
-    verdicts: []
+    threads:
+      - _ulid: 01M3R5K14N06584SNK5XKQEP5T
+        anchor:
+          type: code
+          commit: c0d2965
+          line_end: 96
+          line_start: 95
+          path: scripts/run-isolated-test.sh
+          side: head
+        entries:
+          - _ulid: 01M3R5K14NE8VP2NRYAGFT1222
+            author: DonutsDelivery
+            body: "P2: health curl lacks connect/max time. A listener accepting /health without responding
+              blocks inside curl indefinitely, so deadline and child-exit checks never run. Bound
+              each probe to a small duration no larger than remaining startup budget. Gate
+              capture/state, isolation and validation otherwise correct."
+            created_at: 2026-09-30T03:26:33.621Z
+        kind: blocker
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 2eab59d
+          head_commit: c0d2965
+        decision: request_changes
+        reviewer: /root/pre_create_docs_review
+        role: reviewer
+        created_at: 2026-09-30T03:26:33.745Z
     created_at: 2026-09-30T03:26:32.252Z
-    updated_at: null
+    updated_at: 2026-09-30T03:26:33.745Z
     notes: []
