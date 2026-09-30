@@ -99,3 +99,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T03:59:34.578Z
+  - _ulid: 01M3R9MKAAAAQJV93E8W71EAZ5
+    content: "Follow-up: user could not see Donut Create because GNOME desktop entry launches installed
+      local-build binary fromSep29 predating7a88812. Existing8790 registry lackeddonut-create.
+      Rebuiltmain7a88812 with scripts/install-local-app.sh using host shared
+      gate,2jobs,existingreleasecache; frontend pass and native releasebuild successful4m17s
+      afterwaitingDonutStudio. Installed executable and frontend for desktoplauncher. Existing app
+      left running; user mustfullyquit/reopen toloadnewbinary. No production-library test or
+      modeldownload performed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T04:37:19.306Z
