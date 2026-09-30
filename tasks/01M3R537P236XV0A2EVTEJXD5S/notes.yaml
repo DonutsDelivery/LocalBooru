@@ -1,1 +1,12 @@
-notes: []
+notes:
+  - _ulid: 01M3R54M0733818KPSTFRAAKYB
+    content: "Approach: capture the gate executable and state directory using the host-helper defaults
+      before changing HOME/XDG_STATE_HOME; export them into the disposable launch and fail before
+      run-dev when the executable is unavailable. Preserve profile and file-argument isolation.
+      Verify shell syntax and fake-command behavior only, with no real compiler/app execution.
+      Dedicated worktree is based on local main 2eab59d; no remote sync or push. Initial session
+      start hit CLI/daemon option mismatch (--git); task start required explicit --no-sync to avoid
+      another option mismatch (--sync)."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:18:41.415Z
