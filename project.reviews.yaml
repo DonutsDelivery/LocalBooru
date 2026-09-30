@@ -3935,3 +3935,61 @@ reviews:
     created_at: 2026-09-30T05:27:35.016Z
     updated_at: 2026-09-30T05:31:26.033Z
     notes: []
+  - _ulid: 01M3RH6Y4Z8FC8MPZ7R3HHYS7V
+    slugs:
+      - review-create-simple-studio
+    title: Basic creation studio and paired workspace review
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3RH6Y4ZGX5VYWNND8VF73NW
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-09-30T06:49:40.255Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-simple-studio"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+      head_branch: feat/create-simple-studio
+      head_commit: 4954f16d1434af24545397dcf2d234d3b99a2847
+    threads: []
+    verdicts: []
+    created_at: 2026-09-30T06:49:40.255Z
+    updated_at: null
+    notes: []
+  - _ulid: 01M3RH6YAWR9KQJEN3V03ES1C1
+    slugs:
+      - review-settings-navigation
+    title: Settings navigation review
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3RH6YAWG1A3TS0WA0YTGKF8
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-09-30T06:49:40.444Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@settings-navigation-four-items"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+      head_branch: fix/settings-navigation
+      head_commit: 88de80d176cc370a2c37dead269d9248ed89d753
+    threads: []
+    verdicts: []
+    created_at: 2026-09-30T06:49:40.444Z
+    updated_at: null
+    notes: []
