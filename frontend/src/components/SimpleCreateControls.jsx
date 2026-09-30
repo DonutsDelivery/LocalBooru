@@ -27,6 +27,13 @@ function modelLabel(value) {
   return String(value).split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|gguf|pth)$/i, '').replace(/_/g, ' ')
 }
 
+function displayNumber(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || Number.isInteger(value)) return value
+  const rounded = Number(value.toPrecision(12))
+  // Hide arithmetic noise without rounding typed drafts or changing live widget values.
+  return Math.abs(rounded - value) <= Number.EPSILON * Math.abs(value) * 8 ? rounded : value
+}
+
 function SparkIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
     <path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4L12 3Z" />
@@ -213,7 +220,7 @@ export default function SimpleCreateControls({
     if (!available(key)) return null
     const field = fields[key]
     return <label className="create-field" key={key}>{label}
-      <input type="number" value={value(key)} min={field.min ?? undefined} max={field.max ?? undefined} step={field.step ?? 'any'} disabled={locked}
+      <input type="number" value={displayNumber(value(key))} min={field.min ?? undefined} max={field.max ?? undefined} step={field.step ?? 'any'} disabled={locked}
         onChange={event => stage(key, event.target.value)} onBlur={() => commitField(key)} />
     </label>
   }
@@ -236,7 +243,7 @@ export default function SimpleCreateControls({
     if (!available(key)) return null
     const active = Number(value(key)) !== 0
     return <section className="create-effect-group" key={key}>
-      <label className="create-toggle"><span>{title}<small>{active ? value(key) : 'Off'}</small></span>
+      <label className="create-toggle"><span>{title}<small>{active ? displayNumber(value(key)) : 'Off'}</small></span>
         <input type="checkbox" role="switch" checked={active} disabled={locked} onChange={event => {
           if (!event.target.checked) rememberedStrength.current[key] = value(key)
           const initial = rememberedStrength.current[key] || fields[key].default || Math.min(fields[key].max ?? 1, Math.max(fields[key].min ?? 0, 1))
@@ -280,7 +287,7 @@ export default function SimpleCreateControls({
           }}><span className="create-shape-glyph" aria-hidden="true"><span style={{ width: `${Math.min(26, 18 * Math.sqrt(shape.ratio))}px`, height: `${Math.min(26, 18 / Math.sqrt(shape.ratio))}px` }} /></span><strong>{shape.ratioLabel}</strong></button>)}</div>
       </fieldset>}
       {followsCrop && <p className="create-control-note">Following Reference A’s crop. Choosing a shape sets an independent output canvas.</p>}
-      <details className="create-prompt-options"><summary>Resolution <span>{customSize ? `${value('width')} × ${value('height')}` : usesMegapixels ? `${value('megapixels') || '1'} MP` : 'Reference crop'}</span></summary>
+      <details className="create-prompt-options"><summary>Resolution <span>{customSize ? `${value('width')} × ${value('height')}` : usesMegapixels ? `${displayNumber(value('megapixels')) || '1'} MP` : 'Reference crop'}</span></summary>
         {selectField('resolutionMode')}{usesMegapixels && numberField('megapixels')}
         {independentEditing && selectField('outputCanvas')}
         {customSize && <div className="create-control-pair">{numberField('width')}{numberField('height')}</div>}
@@ -308,7 +315,7 @@ export default function SimpleCreateControls({
           {choices.map(choice => <option value={choice} key={choice}>{modelLabel(choice)}</option>)}
         </select></label>
         {row.enabled !== false && ['model_weight', 'clip_weight'].map((key, strengthIndex) => <label className="create-field create-lora-strength" key={key}>{strengthIndex === 0 ? 'Model strength' : 'Text strength'}
-          <input type="number" value={row[key] ?? 1} min={bounds.min ?? -1000} max={bounds.max ?? 1000} step={bounds.step ?? 0.01} disabled={locked}
+          <input type="number" value={displayNumber(row[key] ?? 1)} min={bounds.min ?? -1000} max={bounds.max ?? 1000} step={bounds.step ?? 0.01} disabled={locked}
             onChange={event => stage('loras', rows.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: event.target.value } : item))}
             onBlur={() => commitField('loras')} />
         </label>)}
@@ -327,7 +334,8 @@ export default function SimpleCreateControls({
 
   const lowerMode = mobilePane === 'history' ? 'history' : mobilePane === 'models' ? 'models' : lowerTab
 
-  return <form className="create-simple-workspace" onSubmit={generate}>
+  // Comfy widget steps are not based on HTML's min offset; commit validates authored drafts.
+  return <form className="create-simple-workspace" onSubmit={generate} noValidate>
     <aside className="create-controls" aria-label="Image controls">
       <div className="create-control-tabs" role="tablist" aria-label="Studio controls">
         {['create', 'edit', 'tuning'].map(tab => <button type="button" role="tab" id={`create-tab-${tab}`} key={tab}
