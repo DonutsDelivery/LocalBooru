@@ -3140,3 +3140,32 @@ reviews:
     created_at: 2026-09-30T00:03:39.879Z
     updated_at: 2026-09-30T00:19:42.389Z
     notes: []
+  - _ulid: 01M3R28KWKHSJSGNBVE8ZRK9HS
+    slugs:
+      - review-pre-create-product-record
+    title: Review pre-Create product and commerce records
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3R28KWK6SXMD118BPJC68QK
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-09-30T02:28:26.643Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@task-pre-create-product-record"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 08b41742232bb2ad17f65e735a173f33c16d58e9
+      head_branch: docs/pre-create-product-record
+      head_commit: a245131
+    threads: []
+    verdicts: []
+    created_at: 2026-09-30T02:28:26.643Z
+    updated_at: null
+    notes: []
