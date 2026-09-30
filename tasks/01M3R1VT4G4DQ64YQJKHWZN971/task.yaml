@@ -11,13 +11,25 @@ description: "Consolidate the conversation before ComfyUI into durable documenta
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 3
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-09-30T02:21:43.663Z
+        previous: null
+    command: task-start
+    timestamp: 2026-09-30T02:21:43.665Z
 created_at: 2026-09-30T02:21:27.056Z
+started_at: 2026-09-30T02:21:43.663Z
 todos: []
 automation: manual_only

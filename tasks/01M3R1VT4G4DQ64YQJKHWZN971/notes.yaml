@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M3R1WAEX24WR934MV3T9NCPW
+    content: Existing architecture record is on main in docs/architecture/shared-libraries-and-mobile.md
+      (f42ccc8, 23e3857). Reviewed it and the DonutBooru federation pilot decision. Add a
+      conversation decision index and missing pre-creation requirements/commerce design without
+      asserting implemented status. Manual document review only; no compiler or desktop launch
+      needed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T02:21:43.773Z
