@@ -44,3 +44,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T03:23:27.780Z
+  - _ulid: 01M3R5DPGS30ZKH0RZJFVT4GKB
+    content: "Correction to previous candidate note: the actual final commit is
+      c0d2965f65f99fd268416eb8d2d1e812785ba3b8. The 15a2ba6 reference in that note was an entry
+      error and does not identify this work."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:23:38.905Z
