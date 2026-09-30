@@ -22,3 +22,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T02:32:42.587Z
+  - _ulid: 01M3R2JJ8TE5HYCYJ6GJ7VS8AW
+    content: User-authorized atomic push succeeded. Verified origin/main
+      exactly2eab59d5f02edd4d583e5f9b086919daf3dbb05b and origin/feat/donut-create-plugin
+      exactly2394773e32ff0671575208a71906363a8be881b5 with live ls-remote. No force push/history
+      rewrite, PR, release binary publication, or kspec shadow push. Main includes approved
+      pre-Create records; creation candidate remains separate and native verification pending.
+      Unrelated untracked MediaNavigation test preserved.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T02:33:52.666Z
