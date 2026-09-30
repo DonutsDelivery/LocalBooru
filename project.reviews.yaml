@@ -3840,6 +3840,25 @@ reviews:
         runner: synthetic-ASGI/Node/T3-preview
         created_at: 2026-09-30T05:28:45.433Z
         completed_at: 2026-09-30T05:28:45.433Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 7a88812a043f5c4cf4693139f215e4dc39e67236
+          head_commit: 4eab1e9405e4ba1128866910afc068b8cb2c2612
+        evidence: "Independently ran all 35 existing synthetic controller tests on committed
+          4eab1e9405e4ba1128866910afc068b8cb2c2612: pass (0.329s); no real backend generation.
+          Commit matches previously reviewed 3-file source and whitespace inspection passes. Read
+          both required check evidence records and spec/AC annotations. No source blockers:
+          exact-capability normalization remains behind route allowlist, user.css/model-manager
+          fallback stay local, ToneLab model path is bounded, LoRAStack remains discovery-only.
+          Repository-wide kspec validate exits 4 for existing invalid Android specs/old author
+          refs/unrelated verify skill frontmatter; product diff contains no metadata changes. Native
+          WebView and GPU generation acceptance remain unverified."
+        name: independent-controller-source-review
+        required: true
+        runner: python-unittest/main_sync_review
+        created_at: 2026-09-30T05:31:25.887Z
+        completed_at: 2026-09-30T05:31:25.887Z
     events:
       - _ulid: 01M3RCGMB88TNNWXKW2B1DE9DH
         actor: DonutsDelivery
@@ -3868,9 +3887,33 @@ reviews:
           status: pass
           name: disposable-startup-regressions
         timestamp: 2026-09-30T05:28:45.458Z
+      - _ulid: 01M3RCQNV0CD7DNDP6X5FQ3E7Y
+        actor: main_sync_review
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-controller-source-review
+        timestamp: 2026-09-30T05:31:25.920Z
+      - _ulid: 01M3RCQNYHQ8GCDTC5P3N51DDS
+        actor: main_sync_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 7a88812a043f5c4cf4693139f215e4dc39e67236
+            head_commit: 4eab1e9405e4ba1128866910afc068b8cb2c2612
+          decision: approve
+        timestamp: 2026-09-30T05:31:26.033Z
+      - _ulid: 01M3RCQNYH3C7D420Y8G654PWZ
+        actor: main_sync_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-09-30T05:31:26.033Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@fix-create-studio-frame"
     subject:
@@ -3880,7 +3923,15 @@ reviews:
       head_branch: fix/create-studio-frame
       head_commit: 4eab1e9405e4ba1128866910afc068b8cb2c2612
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 7a88812a043f5c4cf4693139f215e4dc39e67236
+          head_commit: 4eab1e9405e4ba1128866910afc068b8cb2c2612
+        decision: approve
+        reviewer: main_sync_review
+        role: reviewer
+        created_at: 2026-09-30T05:31:26.033Z
     created_at: 2026-09-30T05:27:35.016Z
-    updated_at: 2026-09-30T05:28:45.433Z
+    updated_at: 2026-09-30T05:31:26.033Z
     notes: []
