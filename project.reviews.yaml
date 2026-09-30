@@ -3810,7 +3810,36 @@ reviews:
     slugs: []
     title: Review Donut Create existing ComfyUI startup fix
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 7a88812a043f5c4cf4693139f215e4dc39e67236
+          head_commit: 4eab1e9405e4ba1128866910afc068b8cb2c2612
+        evidence: 35 controller + 5 browser adapter + 21 CreateStudioHost checks passed; no real jobs
+          submitted.
+        name: focused-controller-adapter-host
+        required: true
+        runner: python-unittest/node-test/vitest
+        created_at: 2026-09-30T05:28:45.333Z
+        completed_at: 2026-09-30T05:28:45.333Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 7a88812a043f5c4cf4693139f215e4dc39e67236
+          head_commit: 4eab1e9405e4ba1128866910afc068b8cb2c2612
+        evidence: "Actual current ComfyUI frontend loads in own test capability: 26 nodes, 11 v5 panels, no
+          error nodes; exact apiURL/fileURL already-scoped calls remain unchanged. Before CSP
+          frame-src violation reproduced, after zero. Disposable checks passed JS regex
+          preservation/parse/import rewrites, delayed comfyAPI shim namespace, duplicate
+          same-capability routing and cross-capability rejection, local CSS/404 fallback, unsafe
+          ToneLab paths and LoRAStack queue denial. Not GPU-generation or native WebView
+          acceptance."
+        name: disposable-startup-regressions
+        required: true
+        runner: synthetic-ASGI/Node/T3-preview
+        created_at: 2026-09-30T05:28:45.433Z
+        completed_at: 2026-09-30T05:28:45.433Z
     events:
       - _ulid: 01M3RCGMB88TNNWXKW2B1DE9DH
         actor: DonutsDelivery
@@ -3818,9 +3847,30 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-09-30T05:27:35.016Z
+      - _ulid: 01M3RCJRXXGVRV2N68MZK052RZ
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-09-30T05:28:45.245Z
+      - _ulid: 01M3RCJS1DC5JSPXV3GYQNQ6R5
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-controller-adapter-host
+        timestamp: 2026-09-30T05:28:45.357Z
+      - _ulid: 01M3RCJS4J30M954TABY8HC2FB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: disposable-startup-regressions
+        timestamp: 2026-09-30T05:28:45.458Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@fix-create-studio-frame"
     subject:
@@ -3832,5 +3882,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-09-30T05:27:35.016Z
-    updated_at: null
+    updated_at: 2026-09-30T05:28:45.433Z
     notes: []
