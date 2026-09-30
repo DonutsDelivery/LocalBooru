@@ -74,3 +74,65 @@
   .create-edit-heading { flex-wrap: wrap; }
   .create-studio-dialog .create-edit-empty { min-height: 220px; }
 }
+
+.create-center-workspace .create-edit-workspace {
+  margin: 0;
+  padding: 16px;
+  min-width: 0;
+  background: var(--bg-secondary);
+}
+
+.create-edit-heading { align-items: flex-start; gap: 12px; }
+.create-edit-heading h2 { font-size: 0.93rem; font-weight: 500; }
+.create-edit-heading p { font-size: 0.72rem; }
+.create-edit-reference-switch { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.create-edit-reference-switch button { font-size: 0.7rem; padding: 7px 9px; }
+.create-edit-reference-switch button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.create-edit-mode-tabs { display: flex; gap: 5px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 12px; }
+.create-studio-dialog .create-edit-mode-tabs button { background: transparent; font-size: 0.72rem; border-color: transparent; }
+.create-studio-dialog .create-edit-mode-tabs button[aria-pressed="true"] { border-color: var(--border); color: var(--accent); background: var(--bg-primary); }
+.create-edit-toolbar { gap: 6px; margin-bottom: 12px; }
+.create-edit-toolbar button { font-size: 0.67rem; padding: 7px 9px; }
+.create-edit-toolbar .create-edit-hint { margin: 0; font-size: 0.67rem; }
+.create-crop-aspect { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 0.72rem; }
+.create-crop-aspect select { background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; font: inherit; padding: 7px 9px; }
+.create-edit-stage { flex-shrink: 0; user-select: none; touch-action: none; }
+.create-edit-stage.can-crop { cursor: crosshair; }
+.create-edit-stage img { pointer-events: none; }
+.create-crop-selection { position: absolute; border: 1.5px solid var(--accent); box-shadow: 0 0 0 9999px #0007; box-sizing: border-box; cursor: move; }
+.create-crop-selection::before { content: ''; position: absolute; inset: 33.333% 0; border-top: 1px solid #fff4; border-bottom: 1px solid #fff4; pointer-events: none; }
+.create-crop-selection::after { content: ''; position: absolute; inset: 0 33.333%; border-left: 1px solid #fff4; border-right: 1px solid #fff4; pointer-events: none; }
+.create-crop-handle { position: absolute; width: 22px; height: 22px; border: 2px solid #10251f; background: var(--accent); border-radius: 5px; box-sizing: border-box; }
+.create-crop-handle.nw { left: -9px; top: -9px; cursor: nwse-resize; }
+.create-crop-handle.ne { right: -9px; top: -9px; cursor: nesw-resize; }
+.create-crop-handle.sw { left: -9px; bottom: -9px; cursor: nesw-resize; }
+.create-crop-handle.se { right: -9px; bottom: -9px; cursor: nwse-resize; }
+.create-crop-size { position: absolute; left: 50%; top: 9px; transform: translateX(-50%); background: #10251ed9; color: #e2f8ec; border-radius: 5px; padding: 4px 7px; font-size: 0.63rem; white-space: nowrap; }
+.create-outpaint-controls { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); padding: 11px; margin-bottom: 12px; }
+.create-outpaint-presets { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.create-outpaint-presets > span { color: var(--text-secondary); font-size: 0.68rem; margin-right: 3px; }
+.create-outpaint-presets button { font-size: 0.66rem; padding: 6px 9px; }
+.create-placement-sliders { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 17px; }
+.create-placement-sliders label { display: grid; grid-template-columns: 1fr 42px; align-items: center; gap: 4px 9px; color: var(--text-secondary); font-size: 0.65rem; }
+.create-placement-sliders input { grid-column: 1; grid-row: 2; width: 100%; min-width: 0; margin: 0; accent-color: var(--accent); }
+.create-placement-sliders span { grid-column: 2; grid-row: 2; text-align: right; font-size: 0.64rem; }
+.create-center-workspace .create-edit-hint { font-size: 0.71rem; }
+
+@media (max-width: 940px) {
+  .create-center-workspace .create-edit-workspace { padding: 12px; }
+  .create-edit-heading { flex-wrap: wrap; }
+  .create-edit-mode-tabs button,
+  .create-edit-toolbar button { min-height: 37px; }
+  .create-crop-aspect select { font-size: 16px; min-height: 40px; }
+  .create-brush-size input { min-height: 32px; }
+  .create-placement-sliders input { min-height: 30px; }
+  .create-crop-handle { width: 27px; height: 27px; }
+  .create-crop-handle.nw,
+  .create-crop-handle.ne { top: -11px; }
+  .create-crop-handle.sw,
+  .create-crop-handle.se { bottom: -11px; }
+  .create-crop-handle.nw,
+  .create-crop-handle.sw { left: -11px; }
+  .create-crop-handle.ne,
+  .create-crop-handle.se { right: -11px; }
+}

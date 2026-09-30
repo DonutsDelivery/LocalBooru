@@ -71,6 +71,43 @@ export function outputUrl(sessionId, outputId) {
   return `${getApiUrl()}/create/output/${encodeURIComponent(sessionId)}/${encodeURIComponent(outputId)}`
 }
 
+export function studioEventsUrl(sessionId) {
+  const url = new URL(`${studioUrl(sessionId)}ws`, window.location.href)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  url.searchParams.set('clientId', `donut-create-${sessionId}`)
+  return url.href
+}
+
+export function stagePreviewUrl(sessionId, preview) {
+  const url = new URL(`${studioUrl(sessionId)}view`, window.location.href)
+  url.searchParams.set('filename', preview.filename)
+  url.searchParams.set('subfolder', preview.subfolder || '')
+  url.searchParams.set('type', 'temp')
+  return url.href
+}
+
+// ComfyUI's binary preview frames use big-endian headers. Both supported
+// envelopes still carry a session-owned image, never a reusable backend URL.
+export function readStudioPreview(buffer) {
+  if (!(buffer instanceof ArrayBuffer) || buffer.byteLength <= 8 || buffer.byteLength > 32 * 1024 * 1024) return null
+  const header = new DataView(buffer)
+  const event = header.getUint32(0)
+  let offset = 8, type
+  if (event === 1) {
+    type = { 1: 'image/jpeg', 2: 'image/png' }[header.getUint32(4)]
+  } else if (event === 4) {
+    const length = header.getUint32(4)
+    if (length > 65536 || length < 2 || offset + length >= buffer.byteLength) return null
+    try {
+      const metadata = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, offset, length)))
+      type = metadata.image_type
+    } catch { return null }
+    offset += length
+  }
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) return null
+  return new Blob([buffer.slice(offset)], { type })
+}
+
 export async function importStudioOutput(sessionId, outputId, destination, signal) {
   const response = await apiClient.post('/create/import', {
     session_id: sessionId,

@@ -459,7 +459,7 @@ class Controller:
                               "backend_key": backend_key, "workspace": workspace,
                               "profile": self.installer.status().get("profile") or "base",
                               "created_at": self.clock(), "expires_at": self.clock() + self.ttl,
-                              "jobs": {}, "outputs": {}, "uploads": [], "references": [],
+                              "jobs": {}, "outputs": {}, "previews": {}, "uploads": [], "references": [],
                               "masks": [], "settings": {}, "userdata": {}}
         if workspace:
             session = self.sessions[sid]
@@ -482,7 +482,61 @@ class Controller:
                 "studio_path": f"/api/create/studio/{sid}/", "expires_at": session["expires_at"],
                 "workspace": session.get("workspace", False), "latest_run_revision": session.get("latest_run_revision", 0),
                 "jobs": [{key: value for key, value in job.items() if not session.get("workspace") or key not in {"prompt", "workflow"}}
-                         for job in session["jobs"].values()], "outputs": list(session["outputs"].values())}
+                         for job in session["jobs"].values()], "outputs": list(session["outputs"].values()),
+                "previews": list(session.get("previews", {}).values())}
+
+    def workflow_property(self, job: dict[str, Any], node_id: str, name: str) -> Any:
+        workflow = job.get("workflow") or {}
+        definitions = workflow.get("definitions")
+        subgraphs = definitions.get("subgraphs") if isinstance(definitions, dict) else None
+        definitions_by_id = {str(graph.get("id")): graph for graph in subgraphs or []
+                             if isinstance(graph, dict)} if isinstance(subgraphs, list) else {}
+        graph = workflow
+        path = str(node_id).split(":")
+        for index, part in enumerate(path):
+            nodes = graph.get("nodes") if isinstance(graph, dict) else None
+            matches = [item for item in nodes if isinstance(item, dict) and str(item.get("id")) == part] if isinstance(nodes, list) else []
+            if len(matches) != 1:
+                return None
+            item = matches[0]
+            if index == len(path) - 1:
+                properties = item.get("properties")
+                return properties.get(name) if isinstance(properties, dict) else None
+            graph = definitions_by_id.get(str(item.get("type")))
+            if graph is None:
+                return None
+        return None
+
+    def final_output(self, job: dict[str, Any], node_id: str) -> bool:
+        node = job.get("prompt", {}).get(str(node_id), {})
+        if node.get("class_type") not in {"SaveImage", "DonutImageSave"}:
+            return False
+        marker = self.workflow_property(job, node_id, "dmc_final_output")
+        if isinstance(marker, bool):
+            return marker
+        # Older v5 graphs have a dedicated final Donut save and an ordinary
+        # SaveImage for the intermediate result.
+        return node.get("class_type") == "DonutImageSave"
+
+    def record_previews(self, session: dict[str, Any], prompt_id: str, node_id: str,
+                        output: dict[str, Any]) -> None:
+        if prompt_id not in session["jobs"]:
+            return
+        previews = session.setdefault("previews", {})
+        for image in output.get("images", []):
+            if (not isinstance(image, dict) or image.get("type") != "temp"
+                    or not safe_relative(image.get("filename", ""))
+                    or "/" in image["filename"]
+                    or PurePosixPath(image["filename"]).suffix.lower() not in IMAGE_SUFFIXES
+                    or not safe_relative(image.get("subfolder", ""), empty=True)):
+                continue
+            filename, subfolder = image["filename"], image.get("subfolder", "")
+            pid = hashlib.sha256(json.dumps([prompt_id, node_id, filename, subfolder]).encode()).hexdigest()[:32]
+            previews.pop(pid, None)
+            previews[pid] = {"id": pid, "prompt_id": prompt_id, "node_id": str(node_id),
+                             "filename": filename, "subfolder": subfolder, "type": "temp"}
+            while len(previews) > 128:
+                previews.pop(next(iter(previews)))
 
     def owned_queue(self, session: dict[str, Any], queue: dict[str, Any]) -> dict[str, Any]:
         return {key: [row for row in queue.get(key, [])
@@ -519,6 +573,7 @@ class Controller:
             if not isinstance(output, dict):
                 continue
             self.record_masks(session, output)
+            self.record_previews(session, prompt_id, str(node_id), output)
             for image in output.get("images", []):
                 if (not isinstance(image, dict) or image.get("type") != "output"
                         or not safe_relative(image.get("filename", ""))
@@ -530,6 +585,7 @@ class Controller:
                 oid = hashlib.sha256(json.dumps([prompt_id, node_id, filename, subfolder]).encode()).hexdigest()[:32]
                 session["outputs"][oid] = {"id": oid, "prompt_id": prompt_id, "filename": filename,
                     "subfolder": subfolder, "type": "output", "node_id": str(node_id),
+                    "final": self.final_output(job, str(node_id)),
                     "media_type": mimetypes.guess_type(filename)[0] or "application/octet-stream",
                     "url": f"/api/create/output/{session['id']}/{oid}",
                     "workflow": job.get("workflow"), "prompt": job.get("prompt"), "execution": job["execution"],
@@ -539,6 +595,8 @@ class Controller:
         metadata: dict[str, Any] = {"prompt_id": job["id"]}
         for node_id, output in record.get("outputs", {}).items():
             if not isinstance(output, dict):
+                continue
+            if self.workflow_property(job, str(node_id), "dmc_prompt_role") == "face":
                 continue
             for source, target in (("donut_final_prompt", "prompt"), ("donut_final_negative_prompt", "negative_prompt")):
                 values = output.get(source)
@@ -650,9 +708,35 @@ class Controller:
                 raise HTTPException(400, "Invalid text input connection.")
             seen.add(source_id)
             source = prompt[source_id]
-            if source.get("class_type") not in {"StringConcatenate", "DF_Text_Box", "DonutText"}:
+            if source.get("class_type") not in {"StringConcatenate", "DF_Text_Box", "DonutText", "DonutPromptConditioning"}:
                 raise HTTPException(403, "Use the bundled text controls for prompt text.")
             inputs = source.get("inputs", {})
+            if source["class_type"] == "DonutPromptConditioning":
+                if type(value[1]) is not int or value[1] != 0:
+                    raise HTTPException(403, "Use the main prompt text output for face instructions.")
+                face, scene = (source_text(inputs.get(key, ""), seen) for key in ("face", "scene"))
+                variants_json = inputs.get("prompt_sets_json", "[]")
+                if not isinstance(variants_json, str):
+                    raise HTTPException(403, "Use literal prompt variants in the studio.")
+                try:
+                    variants = json.loads(variants_json or "[]")
+                except ValueError:
+                    raise HTTPException(400, "Invalid prompt variants.") from None
+                if not isinstance(variants, list) or any(not isinstance(row, dict) for row in variants):
+                    raise HTTPException(400, "Invalid prompt variants.")
+                if variants:
+                    selected_index = inputs.get("prompt_set_index", 0)
+                    if type(selected_index) is not int:
+                        raise HTTPException(403, "Use a literal prompt variant index in the studio.")
+                    position = max(0, selected_index - 1) % (len(variants) + 1)
+                    if position:
+                        row = variants[position - 1]
+                        face, scene = row.get("face", face), row.get("scene", scene)
+                        if not isinstance(face, str) or not isinstance(scene, str):
+                            raise HTTPException(400, "Prompt variant fields must be text.")
+                full = face + source_text(inputs.get("separator", ""), seen) + scene
+                safe_prompt_text(full)
+                return full
             if source["class_type"] == "DF_Text_Box":
                 return source_text(inputs.get("Text", inputs.get("text", "")), seen)
             if source["class_type"] == "StringConcatenate":
@@ -677,6 +761,10 @@ class Controller:
             if node["class_type"] == "DonutPromptConditioning":
                 for key in ("face", "scene", "negative", "edit_negative"):
                     safe_prompt_text(source_text(inputs.get(key)))
+                if "prompt_sets_json" in inputs and not isinstance(inputs["prompt_sets_json"], str):
+                    raise HTTPException(403, "Use literal prompt variants in the studio.")
+                if "prompt_set_index" in inputs and type(inputs["prompt_set_index"]) is not int:
+                    raise HTTPException(403, "Use a literal prompt variant index in the studio.")
                 if isinstance(inputs.get("prompt_sets_json"), str):
                     try:
                         variants = json.loads(inputs["prompt_sets_json"])
@@ -838,6 +926,7 @@ class Controller:
             job["last_seen_at"] = self.clock()
         elif kind == "executed" and isinstance(data.get("output"), dict):
             self.record_masks(session, data["output"])
+            self.record_previews(session, prompt_id, str(data.get("node", "")), data["output"])
         self.persist()
         return True
 
@@ -1229,7 +1318,13 @@ def create_app(controller: Controller | None = None) -> FastAPI:
                                and entry["subfolder"] == params.get("subfolder", "")
                                and params.get("type", "output") == "output"), None)
                 if output is None:
-                    if params.get("type") != "input" or params.get("filename") not in session["uploads"] or params.get("subfolder"):
+                    preview = any(entry["filename"] == params.get("filename")
+                                  and entry["subfolder"] == params.get("subfolder", "")
+                                  and params.get("type") == "temp"
+                                  for entry in session.get("previews", {}).values())
+                    uploaded = (params.get("type") == "input" and params.get("filename") in session["uploads"]
+                                and not params.get("subfolder"))
+                    if not preview and not uploaded:
                         raise HTTPException(404, "This image is outside the studio.")
                 else:
                     return await ctrl.output_response(session, output["id"])
