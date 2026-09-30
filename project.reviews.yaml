@@ -4401,6 +4401,45 @@ reviews:
         runner: root
         created_at: 2026-09-30T21:51:30.885Z
         completed_at: 2026-09-30T21:51:30.885Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 3f2d063
+        evidence: Exact3f2d063 approved after2-line active-only center/history mount fix; iframe/drafts
+          retained, no source blockers.
+        name: source-review
+        required: true
+        runner: donut_create_review
+        created_at: 2026-09-30T21:54:44.076Z
+        completed_at: 2026-09-30T21:54:44.076Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 3f2d063
+        evidence: Unchanged reviewed controller/adapter/graphs:35 existingPython,5 adapter, disposable
+          rich-controls/crop-mask/atomic mutation/style/main-face serialization passed. Focused JSX
+          ESLint passes.
+        name: controller-adapter-serialization
+        required: true
+        runner: root
+        created_at: 2026-09-30T21:54:44.710Z
+        completed_at: 2026-09-30T21:54:44.710Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: ae908b1
+          head_commit: 3f2d063
+        evidence: All22 focused existingVitest cases pass after production duplicate-center fix.
+          Fixturebundles built under hostgate; desktop actualReact+Comfy controls render and
+          galleryload/folder selection pass. Queue/save/mobile checks ongoing. No GPU execution
+          claimed.
+        name: frontend-and-browser
+        required: true
+        runner: root
+        created_at: 2026-09-30T21:54:44.851Z
+        completed_at: null
     events:
       - _ulid: 01M3T4DDGB4Y4NYWK77VJYR14J
         actor: DonutsDelivery
@@ -4436,6 +4475,35 @@ reviews:
           status: fail
           name: frontend-and-browser
         timestamp: 2026-09-30T21:51:30.914Z
+      - _ulid: 01M3T504887AB2YN9XKHJ6KHBE
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_base: ae908b1
+          new_head: 3f2d063
+          previous_head: 0d8ae56
+        timestamp: 2026-09-30T21:54:43.081Z
+      - _ulid: 01M3T5058AKKSBY4A57P9YSND1
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-review
+        timestamp: 2026-09-30T21:54:44.106Z
+      - _ulid: 01M3T505WK9FB2AP7WAWTZVFP4
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: controller-adapter-serialization
+        timestamp: 2026-09-30T21:54:44.755Z
+      - _ulid: 01M3T5060SD9K66XDXYSKBZBGV
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: frontend-and-browser
+        timestamp: 2026-09-30T21:54:44.889Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -4446,9 +4514,9 @@ reviews:
       base_branch: feat/create-output-sidecars
       base_commit: ae908b1
       head_branch: feat/create-v5-controls
-      head_commit: 0d8ae56
+      head_commit: 3f2d063
     threads: []
     verdicts: []
     created_at: 2026-09-30T21:44:29.965Z
-    updated_at: 2026-09-30T21:51:30.885Z
+    updated_at: 2026-09-30T21:54:44.851Z
     notes: []
