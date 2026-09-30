@@ -14,8 +14,12 @@ description: User requested detailed basic controls list, separate face-only pro
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Reviewedapprovedpassing1b91d69 integratedmain7ec6ba8, pushedoriginmain,
+  combinednativebuildinstalledandDMC/addonreopenedleftalive.
+  Focusedexisting22frontend+35controller+5adapter/disposableserialization/canvas and
+  desktop/mobileT3browserchecks passed; no realGPUorphysicalmobileclaim.
 depends_on: []
 context: []
 priority: 1
@@ -76,7 +80,24 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-09-30T22:37:03.897Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Reviewedapprovedpassing1b91d69 integratedmain7ec6ba8, pushedoriginmain,
+          combinednativebuildinstalledandDMC/addonreopenedleftalive.
+          Focusedexisting22frontend+35controller+5adapter/disposableserialization/canvas and
+          desktop/mobileT3browserchecks passed; no realGPUorphysicalmobileclaim.
+        previous: null
+      completed_at:
+        new: 2026-09-30T23:50:14.571Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-09-30T23:50:14.576Z
 created_at: 2026-09-30T20:40:25.756Z
 started_at: 2026-09-30T20:41:24.541Z
 submitted_at: 2026-09-30T22:37:03.897Z
+completed_at: 2026-09-30T23:50:14.571Z
 todos: []
