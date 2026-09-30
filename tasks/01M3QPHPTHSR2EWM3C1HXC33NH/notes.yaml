@@ -64,3 +64,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T03:18:11.123Z
+  - _ulid: 01M3R5BYQ8G1XQGHRNQSWQ66CB
+    content: "User corrected product terminology: this is an add-on, not a plugin. Existing UI and addon
+      registry already use add-on; changed new product architecture wording accordingly while
+      preserving historical task/spec aliases. Scratch integration candidate ad88d03 combines
+      creation2394773 with current main2eab59d in separate worktree, preserving native build inputs
+      at2394773 while it waits. Only API merge conflict retained both studio server-switch ownership
+      events and unavailable-library cooldown reset. Candidate is not on main yet; independent delta
+      review underway."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:22:41.768Z
