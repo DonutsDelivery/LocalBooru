@@ -3123,9 +3123,16 @@ reviews:
           status: skipped
           name: creation-isolated-desktop-smoke
         timestamp: 2026-09-30T00:19:42.416Z
+      - _ulid: 01M3R6GBA2KQJ2EKZ3TQ1WYEMR
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-09-30T03:42:34.306Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@task-donut-create-plugin"
       - "@donut-create-plugin"
@@ -3138,7 +3145,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-09-30T00:03:39.879Z
-    updated_at: 2026-09-30T00:19:42.389Z
+    updated_at: 2026-09-30T03:42:34.218Z
     notes: []
   - _ulid: 01M3R28KWKHSJSGNBVE8ZRK9HS
     slugs:
