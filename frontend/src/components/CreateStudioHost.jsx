@@ -1031,8 +1031,8 @@ export default function CreateStudioHost() {
             <SimpleCreateControls key={session.id + ':' + controlsRevision} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
               onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={refreshControls} onAdvanced={showAdvancedStudio}
-              runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={historyContent}>
-              {resultsContent}
+              runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null}>
+              {simpleView ? resultsContent : null}
             </SimpleCreateControls>
           </div>}
           <div className="create-studio-main" hidden={!!session && simpleView}>
