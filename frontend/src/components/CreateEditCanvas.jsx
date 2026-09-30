@@ -42,7 +42,8 @@ function canvasDimensions(settings, source, crop, sourceB, cropB, fallback) {
   if (!settings || !source) return fallback
   const grid = Number(settings.pixelGrid || settings.outputMultiple) || 64
   const independent = settings.editing === true && settings.geometryMode === 'Independent crops'
-  const cropped = (size, document) => document?.source_size?.[0] === size?.width && document?.source_size?.[1] === size?.height
+  const cropped = (size, document) => size && document && Array.isArray(document.bounds) && document.bounds.length === 4
+    && document.bounds.every(Number.isFinite) && document.source_size?.[0] === size.width && document.source_size?.[1] === size.height
     ? [Math.max(1, Math.round(document.bounds[2] * size.width) - Math.round(document.bounds[0] * size.width)), Math.max(1, Math.round(document.bounds[3] * size.height) - Math.round(document.bounds[1] * size.height))]
     : size ? [size.width, size.height] : null
   const a = independent ? cropped(source, crop) : [source.width, source.height]

@@ -28,6 +28,7 @@ const SLIDER_FIELDS = new Set([
   'upscale1Scale', 'upscale2Scale', 'postUpscaleScale', 'upscale1Denoise', 'upscale2Denoise', 'postUpscaleDenoise',
   'upscale1SeedVrDenoise', 'upscale2SeedVrDenoise', 'faceDenoise',
 ])
+const SLIDER_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'])
 
 function modelLabel(value) {
   return String(value).split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|gguf|pth)$/i, '').replace(/_/g, ' ')
@@ -110,7 +111,8 @@ function SliderNumberField({ label, value, bounds, sliderBounds, disabled, onCha
         value={displayNumber(sliderValue)} min={min} max={max} step={bounds.step ?? 'any'} disabled={disabled || pending}
         onPointerDown={event => { begin(); event.currentTarget.setPointerCapture?.(event.pointerId) }}
         onPointerUp={finish} onPointerCancel={finish} onLostPointerCapture={finish} onBlur={finish}
-        onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) begin() }}
+        onKeyDown={event => { if (SLIDER_KEYS.has(event.key)) begin() }}
+        onKeyUp={event => { if (SLIDER_KEYS.has(event.key)) finish() }}
         onChange={event => change(event.target.value, true)} />}
       <input id={`${id}-number`} type="number" value={displayNumber(value)} min={bounds.min ?? undefined} max={bounds.max ?? undefined}
         step={bounds.step ?? 'any'} disabled={disabled || pending} onChange={event => change(event.target.value)} onBlur={finish} />
@@ -139,6 +141,8 @@ export default function SimpleCreateControls({
   const [sliding, setSliding] = useState(false)
   const draftRef = useRef({})
   const sliderInteractions = useRef(new Set())
+  const controlsAlive = useRef(true)
+  const draftReporter = useRef(onDraftChange)
   const submission = useRef(false)
   const rememberedStrength = useRef({})
   const uploadId = useId()
@@ -164,14 +168,27 @@ export default function SimpleCreateControls({
   const usesShape = !followsCrop && (independentEditing ? !customSize : presetSize)
   const fixedSeed = /fixed|custom|manual|keep/i.test(String(value('seedMode')))
   const hasReference = key => /^donutref:[a-f0-9]{64}$/.test(String(value(key)))
-  const notifyDrafts = useCallback(next => onDraftChange?.(submission.current || sliderInteractions.current.size > 0 || Object.keys(next).length > 0), [onDraftChange])
+  const notifyDrafts = useCallback(next => {
+    if (controlsAlive.current) onDraftChange?.(submission.current || sliderInteractions.current.size > 0 || Object.keys(next).length > 0)
+  }, [onDraftChange])
   const sliderInteraction = useCallback((id, active) => {
+    if (!controlsAlive.current) return
     if (active) sliderInteractions.current.add(id)
     else sliderInteractions.current.delete(id)
     setSliding(sliderInteractions.current.size > 0)
     notifyDrafts(draftRef.current)
   }, [notifyDrafts])
-  useEffect(() => () => onDraftChange?.(false), [onDraftChange])
+  useEffect(() => { draftReporter.current = onDraftChange }, [onDraftChange])
+  useEffect(() => {
+    controlsAlive.current = true
+    const interactions = sliderInteractions.current
+    return () => {
+      controlsAlive.current = false
+      interactions.clear()
+      draftRef.current = {}
+      draftReporter.current?.(false)
+    }
+  }, [])
 
   function stage(key, nextValue) {
     const next = { ...draftRef.current, [key]: nextValue }
