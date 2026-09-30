@@ -14,13 +14,21 @@ description: Implement the user-approved optional Create add-on using the audite
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-09-30T00:03:02.901Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -32,7 +40,28 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-09-29T23:03:41.729Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-09-30T00:03:02.901Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-09-30T00:03:02.906Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-09-30T00:03:02.907Z
 created_at: 2026-09-29T23:03:41.649Z
 started_at: 2026-09-29T23:03:41.729Z
+submitted_at: 2026-09-30T00:03:02.906Z
 todos: []
 automation: manual_only
