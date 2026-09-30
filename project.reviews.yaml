@@ -2988,3 +2988,33 @@ reviews:
     created_at: 2026-09-29T23:32:42.743Z
     updated_at: 2026-09-29T23:33:20.464Z
     notes: []
+  - _ulid: 01M3QSZGQ7JRJ0SXB1R9W59HK5
+    slugs:
+      - review-donut-create-plugin
+    title: Donut Create studio implementation review
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3QSZGQ7SDD1VX9NC5XSGSG0
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-09-30T00:03:39.879Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@task-donut-create-plugin"
+      - "@donut-create-plugin"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 08b4174
+      head_branch: feat/donut-create-plugin
+      head_commit: 2394773e32ff0671575208a71906363a8be881b5
+    threads: []
+    verdicts: []
+    created_at: 2026-09-30T00:03:39.879Z
+    updated_at: null
+    notes: []
