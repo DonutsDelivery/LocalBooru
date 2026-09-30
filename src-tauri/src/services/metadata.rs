@@ -9,11 +9,111 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+const MAX_SIDECAR_BYTES: u64 = 32 * 1024 * 1024;
+
+fn image_sha256(path: &Path) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let mut hash = Sha256::new();
+    std::io::copy(&mut file, &mut hash).map_err(|e| e.to_string())?;
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+/// Portable generation recipe, beside the original image rather than its thumbnail.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerationSidecar {
+    pub schema: String,
+    pub image_sha256: String,
+    pub generation: GenerationMetadata,
+    pub workflow: Option<serde_json::Value>,
+    pub execution_prompt: Option<serde_json::Value>,
+    pub execution: Option<serde_json::Value>,
+    pub png_text: HashMap<String, String>,
+}
+
+pub fn read_generation_sidecar(path: &Path) -> Result<Option<GenerationSidecar>, String> {
+    let Some(parent) = path.parent() else {
+        return Ok(None);
+    };
+    let Some(filename) = path.file_name() else {
+        return Ok(None);
+    };
+    let folder = parent.join(".donut-create");
+    if !folder.exists() {
+        return Ok(None);
+    }
+    if std::fs::symlink_metadata(&folder)
+        .map_err(|e| e.to_string())?
+        .file_type()
+        .is_symlink()
+    {
+        return Err("The generation metadata folder must not be a symbolic link".into());
+    }
+    let mut name = filename.to_os_string();
+    name.push(".json");
+    let sidecar = folder.join(name);
+    let info = match std::fs::symlink_metadata(&sidecar) {
+        Ok(info) => info,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    if !info.is_file() || info.len() > MAX_SIDECAR_BYTES {
+        return Err("Invalid or oversized generation metadata file".into());
+    }
+    let value: GenerationSidecar = serde_json::from_reader(
+        File::open(sidecar)
+            .map_err(|e| e.to_string())?
+            .take(MAX_SIDECAR_BYTES + 1),
+    )
+    .map_err(|_| "Invalid generation metadata file".to_string())?;
+    if value.schema != "donut-create-output-v1" || value.image_sha256 != image_sha256(path)? {
+        return Err("Generation metadata does not match this image".into());
+    }
+    Ok(Some(value))
+}
+
+pub fn write_generation_sidecar(path: &Path, sidecar: &GenerationSidecar) -> Result<(), String> {
+    let parent = path.parent().ok_or("Image has no parent directory")?;
+    let folder = parent.join(".donut-create");
+    match std::fs::create_dir(&folder) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    if !std::fs::symlink_metadata(&folder)
+        .map_err(|e| e.to_string())?
+        .is_dir()
+    {
+        return Err("The generation metadata folder must be a real directory".into());
+    }
+    let mut name = path
+        .file_name()
+        .ok_or("Image has no filename")?
+        .to_os_string();
+    name.push(".json");
+    let destination = folder.join(name);
+    // Never replace an unrelated or stale companion; only our verified format.
+    if destination.exists() || destination.is_symlink() {
+        read_generation_sidecar(path)?.ok_or("Invalid existing metadata file")?;
+    }
+    let bytes = serde_json::to_vec_pretty(sidecar).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_SIDECAR_BYTES {
+        return Err("Generation metadata is too large".into());
+    }
+    let mut staged = tempfile::NamedTempFile::new_in(folder).map_err(|e| e.to_string())?;
+    staged.write_all(&bytes).map_err(|e| e.to_string())?;
+    staged.as_file().sync_all().map_err(|e| e.to_string())?;
+    staged
+        .persist(destination)
+        .map_err(|e| e.error.to_string())?;
+    Ok(())
+}
 
 // ─── Data types ──────────────────────────────────────────────────────────────
 
@@ -102,6 +202,7 @@ pub fn extract_png_text_chunks(file_path: &str) -> Result<HashMap<String, String
     }
 
     let file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+    let file_len = file.metadata().map_err(|e| e.to_string())?.len();
     let mut reader = BufReader::new(file);
 
     // Verify PNG signature
@@ -114,6 +215,7 @@ pub fn extract_png_text_chunks(file_path: &str) -> Result<HashMap<String, String
     }
 
     let mut chunks = HashMap::new();
+    let mut text_bytes = 0u64;
 
     // Read chunks until IEND or EOF
     loop {
@@ -130,12 +232,20 @@ pub fn extract_png_text_chunks(file_path: &str) -> Result<HashMap<String, String
             break;
         }
         let chunk_type = std::str::from_utf8(&type_buf).unwrap_or("");
+        let position = reader.stream_position().map_err(|e| e.to_string())?;
+        if chunk_len as u64 + 4 > file_len.saturating_sub(position) {
+            return Err("PNG chunk exceeds the remaining file length".into());
+        }
 
         if chunk_type == "IEND" {
             break;
         }
 
         if chunk_type == "tEXt" || chunk_type == "iTXt" {
+            text_bytes += chunk_len as u64;
+            if text_bytes > MAX_SIDECAR_BYTES {
+                return Err("PNG generation metadata exceeds the size limit".into());
+            }
             // Read chunk data
             let mut data = vec![0u8; chunk_len];
             if reader.read_exact(&mut data).is_err() {
@@ -153,11 +263,9 @@ pub fn extract_png_text_chunks(file_path: &str) -> Result<HashMap<String, String
             }
         } else {
             // Skip chunk data + CRC
-            let skip_len = chunk_len + 4;
-            let mut skip_buf = vec![0u8; skip_len];
-            if reader.read_exact(&mut skip_buf).is_err() {
-                break;
-            }
+            reader
+                .seek(SeekFrom::Current(chunk_len as i64 + 4))
+                .map_err(|e| e.to_string())?;
         }
     }
 
@@ -518,6 +626,14 @@ pub fn extract_metadata(
     comfyui_negative_node_ids: Option<&[String]>,
     format_hint: &str,
 ) -> ExtractionResult {
+    if format_hint == "none" {
+        return ExtractionResult::no_metadata();
+    }
+    match read_generation_sidecar(Path::new(file_path)) {
+        Ok(Some(sidecar)) => return ExtractionResult::success(sidecar.generation),
+        Err(error) => return ExtractionResult::error(&error),
+        Ok(None) => {}
+    }
     let chunks = match extract_png_text_chunks(file_path) {
         Ok(c) => c,
         Err(e) => return ExtractionResult::error(&e),

@@ -678,6 +678,40 @@
   background: var(--bg-secondary);
 }
 
+.create-save-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 250px;
+  max-width: 48%;
+}
+
+.create-results-toolbar .create-save-tools .create-field {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.create-output-library select {
+  background: var(--bg-secondary);
+  font-size: 0.8rem;
+}
+
+.create-studio-dialog .create-directory-button {
+  background: transparent;
+  font-size: 0.73rem;
+  text-align: left;
+  border-style: dashed;
+}
+
+.create-view-advanced .create-save-tools,
+.create-view-setup .create-save-tools {
+  width: 100%;
+  max-width: none;
+}
+
 .create-count {
   padding: 2px 7px;
   border-radius: 5px;
@@ -1095,6 +1129,11 @@
   }
 
   .create-results-toolbar .create-destination {
+    width: 100%;
+    max-width: none;
+  }
+
+  .create-save-tools {
     width: 100%;
     max-width: none;
   }

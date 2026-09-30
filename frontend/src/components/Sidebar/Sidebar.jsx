@@ -88,16 +88,35 @@ function Sidebar({
   const [saveSearchName, setSaveSearchName] = useState('')
 
   // Load directories
-  const refreshDirectories = useCallback(() => {
-    fetchDirectories(false, null, mediaType).then(data => {
+  const refreshDirectories = useCallback(requestConfig => {
+    return fetchDirectories(false, null, mediaType, requestConfig).then(data => {
+      if (requestConfig?.signal?.aborted) return
       setDirectories(data.directories || [])
       setDirectoriesMediaType(mediaType)
-    }).catch(console.error)
+    }).catch(error => { if (!requestConfig?.signal?.aborted) console.error(error) })
   }, [mediaType])
 
   useEffect(() => {
     refreshDirectories()
   }, [refreshDirectories])
+
+  useEffect(() => {
+    if (mediaType !== 'image') return
+    let request = null
+    const created = () => {
+      request?.abort()
+      request = new AbortController()
+      refreshDirectories({ signal: request.signal })
+    }
+    const changingServer = () => request?.abort()
+    window.addEventListener('donut-create-directory-created', created)
+    window.addEventListener('donut-create-server-changing', changingServer)
+    return () => {
+      request?.abort()
+      window.removeEventListener('donut-create-directory-created', created)
+      window.removeEventListener('donut-create-server-changing', changingServer)
+    }
+  }, [mediaType, refreshDirectories])
 
   useEffect(() => {
     if (!isGalleryPage && !isCollectionPage) return

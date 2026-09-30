@@ -46,6 +46,33 @@ use existing session-owned routes. Account credentials and local filesystem path
 are not put in frame messages. Results are saved only into an explicitly selected,
 available image directory.
 
+## Output directories and saved recipes
+
+Create output directory creates or reuses an image-only **Created Images** folder
+inside the selected library. It registers the folder through the regular directory
+scan and watcher paths and selects it for saving. Other image directories remain
+available. Creation requires write access, including for paired mobile clients.
+
+The PNG remains byte-for-byte the backend output, including any embedded metadata.
+Saving also writes `.donut-create/<image filename>.json` beside it: for example,
+`Created Images/.donut-create/example.png.json`. The hidden companion contains a
+versioned format, image SHA-256, the full editable workflow, executed prompt graph,
+execution details, normalized prompt/seed/sampling fields and original PNG text.
+It does not contain the studio capability or account credentials. Writes are staged
+and atomically replaced; an invalid, mismatched or symlinked companion is rejected.
+The database caches searchable fields; reindexing can recover those fields from
+the verified companion. Keep the hidden folder with the images when moving a
+directory or making a backup.
+
+Gallery context menus and the image lightbox offer **Load workflow** when a recipe
+is available. Lookup uses the mounted library, directory, image and expected file
+hash, checks the current file and companion, and falls back to embedded PNG
+workflow data for older images. It opens Create and loads that graph into the same
+basic/advanced editor after readiness, without generating. Closing before readiness
+cancels the delayed load. Missing backend models, node packs or reference assets
+must still be supplied; the companion describes the recipe rather than embedding
+those dependencies. Loading an image recipe does not change the shared latest run.
+
 ## Editing scope
 
 The basic view has separate Create, Edit and Tuning tabs. Edit supports uploading

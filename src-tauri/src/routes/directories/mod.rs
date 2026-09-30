@@ -362,7 +362,7 @@ async fn list_directories(
 
 /// POST /api/directories — Add a new watch directory.
 /// Accepts optional `library_id` in the request body to target a specific library.
-async fn add_directory(
+pub(crate) async fn add_directory(
     State(state): State<AppState>,
     Json(data): Json<DirectoryCreate>,
 ) -> Result<Json<Value>, AppError> {

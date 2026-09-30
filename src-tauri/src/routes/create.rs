@@ -5,7 +5,7 @@ use axum::{
     body::Body,
     extract::{
         ws::{rejection::WebSocketUpgradeRejection, Message, WebSocket, WebSocketUpgrade},
-        ConnectInfo, FromRequestParts, Path, Request, State,
+        ConnectInfo, FromRequestParts, Path, Query, Request, State,
     },
     http::{header, request::Parts, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
@@ -37,6 +37,8 @@ pub fn router() -> Router<AppState> {
         .route("/studio/{session_id}/{*rest}", any(studio))
         .route("/output/{session_id}/{output_id}", get(output))
         .route("/import", post(import_output))
+        .route("/output-directory", post(create_output_directory))
+        .route("/workflow", get(image_workflow))
 }
 
 /// Management/import routes require an actual write credential or the local desktop.
@@ -330,6 +332,160 @@ struct ImportedOutput {
     status: &'static str,
 }
 
+#[derive(Deserialize)]
+struct OutputDirectoryRequest {
+    library_id: Option<String>,
+}
+
+async fn create_output_directory(
+    State(state): State<AppState>,
+    req: Request,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (mut parts, body) = req.into_parts();
+    require_write(&state, &mut parts).await?;
+    let bytes = axum::body::to_bytes(body, 4096)
+        .await
+        .map_err(|_| AppError::BadRequest("Invalid directory request".into()))?;
+    let request: OutputDirectoryRequest = serde_json::from_slice(&bytes)
+        .map_err(|_| AppError::BadRequest("Invalid directory request".into()))?;
+    let lib = state.resolve_library(request.library_id.as_deref())?;
+    let base = std::fs::canonicalize(&lib.data_dir)?;
+    let root = base.join("Created Images");
+    match std::fs::create_dir(&root) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error.into()),
+    }
+    if !std::fs::symlink_metadata(&root)?.is_dir() {
+        return Err(AppError::BadRequest(
+            "Created Images must be a real directory".into(),
+        ));
+    }
+    let path = root.to_string_lossy().into_owned();
+    let existing = || -> Result<Option<i64>, AppError> {
+        let row: Option<(i64, bool, bool, bool, bool)> = lib.main_pool.get()?.query_row(
+            "SELECT id,enabled,show_images,show_videos,show_music FROM watch_directories WHERE path=?1",
+            params![path], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
+        ).optional()?;
+        match row {
+            Some((id, true, true, false, false)) => Ok(Some(id)),
+            Some(_) => Err(AppError::BadRequest("Created Images already exists with different settings. Enable Images only in Settings > Directories.".into())),
+            None => Ok(None),
+        }
+    };
+    let id = if let Some(id) = existing()? {
+        // Repair an interrupted earlier registration before claiming success.
+        // get_pool initializes the directory schema and scans are deduplicated.
+        lib.directory_db.get_pool(id)?;
+        let recursive: bool = lib.main_pool.get()?.query_row(
+            "SELECT recursive FROM watch_directories WHERE id=?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        crate::services::task_queue::enqueue_task(
+            &state,
+            crate::services::task_queue::TASK_SCAN_DIRECTORY,
+            &serde_json::json!({"directory_id":id,"directory_path":path,"library_id":lib.uuid,"recursive":recursive,"fast_import":true}),
+            crate::services::task_queue::PRIORITY_INDEX,
+            None,
+        )?;
+        if let Some(watcher) = state.directory_watcher() {
+            watcher.add_directory_for_library(id, &path, recursive, lib.clone());
+        }
+        state.allow_asset_dir(&path);
+        id
+    } else {
+        let added = super::directories::add_directory(
+            State(state.clone()),
+            Json(super::directories::DirectoryCreate {
+                path: path.clone(),
+                name: Some("Created Images".into()),
+                recursive: true,
+                auto_tag: false,
+                auto_age_detect: false,
+                show_images: true,
+                show_videos: false,
+                show_music: false,
+                library_id: Some(lib.uuid.clone()),
+            }),
+        )
+        .await?;
+        added.0["id"]
+            .as_i64()
+            .ok_or_else(|| AppError::Internal("Directory was not registered".into()))?
+    };
+    Ok(Json(
+        serde_json::json!({"library_id":lib.uuid,"directory_id":id,"name":"Created Images","path":path}),
+    ))
+}
+
+#[derive(Deserialize)]
+struct WorkflowQuery {
+    library_id: String,
+    directory_id: i64,
+    image_id: i64,
+    file_hash: Option<String>,
+    #[serde(default)]
+    summary: bool,
+}
+
+async fn image_workflow(
+    State(state): State<AppState>,
+    Query(query): Query<WorkflowQuery>,
+    req: Request,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (mut parts, _) = req.into_parts();
+    require_write(&state, &mut parts).await?;
+    let lib = state.resolve_library(Some(&query.library_id))?;
+    tokio::task::spawn_blocking(move || {
+        let root = destination(&lib, query.directory_id)?;
+        let (path, hash) =
+            super::images::single::resolve_exact_media(&lib, query.directory_id, query.image_id)?;
+        if query
+            .file_hash
+            .as_ref()
+            .is_some_and(|expected| expected != &hash)
+        {
+            return Err(AppError::BadRequest(
+                "The gallery image changed. Open its current version before loading the workflow."
+                    .into(),
+            ));
+        }
+        let path = std::fs::canonicalize(path)
+            .map_err(|_| AppError::NotFound("Image file is unavailable".into()))?;
+        if !path.starts_with(root) || !super::images::single::media_path_matches_hash(&path, &hash)
+        {
+            return Err(AppError::NotFound(
+                "Image file does not match the gallery item".into(),
+            ));
+        }
+        let workflow =
+            match metadata::read_generation_sidecar(&path).map_err(AppError::BadRequest)? {
+                Some(sidecar) => sidecar.workflow,
+                None => metadata::extract_png_text_chunks(&path.to_string_lossy())
+                    .ok()
+                    .and_then(|chunks| {
+                        chunks
+                            .get("workflow")
+                            .and_then(|value| serde_json::from_str(value).ok())
+                    }),
+            };
+        let workflow = workflow.filter(|value| {
+            value
+                .get("nodes")
+                .and_then(|v| v.as_array())
+                .is_some_and(|nodes| !nodes.is_empty())
+                && serde_json::to_vec(value).is_ok_and(|bytes| bytes.len() <= 4 * 1024 * 1024)
+        });
+        Ok(Json(if query.summary {
+            serde_json::json!({"available":workflow.is_some()})
+        } else {
+            serde_json::json!({"available":workflow.is_some(),"workflow":workflow})
+        }))
+    })
+    .await?
+}
+
 fn destination(lib: &LibraryContext, directory_id: i64) -> Result<PathBuf, AppError> {
     let (path, enabled, images): (String, bool, bool) = lib
         .main_pool
@@ -378,15 +534,28 @@ async fn import_output(
         request.session_id,
         request.output_id
     );
-    let metadata_response = state
+    let mut metadata_response = state
         .http_client()
-        .get(format!("{url}/metadata"))
+        .get(format!("{url}/provenance"))
         .timeout(Duration::from_secs(70))
         .send()
         .await
         .map_err(|_| {
             AppError::ServiceUnavailable("Could not load executed generation metadata".into())
         })?;
+    // An already running older add-on may not expose full provenance yet.
+    // Its embedded PNG graph remains a valid fallback until the add-on restarts.
+    if metadata_response.status() == StatusCode::NOT_FOUND {
+        metadata_response = state
+            .http_client()
+            .get(format!("{url}/metadata"))
+            .timeout(Duration::from_secs(70))
+            .send()
+            .await
+            .map_err(|_| {
+                AppError::ServiceUnavailable("Could not load executed generation metadata".into())
+            })?;
+    }
     if !metadata_response.status().is_success() {
         return Err(AppError::BadRequest(
             "Generation output is unavailable or the studio has expired".into(),
@@ -497,6 +666,7 @@ fn save_output(
             |row| row.get(0),
         )?;
         if exists && path.is_file() && file_digest(&path)? == digest && digest == sha256 {
+            persist_output_metadata(&path, &sha256, request.execution_metadata.as_ref())?;
             return Ok(ImportedOutput {
                 library_id: lib.uuid.clone(),
                 directory_id: request.directory_id,
@@ -531,6 +701,15 @@ fn save_output(
             Err(error) => return Err(error.error.into()),
         }
     };
+    // Write the portable recipe before indexing so ordinary metadata extraction
+    // and later reindexing use the same executed settings as this import.
+    if let Err(error) = persist_output_metadata(&path, &sha256, request.execution_metadata.as_ref())
+    {
+        if created {
+            let _ = std::fs::remove_file(&path);
+        }
+        return Err(error);
+    }
     let imported = importer::import_image(
         state,
         lib,
@@ -543,6 +722,10 @@ fn save_output(
         result => {
             if created {
                 let _ = std::fs::remove_file(&path);
+                let _ = std::fs::remove_file(root.join(".donut-create").join(format!(
+                    "{}.json",
+                    path.file_name().unwrap().to_string_lossy()
+                )));
             }
             return Err(match result {
                 Err(error) => error,
@@ -628,6 +811,53 @@ fn save_generation_metadata(
     prompt: Option<&String>,
     executed: Option<&serde_json::Value>,
 ) -> Result<(), AppError> {
+    let parsed = generation_metadata(prompt, executed);
+    conn.execute("UPDATE images SET prompt=COALESCE(?1,prompt),negative_prompt=COALESCE(?2,negative_prompt),model_name=COALESCE(?3,model_name),sampler=COALESCE(?4,sampler),seed=COALESCE(?5,seed),steps=COALESCE(?6,steps),cfg_scale=COALESCE(?7,cfg_scale) WHERE id=?8", params![parsed.prompt,parsed.negative_prompt,parsed.model_name,parsed.sampler,parsed.seed,parsed.steps,parsed.cfg_scale,image_id])?;
+    Ok(())
+}
+
+fn persist_output_metadata(
+    path: &std::path::Path,
+    sha256: &str,
+    executed: Option<&serde_json::Value>,
+) -> Result<(), AppError> {
+    let chunks = metadata::extract_png_text_chunks(&path.to_string_lossy()).unwrap_or_default();
+    let graph = executed
+        .and_then(|value| value.get("execution_prompt"))
+        .filter(|v| v.is_object())
+        .cloned()
+        .or_else(|| {
+            chunks
+                .get("prompt")
+                .and_then(|value| serde_json::from_str(value).ok())
+        });
+    let prompt_text = graph.as_ref().map(serde_json::Value::to_string);
+    let sidecar = metadata::GenerationSidecar {
+        schema: "donut-create-output-v1".into(),
+        image_sha256: sha256.into(),
+        generation: generation_metadata(prompt_text.as_ref(), executed),
+        workflow: executed
+            .and_then(|value| value.get("workflow"))
+            .filter(|v| v.is_object())
+            .cloned()
+            .or_else(|| {
+                chunks
+                    .get("workflow")
+                    .and_then(|value| serde_json::from_str(value).ok())
+            }),
+        execution_prompt: graph,
+        execution: executed.and_then(|value| value.get("execution")).cloned(),
+        png_text: chunks,
+    };
+    metadata::write_generation_sidecar(path, &sidecar).map_err(|error| {
+        AppError::BadRequest(format!("Could not save generation metadata: {error}"))
+    })
+}
+
+fn generation_metadata(
+    prompt: Option<&String>,
+    executed: Option<&serde_json::Value>,
+) -> metadata::GenerationMetadata {
     let graph = prompt
         .and_then(|p| serde_json::from_str::<serde_json::Value>(p).ok())
         .unwrap_or_default();
@@ -716,9 +946,7 @@ fn save_generation_metadata(
             parsed.sampler = Some(sampler.to_owned());
         }
     }
-    // The complete executed prompt and workflow remain embedded and in provenance.
-    conn.execute("UPDATE images SET prompt=COALESCE(?1,prompt),negative_prompt=COALESCE(?2,negative_prompt),model_name=COALESCE(?3,model_name),sampler=COALESCE(?4,sampler),seed=COALESCE(?5,seed),steps=COALESCE(?6,steps),cfg_scale=COALESCE(?7,cfg_scale) WHERE id=?8", params![parsed.prompt,parsed.negative_prompt,parsed.model_name,parsed.sampler,parsed.seed,parsed.steps,parsed.cfg_scale,image_id])?;
-    Ok(())
+    parsed
 }
 
 #[cfg(test)]
@@ -796,7 +1024,7 @@ mod tests {
         assert_eq!(repeated.image_id, saved.image_id);
         assert_eq!(repeated.filename, saved.filename);
         assert_eq!(repeated.status, "existing");
-        assert_eq!(std::fs::read_dir(root).unwrap().count(), 2);
+        assert_eq!(std::fs::read_dir(root).unwrap().count(), 3);
     }
 
     // AC: @donut-create-plugin ac-save-gallery

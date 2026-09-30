@@ -10,6 +10,7 @@ import {
 } from './Lightbox/hooks/timelinePreviewLifecycle.js'
 import { getDesktopAPI } from '../tauriAPI'
 import { toast } from './Toast'
+import { useImageWorkflow } from '../hooks/useImageWorkflow'
 import ContextMenu from './ContextMenu'
 import './MediaItem.css'
 
@@ -58,6 +59,7 @@ function MediaItem({ image, useFullImage = false, onClick, isSelectable = false,
   const previewIdentity = timelinePreviewIdentityKey(previewLocator)
   const isVideoFile = isGridVideo(image)
   const fileStatus = image?.file_status || 'available'
+  const workflow = useImageWorkflow(image, !!contextMenu && !isVideoFile && fileStatus === 'available')
 
   // Determine if we should use preview frames for hover animation
   const usePreviewFrames = isVideoFile && previewLoaded && previewFrames.length > 0
@@ -391,6 +393,11 @@ function MediaItem({ image, useFullImage = false, onClick, isSelectable = false,
           position={contextMenu}
           onClose={() => setContextMenu(null)}
           items={[
+            ...(workflow.available && !isVideoFile ? [{
+              label: workflow.loading ? 'Loading workflow…' : 'Load workflow',
+              disabled: workflow.loading,
+              onClick: workflow.loadWorkflow,
+            }, { separator: true }] : []),
             {
               label: 'Copy Image',
               onClick: handleCopyImage

@@ -1104,6 +1104,17 @@ def create_app(controller: Controller | None = None) -> FastAPI:
             raise HTTPException(404, "Completed studio output not found.")
         return output.get("metadata", {})
 
+    @application.get("/create/sessions/{sid}/outputs/{oid}/provenance")
+    async def get_output_provenance(sid: str, oid: str):
+        ctrl = current()
+        session = ctrl.session(sid)
+        await ctrl.reconcile(session)
+        output = session["outputs"].get(oid)
+        if output is None or session["jobs"].get(output["prompt_id"], {}).get("status") != "completed":
+            raise HTTPException(404, "Completed studio output not found.")
+        return {**output.get("metadata", {}), "workflow": output.get("workflow"),
+                "execution_prompt": output.get("prompt"), "execution": output.get("execution")}
+
     @application.api_route("/studio/{sid}/", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
     @application.api_route("/studio/{sid}/{rest:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
     async def studio(sid: str, request: Request, rest: str = ""):

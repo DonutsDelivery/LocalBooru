@@ -1,4 +1,4 @@
-import { apiClient, getApiUrl } from '../api'
+import { apiClient, getApiUrl, invalidateDirectoriesCache } from '../api'
 
 const CREATE_API = '/addons/donut-create/api/create'
 
@@ -83,6 +83,31 @@ export async function importStudioOutput(sessionId, outputId, destination, signa
   return response.data
 }
 
+export async function createOutputDirectory(libraryId, signal) {
+  const response = await apiClient.post('/create/output-directory', libraryId ? { library_id: libraryId } : {}, { signal })
+  checkRequest(signal)
+  invalidateDirectoriesCache()
+  window.dispatchEvent(new CustomEvent('donut-create-directory-created', { detail: response.data }))
+  return response.data
+}
+
+export async function getImageWorkflow(locator, summary = false, signal) {
+  const response = await apiClient.get('/create/workflow', { signal, params: {
+    library_id: locator.libraryId,
+    directory_id: locator.directoryId,
+    image_id: locator.imageId,
+    ...(locator.fileHash ? { file_hash: locator.fileHash } : {}),
+    ...(summary ? { summary: true } : {}),
+  } })
+  checkRequest(signal)
+  return response.data
+}
+
+export function openImageWorkflow(workflow, locator, label) {
+  if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) throw new Error('This image does not contain a saved workflow.')
+  window.dispatchEvent(new CustomEvent('donut-create-load-workflow', { detail: { workflow, source: { ...locator, label } } }))
+}
+
 export function createErrorMessage(error) {
   const detail = error?.response?.data?.error
     || error?.response?.data?.detail
@@ -96,10 +121,15 @@ export function formatCreateBytes(bytes) {
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`
 }
 
-export function createDirectoryOptions(directories, libraries) {
-  const available = new Map(libraries
+export function createLibraryOptions(libraries) {
+  return libraries
     .filter(library => library.mounted && library.accessible !== false && library.read_only !== true && library.remote !== true)
-    .map(library => [library.uuid, library.name]))
+    .map(library => ({ id: library.uuid, label: library.name, primary: library.is_primary === true }))
+    .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }))
+}
+
+export function createDirectoryOptions(directories, libraries) {
+  const available = new Map(createLibraryOptions(libraries).map(library => [library.id, library.label]))
   return directories
     .filter(directory => available.has(directory.library_id)
       && directory.show_images === true
