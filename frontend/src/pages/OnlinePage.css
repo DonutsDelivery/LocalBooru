@@ -2,3 +2,5 @@
 .online-panel .online-checkbox{flex-direction:row;align-items:center}.online-panel .online-checkbox input{width:16px;height:16px;padding:0;margin:0 5px 0 0}.online-header .menu-btn{margin-right:12px}
 .online-page{background:var(--bg-primary,#101318)}.online-back{color:var(--accent)}.online-header button.active,.online-toolbar button,.import-button{background:var(--accent);border-color:var(--accent);color:#101510}.online-notice{border-color:var(--accent);background:var(--accent-glow)}.capability-strip span,.remote-badge{background:var(--accent-glow);border-color:var(--accent)}.remote-card:focus-visible{outline-color:var(--accent)}
 .publishing-heading>div:last-child{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.publishing-heading select{background:#171c24;border:1px solid rgba(255,255,255,.14);color:inherit;border-radius:10px;padding:10px}.publishing-heading p{color:var(--text-secondary)}@media(max-width:900px){.publishing-heading{align-items:stretch;flex-direction:column;gap:12px}}
+.online-header h2 { font-size: 2.25rem; margin: 8px 0 4px; }
+.online-main { max-width: 1500px; margin: auto; }

@@ -1,7 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import Sidebar from '../components/Sidebar'
-import { useMobileDrawer } from '../hooks/useMobileDrawer'
 import {
   browseRemoteSource,
   createPublication,
@@ -28,7 +25,6 @@ function errorMessage(error) {
 }
 
 export default function OnlinePage() {
-  const drawer = useMobileDrawer()
   const [tab, setTab] = useState('browse')
   const [sources, setSources] = useState([])
   const [sourceId, setSourceId] = useState('')
@@ -168,19 +164,16 @@ export default function OnlinePage() {
     }
   }
 
-  return <div className="app"><div className="main-container">
-    {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
-    <Sidebar mobileOpen={drawer.isOpen} onClose={drawer.close} />
-    <div className="content with-sidebar"><div className="online-page">
+  return <div className="online-page">
     <header className="online-header">
-      <div><button className="menu-btn mobile-only" onClick={drawer.open} aria-label="Open menu">☰</button><Link to="/" className="online-back">← Local Library</Link><h1>Nodes & Fediverse</h1><p>Browse DonutBooru and compatible remote sources. Import and publish are explicit actions.</p></div>
+      <div><h2>Fediverse & Nodes</h2><p>Browse DonutBooru and compatible remote sources. Import and publish are explicit actions.</p></div>
       <nav aria-label="Online sections">
         {['browse', 'sources', 'publishing'].map(name => <button key={name} className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name === 'publishing' ? 'Publishing' : name[0].toUpperCase() + name.slice(1)}</button>)}
       </nav>
     </header>
     {notice && <div className="online-notice" role="status">{notice}</div>}
 
-    {tab === 'browse' && <main>
+    {tab === 'browse' && <section className="online-main">
       <form className="online-toolbar" onSubmit={browse}>
         <select aria-label="Remote source" value={sourceId} onChange={event => { setSourceId(event.target.value); setPage(null) }}>
           <option value="">Choose a source</option>
@@ -202,9 +195,9 @@ export default function OnlinePage() {
           </button>
         })}
       </div>
-    </main>}
+    </section>}
 
-    {tab === 'sources' && <main className="online-two-column">
+    {tab === 'sources' && <section className="online-main online-two-column">
       <form className="online-panel" onSubmit={addSource}><h2>Add source</h2>
         <label>Name<input required value={form.display_name} onChange={event => setForm({ ...form, display_name: event.target.value })} /></label>
         <label>Provider<select value={form.provider_family} onChange={event => setForm({ ...form, provider_family: event.target.value })}><option value="danbooru">Danbooru-compatible</option><option value="donutbooru">DonutBooru</option></select></label>
@@ -223,14 +216,14 @@ export default function OnlinePage() {
         <small>The credential is sent directly to backend-owned storage and is never returned to this page.</small>
         {connections.map(connection => <article className="source-row" key={connection.connection_id}><div><strong>{connection.account_display_name || 'Connected account'}</strong><small>{connection.trust_state} · credential stored</small></div><button type="button" className="danger" onClick={async () => { await deleteRemoteConnection(sourceId, connection.connection_id); const result = await getRemoteConnections(sourceId); setConnections(result.connections || []) }}>Disconnect</button></article>)}
       </form>
-    </main>}
+    </section>}
 
-    {tab === 'publishing' && <main className="online-panel publishing-panel">
+    {tab === 'publishing' && <section className="online-main online-panel publishing-panel">
       <div className="publishing-heading"><div><h2>Publication history</h2><p>Each destination has its own durable state and receipt.</p></div><div><select aria-label="Publication source" value={sourceId} onChange={event => setSourceId(event.target.value)}><option value="">Choose a source</option>{sources.filter(source => source.capabilities.upload).map(source => <option key={source.source_id} value={source.source_id}>{source.display_name}</option>)}</select><select aria-label="Local directory" value={directoryId} onChange={event => setDirectoryId(event.target.value)}><option value="">Choose directory</option>{directories.map(directory => <option key={directory.id} value={directory.id}>{directory.name || directory.path}</option>)}</select><button disabled={!selectedSource?.capabilities?.upload || connections.length === 0 || !directoryId || busy} title={connections.length === 0 ? 'Connect a publishing account in Sources first' : ''} onClick={queuePublication}>New publication</button></div></div>
       {publications.length === 0 && <div className="online-empty">Nothing has been published from this app.</div>}
       {publications.map(entry => <article className="publication-row" key={entry.target.target_id}><div><strong>Local image #{entry.snapshot.image_id}</strong><small>Target {entry.target.source_id}</small><small>{new Date(entry.created_at).toLocaleString()}</small>{entry.target.error?.message && <small role="alert">{entry.target.error.message}</small>}</div><div><span className={`publication-state state-${entry.target.state}`}>{entry.target.state.replaceAll('_', ' ')}</span>{entry.target.remote_url && <a href={entry.target.remote_url} target="_blank" rel="noreferrer">Open receipt</a>}{['queued', 'failed_retryable'].includes(entry.target.state) && <button disabled={busy} onClick={async () => { setBusy(true); try { const result = await deliverPublication(entry.publication_id); await loadHistory(); const failed = result.targets?.find(target => target.error); setNotice(failed ? failed.error.message : 'Publication delivery completed.') } catch (error) { setNotice(errorMessage(error)) } finally { setBusy(false) } }}>{entry.target.state === 'queued' ? 'Publish now' : 'Retry'}</button>}</div></article>)}
-    </main>}
+    </section>}
 
     {selected && <div className="remote-viewer" role="dialog" aria-modal="true" aria-label="Remote item"><button className="viewer-close" onClick={() => setSelected(null)}>×</button><div className="viewer-media">{selected.duration != null && selected.media.some(media => media.kind === 'original') ? <video src={assetUrl(selected, 'original')} controls autoPlay /> : selected.media.some(media => media.kind === 'sample') ? <img src={assetUrl(selected, 'sample')} alt={selected.title || selected.tags.join(', ')} /> : <img src={assetUrl(selected, selected.media[0]?.kind)} alt={selected.title || selected.tags.join(', ')} />}</div><aside><span className="remote-badge">Remote item</span><h2>Post {selected.remote_post_id}</h2><p>{selected.tags.join(' ')}</p><a href={selected.canonical_url} target="_blank" rel="noreferrer">Open on source ↗</a><label>Import destination<select value={directoryId} onChange={event => setDirectoryId(event.target.value)}><option value="">Choose watched directory</option>{directories.map(directory => <option key={directory.id} value={directory.id}>{directory.name || directory.path}</option>)}</select></label><button className="import-button" disabled={!directoryId || busy} onClick={importSelected}>Import a local copy</button><small>Browsing does not add this item. Import downloads and verifies one media file, then adds it through the normal library importer.</small></aside></div>}
-  </div></div></div></div>
+  </div>
 }

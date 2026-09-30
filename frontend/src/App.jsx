@@ -3,7 +3,7 @@
  * Simplified single-user version
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { BrowserRouter, Routes, Route, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 
 import { isMobileApp, LOCAL_SERVER } from './serverManager'
 import MasonryGrid from './components/MasonryGrid'
@@ -252,7 +252,14 @@ function FamilyModeSettings() {
 // Settings page with tabs
 function SettingsPage() {
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('general')
+  const location = useLocation()
+  const section = location.pathname.split('/')[2] || 'directories'
+  const activeTab = ['directories', 'general', 'video', 'network', 'servers', 'fediverse', 'mobile', 'data', 'addons', 'addon-settings', 'tasks'].includes(section)
+    ? section : 'directories'
+  const changeTab = (tab) => navigate(tab === 'directories' ? '/settings' : `/settings/${tab}`, { state: location.state })
+  const returnTo = location.state?.returnTo
+  const galleryReturnTo = typeof returnTo === 'string' && (returnTo === '/' || returnTo.startsWith('/?') || returnTo.startsWith('/videos') || returnTo.startsWith('/music') || returnTo.startsWith('/collections'))
+    ? returnTo : '/'
   const [showContinueWatching, setShowContinueWatching] = useState(() => {
     return localStorage.getItem('localbooru_continueWatching') !== 'false'
   })
@@ -311,7 +318,7 @@ function SettingsPage() {
         <Sidebar
           stats={stats}
           settingsTab={activeTab}
-          onSettingsTabChange={setActiveTab}
+          onSettingsTabChange={changeTab}
           mobileOpen={settingsDrawer.isOpen}
           onClose={settingsDrawer.close}
         />
@@ -319,7 +326,7 @@ function SettingsPage() {
         <main className="content with-sidebar">
           <div className="page settings-page">
             <div className="page-header">
-              <button className="back-btn mobile-only" onClick={() => navigate('/')} aria-label="Back to gallery">
+              <button className="back-btn mobile-only" onClick={() => navigate(galleryReturnTo)} aria-label="Back to gallery">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M19 12H5M12 19l-7-7 7-7"/>
                 </svg>
@@ -333,6 +340,8 @@ function SettingsPage() {
             </div>
 
             {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
+            {activeTab === 'directories' && <div className="settings-tab-content active wide"><DirectoriesPage /></div>}
+            {activeTab === 'fediverse' && <div className="settings-tab-content active wide"><OnlinePage /></div>}
             <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
               <VideoPlaybackSettings />
 
@@ -2360,12 +2369,14 @@ function AppShell() {
             <Route path="/" element={<Gallery key="image" mediaType="image" />} />
             <Route path="/videos" element={<Gallery key="video" mediaType="video" />} />
             <Route path="/music" element={<MusicPage />} />
-            <Route path="/online" element={<OnlinePage />} />
-            <Route path="/directories" element={<DirectoriesPage />} />
+            <Route path="/online" element={<Navigate to="/settings/fediverse" replace />} />
+            <Route path="/fediverse" element={<Navigate to="/settings/fediverse" replace />} />
+            <Route path="/directories" element={<Navigate to="/settings" replace />} />
             <Route path="/collections" element={<CollectionsPage />} />
             <Route path="/collections/:id" element={<CollectionDetailPage />} />
             <Route path="/watch/:token" element={<WatchPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/:section" element={<SettingsPage />} />
           </Routes>
           <CreateStudioHost />
           <PersistentMusicPlayer placement="mobile" />

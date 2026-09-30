@@ -506,6 +506,15 @@
   margin: 0 auto;
 }
 
+.settings-page .settings-tab-content.active.wide {
+  max-width: none;
+}
+
+.settings-page .online-page {
+  min-height: 0;
+  padding: 0;
+}
+
 .settings-divider {
   border: none;
   border-top: 1px solid var(--border);
