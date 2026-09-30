@@ -3428,3 +3428,32 @@ reviews:
     created_at: 2026-09-30T03:26:32.252Z
     updated_at: 2026-09-30T03:26:33.745Z
     notes: []
+  - _ulid: 01M3R5SH5VMS478J6SAQ772W30
+    slugs:
+      - review-isolated-host-gate-v2
+    title: Review isolated host gate fix cycle 2
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3R5SH5VQNFJDXNH9YAMZ3B0
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-09-30T03:30:06.651Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@isolated-host-build-gate"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 2eab59d
+      head_branch: fix/isolated-host-gate
+      head_commit: 5f068177
+    threads: []
+    verdicts: []
+    created_at: 2026-09-30T03:30:06.651Z
+    updated_at: null
+    notes: []
