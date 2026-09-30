@@ -10,6 +10,12 @@ it does not claim mobile playback or the sharing architecture has passed it.
 
 ## Product direction
 
+For the recorded pre-Create discussion, including gallery/playback requirements
+and later corrections, see the [product decision record](pre-create-product-decisions.md).
+The subsequent [creator commerce record](creator-commerce-and-offline-delivery.md)
+adds paid collections, copying limits, and creator-offline purchases. These are
+design records; this document's earlier inventory is not evidence of their completion.
+
 DonutMediaCenter is a personal media library, player, and optional publisher.
 People browse Images, Videos, and Music, connect to creators' shared libraries,
 and explicitly choose what they publish from their own library.
