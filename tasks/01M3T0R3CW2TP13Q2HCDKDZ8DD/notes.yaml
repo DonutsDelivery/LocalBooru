@@ -30,3 +30,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T20:59:20.723Z
+  - _ulid: 01M3T227H3S60F51B4A480Z4P5
+    content: User asked about wholly different workflows. Explained current Advanced can import/edit but
+      generation remains supported-node allowlist and basic bindings are v5-specific. Separate
+      custom workflow profiles with capability/model checks and optional promoted basic inputs are a
+      follow-on design; did not loosen scope/allow arbitrary nodes during current implementation.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T21:03:26.243Z
