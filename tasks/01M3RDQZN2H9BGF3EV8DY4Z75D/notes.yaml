@@ -25,3 +25,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T06:22:45.678Z
+  - _ulid: 01M3RH46A3QKZ8H3JJ3095F0XS
+    content: Live modern ComfyUI browser (disposable state, synthetic POST/history/reference intercepts,
+      real GET-only frontend/catalog) verified all26 v5 nodes, actual prompt/style, promoted
+      steps9/cfg1.5/shared seed42, scoped reference and one-stroke inpaint mask in serialized API
+      prompt. Found and fixed numeric DonutSeedPlan.filename_seed incorrectly rejected as filesystem
+      link. Refreshed two-client browser verified startup latest graph, preserved unsaved
+      first-device prompt, newer revision notification and explicit Load latest run. Host snapshot
+      now reads revision rather than depending on extra editor timer. Existing controller35/adapter5
+      and live VM fixture pass. Build gate still held by unrelated linking; React browser/mobile
+      layout/native installation pending.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T06:48:10.308Z
