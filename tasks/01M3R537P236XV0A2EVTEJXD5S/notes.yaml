@@ -66,3 +66,17 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T03:27:00.188Z
+  - _ulid: 01M3R5QFSZGTG0WJA406MT4393
+    content: "Fix cycle 1: addressed the only review blocker with commit
+      5f068177fcaa9d36599027c5e10b4eb1ceba8ce4 on fix/isolated-host-gate. Each curl health probe has
+      connect/max time min(2 seconds, remaining startup budget), with a positive-budget guard so
+      curl never receives unbounded max-time 0. Outside-repository fake app served a real TCP
+      /health request without responding: launcher returned timeout in 3.03s for 3s budget,
+      terminated fake child, and removed isolated root. Child exit during probe detected in 0.53s
+      before 6s deadline. bash -n, diff --check, and existing host-build integration fake-command
+      check pass. No tests added, real app/build launched, user data accessed, or pushes performed.
+      Review subject should use actual 2eab59d..5f06817; original-root submission linkage remains
+      unrelated and must not be trusted."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:28:59.711Z
