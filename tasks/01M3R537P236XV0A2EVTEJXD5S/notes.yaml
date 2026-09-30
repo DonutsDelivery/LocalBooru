@@ -21,3 +21,17 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T03:22:13.520Z
+  - _ulid: 01M3R5C7TSV4YH3SWZA00TM61G
+    content: "Implemented only scripts/run-isolated-test.sh: retain pre-isolation host gate
+      executable/state identity, actionable missing/non-executable gate status 75, deadline-based
+      readiness with default 1800 and configurable integer 1..14400 seconds. Verification passed:
+      bash -n, git diff --check, existing host-build integration fake-command check, and
+      outside-repository disposable fake npm/curl/ss exercise covering default host HOME state, XDG
+      state, explicit overrides, app-path isolation and cleanup, invalid/missing gate and timeout
+      rejection, delayed readiness, timeout child termination, early exit, and file-argument
+      rejection. No real app, Cargo, Docker, or compiler was started. Existing run-dev shell test
+      failure is an unrelated branding assertion (expected LocalBooru, actual DonutMediaCenter).
+      Candidate awaits parent review and local-main integration."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:22:51.097Z
