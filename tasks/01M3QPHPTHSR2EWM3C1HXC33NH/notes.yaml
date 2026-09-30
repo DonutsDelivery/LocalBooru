@@ -53,3 +53,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-09-30T00:19:43.674Z
+  - _ulid: 01M3R53PDJ6TEYS04SHR54A9GZ
+    content: Resumed after connection loss. Confirmed pushed main2eab59d and creation2394773, candidate
+      clean. Initial live compiler inventory was quiet but a new shared build acquired token before
+      native attempt;60s lock wait exited75 without compiler start. Native focused tests now queued
+      through run-cargo host alias with standard bounded wait. Separate scoped helper fixes isolated
+      launcher host gate executable and state capture before temporary HOME/XDG; existing isolation
+      and no normal-profile fallback retained. User push authorization now permits explicit product
+      refs after verification, superseding original no-push task wording.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T03:18:11.123Z
