@@ -11,7 +11,7 @@ import {
 test('lists configurable add-ons in a stable order', () => {
   assert.deepEqual(
     ADDON_SETTINGS_CATALOG.map(({ id }) => id),
-    ['auto-tagger', 'age-detector', 'whisper-subtitles', 'cast', 'svp', 'curation-game', 'wd14-sidecar'],
+    ['auto-tagger', 'age-detector', 'whisper-subtitles', 'cast', 'svp', 'curation-game', 'wd14-sidecar', 'donut-create'],
   )
 })
 

@@ -927,7 +927,7 @@ impl AddonManager {
             }
             if let Some(sources) = super::sources::get_addon_sources(id) {
                 for (filename, source) in sources {
-                    std::fs::write(addon_dir.join(filename), source)
+                    super::sources::write_source(&addon_dir, filename, source)
                         .map_err(|error| format!("Failed to write {}: {}", filename, error))?;
                 }
             }
@@ -975,7 +975,7 @@ impl AddonManager {
         // Deploy embedded addon sources if available.
         if let Some(sources) = super::sources::get_addon_sources(id) {
             for (filename, source) in sources {
-                std::fs::write(addon_dir.join(filename), source)
+                super::sources::write_source(&addon_dir, filename, source)
                     .map_err(|e| format!("Failed to write {}: {}", filename, e))?;
             }
             log::info!("[AddonManager] Deployed sources for addon '{}'", id);
@@ -1033,7 +1033,7 @@ impl AddonManager {
         }
         if let Some(sources) = super::sources::get_addon_sources(id) {
             for (filename, source) in sources {
-                std::fs::write(self.addon_dir(id).join(filename), source)
+                super::sources::write_source(&self.addon_dir(id), filename, source)
                     .map_err(|error| format!("Failed to deploy {}: {}", filename, error))?;
             }
         }
@@ -1147,7 +1147,12 @@ impl AddonManager {
         // This ensures installed addons pick up source updates on restart.
         if let Some(sources) = super::sources::get_addon_sources(id) {
             for (filename, source) in sources {
-                if let Err(e) = std::fs::write(app_dir.join(filename), source) {
+                if let Err(e) = super::sources::write_source(&app_dir, filename, source) {
+                    if id == "donut-create" {
+                        let error = format!("Failed to deploy {}: {}", filename, e);
+                        self.set_status(id, AddonStatus::Error(error.clone()));
+                        return Err(error);
+                    }
                     log::warn!(
                         "[AddonManager] Failed to deploy {} for '{}': {}",
                         filename,

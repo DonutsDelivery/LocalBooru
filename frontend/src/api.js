@@ -38,7 +38,7 @@ function getLocalServerBase() {
 }
 
 // Get API URL - same origin when served from backend, fallback for dev
-function getApiUrl() {
+export function getApiUrl() {
   // Mobile app with remote server on Tauri — route through local proxy
   if (currentServerUrl && isTauriApp()) {
     return `${getLocalServerBase()}/remote/api`
@@ -59,20 +59,104 @@ function getApiUrl() {
 export async function updateServerConfig(workingUrl = null) {
   if (!isTauriClient()) return
 
-  // Reset the media token on any server change; it is re-minted below when a
-  // session token is available.
-  currentMediaToken = null
-  mediaTokenExpiry = 0
+  // /remote/api stays the same URL while its paired backend changes. The
+  // studio must discard its old capability before it can target that backend.
+  window.dispatchEvent(new CustomEvent('donut-create-server-changing'))
 
-  const server = await getActiveServer()
-  const serverId = server?.id ?? LOCAL_SERVER.id
-  if (serverId !== unavailableToastServerId) {
-    unavailableToastServerId = serverId
-    suppressRepeatedUnavailableLibraryToast = createUnavailableLibraryToastGate()
-  }
-  if (server) {
-    // Local embedded server — use relative URLs like desktop
-    if (server.isLocal || server.id === LOCAL_SERVER.id) {
+  try {
+    // Reset the media token on any server change; it is re-minted below when a
+    // session token is available.
+    currentMediaToken = null
+    mediaTokenExpiry = 0
+
+    const server = await getActiveServer()
+    const serverId = server?.id ?? LOCAL_SERVER.id
+    if (serverId !== unavailableToastServerId) {
+      unavailableToastServerId = serverId
+      suppressRepeatedUnavailableLibraryToast = createUnavailableLibraryToastGate()
+    }
+    if (server) {
+      // Local embedded server — use relative URLs like desktop
+      if (server.isLocal || server.id === LOCAL_SERVER.id) {
+        currentServerUrl = null
+        currentServerAuth = null
+        currentServerToken = null
+        currentCertFingerprint = null
+        certValidated = false
+        // Clear remote proxy on Tauri
+        if (isTauriApp()) {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core')
+            await invoke('set_remote_proxy', { url: null, fallbackUrl: null, token: null })
+          } catch (e) { console.warn('[API] Failed to clear remote proxy:', e) }
+        }
+        api.defaults.baseURL = getApiUrl()
+        return
+      }
+
+      currentServerUrl = server.url
+      currentCertFingerprint = server.certFingerprint || null
+      certValidated = false  // Reset validation on server change
+      // Prefer JWT token (from QR pairing) over Basic auth
+      if (server.token) {
+        currentServerAuth = 'Bearer ' + server.token
+        currentServerToken = server.token
+        // Mint a short-lived media token in the background (non-Tauri browser path
+        // uses it in media URLs instead of the session JWT).
+        void fetchMediaToken()
+      } else if (server.username && server.password) {
+        currentServerAuth = 'Basic ' + btoa(`${server.username}:${server.password}`)
+        currentServerToken = null
+      } else {
+        currentServerAuth = null
+        currentServerToken = null
+      }
+
+      // Determine which URL to use as proxy primary. If the caller didn't tell us
+      // which one was just verified, fall back to the cached probe result, then probe.
+      let primaryUrl = server.url
+      let fallbackUrl = server.fallbackUrl || null
+      if (server.fallbackUrl) {
+        let resolved = workingUrl || server._lastReachableUrl || null
+        if (!resolved) {
+          try {
+            const probe = await probeServer(server)
+            if (probe.success && probe.url) resolved = probe.url
+          } catch { /* probe failed; fall through to default */ }
+        }
+        if (resolved) {
+          primaryUrl = resolved
+          fallbackUrl = resolved === server.url ? (server.fallbackUrl || null) : server.url
+        }
+      }
+
+      // Normalize: reqwest's URL parser rejects scheme-less inputs with a "builder error".
+      // Older saved entries may have been written without `http://`; patch them on the way out.
+      const ensureScheme = u => (u && !/^https?:\/\//i.test(u)) ? `http://${u}` : u
+      primaryUrl = ensureScheme(primaryUrl)
+      fallbackUrl = ensureScheme(fallbackUrl)
+
+      // On Tauri mobile, configure the local server to proxy to remote server
+      // This avoids mixed-content blocks (https://tauri.localhost -> http://...)
+      if (isTauriApp()) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          await invoke('set_remote_proxy', {
+            url: primaryUrl,
+            fallbackUrl,
+            token: server.token || null,
+          })
+        } catch (e) { console.warn('[API] Failed to set remote proxy:', e) }
+      }
+
+      // Update axios base URL
+      api.defaults.baseURL = getApiUrl()
+
+      // Validate certificate on first connection to HTTPS server
+      if (isHttps(server.url) && currentCertFingerprint) {
+        console.log('[API] Server uses HTTPS with certificate pinning')
+      }
+    } else {
       currentServerUrl = null
       currentServerAuth = null
       currentServerToken = null
@@ -85,86 +169,10 @@ export async function updateServerConfig(workingUrl = null) {
           await invoke('set_remote_proxy', { url: null, fallbackUrl: null, token: null })
         } catch (e) { console.warn('[API] Failed to clear remote proxy:', e) }
       }
-      api.defaults.baseURL = getApiUrl()
-      return
+      api.defaults.baseURL = null
     }
-
-    currentServerUrl = server.url
-    currentCertFingerprint = server.certFingerprint || null
-    certValidated = false  // Reset validation on server change
-    // Prefer JWT token (from QR pairing) over Basic auth
-    if (server.token) {
-      currentServerAuth = 'Bearer ' + server.token
-      currentServerToken = server.token
-      // Mint a short-lived media token in the background (non-Tauri browser path
-      // uses it in media URLs instead of the session JWT).
-      void fetchMediaToken()
-    } else if (server.username && server.password) {
-      currentServerAuth = 'Basic ' + btoa(`${server.username}:${server.password}`)
-      currentServerToken = null
-    } else {
-      currentServerAuth = null
-      currentServerToken = null
-    }
-
-    // Determine which URL to use as proxy primary. If the caller didn't tell us
-    // which one was just verified, fall back to the cached probe result, then probe.
-    let primaryUrl = server.url
-    let fallbackUrl = server.fallbackUrl || null
-    if (server.fallbackUrl) {
-      let resolved = workingUrl || server._lastReachableUrl || null
-      if (!resolved) {
-        try {
-          const probe = await probeServer(server)
-          if (probe.success && probe.url) resolved = probe.url
-        } catch { /* probe failed; fall through to default */ }
-      }
-      if (resolved) {
-        primaryUrl = resolved
-        fallbackUrl = resolved === server.url ? (server.fallbackUrl || null) : server.url
-      }
-    }
-
-    // Normalize: reqwest's URL parser rejects scheme-less inputs with a "builder error".
-    // Older saved entries may have been written without `http://`; patch them on the way out.
-    const ensureScheme = u => (u && !/^https?:\/\//i.test(u)) ? `http://${u}` : u
-    primaryUrl = ensureScheme(primaryUrl)
-    fallbackUrl = ensureScheme(fallbackUrl)
-
-    // On Tauri mobile, configure the local server to proxy to remote server
-    // This avoids mixed-content blocks (https://tauri.localhost -> http://...)
-    if (isTauriApp()) {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core')
-        await invoke('set_remote_proxy', {
-          url: primaryUrl,
-          fallbackUrl,
-          token: server.token || null,
-        })
-      } catch (e) { console.warn('[API] Failed to set remote proxy:', e) }
-    }
-
-    // Update axios base URL
-    api.defaults.baseURL = getApiUrl()
-
-    // Validate certificate on first connection to HTTPS server
-    if (isHttps(server.url) && currentCertFingerprint) {
-      console.log('[API] Server uses HTTPS with certificate pinning')
-    }
-  } else {
-    currentServerUrl = null
-    currentServerAuth = null
-    currentServerToken = null
-    currentCertFingerprint = null
-    certValidated = false
-    // Clear remote proxy on Tauri
-    if (isTauriApp()) {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core')
-        await invoke('set_remote_proxy', { url: null, fallbackUrl: null, token: null })
-      } catch (e) { console.warn('[API] Failed to clear remote proxy:', e) }
-    }
-    api.defaults.baseURL = null
+  } finally {
+    window.dispatchEvent(new CustomEvent('donut-create-server-changed'))
   }
 }
 
@@ -183,6 +191,9 @@ const api = axios.create({
   baseURL: getApiUrl(),
   timeout: 120000,  // 120s timeout for busy servers / large operations
 })
+
+// Add-on clients share the active backend and its existing auth interceptors.
+export const apiClient = api
 
 
 // Add request interceptor for auth on mobile and certificate validation
@@ -1727,13 +1738,13 @@ export async function getAddons() {
   return response.data
 }
 
-export async function getAddon(id) {
-  const response = await api.get(`/addons/${id}`)
+export async function getAddon(id, requestConfig) {
+  const response = await api.get(`/addons/${id}`, requestConfig)
   return response.data
 }
 
-export async function installAddon(id, options) {
-  const response = await api.post(`/addons/${id}/install`, options, { timeout: 0 })
+export async function installAddon(id, options, requestConfig) {
+  const response = await api.post(`/addons/${id}/install`, options, { timeout: 0, ...requestConfig })
   return response.data
 }
 
@@ -1747,8 +1758,8 @@ export async function uninstallAddon(id) {
   return response.data
 }
 
-export async function startAddon(id) {
-  const response = await api.post(`/addons/${id}/start`)
+export async function startAddon(id, requestConfig) {
+  const response = await api.post(`/addons/${id}/start`, undefined, requestConfig)
   return response.data
 }
 

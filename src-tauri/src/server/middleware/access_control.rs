@@ -42,6 +42,10 @@ const EXEMPT_PREFIXES: &[&str] = &[
     "/icon.png",
     "/api/share/",
     "/api/cast-media/",
+    // These routes validate an expiring studio capability in the sidecar.
+    // Creation/configuration/import endpoints still require normal access.
+    "/api/create/studio/",
+    "/api/create/output/",
     "/watch/",
 ];
 

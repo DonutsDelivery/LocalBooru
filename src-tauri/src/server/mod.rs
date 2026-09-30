@@ -9,7 +9,10 @@ use std::path::PathBuf;
 
 use axum::{
     body::Body,
-    extract::{Request, State},
+    extract::{
+        ws::{rejection::WebSocketUpgradeRejection, WebSocketUpgrade},
+        Request, State,
+    },
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Json, Response},
     routing::get,
@@ -80,6 +83,7 @@ pub fn build_router(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
         )
         .nest("/api/library", crate::routes::library::router())
         .nest("/api/collections", crate::routes::collections::router())
+        .nest("/api/create", crate::routes::create::router())
         .nest("/api/music", crate::routes::music::router())
         .nest("/api/online", crate::routes::online::router())
         .nest("/api/users", crate::routes::users::router())
@@ -217,7 +221,11 @@ async fn health() -> Json<serde_json::Value> {
 /// (connect refused/timeout). HTTP error responses are NOT retried — a 5xx means
 /// the primary server is reachable, so flipping to the fallback would just hide
 /// real server problems behind a working secondary path.
-async fn remote_proxy_handler(State(state): State<AppState>, req: Request) -> Response {
+async fn remote_proxy_handler(
+    State(state): State<AppState>,
+    upgrade: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
+    req: Request,
+) -> Response {
     let proxy = state.get_remote_proxy().await;
     let cfg = match proxy {
         Some(c) => c,
@@ -233,6 +241,26 @@ async fn remote_proxy_handler(State(state): State<AppState>, req: Request) -> Re
         .query()
         .map(|q| format!("?{}", q))
         .unwrap_or_default();
+    let studio_prefix = crate::routes::create::remote_studio_prefix(&path);
+    if studio_prefix.is_some() && path.ends_with("/ws") {
+        let upgrade = match upgrade {
+            Ok(upgrade) => upgrade,
+            Err(_) => {
+                return (StatusCode::BAD_REQUEST, "Expected a WebSocket upgrade").into_response()
+            }
+        };
+        let mut urls = vec![format!("{}{}{}", cfg.primary_url, path, query)];
+        if let Some(fallback) = &cfg.fallback_url {
+            urls.push(format!("{}{}{}", fallback, path, query));
+        }
+        return crate::routes::create::proxy_websocket(
+            upgrade,
+            &urls,
+            studio_prefix.as_deref(),
+            cfg.token.as_deref(),
+        )
+        .await;
+    }
     let method = req.method().clone();
     let headers_snapshot: Vec<(axum::http::HeaderName, axum::http::HeaderValue)> = req
         .headers()
@@ -267,6 +295,9 @@ async fn remote_proxy_handler(State(state): State<AppState>, req: Request) -> Re
         }
         if let Some(ref tok) = token {
             builder = builder.header("Authorization", format!("Bearer {}", tok));
+        }
+        if let Some(ref prefix) = studio_prefix {
+            builder = builder.header("x-dmc-studio-prefix", prefix);
         }
         if !body_bytes.is_empty() {
             builder = builder.body(body_bytes.clone());

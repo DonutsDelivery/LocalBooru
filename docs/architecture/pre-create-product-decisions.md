@@ -1,7 +1,7 @@
 # DonutMediaCenter: product decisions before Create
 
 Recorded: 2026-09-30. Scope: this conversation up to the request to start the
-ComfyUI creation plugin.
+ComfyUI creation add-on.
 
 This is a durable record of requirements and design discussion, not a completion
 report. A screenshot, a user report, or an earlier agent's claim does not establish
@@ -367,7 +367,7 @@ cannot establish authorship merely from an upload or eradicate fraudulent claims
 No blanket legal conclusion about all private friend sharing was adopted.
 
 No payment chain, NFT scheme, DRM provider, or P2P stack was selected. Do not treat
-these ideas as implemented features or prerequisites for the Create plugin.
+these ideas as implemented features or prerequisites for the Create add-on.
 
 ## 11. Delivery and traceability
 
@@ -404,5 +404,5 @@ publishing or pushing remains a separately authorized operation.
 
 The unrelated progress-dashboard attachment was explicitly identified as belonging
 to another session and is excluded. ComfyUI/DonutUI/Create installation, workflow,
-model setup, and implementation status belong to the subsequent creation-plugin
+model setup, and implementation status belong to the subsequent creation-add-on
 task, outside this record.

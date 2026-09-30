@@ -107,6 +107,16 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             python_deps: &[],
         },
         AddonManifest {
+            id: "donut-create",
+            name: "Donut Create",
+            description: "Create images with DonutUI, ComfyUI and DonutNodes workflow v5",
+            runtime: AddonRuntime::Sidecar,
+            installation: AddonInstallation::PythonVenv,
+            port: Some(18009),
+            // The ComfyUI runtime and models have their own managed environment.
+            python_deps: &["httpx==0.28.1", "websockets==15.0.1"],
+        },
+        AddonManifest {
             id: "curation-game",
             name: "Curation Game",
             description: "Rapidly keep or discard media from the current gallery view",
