@@ -3977,6 +3977,45 @@ reviews:
         runner: T3 browser with synthetic controller mutations
         created_at: 2026-09-30T06:50:44.831Z
         completed_at: 2026-09-30T06:50:44.831Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+          head_commit: 50cb79e5741eebaf5e0ad1d16300fabb17a3cab4
+        evidence: 35 controller +5 adapter checks pass; live-widget VM manually rerun and independently
+          verified by reviewer.
+        name: controller-and-adapter
+        required: true
+        runner: focused synthetic and browser checks
+        created_at: 2026-09-30T06:59:30.612Z
+        completed_at: 2026-09-30T06:59:30.612Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+          head_commit: 50cb79e5741eebaf5e0ad1d16300fabb17a3cab4
+        evidence: "Real modern v5 browser scoped prompt accepted by fake backend: actual selected
+          prompts/steps/cfg/seed/reference/mask; startup latest workflow and two-client newer notice
+          + draft preservation + explicit load pass; queued cancellation count1/errors0."
+        name: modern-comfy-serialized-prompt
+        required: true
+        runner: focused synthetic and browser checks
+        created_at: 2026-09-30T06:59:30.712Z
+        completed_at: 2026-09-30T06:59:30.712Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+          head_commit: 50cb79e5741eebaf5e0ad1d16300fabb17a3cab4
+        evidence: 28 existing frontend checks pass under NODE_ENV=test Node22 optimization-disabled after
+          local V8 worker crash; cancellation assertion accommodates new connection status. Built
+          isolated53-module React fixture. Desktop1280/mobile390 studio has no horizontal overflow.
+          Actual pointer mask strokes/rapid-save lock/toggle preservation pass.
+        name: browser-layout-focused-checks
+        required: true
+        runner: focused synthetic and browser checks
+        created_at: 2026-09-30T06:59:30.823Z
+        completed_at: 2026-09-30T06:59:30.823Z
     events:
       - _ulid: 01M3RH6Y4ZGX5VYWNND8VF73NW
         actor: DonutsDelivery
@@ -4012,9 +4051,54 @@ reviews:
           status: pass
           name: modern-comfy-serialized-prompt
         timestamp: 2026-09-30T06:50:44.855Z
+      - _ulid: 01M3RHRYJWJPA9GPQAZMRDZK60
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 50cb79e5741eebaf5e0ad1d16300fabb17a3cab4
+          previous_head: 4954f16d1434af24545397dcf2d234d3b99a2847
+        timestamp: 2026-09-30T06:59:30.524Z
+      - _ulid: 01M3RHRYPDEHBVM3R9FDRZ57BP
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: controller-and-adapter
+        timestamp: 2026-09-30T06:59:30.637Z
+      - _ulid: 01M3RHRYSWTGE0V52Y23B8G035
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: modern-comfy-serialized-prompt
+        timestamp: 2026-09-30T06:59:30.748Z
+      - _ulid: 01M3RHRYWZCQ40E1SQ1N9JVC6E
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: browser-layout-focused-checks
+        timestamp: 2026-09-30T06:59:30.848Z
+      - _ulid: 01M3RHRZ2MWC566YMHXHXSZVK8
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+            head_commit: 50cb79e5741eebaf5e0ad1d16300fabb17a3cab4
+          decision: approve
+        timestamp: 2026-09-30T06:59:31.028Z
+      - _ulid: 01M3RHRZ2MPHG1TNDSAGEN43FQ
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-09-30T06:59:31.028Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@create-simple-studio"
     subject:
@@ -4022,11 +4106,19 @@ reviews:
       base_branch: main
       base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
       head_branch: feat/create-simple-studio
-      head_commit: 4954f16d1434af24545397dcf2d234d3b99a2847
+      head_commit: 50cb79e5741eebaf5e0ad1d16300fabb17a3cab4
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+          head_commit: 50cb79e5741eebaf5e0ad1d16300fabb17a3cab4
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-09-30T06:59:31.028Z
     created_at: 2026-09-30T06:49:40.255Z
-    updated_at: 2026-09-30T06:50:44.831Z
+    updated_at: 2026-09-30T06:59:31.028Z
     notes: []
   - _ulid: 01M3RH6YAWR9KQJEN3V03ES1C1
     slugs:
@@ -4045,6 +4137,20 @@ reviews:
         runner: isolated Vite fixture and existing Vitest
         created_at: 2026-09-30T06:50:44.639Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+          head_commit: 88de80d176cc370a2c37dead269d9248ed89d753
+        evidence: Independent reviewer approved9-file route/navigation diff. Built actual SidebarNavigation
+          and Music/Sidebar CSS in isolated fixture; four icons and identical8px padding,59px
+          width,40px height in gallery and Music, including selected Music. No normal DMC profile
+          launched.
+        name: browser-layout-focused-checks
+        required: true
+        runner: source review and isolated React browser
+        created_at: 2026-09-30T06:59:30.915Z
+        completed_at: 2026-09-30T06:59:30.915Z
     events:
       - _ulid: 01M3RH6YAWG1A3TS0WA0YTGKF8
         actor: DonutsDelivery
@@ -4066,9 +4172,33 @@ reviews:
           status: running
           name: browser-layout-focused-checks
         timestamp: 2026-09-30T06:50:44.664Z
+      - _ulid: 01M3RHRYZV9A95EVV8CBEGH646
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: browser-layout-focused-checks
+        timestamp: 2026-09-30T06:59:30.940Z
+      - _ulid: 01M3RHRZ7PTDKF6XV2YKXF0HK9
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+            head_commit: 88de80d176cc370a2c37dead269d9248ed89d753
+          decision: approve
+        timestamp: 2026-09-30T06:59:31.190Z
+      - _ulid: 01M3RHRZ7PTS5GN8AMR051MFKW
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-09-30T06:59:31.190Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@settings-navigation-four-items"
     subject:
@@ -4078,7 +4208,15 @@ reviews:
       head_branch: fix/settings-navigation
       head_commit: 88de80d176cc370a2c37dead269d9248ed89d753
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 171eb7afc3c7cbf8239b079c2b607c325ba97f71
+          head_commit: 88de80d176cc370a2c37dead269d9248ed89d753
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-09-30T06:59:31.190Z
     created_at: 2026-09-30T06:49:40.444Z
-    updated_at: 2026-09-30T06:50:44.639Z
+    updated_at: 2026-09-30T06:59:31.190Z
     notes: []
