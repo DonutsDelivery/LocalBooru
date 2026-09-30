@@ -3714,6 +3714,21 @@ reviews:
         runner: main_sync_review
         created_at: 2026-09-30T03:57:53.075Z
         completed_at: 2026-09-30T03:57:53.075Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d44d0eb7e425efe01d29aa18de9a8058d606abc0
+          head_commit: 56d8174fe0d13f4304b46d80ac4e49b645b8a65d
+        evidence: Disposable isolated native app built and started on18790;96syntheticPNG fixtures outside
+          repo; thumbnail rendering confirmed. Browser Create setup/controller install succeeds
+          on18009,managed18010,unavailableComfy status and disabledOpenStudio visible. Create
+          absentVideos/Music. Close button works;Escape preserves Images path and gallery
+          scroll400px/restores trigger focus. No models/GPU generation/nativeWebView/platform
+          certification claimed.
+        name: isolated-native-launch-and-browser-smoke
+        required: true
+        created_at: 2026-09-30T03:58:22.104Z
+        completed_at: 2026-09-30T03:58:22.104Z
     events:
       - _ulid: 01M3R7BM4P6MZ8N0P05M75DVCN
         actor: DonutsDelivery
@@ -3742,6 +3757,13 @@ reviews:
           status: pass
           name: creation-independent-source-review
         timestamp: 2026-09-30T03:57:53.101Z
+      - _ulid: 01M3R7D8YX0ZZFEJSF0634Z18X
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: isolated-native-launch-and-browser-smoke
+        timestamp: 2026-09-30T03:58:22.173Z
     examined_commit: 56d8174fe0d13f4304b46d80ac4e49b645b8a65d
     external_links: []
     lifecycle_state: open
@@ -3757,5 +3779,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-09-30T03:57:28.086Z
-    updated_at: 2026-09-30T03:57:53.075Z
+    updated_at: 2026-09-30T03:58:22.104Z
     notes: []
