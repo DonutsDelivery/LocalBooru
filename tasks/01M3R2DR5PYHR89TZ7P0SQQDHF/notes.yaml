@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M3R2EJTJ7NQGTVV9J502QNNS
+    content: "Fetched origin. Main673985e includes approved documentation a245131; remote8309fa7
+      contains release metadata2.0.5, unavailable-library toast throttling, duplicate-media read
+      fixes and release-infrastructure docs. Merging preserves both histories. Five content
+      conflicts resolved: retain DMC branding at remote2.0.5; fetchImage accepts both optional and
+      suppressNotFoundToast; preserve new cooldown and console redaction. All18 existing focused
+      Node tests passed, API syntax check and release metadata consistency passed. Independent merge
+      review underway. Creation2394773 remains separate/unmerged/native-unverified; push only
+      explicit product refs, not kspec shadow."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T02:31:42.162Z

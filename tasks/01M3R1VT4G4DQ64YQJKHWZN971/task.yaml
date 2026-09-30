@@ -11,8 +11,12 @@ description: "Consolidate the conversation before ComfyUI into durable documenta
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Approved documentation a245131 integrated into local main via673985e. Comprehensive
+  visible pre-Create requirements and commerce/offline discussion recorded and crosslinked. Manual
+  independent review approved, 12 local links verified, diff whitespace clean; no broad build
+  needed.
 depends_on: []
 context: []
 priority: 3
@@ -65,8 +69,25 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-09-30T02:28:26.714Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Approved documentation a245131 integrated into local main via673985e. Comprehensive visible
+          pre-Create requirements and commerce/offline discussion recorded and crosslinked. Manual
+          independent review approved, 12 local links verified, diff whitespace clean; no broad
+          build needed.
+        previous: null
+      completed_at:
+        new: 2026-09-30T02:31:42.248Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-09-30T02:31:42.253Z
 created_at: 2026-09-30T02:21:27.056Z
 started_at: 2026-09-30T02:21:43.663Z
 submitted_at: 2026-09-30T02:28:25.119Z
+completed_at: 2026-09-30T02:31:42.248Z
 todos: []
 automation: manual_only
