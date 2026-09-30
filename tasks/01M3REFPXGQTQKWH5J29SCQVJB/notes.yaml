@@ -1,0 +1,10 @@
+notes:
+  - _ulid: 01M3REFQ3CERRBAW2TE64DHN1F
+    content: Dedicated worktree /tmp/dmc-settings-navigation branch fix/settings-navigation from
+      main171eb7a; existing directory_scope agent handles shared navigation/settings routes and
+      music styles. Root keeps creation implementation in separate /tmp/dmc-create-simple. Preserve
+      compatibility and distinct Servers/Fediverse functions. Four shared menu buttons with
+      identical sizing across all selected media.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-09-30T06:02:02.220Z

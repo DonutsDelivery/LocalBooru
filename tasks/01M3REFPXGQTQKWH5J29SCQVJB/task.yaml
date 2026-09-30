@@ -1,0 +1,35 @@
+_ulid: 01M3REFPXGQTQKWH5J29SCQVJB
+slugs:
+  - settings-navigation-four-items
+title: Move directories and Fediverse into Settings and fix media menu spacing
+type: bug
+description: User requests four main media/menu buttons Images, Videos, Music, Settings. Watch
+  Directories becomes default Settings starting page; Fediverse becomes Settings section, not remote
+  install Servers. Correct recurring Music-selected spacing/padding regression by using consistent
+  shared navigation. Preserve old direct routes or redirect safely; preserve unrelated creation
+  integration. Verify focused navigation behavior and integrate main.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-09-30T06:02:02.120Z
+        previous: null
+    command: task-start
+    timestamp: 2026-09-30T06:02:02.120Z
+created_at: 2026-09-30T06:02:02.031Z
+started_at: 2026-09-30T06:02:02.120Z
+todos: []
+automation: manual_only
