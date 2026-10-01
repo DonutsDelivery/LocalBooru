@@ -20,7 +20,7 @@ import CreateStudioHost from './CreateStudioHost'
 import CreateSettings from './CreateSettings'
 import Sidebar from './Sidebar/Sidebar'
 import AddonSettings from './AddonSettings'
-import ToastContainer from './Toast'
+import ToastContainer, { toast } from './Toast'
 import { getCreateStatus, startCreateBackend, stopCreateBackend } from '../services/donutCreate'
 
 const CREATE_API = '/addons/donut-create/api/create'
@@ -127,6 +127,7 @@ describe('Donut Create studio', () => {
     const gallery = screen.getByTestId('gallery')
     titlebar.inert = false
     gallery.inert = false
+    act(() => { toast.info('Synthetic window notification', 0) })
     openStudio()
     await screen.findByTitle('DonutUI creation studio')
     expect(titlebar.inert).toBe(false)
