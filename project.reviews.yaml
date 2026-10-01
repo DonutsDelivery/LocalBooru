@@ -4986,3 +4986,135 @@ reviews:
     created_at: 2026-10-01T01:00:33.710Z
     updated_at: 2026-10-01T01:00:34.651Z
     notes: []
+  - _ulid: 01M3TH8MQ0MXKZE4D8KDEYJMJ2
+    slugs:
+      - review-create-actions-layout
+    title: Review creator actions and Finalize layout
+    author: DonutCreateIndependentReview
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 6a5cd4783e34318a10123ea5e14926d89247e7d3
+          head_commit: b1786c5795413e1d6691259231a1d35f75317217
+        evidence: Independently reran NODE_ENV=test host-gated
+          /tmp/electron-tmp/dmc-controls-browser/actions.component.test.jsx via
+          actions-vitest.config.mjs:23/23 passed. Covers collapsed sampling commit,Finalize
+          transitions preserving uncommitted prompt with no spurious graph patch,jobs above
+          generation footer,drawer Escape/focus restoration without modal close,notch canvas/preview
+          transitions,and inherited scoped cancellation,qualified saving,stale server/session/import
+          rejection. Writer exited0; no compiler/test writers at inspection and host gate free. No
+          reviewer source or tracked-test edits.
+        name: independent-actions-behavior
+        required: true
+        runner: vitest
+        created_at: 2026-10-01T01:29:05.446Z
+        completed_at: 2026-10-01T01:29:05.446Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 6a5cd4783e34318a10123ea5e14926d89247e7d3
+          head_commit: b1786c5795413e1d6691259231a1d35f75317217
+        evidence: Clean exact b1786c5 five-path diff reviewed with interacting bridge,state,canvas and CSS
+          context. Finalize preserves editing mode,destination/autosave state remains owned by
+          Host,conditional simple/advanced saving controls avoid duplicate active
+          destinations,Create sampling binds existing graph fields,draft commit guards remain,queue
+          Cancel retains scoped handler,drawer local Escape stops modal event and focuses summary.
+          Parent existing frontend22 and final synthetic Vite build passed. Parent
+          browser1280x800,390x844,320x568 confirms bounded upward360/248px drawer,Finalize survives
+          polling,canvas notch switching,no horizontal overflow or runtime fixture errors; final320
+          notch/zoom gap12.5px after compact CSS. No GPU/native installation acceptance claimed.
+        name: source-and-responsive-layout
+        required: true
+        created_at: 2026-10-01T01:29:05.562Z
+        completed_at: 2026-10-01T01:29:05.562Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: 6a5cd4783e34318a10123ea5e14926d89247e7d3
+          head_commit: b1786c5795413e1d6691259231a1d35f75317217
+        evidence: Direct authoritative-root kspec validate executed; exit4 due pre-existing unrelated
+          malformed Android/core records,legacy @claude references,and verify skill
+          missing-description. Donut-create-plugin has no inherited traits. This scoped approval
+          does not certify shared registry health.
+        name: shared-kspec-validation
+        required: false
+        created_at: 2026-10-01T01:29:05.681Z
+        completed_at: 2026-10-01T01:29:05.681Z
+    events:
+      - _ulid: 01M3TH8MPZJMXFTRTKQHGMWC32
+        actor: DonutCreateIndependentReview
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T01:29:04.992Z
+      - _ulid: 01M3TH8N217XVZ39SNY07KMZZG
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T01:29:05.345Z
+      - _ulid: 01M3TH8N66S5XF6S1HD9JZDT4A
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-actions-behavior
+        timestamp: 2026-10-01T01:29:05.478Z
+      - _ulid: 01M3TH8N9R4WTP6E05Y244G2X0
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-and-responsive-layout
+        timestamp: 2026-10-01T01:29:05.592Z
+      - _ulid: 01M3TH8NDKS1RF6Q7RWTH37RTC
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: shared-kspec-validation
+        timestamp: 2026-10-01T01:29:05.715Z
+      - _ulid: 01M3TH8NHAAGAESGKNJWY2B2W9
+        actor: DonutCreateIndependentReview
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 6a5cd4783e34318a10123ea5e14926d89247e7d3
+            head_commit: b1786c5795413e1d6691259231a1d35f75317217
+          decision: approve
+        timestamp: 2026-10-01T01:29:05.834Z
+      - _ulid: 01M3TH8NHA13FQMQ67RWY5AME7
+        actor: DonutCreateIndependentReview
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T01:29:05.834Z
+    examined_commit: b1786c5795413e1d6691259231a1d35f75317217
+    external_links: []
+    lifecycle_state: closed
+    related_refs:
+      - "@create-actions-layout"
+      - "@donut-create-plugin"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 6a5cd4783e34318a10123ea5e14926d89247e7d3
+      head_branch: feat/create-actions-layout
+      head_commit: b1786c5795413e1d6691259231a1d35f75317217
+    threads: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 6a5cd4783e34318a10123ea5e14926d89247e7d3
+          head_commit: b1786c5795413e1d6691259231a1d35f75317217
+        decision: approve
+        reviewer: DonutCreateIndependentReview
+        role: reviewer
+        created_at: 2026-10-01T01:29:05.834Z
+    created_at: 2026-10-01T01:29:04.992Z
+    updated_at: 2026-10-01T01:29:05.834Z
+    notes: []
