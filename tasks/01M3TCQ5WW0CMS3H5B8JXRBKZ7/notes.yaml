@@ -1,0 +1,11 @@
+notes:
+  - _ulid: 01M3TCQ649WZSRKPKE84A7R2GW
+    content: "Approach: retain scoped bridge and short individual probes but wait up to five minutes for
+      editor readiness; retry refreshes only a not-yet-ready iframe after backend readiness.
+      Close/backend changes cancel readiness polling. TAB Off hides its slider without deleting
+      strength. Effects spans both rows and bottom pane occupies center column. Focused existing
+      component suites plus disposable delayed-start behavioral checks; no GPU jobs or user-profile
+      smoke testing."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T00:09:38.697Z
