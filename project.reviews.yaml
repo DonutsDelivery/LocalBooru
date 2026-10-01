@@ -4705,3 +4705,130 @@ reviews:
     created_at: 2026-09-30T21:44:29.965Z
     updated_at: 2026-09-30T22:37:04.155Z
     notes: []
+  - _ulid: 01M3TD80AA69PRZWETNCQY79Q2
+    slugs:
+      - review-create-connection-pane-polish
+    title: Review creator connection wait and pane polish
+    author: DonutCreateIndependentReview
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 7ec6ba805b0b54e8725ff56160a66c29579fdc0f
+          head_commit: 843d87737ffe267ac4871d32ed6a46d896476767
+        evidence: "Independent NODE_ENV=test gated run: /tmp/dmc-review-retry.component.test.jsx via
+          /tmp/dmc-review-retry.config.mjs, 24/24 passed. Covers >7 second startup, five-minute
+          expiration/retry and late-ready, no closed polling, TAB Off and Face toggle/placement,
+          input staging before pointer release, retained iframe after pending owned patch
+          close/reopen with renewed scoped snapshot/new patch/Generate recovery. Existing
+          server-generation and stale-completion cases included. No tracked tests added."
+        name: focused-startup-controls-and-close-reopen
+        required: true
+        runner: vitest
+        created_at: 2026-10-01T00:18:50.228Z
+        completed_at: 2026-10-01T00:18:50.228Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 7ec6ba805b0b54e8725ff56160a66c29579fdc0f
+          head_commit: 843d87737ffe267ac4871d32ed6a46d896476767
+        evidence: All four changed files and scoped bridge service reviewed on exact843d877. Owned cleanup
+          clears pending counters and rejects old closures by bridge identity; individual probes
+          bounded7sec and overall startup5min. CSS lower pane center-only, Effects both rows, mobile
+          overrides retained. Parent browser fixture:1280x800 nonintersecting Effects/lower
+          rectangles;390x844 no page overflow, TAB/face visibility and zero fixture errors. No GPU
+          or user-profile runtime evidence claimed.
+        name: source-review-and-layout-fixture
+        required: true
+        created_at: 2026-10-01T00:18:50.340Z
+        completed_at: 2026-10-01T00:18:50.340Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: 7ec6ba805b0b54e8725ff56160a66c29579fdc0f
+          head_commit: 843d87737ffe267ac4871d32ed6a46d896476767
+        evidence: Ran shared authoritative original-root kspec validate; exits4 on pre-existing malformed
+          unrelated Android/core spec ULIDs/ACs, legacy @claude references, and verify skill
+          missing-description. Reviewed donut-create-plugin has no inherited traits. This narrow
+          code review does not claim the shared registry is valid.
+        name: shared-kspec-validation
+        required: false
+        created_at: 2026-10-01T00:18:50.462Z
+        completed_at: 2026-10-01T00:18:50.462Z
+    events:
+      - _ulid: 01M3TD80AAY01N5X1F4JJ8VR4Q
+        actor: DonutCreateIndependentReview
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T00:18:49.802Z
+      - _ulid: 01M3TD80MSQ196WJNQHZ09GMTF
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T00:18:50.138Z
+      - _ulid: 01M3TD80RJKT8EKT00NWRK1RFW
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-startup-controls-and-close-reopen
+        timestamp: 2026-10-01T00:18:50.258Z
+      - _ulid: 01M3TD80W155CD0HARCZ07TZD5
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-review-and-layout-fixture
+        timestamp: 2026-10-01T00:18:50.369Z
+      - _ulid: 01M3TD80ZWAW98E9YQMP1XHK9H
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: shared-kspec-validation
+        timestamp: 2026-10-01T00:18:50.492Z
+      - _ulid: 01M3TD813FYDDNJG0639AAPSA3
+        actor: DonutCreateIndependentReview
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 7ec6ba805b0b54e8725ff56160a66c29579fdc0f
+            head_commit: 843d87737ffe267ac4871d32ed6a46d896476767
+          decision: approve
+        timestamp: 2026-10-01T00:18:50.607Z
+      - _ulid: 01M3TD813FBH5QPE30FP74TCDV
+        actor: DonutCreateIndependentReview
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T00:18:50.607Z
+    examined_commit: 843d87737ffe267ac4871d32ed6a46d896476767
+    external_links: []
+    lifecycle_state: closed
+    related_refs:
+      - "@create-connection-pane-polish"
+      - "@donut-create-plugin"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 7ec6ba805b0b54e8725ff56160a66c29579fdc0f
+      head_branch: fix/create-connection-pane-polish
+      head_commit: 843d87737ffe267ac4871d32ed6a46d896476767
+    threads: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 7ec6ba805b0b54e8725ff56160a66c29579fdc0f
+          head_commit: 843d87737ffe267ac4871d32ed6a46d896476767
+        decision: approve
+        reviewer: DonutCreateIndependentReview
+        role: reviewer
+        created_at: 2026-10-01T00:18:50.607Z
+    created_at: 2026-10-01T00:18:49.802Z
+    updated_at: 2026-10-01T00:18:50.607Z
+    notes: []
