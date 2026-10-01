@@ -28,3 +28,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T05:09:45.493Z
+  - _ulid: 01M3TY7N6C6GR8F90A8NM9B3HG
+    content: Main0d28e2803ea602385276cf84571a34349fc614c9 pushed. Canonical Android build running under
+      host gate with JDK17/SDK36/NDK28.2, jobs2, existing signing key; initial arm64 release compile
+      finished4m28s, packaging phase underway. Linux desktop install queued behind same token, DMC
+      kept alive. Redmi still paired/reachable.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T05:15:44.205Z
