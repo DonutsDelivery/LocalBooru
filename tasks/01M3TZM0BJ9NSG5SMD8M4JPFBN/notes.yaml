@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M3TZXDB8BV53XEZ7W8R7Z2MH
+    content: "Root causes reproduced: auto-height flex DirectoriesPage child list flex-basis0 collapses;
+      hidden MigrationSettings global directory-* rules also leak into watch cards; Continue
+      Watching exact hydrated item omitted from loaded gallery causes Lightbox currentIndex -1 while
+      sidebar hides. Fix natural Settings scroll and scoped migration CSS, selected fallback
+      lightbox with exact identity/update/delete/close safety, Clear All next to header. Initial
+      focused component4/4 pass; T3 browser synthetic real-CSS fixture reproduced baseline
+      listheight0 desktop/phone and corrected heights1630/1590, all last cards scroll-reachable and
+      ClearAll/Select no overlap."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T05:45:05.640Z
