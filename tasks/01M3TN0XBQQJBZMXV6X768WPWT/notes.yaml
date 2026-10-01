@@ -10,3 +10,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T02:45:53.073Z
+  - _ulid: 01M3TPA73D40AERFS3629ZQCTJ
+    content: Focused checks:35 existing controller +10 disposable lifecycle +28 frontend +22 installer
+      +5 adapter passed. Synthetic browser Start/Restart/Stop passed1280 and390px with no
+      alerts/overflow. Fixed starter preset named model/mode/LoRA values that conflicted with
+      arrays; installer now selects actual base asset. Review agrees pure default value changes must
+      retain controls_revision1 to avoid misleading updated-controls notice on supported saved
+      drafts. Only actual control schema changes should trigger it.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T02:57:19.470Z
