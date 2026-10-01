@@ -5344,6 +5344,18 @@ reviews:
         required: true
         created_at: 2026-10-01T03:13:28.977Z
         completed_at: 2026-10-01T03:13:28.977Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
+          head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+        evidence: "Unverified runtime acceptance, informational limit: full Tauri wrapper compile/install is
+          parent deployment gate; actual OS drop, GPU generation and Windows/macOS not exercised.
+          This is not a source-review check."
+        name: native-gpu-platform-acceptance
+        required: false
+        created_at: 2026-10-01T03:13:55.943Z
+        completed_at: 2026-10-01T03:13:55.943Z
     events:
       - _ulid: 01M3TQ6DE9VSK2FRSR448XSHG7
         actor: DonutsDelivery
@@ -5424,6 +5436,13 @@ reviews:
           from: open
           to: closed
         timestamp: 2026-10-01T03:13:29.134Z
+      - _ulid: 01M3TQ8M88TZB9VFR9W4BAWV36
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: native-gpu-platform-acceptance
+        timestamp: 2026-10-01T03:13:55.976Z
     examined_commit: 931b073f3a84a0c640380d33312fa675c99213f2
     external_links: []
     lifecycle_state: closed
@@ -5462,5 +5481,5 @@ reviews:
         role: reviewer
         created_at: 2026-10-01T03:13:29.134Z
     created_at: 2026-10-01T03:12:43.465Z
-    updated_at: 2026-10-01T03:13:29.134Z
+    updated_at: 2026-10-01T03:13:55.943Z
     notes: []
