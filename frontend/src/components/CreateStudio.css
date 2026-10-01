@@ -1421,9 +1421,6 @@
   background: var(--bg-secondary);
 }
 
-.create-center-tabs { display: flex; align-items: center; gap: 5px; }
-.create-studio-dialog .create-center-tabs button { display: flex; align-items: center; gap: 7px; background: transparent; border-color: transparent; padding: 7px 9px; font-size: 0.75rem; }
-.create-studio-dialog .create-center-tabs button[aria-pressed="true"] { color: var(--accent); border-color: var(--border); background: var(--bg-tertiary); }
 .create-save-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-left: auto; }
 .create-auto-save { display: flex; align-items: center; gap: 7px; font-size: 0.72rem; color: var(--text-secondary); white-space: nowrap; cursor: pointer; }
 .create-save-tools { width: auto; max-width: none; position: relative; display: block; }
@@ -1583,4 +1580,27 @@
   .create-preview-zoom { top: 5px; right: 5px; }
 }
 
-.create-preview-image-wrap > .create-saved-badge { left: 12px; right: auto; }
+.create-preview-image-wrap > .create-saved-badge { left: auto; right: 12px; top: auto; bottom: 12px; }
+
+.create-finalize .create-directory-button { width: 100%; font-size: 0.75rem; margin: 0 0 16px; }
+.create-finalize .create-auto-save { margin: 16px 0 10px; font-size: 0.78rem; }
+.create-results-empty { position: relative; }
+.create-center-notch { position: absolute; top: 0; left: 0; z-index: 3; display: flex; padding: 3px; gap: 2px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); border-bottom-right-radius: 10px; background: #171b19eb; }
+.create-studio-dialog .create-center-notch button { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; background: transparent; border-color: transparent; color: var(--text-secondary); }
+.create-studio-dialog .create-center-notch button[aria-pressed="true"] { color: var(--accent); background: var(--bg-tertiary); border-color: var(--border); }
+.create-edit-heading > .create-center-notch { position: static; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; }
+.create-generate-footer .create-queue-bar { position: relative; grid-column: 1 / -1; gap: 6px; margin: 0 0 10px; padding: 4px 7px; }
+.create-generate-footer .create-queue-details summary { gap: 6px; font-size: 0.7rem; }
+.create-generate-footer .create-queue-details summary::after { content: '⌃'; }
+.create-generate-footer .create-queue-bar > button { padding: 7px; font-size: 0.65rem; }
+.create-generate-footer .create-job-list { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 10; margin: 0; padding: 8px 12px; max-height: clamp(48px, calc(100dvh - 320px), 360px); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-secondary); box-shadow: 0 -8px 28px #0006; }
+.create-generate-footer .create-job-list p { text-align: left; margin: 0; }
+@media (max-width: 940px) {
+  .create-simple-workspace .create-generate-footer .create-queue-bar { margin: 0; }
+  .create-studio-dialog .create-center-notch button { width: 39px; height: 39px; }
+}
+
+@media (max-width: 380px) {
+  .create-preview-zoom { gap: 1px; padding: 2px; }
+  .create-preview-zoom output { min-width: 32px; }
+}

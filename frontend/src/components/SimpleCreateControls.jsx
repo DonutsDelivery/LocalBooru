@@ -143,7 +143,7 @@ export default function SimpleCreateControls({
   snapshot, activeTab, onTabChange, connected, connecting, busy, error, mobilePane,
   onPatch, onGenerate, onUpload, onUploadMask, onRetry, onAdvanced,
   onReferenceTools, referenceUrls = {}, runInstant, onRunInstantChange, onDraftChange,
-  children, historyContent,
+  children, historyContent, jobsContent, finalizeContent,
 }) {
   const [drafts, setDrafts] = useState({})
   const [inputError, setInputError] = useState('')
@@ -275,7 +275,7 @@ export default function SimpleCreateControls({
 
   async function chooseTab(tab) {
     if (tab === activeTab) return
-    if (tab === 'tuning' || !connected || !available('editing')) {
+    if (tab === 'finalize' || !connected || !available('editing')) {
       onTabChange(tab)
       return
     }
@@ -465,22 +465,22 @@ export default function SimpleCreateControls({
   return <form className={`create-simple-workspace${lowerExpanded ? ' create-lower-expanded' : ''}`}  onSubmit={generate} noValidate>
     <aside className="create-controls" aria-label="Image controls">
       <div className="create-control-tabs" role="tablist" aria-label="Studio controls">
-        {['create', 'edit', 'tuning'].map(tab => <button type="button" role="tab" id={`create-tab-${tab}`} key={tab}
+        {['create', 'edit', 'finalize'].map(tab => <button type="button" role="tab" id={`create-tab-${tab}`} key={tab}
           aria-selected={activeTab === tab} aria-controls={`create-panel-${tab}`} tabIndex={activeTab === tab ? 0 : -1} disabled={submitting || sliding || !!busy}
           onKeyDown={event => {
-            const tabs = ['create', 'edit', 'tuning'], index = tabs.indexOf(tab)
+            const tabs = ['create', 'edit', 'finalize'], index = tabs.indexOf(tab)
             const next = event.key === 'ArrowRight' ? tabs[(index + 1) % tabs.length] : event.key === 'ArrowLeft' ? tabs[(index + tabs.length - 1) % tabs.length] : event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs.at(-1) : null
             if (next) { event.preventDefault(); event.currentTarget.parentElement.querySelector(`#create-tab-${next}`)?.focus(); chooseTab(next) }
-          }} onClick={() => chooseTab(tab)}>{tab === 'create' ? 'Create' : tab === 'edit' ? 'Edit' : 'Tuning'}</button>)}
+          }} onClick={() => chooseTab(tab)}>{tab === 'create' ? 'Create' : tab === 'edit' ? 'Edit' : 'Finalize'}</button>)}
       </div>
       <div className="create-controls-scroll" role="tabpanel" id={`create-panel-${activeTab}`} aria-labelledby={`create-tab-${activeTab}`}>
-        <div className="create-controls-intro"><h2>{activeTab === 'edit' ? 'Shape your image' : activeTab === 'tuning' ? 'Generation settings' : 'What do you imagine?'}</h2>
-          <p>{activeTab === 'edit' ? 'Describe the whole finished image, then guide the changes.' : activeTab === 'tuning' ? 'Tune the current workflow without losing its recipe.' : 'A subject, a setting, and a little atmosphere.'}</p></div>
+        <div className="create-controls-intro"><h2>{activeTab === 'edit' ? 'Shape your image' : activeTab === 'finalize' ? 'Save your images' : 'What do you imagine?'}</h2>
+          <p>{activeTab === 'edit' ? 'Describe the whole finished image, then guide the changes.' : activeTab === 'finalize' ? 'Choose where completed images go.' : 'A subject, a setting, and a little atmosphere.'}</p></div>
         {!connected && <div className="create-connection-note" role="status"><span className={connecting ? 'create-spinner' : 'create-connection-dot'} aria-hidden="true" />
           <div><strong>{connecting ? 'Preparing your studio…' : 'Studio not connected'}</strong><p>{error || snapshot?.error || 'Waiting for ComfyUI and the workflow to finish loading. This can take up to five minutes. You can close the studio while it starts.'}</p>
             {!connecting && <button type="button" onClick={onRetry}>Retry connection</button>}</div>
         </div>}
-        {activeTab !== 'tuning' && <>
+        {activeTab !== 'finalize' && <>
           {textField(activeTab === 'edit' ? 'editPrompt' : 'prompt', 'Describe your image', activeTab === 'edit' ? 'The finished image: keep the subject, change the background to a sunny beach…' : 'A cozy cabin beside a lake, morning mist, warm sunlight…', 6)}
           {value('faceDetail') === true && textField('facePrompt', 'Describe only the face', 'Expression, facial features, makeup…', 3)}
           {(available('stylePrompt') || available('negativePrompt')) && <details className="create-prompt-options"><summary>Style & exclusions <span>Optional</span></summary>
@@ -515,15 +515,16 @@ export default function SimpleCreateControls({
             {value('inpaint') === true && numberField('maskFeather')}{sizing()}
           </>}
         </>}
-        {activeTab === 'tuning' && <>
+        {activeTab === 'create' && <details className="create-prompt-options"><summary>Sampling <span>Steps, seed & more</span></summary>
           <div className="create-control-pair">{numberField('steps')}{numberField('guidance')}</div>
           {selectField('sampler')}{selectField('scheduler')}{numberField('batchSize')}{selectField('seedMode')}{fixedSeed && numberField('seed')}
-          {sizing()}
           <button type="button" className="create-advanced-link" disabled={locked} onClick={() => commit({ ...draftRef.current }).then(onAdvanced).catch(() => {})}>Open full workflow editor <span aria-hidden="true">↗</span></button>
-        </>}
+        </details>}
+        {activeTab === 'finalize' && finalizeContent}
         {inputError && <p className="create-message error" role="alert">{inputError}</p>}
       </div>
       <footer className="create-generate-footer">
+        {jobsContent}
         <label className="create-instant-toggle"><input type="checkbox" checked={runInstant === true} disabled={locked || sliding || !!busy || (editing && !hasReference('referenceA'))} onChange={event => onRunInstantChange?.(event.target.checked)} />Run Instant</label>
         <button type="submit" className="create-primary create-generate" disabled={locked || sliding || (!!busy && busy !== 'patch') || (editing && !hasReference('referenceA'))}>
           <SparkIcon /><span>{busy === 'generate' ? 'Adding to queue…' : editing ? 'Generate edit' : 'Generate image'}</span>{Number(value('batchSize')) > 1 && <small>×{value('batchSize')}</small>}

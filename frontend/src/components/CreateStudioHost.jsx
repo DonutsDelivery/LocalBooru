@@ -390,7 +390,7 @@ export default function CreateStudioHost() {
     setBridgeConnecting(!nextSnapshot.ready && !nextSnapshot.error)
     if (!actionErrorVisible.current) setBridgeError(nextSnapshot.error || '')
     if (nextSnapshot.ready && nextSnapshot.fields?.editing?.available !== false) {
-      setControlTab(previous => previous === 'tuning' ? previous : nextSnapshot.fields?.editing?.value === true ? 'edit' : 'create')
+      setControlTab(previous => previous === 'finalize' ? previous : nextSnapshot.fields?.editing?.value === true ? 'edit' : 'create')
     }
   }, [])
 
@@ -690,7 +690,7 @@ export default function CreateStudioHost() {
     return studioActions.current.catch(() => {}).then(() => requestGeneration === generation.current ? syncSnapshot() : null).then(nextSnapshot => {
       if (nextSnapshot && mounted.current && requestGeneration === generation.current) {
         setControlsRevision(previous => previous + 1)
-        setControlTab(previous => previous === 'tuning' ? previous : nextSnapshot.fields?.editing?.value === true ? 'edit' : 'create')
+        setControlTab(previous => previous === 'finalize' ? previous : nextSnapshot.fields?.editing?.value === true ? 'edit' : 'create')
       }
     })
   }
@@ -946,9 +946,7 @@ export default function CreateStudioHost() {
   const settings = Object.fromEntries(['editing', 'geometryMode', 'outputCanvas', 'resolutionMode', 'aspectRatio', 'megapixels', 'width', 'height', 'pixelGrid', 'outputMultiple', 'referenceB']
     .map(key => [key, fields[key]?.value]))
 
-  const saveTools = <details className="create-save-tools">
-    <summary><span>Save destination</span><strong>{destination?.label || 'Choose a directory'}</strong></summary>
-    <div className="create-save-popover">
+  const destinationControls = <div className="create-destination-controls">
       <label className="create-field create-destination">Save to image directory
         <select value={destination ? destinationKey : ''} disabled={creatingDirectory || switchingServer} onChange={event => changeDestination(event.target.value)}>
           <option value="">Choose a directory</option>
@@ -966,7 +964,28 @@ export default function CreateStudioHost() {
       </button>
       {directories.length === 0 && <p className="create-control-note">Create an output directory here, or enable an Images directory in Directories.</p>}
     </div>
+  const saveTools = <details className="create-save-tools">
+    <summary><span>Save destination</span><strong>{destination?.label || 'Choose a directory'}</strong></summary>
+    <div className="create-save-popover">{destinationControls}</div>
   </details>
+  const autoSaveControl = <label className="create-auto-save"><input type="checkbox" role="switch" checked={autoSave} disabled={!destination || creatingDirectory || switchingServer}
+    onChange={event => changeAutoSave(event.target.checked)} />Save output</label>
+  const finalizeContent = <div className="create-finalize">{destinationControls}{autoSaveControl}
+    <p className="create-control-note">Save output automatically adds completed final images to this directory. You can also save individual results from Preview or History.</p>
+  </div>
+  const jobsContent = <div className="create-queue-bar">
+    <details className="create-queue-details" onKeyDown={event => {
+      if (event.key === 'Escape' && event.currentTarget.open) { event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector('summary').focus() }
+    }}><summary><span className={hasActiveJobs ? 'create-spinner' : 'create-connection-dot'} aria-hidden="true" /><span>Studio jobs</span>
+      <strong>{hasActiveJobs ? activeJobs.length + ' active' : jobs.length + ' recent'}</strong></summary>
+      <ul className="create-job-list">{jobs.length ? jobs.map(job => <li key={job.id}><span>{job.id.slice(0, 8)}</span><strong>{job.status}</strong>{job.error && <p role="alert">{job.error}</p>}</li>) : <li>No jobs yet.</li>}</ul>
+    </details>
+    {hasActiveJobs && <button type="button" aria-label="Cancel studio jobs" title="Cancel studio jobs" disabled={cancelling} onClick={cancelJobs}>{cancelling ? 'Cancelling…' : 'Cancel'}</button>}
+  </div>
+  const centerSwitch = simpleView && <div className="create-center-notch" role="group" aria-label="Center workspace">
+    <button type="button" aria-label="Preview" title="Preview" aria-pressed={centerView === 'preview'} onClick={() => setCenterView('preview')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="m3 16 5-5 6 6 3-3 4 4" /><circle cx="16" cy="8" r="1.5" /></svg></button>
+    <button type="button" aria-label="Image tools" title="Image tools" aria-pressed={centerView === 'canvas'} onClick={() => setCenterView('canvas')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 4h16v16H4zM4 9h16M9 4v16m4-5 6-6 3 3-6 6-4 1z" /></svg></button>
+  </div>
 
   const historyContent = <div className="create-history-grid">
     {outputs.length === 0 && <div className="create-history-empty"><strong>Your image history starts here</strong><p>Completed images stay in this workspace until the session expires.</p></div>}
@@ -989,17 +1008,10 @@ export default function CreateStudioHost() {
   </div>
 
   const resultsContent = <section className="create-results" aria-label="Creation results">
-    <div className="create-results-toolbar">
-      <div className="create-center-tabs" role="group" aria-label="Center workspace">
-        <button type="button" aria-pressed={centerView === 'preview'} onClick={() => setCenterView('preview')}>Preview <span className="create-count">{outputs.length}</span></button>
-        {simpleView && <button type="button" aria-pressed={centerView === 'canvas'} onClick={() => setCenterView('canvas')}>Image tools</button>}
-      </div>
-      <div className="create-save-toolbar">
-        <label className="create-auto-save"><input type="checkbox" role="switch" checked={autoSave} disabled={!destination || creatingDirectory || switchingServer}
-          onChange={event => changeAutoSave(event.target.checked)} />Save output</label>
-        {saveTools}
-      </div>
-    </div>
+    {!simpleView && <div className="create-results-toolbar">
+      <span>Preview <span className="create-count">{outputs.length}</span></span>
+      <div className="create-save-toolbar">{autoSaveControl}{saveTools}</div>
+    </div>}
     <div className="create-results-scroll">
       {snapshot?.workflowUpgradeAvailable && <div className="create-latest-note"><div><strong>Updated v5 controls are available</strong><span>Load the updated preset to replace this recipe.</span></div>
         <button type="button" disabled={!connected || !!bridgeBusy || workflowPending} onClick={loadUpdatedV5}>{bridgeBusy === 'load-preset' ? 'Loading updated v5…' : 'Load updated v5'}</button>
@@ -1007,14 +1019,8 @@ export default function CreateStudioHost() {
       {snapshot?.latestAvailable && <div className="create-latest-note"><div><strong>A newer run is available</strong><span>Load it to replace this working draft.</span></div>
         <button type="button" disabled={!connected || !!bridgeBusy || workflowPending} onClick={loadLatestRun}>{bridgeBusy === 'load-latest' ? 'Loading latest run…' : 'Load latest run'}</button>
       </div>}
-      {(jobs.length > 0 || hasActiveJobs) && <div className="create-queue-bar">
-        <details className="create-queue-details"><summary><span className={hasActiveJobs ? 'create-spinner' : 'create-connection-dot'} aria-hidden="true" /><span>Studio jobs</span>
-          <strong>{hasActiveJobs ? activeJobs.length + ' active' : jobs.length + ' recent'}</strong></summary>
-          <ul className="create-job-list">{jobs.map(job => <li key={job.id}><span>{job.id.slice(0, 8)}</span><strong>{job.status}</strong>{job.error && <p role="alert">{job.error}</p>}</li>)}</ul>
-        </details>
-        {hasActiveJobs && <button type="button" disabled={cancelling} onClick={cancelJobs}>{cancelling ? 'Cancelling jobs…' : 'Cancel studio jobs'}</button>}
-      </div>}
-      {simpleView && centerView === 'canvas' ? <CreateEditCanvas key={session.id + ':' + editRevision + ':' + canvasScope + ':' + canvasReference}
+      {!simpleView && (jobs.length > 0 || hasActiveJobs) && jobsContent}
+      {simpleView && centerView === 'canvas' ? <CreateEditCanvas workspaceSwitch={centerSwitch} key={session.id + ':' + editRevision + ':' + canvasScope + ':' + canvasReference}
         reference={reference} imageUrl={referenceUrls[referenceKey] || ''} maskData={canMask ? fields.editMask?.value : null}
         enabled={canMask} selectedArea={canMask && fields.inpaint?.value === true} disabled={!connected || !!bridgeBusy || workflowPending}
         cropData={fields[cropKey]?.value} cropEnabled={canCrop} onCropChange={changeCrop}
@@ -1029,6 +1035,7 @@ export default function CreateStudioHost() {
           {selectedOutputId && <button type="button" onClick={() => setSelectedOutputId('')}>Follow latest</button>}
         </div>
         {previewUrl ? <div className="create-preview-image-wrap">
+          {centerSwitch}
           {failedPreview === previewUrl ? <div className="create-preview-error"><strong>The preview could not be loaded.</strong><p>Your workflow and completed results are still available.</p>
             <button type="button" onClick={() => { setFailedPreview(''); setPreviewRetry(previous => previous + 1) }}>Retry preview</button></div>
             : <CreateResultPreview key={previewRetry} imageKey={liveImage ? session.id + ':live:' + (livePreview?.promptId || stagePreview?.prompt_id || activeJobs.find(job => job.status === 'running')?.id || 'current') : selectedOutput?.id} src={previewUrl} alt={liveImage ? 'Live generation preview' : selectedOutput?.filename || 'Generated image'} onError={() => setFailedPreview(previewUrl)} />}
@@ -1037,6 +1044,7 @@ export default function CreateStudioHost() {
             {liveProgress ? Math.round(liveProgress.value / liveProgress.max * 100) + '% · Generating' : activeJobs.some(job => job.status === 'running') ? 'Generating' : 'Queued'}
             {previewConnecting && <small>Live preview reconnecting…</small>}</div>}
         </div> : <div className="create-results-empty">
+          {centerSwitch}
           <div className="create-empty-art" aria-hidden="true"><svg width="62" height="62" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="8" y="10" width="44" height="44" rx="7" /><path d="m9 44 12-12 11 10 8-8 12 12" /><circle cx="39" cy="24" r="4" /><path d="m55 5 1.5 4.5L61 11l-4.5 1.5L55 17l-1.5-4.5L49 11l4.5-1.5L55 5Z" /></svg></div>
           <h3>{hasActiveJobs ? 'Your idea is taking shape' : 'Your next favorite image starts here'}</h3>
           <p>{hasActiveJobs ? 'Live previews appear while your image runs. Completed results stay in History.' : 'Describe an image and choose Generate. Your latest result appears here.'}</p>
@@ -1071,7 +1079,7 @@ export default function CreateStudioHost() {
         {switchingServer && <p className="create-message" role="status">Connecting to the selected server…</p>}
         {workflowPending && <p className="create-message" role="status">{bridgeBusy === 'load-workflow' ? 'Loading the saved workflow…' : 'The saved workflow is waiting for the studio to be ready.'}</p>}
         {session && simpleView && <div className="create-mobile-workspace-nav" role="group" aria-label="Workspace panel">
-          {[['controls', 'Prompt'], ['results', 'Preview'], ['effects', 'Effects'], ['models', 'Models'], ['history', 'History']].map(([pane, label]) =>
+          {[['controls', 'Controls'], ['results', 'Preview'], ['effects', 'Effects'], ['models', 'Models'], ['history', 'History']].map(([pane, label]) =>
             <button type="button" key={pane} aria-pressed={mobilePane === pane} onClick={() => setMobilePane(pane)}>{label}</button>)}
         </div>}
         <div className={'create-studio-body create-view-' + (showSetup ? 'setup' : studioView) + ' create-mobile-' + mobilePane}>
@@ -1079,7 +1087,7 @@ export default function CreateStudioHost() {
             <SimpleCreateControls key={session.id + ':' + controlsRevision} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
               onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio}
-              runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null}>
+              runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null} jobsContent={simpleView ? jobsContent : null} finalizeContent={simpleView ? finalizeContent : null}>
               {simpleView ? resultsContent : null}
             </SimpleCreateControls>
           </div>}
