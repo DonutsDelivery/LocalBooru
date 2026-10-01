@@ -7257,6 +7257,50 @@ reviews:
         required: false
         created_at: 2026-10-01T21:12:33.524Z
         completed_at: 2026-10-01T21:12:33.524Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: "Read /tmp/dmc-create-layout/sidecar-tests-retry.log at unchanged clean0b335563: canonical
+          focused test compile completes1m51s and
+          addons::manager::tests::status_refresh_detects_exited_sidecar_without_overwriting_lifecyc\
+          le_state passes1/1,0fail,266filtered. Test executable resides in relocated external
+          dev-target. No reviewer compiler run."
+        name: rust-sidecar-lifecycle
+        required: true
+        runner: independent-focused-cargo-log-audit
+        created_at: 2026-10-01T21:37:05.483Z
+        completed_at: 2026-10-01T21:37:05.483Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: Parent corrected NODE_ENV=test Host+TitleBar run
+          /tmp/dmc-create-layout/component-tests-retry.log shows37total,35pass,2fail;34Host cases
+          account for both failures, leaving all3 TitleBar platform cases passing. Original
+          production-environment React.act failure is not product evidence.
+        name: titlebar-components
+        required: true
+        runner: independent-corrected-vitest-log-audit
+        created_at: 2026-10-01T21:37:05.692Z
+        completed_at: 2026-10-01T21:37:05.692Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: "Corrected NODE_ENV=test run on unchanged0b335563: Host34cases,32pass/2fail. Existing
+          cancellation exact alert text assertion now includes toast ✗ icon; backend-change fixture
+          lacks ToastContainer while asserting alert. Substantive assertions must be preserved and
+          toast fixtures corrected, then current-head suite rerun. Prior initial run all34failed
+          React.act unavailable under NODE_ENV=production, confirmed environment defect."
+        name: react-components
+        required: true
+        runner: independent-corrected-vitest-log-audit
+        created_at: 2026-10-01T21:37:05.866Z
+        completed_at: 2026-10-01T21:37:05.866Z
     events:
       - _ulid: 01M3WMZ3FG91RRMM57SV329BC5
         actor: DonutsDelivery
@@ -7348,6 +7392,34 @@ reviews:
           status: skipped
           name: native-install-and-real-job-acceptance
         timestamp: 2026-10-01T21:12:33.641Z
+      - _ulid: 01M3WPCJFWYG57FV62RK6JXZQT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: rust-sidecar-lifecycle
+        timestamp: 2026-10-01T21:37:05.532Z
+      - _ulid: 01M3WPCJP9XD10QMZY40VEX0ZM
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: titlebar-components
+        timestamp: 2026-10-01T21:37:05.737Z
+      - _ulid: 01M3WPCJVPDGV12V3TV6ABN9KH
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: react-components
+        timestamp: 2026-10-01T21:37:05.910Z
+      - _ulid: 01M3WPCK16NMNFQNP2XJEA2C58
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01M3WPCJZPWYZFHQPQQFBKG89V
+        timestamp: 2026-10-01T21:37:06.086Z
     examined_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
     external_links: []
     lifecycle_state: open
@@ -7376,7 +7448,27 @@ reviews:
               No product edits, heavy builds, app closure or GPU submissions by reviewer."
             created_at: 2026-10-01T21:12:19.737Z
         kind: nit
+      - _ulid: 01M3WPCJZPWYZFHQPQQFBKG89V
+        anchor:
+          type: code
+          commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+          line_end: 490
+          line_start: 475
+          path: frontend/src/components/CreateStudioHost.component.test.jsx
+          side: head
+        entries:
+          - _ulid: 01M3WPCJZP1B7V25CKRT6S69Q6
+            author: DonutsDelivery
+            body: "Corrected test environment exposes two stale notification expectations: cancellation asserts
+              entire alert text equals message but toast includes ✗ icon; backend-change test
+              renders Host alone while now expecting a ToastContainer alert. Correct fixture and
+              assert notification message without removing cancellation ownership, state
+              preservation or backend invalidation assertions. Re-run required Host suite. Observed
+              actual failure in component-tests-retry.log; no product behavior failure attributed
+              from these assertions."
+            created_at: 2026-10-01T21:37:06.038Z
+        kind: blocker
     verdicts: []
     created_at: 2026-10-01T21:12:15.615Z
-    updated_at: 2026-10-01T21:12:33.524Z
+    updated_at: 2026-10-01T21:37:06.038Z
     notes: []
