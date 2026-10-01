@@ -567,7 +567,20 @@ export default function CreateStudioHost() {
         && authoredRevision.current === version && !draftsWaiting.current && visible.current
         && !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)) : undefined
       const nextSnapshot = await studioAction('generate', { outputDestination: outputDestination.current }, ownsRequest)
-      for (const id of nextSnapshot.lastQueuedPromptIds || []) acknowledgedPrompts.current.add(id)
+      const queuedIds = nextSnapshot.lastQueuedPromptIds || []
+      for (const id of queuedIds) acknowledgedPrompts.current.add(id)
+      // The queue acknowledgement is authoritative; show it without waiting for
+      // the next two-second session poll.
+      const current = sessionRef.current
+      if (current && requestGeneration === generation.current) {
+        const known = new Set((current.jobs || []).map(job => job.id))
+        const added = queuedIds.filter(id => !known.has(id)).map(id => ({ id, status: 'queued' }))
+        if (added.length) {
+          const next = { ...current, jobs: [...(current.jobs || []), ...added] }
+          sessionRef.current = next
+          setSession(next)
+        }
+      }
       if (!isInstant) setMobilePane('results')
       return nextSnapshot
     } catch (generateError) {

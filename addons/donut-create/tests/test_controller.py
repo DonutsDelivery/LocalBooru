@@ -167,6 +167,75 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["prompt_id"]
 
+    async def test_progress_and_completed_polling_do_not_rewrite_or_rescan_history(self):
+        sid = await self.new_session()
+        own = await self.submit(sid)
+        self.backend.complete(own)
+        await self.controller.reconcile(self.controller.session(sid))
+        self.backend.requests.clear()
+        with patch.object(self.controller, "persist") as persist:
+            await self.controller.reconcile(self.controller.session(sid))
+            for value in range(20):
+                self.assertTrue(self.controller.observe_event(self.controller.session(sid),
+                    {"type": "progress", "data": {"prompt_id": own, "value": value, "max": 20}}))
+            persist.assert_not_called()
+        self.assertFalse(any("/history/" in url for _, url, _, _ in self.backend.requests))
+
+    async def test_reconcile_accepts_a_submission_while_history_request_is_pending(self):
+        sid = await self.new_session()
+        first = await self.submit(sid)
+        self.backend.pending = []
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = self.controller.backend_json
+        async def held_history(backend, path):
+            if path == "history/" + first:
+                entered.set()
+                await release.wait()
+            return await original(backend, path)
+        with patch.object(self.controller, "backend_json", side_effect=held_history):
+            reading = asyncio.create_task(self.controller.reconcile(self.controller.session(sid)))
+            await asyncio.wait_for(entered.wait(), 1)
+            second = await self.submit(sid)
+            release.set()
+            await asyncio.wait_for(reading, 1)
+        self.assertIn(second, self.controller.session(sid)["jobs"])
+
+    async def test_cancel_does_not_wait_for_completed_job_history(self):
+        sid = await self.new_session()
+        old = await self.submit(sid)
+        own = await self.submit(sid)
+        self.backend.pending = [self.backend.row(own)]
+        self.backend.requests.clear()
+        result = (await self.http.post(f"/create/sessions/{sid}/cancel")).json()
+        self.assertEqual(result["cancelled"], [own])
+        self.assertFalse(any("/history/" in url for _, url, _, _ in self.backend.requests))
+        self.assertIn(old, self.controller.session(sid)["jobs"])
+
+    async def test_workspace_polling_omits_bulk_provenance_but_output_endpoint_retains_it(self):
+        response = await self.http.post("/create/sessions", json={"workspace": True})
+        sid = response.json()["id"]
+        workflow = {"nodes": [{"id": 1, "type": "DonutImageSave"}]}
+        own = await self.submit(sid, extra={"extra_data": {"extra_pnginfo": {"workflow": workflow}}})
+        self.backend.complete(own)
+        state = (await self.http.get(f"/create/sessions/{sid}")).json()
+        output = state["outputs"][0]
+        for key in ("workflow", "prompt", "execution", "metadata"):
+            self.assertNotIn(key, output)
+        provenance = (await self.http.get(f"/create/sessions/{sid}/outputs/{output['id']}/provenance")).json()
+        self.assertEqual(provenance["workflow"], workflow)
+        self.assertIn("execution_prompt", provenance)
+
+    async def test_interrupted_history_stays_cancelled_and_is_reconciled_once(self):
+        sid = await self.new_session()
+        own = await self.submit(sid)
+        self.backend.complete(own, status={"status_str": "error", "completed": False,
+            "messages": [["execution_interrupted", {}]]})
+        state = (await self.http.get(f"/create/sessions/{sid}")).json()
+        self.assertEqual(state["jobs"][0]["status"], "cancelled")
+        self.backend.requests.clear()
+        await self.http.get(f"/create/sessions/{sid}")
+        self.assertFalse(any("/history/" in url for _, url, _, _ in self.backend.requests))
+
     # AC: @donut-create-plugin ac-access-boundary
     async def test_capabilities_expire_and_restore_without_repository_state(self):
         sid = await self.new_session()

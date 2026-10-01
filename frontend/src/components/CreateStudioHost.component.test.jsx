@@ -3,6 +3,12 @@ import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
+const bridgeFixture = vi.hoisted(() => ({ current: null }))
+vi.mock('../services/createStudioBridge', async importOriginal => {
+  const original = await importOriginal()
+  return { ...original, createStudioBridge: options => bridgeFixture.current || original.createStudioBridge(options) }
+})
+
 const api = vi.hoisted(() => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
   getApiUrl: vi.fn(() => '/remote/api'),
@@ -58,6 +64,7 @@ async function reconnectStudio() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  bridgeFixture.current = null
   status = {
     mode: 'managed', backend_url: 'http://127.0.0.1:18010',
     backend: { ready: true, running: true, owned: true },
@@ -115,6 +122,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('Donut Create studio', () => {
+  test('shows an acknowledged queue submission before the next session poll', async () => {
+    session.jobs = []
+    session.outputs = []
+    const snapshot = { ready: true, fields: { prompt: { value: 'Synthetic landscape', available: true } } }
+    bridgeFixture.current = {
+      dispose: vi.fn(),
+      request: vi.fn(async action => action === 'generate'
+        ? { ...snapshot, lastQueuedPromptIds: ['new-queued-id'] } : snapshot),
+    }
+    render(<CreateStudioHost />)
+    openStudio()
+    const generate = await screen.findByRole('button', { name: 'Generate image', exact: true })
+    await waitFor(() => expect(generate.disabled).toBe(false))
+    const pollsBefore = api.apiClient.get.mock.calls.filter(([url]) => url.includes('/sessions/')).length
+    fireEvent.click(generate)
+    await screen.findByText('1 active')
+    const details = screen.getByText('Studio jobs').closest('details')
+    details.open = true
+    expect(within(details).getByText('new-queu')).toBeTruthy()
+    expect(within(details).getByText('queued')).toBeTruthy()
+    expect(api.apiClient.get.mock.calls.filter(([url]) => url.includes('/sessions/'))).toHaveLength(pollsBefore)
+  })
+
   test('keeps window controls and notifications interactive while the gallery is inert', async () => {
     const windowAction = vi.fn()
     const { container } = render(<>

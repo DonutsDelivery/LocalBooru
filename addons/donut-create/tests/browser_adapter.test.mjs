@@ -40,7 +40,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   const document = {body:element('body'),createElement:element,getElementById:id=>elements.get(id),querySelector:()=>null,
     addEventListener(name, fn) { events.set(name, fn); },hidden:false};
   let current = copy(initial);
-  const loaded = [], queued = [];
+  const loaded = [], queued = [], fetched = [];
   const models = Object.fromEntries([...new Set(catalog.models.map(model => model.folder))].map(folder => [folder,catalog.models.filter(model => model.folder === folder).map(model => model.filename)]));
   const app = {
     canvas:{draw() {}}, registerExtension() {},
@@ -66,6 +66,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   };
   const api = {
     async fetchApi(route) {
+      fetched.push(route);
       const value = route.startsWith('/dmc/workflow') ? {revision:0,workflow:null}
         : route === '/object_info' ? Object.fromEntries(manifest.required_nodes.map(node=>[node,{}])) : models[route.slice('/models/'.length)];
       return {ok:true,json:async()=>copy(value)};
@@ -109,7 +110,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
     assert.equal(control.widget,'Text');
     nodeAt(current,control.path.at(-1)).widgets_values[0]=value;
   }
-  return {app,api,loaded,queued,models,store,context,events,boot,settle,editPrompt,
+  return {app,api,loaded,queued,fetched,models,store,context,events,boot,settle,editPrompt,
     current:()=>copy(current),notice:()=>elements.get('donut-create-status')?.querySelector('.message')?.textContent};
 }
 
@@ -213,4 +214,15 @@ test('changed external prompt still shows notice and preserves the local draft',
  const replies=[];const parent={postMessage:v=>replies.push(v)};env.context.parent=parent;
  env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'check',action:'snapshot',payload:{outputDestination:'preview'}}});await env.settle();
  assert.equal(replies[0].snapshot.latestAvailable,true);assert.match(env.notice()||'',/newer run/);assert.equal(nodeAt(env.current(),1126).widgets_values[0],'Keep my unsaved synthetic violet vase.');
+});
+
+
+test('queue validation uses the already compiled prompt once', async () => {
+  const env = fixture(); await env.boot();
+  const compiled = await env.app.graphToPrompt();
+  env.fetched.length = 0;
+  env.app.graphToPrompt = async () => { throw new Error('Unexpected recompilation'); };
+  await env.api.queuePrompt(0, compiled);
+  assert.equal(env.queued.length, 1);
+  assert.equal(env.fetched.filter(route => route === '/object_info').length, 1);
 });
