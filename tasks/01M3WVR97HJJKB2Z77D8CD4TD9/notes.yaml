@@ -57,3 +57,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T23:29:59.176Z
+  - _ulid: 01M3WWXBT05RSHF9B7MBC56GRH
+    content: "Current user confirms SVP works after root runtime orphan repair; lower-quality500 still
+      pending updated native source deployment. Read-only last1200runtime log lines show12 SVP
+      play/stop requests all200 and no SVP failure categories, so no current Python500 attribution.
+      Isolated actual720p24FPS->SVP480p60FPS pipeline reaches ready. Fixed independent prior
+      near-targetFPS quality bug: source720p60FPS requested480p no longer skipped; actual pipeline
+      produces854x480 at60/1 verified by ffprobe, no interpolation. Enhanced1080p resolution alias
+      now honored. Python quality3/3, lifecycle7/7, availability3/3 pass. Exact software/GPU HLS
+      ffmpeg-vsync failure and fps_mode success remain confirmed. Rust checks gated
+      sessions57154settings and61399transcode dependency queue."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T23:31:07.200Z
