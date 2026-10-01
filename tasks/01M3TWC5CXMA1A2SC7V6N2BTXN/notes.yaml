@@ -36,3 +36,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T05:15:44.205Z
+  - _ulid: 01M3TZ7MGDAW2Z64EJD6647SRZ
+    content: Canonical Android wrapper exited0. Verified universal APK v2.0.5 code2000005
+      packagecom.localbooru.app, all4 ABIs, zip integrity, v2/v3 signatures, existing
+      cert960ce0f88cfbb075a48172116f776f6bcbb5cf91b50697e8fdfb91317db0325c. APK
+      SHA256d15d6a3cb6c0fde99fbf488766242644286070e426a037dfa783d1183ad8f81c, 98MiB, path
+      dmc-main/DonutMediaCenter.apk. KDE Connect share to paired reachable
+      Redmi484ff658_bfc9_4f3a_95cc_784e8b5e3e60 exited0 Shared; checking exact target file receipt
+      if SFTP available. No on-device install/function claim.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T05:33:12.077Z
