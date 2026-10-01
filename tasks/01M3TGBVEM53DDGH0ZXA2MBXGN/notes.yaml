@@ -11,3 +11,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T01:13:21.832Z
+  - _ulid: 01M3TH4G45SKFN0HWKVGMKS2KS
+    content: Candidate b1786c5795413e1d6691259231a1d35f75317217 from exact
+      main6a5cd4783e34318a10123ea5e14926d89247e7d3. Existing host+gallery22 tests pass; disposable
+      actions tests23 pass (host21+2 new layout/draft/Escape/notch cases), synthetic Vite production
+      build passes. Browser1280x800,390x844,320x568 confirms upward popup, footer placement,
+      Finalize/polling, tools switching, no horizontal overflow, no runtime fixture errors. Added
+      compactzoom max380 to avoid corner overlap. All GPU mutations synthetic; running userDMC/Comfy
+      preserved. Independent review requested; native install follows approved integration.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T01:26:49.221Z

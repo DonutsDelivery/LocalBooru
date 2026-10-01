@@ -1646,12 +1646,13 @@ tasks:
     title: Reorganize Create actions, jobs and finalize controls
     type: task
     spec_ref: "@donut-create-plugin"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
     tags: []
-    notes_count: 1
+    notes_count: 2
     todos_count: 0
     created_at: 2026-10-01T01:13:21.620Z
     started_at: 2026-10-01T01:13:21.722Z
+    submitted_at: 2026-10-01T01:26:49.348Z

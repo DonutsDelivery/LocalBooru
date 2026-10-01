@@ -10,13 +10,21 @@ description: Move owned job list above RunInstant/Generate in an upward-opening 
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-10-01T01:26:49.344Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -28,6 +36,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-01T01:13:21.722Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-10-01T01:26:49.344Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-01T01:26:49.348Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-01T01:26:49.348Z
 created_at: 2026-10-01T01:13:21.620Z
 started_at: 2026-10-01T01:13:21.722Z
+submitted_at: 2026-10-01T01:26:49.348Z
 todos: []
