@@ -7106,3 +7106,277 @@ reviews:
     created_at: 2026-10-01T20:38:24.206Z
     updated_at: 2026-10-01T20:38:26.244Z
     notes: []
+  - _ulid: 01M3WMZ3FZRDJ6HJ9M3Q6S0MS6
+    slugs:
+      - review-create-compact-progress
+    title: Compact Create navigation, lifecycle and responsive queue review
+    author: DonutsDelivery
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: All changed source/test files reviewed, clean final head confirmed. Compact navigation
+          preserves mounted graph/control drafts; dialog accessible title retained; titlebar/toasts
+          excluded from modal inert siblings. Backend controls retain owned-only actions and
+          server/abort guards; shared status revision suppresses stale publishers/actions. History
+          groups actual prompt_id with visible final outputs and collapsed stages. Stable job
+          snapshot, confirmed history caching and no progress disk rewrite preserve ownership and
+          provenance endpoint. Rust child exit refresh uses nonblocking child lock and exact Arc
+          identity + Running state guard. Existing known kspec verify/SKILL.md missing-description
+          validation failure is unrelated to this diff.
+        name: source-scope-and-contracts
+        required: true
+        runner: independent-git-source-review
+        created_at: 2026-10-01T21:12:22.265Z
+        completed_at: 2026-10-01T21:12:22.265Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: Reviewer ran actual synthetic controller suite47/47 exit0 at fc479282; controller product
+          bytes unchanged through final0b335563. Includes concurrent submission during awaited
+          history, pending-to-running scoped cancellation and late final recovery, confirmed
+          success/interruption delayed-event guards, progress persistence and stripped workspace
+          output provenance. No real backend/services/models/profile used.
+        name: controller-regressions
+        required: true
+        runner: independent-python-unittest
+        created_at: 2026-10-01T21:12:30.607Z
+        completed_at: 2026-10-01T21:12:30.607Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: Reviewer ran existing adapter suite10/10 exit0 at fc479282; adapter product bytes
+          unchanged through final0b335563. Includes compiled-prompt single-validation queue path and
+          prior storage/draft/ownership regressions.
+        name: browser-adapter-regressions
+        required: true
+        runner: independent-node-test-vm
+        created_at: 2026-10-01T21:12:30.918Z
+        completed_at: 2026-10-01T21:12:30.918Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: "Actual service source executed: status reads begun before/during Stop rejected; delayed
+          Start cannot replace newer Stop epoch. Actual Host poll and acknowledgement blocks
+          executed: prior c414 lost queued placeholder after stale response, fixed fc479 retained
+          it. Controller actual prior live iterator RuntimeError reproduced;
+          pending-delete/terminal-state failures reproduced and retained tests now pass."
+        name: actual-callback-races
+        required: true
+        runner: independent-synthetic-vm-callbacks
+        created_at: 2026-10-01T21:12:31.165Z
+        completed_at: 2026-10-01T21:12:31.165Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: "Final runtime manifest fingerprint fixed; reviewer independently hashes every advertised
+          browser artifact: base-workflow.json, donut-create.css, donut-create.js all match. Parent
+          existing focused installer provenance test1/1 pass
+          /tmp/dmc-create-layout/provenance-test.log. This validates artifact byte identity, not
+          textual implementation presence."
+        name: bundled-provenance
+        required: true
+        runner: independent-sha256-artifact-verification
+        created_at: 2026-10-01T21:12:31.363Z
+        completed_at: 2026-10-01T21:12:31.363Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: Read /tmp/dmc-create-layout/backend-layout-checks.json, attributed parent browser
+          execution using actual CSS. Desktop1280 right pane200px wraps modes within1080..1280;
+          center begins y0. Badge208.7px in792px preview; mobile360/320 badges202.5px
+          within336/296px previews. Document scrollWidth equals viewport; backend popover within
+          viewport, mobile navigation remains accessible above panel tabs. Product CSS unchanged
+          from receipt through final head.
+        name: rendered-layout
+        required: true
+        runner: parent-real-css-synthetic-browser-receipt
+        created_at: 2026-10-01T21:12:31.831Z
+        completed_at: 2026-10-01T21:12:31.831Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: Required focused Host/Settings/Toast/History interaction suite queued by parent behind
+          active DonutStudio writer. New tests cover native titlebar inert exclusion, focus
+          transfers, compact progress History, backend lifecycle shared epochs, immediate queue
+          acknowledgement and stale generate/cancel session polls. No passing claim until
+          current-head log available.
+        name: react-components
+        required: true
+        runner: host-gated-vitest-queued
+        created_at: 2026-10-01T21:12:32.456Z
+        completed_at: null
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: "Required new platform component suite queued by parent: Mac native traffic lights, Linux
+          custom controls/offset, iOS server button. No reviewer compiler/build started."
+        name: titlebar-components
+        required: true
+        runner: host-gated-vitest-queued
+        created_at: 2026-10-01T21:12:32.624Z
+        completed_at: null
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: Required focused synthetic manager child-exit/lifecycle test queued by parent through
+          canonical run-cargo wrapper; PATH retry may be required after gate. Compile/test evidence
+          pending, no overlap/bypass by reviewer.
+        name: rust-sidecar-lifecycle
+        required: true
+        runner: run-cargo-wrapper-host-gate-queued
+        created_at: 2026-10-01T21:12:33.348Z
+        completed_at: null
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+        evidence: Main integration/installation remains parent-owned after final source approval. No actual
+          GPU run, real user-profile media check, positively attributed live500 traceback or native
+          OS interaction acceptance claimed by this code review.
+        name: native-install-and-real-job-acceptance
+        required: false
+        created_at: 2026-10-01T21:12:33.524Z
+        completed_at: 2026-10-01T21:12:33.524Z
+    events:
+      - _ulid: 01M3WMZ3FG91RRMM57SV329BC5
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T21:12:15.600Z
+      - _ulid: 01M3WMZ78VFXE4ASQMDCE83N3Q
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T21:12:19.483Z
+      - _ulid: 01M3WMZ95DPJC3PB3JKWPTZ9B7
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3WMZ7GRDMVXJFMM2WB06P3P
+        timestamp: 2026-10-01T21:12:21.421Z
+      - _ulid: 01M3WMZEF2QKSK52D58856A6H4
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-scope-and-contracts
+        timestamp: 2026-10-01T21:12:26.850Z
+      - _ulid: 01M3WMZJ5Y59F8TFDA6WB7XNPQ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: controller-regressions
+        timestamp: 2026-10-01T21:12:30.654Z
+      - _ulid: 01M3WMZJGRM5XGBDT1NWR3RM16
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: browser-adapter-regressions
+        timestamp: 2026-10-01T21:12:31.000Z
+      - _ulid: 01M3WMZJQFA8VC3RP8KH6N980J
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: actual-callback-races
+        timestamp: 2026-10-01T21:12:31.215Z
+      - _ulid: 01M3WMZJY28HRVW4F53PPMGPMY
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: bundled-provenance
+        timestamp: 2026-10-01T21:12:31.426Z
+      - _ulid: 01M3WMZKCYBXTDRKY7XCE94N6T
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: rendered-layout
+        timestamp: 2026-10-01T21:12:31.902Z
+      - _ulid: 01M3WMZKZHFSKWFPTKT1H969SP
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: react-components
+        timestamp: 2026-10-01T21:12:32.497Z
+      - _ulid: 01M3WMZM4VQ34Z4PKPJP4M4BAD
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: titlebar-components
+        timestamp: 2026-10-01T21:12:32.667Z
+      - _ulid: 01M3WMZMVYS8X8FYB3S4MNT54C
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: rust-sidecar-lifecycle
+        timestamp: 2026-10-01T21:12:33.406Z
+      - _ulid: 01M3WMZN39W5HHJ8WZ4DA3F7E9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: native-install-and-real-job-acceptance
+        timestamp: 2026-10-01T21:12:33.641Z
+    examined_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+    external_links: []
+    lifecycle_state: open
+    related_refs:
+      - "@create-compact-progress"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+      head_branch: fix/create-compact-navigation
+      head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+    threads:
+      - _ulid: 01M3WMZ7GRDMVXJFMM2WB06P3P
+        entries:
+          - _ulid: 01M3WMZ7GRXW610SXZ8SBFTSGX
+            author: DonutsDelivery
+            body: "Read-only independent review of clean exact
+              e769ac7842c682e29fa6af8c9a685ce2987d2b60..0b335563b36246bd749228ca45af4cb07d1e131d.
+              Reviewer findings resolved before freeze: navigation focus loss and 200px sidebar
+              wrapping; progress while inspecting History; shared lifecycle status epoch; toast
+              fixture initialization; pending-to-running cancellation race and recoverable late
+              history; immutable confirmed terminal history against delayed socket events; session
+              poll revisions preserving generate/cancel acknowledgements; refreshed shipped browser
+              asset fingerprints. Original async dictionary iteration RuntimeError reproduced with
+              actual pre-fix callback, but the live generic500 cause was not positively attributed.
+              No product edits, heavy builds, app closure or GPU submissions by reviewer."
+            created_at: 2026-10-01T21:12:19.737Z
+        kind: nit
+    verdicts: []
+    created_at: 2026-10-01T21:12:15.615Z
+    updated_at: 2026-10-01T21:12:33.524Z
+    notes: []
