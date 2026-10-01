@@ -7861,6 +7861,33 @@ reviews:
         runner: scope-limits
         created_at: 2026-10-01T23:05:37.551Z
         completed_at: 2026-10-01T23:05:37.551Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+        evidence: "Optional context: independent validation /tmp/dmc-effect-collapse-review-validation.log
+          records preexisting malformed Android/core records and verify/SKILL.md
+          missing-description; task has no linked spec or inherited trait ACs. Global validation is
+          not claimed clean."
+        name: kspec-validation-context
+        required: false
+        runner: kspec-validate
+        created_at: 2026-10-01T23:06:40.760Z
+        completed_at: 2026-10-01T23:06:40.760Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+        evidence: "Optional outside this frontend source review: native packaging, user-profile functional
+          testing, real backend actions and GPU submission not run. Parent integration/install
+          separate; no Rust/controller/adapter change."
+        name: native-profile-backend-GPU
+        required: false
+        runner: scope-limits
+        created_at: 2026-10-01T23:06:40.965Z
+        completed_at: 2026-10-01T23:06:40.965Z
     events:
       - _ulid: 01M3WVEMRQ8W4FHRF8MQMSAV2Q
         actor: donut_create_review
@@ -7910,6 +7937,20 @@ reviews:
           status: skipped
           name: native-profile-backend-GPU
         timestamp: 2026-10-01T23:05:37.600Z
+      - _ulid: 01M3WVGKSBTK978B4HFD7R3AV5
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: kspec-validation-context
+        timestamp: 2026-10-01T23:06:40.811Z
+      - _ulid: 01M3WVGKZXFRF980YT689V4TJG
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: native-profile-backend-GPU
+        timestamp: 2026-10-01T23:06:41.021Z
     examined_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
     external_links: []
     lifecycle_state: open
@@ -7924,5 +7965,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-01T23:05:36.280Z
-    updated_at: 2026-10-01T23:05:37.551Z
+    updated_at: 2026-10-01T23:06:40.965Z
     notes: []
