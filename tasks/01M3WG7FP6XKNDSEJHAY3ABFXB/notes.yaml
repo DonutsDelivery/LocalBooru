@@ -36,3 +36,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T20:16:14.315Z
+  - _ulid: 01M3WJVJ9HVKTTDQ98AQK5Y5TH
+    content: User titlebar report reproduced in modal sibling inert code. Exclude custom titlebar while
+      keeping gallery inert; behavioral click/restore test added. Native Mac decorations and hiding
+      custom Mac controls already in main; added platform component regression checks
+      (Mac/Linux/iOS). Dead child process status now refreshed lazily without blocking lifecycle
+      locks, with synthetic subprocess test. Cache migration finished with full checksum pass;
+      controller and Linux app remain running. Focused tests waiting for host gate occupied by
+      another project.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T20:35:22.545Z
