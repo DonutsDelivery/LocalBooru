@@ -5118,3 +5118,140 @@ reviews:
     created_at: 2026-10-01T01:29:04.992Z
     updated_at: 2026-10-01T01:29:05.834Z
     notes: []
+  - _ulid: 01M3TKT7AF7GWJGT72AHW69R6K
+    slugs:
+      - review-create-resizable-panels
+    title: Review resizable creator studio panes
+    author: DonutCreateIndependentReview
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f5f8f5ee68689d10b0c164b0c9350034936bce92
+          head_commit: ad82aaed89184f401202ccb1e13dba276de09fc7
+        evidence: "Independently reran actual frozen source using host-heavy-build and
+          /tmp/electron-tmp/dmc-controls-browser/resize-vitest.config.mjs filtered to five resize
+          cases: 5 passed,23 inherited skipped (28 total). Covers immediate pointer
+          updates,persisted remount,320px center minimum,lower expand/drag/cancel/reset,mobile
+          inactive handles,invalid preference clamping,narrow desktop resizing,500/500 saved-width
+          drag reversal and keyboard sibling anchoring,and viewport945/container928 active keyboard
+          handle. Writer exited0; no compiler/vitest writer remained. HEAD matches exact
+          subject,worktree clean,diff-check passes. No source or tracked-test edits by reviewer."
+        name: independent-resize-behavior
+        required: true
+        runner: vitest
+        created_at: 2026-10-01T02:13:38.691Z
+        completed_at: 2026-10-01T02:13:38.691Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f5f8f5ee68689d10b0c164b0c9350034936bce92
+          head_commit: ad82aaed89184f401202ccb1e13dba276de09fc7
+        evidence: All three changed files and interacting grid/canvas/model styles reviewed. Prior
+          hysteresis and CSS/hook breakpoint findings fixed with rendered sibling anchor,frozen
+          gesture limits,raw preference cancellation restore,and viewport matchMedia criterion.
+          Finite known-key preferences only,storage failures tolerated,pointer identity guards and
+          capture cleanup; keyboard arrows/Shift/Home/End and doubleclick reset preserve bounds.
+          Hook changes display state only and does not mutate graph,queue,autosave or Instant.
+          Narrow lower LoRA rows and canvas headings wrap. Scope aligns basic studio,full edit
+          reference and mobile shared workspace ACs. Parent gated full28/28 and synthetic Vite43
+          modules passed. Parent browser1280x800 confirms left310/right650/center320/lower200 and
+          dividers track grid; LoRA scroll/client263 and image-tools heading243/243. Settled945
+          browser confirms left310/right315/center320/lower200,wide-screen preferences retained,no
+          errors/overflow. Mobile390x844 and320x568 confirm hidden handles/tabIndex-1,visible
+          canvas281px,no overflow/errors. Reference B handling reviewed at source only. No
+          independent native/GPU acceptance claimed.
+        name: source-and-browser-layout
+        required: true
+        created_at: 2026-10-01T02:13:38.811Z
+        completed_at: 2026-10-01T02:13:38.811Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: f5f8f5ee68689d10b0c164b0c9350034936bce92
+          head_commit: ad82aaed89184f401202ccb1e13dba276de09fc7
+        evidence: "Executed direct authoritative-root kspec validate: exit4 from existing unrelated
+          malformed Android/core records,legacy @claude references,and verify/SKILL.md
+          missing-description. Donut-create-plugin has no inherited traits. Scoped review does not
+          certify shared registry health."
+        name: shared-kspec-validation
+        required: false
+        created_at: 2026-10-01T02:13:38.933Z
+        completed_at: 2026-10-01T02:13:38.933Z
+    events:
+      - _ulid: 01M3TKT7AFPZ7RV3QF87FGRGJQ
+        actor: DonutCreateIndependentReview
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T02:13:38.255Z
+      - _ulid: 01M3TKT7N53GRTQNH39WWNXVJS
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T02:13:38.597Z
+      - _ulid: 01M3TKT7S3C2DHHR02N6HV9X1W
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-resize-behavior
+        timestamp: 2026-10-01T02:13:38.723Z
+      - _ulid: 01M3TKT7WS2H8DHKKAVSYMRDXN
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-and-browser-layout
+        timestamp: 2026-10-01T02:13:38.841Z
+      - _ulid: 01M3TKT80N7FPEAD5K017G7SF9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: shared-kspec-validation
+        timestamp: 2026-10-01T02:13:38.965Z
+      - _ulid: 01M3TKT84CAVVR5JJ09XZY95Q1
+        actor: DonutCreateIndependentReview
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: f5f8f5ee68689d10b0c164b0c9350034936bce92
+            head_commit: ad82aaed89184f401202ccb1e13dba276de09fc7
+          decision: approve
+        timestamp: 2026-10-01T02:13:39.084Z
+      - _ulid: 01M3TKT84CQH55XC9S4JG8N625
+        actor: DonutCreateIndependentReview
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T02:13:39.084Z
+    examined_commit: ad82aaed89184f401202ccb1e13dba276de09fc7
+    external_links: []
+    lifecycle_state: closed
+    related_refs:
+      - "@create-resizable-panels"
+      - "@donut-create-plugin"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: f5f8f5ee68689d10b0c164b0c9350034936bce92
+      head_branch: feat/create-resizable-panels
+      head_commit: ad82aaed89184f401202ccb1e13dba276de09fc7
+    threads: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: f5f8f5ee68689d10b0c164b0c9350034936bce92
+          head_commit: ad82aaed89184f401202ccb1e13dba276de09fc7
+        decision: approve
+        reviewer: DonutCreateIndependentReview
+        role: reviewer
+        created_at: 2026-10-01T02:13:39.084Z
+    created_at: 2026-10-01T02:13:38.255Z
+    updated_at: 2026-10-01T02:13:39.084Z
+    notes: []
