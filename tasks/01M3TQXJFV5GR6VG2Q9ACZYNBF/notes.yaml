@@ -18,3 +18,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T03:36:21.149Z
+  - _ulid: 01M3TRNS50JMY4J17GX0G2HDNE
+    content: Frozen exact candidate b816218f42eac56052850781690a3ca6dbfd4b42, base main
+      bbac23727e042cf53f45ec90dffdd0e11ef42eae, worktree /tmp/dmc-exclusive-output. All61 Python +9
+      adapter and eslint/diff checks pass. Independent exact-head review
+      @review-create-exclusive-output is pending gated frontend check. Note task submit from
+      original root may link unrelated checkout4235aeb; authoritative candidate is b816218 and
+      review pins exact source range.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T03:38:35.552Z
