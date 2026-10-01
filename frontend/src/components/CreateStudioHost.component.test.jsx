@@ -179,7 +179,8 @@ describe('Donut Create studio', () => {
       openStudio()
       const save = await screen.findByRole('button', { name: 'Save to library', exact: true })
       expect(save.disabled).toBe(true)
-      const destination = screen.getByLabelText('Save to image directory')
+      fireEvent.click(await screen.findByRole('tab', { name: 'Finalize' }))
+      const destination = await screen.findByLabelText('Save to image directory')
       expect(Array.from(destination.options).map(option => option.text)).toEqual([
         'Choose a directory', 'Archive · Images B', 'Primary · Images A',
       ])
@@ -273,7 +274,8 @@ describe('Donut Create studio', () => {
     expect(newFrame.getAttribute('src')).toBe('/remote/api/create/studio/new-server-session/')
     expect(screen.queryByRole('img', { name: 'old-server.png' })).toBeNull()
     expect(screen.getByRole('img', { name: 'new-server.png' })).toBeTruthy()
-    expect(Array.from(screen.getByLabelText('Save to image directory').options).map(option => option.text)).toEqual(['Choose a directory', 'New server · Fresh images'])
+    fireEvent.click(await screen.findByRole('tab', { name: 'Finalize' }))
+    expect(Array.from((await screen.findByLabelText('Save to image directory')).options).map(option => option.text)).toEqual(['Choose a directory', 'New server · Fresh images'])
     expect(api.apiClient.get.mock.calls.slice(requestsBeforeSwitch).some(([url]) => url.includes('/sessions/scoped-session'))).toBe(false)
     expect(api.getApiUrl()).toBe('/remote/api')
   })
@@ -302,7 +304,8 @@ describe('Donut Create studio', () => {
     expect(screen.getByTitle('DonutUI creation studio')).toBe(newFrame)
     expect(newFrame.getAttribute('src')).toContain('new-server-session')
     expect(screen.queryByRole('option', { name: /Old destination/ })).toBeNull()
-    expect(screen.getByRole('option', { name: 'New server · Fresh images' })).toBeTruthy()
+    fireEvent.click(await screen.findByRole('tab', { name: 'Finalize' }))
+    expect(await screen.findByRole('option', { name: 'New server · Fresh images' })).toBeTruthy()
   })
 
   // AC: @donut-create-plugin ac-access-boundary
@@ -316,7 +319,8 @@ describe('Donut Create studio', () => {
       render(<CreateStudioHost />)
       openStudio()
       await screen.findByRole('button', { name: 'Save to library', exact: true })
-      fireEvent.change(screen.getByLabelText('Save to image directory'), { target: { value: 'library-a:1' } })
+      fireEvent.click(await screen.findByRole('tab', { name: 'Finalize' }))
+      fireEvent.change(await screen.findByLabelText('Save to image directory'), { target: { value: 'library-a:1' } })
       fireEvent.click(screen.getByRole('button', { name: 'Save to library', exact: true }))
       await waitFor(() => expect(api.apiClient.post.mock.calls.some(([url]) => url === '/create/import')).toBe(true))
       serverEvent('donut-create-server-changing')
