@@ -472,7 +472,7 @@ describe('Donut Create studio', () => {
     const cancel = await screen.findByRole('button', { name: 'Cancel studio jobs' })
     api.apiClient.post.mockResolvedValueOnce({ data: { cancelled: [], errors: [message] } })
     fireEvent.click(cancel)
-    expect((await screen.findByRole('alert')).textContent).toBe(message)
+    expect((await screen.findByRole('alert')).querySelector('.toast-message').textContent).toBe(message)
     expect(screen.getAllByRole('status').some(element => element.textContent === message)).toBe(true)
     expect(screen.getByText('running')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Cancel studio jobs' }).disabled).toBe(false)
@@ -482,12 +482,12 @@ describe('Donut Create studio', () => {
 
   // AC: @donut-create-plugin ac-workflow-state
   test('invalidates the old session when the backend changes', async () => {
-    render(<CreateStudioHost />)
+    render(<><ToastContainer /><CreateStudioHost /></>)
     openStudio()
     const oldFrame = await screen.findByTitle('DonutUI creation studio')
     act(() => { window.dispatchEvent(new CustomEvent('donut-create-backend-changed')) })
     expect(oldFrame.isConnected).toBe(false)
-    expect(screen.getByRole('alert').textContent).toMatch(/backend changed/)
+    expect((await screen.findByRole('alert')).querySelector('.toast-message').textContent).toMatch(/backend changed/)
     session = { ...session, id: 'new-scoped-session', backend_url: 'http://127.0.0.1:8288' }
     status = { ...status, backend_url: session.backend_url }
     const launch = await screen.findByRole('button', { name: 'Open studio', exact: true })
