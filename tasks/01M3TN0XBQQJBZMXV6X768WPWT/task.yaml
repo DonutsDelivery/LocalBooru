@@ -10,13 +10,21 @@ description: Expose start/stop/restart with status in Create setup; support mana
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 2
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-10-01T03:08:09.267Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -28,6 +36,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-01T02:34:46.125Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-10-01T03:08:09.267Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-01T03:08:09.271Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-01T03:08:09.272Z
 created_at: 2026-10-01T02:34:46.007Z
 started_at: 2026-10-01T02:34:46.125Z
+submitted_at: 2026-10-01T03:08:09.271Z
 todos: []

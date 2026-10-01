@@ -1682,12 +1682,13 @@ tasks:
     title: Control ComfyUI backend lifecycle inside Create
     type: task
     spec_ref: "@donut-create-plugin"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 2
     tags: []
-    notes_count: 3
+    notes_count: 4
     todos_count: 0
     created_at: 2026-10-01T02:34:46.007Z
     started_at: 2026-10-01T02:34:46.125Z
+    submitted_at: 2026-10-01T03:08:09.271Z

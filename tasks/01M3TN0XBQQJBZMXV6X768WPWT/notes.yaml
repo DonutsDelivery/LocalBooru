@@ -32,3 +32,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T03:06:35.565Z
+  - _ulid: 01M3TPY1HZJ6V8GFYMA9RVN135
+    content: Candidate9d1cda460eface5d607bafd110e14c2d306d9d28 is committed on
+      feat/create-backend-controls in /tmp/dmc-create-backend, exact base
+      d704dedcfe38e4d27bb791a4ee79fbf8c4af10af. Parent reviewed delegated drop source and actual
+      browser PNGmetadata, emptyMIMEJSON, plainPNG, explicitreferencePNG retained draft, no
+      generation/no misleading controls upgrade. Source clean. Review is exact candidate/code
+      subject; ignore originalroot4235aeb auto-linked checkout ref. Native compile/install, main
+      integration, origin push and leave DMC reopened remain required before completion.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T03:08:09.151Z
