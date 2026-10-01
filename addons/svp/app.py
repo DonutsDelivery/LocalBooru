@@ -235,9 +235,17 @@ def check_nvenc() -> bool:
     if not ffmpeg:
         return False
     try:
-        r = subprocess.run([ffmpeg, "-hide_banner", "-encoders"],
-                           capture_output=True, text=True, timeout=5)
-        return "h264_nvenc" in r.stdout if r.returncode == 0 else False
+        # An encoder listing only reports build features, even when the host has
+        # no usable NVIDIA device/driver. Verify that an encoder can open before
+        # selecting it for the HLS pipeline.
+        r = subprocess.run(
+            [ffmpeg, "-hide_banner", "-loglevel", "error",
+             "-f", "lavfi", "-i", "color=size=64x64:rate=1",
+             "-frames:v", "1", "-an", "-c:v", "h264_nvenc",
+             "-preset", "p1", "-tune", "ll", "-f", "null", "-"],
+            capture_output=True, timeout=5,
+        )
+        return r.returncode == 0
     except Exception:
         return False
 

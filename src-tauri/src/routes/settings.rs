@@ -18,25 +18,67 @@ use crate::server::state::AppState;
 use crate::services::transcode::QualityPreset;
 
 static LEGACY_SVP_TRANSITION_EPOCH: AtomicU64 = AtomicU64::new(0);
-static LEGACY_SVP_CLIENT_TRANSITION_EPOCH: AtomicU64 = AtomicU64::new(0);
-static LEGACY_SVP_TRANSITION_LOCK: Mutex<()> = Mutex::new(());
+#[derive(Default)]
+struct LegacySvpClients {
+    epochs: std::collections::HashMap<String, u64>,
+    active: Option<String>,
+}
+
+static LEGACY_SVP_CLIENTS: std::sync::LazyLock<Mutex<LegacySvpClients>> =
+    std::sync::LazyLock::new(|| Mutex::new(LegacySvpClients::default()));
 
 fn owns_legacy_svp_transition(epoch: u64) -> bool {
     LEGACY_SVP_TRANSITION_EPOCH.load(Ordering::SeqCst) == epoch
 }
 
-fn claim_legacy_svp_client_transition(epoch: Option<u64>) -> Option<u64> {
-    let _guard = LEGACY_SVP_TRANSITION_LOCK
+fn claim_legacy_svp_client_transition(
+    epoch: Option<u64>,
+    client: Option<&str>,
+    stopping: bool,
+) -> Option<u64> {
+    let mut clients = LEGACY_SVP_CLIENTS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some(epoch) = epoch {
-        let previous = LEGACY_SVP_CLIENT_TRANSITION_EPOCH.load(Ordering::SeqCst);
-        if epoch < previous {
-            return None;
-        }
-        LEGACY_SVP_CLIENT_TRANSITION_EPOCH.store(epoch, Ordering::SeqCst);
+    if !clients.claim(epoch, client, stopping) {
+        return None;
     }
     Some(LEGACY_SVP_TRANSITION_EPOCH.fetch_add(1, Ordering::SeqCst) + 1)
+}
+
+impl LegacySvpClients {
+    fn claim(&mut self, epoch: Option<u64>, client: Option<&str>, stopping: bool) -> bool {
+        // Clients without a session ID retain the older shared ordering bucket.
+        // Never compare independent browser/phone clocks against each other.
+        let client = client.unwrap_or("");
+        if stopping && self.active.as_deref() != Some(client) {
+            return false;
+        }
+        if let Some(epoch) = epoch {
+            let previous = self.epochs.get(client).copied().unwrap_or(0);
+            if epoch < previous {
+                return false;
+            }
+            self.epochs.insert(client.to_string(), epoch);
+        }
+        self.active = Some(client.to_string());
+        true
+    }
+}
+
+fn legacy_svp_client_id(body: &Value) -> Result<Option<String>, AppError> {
+    body.get("client_session_id")
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|id| !id.is_empty() && id.len() <= 128)
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    AppError::BadRequest(
+                        "client_session_id must be a nonempty string of at most 128 bytes".into(),
+                    )
+                })
+        })
+        .transpose()
 }
 
 pub fn router() -> Router<AppState> {
@@ -1750,6 +1792,14 @@ async fn bridge_post(
         AppError::ServiceUnavailable(format!("Failed to reach addon '{}': {}", addon_id, e))
     })?;
 
+    decode_sidecar_post_response(response, addon_id, rewrite_stream_url).await
+}
+
+async fn decode_sidecar_post_response(
+    response: reqwest::Response,
+    addon_id: &str,
+    rewrite_stream_url: Option<&str>,
+) -> Result<Json<Value>, AppError> {
     let status = response.status();
     let mut result: Value = response.json().await.map_err(|e| {
         AppError::Internal(format!("Invalid response from addon '{}': {}", addon_id, e))
@@ -1758,9 +1808,14 @@ async fn bridge_post(
     if !status.is_success() {
         let detail = result
             .get("detail")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown sidecar error");
-        return Err(AppError::Internal(detail.to_string()));
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| value.to_string())
+            })
+            .unwrap_or_else(|| "Unknown sidecar error".to_string());
+        return Err(AppError::Upstream(status, detail));
     }
 
     // Rewrite stream_url to route through Rust server
@@ -1904,6 +1959,7 @@ async fn bridge_svp_play(
     State(state): State<AppState>,
     Json(mut body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
+    let client_session_id = legacy_svp_client_id(&body)?;
     let body_obj = body
         .as_object_mut()
         .ok_or_else(|| AppError::BadRequest("SVP play request must be an object".to_string()))?;
@@ -1915,8 +1971,13 @@ async fn bridge_svp_play(
             })
         })
         .transpose()?;
-    let transition_epoch = claim_legacy_svp_client_transition(client_transition_id)
-        .ok_or_else(|| AppError::ServiceUnavailable("SVP start was superseded".to_string()))?;
+    body_obj.remove("client_session_id");
+    let transition_epoch = claim_legacy_svp_client_transition(
+        client_transition_id,
+        client_session_id.as_deref(),
+        false,
+    )
+    .ok_or_else(|| AppError::ServiceUnavailable("SVP start was superseded".to_string()))?;
     body_obj.insert("transition_id".to_string(), json!(transition_epoch));
     if state.addon_manager().get_addon_status("svp") != AddonStatus::Running {
         state
@@ -1972,6 +2033,11 @@ async fn bridge_svp_stop(
     State(state): State<AppState>,
     body: Option<Json<Value>>,
 ) -> Result<Json<Value>, AppError> {
+    let client_session_id = body
+        .as_ref()
+        .map(|Json(value)| legacy_svp_client_id(value))
+        .transpose()?
+        .flatten();
     let client_transition_id = body
         .as_ref()
         .and_then(|Json(value)| value.get("client_transition_id"))
@@ -1981,7 +2047,11 @@ async fn bridge_svp_stop(
             })
         })
         .transpose()?;
-    let Some(transition_epoch) = claim_legacy_svp_client_transition(client_transition_id) else {
+    let Some(transition_epoch) = claim_legacy_svp_client_transition(
+        client_transition_id,
+        client_session_id.as_deref(),
+        true,
+    ) else {
         return Ok(Json(json!({
             "success": true,
             "message": "A newer SVP transition already completed this cleanup"
@@ -2004,7 +2074,7 @@ async fn bridge_svp_stop(
     .await
     {
         Ok(response) => Ok(response),
-        Err(AppError::Internal(detail))
+        Err(AppError::Upstream(_, detail))
             if detail.contains("superseded") || detail.contains("supersede") =>
         {
             Ok(Json(json!({
@@ -2477,7 +2547,52 @@ async fn bridge_whisper_events(
 mod tests {
     use super::*;
     use axum::http::{Method, Request};
+    use axum::response::IntoResponse;
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn svp_sidecar_errors_preserve_status_and_detail_through_http() {
+        for (status, detail) in [
+            (StatusCode::NOT_FOUND, "Video file not found"),
+            (StatusCode::CONFLICT, "SVP start was superseded"),
+            (StatusCode::SERVICE_UNAVAILABLE, "vspipe not available"),
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                "SVP stream did not become ready",
+            ),
+            (StatusCode::INTERNAL_SERVER_ERROR, "FFmpeg encode error"),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let fake_sidecar = Router::new().route(
+                "/svp/play",
+                post(move || async move { (status, Json(json!({"detail": detail}))) }),
+            );
+            let server = tokio::spawn(async move {
+                axum::serve(listener, fake_sidecar).await.unwrap();
+            });
+            let response = reqwest::Client::new()
+                .post(format!("http://{address}/svp/play"))
+                .json(&json!({"file_path": "/synthetic/video.mp4"}))
+                .send()
+                .await
+                .unwrap();
+            let forwarded = decode_sidecar_post_response(response, "svp", Some("svp"))
+                .await
+                .unwrap_err()
+                .into_response();
+            assert_eq!(forwarded.status(), status);
+            let bytes = axum::body::to_bytes(forwarded.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::from_slice::<Value>(&bytes).unwrap()["detail"],
+                detail
+            );
+            server.abort();
+            let _ = server.await;
+        }
+    }
 
     // AC: @credential-storage ac-5
     #[tokio::test]
@@ -2548,23 +2663,46 @@ mod tests {
     // AC: @reliable-stream-transitions ac-final-source-owner
     // AC: @reliable-stream-transitions ac-stop-superseded-producer
     fn legacy_svp_transition_epoch_assigns_one_latest_owner() {
-        let first = claim_legacy_svp_client_transition(None).unwrap();
-        let second = claim_legacy_svp_client_transition(None).unwrap();
+        let first = claim_legacy_svp_client_transition(None, None, false).unwrap();
+        let second = claim_legacy_svp_client_transition(None, None, false).unwrap();
         assert!(!owns_legacy_svp_transition(first));
         assert!(owns_legacy_svp_transition(second));
 
-        claim_legacy_svp_client_transition(None).unwrap();
+        claim_legacy_svp_client_transition(None, None, false).unwrap();
         assert!(!owns_legacy_svp_transition(second));
     }
 
     #[test]
     // AC: @reliable-stream-transitions ac-stop-superseded-producer
     fn legacy_svp_rejects_a_delayed_client_transition() {
-        let base = LEGACY_SVP_CLIENT_TRANSITION_EPOCH.load(Ordering::SeqCst);
-        let newest = base + 2;
-        assert!(claim_legacy_svp_client_transition(Some(newest)).is_some());
-        assert!(claim_legacy_svp_client_transition(Some(newest - 1)).is_none());
-        assert!(claim_legacy_svp_client_transition(Some(newest)).is_some());
+        let mut clients = LegacySvpClients::default();
+        assert!(clients.claim(Some(2), Some("phone"), false));
+        assert!(!clients.claim(Some(1), Some("phone"), false));
+        assert!(clients.claim(Some(2), Some("phone"), false));
+    }
+
+    #[test]
+    fn legacy_svp_independent_clients_do_not_compare_clocks_or_stop_another_owner() {
+        // AC: @svp-single-player ac-final-transition-owner
+        // AC: @svp-single-player ac-idempotent-stop
+        let mut clients = LegacySvpClients::default();
+        assert!(clients.claim(Some(9000), Some("desktop"), false));
+        assert!(clients.claim(Some(1), Some("phone"), false));
+        assert!(!clients.claim(Some(9001), Some("desktop"), true));
+        assert!(clients.claim(Some(2), Some("phone"), true));
+        assert!(clients.claim(Some(9002), Some("desktop"), false));
+        assert!(!clients.claim(Some(3), Some("phone"), true));
+        assert!(!clients.claim(None, None, true));
+    }
+
+    #[test]
+    fn legacy_svp_clients_without_session_ids_keep_their_shared_ordering() {
+        let mut clients = LegacySvpClients::default();
+        assert!(clients.claim(Some(9000), None, false));
+        assert!(!clients.claim(Some(1), None, false));
+        assert!(clients.claim(Some(9001), None, true));
+        assert!(clients.claim(Some(1), Some("updated-phone"), false));
+        assert!(!clients.claim(Some(9002), None, true));
     }
 
     // AC: @svp-single-player ac-idempotent-stop
@@ -2576,8 +2714,9 @@ mod tests {
         ));
         std::fs::create_dir_all(&data_dir).unwrap();
         let state = AppState::new(&data_dir, 0).unwrap();
-        let newest = LEGACY_SVP_CLIENT_TRANSITION_EPOCH.load(Ordering::SeqCst) + 2;
-        assert!(claim_legacy_svp_client_transition(Some(newest)).is_some());
+        let client = uuid::Uuid::new_v4().to_string();
+        let newest = 2;
+        assert!(claim_legacy_svp_client_transition(Some(newest), Some(&client), false).is_some());
 
         let response = router()
             .with_state(state)
@@ -2587,8 +2726,9 @@ mod tests {
                     .uri("/svp/stop")
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(Body::from(format!(
-                        r#"{{"client_transition_id":{}}}"#,
-                        newest - 1
+                        r#"{{"client_transition_id":{},"client_session_id":"{}"}}"#,
+                        newest - 1,
+                        client
                     )))
                     .unwrap(),
             )

@@ -9,6 +9,7 @@ import { createUnavailableLibraryToastGate, shouldSuppressOptionalNotFound } fro
 import { remoteMediaProxyUrl } from './utils/remoteMediaRouting.js'
 import { splitTagFilters } from './utils/tagFilters.js'
 import { runtimeDiagnosticTimeoutMs } from './components/autoTaggerRuntime.js'
+import { svpClientTransition } from './utils/svpPlayback.js'
 
 // Current server config (cached for synchronous access)
 let currentServerUrl = null
@@ -1436,7 +1437,7 @@ export async function playVideoSVP(filePath, startPosition = 0, qualityPreset = 
     file_path: filePath,
     start_position: startPosition,
     target_resolution: qualityPreset && qualityPreset !== 'original' ? qualityPreset : null,
-    client_transition_id: transitionId
+    ...svpClientTransition(transitionId)
   }, {
     timeout: 60000,  // 60 second timeout for initial buffering
     signal
@@ -1446,7 +1447,7 @@ export async function playVideoSVP(filePath, startPosition = 0, qualityPreset = 
 
 export async function stopSVPStream(transitionId = undefined) {
   const response = await api.post('/settings/svp/stop', {
-    client_transition_id: transitionId
+    ...svpClientTransition(transitionId)
   })
   return response.data
 }

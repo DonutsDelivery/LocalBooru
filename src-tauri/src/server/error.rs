@@ -11,6 +11,7 @@ pub enum AppError {
     TooManyRequests(String),
     Internal(String),
     ServiceUnavailable(String),
+    Upstream(StatusCode, String),
 }
 
 impl std::fmt::Display for AppError {
@@ -23,6 +24,7 @@ impl std::fmt::Display for AppError {
             AppError::TooManyRequests(m) => write!(f, "Too many requests: {}", m),
             AppError::Internal(m) => write!(f, "Internal error: {}", m),
             AppError::ServiceUnavailable(m) => write!(f, "Service unavailable: {}", m),
+            AppError::Upstream(status, m) => write!(f, "Upstream error ({}): {}", status, m),
         }
     }
 }
@@ -37,6 +39,7 @@ impl IntoResponse for AppError {
             AppError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, m),
             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
             AppError::ServiceUnavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
+            AppError::Upstream(status, m) => (status, m),
         };
         (status, Json(serde_json::json!({"detail": message}))).into_response()
     }

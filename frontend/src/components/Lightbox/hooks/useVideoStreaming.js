@@ -28,6 +28,7 @@ import { useAudioNormalization } from './useAudioNormalization'
 import { shouldRestartStalledSVP } from './svpStallGuard'
 import { getCodecFallbackStartPosition } from './codecFallback'
 import { shouldStartSVPPlayback } from './svpBuffering'
+import { svpPlaybackError } from '../../../utils/svpPlayback'
 import {
   capturePlaybackIntent as captureTransitionIntent,
   createPlaybackTransitionOwner,
@@ -415,7 +416,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       if (!isPlaybackTransitionCurrent(transition)) return
       if (err?.name !== 'CanceledError' && err?.name !== 'AbortError') {
         console.error('SVP restart error:', err)
-        setSvpError(err.message || 'Failed to restart SVP stream')
+        setSvpError(svpPlaybackError(err, 'Failed to restart SVP stream'))
       }
       setSvpLoading(false)
       finishPlaybackTransition(transition)
@@ -671,7 +672,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
           mseShouldResume
         )
       } else if (err?.name !== 'CanceledError' && err?.name !== 'AbortError') {
-        setSvpError(err.message || 'Failed to start SVP playback')
+        setSvpError(svpPlaybackError(err))
         setSvpLoading(false)
         finishPlaybackTransition(transition)
       }
@@ -1676,6 +1677,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
           absoluteTime,
           qualityId,
           transition.signal,
+          transition.generation,
         )
         if (!isPlaybackTransitionCurrent(transition)) return
         if (result.success && result.stream_url) {
@@ -1731,7 +1733,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       if (!isPlaybackTransitionCurrent(transition)) return
       if (err?.name === 'CanceledError' || err?.name === 'AbortError') return
       console.error('Failed to change quality:', err)
-      setStreamError(err.message || 'Failed to change playback source')
+      setStreamError(svpPlaybackError(err, 'Failed to change playback source'))
       setSvpLoading(false)
       if (qualityId !== 'original') {
         await handleQualityChangeRef.current?.('original', transition.intent)
