@@ -187,7 +187,8 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(workflow["extra"]["donut_workflow"]["controls_revision"], 1)
         provenance = self.installer.manifest["provenance"]
         self.assertEqual(provenance["workflow"]["bundled_sha256"], hashlib.sha256((ROOT / "workflow.json").read_bytes()).hexdigest())
-        self.assertEqual(provenance["donutui"]["browser_assets"]["assets/base-workflow.json"], hashlib.sha256((ROOT / "assets/base-workflow.json").read_bytes()).hexdigest())
+        for asset, expected in provenance["donutui"]["browser_assets"].items():
+            self.assertEqual(expected, hashlib.sha256((ROOT / asset).read_bytes()).hexdigest(), asset)
 
     # AC: @donut-create-plugin ac-managed-setup
     def test_exact_download_is_activated_atomically_and_verified_file_is_reused(self):
