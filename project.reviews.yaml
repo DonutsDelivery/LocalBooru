@@ -4832,3 +4832,157 @@ reviews:
     created_at: 2026-10-01T00:18:49.802Z
     updated_at: 2026-10-01T00:18:50.607Z
     notes: []
+  - _ulid: 01M3TFMDHE8B88JGAKXBB4214C
+    slugs:
+      - review-create-preview-zoom
+    title: Review creator preview zoom and workflow controls
+    author: DonutCreateIndependentReview
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 8a7d1b8b3f0ab6ded979659ada63736fe6a16b57
+          head_commit: a192143e04b15ab9f5109dcdb2e6e89b473fb5a6
+        evidence: Host-gated NODE_ENV=test run of /tmp/dmc-review-preview.component.test.jsx via
+          /tmp/dmc-review-preview.config.mjs:2/2 passed. Fit400px versus natural
+          source100%=800px,125%zoom,arrowpan,wheel,blobsrc transform preservation,imageKey
+          reset,moving-midpoint pinch correct+100px. Writer exited0; no vitest/rustc/cargo/ninja
+          writers at inspection,host gate free. No tracked tests added.
+        name: independent-viewer-behavior
+        required: true
+        runner: vitest
+        created_at: 2026-10-01T01:00:34.125Z
+        completed_at: 2026-10-01T01:00:34.125Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 8a7d1b8b3f0ab6ded979659ada63736fe6a16b57
+          head_commit: a192143e04b15ab9f5109dcdb2e6e89b473fb5a6
+        evidence: Independently ran node --experimental-vm-modules
+          /tmp/electron-tmp/dmc-controls-browser/workflow_notice.test.mjs:9/9 passed, and python3
+          /tmp/electron-tmp/dmc-controls-browser/controller_receipt.py:36/36 passed. Actual adapter
+          execution covers exact accepted receipt despite backend decoration, legacy fallback,
+          identical canvas-only external graph and unsaved-draft preservation,different shared
+          prompt notice,explicit older V5 upgrade,current/future/unmarked/custom quiet,preset
+          load/reopen and Advanced graph swaps. Controller receipts remain exact for each accepted
+          job.
+        name: independent-workflow-adapter-and-controller
+        required: true
+        runner: node-python
+        created_at: 2026-10-01T01:00:34.241Z
+        completed_at: 2026-10-01T01:00:34.241Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 8a7d1b8b3f0ab6ded979659ada63736fe6a16b57
+          head_commit: a192143e04b15ab9f5109dcdb2e6e89b473fb5a6
+        evidence: Exact a192143 clean eight-path candidate and diff-check verified. Source reviews owned
+          preview identity/reconnect,atomic pinch clamp,viewport/size reset,scoped wheel/pointer
+          cleanup,desktop collapse/mobile overrides,precise numeric strengths and fine
+          geometry/threshold steps,exact owned run receipt,and live explicit bundledV5 revision
+          comparison. Parent reports existing frontend22 and disposableUI26 passed. Parent synthetic
+          browser1280x800 collapsedlower45px preview472px,expandedlower160px endsx1035 Effects
+          beginsx1035;100%=800sourcepx.390mobile documentwidth390,preview364x346,Models visible
+          LoRAstep0.05,fixtureErrors empty. Reviewer independently inspected provided synthetic
+          desktop screenshot. No native installation/GPU generation acceptance claimed.
+        name: source-and-browser-layout
+        required: true
+        created_at: 2026-10-01T01:00:34.360Z
+        completed_at: 2026-10-01T01:00:34.360Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: 8a7d1b8b3f0ab6ded979659ada63736fe6a16b57
+          head_commit: a192143e04b15ab9f5109dcdb2e6e89b473fb5a6
+        evidence: Ran authoritative original-root kspec validate again; exit4 on pre-existing malformed
+          unrelated Android/core ULIDs/ACs,legacy @claude references,and verify skill
+          missing-description. Donut-create-plugin has no inherited traits. Shared registry health
+          is not claimed by this scoped code approval.
+        name: shared-kspec-validation
+        required: false
+        created_at: 2026-10-01T01:00:34.483Z
+        completed_at: 2026-10-01T01:00:34.483Z
+    events:
+      - _ulid: 01M3TFMDHD3BMEXEEZKTKTMN0T
+        actor: DonutCreateIndependentReview
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T01:00:33.710Z
+      - _ulid: 01M3TFMDVH05QMGB4Y8H0TB25S
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T01:00:34.033Z
+      - _ulid: 01M3TFMDZCW01E8D1XA3V1XD20
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-viewer-behavior
+        timestamp: 2026-10-01T01:00:34.156Z
+      - _ulid: 01M3TFME31XZMGSX156E7R5N9N
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-workflow-adapter-and-controller
+        timestamp: 2026-10-01T01:00:34.273Z
+      - _ulid: 01M3TFME6SRVQQCNNXAMJXZZP5
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-and-browser-layout
+        timestamp: 2026-10-01T01:00:34.393Z
+      - _ulid: 01M3TFMEAPT6HMPRHY0XCW8V48
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: shared-kspec-validation
+        timestamp: 2026-10-01T01:00:34.518Z
+      - _ulid: 01M3TFMEEV1W0J8D5KTRA00CS5
+        actor: DonutCreateIndependentReview
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 8a7d1b8b3f0ab6ded979659ada63736fe6a16b57
+            head_commit: a192143e04b15ab9f5109dcdb2e6e89b473fb5a6
+          decision: approve
+        timestamp: 2026-10-01T01:00:34.651Z
+      - _ulid: 01M3TFMEEVJXHTB2VWQCM6BRH7
+        actor: DonutCreateIndependentReview
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T01:00:34.651Z
+    examined_commit: a192143e04b15ab9f5109dcdb2e6e89b473fb5a6
+    external_links: []
+    lifecycle_state: closed
+    related_refs:
+      - "@create-preview-zoom"
+      - "@donut-create-plugin"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 8a7d1b8b3f0ab6ded979659ada63736fe6a16b57
+      head_branch: feat/create-preview-zoom
+      head_commit: a192143e04b15ab9f5109dcdb2e6e89b473fb5a6
+    threads: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 8a7d1b8b3f0ab6ded979659ada63736fe6a16b57
+          head_commit: a192143e04b15ab9f5109dcdb2e6e89b473fb5a6
+        decision: approve
+        reviewer: DonutCreateIndependentReview
+        role: reviewer
+        created_at: 2026-10-01T01:00:34.651Z
+    created_at: 2026-10-01T01:00:33.710Z
+    updated_at: 2026-10-01T01:00:34.651Z
+    notes: []
