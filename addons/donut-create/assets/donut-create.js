@@ -28,7 +28,7 @@
   'use strict';
 
   const POLL_INTERVAL = 200;
-  const MAX_WAIT = 30000;
+  const MAX_WAIT = 5 * 60 * 1000;
 
   // Wait for ComfyUI's app object to be available
   function waitForApp() {
@@ -1599,7 +1599,7 @@
     const started = Date.now();
     const wait = setInterval(async () => {
       if (!app.graph || !app.canvas || !window.LiteGraph?.registered_node_types?.DonutWorkflowPanel) {
-        if (Date.now() - started > 60000) { clearInterval(wait); showError(new Error('The v5 editor did not finish loading. Required DonutNodes browser panels may be missing.')); }
+        if (Date.now() - started > 5 * 60 * 1000) { clearInterval(wait); showError(new Error('The v5 editor did not finish loading. Required DonutNodes browser panels may be missing.')); }
         return;
       }
       clearInterval(wait); ready = true;
