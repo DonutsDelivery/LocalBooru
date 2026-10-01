@@ -36,3 +36,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T23:20:05.633Z
+  - _ulid: 01M3WWFCESR474JECRZ5G5DDZ2
+    content: "Confirmed ordinary streaming failure on this host with synthetic5s320x180 fixture: actual
+      app GPU480p command with -vsync cfr returns8, Unrecognized option vsync, no playlist/segments.
+      Installed FFmpeg n9.0.1 exposes fps_mode. Identical command after -fps_mode cfr returns0,
+      playlist exists and first segment472632bytes. Source updated accordingly. Real
+      synthetic256x144 NVENC and CUDAupload/scale/NVENC probes both exit0, so this host has usable
+      GPU; globally unavailable NVENC is not the current ordinary failure. Initial64x64 probe failed
+      minimum hardware dimensions and was corrected to256x144. Follow-up candidate4files includes
+      detailed transcode-restart errors. No real user media/profile playback tested."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T23:23:29.113Z
