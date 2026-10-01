@@ -47,6 +47,7 @@ export default function ToastContainer() {
       {toasts.map(t => (
         <div
           key={t.id}
+          role={t.type === 'error' ? 'alert' : 'status'}
           className={`toast toast-${t.type}${t.visible ? ' toast-enter' : ' toast-exit'}`}
           onClick={() => dismissToast(t.id)}
         >

@@ -1,22 +1,38 @@
 import { apiClient, getApiUrl, invalidateDirectoriesCache } from '../api'
 
 const CREATE_API = '/addons/donut-create/api/create'
+let backendStatusRevision = 0
 
 function checkRequest(signal) {
   if (signal?.aborted) throw new DOMException('The server connection changed.', 'AbortError')
 }
 
 export async function getCreateStatus(signal) {
+  const revision = backendStatusRevision
   const response = await apiClient.get(`${CREATE_API}/status`, { signal })
   checkRequest(signal)
+  if (revision !== backendStatusRevision) throw new DOMException('Backend status was superseded.', 'AbortError')
   return response.data
 }
 
+// All status readers share the lifecycle epoch, including polls in separate views.
+async function changeBackend(path, body, signal) {
+  const revision = ++backendStatusRevision
+  try {
+    const response = await apiClient.post(`${CREATE_API}/${path}`, body, { signal })
+    checkRequest(signal)
+    if (revision !== backendStatusRevision) throw new DOMException('Backend action was superseded.', 'AbortError')
+    return response.data
+  } finally {
+    // Also discard polls begun while the action was still changing the backend.
+    if (revision === backendStatusRevision) backendStatusRevision += 1
+  }
+}
+
 export async function saveCreateConfig(config, signal) {
-  const response = await apiClient.post(`${CREATE_API}/config`, config, { signal })
-  checkRequest(signal)
+  const status = await changeBackend('config', config, signal)
   window.dispatchEvent(new CustomEvent('donut-create-backend-changed'))
-  return response.data
+  return status
 }
 
 export async function setupCreateBackend(options, signal) {
@@ -32,21 +48,15 @@ export async function cancelCreateSetup(signal) {
 }
 
 export async function startCreateBackend(signal) {
-  const response = await apiClient.post(`${CREATE_API}/backend/start`, undefined, { signal })
-  checkRequest(signal)
-  return response.data
+  return changeBackend('backend/start', undefined, signal)
 }
 
 export async function stopCreateBackend(signal) {
-  const response = await apiClient.post(`${CREATE_API}/backend/stop`, undefined, { signal })
-  checkRequest(signal)
-  return response.data
+  return changeBackend('backend/stop', undefined, signal)
 }
 
 export async function restartCreateBackend(signal) {
-  const response = await apiClient.post(`${CREATE_API}/backend/restart`, undefined, { signal })
-  checkRequest(signal)
-  return response.data
+  return changeBackend('backend/restart', undefined, signal)
 }
 
 export async function createStudioSession(signal) {
