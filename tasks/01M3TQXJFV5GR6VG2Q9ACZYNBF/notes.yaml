@@ -8,3 +8,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T03:25:35.672Z
+  - _ulid: 01M3TRHNWXSQSV8QFYQ6KKXWXD
+    content: Implementation and Python39/controller +22/installer +6/adapter checks pass. Independent
+      review verified marked SaveImage temp ownership/import and found transport storage marker
+      causing false remote recipe notice; root-extra normalization fixes it, 3 regression cases pass
+      independently. Frontend component suite queued behind host-heavy lock held by unrelated C++
+      build (PID20035). DMC7879, addon9149, independent ComfyUI3890977 stay alive. No prior user
+      outputs deleted.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T03:36:21.149Z
