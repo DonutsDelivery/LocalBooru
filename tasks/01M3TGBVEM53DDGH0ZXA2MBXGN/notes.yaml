@@ -1,0 +1,13 @@
+notes:
+  - _ulid: 01M3TGBVN8JYQRYYX6E2BTEH3Q
+    content: "Approach: reuse existing jobsContent/cancel handlers as a footer slot, existing
+      destinationControls as a Finalize slot, and existing canvas/preview switching state. Keep
+      Create/Edit/Finalize left tabs; sampling details under Create preserves same bindings. Simple
+      center removes toolbar row and anchors compact mode switch above content in corner. Mobile
+      footer queue occupies full row, bounded popup expands upward within dialog; no new backend/GPU
+      behavior. Focused existing host/gallery tests plus disposable controls/queue placement,
+      sampling patch and Finalize checks; synthetic desktop/mobile geometry. Isolated worktree
+      basedmain6a5cd47; preserve running nativeDMC and Comfy."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T01:13:21.832Z

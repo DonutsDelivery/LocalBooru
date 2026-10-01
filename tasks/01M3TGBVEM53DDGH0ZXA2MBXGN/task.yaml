@@ -1,0 +1,33 @@
+_ulid: 01M3TGBVEM53DDGH0ZXA2MBXGN
+slugs:
+  - create-actions-layout
+title: Reorganize Create actions, jobs and finalize controls
+type: task
+description: Move owned job list above RunInstant/Generate in an upward-opening compact popup; fold
+  sampling/tuning into Create; replace Tuning tab with left Finalize destination/auto-save controls;
+  move Preview/Image tools switch into a compact preview corner notch. Preserve Advanced view,
+  shared graph, queue ownership/cancellation and mobile navigation.
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-01T01:13:21.722Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-01T01:13:21.722Z
+created_at: 2026-10-01T01:13:21.620Z
+started_at: 2026-10-01T01:13:21.722Z
+todos: []

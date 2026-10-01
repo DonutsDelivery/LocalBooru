@@ -1640,3 +1640,18 @@ tasks:
     started_at: 2026-10-01T00:21:22.069Z
     submitted_at: 2026-10-01T00:57:57.675Z
     completed_at: 2026-10-01T01:06:26.274Z
+  - _ulid: 01M3TGBVEM53DDGH0ZXA2MBXGN
+    slugs:
+      - create-actions-layout
+    title: Reorganize Create actions, jobs and finalize controls
+    type: task
+    spec_ref: "@donut-create-plugin"
+    status: in_progress
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 1
+    todos_count: 0
+    created_at: 2026-10-01T01:13:21.620Z
+    started_at: 2026-10-01T01:13:21.722Z
