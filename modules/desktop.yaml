@@ -830,6 +830,9 @@ features:
         type: requirement
         description: SVP transitions preserve one standard video player and prevent superseded playback from
           producing picture or sound.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
