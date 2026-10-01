@@ -8008,6 +8008,18 @@ reviews:
         required: true
         created_at: 2026-10-01T23:32:30.491Z
         completed_at: 2026-10-01T23:32:30.491Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 973a575b63cb24c084d0c0e5c6d257ac5d9d494e
+        evidence: kspec validate exits4 with existing unrelated legacyAndroid schema/ULID errors; product
+          diff changes no spec files. Native focused execution remains required and pending.
+          Validation receipt:/tmp/dmc-create-layout/android-review-validation.log.
+        name: validation-context
+        required: true
+        created_at: 2026-10-01T23:34:29.430Z
+        completed_at: 2026-10-01T23:34:29.430Z
     events:
       - _ulid: 01M3WWR30PMYQ4FPFX3KSQGEEP
         actor: DonutsDelivery
@@ -8050,6 +8062,13 @@ reviews:
           status: pass
           name: python-svp-quality
         timestamp: 2026-10-01T23:32:30.555Z
+      - _ulid: 01M3WX3HBDCXKV9E10XTTPWWPR
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: validation-context
+        timestamp: 2026-10-01T23:34:29.485Z
     examined_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
     external_links: []
     lifecycle_state: open
@@ -8064,5 +8083,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-01T23:28:14.358Z
-    updated_at: 2026-10-01T23:32:30.491Z
+    updated_at: 2026-10-01T23:34:29.430Z
     notes: []
