@@ -7972,7 +7972,18 @@ reviews:
       - review-android-hls-startup
     title: Review Android HLS startup and resolution fixes
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
+        evidence: Rust settings and transcode groups queued through required wrapper behind host gate; no
+          compile result claimed.
+        name: native-streaming
+        required: true
+        created_at: 2026-10-01T23:28:33.106Z
+        completed_at: null
     events:
       - _ulid: 01M3WWR30PMYQ4FPFX3KSQGEEP
         actor: DonutsDelivery
@@ -7987,6 +7998,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-01T23:28:31.783Z
+      - _ulid: 01M3WWRNC27VRV732DK8QQE5XB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: native-streaming
+        timestamp: 2026-10-01T23:28:33.155Z
     examined_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
     external_links: []
     lifecycle_state: open
@@ -8001,5 +8019,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-01T23:28:14.358Z
-    updated_at: 2026-10-01T23:28:31.735Z
+    updated_at: 2026-10-01T23:28:33.106Z
     notes: []
