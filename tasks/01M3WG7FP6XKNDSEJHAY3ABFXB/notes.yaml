@@ -47,3 +47,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T20:35:22.545Z
+  - _ulid: 01M3WKJWDPF15Y4B7F3128EY9P
+    content: "User reports sluggish queue/cancel with500 + bridge timeout. Controller fixes:
+      cancellation checks queue only (no history scan); reconcile stable job snapshot and finalized
+      marker; no repeated completed metadata scans/session writes on progress; workspace poll output
+      strips bulk provenance available from dedicated endpoint. Queue wrapper validates compiled
+      prompt once; acknowledged jobs shown immediately before nextpoll. Synthetic controller44/44
+      and adapter10/10 passed. React/Rust stillqueued behind active DonutStudio build."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T20:48:06.583Z
