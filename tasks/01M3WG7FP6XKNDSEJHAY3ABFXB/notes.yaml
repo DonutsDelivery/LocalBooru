@@ -17,3 +17,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T19:58:58.422Z
+  - _ulid: 01M3WH7XSYEF49PFVSFAGGS0KY
+    content: "Additional user steering: reuse existing DMC toast.error notifications instead of
+      full-width error panel; expose existing backend controls prominently in right sidebar
+      (Start/Stop/Restart for owned local/managed installs, explain URL-only control limits). Reuse
+      CreateSettings runtime action/poll guards in compact backend-only view, preserve original
+      Setup actions and no real backend shutdown during testing."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T20:07:10.398Z
