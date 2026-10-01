@@ -9,3 +9,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T00:09:38.697Z
+  - _ulid: 01M3TD2VKY97QMSFXETG8Z5B4P
+    content: Implemented five-minute repeated readiness probes and iframe recovery; closing clears
+      bridge-owned pending actions, avoiding reopen deadlock. Effects spans full height; bottom pane
+      constrained to center, TAB Off hides strength, face prompt directly below scene and
+      toggle-controlled, range uses native pointer handling and input staging. Existing component
+      suites 22/22 and adapter 5/5 passed; disposable extended suite 23/23 proves >7sec wait,
+      five-minute expiration, fresh retry/late-ready and UI controls. Browser synthetic fixture
+      1280x800 confirms no panel intersection; 390x844 no page overflow and face prompt toggle
+      works, zero fixture errors. No private-profile testing or GPU generation.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T00:16:01.150Z
