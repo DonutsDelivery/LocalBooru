@@ -5835,3 +5835,190 @@ reviews:
     created_at: 2026-10-01T03:37:50.425Z
     updated_at: 2026-10-01T05:09:53.198Z
     notes: []
+  - _ulid: 01M3TYQP363554G677KSBZ8F0B
+    slugs:
+      - review-mac-build-test-fixtures
+    title: Native Mac build fixture corrections
+    author: DonutsDelivery
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 0d28e2803ea602385276cf84571a34349fc614c9
+          head_commit: 153346a3c06816bb123caa49d833aa869e1ca652
+        evidence: Clean exact head153346a3c06816bb123caa49d833aa869e1ca652 and full base/head
+          3-file20-added4-removed diff inspected. Changes entirely cfg(test); legacy rows/check
+          constraints, exact collection membership, save qualification/idempotence/collision and
+          library-colliding watch-history assertions preserved. Diff check clean.
+        name: source-assertion-preservation
+        required: true
+        runner: git-source-review
+        created_at: 2026-10-01T05:24:30.033Z
+        completed_at: 2026-10-01T05:24:30.033Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 0d28e2803ea602385276cf84571a34349fc614c9
+          head_commit: 153346a3c06816bb123caa49d833aa869e1ca652
+        evidence: Reviewer independently read SSH donutstudio-mac build log
+          ~/LocalBooru-builds/dmc-153346a-build.log. Test compile finished34.92s; result219 passed0
+          failed0 ignored13.36s. Explicit corrected collection migration, retry migration, v15
+          constraint repair, qualified idempotent save and colliding-library watch-history entries
+          are ok. Native check/release continuing; no local heavy builds launched.
+        name: native-rust-tests
+        required: true
+        runner: canonical-macos-wrapper
+        created_at: 2026-10-01T05:24:30.175Z
+        completed_at: 2026-10-01T05:24:30.175Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 0d28e2803ea602385276cf84571a34349fc614c9
+          head_commit: 153346a3c06816bb123caa49d833aa869e1ca652
+        evidence: Same exact-candidate native log independently inspected:7 test files42 tests passed. No
+          test disable or product behavior changes in candidate.
+        name: native-frontend-tests
+        required: true
+        runner: canonical-macos-wrapper-vitest
+        created_at: 2026-10-01T05:24:30.350Z
+        completed_at: 2026-10-01T05:24:30.350Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 0d28e2803ea602385276cf84571a34349fc614c9
+          head_commit: 153346a3c06816bb123caa49d833aa869e1ca652
+        evidence: Task@mac-current-install and release/repository instructions inspected. Authoritative-root
+          kspec validate retains preexisting unrelated schema130/reference47/skill1 failures;
+          candidate edits only test fixtures, no specs. Shared build/runtime/privacy boundaries
+          respected.
+        name: repository-task-context
+        required: true
+        runner: kspec-source
+        created_at: 2026-10-01T05:24:30.503Z
+        completed_at: 2026-10-01T05:24:30.503Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: 0d28e2803ea602385276cf84571a34349fc614c9
+          head_commit: 153346a3c06816bb123caa49d833aa869e1ca652
+        evidence: Universal release, architectures/signature/DMG/ZIP/hash verification, installation and
+          installed process acceptance are still parent-managed gates. Full Mac build/install task
+          is not complete; no real-Mac stable support, GPU/video or user profile acceptance claimed.
+          Existing application preserved during review.
+        name: package-install-platform-acceptance
+        required: false
+        created_at: 2026-10-01T05:24:30.639Z
+        completed_at: 2026-10-01T05:24:30.639Z
+    events:
+      - _ulid: 01M3TYQP330PDATSM9F5DW65GW
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T05:24:29.412Z
+      - _ulid: 01M3TYQPETZ7WDCTBXVM8QTZH4
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T05:24:29.786Z
+      - _ulid: 01M3TYQPK7GKGDKP6ZTXXK7XYQ
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3TYQPJ2X145ZP54PDW4AK52
+        timestamp: 2026-10-01T05:24:29.927Z
+      - _ulid: 01M3TYQPQVQWAGC8GF7KR4TY0W
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-assertion-preservation
+        timestamp: 2026-10-01T05:24:30.075Z
+      - _ulid: 01M3TYQPW7ABCVBP05NWB0TBGE
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: native-rust-tests
+        timestamp: 2026-10-01T05:24:30.215Z
+      - _ulid: 01M3TYQQ1K4BN08YDBEP70PVB7
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: native-frontend-tests
+        timestamp: 2026-10-01T05:24:30.387Z
+      - _ulid: 01M3TYQQ6GJQNH6PGHEZSGCMQB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: repository-task-context
+        timestamp: 2026-10-01T05:24:30.544Z
+      - _ulid: 01M3TYQQAKZX5QF202Y58XA093
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: package-install-platform-acceptance
+        timestamp: 2026-10-01T05:24:30.675Z
+      - _ulid: 01M3TYQQETCT7REVMB0BTY074X
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 0d28e2803ea602385276cf84571a34349fc614c9
+            head_commit: 153346a3c06816bb123caa49d833aa869e1ca652
+          decision: approve
+        timestamp: 2026-10-01T05:24:30.810Z
+      - _ulid: 01M3TYQQET859N6QSVX3GBEK02
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T05:24:30.810Z
+    examined_commit: 153346a3c06816bb123caa49d833aa869e1ca652
+    external_links: []
+    lifecycle_state: closed
+    related_refs:
+      - "@mac-current-install"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 0d28e2803ea602385276cf84571a34349fc614c9
+      head_branch: fix/mac-build-test-fixtures
+      head_commit: 153346a3c06816bb123caa49d833aa869e1ca652
+    threads:
+      - _ulid: 01M3TYQPJ2X145ZP54PDW4AK52
+        entries:
+          - _ulid: 01M3TYQPJ2Q8H5EWXHPVDE5PMY
+            author: DonutsDelivery
+            body: "Independent source review: all 3 changed files are confined to cfg(test) modules and no
+              assertions were deleted/relaxed. Four partial legacy fixtures now initialize missing
+              unrelated tables via production init_main_db, whose CREATE TABLE IF NOT EXISTS
+              preserves the supplied legacy task_queue/collections schemas before invoking the same
+              migrations. Canonical temp output fixture now matches production canonical destination
+              resolution. Watch-history collision fixture registers both existing watched directory
+              paths required by current mounted-path filter; primary Arc as_ref provides the correct
+              shared reference. Native suite success confirms these fixtures remain executable. No
+              source blockers. This approves fixture code only, not completion of the full
+              build/install infra task."
+            created_at: 2026-10-01T05:24:29.890Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 0d28e2803ea602385276cf84571a34349fc614c9
+          head_commit: 153346a3c06816bb123caa49d833aa869e1ca652
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-01T05:24:30.810Z
+    created_at: 2026-10-01T05:24:29.414Z
+    updated_at: 2026-10-01T05:24:30.810Z
+    notes: []
