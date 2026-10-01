@@ -365,7 +365,8 @@ mod music_scope_tests {
                  VALUES (11,7,42,3);",
         )
         .unwrap();
-        run_main_migrations(&conn).unwrap();
+        // Initialize the rest of the schema before applying all pending migrations.
+        crate::db::schema::init_main_db(&conn).unwrap();
         let (name, media_type): (String, Option<String>) = conn
             .query_row(
                 "SELECT name,media_type FROM collections WHERE id=7",
@@ -669,7 +670,8 @@ mod tests {
         )
         .unwrap();
 
-        run_main_migrations(&conn).unwrap();
+        // Initialize the rest of the schema before applying all pending migrations.
+        crate::db::schema::init_main_db(&conn).unwrap();
 
         let columns: Vec<String> = conn
             .prepare("PRAGMA table_info(task_queue)")
@@ -720,7 +722,8 @@ mod tests {
         )
         .unwrap();
 
-        run_main_migrations(&conn).unwrap();
+        // Initialize the rest of the schema before applying all pending migrations.
+        crate::db::schema::init_main_db(&conn).unwrap();
 
         let legacy_task_type: String = conn
             .query_row("SELECT task_type FROM task_queue WHERE id = 1", [], |row| {
@@ -769,7 +772,8 @@ mod tests {
         )
         .unwrap();
 
-        run_main_migrations(&conn).unwrap();
+        // Initialize the rest of the schema before applying all pending migrations.
+        crate::db::schema::init_main_db(&conn).unwrap();
 
         conn.execute(
             "INSERT INTO task_queue (task_type, status) VALUES ('complete_directory_imports', 'pending')",

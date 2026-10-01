@@ -968,6 +968,7 @@ mod tests {
         let lib = state.resolve_library(Some(&uuid)).unwrap();
         let root = temp.path().join("images");
         std::fs::create_dir(&root).unwrap();
+        let root = std::fs::canonicalize(root).unwrap();
         for library in [state.library_manager().primary(), &lib] {
             library.main_pool.get().unwrap().execute("INSERT INTO watch_directories(id,path,name,show_images) VALUES(7,?1,'Synthetic images',1)", params![root.to_string_lossy()]).unwrap();
         }
