@@ -1776,3 +1776,16 @@ tasks:
     todos_count: 0
     created_at: 2026-10-01T19:34:52.988Z
     started_at: 2026-10-01T19:37:31.184Z
+  - _ulid: 01M3WG7FP6XKNDSEJHAY3ABFXB
+    slugs:
+      - create-compact-progress
+    title: Keep creator generation status compact in preview corner
+    type: bug
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 3
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-01T19:49:27.334Z

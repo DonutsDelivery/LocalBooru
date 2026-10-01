@@ -1,0 +1,21 @@
+_ulid: 01M3WG7FP6XKNDSEJHAY3ABFXB
+slugs:
+  - create-compact-progress
+title: Keep creator generation status compact in preview corner
+type: bug
+description: User screenshot shows generating status background stretching across full preview
+  panel. Make status badge size to its content near preview corner, preserve readable progress and
+  mobile bounds. Use existing styles, focused rendered CSS checks, integrate main after review; do
+  not interrupt running app or Comfy jobs.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-10-01T19:49:27.334Z
+todos: []
