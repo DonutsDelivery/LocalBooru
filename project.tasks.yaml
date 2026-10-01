@@ -1669,7 +1669,7 @@ tasks:
     depends_on: []
     priority: 2
     tags: []
-    notes_count: 0
+    notes_count: 1
     todos_count: 0
     created_at: 2026-10-01T01:47:40.238Z
     started_at: 2026-10-01T01:47:40.334Z

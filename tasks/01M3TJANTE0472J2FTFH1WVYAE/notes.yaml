@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M3TJMP19Z3426W9BXC9DFPDW
+    content: Implementation isolated from mainf5f8f5e. Three accessible separators resize
+      controls/effects widths and Models/History height, pointercapture/liveupdates/cancel restore;
+      widths/heights clamped to preserve preview, preferences localStorage outside library.
+      Keyboardarrows/HomeEnd anddoubleclickreset. Review caught cramped savedwidths siblingexpansion
+      and viewport/container breakpointmismatch; both fixed with frozen sibling/gesturebounds and
+      matching CSSviewport criterion. Disposable tests cover these plus persistence/minimums/mobile;
+      queuedsharedgatebehindDonutStudio, no bypass. Lower LoRAcontainerquery wraps rows when
+      centralpane≤500px.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T01:53:08.137Z
