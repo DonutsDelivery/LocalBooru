@@ -176,10 +176,34 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.controller, "persist") as persist:
             await self.controller.reconcile(self.controller.session(sid))
             for value in range(20):
-                self.assertTrue(self.controller.observe_event(self.controller.session(sid),
+                self.assertFalse(self.controller.observe_event(self.controller.session(sid),
                     {"type": "progress", "data": {"prompt_id": own, "value": value, "max": 20}}))
             persist.assert_not_called()
         self.assertFalse(any("/history/" in url for _, url, _, _ in self.backend.requests))
+
+    async def test_confirmed_history_ignores_delayed_socket_lifecycle_events(self):
+        for terminal in ("completed", "cancelled"):
+            with self.subTest(terminal=terminal):
+                sid = await self.new_session()
+                own = await self.submit(sid)
+                status = None if terminal == "completed" else {"status_str": "error", "completed": False,
+                    "messages": [["execution_interrupted", {}]]}
+                self.backend.complete(own, status=status)
+                await self.controller.reconcile(self.controller.session(sid))
+                for kind in ("execution_start", "executing", "execution_error", "execution_interrupted"):
+                    self.assertFalse(self.controller.observe_event(self.controller.session(sid),
+                        {"type": kind, "data": {"prompt_id": own, "node": "1"}}))
+                await self.controller.reconcile(self.controller.session(sid))
+                self.assertEqual(self.controller.session(sid)["jobs"][own]["status"], terminal)
+
+    async def test_live_progress_does_not_write_session_files(self):
+        sid = await self.new_session()
+        own = await self.submit(sid)
+        with patch.object(self.controller, "persist") as persist:
+            for value in range(20):
+                self.assertTrue(self.controller.observe_event(self.controller.session(sid),
+                    {"type": "progress", "data": {"prompt_id": own, "value": value, "max": 20}}))
+            persist.assert_not_called()
 
     async def test_reconcile_accepts_a_submission_while_history_request_is_pending(self):
         sid = await self.new_session()

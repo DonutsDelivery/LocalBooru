@@ -1023,6 +1023,8 @@ class Controller:
         if prompt_id not in session["jobs"]:
             return False
         job = session["jobs"][prompt_id]
+        if job.get("history_reconciled"):
+            return False  # Delayed socket events cannot reopen confirmed history.
         kind = event.get("type")
         changed = False
         if kind in {"execution_error", "execution_interrupted"}:
