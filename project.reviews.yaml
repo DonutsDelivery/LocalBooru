@@ -6267,6 +6267,74 @@ reviews:
         required: false
         created_at: 2026-10-01T05:58:28.475Z
         completed_at: 2026-10-01T05:58:28.475Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+          head_commit: cffebce4ac177d977b3d248226381bcd8cbdacda
+        evidence: Actual committed refreshNewImages callback invoked with synthetic API/state and actual
+          identity/reconciliation helpers. Prior91 reproduced filtered gallery contamination,
+          prior96 reproduced newer-selection cleared by stale404; finalcff passes filtered gallery
+          unchanged and newer selection retained. No DOM/CSS text assertions or tracked test
+          additions.
+        name: independent-refresh-callback
+        required: true
+        runner: node-vm-actual-callback
+        created_at: 2026-10-01T06:00:48.160Z
+        completed_at: 2026-10-01T06:00:48.160Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+          head_commit: cffebce4ac177d977b3d248226381bcd8cbdacda
+        evidence: Current clean headcff confirmed and all product/test deltas inspected. Textual CSS guard
+          tests removed; migration directory selectors scoped; natural directory height uses
+          Settings scroll; canonical fallback update/delete/history-close and
+          no-navigation-to-unrelated-gallery behavior intact. New component regression preserves
+          assertions and waits callback settlement.
+        name: source-scope
+        required: true
+        runner: git-source-review
+        created_at: 2026-10-01T06:00:48.319Z
+        completed_at: 2026-10-01T06:00:48.319Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+          head_commit: cffebce4ac177d977b3d248226381bcd8cbdacda
+        evidence: Parent Linux focused28 tests queued behind unrelated gate; native exact-cff archive
+          planned when prior own group safely resumes. Required current-head behavior evidence
+          pending; no gate bypass by reviewer.
+        name: current-frontend-regressions
+        required: true
+        runner: host-gated-focused-and-native-wrapper
+        created_at: 2026-10-01T06:00:48.457Z
+        completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+          head_commit: cffebce4ac177d977b3d248226381bcd8cbdacda
+        evidence: Parent real-CSS browser baseline0height vs fixed1630desktop1590phone, first/last
+          outer-scroll reachable and ClearAll/Select nonoverlap. CSS product content unchanged from
+          independently inspecteddbf throughcff; attributed parent execution evidence.
+        name: real-css-layout
+        required: true
+        runner: parent-synthetic-browser
+        created_at: 2026-10-01T06:00:48.600Z
+        completed_at: 2026-10-01T06:00:48.600Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+          head_commit: cffebce4ac177d977b3d248226381bcd8cbdacda
+        evidence: Package/native install/runtime acceptance remains parent-managed; no actual media playback
+          or user-profile functional claim. Reviewer preserved apps/builds and inspected only
+          synthetic data/source/build logs.
+        name: release-device-acceptance
+        required: false
+        created_at: 2026-10-01T06:00:48.742Z
+        completed_at: 2026-10-01T06:00:48.742Z
     events:
       - _ulid: 01M3V0NWB4E7T0REV103KPCHDP
         actor: DonutsDelivery
@@ -6316,6 +6384,68 @@ reviews:
           status: skipped
           name: release-device-acceptance
         timestamp: 2026-10-01T05:58:28.511Z
+      - _ulid: 01M3V0T574NZT8QJ6R4NSZZ8MB
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_base: fb9e65beb825ded9e101264dca21c14985461f7c
+          new_head: cffebce4ac177d977b3d248226381bcd8cbdacda
+          previous_head: 96b6bf7f7c22e951ba043e151729b1786cbd85f5
+        timestamp: 2026-10-01T06:00:47.588Z
+      - _ulid: 01M3V0T5CPZWPD5T058J75VVFT
+        actor: DonutsDelivery
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01M3V0NWTGFCPNP6SKDWSJ8TFP
+        timestamp: 2026-10-01T06:00:47.766Z
+      - _ulid: 01M3V0T5HA9D4RXYHAHNXANWPN
+        actor: DonutsDelivery
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01M3V0NWTGFCPNP6SKDWSJ8TFP
+        timestamp: 2026-10-01T06:00:47.914Z
+      - _ulid: 01M3V0T5NPC9JWEM70JE2MSNR8
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3V0T5MKN799QPH5RWRV0HT7
+        timestamp: 2026-10-01T06:00:48.054Z
+      - _ulid: 01M3V0T5T6H4SF6GDZDT509ABK
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-refresh-callback
+        timestamp: 2026-10-01T06:00:48.198Z
+      - _ulid: 01M3V0T5Z3CBK2WC4T1RAX2DNW
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-scope
+        timestamp: 2026-10-01T06:00:48.355Z
+      - _ulid: 01M3V0T63F8ESSZQ43R3KZY7YX
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: current-frontend-regressions
+        timestamp: 2026-10-01T06:00:48.495Z
+      - _ulid: 01M3V0T67XSBVTMM0HK8DAMKE6
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: real-css-layout
+        timestamp: 2026-10-01T06:00:48.637Z
+      - _ulid: 01M3V0T6CGP0HX40T2QHRBFXD1
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: release-device-acceptance
+        timestamp: 2026-10-01T06:00:48.784Z
     examined_commit: 96b6bf7f7c22e951ba043e151729b1786cbd85f5
     external_links: []
     lifecycle_state: open
@@ -6326,7 +6456,7 @@ reviews:
       base_branch: main
       base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
       head_branch: fix/settings-continue-watching
-      head_commit: 96b6bf7f7c22e951ba043e151729b1786cbd85f5
+      head_commit: cffebce4ac177d977b3d248226381bcd8cbdacda
     threads:
       - _ulid: 01M3V0NWTGFCPNP6SKDWSJ8TFP
         anchor:
@@ -6349,7 +6479,19 @@ reviews:
               Close only if current selected locator still matches captured locator; add
               deferred404/new-selection behavior case. No product edits by reviewer."
             created_at: 2026-10-01T05:58:27.921Z
+          - _ulid: 01M3V0T5AY1Z3P05V09X7KJFP7
+            author: DonutsDelivery
+            body: "Fixed at cffebce4ac177d977b3d248226381bcd8cbdacda: close requires exact match between current
+              selection ref and captured locator. Reviewer independently executes actual committed
+              callback: normal standalone authoritative refresh leaves filtered gallery unchanged;
+              deferred old404 after a newer selection preserves newer locator. Both pass in
+              /tmp/settings-playback-refresh-proof.mjs. New retained actual component regression
+              waits refreshed gallery label to prove deferred refresh settled before asserting
+              player remains open."
+            created_at: 2026-10-01T06:00:47.710Z
         kind: blocker
+        resolved_at: 2026-10-01T06:00:47.878Z
+        resolved_by: DonutsDelivery
       - _ulid: 01M3V0NWYNPB1GH64TAP3RMXJV
         entries:
           - _ulid: 01M3V0NWYNJXSV2S5Q5DX3VJQD
@@ -6363,7 +6505,19 @@ reviews:
               independently read, but current96 new regression requires current-head verification."
             created_at: 2026-10-01T05:58:28.053Z
         kind: nit
+      - _ulid: 01M3V0T5MKN799QPH5RWRV0HT7
+        entries:
+          - _ulid: 01M3V0T5MK56MY9PGVQ7ZEZH9X
+            author: DonutsDelivery
+            body: Final source inspected clean at cffebce4ac177d977b3d248226381bcd8cbdacda. Actual branch is
+              fix/settings-and-continue-watching (initial review head-branch text was abbreviated
+              incorrectly); authoritative code subject is exact
+              fb9e65beb825ded9e101264dca21c14985461f7c..cffebce4ac177d977b3d248226381bcd8cbdacda. No
+              remaining source blockers found; final verdict still waits current-head frontend
+              suite. Reviewer did not edit product code/tests or launch builds.
+            created_at: 2026-10-01T06:00:48.019Z
+        kind: nit
     verdicts: []
     created_at: 2026-10-01T05:58:27.429Z
-    updated_at: 2026-10-01T05:58:28.475Z
+    updated_at: 2026-10-01T06:00:48.742Z
     notes: []
