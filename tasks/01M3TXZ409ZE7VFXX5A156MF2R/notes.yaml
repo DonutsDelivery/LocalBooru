@@ -1,1 +1,14 @@
-notes: []
+notes:
+  - _ulid: 01M3TY258YPJKPRR56BW6Q21FT
+    content: Mac Apple Silicon macOS26.6.2 reachable at donutstudio-mac. Source archive exact
+      main0d28e2803ea602385276cf84571a34349fc614c9
+      hash5c3eddaf37db5b29818ab77f908fc553ef291adaf25ec80354605f892cbb734e staged/verified in
+      ~/LocalBooru-builds/dmc-0d28e2803ea6. Canonical scripts/build-macos-ci.sh queued through
+      Python fcntl host-wide lock ~/.local/state/host-heavy-build/heavy-build.lock, jobs2, existing
+      compilers absent. Existing /Applications/LocalBooru.app version2.0.3 owned by user will be
+      replaced in place after all wrapper verification. macOS SSH lacks Desktop permission, shortcut
+      itself cannot be inspected. Build PID64568; log outside repo
+      ~/LocalBooru-builds/dmc-0d28e2803ea6-build.log.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T05:12:44.062Z
