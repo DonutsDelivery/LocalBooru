@@ -13044,7 +13044,8 @@
     },
     "donut_workflow": {
       "name": "Donut Create · v5",
-      "release": "V5"
+      "release": "V5",
+      "controls_revision": 1
     },
     "donut_tone_lab_v1": {
       "node_id": 1181,

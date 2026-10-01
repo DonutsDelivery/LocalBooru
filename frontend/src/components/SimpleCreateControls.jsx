@@ -41,7 +41,7 @@ function displayNumber(value) {
   return Math.abs(rounded - value) <= Number.EPSILON * Math.abs(value) * 8 ? rounded : value
 }
 
-function SliderNumberField({ label, value, bounds, sliderBounds, disabled, onChange, onCommit, onInteraction, className = '', context = '' }) {
+function SliderNumberField({ label, value, bounds, sliderBounds, sliderStep, disabled, onChange, onCommit, onInteraction, className = '', context = '' }) {
   const id = useId()
   const [pending, setPending] = useState(false)
   const dirty = useRef(false)
@@ -49,8 +49,12 @@ function SliderNumberField({ label, value, bounds, sliderBounds, disabled, onCha
   const committing = useRef(false)
   const finishRequested = useRef(false)
   const mounted = useRef(true)
-  const min = sliderBounds ? Math.max(bounds.min ?? sliderBounds[0], sliderBounds[0]) : bounds.min
-  const max = sliderBounds ? Math.min(bounds.max ?? sliderBounds[1], sliderBounds[1]) : bounds.max
+  const rangeStep = sliderStep ?? bounds.step
+  const lower = sliderBounds ? Math.max(bounds.min ?? sliderBounds[0], sliderBounds[0]) : bounds.min
+  const upper = sliderBounds ? Math.min(bounds.max ?? sliderBounds[1], sliderBounds[1]) : bounds.max
+  // Align range endpoints to zero so native steps include exact whole values.
+  const min = rangeStep > 0 && Number.isFinite(lower) ? Number((Math.ceil(lower / rangeStep - 1e-8) * rangeStep).toFixed(8)) : lower
+  const max = rangeStep > 0 && Number.isFinite(upper) ? Number((Math.floor(upper / rangeStep + 1e-8) * rangeStep).toFixed(8)) : upper
   const hasSlider = Number.isFinite(min) && Number.isFinite(max) && max > min
   const numeric = value === '' ? NaN : Number(value)
   const outside = hasSlider && Number.isFinite(numeric) && (numeric < min || numeric > max)
@@ -108,12 +112,19 @@ function SliderNumberField({ label, value, bounds, sliderBounds, disabled, onCha
     <label htmlFor={`${id}-number`}>{label}</label>
     <div className="create-slider-inputs">
       {hasSlider && <input type="range" aria-label={`${label} slider${context ? ` for ${context}` : ''}`} aria-describedby={outside ? `${id}-range-note` : undefined}
-        value={displayNumber(sliderValue)} min={min} max={max} step={bounds.step ?? 'any'} disabled={disabled || pending}
+        value={displayNumber(sliderValue)} min={min} max={max} step={sliderStep ?? bounds.step ?? 'any'} disabled={disabled || pending}
         onPointerDown={begin}
         onPointerUp={finish} onPointerCancel={finish} onLostPointerCapture={finish} onBlur={finish}
         onKeyDown={event => { if (SLIDER_KEYS.has(event.key)) begin() }}
         onKeyUp={event => { if (SLIDER_KEYS.has(event.key)) finish() }}
-        onInput={event => change(event.currentTarget.value, true)} />}
+        onInput={event => {
+          const raw = Number(event.currentTarget.value)
+          const step = sliderStep ?? bounds.step ?? 0.01
+          const snapped = Math.round(raw / step) * step
+          const whole = Math.round(snapped)
+          const next = sliderStep >= 0.05 && Math.abs(snapped - whole) < 0.021 ? whole : Number(snapped.toFixed(8))
+          change(Math.min(bounds.max ?? Infinity, Math.max(bounds.min ?? -Infinity, next)), true)
+        }} />}
       <input id={`${id}-number`} type="number" value={displayNumber(value)} min={bounds.min ?? undefined} max={bounds.max ?? undefined}
         step={bounds.step ?? 'any'} disabled={disabled || pending} onChange={event => change(event.target.value)} onBlur={finish} />
     </div>
@@ -138,6 +149,7 @@ export default function SimpleCreateControls({
   const [inputError, setInputError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [lowerTab, setLowerTab] = useState('models')
+  const [lowerExpanded, setLowerExpanded] = useState(false)
   const [sliding, setSliding] = useState(false)
   const draftRef = useRef({})
   const sliderInteractions = useRef(new Set())
@@ -332,7 +344,7 @@ export default function SimpleCreateControls({
   function numberField(key, label = LABELS[key]) {
     if (!available(key)) return null
     const field = fields[key]
-    if (SLIDER_FIELDS.has(key)) return <SliderNumberField key={key} label={label} value={value(key)} bounds={field} disabled={locked}
+    if (SLIDER_FIELDS.has(key)) return <SliderNumberField key={key} label={label} value={value(key)} bounds={field} sliderStep={['megapixels', 'cropAX', 'cropAY', 'cropBX', 'cropBY', 'maskBThreshold'].includes(key) ? field.step : Math.max(field.step || 0, 0.05)} disabled={locked}
       onChange={next => stage(key, next)} onCommit={() => commitField(key)} onInteraction={sliderInteraction} />
     return <label className="create-field" key={key}>{label}
       <input type="number" value={displayNumber(value(key))} min={field.min ?? undefined} max={field.max ?? undefined} step={field.step ?? 'any'} disabled={locked}
@@ -431,7 +443,7 @@ export default function SimpleCreateControls({
         </select></label>
         {row.enabled !== false && ['model_weight', 'clip_weight'].map((key, strengthIndex) => <SliderNumberField key={key}
           className={`create-lora-strength create-lora-${strengthIndex === 0 ? 'model' : 'text'}-strength`} label={strengthIndex === 0 ? 'Model strength' : 'Text strength'} context={`LoRA ${index + 1}`}
-          value={row[key] ?? 1} bounds={{ min: bounds.min ?? -1000, max: bounds.max ?? 1000, step: bounds.step ?? 0.01 }} sliderBounds={[-2, 2]} disabled={locked}
+          value={row[key] ?? 1} bounds={{ min: bounds.min ?? -1000, max: bounds.max ?? 1000, step: bounds.step ?? 0.01 }} sliderBounds={[-2, 2]} sliderStep={0.05} disabled={locked}
           onChange={next => stage('loras', rows.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: next } : item))}
           onCommit={() => commitField('loras')} onInteraction={sliderInteraction} />)}
         <button type="button" className="create-lora-remove" disabled={locked} aria-label={`Remove LoRA ${index + 1}`} onClick={() => choose('loras', rows.filter((_, rowIndex) => rowIndex !== index))}>×</button>
@@ -450,7 +462,7 @@ export default function SimpleCreateControls({
   const lowerMode = mobilePane === 'history' ? 'history' : mobilePane === 'models' ? 'models' : lowerTab
 
   // Comfy widget steps are not based on HTML's min offset; commit validates authored drafts.
-  return <form className="create-simple-workspace" onSubmit={generate} noValidate>
+  return <form className={`create-simple-workspace${lowerExpanded ? ' create-lower-expanded' : ''}`}  onSubmit={generate} noValidate>
     <aside className="create-controls" aria-label="Image controls">
       <div className="create-control-tabs" role="tablist" aria-label="Studio controls">
         {['create', 'edit', 'tuning'].map(tab => <button type="button" role="tab" id={`create-tab-${tab}`} key={tab}
@@ -536,8 +548,8 @@ export default function SimpleCreateControls({
       </div>
     </aside>
     <section className={`create-lower-pane create-lower-${lowerMode}`} aria-label="Models and image history">
-      <div className="create-lower-tabs" role="tablist" aria-label="Models and history">{['models', 'history'].map(tab => <button type="button" role="tab" aria-selected={lowerMode === tab} key={tab} onClick={() => setLowerTab(tab)}>{tab === 'models' ? 'Models & LoRAs' : 'History'}</button>)}</div>
-      <div className="create-lower-scroll">{lowerMode === 'models' ? <div className="create-model-workspace">
+      <div className="create-lower-tabs" role="tablist" aria-label="Models and history">{['models', 'history'].map(tab => <button type="button" role="tab" aria-selected={lowerMode === tab} key={tab} onClick={() => { setLowerTab(tab); setLowerExpanded(true) }}>{tab === 'models' ? 'Models & LoRAs' : 'History'}</button>)}<button type="button" className="create-lower-collapse" aria-expanded={lowerExpanded} aria-controls="create-lower-content" aria-label={lowerExpanded ? 'Collapse models and history' : 'Expand models and history'} onClick={() => setLowerExpanded(previous => !previous)}>{lowerExpanded ? '⌄' : '⌃'}</button></div>
+      <div id="create-lower-content" className="create-lower-scroll">{lowerMode === 'models' ? <div className="create-model-workspace">
         {['modelMode', 'model'].some(available) && <section className="create-model-recipe"><h3>Model recipe</h3>{selectField('modelMode')}{selectField('model')}
           {merging && <>{selectField('secondaryModel')}{numberField('modelBlend')}<p className="create-control-note">Changing this blend applies one balance across the model. Advanced block weights stay intact until you change it.</p></>}
         </section>}{loraRows()}

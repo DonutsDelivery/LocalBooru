@@ -693,7 +693,8 @@
   let ready = false, ignoreInitialDefault = false;
   let defaultGraph;
   let lastError = '', parentOrigin = null, bridgeQueue = Promise.resolve(), queueAttempt = null;
-  let latestRun = {revision: 0, workflow: null}, loadedRunRevision = 0;
+  let latestRun = {revision: 0, workflow: null}, loadedRunRevision = 0, loadedRecipe = null;
+  let presetControlsRevision = null;
   let nodeInfo = {}, loraNames = [], lastQueuedPromptIds = [];
   const uploadedReferences = new Set();
   const uploadedMasks = new Map();
@@ -737,7 +738,9 @@
   async function preset() {
     const response = await fetch(new URL('workflow.json', base));
     if (!response.ok) throw new Error('The v5 workflow could not be loaded. Retry setup.');
-    return response.json();
+    const workflow = await response.json();
+    presetControlsRevision = workflow.extra?.donut_workflow?.controls_revision;
+    return workflow;
   }
   async function checkCapabilities() {
     // Inspect the serialized execution prompt, so promoted/subgraph bindings
@@ -797,7 +800,9 @@
   }
   async function finishLoad() {
     initialized = true;
-    try { await checkCapabilities(); await refreshFieldCatalogs(); lastError = ''; notice('Draft is saved locally for this backend.'); }
+    const workflow = (app.rootGraph || app.graph).serialize();
+    loadedRecipe = recipe(workflow);
+    try { if (presetControlsRevision === null) await preset(); await checkCapabilities(); await refreshFieldCatalogs(); lastError = ''; notice('Draft is saved locally for this backend.'); }
     catch (error) { showError(error); }
     saveDraft();
   }
@@ -960,6 +965,18 @@
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   const canonical = value => JSON.stringify(value, (key, item) => object(item)
     ? Object.fromEntries(Object.keys(item).sort().map(name => [name, item[name]])) : item);
+  const recipe = workflow => {
+    let normalized = workflow;
+    if (object(workflow?.extra) && object(workflow.extra.ds) && ('scale' in workflow.extra.ds || 'offset' in workflow.extra.ds)) {
+      const extra = {...workflow.extra}; delete extra.ds;
+      normalized = {...workflow, extra};
+    }
+    return JSON.stringify(normalized, function (key, item) {
+      // Canvas placement and collapsed panels do not change an executable recipe.
+      if (['pos', 'size', 'flags', 'order', 'color', 'bgcolor'].includes(key) && typeof this?.type === 'string' && this.id != null) return undefined;
+      return object(item) ? Object.fromEntries(Object.keys(item).sort().map(name => [name, item[name]])) : item;
+    });
+  };
   const graphNodes = graph => graph?.nodes || graph?._nodes || [];
 
   function liveNodes(graph = app?.rootGraph || app?.graph, seen = new Set()) {
@@ -1146,11 +1163,15 @@
   }
   function snapshot() {
     const current = bindings();
+    const metadata = (app?.rootGraph || app?.graph)?.extra?.donut_workflow;
+    const loadedControlsRevision = metadata?.release === 'V5' ? metadata.controls_revision : null;
     return {ready: Boolean(ready && initialized && !loading),
       fields: Object.fromEntries(Object.keys(basicFields).map(key => [key, descriptor(key, current[key])])),
       lastQueuedPromptIds: [...lastQueuedPromptIds],
-      workflowUpgradeAvailable: Boolean(current.prompt && resolveControl([1014])
-        && (!current.facePrompt || !current.toneStrength || !current.upscale2Scale || !resolveControl([1014, 1180]))),
+      // Missing optional controls do not prove an update, especially in custom graphs.
+      workflowUpgradeAvailable: Boolean(ready && initialized && !loading
+        && Number.isSafeInteger(loadedControlsRevision) && loadedControlsRevision >= 0
+        && Number.isSafeInteger(presetControlsRevision) && presetControlsRevision > loadedControlsRevision),
       latestRunRevision: latestRun.revision, latestAvailable: latestRun.revision > loadedRunRevision,
       ...(lastError ? {error: lastError} : {})};
   }
@@ -1511,9 +1532,12 @@
         let mutationChanged;
         if (message.action === 'snapshot' && initialized && !loading && !queueAttempt) {
           const latest = await readLatest(true);
-          if (latest.revision > latestRun.revision) {
-            latestRun = latest;
-            notice('A newer run is available in this workspace. Load it from the basic controls to replace this draft.');
+          if (latest.revision > latestRun.revision || (latest.revision > loadedRunRevision && !latestRun.workflow)) {
+            const full = await readLatest();
+            latestRun = full;
+            const signature = full.workflow ? recipe(full.workflow) : null;
+            if (signature && (signature === loadedRecipe || signature === recipe((app.rootGraph || app.graph).serialize()))) loadedRunRevision = full.revision;
+            else notice('A newer run is available in this workspace. Load it from the basic controls to replace this draft.');
           }
         }
         else if (message.action === 'patch') mutationChanged = await applyPatch(message.payload);
@@ -1583,9 +1607,19 @@
         if (result?.prompt_id) {
           lastQueuedPromptIds = [...new Set([...lastQueuedPromptIds, result.prompt_id])].slice(-128);
           try {
-            const latest = await readLatest();
-            if (latest.workflow && canonical(latest.workflow) === canonical(args[1]?.workflow)) loadedRunRevision = latest.revision;
-            latestRun = {revision: latest.revision, workflow: null};
+            const revision = result.dmc_workflow_revision;
+            if (Number.isSafeInteger(revision) && revision >= 0) {
+              loadedRunRevision = Math.max(loadedRunRevision, revision);
+              latestRun = {revision: Math.max(latestRun.revision, revision), workflow: null};
+              loadedRecipe = recipe(args[1]?.workflow || (app.rootGraph || app.graph).serialize());
+            } else {
+              const latest = await readLatest();
+              if (latest.workflow && recipe(latest.workflow) === recipe(args[1]?.workflow)) {
+                loadedRunRevision = latest.revision;
+                loadedRecipe = recipe(latest.workflow);
+              }
+              latestRun = latest;
+            }
           }
           catch (error) { showError(error); }
         }
