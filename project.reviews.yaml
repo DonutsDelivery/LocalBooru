@@ -6335,6 +6335,22 @@ reviews:
         required: false
         created_at: 2026-10-01T06:00:48.742Z
         completed_at: 2026-10-01T06:00:48.742Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+          head_commit: cffebce4ac177d977b3d248226381bcd8cbdacda
+        evidence: "Reviewer independently read ~/LocalBooru-builds/dmc-cffebce-build.log via SSH: line2
+          acquired host token source cffebce4ac177d977b3d248226381bcd8cbdacda; node162/162 pass zero
+          failures; Vitest47/47 across8 files, including all5 GalleryContinueWatching cases and
+          existing22 CreateStudioHost cases. Retained scan refresh and stale404/newer-selection
+          tests pass. Duplicate Linux focused suite is unnecessary for code approval;
+          packaging/Rust/runtime/install remain separate acceptance."
+        name: current-frontend-regressions
+        required: true
+        runner: canonical-mac-wrapper-log-inspected
+        created_at: 2026-10-01T06:06:58.423Z
+        completed_at: 2026-10-01T06:06:58.423Z
     events:
       - _ulid: 01M3V0NWB4E7T0REV103KPCHDP
         actor: DonutsDelivery
@@ -6446,9 +6462,40 @@ reviews:
           status: skipped
           name: release-device-acceptance
         timestamp: 2026-10-01T06:00:48.784Z
+      - _ulid: 01M3V15FD11P85WZW7A00NW5HF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: current-frontend-regressions
+        timestamp: 2026-10-01T06:06:58.465Z
+      - _ulid: 01M3V15FK0TBAPTD06F98WH7NJ
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3V15FH6SWNYMVW2BX1KTWQQ
+        timestamp: 2026-10-01T06:06:58.656Z
+      - _ulid: 01M3V15FQP48K89QRPX97HZNVX
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+            head_commit: cffebce4ac177d977b3d248226381bcd8cbdacda
+          decision: approve
+        timestamp: 2026-10-01T06:06:58.806Z
+      - _ulid: 01M3V15FQPHC14MPWSPPJRJT6R
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T06:06:58.806Z
     examined_commit: 96b6bf7f7c22e951ba043e151729b1786cbd85f5
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@settings-continue-watching"
     subject:
@@ -6517,7 +6564,28 @@ reviews:
               suite. Reviewer did not edit product code/tests or launch builds.
             created_at: 2026-10-01T06:00:48.019Z
         kind: nit
-    verdicts: []
+      - _ulid: 01M3V15FH6SWNYMVW2BX1KTWQQ
+        entries:
+          - _ulid: 01M3V15FH6JZCBTYTNM0GR63QF
+            author: DonutsDelivery
+            body: Final approval examines clean exact cffebce4ac177d977b3d248226381bcd8cbdacda against
+              fb9e65beb825ded9e101264dca21c14985461f7c. Required source, independently executed
+              callback, exact-head frontend regressions and attributed real-CSS browser checks pass.
+              No unresolved source blockers. Native package/install and actual user media playback
+              are not claimed verified; parent manages remaining operational checks. Review metadata
+              examined_commit and abbreviated branch label are stale CLI fields already clarified;
+              current subject hashes and fresh version-bound evidence are authoritative.
+            created_at: 2026-10-01T06:06:58.598Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+          head_commit: cffebce4ac177d977b3d248226381bcd8cbdacda
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-01T06:06:58.806Z
     created_at: 2026-10-01T05:58:27.429Z
-    updated_at: 2026-10-01T06:00:48.742Z
+    updated_at: 2026-10-01T06:06:58.806Z
     notes: []
