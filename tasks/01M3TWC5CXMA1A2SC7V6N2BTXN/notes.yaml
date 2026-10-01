@@ -47,3 +47,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T05:33:12.077Z
+  - _ulid: 01M3TZBXYYHMT9PG8VBB7DC9M3
+    content: "Operational artifact task: source built is main0d28e2803ea602385276cf84571a34349fc614c9
+      (not original checkout splice head automatically linked by task submit). Build/log receipt
+      /tmp/electron-tmp/dmc-apk-redmi-20261001/android-build.log; signed artifact
+      /home/user/Programs/Claude Projects/dmc-main/DonutMediaCenter.apk. Share RPC accepted; actual
+      Downloads receipt unverified because SFTP unavailable."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T05:35:32.831Z
