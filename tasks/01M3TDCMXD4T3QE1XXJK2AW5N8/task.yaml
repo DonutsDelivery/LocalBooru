@@ -1,0 +1,32 @@
+_ulid: 01M3TDCMXD4T3QE1XXJK2AW5N8
+slugs:
+  - create-preview-zoom
+title: Expand creator preview and add actual-size zoom
+type: task
+description: Allow fit,100%actual-pixel zoom,zoom in/out and pan in output/live preview; reclaim
+  vertical space via collapsible model/history pane and compact preview heading while preserving
+  mobile usability and errors.
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-01T00:21:22.069Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-01T00:21:22.069Z
+created_at: 2026-10-01T00:21:21.965Z
+started_at: 2026-10-01T00:21:22.069Z
+todos: []

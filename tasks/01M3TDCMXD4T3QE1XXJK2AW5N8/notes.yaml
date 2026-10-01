@@ -1,0 +1,11 @@
+notes:
+  - _ulid: 01M3TDCN4R5YZ0W5SN79VMH237
+    content: "Approach: inspect existing lightbox zoom/pan and editor image transforms; use a scoped
+      output viewer supporting Fit/100%/zoom and pan, stable preview identity across live frames, no
+      editing/generation mutation. Bottom pane collapsible on desktop with models/history tabs
+      reopening it; mobile full panel preserved. Compact heading and preview padding. Focused
+      component regression plus disposable viewer interaction/geometry checks; keep native build
+      writer for prior fixes undisturbed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T00:21:22.200Z
