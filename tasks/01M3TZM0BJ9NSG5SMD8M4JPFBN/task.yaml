@@ -12,12 +12,24 @@ description: User reports Watch Directories collapses to zero-height after move 
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 3
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-01T05:39:58.653Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-01T05:39:58.654Z
 created_at: 2026-10-01T05:39:57.426Z
+started_at: 2026-10-01T05:39:58.653Z
 todos: []
