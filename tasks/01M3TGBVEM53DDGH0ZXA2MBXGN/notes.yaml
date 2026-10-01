@@ -30,3 +30,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T01:28:18.076Z
+  - _ulid: 01M3THA04GH4V39MBR489ZGRBS
+    content: Independent exactb1786c5 review@review-create-actions-layout is closed/approved/gatepassing
+      with independent23/23; no blockers. Integratedmainf5f8f5ee68689d10b0c164b0c9350034936bce92 and
+      pushedoriginmain. Native install wrapper started only after prior writers exited; userapp
+      stays open during build. Completion awaits install/hash/reopen receipt.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T01:29:49.457Z
