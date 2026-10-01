@@ -1,1 +1,12 @@
-notes: []
+notes:
+  - _ulid: 01M3WFQRRHXZ6R54NDAM42R6ZP
+    content: Source ~/.cache/localbooru/builds 96141264KiB (~92GiB), root889MiBfree;
+      targetstorage354GiBfree. Hostgateheld through
+      copy/fullchecksumverification/symlinkpathswitch/removingverifiedoldcache.
+      ExistingLOCALBOORU_DEV_TARGET_DIR will persist via dedicateduserenvfile, bashstartupsource and
+      systemduserenvironment so cleanup usesrealpath (symlinkguardpreserved).
+      Allcachefilesoutsidegit; no productsourcechanges/userappclose/build. Processsession57281
+      copyactive; log/tmp/dmc-cache-move.log.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T19:40:52.370Z
