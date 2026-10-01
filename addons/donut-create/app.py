@@ -863,6 +863,10 @@ class Controller:
                                                 "references": list(session["references"]),
                                                 "masks": list(session["masks"])}
             self.persist()
+            if workflow is not None:
+                # Acknowledge this exact accepted run, before another device can submit.
+                response = httpx.Response(response.status_code, json={**response.json(),
+                    "dmc_workflow_revision": session["latest_run_revision"]})
         return response
 
     async def cancel(self, session: dict[str, Any], requested: set[str] | None = None) -> dict[str, Any]:
