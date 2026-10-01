@@ -1693,3 +1693,17 @@ tasks:
     created_at: 2026-10-01T02:34:46.007Z
     started_at: 2026-10-01T02:34:46.125Z
     submitted_at: 2026-10-01T03:08:09.271Z
+  - _ulid: 01M3TQXJFV5GR6VG2Q9ACZYNBF
+    slugs:
+      - create-exclusive-output
+    title: Avoid duplicate permanent creator outputs
+    type: bug
+    spec_ref: "@donut-create-plugin"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 3
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-01T03:25:22.299Z

@@ -1,0 +1,20 @@
+_ulid: 01M3TQXJFV5GR6VG2Q9ACZYNBF
+slugs:
+  - create-exclusive-output
+title: Avoid duplicate permanent creator outputs
+type: bug
+description: User requests one permanent output destination. ComfyUI saves must not auto-copy to
+  DMC; DMC/unsaved runs use temporary backend staging. Preserve owned preview/history, graph
+  metadata and explicit manual saves.
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-10-01T03:25:22.299Z
+todos: []
