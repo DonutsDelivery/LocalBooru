@@ -1,0 +1,23 @@
+_ulid: 01M3TZM0BJ9NSG5SMD8M4JPFBN
+slugs:
+  - settings-continue-watching
+title: Fix Settings directory clipping and Continue Watching playback
+type: bug
+description: User reports Watch Directories collapses to zero-height after move into Settings;
+  Continue Watching click only hides sidebar when item is outside loaded gallery; Clear All is
+  covered by floating Select. Restore directory natural height with parent Settings scroll, isolate
+  migration directory styles, open fully hydrated exact-identity history item without altering
+  gallery scope, prevent header action overlap. Focused layout and integration regression checks,
+  integrate main and refresh requested builds.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-10-01T05:39:57.426Z
+todos: []
