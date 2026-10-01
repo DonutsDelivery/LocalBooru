@@ -164,6 +164,23 @@ describe('Donut Create studio', () => {
     expect(screen.getByText('1 active')).toBeTruthy()
   })
 
+  test('does not let an older session poll reopen an acknowledged cancellation', async () => {
+    const oldPoll = deferred()
+    api.apiClient.get.mockImplementation(async url => ({ data: url.endsWith('/status') ? status : await oldPoll.promise }))
+    api.apiClient.post.mockImplementation(async url => ({ data: url.endsWith('/cancel')
+      ? { cancelled: ['owned-job'], session: { ...session, jobs: [{ id: 'owned-job', status: 'cancelled' }] } }
+      : session }))
+    render(<CreateStudioHost />)
+    openStudio()
+    const cancel = await screen.findByRole('button', { name: 'Cancel studio jobs' })
+    await waitFor(() => expect(api.apiClient.get.mock.calls.some(([url]) => url.includes('/sessions/'))).toBe(true))
+    fireEvent.click(cancel)
+    await screen.findByText('cancelled')
+    await act(async () => { oldPoll.resolve(session); await oldPoll.promise })
+    expect(screen.getByText('cancelled')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Cancel studio jobs' })).toBeNull()
+  })
+
   test('keeps window controls and notifications interactive while the gallery is inert', async () => {
     const windowAction = vi.fn()
     const { container } = render(<>
