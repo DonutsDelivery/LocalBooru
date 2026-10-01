@@ -6589,3 +6589,161 @@ reviews:
     created_at: 2026-10-01T05:58:27.429Z
     updated_at: 2026-10-01T06:06:58.806Z
     notes: []
+  - _ulid: 01M3V231MGVPTY7S9N5A2HT66G
+    slugs:
+      - review-mac-current-install
+    title: Current Mac native build and installed bundle operational audit
+    author: DonutsDelivery
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: ~/LocalBooru-builds/dmc-cffebce-build.log identifies exact cff source, host-token
+          acquisition, Node162/162, component47/47, Rust219/219, cargo check and universal release
+          completion. dmc-cffebce.exit=0 and log Build exit:0. Process inventory shows no native
+          Cargo/Rust/ninja writer during audit.
+        name: canonical-build
+        required: true
+        runner: independent-ssh-log-audit
+        created_at: 2026-10-01T06:23:08.149Z
+        completed_at: 2026-10-01T06:23:08.149Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "lipo installed executable: x86_64 arm64. codesign --verify --deep --strict valid and
+          designated requirement satisfied; signature is ad hoc/runtime. DMG and ZIP shasum -a256 -c
+          SHA256SUMS-macOS pass; canonical log also hdiutil checksum valid and ZIP compressed-data
+          verification pass. Installed executable
+          SHA256968b6333d4e335d6274371e376aaca3e2d13a322cac664ee50f88d5c8526c720 exactly equals
+          packaged executable."
+        name: bundle-and-artifact-integrity
+        required: true
+        runner: independent-ssh-native-tools
+        created_at: 2026-10-01T06:23:08.311Z
+        completed_at: 2026-10-01T06:23:08.311Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: /Applications/LocalBooru.app plist2.0.5, identifier com.localbooru.app, bundle
+          inode16553666 matches preserved-target receipt. ps confirms live PID80580 exact
+          /Applications/LocalBooru.app/Contents/MacOS/localbooru (not prior build-tree process).
+          Installer receipt records preserved directory identity and normal prior DMC quit/reopen.
+          No user media/settings copied according to scoped install log and receipt.
+        name: installed-target-and-runtime
+        required: true
+        runner: independent-ssh-plist-stat-ps
+        created_at: 2026-10-01T06:23:08.455Z
+        completed_at: 2026-10-01T06:23:08.455Z
+      - status: skipped
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Desktop alias itself cannot be inspected because SSH Desktop access was TCC-blocked.
+          Existing target path, bundle directory inode and identifier preserved. No real user-media
+          playback, settings/profile functional test or GPU execution claimed. These do not block
+          requested packaging/replacement/runtime-presence operational acceptance.
+        name: shortcut-and-functional-profile
+        required: false
+        created_at: 2026-10-01T06:23:08.599Z
+        completed_at: 2026-10-01T06:23:08.599Z
+    events:
+      - _ulid: 01M3V231MG2VF7RJ3GD6KE655C
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T06:23:07.408Z
+      - _ulid: 01M3V2323P2X261NQTK92G4SE4
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T06:23:07.895Z
+      - _ulid: 01M3V2328A8HZ9VAQNV2NGJCW9
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3V23274PVAYPBY23B60C9BW
+        timestamp: 2026-10-01T06:23:08.043Z
+      - _ulid: 01M3V232DE964YH0NTKGH0DFMP
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: canonical-build
+        timestamp: 2026-10-01T06:23:08.206Z
+      - _ulid: 01M3V232HXWX39MY6DDRG574SP
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: bundle-and-artifact-integrity
+        timestamp: 2026-10-01T06:23:08.349Z
+      - _ulid: 01M3V232PERV1H4XM8HQ3VQYRD
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: installed-target-and-runtime
+        timestamp: 2026-10-01T06:23:08.494Z
+      - _ulid: 01M3V232TZP0MS8BRT4VZQ7W1D
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: shortcut-and-functional-profile
+        timestamp: 2026-10-01T06:23:08.639Z
+      - _ulid: 01M3V232ZGAYRQ8P4APFND1NE1
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: approve
+        timestamp: 2026-10-01T06:23:08.784Z
+      - _ulid: 01M3V232ZGD7XNEY0Q04TEX7ZW
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T06:23:08.784Z
+    examined_commit: cffebce4ac177d977b3d248226381bcd8cbdacda
+    external_links: []
+    lifecycle_state: closed
+    related_refs: []
+    subject:
+      type: task
+      content_hash: ""
+      ref: "@mac-current-install"
+      shadow_commit: ""
+    threads:
+      - _ulid: 01M3V23274PVAYPBY23B60C9BW
+        entries:
+          - _ulid: 01M3V23274JQ2CWQRPXGBPHF17
+            author: DonutsDelivery
+            body: Operational task audited against actual built cffebce4ac177d977b3d248226381bcd8cbdacda,
+              integrated main e769ac7842c682e29fa6af8c9a685ce2987d2b60. Reviewer independently
+              confirms both commits have identical tree e2d91c10b1f86fcf78fccedc65f8326b2712a377.
+              Automatic submission linkage4235aeb refers to unrelated original checkout and is not
+              built provenance. Read-only SSH inspection; no builds, application changes or
+              profile/media tests performed by reviewer.
+            created_at: 2026-10-01T06:23:08.004Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-01T06:23:08.784Z
+    created_at: 2026-10-01T06:23:07.408Z
+    updated_at: 2026-10-01T06:23:08.784Z
+    notes: []
