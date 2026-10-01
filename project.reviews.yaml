@@ -6947,3 +6947,162 @@ reviews:
     created_at: 2026-10-01T06:36:45.105Z
     updated_at: 2026-10-01T06:36:52.645Z
     notes: []
+  - _ulid: 01M3WK13PEP46FNAYY37DQ5W0S
+    slugs:
+      - review-move-dmc-build-cache
+    title: Build cache relocation operational audit
+    author: DonutsDelivery
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "Reviewed actual script: original kept until rsync -aH checksum dry-run comparison with
+          empty itemized diff; verification failure prevents switch. Rename original then symlink
+          with rollback on symlink failure. Settings publication precedes removal of exact renamed
+          cache. Execution log and final receipt confirm fullchecksum pass, legacy destination and
+          original removal. Source96141264KiB; reusable cache data remained outside repository."
+        name: copy-verification-and-safe-switch
+        required: true
+        runner: script-log-receipt-audit
+        created_at: 2026-10-01T20:38:25.501Z
+        completed_at: 2026-10-01T20:38:25.501Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Independent readlink confirms ~/.cache/localbooru/builds ->
+          /mnt/storage/Projects/extra_storage/localbooru/builds. Legacy and destination dev-target
+          both stat64512:107548861, proving same directory target. builds-before-storage-move
+          absent. Root available133740666880bytes at independent audit, receipt
+          originally135079510016bytes; live compiler activity after migration explains ongoing
+          normal cache use, not operation failure.
+        name: destination-and-legacy-path
+        required: true
+        runner: readlink-stat-and-filesystem-inspection
+        created_at: 2026-10-01T20:38:25.670Z
+        completed_at: 2026-10-01T20:38:25.670Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Independent fresh bash login printenv, systemctl --user show-environment,
+          ~/.config/localbooru/build-cache.env and environment.d/60-localbooru-build-cache.conf all
+          resolve LOCALBOORU_DEV_TARGET_DIR to external builds/dev-target. Both .bash_profile and
+          .bashrc load dedicated config. Legacy symlink preserves callers with default path. No
+          compiler needed for migration acceptance.
+        name: persistent-target-setting
+        required: true
+        runner: bash-login-and-systemd-user-environment
+        created_at: 2026-10-01T20:38:25.845Z
+        completed_at: 2026-10-01T20:38:25.845Z
+      - status: skipped
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: A future compiler cache-reuse run is not performed by reviewer and is unnecessary for
+          copy/path/environment acceptance. No user-profile/media functional testing claimed. Other
+          DonutStudio writer remains preserved, queued product checks wait its gate.
+        name: future-build-and-profile-functionality
+        required: false
+        created_at: 2026-10-01T20:38:26.017Z
+        completed_at: 2026-10-01T20:38:26.017Z
+    events:
+      - _ulid: 01M3WK13P2R02QPYX6FENB8A8D
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T20:38:24.194Z
+      - _ulid: 01M3WK14NE21WJEVPHZW8YW482
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T20:38:25.199Z
+      - _ulid: 01M3WK14V37MPR8P9FB3J97JRS
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3WK14SPPPYYDMZCKGZGAQPF
+        timestamp: 2026-10-01T20:38:25.379Z
+      - _ulid: 01M3WK1509TS07ASN9M46J55BW
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: copy-verification-and-safe-switch
+        timestamp: 2026-10-01T20:38:25.545Z
+      - _ulid: 01M3WK155M9W0MW15DTDM1X4CG
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: destination-and-legacy-path
+        timestamp: 2026-10-01T20:38:25.716Z
+      - _ulid: 01M3WK15B0FKGK1HRFSYD4SBHR
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: persistent-target-setting
+        timestamp: 2026-10-01T20:38:25.888Z
+      - _ulid: 01M3WK15GGS7H3WCBNTM0TBK7G
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: future-build-and-profile-functionality
+        timestamp: 2026-10-01T20:38:26.064Z
+      - _ulid: 01M3WK15P44CMKD3N6DX4Z15ST
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: approve
+        timestamp: 2026-10-01T20:38:26.244Z
+      - _ulid: 01M3WK15P4KBR5HWJ0NFW813J2
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T20:38:26.244Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: closed
+    related_refs: []
+    subject:
+      type: task
+      content_hash: ""
+      ref: "@move-dmc-build-cache"
+      shadow_commit: ""
+    threads:
+      - _ulid: 01M3WK14SPPPYYDMZCKGZGAQPF
+        entries:
+          - _ulid: 01M3WK14SPZ140CVAVHV3CMNB5
+            author: DonutsDelivery
+            body: Read-only operational audit of /tmp/dmc-cache-move.py
+              SHA256c5796742e366d3733441b5a3ff03f8f6b959b48fb210c6c168e902c69e715c31, log
+              /tmp/dmc-cache-move.log and external cache-move-receipt.json
+              timestamp2026-10-01T20:31:12.763972+00:00. No product/source changes are part of
+              migration; automatic checkout submission4235 is not operation provenance. Reviewer did
+              not change environment/cache, run compilers, close apps, or interfere with other
+              active build.
+            created_at: 2026-10-01T20:38:25.334Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-01T20:38:26.244Z
+    created_at: 2026-10-01T20:38:24.206Z
+    updated_at: 2026-10-01T20:38:26.244Z
+    notes: []
