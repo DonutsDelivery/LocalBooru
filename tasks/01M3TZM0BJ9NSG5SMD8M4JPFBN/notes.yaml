@@ -19,3 +19,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T05:46:45.343Z
+  - _ulid: 01M3V02SRDTJCE5KFGY429JSGW
+    content: Exact clean source candidate dbf97e3b085c4f4f416697840a21e11565499a68 base fb9e65b (main
+      after reviewed Mac fixtures). Browser regression proved baseline listheight0, fix1630px
+      desktop/1590phone with first and last scrollreachable at titlebar32 desktop and phone;
+      clear/select no overlap. Focused initial Gallery+CreateGallery4/4 pass. Mac canonical wrapper
+      now verifies exact UI candidate; queued Linux full27-test host check waiting on unrelated
+      build.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T05:48:02.189Z

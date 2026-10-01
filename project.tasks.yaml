@@ -1752,7 +1752,7 @@ tasks:
     depends_on: []
     priority: 3
     tags: []
-    notes_count: 2
+    notes_count: 3
     todos_count: 0
     created_at: 2026-10-01T05:39:57.426Z
     started_at: 2026-10-01T05:39:58.653Z
