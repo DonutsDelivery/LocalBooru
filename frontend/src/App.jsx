@@ -582,6 +582,7 @@ function Gallery({ mediaType = 'image' }) {
   const [total, setTotal] = useState(() => cachedGalleryRef.current?.total || 0)
   const [filtersInitialized, setFiltersInitialized] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
+  const [lightboxFallbackImage, setLightboxFallbackImage] = useState(null)
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [lightboxSidebarHover, setLightboxSidebarHover] = useState(false)
@@ -624,6 +625,7 @@ function Gallery({ mediaType = 'image' }) {
         loadingMoreRef.current = false
         lightboxPaginationGenerationRef.current += 1
         setLightboxIndex(null)
+        setLightboxFallbackImage(null)
       }
     }
 
@@ -1010,6 +1012,8 @@ function Gallery({ mediaType = 'image' }) {
       updateImagesByLocator(previous, imageLocator, updates),
       currentSort
     ))
+    setLightboxFallbackImage(previous => (previous && imageMatchesLocator(previous, imageLocator)
+      ? updateImagesByLocator([previous], imageLocator, updates)[0] : previous))
     updateCurationImage(imageLocator, updates)
   }, [updateCurationImage, currentSort])
 
@@ -1044,6 +1048,13 @@ function Gallery({ mediaType = 'image' }) {
 
   // Handle image deletion from lightbox
   const handleImageDelete = useCallback((locator) => {
+    if (lightboxFallbackImage && imageMatchesLocator(lightboxFallbackImage, locator)
+      && !imagesRef.current.some(image => imageMatchesLocator(image, locator))) {
+      setLightboxIndex(null)
+      setLightboxFallbackImage(null)
+      if (window.history.state?.lightbox) window.history.back()
+      return
+    }
     setImages(prev => {
       const deletedIndex = prev.findIndex(image => imageMatchesLocator(image, locator))
       const newImages = prev.filter(image => !imageMatchesLocator(image, locator))
@@ -1057,7 +1068,7 @@ function Gallery({ mediaType = 'image' }) {
 
       return newImages
     })
-  }, [])
+  }, [lightboxFallbackImage])
 
   // Load tags
   const loadTags = useCallback(async () => {
@@ -1150,6 +1161,10 @@ function Gallery({ mediaType = 'image' }) {
       if (!galleryRequestOwnerRef.current.owns(request)) return false
 
       const currentLocator = authoritative ? lightboxIndexRef.current : null
+      const standaloneSelection = currentLocator && lightboxFallbackImage
+        && imageMatchesLocator(lightboxFallbackImage, currentLocator)
+        && !imagesRef.current.some(image => imageMatchesLocator(image, currentLocator))
+      let standaloneCurrentExists = false
       if (
         currentLocator
         && !result.images.some(image => imageIdentityKey(image) === imageIdentityKey(currentLocator))
@@ -1161,7 +1176,14 @@ function Gallery({ mediaType = 'image' }) {
             optional: true,
           })
           if (!galleryRequestOwnerRef.current.owns(request)) return false
-          result.images.push(canonical)
+          if (standaloneSelection) {
+            // Refresh a history selection without inserting it into the filtered gallery.
+            setLightboxFallbackImage(previous => previous && imageMatchesLocator(previous, currentLocator)
+              ? canonical : previous)
+            standaloneCurrentExists = true
+          } else {
+            result.images.push(canonical)
+          }
         } catch (error) {
           if (error?.response?.status !== 404) {
             console.error('Failed to verify current image after scan:', error)
@@ -1179,11 +1201,14 @@ function Gallery({ mediaType = 'image' }) {
         setPage(authoritative ? pageCount : 1)
         setHasMore(reconciled.images.length < result.total)
         publishedGalleryViewRef.current = galleryViewKey
-        if (authoritative && lightboxIndexRef.current && !reconciled.currentLocator) {
+        if (authoritative && lightboxIndexRef.current
+          && imageMatchesLocator(lightboxIndexRef.current, currentLocator)
+          && !reconciled.currentLocator && !standaloneCurrentExists) {
           loadingMoreRef.current = false
           lightboxPaginationGenerationRef.current += 1
           lightboxIndexRef.current = null
           setLightboxIndex(null)
+          setLightboxFallbackImage(null)
           if (window.history.state?.lightbox) {
             window.history.replaceState(null, '')
           }
@@ -1207,7 +1232,7 @@ function Gallery({ mediaType = 'image' }) {
       }
       return false
     }
-  }, [mediaType, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey])
+  }, [mediaType, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey, lightboxFallbackImage])
 
   refreshNewImagesRef.current = refreshNewImages
 
@@ -1504,6 +1529,7 @@ function Gallery({ mediaType = 'image' }) {
   const handleImageClick = (image) => {
     const locator = adjustmentLocator(image)
     window.history.pushState({ lightbox: true, locator }, '')
+    setLightboxFallbackImage(image)
     setLightboxIndex(locator)
     // Keep sidebar visible to show image details
   }
@@ -1523,6 +1549,7 @@ function Gallery({ mediaType = 'image' }) {
     } else {
       // Fallback: close directly if no history state (shouldn't normally happen)
       setLightboxIndex(null)
+      setLightboxFallbackImage(null)
     }
 
     // Use requestAnimationFrame to scroll after the lightbox closes and DOM updates
@@ -1728,6 +1755,11 @@ function Gallery({ mediaType = 'image' }) {
     setBatchActionLoading(false)
   }
 
+  const fallbackIsSelected = lightboxFallbackImage && imageMatchesLocator(lightboxFallbackImage, lightboxIndex)
+  const standaloneLightbox = fallbackIsSelected && !images.some(image => imageMatchesLocator(image, lightboxIndex))
+  const lightboxImages = standaloneLightbox ? [lightboxFallbackImage] : images
+  const currentLightboxImage = lightboxImages.find(image => imageMatchesLocator(image, lightboxIndex))
+
   return (
     <div
       className={`app gallery-view ${lightboxIndex !== null ? 'lightbox-active' : ''}`}
@@ -1773,7 +1805,7 @@ function Gallery({ mediaType = 'image' }) {
             setLightboxSidebarHover(false)
           }}
           currentTags={currentTags}
-          selectedImage={curation.active ? curation.current : (lightboxIndex !== null ? images.find(image => imageMatchesLocator(image, lightboxIndex)) : null)}
+          selectedImage={curation.active ? curation.current : (lightboxIndex !== null ? currentLightboxImage : null)}
           onSearch={handleSearch}
           initialTags={currentTags}
           initialRating={currentRating}
@@ -2139,9 +2171,9 @@ function Gallery({ mediaType = 'image' }) {
 
       {(lightboxIndex !== null || (curation.active && curation.current)) && !curation.complete && (
         <Lightbox
-          images={curation.active ? curation.queue : images}
-          currentIndex={curation.active ? 0 : images.findIndex(image => imageMatchesLocator(image, lightboxIndex))}
-          total={curation.active ? curation.queue.length : total}
+          images={curation.active ? curation.queue : lightboxImages}
+          currentIndex={curation.active ? 0 : lightboxImages.findIndex(image => imageMatchesLocator(image, lightboxIndex))}
+          total={curation.active ? curation.queue.length : standaloneLightbox ? 1 : total}
           onClose={curation.active ? curation.exit : handleLightboxClose}
           onNav={curation.active ? (() => {}) : handleLightboxNav}
           onTagClick={handleTagClick}

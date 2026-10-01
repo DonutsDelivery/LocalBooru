@@ -319,12 +319,12 @@
   background: var(--bg-hover, rgba(255,255,255,0.2));
 }
 
-.directory-list {
+.directory-selector .directory-list {
   max-height: 300px;
   overflow-y: auto;
 }
 
-.directory-item {
+.directory-selector .directory-item {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
@@ -334,19 +334,19 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.directory-item:last-child {
+.directory-selector .directory-item:last-child {
   border-bottom: none;
 }
 
-.directory-item:hover {
+.directory-selector .directory-item:hover {
   background: var(--bg-hover, rgba(255,255,255,0.05));
 }
 
-.directory-item.inaccessible {
+.directory-selector .directory-item.inaccessible {
   opacity: 0.7;
 }
 
-.directory-item input[type="checkbox"] {
+.directory-selector .directory-item input[type="checkbox"] {
   margin-top: 0.2rem;
   width: 18px;
   height: 18px;
@@ -355,7 +355,7 @@
   accent-color: var(--accent-color);
 }
 
-.directory-info {
+.directory-selector .directory-info {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -363,24 +363,24 @@
   gap: 0.2rem;
 }
 
-.directory-name {
+.directory-selector .directory-name {
   font-weight: 500;
   color: var(--text-primary);
 }
 
-.directory-path {
+.directory-selector .directory-path {
   font-size: 0.85rem;
   color: var(--text-muted);
   word-break: break-all;
   font-family: monospace;
 }
 
-.directory-stats {
+.directory-selector .directory-stats {
   font-size: 0.8rem;
   color: var(--text-muted);
 }
 
-.directory-warning {
+.directory-selector .directory-warning {
   font-size: 0.8rem;
   color: var(--warning-color, #ff9800);
   display: flex;
@@ -388,11 +388,11 @@
   gap: 0.25rem;
 }
 
-.directory-warning::before {
+.directory-selector .directory-warning::before {
   content: "\26A0";
 }
 
-.directory-summary {
+.directory-selector .directory-summary {
   padding: 0.75rem 1rem;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
@@ -400,7 +400,7 @@
   color: var(--text-muted);
 }
 
-.directory-summary strong {
+.directory-selector .directory-summary strong {
   color: var(--text-primary);
 }
 

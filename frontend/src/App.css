@@ -11,34 +11,16 @@
   width: 100%;
 }
 
+/* Settings owns scrolling; directory content must keep its natural height. */
 .directories-page {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  max-width: none;
   width: 100%;
-}
-
-.directories-page > h1,
-.directories-page > p,
-.directories-page > .directory-buttons,
-.directories-page > .directory-list-header {
-  flex-shrink: 0;
+  max-width: none;
 }
 
 .directories-page .directory-list {
-  flex: 1 1 0;
-  overflow-y: auto;
-  min-height: 0;
-  max-height: calc(100vh - var(--title-bar-height, 0px) - 280px);
-  padding-right: 8px;
+  max-height: none;
+  overflow: visible;
   margin-bottom: 20px;
-}
-
-.directories-page .empty-state {
-  flex: 1;
 }
 
 .page h1 {
