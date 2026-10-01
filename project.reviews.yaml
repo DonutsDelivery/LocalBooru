@@ -6223,3 +6223,147 @@ reviews:
     created_at: 2026-10-01T05:38:52.036Z
     updated_at: 2026-10-01T05:38:53.555Z
     notes: []
+  - _ulid: 01M3V0NWB58R31HCZF81PP2G9S
+    slugs:
+      - review-settings-continue-watching
+    title: Settings directories and Continue Watching playback review
+    author: DonutsDelivery
+    checks:
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+          head_commit: 96b6bf7f7c22e951ba043e151729b1786cbd85f5
+        evidence: Linux combined focused suite queued; current96 native archive planned. Prior
+          dbf45frontend/219Rust independently verified but not proof of newest extra regression/fix.
+          Required current-head evidence before verdict.
+        name: current-frontend-regressions
+        required: true
+        runner: host-gated-focused-and-native-wrapper
+        created_at: 2026-10-01T05:58:28.192Z
+        completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+          head_commit: 96b6bf7f7c22e951ba043e151729b1786cbd85f5
+        evidence: Parent real CSS T3 fixture reproduced baseline directory listheight0; corrected natural
+          list1630pxdesktop1590phone, first/last card outer-scroll reachable and ClearAll/Select
+          nonoverlap. Source CSS unchanged through96. This is attributed parent browser evidence,
+          not a source-text assertion.
+        name: real-css-layout
+        required: true
+        runner: parent-synthetic-browser
+        created_at: 2026-10-01T05:58:28.331Z
+        completed_at: 2026-10-01T05:58:28.331Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+          head_commit: 96b6bf7f7c22e951ba043e151729b1786cbd85f5
+        evidence: Build/install/runtime package acceptance remains parent release work. No local heavy
+          build, user app stop, GPU job or private library data used by reviewer.
+        name: release-device-acceptance
+        required: false
+        created_at: 2026-10-01T05:58:28.475Z
+        completed_at: 2026-10-01T05:58:28.475Z
+    events:
+      - _ulid: 01M3V0NWB4E7T0REV103KPCHDP
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T05:58:27.428Z
+      - _ulid: 01M3V0NWQ88D9MCT6W9171XF00
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T05:58:27.816Z
+      - _ulid: 01M3V0NWVK90RYECWBAE3SP9D7
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01M3V0NWTGFCPNP6SKDWSJ8TFP
+        timestamp: 2026-10-01T05:58:27.955Z
+      - _ulid: 01M3V0NWZT48QTYC8ESXXRN9PT
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3V0NWYNPB1GH64TAP3RMXJV
+        timestamp: 2026-10-01T05:58:28.090Z
+      - _ulid: 01M3V0NX45T0P7TYM4C1HGZRVG
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: current-frontend-regressions
+        timestamp: 2026-10-01T05:58:28.229Z
+      - _ulid: 01M3V0NX8KB4SPZGCVT3M5J3Q7
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: real-css-layout
+        timestamp: 2026-10-01T05:58:28.371Z
+      - _ulid: 01M3V0NXCZA83C3AYTK0PZCPDQ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: release-device-acceptance
+        timestamp: 2026-10-01T05:58:28.511Z
+    examined_commit: 96b6bf7f7c22e951ba043e151729b1786cbd85f5
+    external_links: []
+    lifecycle_state: open
+    related_refs:
+      - "@settings-continue-watching"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: fb9e65beb825ded9e101264dca21c14985461f7c
+      head_branch: fix/settings-continue-watching
+      head_commit: 96b6bf7f7c22e951ba043e151729b1786cbd85f5
+    threads:
+      - _ulid: 01M3V0NWTGFCPNP6SKDWSJ8TFP
+        anchor:
+          type: code
+          commit: 96b6bf7f7c22e951ba043e151729b1786cbd85f5
+          line_end: 1210
+          line_start: 1204
+          path: frontend/src/App.jsx
+          side: head
+        entries:
+          - _ulid: 01M3V0NWTGFBJX441PE3HCXRDX
+            author: DonutsDelivery
+            body: "An old authoritative refresh404 can close a newer standalone selection. refresh captures
+              currentLocator before awaiting fetchImage, but the close branch tests merely that
+              latest lightboxIndexRef.current is non-null while reconciled.currentLocator represents
+              the old capture. If old video is closed/replaced during request and old fetch404s, the
+              newer video is closed and its fallback cleared. Disposable
+              /tmp/settings-playback-refresh-proof.mjs executes actual committed96 callback: set
+              newer exact locator during pending fetch, reject old fetch404, selected becomes null.
+              Close only if current selected locator still matches captured locator; add
+              deferred404/new-selection behavior case. No product edits by reviewer."
+            created_at: 2026-10-01T05:58:27.921Z
+        kind: blocker
+      - _ulid: 01M3V0NWYNPB1GH64TAP3RMXJV
+        entries:
+          - _ulid: 01M3V0NWYNJXSV2S5Q5DX3VJQD
+            author: DonutsDelivery
+            body: "Two earlier findings resolved before current review: rejected textual CSS/source tests
+              removed91e9eba; real CSS browser evidence retained. Authoritative scan previously
+              inserted standalone Continue Watching item into filtered gallery;96 updates fallback
+              separately. Independent actual-callback proof confirms filtered gallery now remains
+              unchanged. Canonical update/delete/navigation identities, migration CSS scopes and
+              Settings natural scrolling inspected. Prior native dbf full45frontend/219Rust passing
+              independently read, but current96 new regression requires current-head verification."
+            created_at: 2026-10-01T05:58:28.053Z
+        kind: nit
+    verdicts: []
+    created_at: 2026-10-01T05:58:27.429Z
+    updated_at: 2026-10-01T05:58:28.475Z
+    notes: []

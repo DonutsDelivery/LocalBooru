@@ -19,6 +19,7 @@ context: []
 priority: 3
 tags: []
 vcs_refs: []
+review_ref: "@review-settings-continue-watching"
 submission_linkage:
   review_url: null
   branch: splice/mac-pairing
@@ -58,6 +59,13 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-01T05:48:00.499Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@review-settings-continue-watching"
+        previous: null
+    command: review-link
+    timestamp: 2026-10-01T05:58:27.614Z
 created_at: 2026-10-01T05:39:57.426Z
 started_at: 2026-10-01T05:39:58.653Z
 submitted_at: 2026-10-01T05:48:00.499Z
