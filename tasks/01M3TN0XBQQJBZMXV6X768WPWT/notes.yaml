@@ -43,3 +43,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T03:08:09.151Z
+  - _ulid: 01M3TQB0TY25V1RVX8SD1KSAZ4
+    content: Approved exact review @review-create-backend-controls931b073 integrated into main
+      bbac23727e042cf53f45ec90dffdd0e11ef42eae and pushed origin/main. Native install wrapper is
+      compiling main under host build gate with two jobs; old DMC4108600 and independent
+      Comfy3890977 remain alive. Frontend production build passed. Native compilation/installed
+      checksum receipt and reopened running app remain before task completion.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T03:15:14.398Z
