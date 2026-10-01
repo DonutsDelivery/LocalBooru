@@ -20,3 +20,18 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T00:34:52.716Z
+  - _ulid: 01M3TFFN1D60TH3QB46AA1KTKE
+    content: "Candidate a192143 based8a7d1b8. User clarified structural Updated-v5 notice: replaced
+      missing-widget heuristic with actual bundled controls_revision1 vs live markedV5 metadata;
+      unmarked/custom/current/future graphs stay quiet. Existing frontend22 passed; disposable UI26
+      passed (Fit/100%,wheel,pan,identity,collapse,liveinput,LoRA0.05 and typed0.987).
+      Adapter5/controller35 existing pass; expanded VM9 and receipt/controller36 pass; independent
+      reviewer VM9/viewer2/controller36 pass. Synthetic browser1280x800 collapsedlower45px,
+      preview472px; expanded lower160px ends1035 and Effects starts1035
+      (nonoverlap).100%=800sourcepx;390mobile docwidth390; Modelscontent visible/LoRAstep0.05;
+      runtimefixtureErrors empty. Screenshot outside repository. Only8 explicit productpaths
+      committed. Original checkout4235aeb is unrelated and auto-link captures wrong source; review
+      must pin exactcandidate/base. Actual DMC3887180 remains running pending installation."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T00:57:57.550Z
