@@ -6747,3 +6747,203 @@ reviews:
     created_at: 2026-10-01T06:23:07.408Z
     updated_at: 2026-10-01T06:23:08.784Z
     notes: []
+  - _ulid: 01M3V2W05H8PBSH2M5J4XSMN26
+    slugs:
+      - review-settings-continue-watching-delivery
+    title: Settings and Continue Watching integrated deployment audit
+    author: DonutsDelivery
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: main/origin e769 equals approved cff tree; existing closed source review gate passes.
+          Independently read gallery-ui-tests.log:3files28tests pass. Earlier exact-cff canonicalMac
+          frontend Node162/component47 and Rust219 pass independently audited in
+          @review-mac-current-install.
+        name: integrated-source-and-focused-tests
+        required: true
+        runner: git-and-log-audit
+        created_at: 2026-10-01T06:36:48.147Z
+        completed_at: 2026-10-01T06:36:48.147Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: desktop-ui-build.exit0 and canonical log release+install complete. Installed and release
+          executable SHA256 both2cacb329ca8bc005b783bb518dba6c511f7dcec52e4580dd1127ae95ba8b88ad;
+          /proc/300750/exe exact installed path; live creator300984 cwd deployed addon. Deployed
+          app.py hash69c629394eb5e76444f1a39e66654ca9d32214783f45308c90377d321ad36409 and
+          donut-create.js c3065a75abf1386b707f5e5f8cf2739914d8a844f91fc63b0fca287ebdf1a644
+          matchmain. IndependentComfy3890977 alive. No compiler/Cargo/Docker/Gradle writer found at
+          audit.
+        name: desktop-install-and-deployment
+        required: true
+        runner: sha256-proc-and-logs
+        created_at: 2026-10-01T06:36:48.861Z
+        completed_at: 2026-10-01T06:36:48.861Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "@review-mac-current-install closedapproved gatepassing examinedcff, verifies
+          canonicalexit0 universalbundle, signatures/checksums, installedhash+identity. Reviewer
+          rechecks PID80580 still alive exact
+          /Applications/LocalBooru.app/Contents/MacOS/localbooru."
+        name: mac-install
+        required: true
+        runner: prior-operational-review-and-ssh
+        created_at: 2026-10-01T06:36:49.614Z
+        completed_at: 2026-10-01T06:36:49.614Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: android-ui-build.exit0 canonical log signing/verification/publication complete.
+          Independently verified published102237564-byte APK
+          SHA25676af237d1f1c80fabafcf28ebf058832ac92942e83dadf0507bfee30569ec201; apksigner v2/v3
+          pass certificate960ce0f88cfbb075a48172116f776f6bcbb5cf91b50697e8fdfb91317db0325c; ZIP
+          CRC+zipalignpass; aapt2 com.localbooru.app2.0.5/code2000005 minSdk24target36; all4 actual
+          library ELF class/machine signatures verified.
+        name: current-apk-integrity
+        required: true
+        runner: independent-apksigner-zipalign-aapt2-python
+        created_at: 2026-10-01T06:36:50.387Z
+        completed_at: 2026-10-01T06:36:50.387Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "Read android-ui-delivery.json: exact currentAPK hash/sourcee769,
+          device484ff658_bfc9_4f3a_95cc_784e8b5e3e60, sharecommandexit0 Shared file accepted.
+          Reviewer independently confirms Redmi Note11Pro5G paired/reachable at current audit.
+          Accepted sender-side transfer only; no duplicate share performed."
+        name: redmi-transfer-accepted
+        required: true
+        runner: receipt-and-live-kdeconnect-inventory
+        created_at: 2026-10-01T06:36:51.091Z
+        completed_at: 2026-10-01T06:36:51.091Z
+      - status: skipped
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Phone Downloads hash and on-device installation unverified; delivery receipt explicitly
+          false. Desktop/Mac actual user-media functional playback not tested, and Mac shortcut
+          alias itself TCC-blocked while targetidentitypreserved. Operational scope confirms
+          build/install/runtimepresence/acceptedshare, not these separate functional claims.
+        name: device-receipt-install-and-profile-runtime
+        required: false
+        created_at: 2026-10-01T06:36:51.893Z
+        completed_at: 2026-10-01T06:36:51.893Z
+    events:
+      - _ulid: 01M3V2W05EA86VYGAB2YMQMNHZ
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T06:36:45.103Z
+      - _ulid: 01M3V2W1T4F4DGCXXY0YMXWN67
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T06:36:46.788Z
+      - _ulid: 01M3V2W2KEEG912YFRWY85X11S
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3V2W2CC343WTN2Y89HWJVAD
+        timestamp: 2026-10-01T06:36:47.598Z
+      - _ulid: 01M3V2W3ADFWZEDQND0YVDBXPQ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: integrated-source-and-focused-tests
+        timestamp: 2026-10-01T06:36:48.333Z
+      - _ulid: 01M3V2W41YKEWZN3XV0FK430TY
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: desktop-install-and-deployment
+        timestamp: 2026-10-01T06:36:49.087Z
+      - _ulid: 01M3V2W4RKTH66CT0N3SW9E3B0
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: mac-install
+        timestamp: 2026-10-01T06:36:49.811Z
+      - _ulid: 01M3V2W5FT20QXVP5V57JK5KC6
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: current-apk-integrity
+        timestamp: 2026-10-01T06:36:50.554Z
+      - _ulid: 01M3V2W67E7A4FM2J6MNPR2YBP
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: redmi-transfer-accepted
+        timestamp: 2026-10-01T06:36:51.311Z
+      - _ulid: 01M3V2W70C266PT4HBKCTSQ3PF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: device-receipt-install-and-profile-runtime
+        timestamp: 2026-10-01T06:36:52.108Z
+      - _ulid: 01M3V2W7H5NZR7X5BVBTYYT3TW
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: approve
+        timestamp: 2026-10-01T06:36:52.645Z
+      - _ulid: 01M3V2W7H5W4NR5S1N9MBG7JSN
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T06:36:52.645Z
+    examined_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+    external_links: []
+    lifecycle_state: closed
+    related_refs: []
+    subject:
+      type: task
+      content_hash: ""
+      ref: "@settings-continue-watching"
+      shadow_commit: ""
+    threads:
+      - _ulid: 01M3V2W2CC343WTN2Y89HWJVAD
+        entries:
+          - _ulid: 01M3V2W2CC0V1MFYPVJBGKAE93
+            author: DonutsDelivery
+            body: Operational review follows approved source review @review-settings-continue-watching. Reviewer
+              confirms main and origin/main e769ac7842c682e29fa6af8c9a685ce2987d2b60 treeidentical
+              to approved cffebce4 (tree e2d91c10b1f86fcf78fccedc65f8326b2712a377). Automatic
+              original checkout submission4235 is not delivery provenance. Only read-only inspection
+              and APK verification performed; no builds, sharing commands, app closure or product
+              edits. Unrelated untracked MediaNavigation.component.test.jsx preserved.
+            created_at: 2026-10-01T06:36:47.372Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-01T06:36:52.645Z
+    created_at: 2026-10-01T06:36:45.105Z
+    updated_at: 2026-10-01T06:36:52.645Z
+    notes: []
