@@ -1715,7 +1715,7 @@ tasks:
       - apk-redmi-current
     title: Rebuild Android APK and send to paired Redmi
     type: infra
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 3
@@ -1723,3 +1723,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-01T04:43:14.713Z
+    started_at: 2026-10-01T04:43:16.144Z
