@@ -11,3 +11,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T23:11:27.386Z
+  - _ulid: 01M3WW3ZBECB1DDXZYBATSKRZE
+    content: "User clarified all encoded quality presets500, SVP503, original works. Root repaired
+      confirmed runtime orphan occupying SVP18008 (owned Sep28 process), current addon now
+      owned/running; no real playback verification. Expanded source scope to ordinary HLS: replace
+      compiled-feature listings with bounded device probes, retry hardware-start failure once with
+      software, continuously drain bounded stderr and preserve failures. Synthetic FFmpeg480p
+      fixture retry test and command selection for all quality presets added. Shared Cargo target
+      /mnt/storage/Projects/extra_storage/localbooru/builds/dev-target; queued compile waits host
+      gate."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T23:17:15.246Z
