@@ -608,11 +608,16 @@ mod tests {
         let secondary =
             crate::db::library::LibraryContext::open(&secondary_root, "Secondary").unwrap();
         insert_image(&secondary, 1, 12);
-        for (library, path) in [(&primary, &primary_root), (&secondary, &secondary_root)] {
-            library.main_pool.get().unwrap().execute(
-                "INSERT INTO watch_directories (id, path, name) VALUES (1, ?1, 'Synthetic videos')",
-                rusqlite::params![path.to_string_lossy()],
-            ).unwrap();
+        for (library, path) in [(primary.as_ref(), &primary_root), (&secondary, &secondary_root)] {
+            library
+                .main_pool
+                .get()
+                .unwrap()
+                .execute(
+                    "INSERT INTO watch_directories (id, path, name) VALUES (1, ?1, 'Synthetic videos')",
+                    rusqlite::params![path.to_string_lossy()],
+                )
+                .unwrap();
         }
         state.library_manager().mount(secondary);
         let primary_id = primary.uuid.clone();
