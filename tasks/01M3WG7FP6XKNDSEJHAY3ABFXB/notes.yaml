@@ -26,3 +26,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T20:07:10.398Z
+  - _ulid: 01M3WHRGZABV1ATN1K8GVQ7EQC
+    content: "Additional implementation: shared toast errors, compact backend controls reusing
+      CreateSettings, History grouped by prompt_id with stages collapsed. Independent review
+      reproduced stale lifecycle status race across publishers; shared service epoch now rejects
+      reads before/during backend mutation and older action completion. Expected AbortError silently
+      discarded. Added deferred behavioral tests. No real backend commands executed. All source
+      changes remain isolated pending tests and approval."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T20:16:14.315Z
