@@ -5483,3 +5483,183 @@ reviews:
     created_at: 2026-10-01T03:12:43.465Z
     updated_at: 2026-10-01T03:13:55.943Z
     notes: []
+  - _ulid: 01M3TRMD2S48XD36QZ2H393P2V
+    slugs:
+      - review-create-exclusive-output
+    title: Exclusive creator output destination review
+    author: DonutsDelivery
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: b816218f42eac56052850781690a3ca6dbfd4b42
+        evidence: 39/39 actual controller tests independently pass. New behavior verifies temp save sinks,
+          preserved original workflow, final temp ledger/type serving, permanent explicit Comfy
+          outputs, ordinary preview exclusion, invalid destination rejection. Additional disposable
+          actual controller check passes marked standard SaveImage -> PreviewImage final result,
+          owner temp view200, cross-studio and wrong-type view404.
+        name: independent-controller
+        required: true
+        runner: python-unittest
+        created_at: 2026-10-01T03:37:50.991Z
+        completed_at: 2026-10-01T03:37:50.991Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: b816218f42eac56052850781690a3ca6dbfd4b42
+        evidence: 9/9 actual adapter cases pass independently. Per-run preview/comfy destination does not
+          change live graph or saved draft. Three reviewer behavioral regressions cover unchanged
+          remote storage intent quiet, unsaved local prompt retained/quiet, and changed external
+          prompt still notifying without overwrite. No ComfyUI/GPU service or job used.
+        name: independent-adapter
+        required: true
+        runner: node-vm
+        created_at: 2026-10-01T03:37:51.112Z
+        completed_at: 2026-10-01T03:37:51.112Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: b816218f42eac56052850781690a3ca6dbfd4b42
+        evidence: 22/22 independently rerun on clean exact candidate. Browser asset manifest hash matches
+          updated adapter; pinned/default workflow and verified installer behavior pass.
+        name: independent-installer
+        required: true
+        runner: python-unittest
+        created_at: 2026-10-01T03:37:51.241Z
+        completed_at: 2026-10-01T03:37:51.241Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: b816218f42eac56052850781690a3ca6dbfd4b42
+        evidence: Clean head b816218f42eac56052850781690a3ca6dbfd4b42 and full 8-path diff inspected; diff
+          check passes. Checked actual pinned DonutImageSave root=temp and PreviewImage behavior
+          plus unchanged Rust output import contract. Task/spec and annotations examined. kspec
+          validate retains preexisting unrelated schema130/reference47/skill1 issues, no DonutCreate
+          trait coverage issue. Parent focused JSX ESLint passed.
+        name: source-spec-scope
+        required: true
+        runner: git-kspec-source
+        created_at: 2026-10-01T03:37:51.387Z
+        completed_at: 2026-10-01T03:37:51.387Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: b816218f42eac56052850781690a3ca6dbfd4b42
+        evidence: Parent queued focused frontend tests behind another project C++ host build; no bypass or
+          overlapping frontend build. Required before final verdict.
+        name: frontend-component-suite
+        required: true
+        runner: vitest-host-heavy-build
+        created_at: 2026-10-01T03:37:51.510Z
+        completed_at: null
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: b816218f42eac56052850781690a3ca6dbfd4b42
+        evidence: Production build/install remains parent release gate. No GPU jobs, native OS drag/drop or
+          user-profile functional tests; no Windows/macOS device runtime claim. Running DMC and
+          unrelated Comfy preserved.
+        name: runtime-release-acceptance
+        required: false
+        created_at: 2026-10-01T03:37:51.630Z
+        completed_at: 2026-10-01T03:37:51.630Z
+    events:
+      - _ulid: 01M3TRMD2R1JGEYD81A32P24N9
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T03:37:50.425Z
+      - _ulid: 01M3TRMDDN3H77CFNCKMFRM0C4
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T03:37:50.773Z
+      - _ulid: 01M3TRMDHNXZTB6Y4WCMAH3VK4
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3TRMDGNTPQMADJW5QM3NW28
+        timestamp: 2026-10-01T03:37:50.901Z
+      - _ulid: 01M3TRMDNFZGQPP1G3ACTG83NF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-controller
+        timestamp: 2026-10-01T03:37:51.023Z
+      - _ulid: 01M3TRMDSA248M4YY5A7B0TW2M
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-adapter
+        timestamp: 2026-10-01T03:37:51.146Z
+      - _ulid: 01M3TRMDXXTPVZH9TB0FSXMDG9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-installer
+        timestamp: 2026-10-01T03:37:51.293Z
+      - _ulid: 01M3TRME1VQF7J9GHZ3HVEHMM4
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-spec-scope
+        timestamp: 2026-10-01T03:37:51.419Z
+      - _ulid: 01M3TRME5N807ASWW0ZJ0NBQVA
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: frontend-component-suite
+        timestamp: 2026-10-01T03:37:51.541Z
+      - _ulid: 01M3TRME9FN4PHK5684F1SSMN8
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: runtime-release-acceptance
+        timestamp: 2026-10-01T03:37:51.663Z
+    examined_commit: b816218f42eac56052850781690a3ca6dbfd4b42
+    external_links: []
+    lifecycle_state: open
+    related_refs:
+      - "@create-exclusive-output"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+      head_branch: fix/create-exclusive-output
+      head_commit: b816218f42eac56052850781690a3ca6dbfd4b42
+    threads:
+      - _ulid: 01M3TRMDGNTPQMADJW5QM3NW28
+        entries:
+          - _ulid: 01M3TRMDGNGRXHQ966HZ1RQWTV
+            author: DonutsDelivery
+            body: "Independent review of root-authored product changes across all 8 paths: known save nodes are
+              rewritten only in submitted execution, original editable workflow retained, final
+              temporary output roles preserved by ledger, owner-only scoped reads retain type,
+              explicit Comfy saving suppresses automatic DMC imports and manual import remains
+              intentional. Found/reproduced per-run destination triggering false latest-workflow
+              notices; root normalized only ephemeral root extra.dmc_output_destination. Reviewer
+              authored regression tests only, not product code. Fixed case and local-draft
+              preservation verified. No remaining source blocker; verdict withheld pending required
+              frontend component check."
+            created_at: 2026-10-01T03:37:50.869Z
+        kind: nit
+    verdicts: []
+    created_at: 2026-10-01T03:37:50.425Z
+    updated_at: 2026-10-01T03:37:51.630Z
+    notes: []
