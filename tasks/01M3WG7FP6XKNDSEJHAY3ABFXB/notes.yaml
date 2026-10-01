@@ -57,3 +57,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T20:48:06.583Z
+  - _ulid: 01M3WKYCAP342KYJX5ATG8R4VH
+    content: "Independent reviewer reproduced original async dictionary mutation RuntimeError and
+      caught3 newraces. Addressed all: recheckqueue afterpendingdelete, scopedcancel promotedownjob,
+      no unconfirmedterminalmarker; historyconfirmedstate rejects delayedevents;
+      sessionmutationrevision rejects polls predating queue/cancelack. Regressiontests
+      controller47/47 adapter10/10 pass. Candidatefc47928 frozen pending focusedReact/Rustgate.
+      Live500 traceback not recovered, so original source race is a confirmed possiblecause, not
+      claimed exclusivecause."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T20:54:23.319Z
