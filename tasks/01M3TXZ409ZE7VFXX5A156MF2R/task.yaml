@@ -1,0 +1,22 @@
+_ulid: 01M3TXZ409ZE7VFXX5A156MF2R
+slugs:
+  - mac-current-install
+title: Build current DMC on Mac and replace desktop-linked install
+type: infra
+description: User authorizes native build on paired SSH Mac, then replacement of
+  /Applications/LocalBooru.app preserving desktop shortcut target. Build exact integrated main
+  through canonical native macOS wrapper and host-wide build gate; verify bundle integrity,
+  signature, architectures and installed executable. Preserve user media/settings and existing build
+  processes.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-10-01T05:11:04.457Z
+todos: []
