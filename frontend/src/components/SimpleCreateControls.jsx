@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import useCreatePanelSizes from './useCreatePanelSizes'
 
 const LABELS = {
   prompt: 'Describe your image', stylePrompt: 'Style prompt', negativePrompt: 'Negative prompt',
@@ -151,6 +152,7 @@ export default function SimpleCreateControls({
   const [lowerTab, setLowerTab] = useState('models')
   const [lowerExpanded, setLowerExpanded] = useState(false)
   const [sliding, setSliding] = useState(false)
+  const panels = useCreatePanelSizes(lowerExpanded, setLowerExpanded)
   const draftRef = useRef({})
   const sliderInteractions = useRef(new Set())
   const controlsAlive = useRef(true)
@@ -462,7 +464,7 @@ export default function SimpleCreateControls({
   const lowerMode = mobilePane === 'history' ? 'history' : mobilePane === 'models' ? 'models' : lowerTab
 
   // Comfy widget steps are not based on HTML's min offset; commit validates authored drafts.
-  return <form className={`create-simple-workspace${lowerExpanded ? ' create-lower-expanded' : ''}`}  onSubmit={generate} noValidate>
+  return <form ref={panels.workspace} style={panels.style} className={`create-simple-workspace${lowerExpanded ? ' create-lower-expanded' : ''}${panels.resizing ? ' create-panels-resizing' : ''}`} onSubmit={generate} noValidate>
     <aside className="create-controls" aria-label="Image controls">
       <div className="create-control-tabs" role="tablist" aria-label="Studio controls">
         {['create', 'edit', 'finalize'].map(tab => <button type="button" role="tab" id={`create-tab-${tab}`} key={tab}
@@ -532,6 +534,9 @@ export default function SimpleCreateControls({
         <p>{busy === 'patch' ? 'Updating workflow…' : editing && !hasReference('referenceA') ? 'Add Reference A to begin.' : runInstant ? 'Runs the latest acknowledged draft when the queue is empty.' : connected ? 'Generate uses the current workflow.' : 'Connect the studio to generate.'}</p>
       </footer>
     </aside>
+    <div className="create-panel-divider create-panel-divider-left" {...panels.separator('left', 'Resize controls pane')} />
+    <div className="create-panel-divider create-panel-divider-right" {...panels.separator('right', 'Resize effects pane')} />
+    <div className="create-panel-divider create-panel-divider-lower" {...panels.separator('lower', 'Resize models and history pane')} />
     <main className="create-center-workspace">{children}</main>
     <aside className="create-effects" aria-label="Image effects">
       <header className="create-pane-heading"><h2>Effects</h2><span>Current recipe</span></header>
