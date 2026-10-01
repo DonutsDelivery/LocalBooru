@@ -7,3 +7,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T19:53:15.911Z
+  - _ulid: 01M3WGRXBP4NRDF707Y1XV3XNF
+    content: "Source and CSS implemented in /tmp/dmc-create-navigation. Synthetic actual CSS browser
+      desktop1280x800: center starts y0, badge216.6px within747px preview. Phone360x800:
+      badge209.8px, all navigation within viewport, scrollWidth360. Resized right sidebar200px: mode
+      buttons wrap within pane, no horizontal overflow. Reviewer findings addressed with keyboard
+      focus restoration and progress retained when inspecting history. Focused component suite
+      queued under host gate session76120 until checksum cache verification completes."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T19:58:58.422Z
