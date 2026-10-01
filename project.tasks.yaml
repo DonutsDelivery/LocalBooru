@@ -1801,7 +1801,7 @@ tasks:
       - create-effect-collapse
     title: Allow independent collapse of Create effects
     type: task
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 3
@@ -1810,3 +1810,4 @@ tasks:
     todos_count: 0
     created_at: 2026-10-01T22:49:58.242Z
     started_at: 2026-10-01T22:50:11.459Z
+    submitted_at: 2026-10-01T23:02:18.915Z

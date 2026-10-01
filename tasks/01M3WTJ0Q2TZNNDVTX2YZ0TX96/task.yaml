@@ -10,13 +10,21 @@ description: User requests expand/collapse of all right-panel effects regardless
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 3
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-10-01T23:02:18.909Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -28,6 +36,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-01T22:50:11.460Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-10-01T23:02:18.909Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-01T23:02:18.915Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-01T23:02:18.915Z
 created_at: 2026-10-01T22:49:58.242Z
 started_at: 2026-10-01T22:50:11.459Z
+submitted_at: 2026-10-01T23:02:18.915Z
 todos: []
