@@ -10,12 +10,24 @@ description: Follow up inbox @01M3TEYK3QC1MJGEC7SVETFNTF. Preserve upstream SVP 
 spec_ref: "@svp-single-player"
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 3
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-01T23:11:26.097Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-01T23:11:26.098Z
 created_at: 2026-10-01T23:10:52.145Z
+started_at: 2026-10-01T23:11:26.097Z
 todos: []
