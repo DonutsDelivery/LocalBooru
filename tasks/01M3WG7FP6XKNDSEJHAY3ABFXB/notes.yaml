@@ -78,3 +78,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T21:40:28.679Z
+  - _ulid: 01M3WPPSQXNF7WZF11W3ERJ38W
+    content: Approved review @review-create-compact-progress has passing current-version gates and zero
+      unresolved blockers. Merged with no-ff to main e320bcdce451414b71bb20cbe4185f3ac38bfd49 and
+      pushed origin/main. Canonical Linux installer now building under compatibility host heavy lock
+      using moved cache; current DMC/controller/independent ComfyUI remain alive. Installation
+      acceptance and artifact hash pending build exit.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T21:42:40.638Z
