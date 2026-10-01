@@ -10,8 +10,15 @@ description: User screenshot shows generating status background stretching acros
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Approved review passing with zero blockers; merged and pushed main e320bcd. Canonical
+  Linux release installer exited0 after4m54s; installed ELF
+  SHA256161fa2a3f9d4351a32e7e9171327f0ce0ecbcd5e85271bdba1b5864505552d20 matches build and all14
+  frontend files match. Receipt /tmp/dmc-create-layout/linux-install-receipt.json. Previous
+  Cargo/Rust writer exited before another project acquired gate. Current DMC1208209,
+  controller1208479 and independent ComfyUI3890977 preserved; no user-profile runtime acceptance or
+  exclusive live500 attribution claimed.
 depends_on: []
 context: []
 priority: 3
@@ -64,7 +71,27 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-01T21:40:30.069Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Approved review passing with zero blockers; merged and pushed main e320bcd. Canonical Linux
+          release installer exited0 after4m54s; installed ELF
+          SHA256161fa2a3f9d4351a32e7e9171327f0ce0ecbcd5e85271bdba1b5864505552d20 matches build and
+          all14 frontend files match. Receipt /tmp/dmc-create-layout/linux-install-receipt.json.
+          Previous Cargo/Rust writer exited before another project acquired gate. Current
+          DMC1208209, controller1208479 and independent ComfyUI3890977 preserved; no user-profile
+          runtime acceptance or exclusive live500 attribution claimed.
+        previous: null
+      completed_at:
+        new: 2026-10-01T21:47:51.547Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-01T21:47:51.554Z
 created_at: 2026-10-01T19:49:27.334Z
 started_at: 2026-10-01T19:52:36.333Z
 submitted_at: 2026-10-01T21:40:30.069Z
+completed_at: 2026-10-01T21:47:51.547Z
 todos: []

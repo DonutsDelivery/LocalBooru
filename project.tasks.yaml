@@ -1784,7 +1784,7 @@ tasks:
       - create-compact-progress
     title: Keep creator generation status compact in preview corner
     type: bug
-    status: pending_review
+    status: completed
     blocked_by: []
     depends_on: []
     priority: 3
@@ -1795,3 +1795,4 @@ tasks:
     created_at: 2026-10-01T19:49:27.334Z
     started_at: 2026-10-01T19:52:36.333Z
     submitted_at: 2026-10-01T21:40:30.069Z
+    completed_at: 2026-10-01T21:47:51.547Z
