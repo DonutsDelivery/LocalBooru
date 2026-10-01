@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M3WVSBMT4Z40MBVDNP5Q3711
+    content: "Prior inbox @01M3TEYK3QC1MJGEC7SVETFNTF and current user503 report. Work isolated at
+      /tmp/dmc-android-svp-hls from main e320bcd. Reproductions: independent clients share a global
+      timestamp and may reject valid phone starts503; inactive cleanup can stop other producers;
+      compiled NVENC advertises unusable encoder; sidecar statuses are remapped500. Scope approved
+      by root: per-client ordering, owner cleanup, usable synthetic NVENC probe/software selection,
+      status/detail preservation. Existing runtime logs contain no known SVP failure evidence; exact
+      live cause unconfirmed. Focused Python/JS/Rust proofs only; no APK build or real-user
+      playback."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T23:11:27.386Z
