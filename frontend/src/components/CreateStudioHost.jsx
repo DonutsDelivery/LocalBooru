@@ -613,7 +613,7 @@ export default function CreateStudioHost() {
         setAnnouncement('Image added as an editing reference.')
       }
     } catch (dropError) {
-      if (valid() && dropError.name !== 'AbortError') setBridgeError(dropError.message)
+      if (valid() && dropError?.name !== 'AbortError') setBridgeError(dropError?.message || String(dropError))
     } finally {
       if (dropSequence.current === version) {
         dropLock.current = false
@@ -640,9 +640,9 @@ export default function CreateStudioHost() {
       const rect = host.current.getBoundingClientRect()
       if (point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) return
       await importDroppedFiles(event.paths, targetAt(document.elementFromPoint(point.x, point.y)), readFile)
-    }, dropError => { if (active) setBridgeError(dropError.message) }).then(dispose => {
+    }, dropError => { if (active) setBridgeError(dropError?.message || String(dropError)) }).then(dispose => {
       if (!active) dispose(); else unlisten = dispose
-    }).catch(dropError => { if (active) setBridgeError(dropError.message) })
+    }).catch(dropError => { if (active) setBridgeError(dropError?.message || String(dropError)) })
     return () => {
       active = false
       unlisten?.()

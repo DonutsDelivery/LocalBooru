@@ -98,7 +98,8 @@ pub fn read_drop(path: &Path) -> Result<(String, String, Vec<u8>), String> {
         .and_then(|name| name.to_str())
         .ok_or("The dropped filename is invalid.")?
         .to_owned();
-    let file = File::open(&grant.canonical).map_err(|_| "The dropped file could not be opened.")?;
+    let mut file =
+        File::open(&grant.canonical).map_err(|_| "The dropped file could not be opened.")?;
     let metadata = file
         .metadata()
         .map_err(|_| "The dropped file could not be inspected.")?;
@@ -114,11 +115,18 @@ pub fn read_drop(path: &Path) -> Result<(String, String, Vec<u8>), String> {
         return Err("The dropped file changed. Drop it again.".into());
     }
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    file.take(limit + 1)
+    (&mut file)
+        .take(limit + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| "The dropped file could not be read.")?;
     if bytes.len() as u64 != grant.length || bytes.len() as u64 > limit {
         return Err("The dropped file changed or exceeds its size limit.".into());
+    }
+    let after = file
+        .metadata()
+        .map_err(|_| "The dropped file could not be inspected after reading.")?;
+    if after.len() != grant.length || after.modified().ok() != grant.modified {
+        return Err("The dropped file changed while being read. Drop it again.".into());
     }
     Ok((name, mime.to_owned(), bytes))
 }

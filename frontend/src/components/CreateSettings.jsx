@@ -142,8 +142,12 @@ export default function CreateSettings({ onStatusChange }) {
     setAction(label)
     setError('')
     try {
-      await operation(signal, ensureCurrent)
+      const nextStatus = await operation(signal, ensureCurrent)
       ensureCurrent()
+      if (nextStatus?.backend && nextStatus.mode) {
+        setStatus(nextStatus)
+        statusCallback.current?.(nextStatus)
+      }
       await refresh()
     } catch (actionError) {
       if (mounted.current && requestGeneration === generation.current && operationRevision === actionRevision.current) setError(createErrorMessage(actionError))
