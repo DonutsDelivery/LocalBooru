@@ -23,3 +23,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T23:17:15.246Z
+  - _ulid: 01M3WW95R1VJASQVE6ZWWFRD8P
+    content: Candidate86c85adc5de970cc9ef751b3f28a0070afe9852a committed clean on fix/android-svp-hls at
+      /tmp/dmc-android-svp-hls for root review; no merge/push. JavaScript11/11 and Python9/9 focused
+      tests pass. Rust settings filter includes upstream404/409/503/504/500 HTTP matrix,
+      independent-session clocks, inactive cleanup and old-client shared-bucket compatibility.
+      Regular HLS tests include mocked hardware failure followed by real synthetic FFmpeg480p
+      output, software command selection across480p/720p/1080p/1440p/4k, bounded failure stderr and
+      superseded-start cleanup. Settings native checks queued through required wrapper/shared target
+      while other host build owns gate; transcode group follows. Legacy clients without session IDs
+      retain old shared ordering until upgraded; explicit plays retain single-producer replacement.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T23:20:05.633Z
