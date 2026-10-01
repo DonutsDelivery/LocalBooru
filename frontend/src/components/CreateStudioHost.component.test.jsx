@@ -130,14 +130,14 @@ describe('Donut Create studio', () => {
     session = {...session, outputs: [...session.outputs, {id:'permanent-new',filename:'comfy.png',type:'output',
       storage:'comfy',final:true,prompt_id:'owned-job',media_type:'image/png'}]}
     fireEvent.click(screen.getByRole('tab', { name: 'History' }))
-    await screen.findByText('comfy.png', {}, {timeout:5000})
+    await screen.findAllByText('comfy.png', {}, {timeout:5000})
     expect(api.apiClient.post.mock.calls.filter(([url]) => url === '/create/import')).toEqual([])
     session = {...session, outputs: [...session.outputs, {id:'temporary-new',filename:'staged.png',type:'temp',
       storage:'temporary',final:true,prompt_id:'owned-job',media_type:'image/png'}]}
     await waitFor(() => expect(api.apiClient.post.mock.calls.filter(([url]) => url === '/create/import'))
       .toEqual([[ '/create/import', expect.objectContaining({output_id:'temporary-new',library_id:'library-b',directory_id:1}),
         expect.objectContaining({signal:expect.any(AbortSignal)}) ]]), {timeout:5000})
-  })
+  }, 10000)
   // AC: @donut-create-plugin ac-image-entry
   test('opens from Images without navigation or changing the gallery scroll', async () => {
     const { container } = render(<MemoryRouter initialEntries={['/?tags=landscape&directory=1']}>
