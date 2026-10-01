@@ -22,6 +22,8 @@ import SimpleCreateControls from './SimpleCreateControls'
 import { createStudioBridge } from '../services/createStudioBridge'
 import './CreateStudio.css'
 
+const CONNECTION_WAIT_MS = 5 * 60 * 1000
+
 export default function CreateStudioHost() {
   const [opened, setOpened] = useState(false)
   const [started, setStarted] = useState(false)
@@ -29,6 +31,7 @@ export default function CreateStudioHost() {
   const [status, setStatus] = useState(null)
   const [session, setSession] = useState(null)
   const [frameUrl, setFrameUrl] = useState('')
+  const [frameRevision, setFrameRevision] = useState(0)
   const [directories, setDirectories] = useState([])
   const [destinationKey, setDestinationKey] = useState('')
   const [libraries, setLibraries] = useState([])
@@ -86,6 +89,8 @@ export default function CreateStudioHost() {
   const bridge = useRef(null)
   const snapshotRef = useRef(null)
   const snapshotRequest = useRef(null)
+  const connectionDeadline = useRef(0)
+  const backendWasReady = useRef(null)
   const studioActions = useRef(Promise.resolve())
   const pendingActions = useRef(0)
   const actionErrorVisible = useRef(false)
@@ -392,18 +397,23 @@ export default function CreateStudioHost() {
     const currentBridge = bridge.current
     const currentSession = sessionRef.current
     const requestGeneration = generation.current
-    if (!currentBridge || !currentSession || serverChanging.current) return Promise.resolve(null)
+    if (!currentBridge || !currentSession || serverChanging.current || !visible.current) return Promise.resolve(null)
     if (snapshotRequest.current?.bridge === currentBridge) return snapshotRequest.current.promise
     const promise = currentBridge.request('snapshot', undefined, { timeout: 7000 })
       .then(nextSnapshot => {
         if (!mounted.current || generation.current !== requestGeneration || bridge.current !== currentBridge) return null
         acceptSnapshot(nextSnapshot)
+        if (!nextSnapshot.ready && !nextSnapshot.error && Date.now() >= connectionDeadline.current) {
+          setBridgeConnecting(false)
+          setBridgeError('ComfyUI did not finish starting within five minutes. Retry connection to keep waiting.')
+        }
         return nextSnapshot
       })
       .catch(syncError => {
         if (mounted.current && generation.current === requestGeneration && bridge.current === currentBridge && syncError.name !== 'AbortError') {
-          setBridgeConnecting(false)
-          if (!actionErrorVisible.current) setBridgeError(syncError.message)
+          const waiting = !snapshotRef.current?.ready && Date.now() < connectionDeadline.current
+          setBridgeConnecting(waiting)
+          if (!actionErrorVisible.current) setBridgeError(waiting ? '' : syncError.message)
         }
         return null
       })
@@ -415,22 +425,48 @@ export default function CreateStudioHost() {
   }, [acceptSnapshot])
 
   useEffect(() => {
-    if (!studioSessionId || !frameUrl || !studioFrame.current) return
+    if (!opened || !studioSessionId || !frameUrl || !studioFrame.current) return
+    connectionDeadline.current = Date.now() + CONNECTION_WAIT_MS
+    if (!snapshotRef.current?.ready) {
+      setBridgeConnecting(true)
+      setBridgeError('')
+    }
     const currentBridge = createStudioBridge({
       iframe: studioFrame.current, sessionId: studioSessionId, url: frameUrl, signal: requests.current.signal,
     })
     bridge.current = currentBridge
     const handshake = () => {
-      if ((!snapshotRef.current?.ready || visible.current) && pendingActions.current === 0) syncSnapshot()
+      if (!visible.current) return
+      if (!snapshotRef.current?.ready && Date.now() >= connectionDeadline.current) {
+        setBridgeConnecting(false)
+        if (!actionErrorVisible.current) setBridgeError('ComfyUI did not finish starting within five minutes. Retry connection to keep waiting.')
+        return
+      }
+      if (pendingActions.current === 0) syncSnapshot()
     }
     handshake()
     const timer = setInterval(handshake, 2000)
     return () => {
       clearInterval(timer)
       currentBridge.dispose()
-      if (bridge.current === currentBridge) bridge.current = null
+      if (bridge.current === currentBridge) {
+        bridge.current = null
+        pendingActions.current = 0
+        studioActions.current = Promise.resolve()
+        if (mounted.current) setBridgeBusy('')
+      }
     }
-  }, [studioSessionId, frameUrl, syncSnapshot])
+  }, [opened, studioSessionId, frameUrl, frameRevision, syncSnapshot])
+
+  useEffect(() => {
+    const wasReady = backendWasReady.current
+    const ready = status?.backend?.ready
+    backendWasReady.current = ready
+    // A failed iframe document cannot recover through postMessage alone.
+    if (opened && studioSessionId && wasReady === false && ready === true && !snapshotRef.current?.ready && Date.now() < connectionDeadline.current) {
+      setFrameRevision(previous => previous + 1)
+    }
+  }, [opened, studioSessionId, status?.backend?.ready])
 
   const studioAction = useCallback((action, payload, ownsRequest) => {
     if (['load-workflow', 'load-latest', 'load-preset'].includes(action)) stopInstant()
@@ -654,6 +690,15 @@ export default function CreateStudioHost() {
         setControlTab(previous => previous === 'tuning' ? previous : nextSnapshot.fields?.editing?.value === true ? 'edit' : 'create')
       }
     })
+  }
+
+  function retryConnection() {
+    setBridgeConnecting(true)
+    actionErrorVisible.current = false
+    setBridgeError('')
+    connectionDeadline.current = Date.now() + CONNECTION_WAIT_MS
+    if (!snapshotRef.current?.ready) setFrameRevision(previous => previous + 1)
+    else refreshControls()
   }
 
   function showSimpleStudio() {
@@ -1030,14 +1075,14 @@ export default function CreateStudioHost() {
           {session && <div className="create-controls-slot" hidden={!simpleView}>
             <SimpleCreateControls key={session.id + ':' + controlsRevision} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
-              onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={refreshControls} onAdvanced={showAdvancedStudio}
+              onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio}
               runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null}>
               {simpleView ? resultsContent : null}
             </SimpleCreateControls>
           </div>}
           <div className="create-studio-main" hidden={!!session && simpleView}>
             {/* The same mounted graph backs simple controls and the advanced editor. */}
-            {session && <iframe ref={studioFrame} title="DonutUI creation studio" src={frameUrl} className="create-studio-frame" hidden={showSetup || studioView !== 'advanced'} referrerPolicy="no-referrer" onLoad={frameLoaded} />}
+            {session && <iframe key={frameRevision} ref={studioFrame} title="DonutUI creation studio" src={frameUrl} className="create-studio-frame" hidden={showSetup || studioView !== 'advanced'} referrerPolicy="no-referrer" onLoad={frameLoaded} />}
             <div className="create-studio-setup" hidden={!showSetup && !!session}>
               {showSetup && !switchingServer && <CreateSettings key={serverRevision} onStatusChange={handleStatus} />}
               <button type="button" className="create-primary create-launch" disabled={switchingServer || opening || (!session && !status?.backend?.ready)} onClick={() => session ? showSimpleStudio() : launchStudio()}>

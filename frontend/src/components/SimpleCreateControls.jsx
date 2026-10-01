@@ -109,11 +109,11 @@ function SliderNumberField({ label, value, bounds, sliderBounds, disabled, onCha
     <div className="create-slider-inputs">
       {hasSlider && <input type="range" aria-label={`${label} slider${context ? ` for ${context}` : ''}`} aria-describedby={outside ? `${id}-range-note` : undefined}
         value={displayNumber(sliderValue)} min={min} max={max} step={bounds.step ?? 'any'} disabled={disabled || pending}
-        onPointerDown={event => { begin(); event.currentTarget.setPointerCapture?.(event.pointerId) }}
+        onPointerDown={begin}
         onPointerUp={finish} onPointerCancel={finish} onLostPointerCapture={finish} onBlur={finish}
         onKeyDown={event => { if (SLIDER_KEYS.has(event.key)) begin() }}
         onKeyUp={event => { if (SLIDER_KEYS.has(event.key)) finish() }}
-        onChange={event => change(event.target.value, true)} />}
+        onInput={event => change(event.currentTarget.value, true)} />}
       <input id={`${id}-number`} type="number" value={displayNumber(value)} min={bounds.min ?? undefined} max={bounds.max ?? undefined}
         step={bounds.step ?? 'any'} disabled={disabled || pending} onChange={event => change(event.target.value)} onBlur={finish} />
     </div>
@@ -465,11 +465,12 @@ export default function SimpleCreateControls({
         <div className="create-controls-intro"><h2>{activeTab === 'edit' ? 'Shape your image' : activeTab === 'tuning' ? 'Generation settings' : 'What do you imagine?'}</h2>
           <p>{activeTab === 'edit' ? 'Describe the whole finished image, then guide the changes.' : activeTab === 'tuning' ? 'Tune the current workflow without losing its recipe.' : 'A subject, a setting, and a little atmosphere.'}</p></div>
         {!connected && <div className="create-connection-note" role="status"><span className={connecting ? 'create-spinner' : 'create-connection-dot'} aria-hidden="true" />
-          <div><strong>{connecting ? 'Preparing your studio…' : 'Studio not connected'}</strong><p>{error || snapshot?.error || 'Controls will be ready when the workflow finishes loading.'}</p>
+          <div><strong>{connecting ? 'Preparing your studio…' : 'Studio not connected'}</strong><p>{error || snapshot?.error || 'Waiting for ComfyUI and the workflow to finish loading. This can take up to five minutes. You can close the studio while it starts.'}</p>
             {!connecting && <button type="button" onClick={onRetry}>Retry connection</button>}</div>
         </div>}
         {activeTab !== 'tuning' && <>
           {textField(activeTab === 'edit' ? 'editPrompt' : 'prompt', 'Describe your image', activeTab === 'edit' ? 'The finished image: keep the subject, change the background to a sunny beach…' : 'A cozy cabin beside a lake, morning mist, warm sunlight…', 6)}
+          {value('faceDetail') === true && textField('facePrompt', 'Describe only the face', 'Expression, facial features, makeup…', 3)}
           {(available('stylePrompt') || available('negativePrompt')) && <details className="create-prompt-options"><summary>Style & exclusions <span>Optional</span></summary>
             {textField('stylePrompt', 'Style prompt', 'Lighting, colors, artistic style…')}{textField('negativePrompt', 'Avoid in the image', 'Things you want to leave out…')}
           </details>}
@@ -522,12 +523,10 @@ export default function SimpleCreateControls({
     <aside className="create-effects" aria-label="Image effects">
       <header className="create-pane-heading"><h2>Effects</h2><span>Current recipe</span></header>
       <div className="create-effects-scroll">
-        {(available('compatibilityPreset') || available('tapStrength')) && <section className="create-effect-group">{selectField('compatibilityPreset')}{numberField('tapStrength')}</section>}
+        {(available('compatibilityPreset') || available('tapStrength')) && <section className="create-effect-group">{selectField('compatibilityPreset')}{value('compatibilityPreset') !== 'Off' && numberField('tapStrength')}</section>}
         {feature('decensor', 'Decensor', numberField('decensorWeight'))}
         {feature('upscale1', 'First upscale', upscaleSettings('upscale1'))}{feature('upscale2', 'Second upscale', upscaleSettings('upscale2'))}
-        {feature('faceDetail', 'Face detail', <>{numberField('faceDenoise')}{numberField('maxFaces')}
-          <details className="create-prompt-options"><summary>Face description <span>Optional</span></summary>{textField('facePrompt', 'Describe only the face', 'Expression, facial features, makeup…', 3)}
-            <p className="create-control-note">This guides face detail only. Keep the whole image description in the main prompt.</p></details></>)}
+        {feature('faceDetail', 'Face detail', <>{numberField('faceDenoise')}{numberField('maxFaces')}</>)}
         {feature('postUpscale', 'Final upscale', <>{selectField('postUpscaleModel')}{selectField('postUpscaleVae')}{numberField('postUpscaleScale')}
           <div className="create-control-pair">{numberField('postUpscaleSteps')}{numberField('postUpscaleDenoise')}</div>{selectField('postUpscaleColorCorrection')}</>)}
         {strengthFeature('nagStrength', 'NAG', null, 'Scale 0 turns NAG off.')}{strengthFeature('sdaStrength', 'SDA')}
