@@ -102,6 +102,7 @@ export default function CreateStudioHost() {
   const connectionDeadline = useRef(0)
   const backendWasReady = useRef(null)
   const studioActions = useRef(Promise.resolve())
+  const sessionMutationRevision = useRef(0)
   const pendingActions = useRef(0)
   const actionErrorVisible = useRef(false)
   const instantEnabled = useRef(false)
@@ -343,8 +344,10 @@ export default function CreateStudioHost() {
         }
         const current = sessionRef.current
         if (current) {
+          const mutationRevision = sessionMutationRevision.current
           const nextSession = await getStudioSession(current.id, signal)
-          if (active && requestGeneration === generation.current && sessionRef.current?.id === current.id) {
+          if (active && requestGeneration === generation.current && sessionRef.current?.id === current.id
+            && mutationRevision === sessionMutationRevision.current) {
             for (const job of nextSession.jobs || []) acknowledgedPrompts.current.delete(job.id)
             sessionRef.current = nextSession
             setSession(nextSession)
@@ -568,6 +571,7 @@ export default function CreateStudioHost() {
         && !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)) : undefined
       const nextSnapshot = await studioAction('generate', { outputDestination: outputDestination.current }, ownsRequest)
       const queuedIds = nextSnapshot.lastQueuedPromptIds || []
+      sessionMutationRevision.current += 1
       for (const id of queuedIds) acknowledgedPrompts.current.add(id)
       // The queue acknowledgement is authoritative; show it without waiting for
       // the next two-second session poll.
@@ -995,6 +999,8 @@ export default function CreateStudioHost() {
       const result = await cancelStudioJobs(current.id, requests.current.signal)
       if (mounted.current && requestGeneration === generation.current) {
         if (result.session?.id === current.id) {
+          sessionMutationRevision.current += 1
+          for (const job of result.session.jobs || []) acknowledgedPrompts.current.delete(job.id)
           sessionRef.current = result.session
           setSession(result.session)
         }

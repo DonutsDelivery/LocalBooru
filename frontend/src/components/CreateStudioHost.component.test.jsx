@@ -145,6 +145,25 @@ describe('Donut Create studio', () => {
     expect(api.apiClient.get.mock.calls.filter(([url]) => url.includes('/sessions/'))).toHaveLength(pollsBefore)
   })
 
+  test('does not let a session poll started before submission erase its queue acknowledgement', async () => {
+    session.jobs = []
+    session.outputs = []
+    const oldPoll = deferred()
+    api.apiClient.get.mockImplementation(async url => ({ data: url.endsWith('/status') ? status : await oldPoll.promise }))
+    const snapshot = { ready: true, fields: { prompt: { value: 'Synthetic landscape', available: true } } }
+    bridgeFixture.current = { dispose: vi.fn(), request: vi.fn(async action => action === 'generate'
+      ? { ...snapshot, lastQueuedPromptIds: ['new-queued-id'] } : snapshot) }
+    render(<CreateStudioHost />)
+    openStudio()
+    const generate = await screen.findByRole('button', { name: 'Generate image', exact: true })
+    await waitFor(() => expect(generate.disabled).toBe(false))
+    await waitFor(() => expect(api.apiClient.get.mock.calls.some(([url]) => url.includes('/sessions/'))).toBe(true))
+    fireEvent.click(generate)
+    await screen.findByText('1 active')
+    await act(async () => { oldPoll.resolve(session); await oldPoll.promise })
+    expect(screen.getByText('1 active')).toBeTruthy()
+  })
+
   test('keeps window controls and notifications interactive while the gallery is inert', async () => {
     const windowAction = vi.fn()
     const { container } = render(<>
