@@ -20,3 +20,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T02:57:19.470Z
+  - _ulid: 01M3TPV65DVQ3RB4CJ59GEAFA9
+    content: Independent review caught readiness HTTP probing inside lifecycle lock; moved status awaits
+      outside mutation lock so Stop can interrupt an owned child even while Start waits for
+      readiness. Parent real collaborative-browser checks with actual installed ComfyUI PNG metadata
+      parser restored PNG workflow prompt and empty-MIME JSON prompt exactly; active descriptor
+      values Euler/Simple/Rebalance confirmed. Fixture forbids real backend
+      lifecycle/generation/mutations, reads only backend module assets/catalogs. Drop slice
+      independent synthetic Host6/6, nativegrant5/5 and adapter contracts pass. Native wrapper
+      compile remains pending.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T03:06:35.565Z
