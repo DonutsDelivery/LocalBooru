@@ -5255,3 +5255,32 @@ reviews:
     created_at: 2026-10-01T02:13:38.255Z
     updated_at: 2026-10-01T02:13:39.084Z
     notes: []
+  - _ulid: 01M3TQ6DE9EB3ASNGJ4V2DFBS6
+    slugs:
+      - review-create-backend-controls
+    title: Create backend lifecycle/defaults independent source review; drop cross-review evidence
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3TQ6DE9VSK2FRSR448XSHG7
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T03:12:43.465Z
+    examined_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-backend-controls"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
+      head_branch: feat/create-backend-controls
+      head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+    threads: []
+    verdicts: []
+    created_at: 2026-10-01T03:12:43.465Z
+    updated_at: null
+    notes: []

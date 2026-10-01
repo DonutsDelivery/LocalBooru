@@ -17,6 +17,7 @@ context: []
 priority: 2
 tags: []
 vcs_refs: []
+review_ref: "@review-create-backend-controls"
 submission_linkage:
   review_url: null
   branch: splice/mac-pairing
@@ -56,6 +57,13 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-01T03:08:09.272Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@review-create-backend-controls"
+        previous: null
+    command: review-link
+    timestamp: 2026-10-01T03:12:43.624Z
 created_at: 2026-10-01T02:34:46.007Z
 started_at: 2026-10-01T02:34:46.125Z
 submitted_at: 2026-10-01T03:08:09.271Z
