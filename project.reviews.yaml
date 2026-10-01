@@ -7980,9 +7980,16 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-01T23:28:14.358Z
+      - _ulid: 01M3WWRM17K1T4C6SSC5NMG8W5
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T23:28:31.783Z
     examined_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@android-svp-hls-startup"
     subject:
@@ -7994,5 +8001,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-01T23:28:14.358Z
-    updated_at: null
+    updated_at: 2026-10-01T23:28:31.735Z
     notes: []
