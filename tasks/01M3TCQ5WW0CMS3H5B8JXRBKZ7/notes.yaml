@@ -21,3 +21,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T00:16:01.150Z
+  - _ulid: 01M3TD92SYTXYNBH980EAXZAW0
+    content: Independent review @review-create-connection-pane-polish approved exact843d877, gate
+      passing;24/24 disposable tests including pending patch close/reopen and new acknowledgement
+      passed. Integrated to main8a7d1b8 and pushed origin/main. Original root submission linkage
+      auto-captured unrelated4235aeb; actual reviewed source is843d877 and merge8a7d1b8, pinned
+      explicitly in review. Native atomic install is currently compiling through shared host gate;
+      DMC kept alive until installation is ready.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T00:19:25.118Z
