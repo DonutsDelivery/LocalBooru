@@ -22,6 +22,7 @@ import SimpleCreateControls from './SimpleCreateControls'
 import CreateResultPreview from './CreateResultPreview'
 import { createStudioBridge } from '../services/createStudioBridge'
 import { listenStudioDesktopDrops, studioDropFile } from '../services/createStudioDrop'
+import { toast } from './Toast'
 import './CreateStudio.css'
 
 const CONNECTION_WAIT_MS = 5 * 60 * 1000
@@ -92,6 +93,7 @@ export default function CreateStudioHost() {
   const visible = useRef(false)
   const trigger = useRef(null)
   const closeButton = useRef(null)
+  const navigationFocus = useRef(null)
   const host = useRef(null)
   const studioFrame = useRef(null)
   const bridge = useRef(null)
@@ -100,6 +102,7 @@ export default function CreateStudioHost() {
   const connectionDeadline = useRef(0)
   const backendWasReady = useRef(null)
   const studioActions = useRef(Promise.resolve())
+  const sessionMutationRevision = useRef(0)
   const pendingActions = useRef(0)
   const actionErrorVisible = useRef(false)
   const instantEnabled = useRef(false)
@@ -163,7 +166,9 @@ export default function CreateStudioHost() {
   useEffect(() => {
     if (!opened) return
     const siblings = Array.from(host.current.parentElement.children)
-      .filter(element => element !== host.current)
+      .filter(element => element !== host.current
+        && !element.classList.contains('toast-container')
+        && !element.classList.contains('title-bar'))
       .map(element => ({ element, inert: element.inert }))
     siblings.forEach(({ element }) => { element.inert = true })
     closeButton.current?.focus()
@@ -339,15 +344,17 @@ export default function CreateStudioHost() {
         }
         const current = sessionRef.current
         if (current) {
+          const mutationRevision = sessionMutationRevision.current
           const nextSession = await getStudioSession(current.id, signal)
-          if (active && requestGeneration === generation.current && sessionRef.current?.id === current.id) {
+          if (active && requestGeneration === generation.current && sessionRef.current?.id === current.id
+            && mutationRevision === sessionMutationRevision.current) {
             for (const job of nextSession.jobs || []) acknowledgedPrompts.current.delete(job.id)
             sessionRef.current = nextSession
             setSession(nextSession)
           }
         }
       } catch (pollError) {
-        if (!active || requestGeneration !== generation.current || signal.aborted) return
+        if (!active || requestGeneration !== generation.current || signal.aborted || pollError?.name === 'AbortError') return
         if ([404, 410].includes(pollError.response?.status) && sessionRef.current) {
           invalidateSession('The studio session expired or became unavailable. Open the studio again to reconnect.')
         } else {
@@ -563,7 +570,21 @@ export default function CreateStudioHost() {
         && authoredRevision.current === version && !draftsWaiting.current && visible.current
         && !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)) : undefined
       const nextSnapshot = await studioAction('generate', { outputDestination: outputDestination.current }, ownsRequest)
-      for (const id of nextSnapshot.lastQueuedPromptIds || []) acknowledgedPrompts.current.add(id)
+      const queuedIds = nextSnapshot.lastQueuedPromptIds || []
+      sessionMutationRevision.current += 1
+      for (const id of queuedIds) acknowledgedPrompts.current.add(id)
+      // The queue acknowledgement is authoritative; show it without waiting for
+      // the next two-second session poll.
+      const current = sessionRef.current
+      if (current && requestGeneration === generation.current) {
+        const known = new Set((current.jobs || []).map(job => job.id))
+        const added = queuedIds.filter(id => !known.has(id)).map(id => ({ id, status: 'queued' }))
+        if (added.length) {
+          const next = { ...current, jobs: [...(current.jobs || []), ...added] }
+          sessionRef.current = next
+          setSession(next)
+        }
+      }
       if (!isInstant) setMobilePane('results')
       return nextSnapshot
     } catch (generateError) {
@@ -783,12 +804,14 @@ export default function CreateStudioHost() {
   }
 
   function showSimpleStudio() {
+    if (showSetup || studioView !== 'simple') navigationFocus.current = 'simple'
     setShowSetup(false)
     setStudioView('simple')
     if (studioView === 'advanced') refreshControls()
   }
 
   function showAdvancedStudio() {
+    if (showSetup || studioView !== 'advanced') navigationFocus.current = 'advanced'
     stopInstant()
     if (pendingWorkflow.current && !pendingWorkflow.current.loading) {
       pendingWorkflow.current = null
@@ -976,6 +999,8 @@ export default function CreateStudioHost() {
       const result = await cancelStudioJobs(current.id, requests.current.signal)
       if (mounted.current && requestGeneration === generation.current) {
         if (result.session?.id === current.id) {
+          sessionMutationRevision.current += 1
+          for (const job of result.session.jobs || []) acknowledgedPrompts.current.delete(job.id)
           sessionRef.current = result.session
           setSession(result.session)
         }
@@ -997,6 +1022,22 @@ export default function CreateStudioHost() {
     }
   }
 
+  const notifiedError = useRef('')
+  useEffect(() => {
+    const message = error || (snapshot?.ready ? bridgeError : '')
+    if (opened && message && message !== notifiedError.current) toast.error(message)
+    notifiedError.current = opened ? message : ''
+  }, [opened, error, bridgeError, snapshot?.ready])
+
+  const simpleView = !showSetup && studioView === 'simple'
+  useEffect(() => {
+    if (!opened) return
+    const target = navigationFocus.current
+    navigationFocus.current = null
+    if (target) host.current?.querySelector(`[data-create-view="${target}"]`)?.focus()
+    else if (document.activeElement === document.body) closeButton.current?.focus()
+  }, [opened, simpleView, showSetup, studioSessionId, controlsRevision])
+
   if (!started) return null
   const jobs = session?.jobs || []
   const activeJobs = jobs.filter(job => job.status === 'queued' || job.status === 'running')
@@ -1004,7 +1045,6 @@ export default function CreateStudioHost() {
   const destination = directories.find(directory => directory.key === destinationKey)
   const connected = !!status?.backend?.ready && !!snapshot?.ready && !bridgeConnecting && !switchingServer
   const fields = snapshot?.fields || {}
-  const simpleView = !showSetup && studioView === 'simple'
   const referenceUrls = {}
   for (const key of ['referenceA', 'referenceB', 'guidanceReferenceA', 'guidanceReferenceB']) {
     const reference = fields[key]?.value
@@ -1073,11 +1113,15 @@ export default function CreateStudioHost() {
     <button type="button" aria-label="Image tools" title="Image tools" aria-pressed={centerView === 'canvas'} onClick={() => setCenterView('canvas')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 4h16v16H4zM4 9h16M9 4v16m4-5 6-6 3 3-6 6-4 1z" /></svg></button>
   </div>
 
-  const historyContent = <div className="create-history-grid">
-    {outputs.length === 0 && <div className="create-history-empty"><strong>Your image history starts here</strong><p>Completed images stay in this workspace until the session expires.</p></div>}
-    {outputs.slice().reverse().map(output => {
-      const result = saved[output.id + ':' + destinationKey]
-      return <article className="create-history-item" key={output.id}>
+  const historyRuns = new Map()
+  for (const output of outputs.slice().reverse()) {
+    const key = output.prompt_id || output.id
+    if (!historyRuns.has(key)) historyRuns.set(key, [])
+    historyRuns.get(key).push(output)
+  }
+  const historyOutput = output => {
+    const result = saved[output.id + ':' + destinationKey]
+    return <article className="create-history-item" key={output.id}>
         <button type="button" className="create-history-preview" aria-label={'Preview ' + (output.filename || 'generated image')}
           aria-pressed={selectedOutput?.id === output.id && !liveImage} onClick={() => { setSelectedOutputId(output.id); setCenterView('preview'); setMobilePane('results') }}>
           <img src={outputUrl(session.id, output.id)} alt={output.filename || 'Generated image'} loading="lazy" />
@@ -1090,6 +1134,19 @@ export default function CreateStudioHost() {
           </button>
         </div>
       </article>
+  }
+  const historyContent = <div className="create-history-grid">
+    {outputs.length === 0 && <div className="create-history-empty"><strong>Your image history starts here</strong><p>Completed images stay in this workspace until the session expires.</p></div>}
+    {Array.from(historyRuns, ([runId, runOutputs]) => {
+      const finals = runOutputs.filter(output => output.final !== false)
+      const stages = runOutputs.filter(output => output.final === false)
+      return <section className="create-history-run" key={runId} aria-label={'Generation run ' + runId}>
+        <header><strong>Run {runId.slice(0, 8)}</strong><span>{finals.length ? finals.length + (finals.length === 1 ? ' result' : ' results') : 'In progress'}</span></header>
+        {finals.length > 0 && <div className="create-history-run-outputs">{finals.map(historyOutput)}</div>}
+        {stages.length > 0 && <details className="create-history-stages"><summary>Stages ({stages.length})</summary>
+          <div className="create-history-run-outputs">{stages.map(historyOutput)}</div>
+        </details>}
+      </section>
     })}
   </div>
 
@@ -1127,8 +1184,9 @@ export default function CreateStudioHost() {
             <button type="button" onClick={() => { setFailedPreview(''); setPreviewRetry(previous => previous + 1) }}>Retry preview</button></div>
             : <CreateResultPreview key={previewRetry} imageKey={liveImage ? session.id + ':live:' + (livePreview?.promptId || stagePreview?.prompt_id || activeJobs.find(job => job.status === 'running')?.id || 'current') : selectedOutput?.id} src={previewUrl} alt={liveImage ? 'Live generation preview' : selectedOutput?.filename || 'Generated image'} onError={() => setFailedPreview(previewUrl)} />}
           {!liveImage && imported && <span className="create-saved-badge">Saved</span>}
-          {hasActiveJobs && !selectedOutputId && <div className="create-preview-run-status"><span className="create-spinner" aria-hidden="true" />
-            {liveProgress ? Math.round(liveProgress.value / liveProgress.max * 100) + '% · Generating' : activeJobs.some(job => job.status === 'running') ? 'Generating' : 'Queued'}
+          {hasActiveJobs && <div className="create-preview-run-status"><span className="create-spinner" aria-hidden="true" />
+            <span>{liveProgress ? Math.round(liveProgress.value / liveProgress.max * 100) + '% · Generating' : activeJobs.some(job => job.status === 'running') ? 'Generating' : 'Queued'}</span>
+            {liveProgress && <progress className="create-live-progress" value={liveProgress.value} max={liveProgress.max} aria-label="Generation progress" />}
             {previewConnecting && <small>Live preview reconnecting…</small>}</div>}
         </div> : <div className="create-results-empty">
           {centerSwitch}
@@ -1136,7 +1194,7 @@ export default function CreateStudioHost() {
           <h3>{hasActiveJobs ? 'Your idea is taking shape' : 'Your next favorite image starts here'}</h3>
           <p>{hasActiveJobs ? 'Live previews appear while your image runs. Completed results stay in History.' : 'Describe an image and choose Generate. Your latest result appears here.'}</p>
         </div>}
-        {hasActiveJobs && liveProgress && <progress className="create-live-progress" value={liveProgress.value} max={liveProgress.max} aria-label="Generation progress" />}
+        {!previewUrl && hasActiveJobs && liveProgress && <progress className="create-live-progress" value={liveProgress.value} max={liveProgress.max} aria-label="Generation progress" />}
         {selectedOutput && !liveImage && <div className="create-preview-actions"><span>{selectedOutput.final === false ? 'Workflow stage result' : 'Completed image'}{imported ? ' · Saved to library' : ''}</span>
           <button type="button" className="create-primary" disabled={!destination || saving !== null || creatingDirectory || !!imported} onClick={() => saveOutput(selectedOutput)}>
             {saving === selectedOutput.id ? 'Saving…' : imported ? 'Saved to library' : 'Save to library'}
@@ -1146,6 +1204,20 @@ export default function CreateStudioHost() {
       {!simpleView && historyContent}
     </div>
   </section>
+
+  const workspaceNavigation = <nav className="create-workspace-navigation" aria-label="Studio navigation">
+    <div className="create-exit-slot"><button type="button" ref={closeButton} onClick={closeStudio}>Exit</button></div>
+    <div className="create-mode-actions">
+      {session && <div className="create-view-switch"><button type="button" data-create-view="simple" aria-pressed={simpleView} onClick={showSimpleStudio}>Simple</button>
+        <button type="button" data-create-view="advanced" aria-pressed={!showSetup && studioView === 'advanced'} onClick={showAdvancedStudio}>Advanced</button></div>}
+      <button type="button" data-create-view="setup" aria-pressed={showSetup} onClick={() => { if (!showSetup) navigationFocus.current = 'setup'; stopInstant(); setShowSetup(true) }}>Setup</button>
+      {opened && <CreateSettings key={serverRevision} backendOnly onStatusChange={handleStatus} />}
+    </div>
+  </nav>
+  const mobileNavigation = <div className="create-mobile-workspace-nav" role="group" aria-label="Workspace panel">
+    {[['controls', 'Controls'], ['results', 'Preview'], ['effects', 'Effects'], ['models', 'Models'], ['history', 'History']].map(([pane, label]) =>
+      <button type="button" key={pane} aria-pressed={mobilePane === pane} onClick={() => setMobilePane(pane)}>{label}</button>)}
+  </div>
 
   return (
     <div className="create-studio-host" hidden={!opened} ref={host}
@@ -1157,31 +1229,18 @@ export default function CreateStudioHost() {
         importDroppedFiles(files, event.target.closest?.('[data-create-drop-reference]')?.getAttribute('data-create-drop-reference') || undefined)
       }}>
       <section className="create-studio-dialog" role="dialog" aria-modal="true" aria-labelledby="create-studio-title">
-        <header className="create-studio-header">
-          <div className="create-studio-brand"><div className="create-brand-mark" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4L12 3Z" /></svg></div>
-            <div><h1 id="create-studio-title">Create images</h1><span>Donut workflow v5 <span aria-hidden="true">·</span> Your creative workspace</span></div></div>
-          <div className="create-actions">
-            {session && <div className="create-view-switch"><button type="button" aria-pressed={simpleView} onClick={showSimpleStudio}>Simple studio</button>
-              <button type="button" aria-pressed={!showSetup && studioView === 'advanced'} onClick={showAdvancedStudio}>Advanced editor</button></div>}
-            <button type="button" aria-pressed={showSetup} onClick={() => { stopInstant(); setShowSetup(true) }}>Setup</button>
-            <button type="button" ref={closeButton} onClick={closeStudio}>Close studio</button>
-          </div>
-        </header>
+        <h1 id="create-studio-title" className="create-sr-status">Create images</h1>
+        {(!session || !simpleView) && workspaceNavigation}
         <p className="create-sr-status" role="status" aria-live="polite">{announcement}</p>
-        {error && <p className="create-message error" role="alert">{error}</p>}
-        {bridgeError && snapshot?.ready && <p className="create-message error" role="alert">{bridgeError}</p>}
         {switchingServer && <p className="create-message" role="status">Connecting to the selected server…</p>}
         {workflowPending && <p className="create-message" role="status">{bridgeBusy === 'load-workflow' ? 'Loading the saved workflow…' : 'The saved workflow is waiting for the studio to be ready.'}</p>}
-        {session && simpleView && <div className="create-mobile-workspace-nav" role="group" aria-label="Workspace panel">
-          {[['controls', 'Controls'], ['results', 'Preview'], ['effects', 'Effects'], ['models', 'Models'], ['history', 'History']].map(([pane, label]) =>
-            <button type="button" key={pane} aria-pressed={mobilePane === pane} onClick={() => setMobilePane(pane)}>{label}</button>)}
-        </div>}
         <div className={'create-studio-body create-view-' + (showSetup ? 'setup' : studioView) + ' create-mobile-' + mobilePane}>
           {session && <div className="create-controls-slot" hidden={!simpleView}>
             <SimpleCreateControls key={session.id + ':' + controlsRevision} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : dropPending ? bridgeBusy || 'drop-file' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
               onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio}
-              runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null} jobsContent={simpleView ? jobsContent : null} finalizeContent={simpleView ? finalizeContent : null}>
+              runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null} jobsContent={simpleView ? jobsContent : null} finalizeContent={simpleView ? finalizeContent : null}
+              navigation={simpleView ? workspaceNavigation : null} mobileNavigation={simpleView ? mobileNavigation : null}>
               {simpleView ? resultsContent : null}
             </SimpleCreateControls>
           </div>}
@@ -1189,7 +1248,7 @@ export default function CreateStudioHost() {
             {/* The same mounted graph backs simple controls and the advanced editor. */}
             {session && <iframe key={frameRevision} ref={studioFrame} title="DonutUI creation studio" src={frameUrl} className="create-studio-frame" hidden={showSetup || studioView !== 'advanced'} referrerPolicy="no-referrer" onLoad={frameLoaded} />}
             <div className="create-studio-setup" hidden={!showSetup && !!session}>
-              {showSetup && !switchingServer && <CreateSettings key={serverRevision} onStatusChange={handleStatus} />}
+              {showSetup && !switchingServer && <CreateSettings key={serverRevision} hideBackendControls onStatusChange={handleStatus} />}
               <button type="button" className="create-primary create-launch" disabled={switchingServer || opening || (!session && !status?.backend?.ready)} onClick={() => session ? showSimpleStudio() : launchStudio()}>
                 {opening ? 'Connecting studio…' : session ? 'Return to studio' : 'Open studio'}
               </button>

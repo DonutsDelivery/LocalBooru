@@ -537,8 +537,11 @@ class Controller:
         return {"id": sid, "backend_url": session["backend_url"],
                 "studio_path": f"/api/create/studio/{sid}/", "expires_at": session["expires_at"],
                 "workspace": session.get("workspace", False), "latest_run_revision": session.get("latest_run_revision", 0),
-                "jobs": [{key: value for key, value in job.items() if not session.get("workspace") or key not in {"prompt", "workflow"}}
-                         for job in session["jobs"].values()], "outputs": list(session["outputs"].values()),
+                "jobs": [{key: value for key, value in job.items() if key != "history_reconciled" and (not session.get("workspace") or key not in {"prompt", "workflow"})}
+                         for job in session["jobs"].values()],
+                "outputs": [{key: value for key, value in output.items()
+                             if not session.get("workspace") or key not in {"workflow", "prompt", "execution", "metadata"}}
+                            for output in session["outputs"].values()],
                 "previews": list(session.get("previews", {}).values())}
 
     def workflow_property(self, job: dict[str, Any], node_id: str, name: str) -> Any:
@@ -614,12 +617,14 @@ class Controller:
                 job["status"] = "cancelled" if entry[0] == "execution_interrupted" else "error"
                 detail = entry[1] if isinstance(entry[1], dict) else {}
                 job["error"] = str(detail.get("exception_message") or detail.get("exception_type") or "Generation failed.")[:2000]
-        if isinstance(status, dict) and status.get("status_str") == "error":
+        if isinstance(status, dict) and status.get("status_str") == "error" and not failed:
             failed = True
             job["status"] = "error"
             job.setdefault("error", "ComfyUI reported an execution error.")
         completed = (status.get("completed") is True or status.get("status_str") == "success"
                      or (not status and bool(record.get("outputs")))) if isinstance(status, dict) else False
+        if failed:
+            job["history_reconciled"] = True
         if not completed or failed:
             return
         job["status"] = "completed"
@@ -650,6 +655,7 @@ class Controller:
                     "url": f"/api/create/output/{session['id']}/{oid}",
                     "workflow": job.get("workflow"), "prompt": job.get("prompt"), "execution": job["execution"],
                     "metadata": metadata}
+        job["history_reconciled"] = True
 
     def execution_metadata(self, job: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
         metadata: dict[str, Any] = {"prompt_id": job["id"]}
@@ -723,7 +729,12 @@ class Controller:
         if not isinstance(queue, dict):
             raise HTTPException(502, "ComfyUI returned an invalid queue.")
         running, pending = queue_ids(queue, "queue_running"), queue_ids(queue, "queue_pending")
-        for prompt_id, job in session["jobs"].items():
+        changed = False
+        # New submissions can arrive while a history request is awaiting I/O.
+        for prompt_id, job in list(session["jobs"].items()):
+            previous_status = job["status"]
+            if job.get("history_reconciled"):
+                continue
             if prompt_id in running:
                 job["status"] = "running"
                 job["last_seen_at"] = self.clock()
@@ -735,10 +746,13 @@ class Controller:
                 record = history.get(prompt_id) if isinstance(history, dict) else None
                 if record is not None:
                     self.record_history(session, prompt_id, record)
+                    changed = changed or job.get("history_reconciled", False)
                 elif job["status"] in {"queued", "running"} and self.clock() - job.get("last_seen_at", job["created_at"]) > 10:
                     job["status"] = "error"
                     job["error"] = "The backend no longer reports this prompt. It may have restarted or cleared history."
-        self.persist()
+            changed = changed or job["status"] != previous_status
+        if changed:
+            self.persist()
         return queue
 
     def validate_prompt(self, session: dict[str, Any], body: dict[str, Any]) -> None:
@@ -947,7 +961,10 @@ class Controller:
 
     async def cancel(self, session: dict[str, Any], requested: set[str] | None = None) -> dict[str, Any]:
         async with self.mutation_lock:
-            queue = await self.reconcile(session)
+            # Cancellation needs current queue ownership, not completed history.
+            queue = await self.backend_json(session["backend_url"], "queue")
+            if not isinstance(queue, dict):
+                raise HTTPException(502, "ComfyUI returned an invalid queue.")
             owned = set(session["jobs"]) if requested is None else set(session["jobs"]) & requested
             pending = queue_ids(queue, "queue_pending") & owned
             running = queue_ids(queue, "queue_running") & owned
@@ -956,7 +973,16 @@ class Controller:
                 response = await self.request_backend(session["backend_url"], "POST", "queue", json={"delete": sorted(pending)})
                 if not response.is_success:
                     raise HTTPException(502, "ComfyUI could not remove this studio's queued prompts.")
-                cancelled.extend(sorted(pending))
+                # A queued prompt may have started before the delete arrived.
+                # Recheck and use scoped interruption for any promoted owned job.
+                queue = await self.backend_json(session["backend_url"], "queue")
+                if not isinstance(queue, dict):
+                    raise HTTPException(502, "ComfyUI returned an invalid queue.")
+                still_pending = queue_ids(queue, "queue_pending") & pending
+                running = queue_ids(queue, "queue_running") & owned
+                cancelled.extend(sorted(pending - running - still_pending))
+                if still_pending:
+                    errors.append("ComfyUI did not remove all of this studio's queued prompts.")
             for prompt_id in sorted(running):
                 # ComfyUI's jobs API performs the ownership check atomically.
                 response = await self.request_backend(session["backend_url"], "POST", f"api/jobs/{prompt_id}/cancel", json={})
@@ -997,17 +1023,24 @@ class Controller:
         if prompt_id not in session["jobs"]:
             return False
         job = session["jobs"][prompt_id]
+        if job.get("history_reconciled"):
+            return False  # Delayed socket events cannot reopen confirmed history.
         kind = event.get("type")
+        changed = False
         if kind in {"execution_error", "execution_interrupted"}:
+            changed = True
             job["status"] = "cancelled" if kind == "execution_interrupted" else "error"
             job["error"] = str(data.get("exception_message") or "Generation interrupted.")[:2000]
         elif kind == "execution_start" or (kind == "executing" and data.get("node") is not None):
+            changed = job["status"] != "running"
             job["status"] = "running"
             job["last_seen_at"] = self.clock()
         elif kind == "executed" and isinstance(data.get("output"), dict):
+            changed = True
             self.record_masks(session, data["output"])
             self.record_previews(session, prompt_id, str(data.get("node", "")), data["output"])
-        self.persist()
+        if changed:
+            self.persist()
         return True
 
 

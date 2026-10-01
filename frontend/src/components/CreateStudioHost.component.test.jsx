@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { StrictMode } from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+
+const bridgeFixture = vi.hoisted(() => ({ current: null }))
+vi.mock('../services/createStudioBridge', async importOriginal => {
+  const original = await importOriginal()
+  return { ...original, createStudioBridge: options => bridgeFixture.current || original.createStudioBridge(options) }
+})
 
 const api = vi.hoisted(() => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
@@ -20,6 +26,8 @@ import CreateStudioHost from './CreateStudioHost'
 import CreateSettings from './CreateSettings'
 import Sidebar from './Sidebar/Sidebar'
 import AddonSettings from './AddonSettings'
+import ToastContainer, { toast } from './Toast'
+import { getCreateStatus, startCreateBackend, stopCreateBackend } from '../services/donutCreate'
 
 const CREATE_API = '/addons/donut-create/api/create'
 let status
@@ -56,6 +64,7 @@ async function reconnectStudio() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  bridgeFixture.current = null
   status = {
     mode: 'managed', backend_url: 'http://127.0.0.1:18010',
     backend: { ready: true, running: true, owned: true },
@@ -113,6 +122,219 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('Donut Create studio', () => {
+  test('shows an acknowledged queue submission before the next session poll', async () => {
+    session.jobs = []
+    session.outputs = []
+    const snapshot = { ready: true, fields: { prompt: { value: 'Synthetic landscape', available: true } } }
+    bridgeFixture.current = {
+      dispose: vi.fn(),
+      request: vi.fn(async action => action === 'generate'
+        ? { ...snapshot, lastQueuedPromptIds: ['new-queued-id'] } : snapshot),
+    }
+    render(<CreateStudioHost />)
+    openStudio()
+    const generate = await screen.findByRole('button', { name: 'Generate image', exact: true })
+    await waitFor(() => expect(generate.disabled).toBe(false))
+    const pollsBefore = api.apiClient.get.mock.calls.filter(([url]) => url.includes('/sessions/')).length
+    fireEvent.click(generate)
+    await screen.findByText('1 active')
+    const details = screen.getByText('Studio jobs').closest('details')
+    details.open = true
+    expect(within(details).getByText('new-queu')).toBeTruthy()
+    expect(within(details).getByText('queued')).toBeTruthy()
+    expect(api.apiClient.get.mock.calls.filter(([url]) => url.includes('/sessions/'))).toHaveLength(pollsBefore)
+  })
+
+  test('does not let a session poll started before submission erase its queue acknowledgement', async () => {
+    session.jobs = []
+    session.outputs = []
+    const oldPoll = deferred()
+    api.apiClient.get.mockImplementation(async url => ({ data: url.endsWith('/status') ? status : await oldPoll.promise }))
+    const snapshot = { ready: true, fields: { prompt: { value: 'Synthetic landscape', available: true } } }
+    bridgeFixture.current = { dispose: vi.fn(), request: vi.fn(async action => action === 'generate'
+      ? { ...snapshot, lastQueuedPromptIds: ['new-queued-id'] } : snapshot) }
+    render(<CreateStudioHost />)
+    openStudio()
+    const generate = await screen.findByRole('button', { name: 'Generate image', exact: true })
+    await waitFor(() => expect(generate.disabled).toBe(false))
+    await waitFor(() => expect(api.apiClient.get.mock.calls.some(([url]) => url.includes('/sessions/'))).toBe(true))
+    fireEvent.click(generate)
+    await screen.findByText('1 active')
+    await act(async () => { oldPoll.resolve(session); await oldPoll.promise })
+    expect(screen.getByText('1 active')).toBeTruthy()
+  })
+
+  test('does not let an older session poll reopen an acknowledged cancellation', async () => {
+    const oldPoll = deferred()
+    api.apiClient.get.mockImplementation(async url => ({ data: url.endsWith('/status') ? status : await oldPoll.promise }))
+    api.apiClient.post.mockImplementation(async url => ({ data: url.endsWith('/cancel')
+      ? { cancelled: ['owned-job'], session: { ...session, jobs: [{ id: 'owned-job', status: 'cancelled' }] } }
+      : session }))
+    render(<CreateStudioHost />)
+    openStudio()
+    const cancel = await screen.findByRole('button', { name: 'Cancel studio jobs' })
+    await waitFor(() => expect(api.apiClient.get.mock.calls.some(([url]) => url.includes('/sessions/'))).toBe(true))
+    fireEvent.click(cancel)
+    await screen.findByText('cancelled')
+    await act(async () => { oldPoll.resolve(session); await oldPoll.promise })
+    expect(screen.getByText('cancelled')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Cancel studio jobs' })).toBeNull()
+  })
+
+  test('keeps window controls and notifications interactive while the gallery is inert', async () => {
+    const windowAction = vi.fn()
+    const { container } = render(<>
+      <div className="title-bar"><button onClick={windowAction}>Window action</button></div>
+      <main data-testid="gallery">Gallery</main>
+      <ToastContainer />
+      <CreateStudioHost />
+    </>)
+    const titlebar = container.querySelector('.title-bar')
+    const gallery = screen.getByTestId('gallery')
+    titlebar.inert = false
+    gallery.inert = false
+    act(() => { toast.info('Synthetic window notification', 0) })
+    openStudio()
+    await screen.findByTitle('DonutUI creation studio')
+    expect(titlebar.inert).toBe(false)
+    expect(container.querySelector('.toast-container').inert).not.toBe(true)
+    expect(gallery.inert).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Window action' }))
+    expect(windowAction).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Exit', exact: true }))
+    expect(gallery.inert).toBe(false)
+  })
+
+  test('places studio navigation over the sidebars and preserves it through setup and advanced mode', async () => {
+    const { container } = render(<CreateStudioHost />)
+    openStudio()
+    const frame = await screen.findByTitle('DonutUI creation studio')
+    const exit = screen.getByRole('button', { name: 'Exit', exact: true })
+    expect(exit.closest('.create-exit-slot')).toBeTruthy()
+    expect(exit.closest('.create-simple-workspace')).toBeTruthy()
+    const advanced = screen.getByRole('button', { name: 'Advanced', exact: true })
+    expect(advanced.closest('.create-mode-actions')).toBeTruthy()
+    expect(container.querySelector('.create-studio-header')).toBeNull()
+    advanced.focus()
+    fireEvent.click(advanced)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Advanced', exact: true }))
+    expect(frame.hidden).toBe(false)
+    expect(screen.getByRole('button', { name: 'Exit', exact: true }).closest('.create-simple-workspace')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Setup', exact: true }))
+    await screen.findByRole('button', { name: 'Return to studio' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Setup', exact: true }))
+    expect(screen.getByRole('button', { name: 'Exit', exact: true })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Simple', exact: true }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Simple', exact: true }))
+    expect(screen.getByTitle('DonutUI creation studio')).toBe(frame)
+    expect(screen.getByRole('button', { name: 'Exit', exact: true }).closest('.create-simple-workspace')).toBeTruthy()
+  })
+
+  test('keeps generation progress inside the compact badge while inspecting a previous result', async () => {
+    let socket
+    vi.stubGlobal('WebSocket', class {
+      constructor() { socket = this }
+      close() {}
+    })
+    try {
+      const { container } = render(<CreateStudioHost />)
+      openStudio()
+      await screen.findByTitle('DonutUI creation studio')
+      await waitFor(() => expect(socket?.onmessage).toBeTypeOf('function'))
+      act(() => socket.onmessage({ data: JSON.stringify({ type: 'progress', data: { value: 88, max: 100 } }) }))
+      const progress = await screen.findByRole('progressbar', { name: 'Generation progress' })
+      expect(progress.value).toBe(88)
+      expect(progress.closest('.create-preview-run-status')).toBeTruthy()
+      expect(container.querySelector('.create-large-preview > progress')).toBeNull()
+      fireEvent.click(screen.getByRole('tab', { name: 'History', exact: true }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Preview synthetic.png', exact: true }))
+      expect(screen.getByRole('progressbar', { name: 'Generation progress' }).value).toBe(88)
+      expect(screen.getByText('Selected image')).toBeTruthy()
+    } finally { cleanup(); vi.unstubAllGlobals() }
+  })
+
+  test('groups final batch images by run and collapses intermediate stages', async () => {
+    session.outputs = [
+      { id: 'stage-a', filename: 'first-pass.png', prompt_id: 'run-a', final: false, media_type: 'image/png' },
+      { id: 'final-a1', filename: 'final-one.png', prompt_id: 'run-a', final: true, media_type: 'image/png' },
+      { id: 'final-a2', filename: 'final-two.png', prompt_id: 'run-a', final: true, media_type: 'image/png' },
+      { id: 'final-b', filename: 'next-run.png', prompt_id: 'run-b', final: true, media_type: 'image/png' },
+    ]
+    render(<CreateStudioHost />)
+    openStudio()
+    await screen.findByTitle('DonutUI creation studio')
+    fireEvent.click(screen.getByRole('tab', { name: 'History', exact: true }))
+    const runs = screen.getAllByRole('region', { name: /Generation run/ })
+    expect(runs).toHaveLength(2)
+    expect(runs[0].getAttribute('aria-label')).toBe('Generation run run-b')
+    const run = screen.getByRole('region', { name: 'Generation run run-a' })
+    expect(within(run).getByText('2 results')).toBeTruthy()
+    expect(within(run).getByRole('button', { name: 'Preview final-one.png' })).toBeTruthy()
+    expect(within(run).getByRole('button', { name: 'Preview final-two.png' })).toBeTruthy()
+    const stages = within(run).getByText('Stages (1)').closest('details')
+    expect(stages.open).toBe(false)
+    stages.open = true
+    fireEvent.click(within(stages).getByRole('button', { name: 'Preview first-pass.png' }))
+    expect(screen.getByText('Selected image')).toBeTruthy()
+  })
+
+  test('notifies failures through existing toast UI without adding a studio banner', async () => {
+    const { container } = render(<><ToastContainer /><CreateStudioHost /></>)
+    openStudio()
+    const cancel = await screen.findByRole('button', { name: 'Cancel studio jobs' })
+    api.apiClient.post.mockRejectedValueOnce(new Error('Synthetic cancellation failure'))
+    fireEvent.click(cancel)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('Synthetic cancellation failure')
+    expect(alert.closest('.toast-container')).toBeTruthy()
+    expect(alert.closest('.toast-container').inert).not.toBe(true)
+    expect(container.querySelector('.create-studio-dialog > .create-message.error')).toBeNull()
+  })
+
+  test('offers owned backend stop and restart from the right sidebar without opening Setup', async () => {
+    render(<CreateStudioHost />)
+    openStudio()
+    await screen.findByTitle('DonutUI creation studio')
+    const summary = await screen.findByText('ComfyUI', { selector: 'summary' })
+    expect(summary.closest('.create-mode-actions')).toBeTruthy()
+    summary.closest('details').open = true
+    const restart = screen.getByRole('button', { name: 'Restart ComfyUI' })
+    await waitFor(() => expect(restart.disabled).toBe(false))
+    fireEvent.click(restart)
+    await waitFor(() => expect(api.apiClient.post.mock.calls.some(([url]) => url.endsWith('/backend/restart'))).toBe(true))
+    expect(screen.getByTitle('DonutUI creation studio')).toBeTruthy()
+  })
+
+  test.each(['before', 'during'])('discards status polls begun %s a backend stop across all views', async when => {
+    const oldPoll = deferred(), stopping = deferred()
+    api.apiClient.get.mockReturnValueOnce(oldPoll.promise)
+    api.apiClient.post.mockReturnValueOnce(stopping.promise)
+    let poll, stop
+    if (when === 'before') {
+      poll = getCreateStatus()
+      stop = stopCreateBackend()
+    } else {
+      stop = stopCreateBackend()
+      poll = getCreateStatus()
+    }
+    const rejected = expect(poll).rejects.toMatchObject({ name: 'AbortError' })
+    stopping.resolve({ data: { ...status, backend: { ready: false, running: false, owned: false } } })
+    expect((await stop).backend.owned).toBe(false)
+    oldPoll.resolve({ data: status })
+    await rejected
+  })
+
+  test('a delayed start cannot overwrite a newer stop acknowledgement', async () => {
+    const starting = deferred()
+    api.apiClient.post.mockReturnValueOnce(starting.promise)
+    const start = startCreateBackend()
+    const rejected = expect(start).rejects.toMatchObject({ name: 'AbortError' })
+    api.apiClient.post.mockResolvedValueOnce({ data: { ...status, backend: { owned: false, ready: false, running: false } } })
+    expect((await stopCreateBackend()).backend.owned).toBe(false)
+    starting.resolve({ data: status })
+    await rejected
+  })
+
   // AC: @donut-create-plugin ac-save-gallery
   test('offers exclusive ComfyUI saving and never automatically copies permanent outputs', async () => {
     render(<CreateStudioHost />)
@@ -154,7 +376,7 @@ describe('Donut Create studio', () => {
     await screen.findByTitle('DonutUI creation studio')
     expect(gallery.scrollTop).toBe(820)
     expect(screen.getByRole('link', { name: 'Images' }).getAttribute('aria-current')).toBe('page')
-    fireEvent.click(screen.getByRole('button', { name: 'Close studio' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Exit' }))
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(gallery.scrollTop).toBe(820)
     expect(document.activeElement).toBe(createButton)
@@ -183,9 +405,9 @@ describe('Donut Create studio', () => {
     await screen.findByRole('button', { name: 'Return to studio' })
     fireEvent.click(screen.getByRole('button', { name: 'Return to studio' }))
     expect(frame.hidden).toBe(true) // Basic view retains the workflow engine without showing its graph.
-    fireEvent.click(screen.getByRole('button', { name: 'Advanced editor', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }))
     expect(frame.hidden).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: 'Close studio' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Exit' }))
     openStudio()
     expect(screen.getByTitle('DonutUI creation studio')).toBe(frame)
     expect(frame.contentDocument.querySelector('input').value).toBe('edited studio prompt')
@@ -245,12 +467,12 @@ describe('Donut Create studio', () => {
   // AC: @donut-create-plugin ac-job-ownership
   test('shows cancellation errors when the running prompt was left unchanged', async () => {
     const message = 'This backend lacks prompt-specific interruption. The running prompt was left unchanged.'
-    render(<CreateStudioHost />)
+    render(<><ToastContainer /><CreateStudioHost /></>)
     openStudio()
     const cancel = await screen.findByRole('button', { name: 'Cancel studio jobs' })
     api.apiClient.post.mockResolvedValueOnce({ data: { cancelled: [], errors: [message] } })
     fireEvent.click(cancel)
-    expect((await screen.findByRole('alert')).textContent).toBe(message)
+    expect((await screen.findByRole('alert')).querySelector('.toast-message').textContent).toBe(message)
     expect(screen.getAllByRole('status').some(element => element.textContent === message)).toBe(true)
     expect(screen.getByText('running')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Cancel studio jobs' }).disabled).toBe(false)
@@ -260,12 +482,12 @@ describe('Donut Create studio', () => {
 
   // AC: @donut-create-plugin ac-workflow-state
   test('invalidates the old session when the backend changes', async () => {
-    render(<CreateStudioHost />)
+    render(<><ToastContainer /><CreateStudioHost /></>)
     openStudio()
     const oldFrame = await screen.findByTitle('DonutUI creation studio')
     act(() => { window.dispatchEvent(new CustomEvent('donut-create-backend-changed')) })
     expect(oldFrame.isConnected).toBe(false)
-    expect(screen.getByRole('alert').textContent).toMatch(/backend changed/)
+    expect((await screen.findByRole('alert')).querySelector('.toast-message').textContent).toMatch(/backend changed/)
     session = { ...session, id: 'new-scoped-session', backend_url: 'http://127.0.0.1:8288' }
     status = { ...status, backend_url: session.backend_url }
     const launch = await screen.findByRole('button', { name: 'Open studio', exact: true })

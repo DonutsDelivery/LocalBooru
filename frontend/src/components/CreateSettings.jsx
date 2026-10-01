@@ -11,9 +11,10 @@ import {
   stopCreateBackend,
   restartCreateBackend,
 } from '../services/donutCreate'
+import { toast } from './Toast'
 import './CreateStudio.css'
 
-export default function CreateSettings({ onStatusChange }) {
+export default function CreateSettings({ onStatusChange, backendOnly = false, hideBackendControls = false }) {
   const [addon, setAddon] = useState(null)
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -81,7 +82,7 @@ export default function CreateSettings({ onStatusChange }) {
       if (serverChanging.current || refreshGeneration.current === generation.current) return
       const requestGeneration = generation.current
       return refresh()
-        .catch(loadError => { if (mounted.current && requestGeneration === generation.current) setError(createErrorMessage(loadError)) })
+        .catch(loadError => { if (mounted.current && requestGeneration === generation.current && loadError?.name !== 'AbortError') setError(createErrorMessage(loadError)) })
         .finally(() => { if (mounted.current && requestGeneration === generation.current) setLoading(false) })
     }
     const changingServer = () => {
@@ -150,7 +151,7 @@ export default function CreateSettings({ onStatusChange }) {
       }
       await refresh()
     } catch (actionError) {
-      if (mounted.current && requestGeneration === generation.current && operationRevision === actionRevision.current) setError(createErrorMessage(actionError))
+      if (mounted.current && requestGeneration === generation.current && operationRevision === actionRevision.current && actionError?.name !== 'AbortError') setError(createErrorMessage(actionError))
     } finally {
       if (requestGeneration === generation.current && operationRevision === actionRevision.current) {
         actionLock.current = false
@@ -197,6 +198,8 @@ export default function CreateSettings({ onStatusChange }) {
     })
   }
 
+  useEffect(() => { if (error) toast.error(error) }, [error])
+
   const setup = status?.setup || {}
   const installing = setup.running === true
   const busy = loading || action !== null || switchingServer
@@ -220,11 +223,32 @@ export default function CreateSettings({ onStatusChange }) {
     : totalBytes > 0 ? Math.min(100, Math.round(downloadedBytes / totalBytes * 100)) : null
   const setupError = setup.error
 
+  const backendCard = active && (
+    <div className="create-settings-card">
+      <h3>Backend status</h3>
+      <p role="status">{action || (status?.backend?.ready ? 'Ready for image creation' : status?.backend?.owned && !status?.backend?.running ? 'ComfyUI is starting… This can take several minutes.' : status?.backend?.running ? 'Checking workflow nodes and models…' : 'Backend is stopped or unavailable')}</p>
+      {status?.backend?.error && <p className="create-message error" role="alert">{status.backend.error}</p>}
+      {status?.backend?.missing_nodes?.length > 0 && <p>Missing node packs or nodes: {status.backend.missing_nodes.join(', ')}</p>}
+      {status?.backend?.missing_models?.length > 0 && <p>Missing models: {status.backend.missing_models.join(', ')}</p>}
+      {!controllable && <p>To start, stop and restart from DMC, select Manage existing local installation on the computer hosting ComfyUI.</p>}
+      {controllable && (
+        <div className="create-actions">
+          <button type="button" disabled={busy || installing || status?.backend?.running || status?.backend?.owned} onClick={() => runAction('Starting backend', startCreateBackend)}>{action === 'Starting backend' ? 'Starting backend…' : 'Start ComfyUI'}</button>
+          <button type="button" disabled={loading || switchingServer || installing || !status?.backend?.owned || (action !== null && action !== 'Starting backend')} onClick={() => runAction('Stopping backend', stopCreateBackend, true)}>{action === 'Stopping backend' ? 'Stopping backend…' : 'Stop ComfyUI'}</button>
+          <button type="button" disabled={busy || installing || !status?.backend?.owned} onClick={() => runAction('Restarting backend', restartCreateBackend)}>{action === 'Restarting backend' ? 'Restarting backend…' : 'Restart ComfyUI'}</button>
+        </div>
+      )}
+    </div>
+  )
+  if (backendOnly) return <details className="create-backend-controls">
+    <summary>ComfyUI <span>{loading ? 'Checking…' : action ? action.replace(' backend', '…') : status?.backend?.ready ? 'Ready' : status?.backend?.owned ? 'Starting…' : status?.backend?.running ? 'Running' : 'Stopped'}</span></summary>
+    <div className="create-backend-popover">{backendCard || <p>Open Setup to activate the creator add-on.</p>}</div>
+  </details>
+
   return (
     <section className="create-settings">
       <h2>Donut Create</h2>
       <p className="settings-description">Create images with the DonutUI studio and DonutNodes workflow v5.</p>
-      {error && <p className="create-message error" role="alert">{error}</p>}
       {switchingServer && <p className="create-message" role="status">Connecting to the selected server…</p>}
 
       <div className="create-settings-card">
@@ -307,23 +331,7 @@ export default function CreateSettings({ onStatusChange }) {
         </div>
       )}
 
-      {active && (
-        <div className="create-settings-card">
-          <h3>Backend status</h3>
-          <p role="status">{action || (status?.backend?.ready ? 'Ready for image creation' : status?.backend?.owned && !status?.backend?.running ? 'ComfyUI is starting… This can take several minutes.' : status?.backend?.running ? 'Checking workflow nodes and models…' : 'Backend is stopped or unavailable')}</p>
-          {status?.backend?.error && <p className="create-message error" role="alert">{status.backend.error}</p>}
-          {status?.backend?.missing_nodes?.length > 0 && <p>Missing node packs or nodes: {status.backend.missing_nodes.join(', ')}</p>}
-          {status?.backend?.missing_models?.length > 0 && <p>Missing models: {status.backend.missing_models.join(', ')}</p>}
-          {!controllable && <p>To start, stop and restart from DMC, select Manage existing local installation on the computer hosting ComfyUI.</p>}
-          {controllable && (
-            <div className="create-actions">
-              <button type="button" disabled={busy || installing || status?.backend?.running || status?.backend?.owned} onClick={() => runAction('Starting backend', startCreateBackend)}>{action === 'Starting backend' ? 'Starting backend…' : 'Start ComfyUI'}</button>
-              <button type="button" disabled={loading || switchingServer || installing || !status?.backend?.owned || (action !== null && action !== 'Starting backend')} onClick={() => runAction('Stopping backend', stopCreateBackend, true)}>{action === 'Stopping backend' ? 'Stopping backend…' : 'Stop ComfyUI'}</button>
-              <button type="button" disabled={busy || installing || !status?.backend?.owned} onClick={() => runAction('Restarting backend', restartCreateBackend)}>{action === 'Restarting backend' ? 'Restarting backend…' : 'Restart ComfyUI'}</button>
-            </div>
-          )}
-        </div>
-      )}
+      {!hideBackendControls && backendCard}
     </section>
   )
 }

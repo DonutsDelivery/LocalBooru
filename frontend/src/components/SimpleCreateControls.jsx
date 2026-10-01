@@ -144,7 +144,7 @@ export default function SimpleCreateControls({
   snapshot, activeTab, onTabChange, connected, connecting, busy, error, mobilePane,
   onPatch, onGenerate, onUpload, onUploadMask, onRetry, onAdvanced,
   onReferenceTools, referenceUrls = {}, runInstant, onRunInstantChange, onDraftChange,
-  children, historyContent, jobsContent, finalizeContent,
+  children, historyContent, jobsContent, finalizeContent, navigation, mobileNavigation,
 }) {
   const [drafts, setDrafts] = useState({})
   const [inputError, setInputError] = useState('')
@@ -465,6 +465,8 @@ export default function SimpleCreateControls({
 
   // Comfy widget steps are not based on HTML's min offset; commit validates authored drafts.
   return <form ref={panels.workspace} style={panels.style} className={`create-simple-workspace${lowerExpanded ? ' create-lower-expanded' : ''}${panels.resizing ? ' create-panels-resizing' : ''}`} onSubmit={generate} noValidate>
+    {navigation}
+    {mobileNavigation}
     <aside className="create-controls" aria-label="Image controls">
       <div className="create-control-tabs" role="tablist" aria-label="Studio controls">
         {['create', 'edit', 'finalize'].map(tab => <button type="button" role="tab" id={`create-tab-${tab}`} key={tab}

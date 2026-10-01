@@ -818,7 +818,37 @@ impl AddonManager {
         readiness
     }
 
+    // Status readers must notice an exited child even when nobody requested Stop.
+    // Never wait for the child mutex here: a lifecycle operation may own it.
+    fn refresh_sidecar_status(&self, id: &str) {
+        let process = match self.addons.get(id) {
+            Some(state) if matches!(state.status, AddonStatus::Running) => state.process.clone(),
+            _ => None,
+        };
+        let Some(process) = process else { return };
+        let exit = match process.try_lock() {
+            Ok(mut child) => child.try_wait().ok().flatten(),
+            Err(_) => None,
+        };
+        let Some(exit) = exit else { return };
+        if let Some(mut state) = self.addons.get_mut(id) {
+            if matches!(state.status, AddonStatus::Running)
+                && state
+                    .process
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, &process))
+            {
+                state.process = None;
+                state.status = AddonStatus::Error(format!(
+                    "Addon '{}' exited ({}). Start the add-on again.",
+                    id, exit
+                ));
+            }
+        }
+    }
+
     fn addon_info(&self, manifest: &super::manifest::AddonManifest) -> AddonInfo {
+        self.refresh_sidecar_status(manifest.id);
         let state = self.addons.get(manifest.id);
         let status = state
             .as_ref()
@@ -861,6 +891,7 @@ impl AddonManager {
 
     /// Quick status check for a single addon.
     pub fn get_addon_status(&self, id: &str) -> AddonStatus {
+        self.refresh_sidecar_status(id);
         self.addons
             .get(id)
             .map(|s| s.status.clone())
@@ -1109,6 +1140,7 @@ impl AddonManager {
             return Err(format!("Addon '{}' does not require a sidecar", id));
         }
 
+        self.refresh_sidecar_status(id);
         {
             let mut state = self
                 .addons
@@ -2141,6 +2173,65 @@ printf '%s\n' '{"addon_version":"0.1.0","protocol_version":1,"upstream_revision"
         assert!(commands[3].contains(ONNXRUNTIME_CPU));
         assert!(commands[3].contains("uvicorn[standard]"));
         assert!(commands[3].contains("fastapi"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn status_refresh_detects_exited_sidecar_without_overwriting_lifecycle_state() {
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = tokio::process::Command::new("sh");
+            command.args(["-c", "exit 7"]);
+            command
+        };
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = tokio::process::Command::new("cmd");
+            command.args(["/C", "exit 7"]);
+            command
+        };
+        command.kill_on_drop(true);
+        let process = Arc::new(TokioMutex::new(command.spawn().unwrap()));
+        let root =
+            std::env::temp_dir().join(format!("dmc-sidecar-status-{}", uuid::Uuid::new_v4()));
+        let manager = AddonManager::new(&root);
+        manager.addons.insert(
+            "donut-create".into(),
+            AddonState {
+                status: AddonStatus::Running,
+                readiness: None,
+                installation_progress: None,
+                process: Some(process.clone()),
+            },
+        );
+        let mut guard = process.lock().await;
+        guard.wait().await.unwrap();
+        // A contended process is still owned by its lifecycle operation.
+        assert!(matches!(
+            manager.get_addon_status("donut-create"),
+            AddonStatus::Running
+        ));
+        drop(guard);
+        for status in [AddonStatus::Stopping, AddonStatus::Repairing] {
+            manager.addons.get_mut("donut-create").unwrap().status = status.clone();
+            assert_eq!(manager.get_addon_status("donut-create"), status);
+        }
+        manager.addons.get_mut("donut-create").unwrap().status = AddonStatus::Running;
+        let info = manager.get_addon("donut-create").unwrap();
+        assert!(
+            matches!(info.status, AddonStatus::Error(ref message) if message.contains("Start the add-on again"))
+        );
+        assert!(matches!(
+            manager.get_addon_status("donut-create"),
+            AddonStatus::Error(_)
+        ));
+        assert!(manager
+            .addons
+            .get("donut-create")
+            .unwrap()
+            .process
+            .is_none());
+        assert!(manager.addon_url("donut-create").is_none());
         let _ = std::fs::remove_dir_all(root);
     }
 

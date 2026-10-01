@@ -743,10 +743,10 @@
     presetControlsRevision = workflow.extra?.donut_workflow?.controls_revision;
     return workflow;
   }
-  async function checkCapabilities() {
+  async function checkCapabilities(compiled) {
     // Inspect the serialized execution prompt, so promoted/subgraph bindings
     // are checked exactly as ComfyUI will submit them from the Run button.
-    const graph = await app.graphToPrompt();
+    const graph = compiled || await app.graphToPrompt();
     const info = await (await api.fetchApi('/object_info')).json();
     nodeInfo = info;
     const missingNodes = new Set(), missingModels = new Set(), catalogs = new Map();
@@ -1505,7 +1505,7 @@
       if (current[crop]?.widget.value) validateCrop(current[crop].widget.value, current[cropReferences[crop]]?.widget.value);
     }
     if (typeof app.queuePrompt !== 'function') throw new Error('The ComfyUI Run action is not available yet.');
-    await checkCapabilities(); saveDraft();
+    saveDraft();
     const attempt = {accepted: 0, error: null}; queueAttempt = attempt;
     try {
       // The app Run path calls before/afterQueued widget hooks. It can swallow
@@ -1651,7 +1651,7 @@
     api.queuePrompt = async function (...args) {
       const attempt = queueAttempt;
       try {
-        await checkCapabilities(); saveDraft();
+        await checkCapabilities(args[1]); saveDraft();
         // Attach per-run storage intent without changing the editable graph.
         if (object(args[1]?.workflow)) args[1] = {...args[1], workflow: {...args[1].workflow,
           extra: {...args[1].workflow.extra, dmc_output_destination: outputDestination}}};
