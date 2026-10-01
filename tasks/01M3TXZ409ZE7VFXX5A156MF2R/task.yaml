@@ -11,8 +11,12 @@ description: User authorizes native build on paired SSH Mac, then replacement of
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: "Independent operational review @review-mac-current-install closed approved
+  gatepassing: exact main-integrated source built/verified natively, installed2.0.5 universal bundle
+  preserving shortcut target inode, installed binary matches package, app retainedPID80580
+  exactinstalledpath. No userdata copied or broad userprofile tests."
 depends_on: []
 context: []
 priority: 3
@@ -72,7 +76,24 @@ history:
         previous: "@review-mac-build-test-fixtures"
     command: review-link
     timestamp: 2026-10-01T06:23:07.680Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: "Independent operational review @review-mac-current-install closed approved gatepassing: exact
+          main-integrated source built/verified natively, installed2.0.5 universal bundle preserving
+          shortcut target inode, installed binary matches package, app retainedPID80580
+          exactinstalledpath. No userdata copied or broad userprofile tests."
+        previous: null
+      completed_at:
+        new: 2026-10-01T06:23:35.066Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-01T06:23:35.073Z
 created_at: 2026-10-01T05:11:04.457Z
 started_at: 2026-10-01T05:11:26.020Z
 submitted_at: 2026-10-01T06:21:27.371Z
+completed_at: 2026-10-01T06:23:35.066Z
 todos: []
