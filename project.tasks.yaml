@@ -1767,7 +1767,7 @@ tasks:
       - move-dmc-build-cache
     title: Move shared DMC build caches to extra storage
     type: infra
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 3
@@ -1776,6 +1776,7 @@ tasks:
     todos_count: 0
     created_at: 2026-10-01T19:34:52.988Z
     started_at: 2026-10-01T19:37:31.184Z
+    submitted_at: 2026-10-01T20:37:11.585Z
   - _ulid: 01M3WG7FP6XKNDSEJHAY3ABFXB
     slugs:
       - create-compact-progress
