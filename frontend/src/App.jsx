@@ -1161,6 +1161,10 @@ function Gallery({ mediaType = 'image' }) {
       if (!galleryRequestOwnerRef.current.owns(request)) return false
 
       const currentLocator = authoritative ? lightboxIndexRef.current : null
+      const standaloneSelection = currentLocator && lightboxFallbackImage
+        && imageMatchesLocator(lightboxFallbackImage, currentLocator)
+        && !imagesRef.current.some(image => imageMatchesLocator(image, currentLocator))
+      let standaloneCurrentExists = false
       if (
         currentLocator
         && !result.images.some(image => imageIdentityKey(image) === imageIdentityKey(currentLocator))
@@ -1172,7 +1176,14 @@ function Gallery({ mediaType = 'image' }) {
             optional: true,
           })
           if (!galleryRequestOwnerRef.current.owns(request)) return false
-          result.images.push(canonical)
+          if (standaloneSelection) {
+            // Refresh a history selection without inserting it into the filtered gallery.
+            setLightboxFallbackImage(previous => previous && imageMatchesLocator(previous, currentLocator)
+              ? canonical : previous)
+            standaloneCurrentExists = true
+          } else {
+            result.images.push(canonical)
+          }
         } catch (error) {
           if (error?.response?.status !== 404) {
             console.error('Failed to verify current image after scan:', error)
@@ -1190,11 +1201,12 @@ function Gallery({ mediaType = 'image' }) {
         setPage(authoritative ? pageCount : 1)
         setHasMore(reconciled.images.length < result.total)
         publishedGalleryViewRef.current = galleryViewKey
-        if (authoritative && lightboxIndexRef.current && !reconciled.currentLocator) {
+        if (authoritative && lightboxIndexRef.current && !reconciled.currentLocator && !standaloneCurrentExists) {
           loadingMoreRef.current = false
           lightboxPaginationGenerationRef.current += 1
           lightboxIndexRef.current = null
           setLightboxIndex(null)
+          setLightboxFallbackImage(null)
           if (window.history.state?.lightbox) {
             window.history.replaceState(null, '')
           }
@@ -1218,7 +1230,7 @@ function Gallery({ mediaType = 'image' }) {
       }
       return false
     }
-  }, [mediaType, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey])
+  }, [mediaType, currentTags, currentRating, favoritesOnly, currentDirectoryId, currentLibraryId, currentMinAge, currentMaxAge, currentTimeframe, currentFilename, currentResolution, currentOrientation, currentDuration, currentWatchedStatus, currentFolder, currentSort, tileSize, groupByFolders, loadFolders, galleryViewKey, lightboxFallbackImage])
 
   refreshNewImagesRef.current = refreshNewImages
 

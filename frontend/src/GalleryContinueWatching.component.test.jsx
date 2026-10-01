@@ -75,6 +75,20 @@ test('deleting a standalone history video closes it without opening a different 
   expect(screen.getByTestId('gallery').textContent).toBe('loaded.mp4')
 })
 
+test('an authoritative scan refresh updates the standalone player without adding it to the filtered gallery', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByText('resume.mp4'))
+  await screen.findByTestId('playing-video')
+  api.fetchImage.mockResolvedValue({ ...historyVideo, is_favorite: true })
+  const onLibraryEvent = api.subscribeToLibraryEvents.mock.calls.at(-1)[0]
+  onLibraryEvent({ type: 'task_completed', data: { task_type: 'scan_directory' } })
+  await waitFor(() => expect(screen.getByTestId('player-favorite').textContent).toBe('true'), { timeout: 2500 })
+  expect(screen.getByTestId('gallery').textContent).toBe('loaded.mp4')
+  expect(screen.getByTestId('player-count').textContent).toBe('1/1')
+  fireEvent.click(screen.getByRole('button', { name: 'Next video' }))
+  expect(screen.getByTestId('playing-video').textContent).toBe('library-b:2:12:resume.mp4')
+})
+
 test('Clear All remains in the Continue Watching heading and clears history without selecting media', async () => {
   const { container } = render(<App />)
   await screen.findByText('resume.mp4')
