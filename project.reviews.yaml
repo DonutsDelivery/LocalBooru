@@ -5260,7 +5260,90 @@ reviews:
       - review-create-backend-controls
     title: Create backend lifecycle/defaults independent source review; drop cross-review evidence
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
+          head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+        evidence: 14/14 disposable tests against actual app.py, including delayed Start status/Stop
+          termination proof, close racing restart spawn, config protection, port conflict, URL-only
+          rejection and owned-only timeout escalation. No real backend child started.
+        name: independent-lifecycle-races
+        required: true
+        runner: python-unittest
+        created_at: 2026-10-01T03:13:28.360Z
+        completed_at: 2026-10-01T03:13:28.360Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
+          head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+        evidence: 7/7 disposable actual CreateSettings component cases. Positive Restart response
+          publication during pending old poll and stale response suppression; warming Stop
+          eligibility, authorized restart preserving draft, local registration, URL-only mode and
+          retry.
+        name: independent-settings-status
+        required: true
+        runner: vitest-host-heavy-build
+        created_at: 2026-10-01T03:13:28.487Z
+        completed_at: 2026-10-01T03:13:28.487Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
+          head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+        evidence: Reviewer independently ran 22/22 existing installer cases, including current bundled
+          preset selection despite stale generated cache, actual neutral starter named/array
+          consistency and shipped default values. Parent also passed
+          controller35/adapter5/frontend28.
+        name: installer-defaults-provenance
+        required: true
+        runner: python-unittest
+        created_at: 2026-10-01T03:13:28.611Z
+        completed_at: 2026-10-01T03:13:28.611Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
+          head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+        evidence: "Authored slice evidence, not independent approval: 7/7 Host actual component cases; 5/5
+          pure native grant cases through host gate; adapter VM workflow/reference/unknown
+          graph/rollback/no-generation cases. Parent independently reviewed drop source and actual
+          installed Comfy metadata/browser PNG workflow, empty-MIME JSON, plain PNG and explicit
+          reference PNG behavior, preserving prompt and zero queued jobs. Host handles Tauri string
+          rejection; native bounded consumed grant rechecks open file after read."
+        name: drop-author-evidence-parent-review
+        required: true
+        runner: synthetic-vm-vitest-rustc-browser
+        created_at: 2026-10-01T03:13:28.739Z
+        completed_at: 2026-10-01T03:13:28.739Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
+          head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+        evidence: Focused ESLint zero warnings, adapter node syntax, git diff check and clean exact
+          candidate 931b073f verified. Task/spec and AC annotations read. kspec validation remains
+          exit4 on preexisting unrelated malformed Android/core records, legacy refs and skill
+          description; no new DonutCreate trait issue.
+        name: scope-lint-source-spec
+        required: true
+        runner: eslint-node-git-kspec
+        created_at: 2026-10-01T03:13:28.860Z
+        completed_at: 2026-10-01T03:13:28.860Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
+          head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+        evidence: Full project Tauri wrapper compile/install pending parent deployment gate. Actual OS-level
+          native drop, real GPU setup/generation and Windows/macOS/mobile-device runtime not
+          exercised by reviewer. Source/focused approval does not certify these.
+        name: native-gpu-platform-acceptance
+        required: true
+        created_at: 2026-10-01T03:13:28.977Z
+        completed_at: 2026-10-01T03:13:28.977Z
     events:
       - _ulid: 01M3TQ6DE9VSK2FRSR448XSHG7
         actor: DonutsDelivery
@@ -5268,9 +5351,82 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-01T03:12:43.465Z
+      - _ulid: 01M3TQ7S1B0RB661GS0PD0FJWD
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T03:13:28.107Z
+      - _ulid: 01M3TQ7S64S6TVDYCA8M682ET7
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3TQ7S4YCFE53DS4TV8YWNGA
+        timestamp: 2026-10-01T03:13:28.261Z
+      - _ulid: 01M3TQ7SAAG17Z691YE6NPZMYQ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-lifecycle-races
+        timestamp: 2026-10-01T03:13:28.394Z
+      - _ulid: 01M3TQ7SE8JP6E873NHG1TAHES
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-settings-status
+        timestamp: 2026-10-01T03:13:28.520Z
+      - _ulid: 01M3TQ7SJ5JE368G2F55WKXBR6
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: installer-defaults-provenance
+        timestamp: 2026-10-01T03:13:28.645Z
+      - _ulid: 01M3TQ7SP3MC52SY2XGAFNJW4F
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: drop-author-evidence-parent-review
+        timestamp: 2026-10-01T03:13:28.771Z
+      - _ulid: 01M3TQ7SSVQ9K9F8GMKZGS3H13
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: scope-lint-source-spec
+        timestamp: 2026-10-01T03:13:28.891Z
+      - _ulid: 01M3TQ7SXHCGWXQCZT4RY09N1V
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: native-gpu-platform-acceptance
+        timestamp: 2026-10-01T03:13:29.009Z
+      - _ulid: 01M3TQ7T1E6PRTGD7VPZNP340J
+        actor: donut_create_review-lifecycle-defaults
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
+            head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+          decision: approve
+        timestamp: 2026-10-01T03:13:29.134Z
+      - _ulid: 01M3TQ7T1EAG02VBXDK2ZHX6Q8
+        actor: donut_create_review-lifecycle-defaults
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T03:13:29.134Z
     examined_commit: 931b073f3a84a0c640380d33312fa675c99213f2
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-backend-controls"
     subject:
@@ -5279,8 +5435,32 @@ reviews:
       base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
       head_branch: feat/create-backend-controls
       head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
-    threads: []
-    verdicts: []
+    threads:
+      - _ulid: 01M3TQ7S4YCFE53DS4TV8YWNGA
+        entries:
+          - _ulid: 01M3TQ7S4YE3NCTVT39ATEPH7E
+            author: DonutsDelivery
+            body: "Review scope: independent read-only assessment of root-authored app.py lifecycle,
+              CreateSettings/service management, installer current-preset selection, shipped
+              defaults and documentation. No remaining blocker: mutation locks serialize owned-child
+              transitions; status probing occurs outside the lock; local registration uses existing
+              Python without adopting unrelated processes; URL-only controls reject; defaults
+              preserve neutral starter and named/array consistency; controls_revision remains 1. The
+              reviewer authored the drag/drop slice, so its approval is supplied by the parent
+              source review and actual synthetic browser checks, explicitly attributed below rather
+              than represented as independent review. Native project compilation/install and real OS
+              drop, GPU generation, Windows/macOS acceptance remain separate unverified gates."
+            created_at: 2026-10-01T03:13:28.223Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: d704dedcfe38e4d27bb791a4ee79fbf8c4af10af
+          head_commit: 931b073f3a84a0c640380d33312fa675c99213f2
+        decision: approve
+        reviewer: donut_create_review-lifecycle-defaults
+        role: reviewer
+        created_at: 2026-10-01T03:13:29.134Z
     created_at: 2026-10-01T03:12:43.465Z
-    updated_at: null
+    updated_at: 2026-10-01T03:13:29.134Z
     notes: []
