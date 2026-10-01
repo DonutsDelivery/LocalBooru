@@ -48,3 +48,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T23:23:29.113Z
+  - _ulid: 01M3WWV9C85FNQBFKVC9QK7DJW
+    content: User retry confirmed SVP works after orphan-port repair. Lower quality still500 both
+      ordinary and SVP. Ordinary retired-vsync failure is synthetically reproduced; separate SVP480p
+      pipeline synthetic test passes, so SVP quality attribution remains under investigation. No
+      user library playback issued. Review @review-android-hls-startup opened; focused native tests
+      waiting for pre-existing host gate owner.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T23:29:59.176Z
