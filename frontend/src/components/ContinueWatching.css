@@ -6,7 +6,9 @@
 .continue-watching-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 8px;
 }
 
