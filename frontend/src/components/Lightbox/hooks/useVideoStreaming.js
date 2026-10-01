@@ -494,6 +494,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       if (!isPlaybackTransitionCurrent(transition)) return
       if (err?.name !== 'CanceledError' && err?.name !== 'AbortError') {
         console.error('Transcode restart error:', err)
+        setStreamError(svpPlaybackError(err, 'Failed to restart transcoded playback'))
       }
       finishPlaybackTransition(transition)
     }

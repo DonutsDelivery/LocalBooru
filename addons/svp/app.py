@@ -240,7 +240,7 @@ def check_nvenc() -> bool:
         # selecting it for the HLS pipeline.
         r = subprocess.run(
             [ffmpeg, "-hide_banner", "-loglevel", "error",
-             "-f", "lavfi", "-i", "color=size=64x64:rate=1",
+             "-f", "lavfi", "-i", "color=size=256x144:rate=1",
              "-frames:v", "1", "-an", "-c:v", "h264_nvenc",
              "-preset", "p1", "-tune", "ll", "-f", "null", "-"],
             capture_output=True, timeout=5,

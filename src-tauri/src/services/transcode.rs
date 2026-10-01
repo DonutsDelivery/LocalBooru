@@ -68,7 +68,7 @@ fn probe_hw_caps(mut probe: impl FnMut(&[&str]) -> bool) -> HwCaps {
         "-f",
         "lavfi",
         "-i",
-        "color=size=64x64:rate=1",
+        "color=size=256x144:rate=1",
         "-frames:v",
         "1",
         "-an",
@@ -92,11 +92,11 @@ fn probe_hw_caps(mut probe: impl FnMut(&[&str]) -> bool) -> HwCaps {
             "-f",
             "lavfi",
             "-i",
-            "color=size=64x64:rate=1",
+            "color=size=256x144:rate=1",
             "-frames:v",
             "1",
             "-vf",
-            "format=nv12,hwupload,scale_cuda=64:64",
+            "format=nv12,hwupload,scale_cuda=256:144",
             "-an",
             "-c:v",
             "h264_nvenc",
@@ -830,7 +830,7 @@ fn build_ffmpeg_command(
 
     if force_cfr && output_fps > 0.0 {
         cmd.extend(["-r".into(), format!("{}", output_fps)]);
-        cmd.extend(["-vsync".into(), "cfr".into()]);
+        cmd.extend(["-fps_mode".into(), "cfr".into()]);
     }
 
     // Force keyframes every 2 seconds
@@ -979,7 +979,7 @@ mod tests {
     #[test]
     fn failed_device_probes_choose_software_for_encoded_qualities() {
         let hw = probe_hw_caps(|args| {
-            assert!(args.contains(&"color=size=64x64:rate=1"));
+            assert!(args.contains(&"color=size=256x144:rate=1"));
             assert!(!args.contains(&"-encoders"));
             false
         });
@@ -1009,6 +1009,8 @@ mod tests {
                 &hw,
             );
             assert!(cmd.iter().any(|arg| arg == "libx264"));
+            assert!(cmd.iter().any(|arg| arg == "-fps_mode"));
+            assert!(!cmd.iter().any(|arg| arg == "-vsync"));
             assert!(!cmd.iter().any(|arg| arg == "h264_nvenc" || arg == "cuda"));
         }
     }

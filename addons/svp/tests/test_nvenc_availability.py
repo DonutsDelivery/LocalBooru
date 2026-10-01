@@ -21,7 +21,7 @@ class NvencAvailabilityTests(unittest.TestCase):
             stream = svp_app.SVPStream('/synthetic/video.mp4')
         self.assertFalse(stream.use_nvenc)
         command = run.call_args.args[0]
-        self.assertIn('color=size=64x64:rate=1', command)
+        self.assertIn('color=size=256x144:rate=1', command)
         self.assertIn('h264_nvenc', command)
         self.assertNotIn('-encoders', command)
 
