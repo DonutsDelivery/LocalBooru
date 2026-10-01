@@ -22,3 +22,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T01:26:49.221Z
+  - _ulid: 01M3TH76WWJ46633VYRWYXMAAE
+    content: Final rebuilt synthetic browser320x568 confirms notch/zoom12.5pxgap, no
+      overlap/nooverflow/errors. Finalize Create output directory selects syntheticCreatedImages and
+      enables Saveoutput; switch toggles successfully, Finalize remains selected after async
+      response. No real library changes.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T01:28:18.076Z
