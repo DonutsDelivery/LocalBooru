@@ -7781,3 +7781,148 @@ reviews:
     created_at: 2026-10-01T21:12:15.615Z
     updated_at: 2026-10-01T21:41:44.960Z
     notes: []
+  - _ulid: 01M3WVEMRR2Y074M2REK2KW2C8
+    slugs:
+      - review-create-effect-collapse
+    title: Review independent Create effect disclosures and compact sidebar controls
+    author: donut_create_review
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+        evidence: Independently reviewed all seven changed frontend files and interactions at clean exact
+          head502c8e97 basede320bcdce. EffectSection disclosure is local state with mounted hidden
+          children, separate activation switches and unchanged strength restoration. Every right
+          effect, including Compatibility, has disclosure; Off still hides TAB strength. Sidebar nav
+          renders once at desktop/media breakpoint, independent sidebar heights, mobile shared nav;
+          no bridge or backend lifecycle mutation changes. URL-only Start/Stop/Restart remain
+          visible disabled with existing management instructions. Behavioral tests exercise UI, not
+          source scans. No confirmed blocker. Task has no linked spec_ref/trait ACs.
+        name: source-contracts
+        required: true
+        runner: independent-source-review
+        created_at: 2026-10-01T23:05:36.857Z
+        completed_at: 2026-10-01T23:05:36.857Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+        evidence: "Read /tmp/dmc-create-layout/collapse-layout-checks.json: parent actual React/CSS
+          browser1280x800,360 and320 checks have exact viewport scrollWidth, Exit46px and tabs y46
+          desktop, independent modes73px, mobile shared controls fit, native Enter disclosures pass.
+          This reviewer inspected receipt and matching CSS/DOM; did not claim independent browser
+          execution or production-profile test."
+        name: rendered-responsive-layout
+        required: true
+        runner: parent-browser-receipt-independently-read
+        created_at: 2026-10-01T23:05:37.028Z
+        completed_at: 2026-10-01T23:05:37.028Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+        evidence: Final46-case exact-head Host+SimpleControls suite queued parent session76218 behind
+          unrelated host writer. Current /tmp/dmc-create-layout/collapse-tests-final.log is
+          earlier45/45; final URL-only action test inspected but not yet executed. Approval withheld
+          pending final46 pass.
+        name: focused-components
+        required: true
+        runner: vitest-host-gated
+        created_at: 2026-10-01T23:05:37.197Z
+        completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+        evidence: Independent direct CLI validation captured /tmp/dmc-effect-collapse-review-validation.log;
+          known unrelated malformed Android/core items and verify/SKILL.md missing-description
+          persist. No task spec_ref and no inherited traits for this task. Do not claim global
+          validation clean.
+        name: kspec-validation-context
+        required: true
+        runner: kspec-validate
+        created_at: 2026-10-01T23:05:37.381Z
+        completed_at: 2026-10-01T23:05:37.381Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+        evidence: No native packaging, user-profile functional test, real backend action or GPU job by
+          reviewer. No changes to Rust/controller/adapter; preserve running app and ComfyUI. Parent
+          integration/install separate from this source review.
+        name: native-profile-backend-GPU
+        required: true
+        runner: scope-limits
+        created_at: 2026-10-01T23:05:37.551Z
+        completed_at: 2026-10-01T23:05:37.551Z
+    events:
+      - _ulid: 01M3WVEMRQ8W4FHRF8MQMSAV2Q
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T23:05:36.279Z
+      - _ulid: 01M3WVEN6T41ZGBRQEPMY9YET9
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T23:05:36.730Z
+      - _ulid: 01M3WVENC7HNHVJFV4TQKBE3JG
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-contracts
+        timestamp: 2026-10-01T23:05:36.903Z
+      - _ulid: 01M3WVENHGQMGSCRZBB7R8XVB6
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: rendered-responsive-layout
+        timestamp: 2026-10-01T23:05:37.072Z
+      - _ulid: 01M3WVENPRTMYVKEWSRHXF5PTT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: focused-components
+        timestamp: 2026-10-01T23:05:37.240Z
+      - _ulid: 01M3WVENWKY97EFSZ1J26NX5CS
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: kspec-validation-context
+        timestamp: 2026-10-01T23:05:37.427Z
+      - _ulid: 01M3WVEP20D6P9KPFD2QE0AZFM
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: native-profile-backend-GPU
+        timestamp: 2026-10-01T23:05:37.600Z
+    examined_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+    external_links: []
+    lifecycle_state: open
+    related_refs:
+      - "@create-effect-collapse"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+      head_branch: fix/create-effect-collapse
+      head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+    threads: []
+    verdicts: []
+    created_at: 2026-10-01T23:05:36.280Z
+    updated_at: 2026-10-01T23:05:37.551Z
+    notes: []
