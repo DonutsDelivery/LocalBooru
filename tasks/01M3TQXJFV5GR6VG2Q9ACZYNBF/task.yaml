@@ -9,8 +9,14 @@ description: User requests one permanent output destination. ComfyUI saves must 
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Reviewedsource c4c1720 integratedmain0d28 andpushed; currentmain e769
+  desktopcanonicalbuild installed/reopened andretainedPID300750 with ownedcreatorcontroller300984.
+  Deployedapp.py andJS payload hashes match source; independentComfy remainsrunning. Mac
+  verifiedcurrenttreeinstalledrunning, originalAPK0d verified/signed/shared to Redmi.
+  Syntheticcontroller39/installer22/adapter9/frontendpassed, source reviewclosedapproved.
+  Permanentoutputselectionexclusive; Comfytemporarypreviewstaging remains.
 depends_on: []
 context: []
 priority: 3
@@ -63,7 +69,26 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-01T03:38:35.676Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Reviewedsource c4c1720 integratedmain0d28 andpushed; currentmain e769 desktopcanonicalbuild
+          installed/reopened andretainedPID300750 with ownedcreatorcontroller300984. Deployedapp.py
+          andJS payload hashes match source; independentComfy remainsrunning. Mac
+          verifiedcurrenttreeinstalledrunning, originalAPK0d verified/signed/shared to Redmi.
+          Syntheticcontroller39/installer22/adapter9/frontendpassed, source reviewclosedapproved.
+          Permanentoutputselectionexclusive; Comfytemporarypreviewstaging remains.
+        previous: null
+      completed_at:
+        new: 2026-10-01T06:25:41.164Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-01T06:25:41.175Z
 created_at: 2026-10-01T03:25:22.299Z
 started_at: 2026-10-01T03:25:35.566Z
 submitted_at: 2026-10-01T03:38:35.676Z
+completed_at: 2026-10-01T06:25:41.164Z
 todos: []
