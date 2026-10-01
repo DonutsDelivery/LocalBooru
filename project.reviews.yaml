@@ -8024,6 +8024,13 @@ reviews:
           status: pass
           name: client-error-helpers
         timestamp: 2026-10-01T23:29:57.738Z
+      - _ulid: 01M3WWYSC8XQ8GD3NP9KQKKD79
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 973a575b63cb24c084d0c0e5c6d257ac5d9d494e
+          previous_head: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
+        timestamp: 2026-10-01T23:31:53.864Z
     examined_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
     external_links: []
     lifecycle_state: open
@@ -8034,9 +8041,9 @@ reviews:
       base_branch: main
       base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
       head_branch: fix/android-svp-hls
-      head_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
+      head_commit: 973a575b63cb24c084d0c0e5c6d257ac5d9d494e
     threads: []
     verdicts: []
     created_at: 2026-10-01T23:28:14.358Z
-    updated_at: 2026-10-01T23:29:57.693Z
+    updated_at: 2026-10-01T23:31:53.803Z
     notes: []
