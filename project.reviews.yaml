@@ -6022,3 +6022,204 @@ reviews:
     created_at: 2026-10-01T05:24:29.414Z
     updated_at: 2026-10-01T05:24:30.810Z
     notes: []
+  - _ulid: 01M3TZJ0G4ZEBKQZ4E0Q4GWW6X
+    slugs:
+      - review-apk-redmi-current
+    title: Android APK artifact and accepted Redmi share review
+    author: DonutsDelivery
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Independent SHA256 matches
+          d15d6a3cb6c0fde99fbf488766242644286070e426a037dfa783d1183ad8f81c; size102237564 bytes.
+          unzip-tq reports no compressed-data errors; Android SDK35 zipalign-c-p4 returns0.
+        name: apk-integrity-hash
+        required: true
+        runner: sha256sum-unzip-zipalign
+        created_at: 2026-10-01T05:38:52.654Z
+        completed_at: 2026-10-01T05:38:52.654Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "Independent apksigner verify--verbose--print-certs returns0: v2=true,v3=true,one signer.
+          Certificate SHA256960ce0f88cfbb075a48172116f776f6bcbb5cf91b50697e8fdfb91317db0325c matches
+          existing signing identity recorded before build. Android Debug cert, RSA2048; no
+          production signing/notarization claim."
+        name: apk-signature-existing-identity
+        required: true
+        runner: apksigner
+        created_at: 2026-10-01T05:38:52.796Z
+        completed_at: 2026-10-01T05:38:52.796Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Independent aapt badging:com.localbooru.app,version2.0.5,code2000005,minSDK24,targetSDK36.
+          Each of arm64-v8a,armeabi-v7a,x86,x86_64 contains one native library; independently read
+          ZIP ELF headers and checked class/machine match actual ABI, not folder labels only.
+        name: apk-package-native-abis
+        required: true
+        runner: aapt-elf-header-inspection
+        created_at: 2026-10-01T05:38:52.936Z
+        completed_at: 2026-10-01T05:38:52.936Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "Independent /tmp/electron-tmp/dmc-apk-redmi-20261001/android-build.log inspected:
+          canonical scripts/build-android-apk.sh production frontend build, ABI release compilation,
+          universal APK, alignment/signature verification and publication complete. Parent wrapper
+          process exited0; no active cargo/rustc/build-android writer observed during review (idle
+          Gradle/Kotlin daemons preserved). dmc-main HEAD
+          independently0d28e2803ea602385276cf84571a34349fc614c9; tracked source clean; unrelated
+          untracked test preserved."
+        name: canonical-build-receipt
+        required: true
+        runner: build-log-source-inspection
+        created_at: 2026-10-01T05:38:53.079Z
+        completed_at: 2026-10-01T05:38:53.079Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "Parent command receipt: explicit device484ff658_bfc9_4f3a_95cc_784e8b5e3e60 share of
+          verified APK exited0 Shared file:///.../DonutMediaCenter.apk. Reviewer read-only
+          kdeconnect-cli--list-available--id-name-only independently returns same ID Redmi
+          Note11Pro5G, proving currently paired/reachable. No duplicate transfer initiated by
+          reviewer."
+        name: kde-share-accepted-target-reachable
+        required: true
+        runner: kdeconnect-cli
+        created_at: 2026-10-01T05:38:53.224Z
+        completed_at: 2026-10-01T05:38:53.224Z
+      - status: skipped
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: On-device Downloads SHA256/file existence, installation and functional behavior not
+          verified. SFTP mount unavailable per parent. Accepted sender RPC is explicitly distinct
+          from receiver receipt; final reporting must retain this limit.
+        name: phone-receipt-install-function
+        required: false
+        created_at: 2026-10-01T05:38:53.370Z
+        completed_at: 2026-10-01T05:38:53.370Z
+    events:
+      - _ulid: 01M3TZJ0G4CK0TFY54GX5KJDZX
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T05:38:52.036Z
+      - _ulid: 01M3TZJ0VJZGN2F9GREGEMVFVP
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-01T05:38:52.402Z
+      - _ulid: 01M3TZJ10348GTR13SVGJ29Z39
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3TZJ0YYGV35QZNB0EX9EE77
+        timestamp: 2026-10-01T05:38:52.547Z
+      - _ulid: 01M3TZJ14QTTCDB14VKJAHHH59
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: apk-integrity-hash
+        timestamp: 2026-10-01T05:38:52.695Z
+      - _ulid: 01M3TZJ191X3X0S2SJFYFHPN2B
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: apk-signature-existing-identity
+        timestamp: 2026-10-01T05:38:52.833Z
+      - _ulid: 01M3TZJ1DEEPKX1HY06KRP9RCK
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: apk-package-native-abis
+        timestamp: 2026-10-01T05:38:52.974Z
+      - _ulid: 01M3TZJ1HYYJBZQY4DDRV6ECRY
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: canonical-build-receipt
+        timestamp: 2026-10-01T05:38:53.118Z
+      - _ulid: 01M3TZJ1PEPDHTKAAYYYQ66HY6
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: kde-share-accepted-target-reachable
+        timestamp: 2026-10-01T05:38:53.263Z
+      - _ulid: 01M3TZJ1TZS59YP5HPGH6EPBY3
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: phone-receipt-install-function
+        timestamp: 2026-10-01T05:38:53.407Z
+      - _ulid: 01M3TZJ1ZKZVYP92JSR7X1N9EN
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: approve
+        timestamp: 2026-10-01T05:38:53.555Z
+      - _ulid: 01M3TZJ1ZKSM7VNRSVH8ZMND4R
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T05:38:53.555Z
+    examined_commit: 0d28e2803ea602385276cf84571a34349fc614c9
+    external_links: []
+    lifecycle_state: closed
+    related_refs: []
+    subject:
+      type: task
+      content_hash: ""
+      ref: "@apk-redmi-current"
+      shadow_commit: ""
+    threads:
+      - _ulid: 01M3TZJ0YYGV35QZNB0EX9EE77
+        entries:
+          - _ulid: 01M3TZJ0YZ2EDYXPP7B7HHM6JE
+            author: DonutsDelivery
+            body: Operational review scope is the requested rebuild and KDE Connect send. Actual built source is
+              main0d28e2803ea602385276cf84571a34349fc614c9, not original-checkout4235aeb task
+              submission autolink. Artifact /home/user/Programs/Claude
+              Projects/dmc-main/DonutMediaCenter.apk is102237564 bytes,
+              SHA256d15d6a3cb6c0fde99fbf488766242644286070e426a037dfa783d1183ad8f81c. Independent
+              integrity/signature/metadata/ABI checks pass and build log confirms canonical wrapper
+              published the verified APK. Parent reports exact-device share CLI exited0 with Shared
+              file:///.../DonutMediaCenter.apk; reviewer independently confirms that Redmi is
+              currently paired/reachable. This approves an accepted send request, not proof of
+              Downloads file receipt, installation or device behavior. No source/application/process
+              mutation by reviewer.
+            created_at: 2026-10-01T05:38:52.511Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-01T05:38:53.555Z
+    created_at: 2026-10-01T05:38:52.036Z
+    updated_at: 2026-10-01T05:38:53.555Z
+    notes: []
