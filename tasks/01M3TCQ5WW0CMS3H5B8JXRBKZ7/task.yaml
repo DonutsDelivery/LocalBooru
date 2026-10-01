@@ -9,8 +9,10 @@ description: Extend retry connection startup window with repeated snapshots and 
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Independent approved review, focused tests and browser checks passed; product843d877
+  integrated/pushed main8a7d1b8 and installed. Native app reopened and left alive.
 depends_on: []
 context: []
 priority: 1
@@ -63,7 +65,22 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-01T00:18:49.961Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Independent approved review, focused tests and browser checks passed; product843d877
+          integrated/pushed main8a7d1b8 and installed. Native app reopened and left alive.
+        previous: null
+      completed_at:
+        new: 2026-10-01T00:24:55.879Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-01T00:24:55.885Z
 created_at: 2026-10-01T00:09:38.458Z
 started_at: 2026-10-01T00:09:38.563Z
 submitted_at: 2026-10-01T00:16:01.279Z
+completed_at: 2026-10-01T00:24:55.879Z
 todos: []

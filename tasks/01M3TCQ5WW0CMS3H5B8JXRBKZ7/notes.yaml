@@ -31,3 +31,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T00:19:25.118Z
+  - _ulid: 01M3TDK5MMR4DW2MATXDY4C8K8
+    content: Installed main8a7d1b8 via scripts/install-local-app.sh (release4m36s), writer exited. Built
+      and installed native SHA2569ac79003127c1210e642875b04ee8d4d82c6ff2eb3c740319f030d4df3fb9b07;
+      graceful tray Quit only after installation, then setsid ./run.sh relaunched. Existing
+      Comfy203054 retained. New user preview zoom/space request continues separately under
+      @create-preview-zoom.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T00:24:55.701Z
