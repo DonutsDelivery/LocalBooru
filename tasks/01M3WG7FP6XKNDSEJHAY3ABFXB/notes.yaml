@@ -68,3 +68,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T20:54:23.319Z
+  - _ulid: 01M3WPJRW7HXYEE5A0CWYQB4J2
+    content: "Final candidate a0e5aaf: focused React Host and TitleBar37/37 pass with NODE_ENV=test;
+      Rust sidecar lifecycle1/1, controller47/47, browser adapter10/10, shipped provenance1/1 and
+      rendered desktop/mobile layout pass. Final changes only correct toast fixture mounting and
+      message assertions. No real user backend cancellation/start/stop performed; current DMC and
+      independent ComfyUI preserved. Submitted exact head for independent approval before main
+      integration and installation."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T21:40:28.679Z
