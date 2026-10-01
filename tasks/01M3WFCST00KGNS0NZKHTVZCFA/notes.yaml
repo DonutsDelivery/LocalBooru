@@ -10,3 +10,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T19:40:52.370Z
+  - _ulid: 01M3WJVKQVCJTFZXGZ0T1S7RFR
+    content: Completed copy and full checksum comparison (empty rsync diff). Legacy symlink points to
+      /mnt/storage/Projects/extra_storage/localbooru/builds, real dev target configured in bash and
+      systemd env. Verified original backup removed. Receipt timestamp2026-10-01T20:31:12Z reports
+      ~91.7GiB relocated, system disk free135079510016bytes. No app/backend restart or cache loss.
+      Pending independent read-only operational review.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T20:35:24.027Z
