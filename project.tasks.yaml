@@ -1676,3 +1676,18 @@ tasks:
     started_at: 2026-10-01T01:47:40.334Z
     submitted_at: 2026-10-01T02:12:01.412Z
     completed_at: 2026-10-01T02:19:49.049Z
+  - _ulid: 01M3TN0XBQQJBZMXV6X768WPWT
+    slugs:
+      - create-backend-controls
+    title: Control ComfyUI backend lifecycle inside Create
+    type: task
+    spec_ref: "@donut-create-plugin"
+    status: in_progress
+    blocked_by: []
+    depends_on: []
+    priority: 2
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-01T02:34:46.007Z
+    started_at: 2026-10-01T02:34:46.125Z
