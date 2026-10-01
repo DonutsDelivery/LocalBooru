@@ -11,3 +11,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T05:45:05.640Z
+  - _ulid: 01M3V00EPZ00P6KCAJZZGYVDJY
+    content: Linux regression rerun is queued through heavy token; another HarmonicMIDI ninja build now
+      owns it. Preserve build per user wait preference. Mac prior universal package finished0 and
+      verified both architectures/signature/DMG/ZIP, but install held to include newly reported UI
+      fixes in refreshed candidate.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T05:46:45.343Z
