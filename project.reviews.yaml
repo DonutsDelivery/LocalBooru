@@ -7996,6 +7996,18 @@ reviews:
         required: true
         created_at: 2026-10-01T23:29:57.693Z
         completed_at: 2026-10-01T23:29:57.693Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 973a575b63cb24c084d0c0e5c6d257ac5d9d494e
+        evidence: Independent root run at973a575:13/13 Python tests pass. Includes actual
+          synthetic720p60FPS→854x48060/1 HLS + matching-cadence no-quality skip + enhanced1080p
+          route + lifecycle and usable NVENC probes. No normal user profile used.
+        name: python-svp-quality
+        required: true
+        created_at: 2026-10-01T23:32:30.491Z
+        completed_at: 2026-10-01T23:32:30.491Z
     events:
       - _ulid: 01M3WWR30PMYQ4FPFX3KSQGEEP
         actor: DonutsDelivery
@@ -8031,6 +8043,13 @@ reviews:
           new_head: 973a575b63cb24c084d0c0e5c6d257ac5d9d494e
           previous_head: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
         timestamp: 2026-10-01T23:31:53.864Z
+      - _ulid: 01M3WWZX6VTD7JJF860DN87CZ2
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: python-svp-quality
+        timestamp: 2026-10-01T23:32:30.555Z
     examined_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
     external_links: []
     lifecycle_state: open
@@ -8045,5 +8064,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-01T23:28:14.358Z
-    updated_at: 2026-10-01T23:31:53.803Z
+    updated_at: 2026-10-01T23:32:30.491Z
     notes: []
