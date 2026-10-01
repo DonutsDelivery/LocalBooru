@@ -5569,6 +5569,84 @@ reviews:
         required: false
         created_at: 2026-10-01T03:37:51.630Z
         completed_at: 2026-10-01T03:37:51.630Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: c4c1720055f3b03fb61b955c24544b43d086dd06
+        evidence: "Rerun against final exact head: controller39/39, plus disposable marked standard
+          SaveImage final/temp owner view200 and cross-studio/wrong-type404 case1/1. Synthetic
+          transport only; no services/GPU jobs."
+        name: independent-controller
+        required: true
+        runner: python-unittest
+        created_at: 2026-10-01T05:09:52.388Z
+        completed_at: 2026-10-01T05:09:52.388Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: c4c1720055f3b03fb61b955c24544b43d086dd06
+        evidence: Rerun final head9/9. Per-run output choice preserves editable/saved graph; identical
+          storage-only peer run produces no false notice including unsaved local draft; genuine
+          remote prompt change still notifies and preserves draft.
+        name: independent-adapter
+        required: true
+        runner: node-vm
+        created_at: 2026-10-01T05:09:52.514Z
+        completed_at: 2026-10-01T05:09:52.514Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: c4c1720055f3b03fb61b955c24544b43d086dd06
+        evidence: Final exact head22/22 installer tests independently rerun; browser asset
+          hash/default/pinned behavior checks pass.
+        name: independent-installer
+        required: true
+        runner: python-unittest
+        created_at: 2026-10-01T05:09:52.642Z
+        completed_at: 2026-10-01T05:09:52.642Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: c4c1720055f3b03fb61b955c24544b43d086dd06
+        evidence: Clean final head and tiny test-only delta independently inspected; full base/head diff
+          check passes. Prior full product review/spec/AC evidence remains applicable because
+          product source unchanged. Known preexisting unrelated kspec schema/reference/skill
+          validation errors remain outside this change; no introduced DonutCreate trait issue.
+        name: source-spec-scope
+        required: true
+        runner: git-source-kspec
+        created_at: 2026-10-01T05:09:52.778Z
+        completed_at: 2026-10-01T05:09:52.778Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: c4c1720055f3b03fb61b955c24544b43d086dd06
+        evidence: "Root focused final frontend suite22/22 PASS, log independently inspected at
+          /tmp/electron-tmp/dmc-apk-redmi-20261001/frontend-check.log: actual worktree
+          /tmp/dmc-exclusive-output/frontend, tests22 passed, duration5.84s. Includes exclusive
+          Comfy output never imported and new temp final auto-import exact destination assertions."
+        name: frontend-component-suite
+        required: true
+        runner: vitest-host-heavy-build
+        created_at: 2026-10-01T05:09:52.908Z
+        completed_at: 2026-10-01T05:09:52.908Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: c4c1720055f3b03fb61b955c24544b43d086dd06
+        evidence: Source/focused-test review only. Production build/install and APK remain root release
+          gates. No GPU, actual OS drag/drop, native user profile or device functional acceptance
+          claimed. Running DMC/unrelated Comfy preserved.
+        name: runtime-release-acceptance
+        required: false
+        created_at: 2026-10-01T05:09:53.035Z
+        completed_at: 2026-10-01T05:09:53.035Z
     events:
       - _ulid: 01M3TRMD2R1JGEYD81A32P24N9
         actor: DonutsDelivery
@@ -5632,9 +5710,83 @@ reviews:
           status: skipped
           name: runtime-release-acceptance
         timestamp: 2026-10-01T03:37:51.663Z
+      - _ulid: 01M3TXWXC3BG1BPMY8SK8PFB1X
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_base: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          new_head: c4c1720055f3b03fb61b955c24544b43d086dd06
+          previous_head: b816218f42eac56052850781690a3ca6dbfd4b42
+        timestamp: 2026-10-01T05:09:52.131Z
+      - _ulid: 01M3TXWXGQ58N7HR7FP4Q98GV7
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3TXWXFP8PDQWKWZWES34GSW
+        timestamp: 2026-10-01T05:09:52.280Z
+      - _ulid: 01M3TXWXN5KEMTJ0P0ZDAH80VE
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-controller
+        timestamp: 2026-10-01T05:09:52.421Z
+      - _ulid: 01M3TXWXS6B4MR1AXNZDRWMN2G
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-adapter
+        timestamp: 2026-10-01T05:09:52.550Z
+      - _ulid: 01M3TXWXX6NQ9CN8GJ3AY0YGH9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-installer
+        timestamp: 2026-10-01T05:09:52.679Z
+      - _ulid: 01M3TXWY1DDBH7FJGN0S2MP8Z1
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-spec-scope
+        timestamp: 2026-10-01T05:09:52.813Z
+      - _ulid: 01M3TXWY5DCYBT1Y3Y0W87RJXN
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-component-suite
+        timestamp: 2026-10-01T05:09:52.941Z
+      - _ulid: 01M3TXWY9DVJQ92F84KZAV254G
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: runtime-release-acceptance
+        timestamp: 2026-10-01T05:09:53.070Z
+      - _ulid: 01M3TXWYDE77X15SHZDSWQ77DZ
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+            head_commit: c4c1720055f3b03fb61b955c24544b43d086dd06
+          decision: approve
+        timestamp: 2026-10-01T05:09:53.198Z
+      - _ulid: 01M3TXWYDESQ51T37YEAQ9MK26
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T05:09:53.198Z
     examined_commit: b816218f42eac56052850781690a3ca6dbfd4b42
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@create-exclusive-output"
     subject:
@@ -5642,7 +5794,7 @@ reviews:
       base_branch: main
       base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
       head_branch: fix/create-exclusive-output
-      head_commit: b816218f42eac56052850781690a3ca6dbfd4b42
+      head_commit: c4c1720055f3b03fb61b955c24544b43d086dd06
     threads:
       - _ulid: 01M3TRMDGNTPQMADJW5QM3NW28
         entries:
@@ -5659,7 +5811,27 @@ reviews:
               frontend component check."
             created_at: 2026-10-01T03:37:50.869Z
         kind: nit
-    verdicts: []
+      - _ulid: 01M3TXWXFP8PDQWKWZWES34GSW
+        entries:
+          - _ulid: 01M3TXWXFPW5P15X71FNZ6ETWS
+            author: DonutsDelivery
+            body: "Final head refresh verified: c4c1720055f3b03fb61b955c24544b43d086dd06 differs from reviewed
+              b816218 only in Host component test findAllByText for the deliberately repeated
+              History/Preview filename and a 10s test deadline covering two real polling intervals.
+              Import exclusivity assertions remain unchanged. Product source is identical. Focused
+              frontend log inspected: 22/22 passed, exit0 as reported by root; source and exact
+              clean head confirmed."
+            created_at: 2026-10-01T05:09:52.246Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: bbac23727e042cf53f45ec90dffdd0e11ef42eae
+          head_commit: c4c1720055f3b03fb61b955c24544b43d086dd06
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-01T05:09:53.198Z
     created_at: 2026-10-01T03:37:50.425Z
-    updated_at: 2026-10-01T03:37:51.630Z
+    updated_at: 2026-10-01T05:09:53.198Z
     notes: []
