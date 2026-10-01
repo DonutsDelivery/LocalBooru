@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M3TWESJVBC5QDQANWAJ5JBAK
+    content: Redmi Note11Pro5G KDE Connect device484ff658_bfc9_4f3a_95cc_784e8b5e3e60 is
+      paired/reachable. Android SDK36, JDK17, NDK28.2 and all4 Rust Android targets installed;
+      canonical scripts/build-android-apk.sh signs verified universal APK with existing keystore.
+      Pending creator output candidate b816218 is clean, exact review awaiting frontend check; fresh
+      gated check queued as exec67749 with log
+      /tmp/electron-tmp/dmc-apk-redmi-20261001/frontend-check.log. Another project compiler holds
+      host heavy gate PID103474. Asked user whether to wait or authorize pausing conflicting build;
+      no external process stopped.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T04:44:40.924Z
