@@ -29,3 +29,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T05:48:02.189Z
+  - _ulid: 01M3V0DBQCWW7FYND076078GHC
+    content: "Independent review requested removal of CSS source scanning tests; removed
+      in91e9ebaad249e67d8e7fc958d352fde05c7b37bc while preserving actual rendered desktop+phone
+      evidence. Product unchanged from dbf; native Mac frontend45/45 and Rust219/219 passed there;
+      exact91e archive hash631fa9bd0a27b4e52cd3df42516c437b583dbc9a0b3a4ee2557834eb7a57dbcf will be
+      staged for clean native wrapper. Correction: queued Linux suite26, not27."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T05:53:48.268Z
