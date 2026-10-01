@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M3TQXZHRE2HQJ4MH65ZVJ6R2
+    content: "Approach: existing save sinks become temporary execution sinks unless ComfyUI is the
+      explicit destination. Retain exact original graph and metadata, owned final temp outputs and
+      manual import. Tests cover exclusive destination, final temp serving, unowned preview
+      rejection and UI/adapter routing. Dedicated branch fix/create-exclusive-output based on
+      current main bbac237."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T03:25:35.672Z
