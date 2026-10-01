@@ -11,8 +11,11 @@ description: User requests build-cache relocation under /mnt/storage/Projects/ex
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: "Operational change independently approved in @review-move-dmc-build-cache: full
+  checksum pass, persistent real target, legacy path continuity, original cache removed, app/backend
+  preserved. 91.7GiB moved to extra storage; no product commit needed."
 depends_on: []
 context: []
 priority: 3
@@ -65,7 +68,23 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-01T20:38:24.961Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: "Operational change independently approved in @review-move-dmc-build-cache: full checksum pass,
+          persistent real target, legacy path continuity, original cache removed, app/backend
+          preserved. 91.7GiB moved to extra storage; no product commit needed."
+        previous: null
+      completed_at:
+        new: 2026-10-01T20:39:14.671Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-01T20:39:14.682Z
 created_at: 2026-10-01T19:34:52.988Z
 started_at: 2026-10-01T19:37:31.184Z
 submitted_at: 2026-10-01T20:37:11.585Z
+completed_at: 2026-10-01T20:39:14.671Z
 todos: []
