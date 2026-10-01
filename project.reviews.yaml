@@ -7301,6 +7301,167 @@ reviews:
         runner: independent-corrected-vitest-log-audit
         created_at: 2026-10-01T21:37:05.866Z
         completed_at: 2026-10-01T21:37:05.866Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        evidence: Carried to final exact a0e5aaf after git diff confirms only3 Host test fixture lines
+          changed from0b335563, no relevant product/artifact changes. All changed source/test files
+          reviewed, clean final head confirmed. Compact navigation preserves mounted graph/control
+          drafts; dialog accessible title retained; titlebar/toasts excluded from modal inert
+          siblings. Backend controls retain owned-only actions and server/abort guards; shared
+          status revision suppresses stale publishers/actions. History groups actual prompt_id with
+          visible final outputs and collapsed stages. Stable job snapshot, confirmed history caching
+          and no progress disk rewrite preserve ownership and provenance endpoint. Rust child exit
+          refresh uses nonblocking child lock and exact Arc identity + Running state guard. Existing
+          known kspec verify/SKILL.md missing-description validation failure is unrelated to this
+          diff.
+        name: source-scope-and-contracts
+        required: true
+        runner: independent-git-source-review
+        created_at: 2026-10-01T21:41:43.202Z
+        completed_at: 2026-10-01T21:41:43.202Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        evidence: Carried to final exact a0e5aaf after git diff confirms only3 Host test fixture lines
+          changed from0b335563, no relevant product/artifact changes. Reviewer ran actual synthetic
+          controller suite47/47 exit0 at fc479282; controller product bytes unchanged through
+          final0b335563. Includes concurrent submission during awaited history, pending-to-running
+          scoped cancellation and late final recovery, confirmed success/interruption delayed-event
+          guards, progress persistence and stripped workspace output provenance. No real
+          backend/services/models/profile used.
+        name: controller-regressions
+        required: true
+        runner: independent-python-unittest
+        created_at: 2026-10-01T21:41:43.366Z
+        completed_at: 2026-10-01T21:41:43.366Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        evidence: Carried to final exact a0e5aaf after git diff confirms only3 Host test fixture lines
+          changed from0b335563, no relevant product/artifact changes. Reviewer ran existing adapter
+          suite10/10 exit0 at fc479282; adapter product bytes unchanged through final0b335563.
+          Includes compiled-prompt single-validation queue path and prior storage/draft/ownership
+          regressions.
+        name: browser-adapter-regressions
+        required: true
+        runner: independent-node-test-vm
+        created_at: 2026-10-01T21:41:43.550Z
+        completed_at: 2026-10-01T21:41:43.550Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        evidence: "Carried to final exact a0e5aaf after git diff confirms only3 Host test fixture lines
+          changed from0b335563, no relevant product/artifact changes. Actual service source
+          executed: status reads begun before/during Stop rejected; delayed Start cannot replace
+          newer Stop epoch. Actual Host poll and acknowledgement blocks executed: prior c414 lost
+          queued placeholder after stale response, fixed fc479 retained it. Controller actual prior
+          live iterator RuntimeError reproduced; pending-delete/terminal-state failures reproduced
+          and retained tests now pass."
+        name: actual-callback-races
+        required: true
+        runner: independent-synthetic-vm-callbacks
+        created_at: 2026-10-01T21:41:43.708Z
+        completed_at: 2026-10-01T21:41:43.708Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        evidence: "Carried to final exact a0e5aaf after git diff confirms only3 Host test fixture lines
+          changed from0b335563, no relevant product/artifact changes. Final runtime manifest
+          fingerprint fixed; reviewer independently hashes every advertised browser artifact:
+          base-workflow.json, donut-create.css, donut-create.js all match. Parent existing focused
+          installer provenance test1/1 pass /tmp/dmc-create-layout/provenance-test.log. This
+          validates artifact byte identity, not textual implementation presence."
+        name: bundled-provenance
+        required: true
+        runner: independent-sha256-artifact-verification
+        created_at: 2026-10-01T21:41:43.869Z
+        completed_at: 2026-10-01T21:41:43.869Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        evidence: Carried to final exact a0e5aaf after git diff confirms only3 Host test fixture lines
+          changed from0b335563, no relevant product/artifact changes. Read
+          /tmp/dmc-create-layout/backend-layout-checks.json, attributed parent browser execution
+          using actual CSS. Desktop1280 right pane200px wraps modes within1080..1280; center begins
+          y0. Badge208.7px in792px preview; mobile360/320 badges202.5px within336/296px previews.
+          Document scrollWidth equals viewport; backend popover within viewport, mobile navigation
+          remains accessible above panel tabs. Product CSS unchanged from receipt through final
+          head.
+        name: rendered-layout
+        required: true
+        runner: parent-real-css-synthetic-browser-receipt
+        created_at: 2026-10-01T21:41:44.032Z
+        completed_at: 2026-10-01T21:41:44.032Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        evidence: Read /tmp/dmc-create-layout/component-tests-final.log for final fixture-only
+          a0e5aaf:2files37/37pass, zero failures under corrected NODE_ENV=test. Host34 cases include
+          shared lifecycle epochs, modal titlebar/toast interactivity, focus preservation, grouped
+          History, progress during History, queued acknowledgement and deferred old polls after
+          generate/cancel. Original substantive assertions preserved in corrected notification
+          fixtures.
+        name: react-components
+        required: true
+        runner: independent-final-vitest-log-audit
+        created_at: 2026-10-01T21:41:44.210Z
+        completed_at: 2026-10-01T21:41:44.210Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        evidence: "Final corrected Host+TitleBar37/37 pass includes all3 platform component cases: native
+          Mac no duplicate chrome, Linux controls+offset, iOS server control. Titlebar product
+          unchanged; no actual OS interaction/GPU claim."
+        name: titlebar-components
+        required: true
+        runner: independent-final-vitest-log-audit
+        created_at: 2026-10-01T21:41:44.385Z
+        completed_at: 2026-10-01T21:41:44.385Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        evidence: Focused canonical Rust log sidecar-tests-retry.log:1/1pass,0fail,266filtered; library test
+          compile1m51s, actual exited-child/lifecycle contention test passes using external
+          relocated dev-target. Rust product and test bytes unchanged from verified0b335563 through
+          finala0e5aaf.
+        name: rust-sidecar-lifecycle
+        required: true
+        runner: independent-focused-cargo-log-audit
+        created_at: 2026-10-01T21:41:44.547Z
+        completed_at: 2026-10-01T21:41:44.547Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        evidence: Carried to final exact a0e5aaf after git diff confirms only3 Host test fixture lines
+          changed from0b335563, no relevant product/artifact changes. Main integration/installation
+          remains parent-owned after final source approval. No actual GPU run, real user-profile
+          media check, positively attributed live500 traceback or native OS interaction acceptance
+          claimed by this code review.
+        name: native-install-and-real-job-acceptance
+        required: false
+        created_at: 2026-10-01T21:41:44.724Z
+        completed_at: 2026-10-01T21:41:44.724Z
     events:
       - _ulid: 01M3WMZ3FG91RRMM57SV329BC5
         actor: DonutsDelivery
@@ -7420,9 +7581,123 @@ reviews:
           kind: blocker
           thread_ulid: 01M3WPCJZPWYZFHQPQQFBKG89V
         timestamp: 2026-10-01T21:37:06.086Z
+      - _ulid: 01M3WPN0ZT1390MX7GG1R5Y98C
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_base: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          new_head: a0e5aaffc55d148ee6847e806b76c607885cae20
+          previous_head: 0b335563b36246bd749228ca45af4cb07d1e131d
+        timestamp: 2026-10-01T21:41:42.522Z
+      - _ulid: 01M3WPN16B0C0QN19H78ZYBHTW
+        actor: DonutsDelivery
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01M3WPCJZPWYZFHQPQQFBKG89V
+        timestamp: 2026-10-01T21:41:42.731Z
+      - _ulid: 01M3WPN1BS4KA9AY8D7BHSCSMY
+        actor: DonutsDelivery
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01M3WPCJZPWYZFHQPQQFBKG89V
+        timestamp: 2026-10-01T21:41:42.905Z
+      - _ulid: 01M3WPN1H9EXTEP39XTYHX4VX3
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3WPN1FVKEVRZ24GN213JFB6
+        timestamp: 2026-10-01T21:41:43.081Z
+      - _ulid: 01M3WPN1PDPNW4E3YWYSXS6NPZ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-scope-and-contracts
+        timestamp: 2026-10-01T21:41:43.245Z
+      - _ulid: 01M3WPN1VMR70PVHE4PQKAH29Q
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: controller-regressions
+        timestamp: 2026-10-01T21:41:43.412Z
+      - _ulid: 01M3WPN219Q9X5FX688C9MBMF3
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: browser-adapter-regressions
+        timestamp: 2026-10-01T21:41:43.593Z
+      - _ulid: 01M3WPN268ZXPWJ87VYYS9H6NZ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: actual-callback-races
+        timestamp: 2026-10-01T21:41:43.753Z
+      - _ulid: 01M3WPN2B990YVT0T9Y9NRR5HB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: bundled-provenance
+        timestamp: 2026-10-01T21:41:43.913Z
+      - _ulid: 01M3WPN2GVA9BQGM6ZQ0WQ6B3F
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: rendered-layout
+        timestamp: 2026-10-01T21:41:44.091Z
+      - _ulid: 01M3WPN2PF3J7ASFV1FJZCP030
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: react-components
+        timestamp: 2026-10-01T21:41:44.271Z
+      - _ulid: 01M3WPN2VC0GTKW83D9TMENGB3
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: titlebar-components
+        timestamp: 2026-10-01T21:41:44.428Z
+      - _ulid: 01M3WPN30JKFJ80J859JZC3QDF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: rust-sidecar-lifecycle
+        timestamp: 2026-10-01T21:41:44.594Z
+      - _ulid: 01M3WPN3631VKQP8HFQZAQAYJ2
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: native-install-and-real-job-acceptance
+        timestamp: 2026-10-01T21:41:44.771Z
+      - _ulid: 01M3WPN3C08J9QCWS6M1J48PD7
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+            head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+          decision: approve
+        timestamp: 2026-10-01T21:41:44.960Z
+      - _ulid: 01M3WPN3C0W7BJN5EN8K7R11MJ
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-01T21:41:44.960Z
     examined_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@create-compact-progress"
     subject:
@@ -7430,7 +7705,7 @@ reviews:
       base_branch: main
       base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
       head_branch: fix/create-compact-navigation
-      head_commit: 0b335563b36246bd749228ca45af4cb07d1e131d
+      head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
     threads:
       - _ulid: 01M3WMZ7GRDMVXJFMM2WB06P3P
         entries:
@@ -7467,8 +7742,42 @@ reviews:
               actual failure in component-tests-retry.log; no product behavior failure attributed
               from these assertions."
             created_at: 2026-10-01T21:37:06.038Z
+          - _ulid: 01M3WPN14WR9E6YB12476X4BZH
+            author: DonutsDelivery
+            body: "Fixed in fixture-only a0e5aaffc55d148ee6847e806b76c607885cae20. Reviewer inspected
+              exact3-line replacement: assert toast-message content, provide real ToastContainer for
+              backend invalidation notification, retain ownership/status/cancelability and
+              old-frame/session assertions. Independently read corrected NODE_ENV=test
+              component-tests-final.log: both files37/37 pass. Product files unchanged from
+              reviewed/tested0b335563."
+            created_at: 2026-10-01T21:41:42.684Z
         kind: blocker
-    verdicts: []
+        resolved_at: 2026-10-01T21:41:42.859Z
+        resolved_by: DonutsDelivery
+      - _ulid: 01M3WPN1FVKEVRZ24GN213JFB6
+        entries:
+          - _ulid: 01M3WPN1FVGSTRFEXYD5ECPY0Z
+            author: DonutsDelivery
+            body: Final independently examined clean exact
+              e769ac7842c682e29fa6af8c9a685ce2987d2b60..a0e5aaffc55d148ee6847e806b76c607885cae20.
+              Only Host test fixture changed from0b335563; all product files,
+              controller/adapter/provenance artifacts, CSS and Rust source/test remain
+              byte-identical. Fresh version-bound checks recorded on new code subject; old check
+              entries are historical/stale and do not establish current gates. CLI refresh leaves
+              examined_commit metadata at previous0b; this explicit inspection and current subject
+              hashes identify final examined head. No source blockers remain; no runtime/GPU/live500
+              cause claim added.
+            created_at: 2026-10-01T21:41:43.035Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: e769ac7842c682e29fa6af8c9a685ce2987d2b60
+          head_commit: a0e5aaffc55d148ee6847e806b76c607885cae20
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-01T21:41:44.960Z
     created_at: 2026-10-01T21:12:15.615Z
-    updated_at: 2026-10-01T21:37:06.038Z
+    updated_at: 2026-10-01T21:41:44.960Z
     notes: []
