@@ -959,7 +959,7 @@
   const referenceFields = new Set(['referenceA', 'referenceB', 'guidanceReferenceA', 'guidanceReferenceB']);
   const cropReferences = {cropA: 'referenceA', cropB: 'referenceB', guidanceCropA: 'guidanceReferenceA', guidanceCropB: 'guidanceReferenceB'};
   const channel = 'donut-create-basic-v1';
-  const actions = new Set(['snapshot', 'patch', 'generate', 'upload-reference', 'upload-mask', 'load-preset', 'load-latest', 'load-workflow']);
+  const actions = new Set(['snapshot', 'patch', 'generate', 'upload-reference', 'upload-mask', 'load-preset', 'load-latest', 'load-workflow', 'drop-file']);
   const referencePattern = /^donutref:[a-f0-9]{64}$/;
   const maskPattern = /^donutmask:[a-f0-9]{64}$/;
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -1514,6 +1514,50 @@
       lastError = ''; saveDraft();
     } finally { queueAttempt = null; }
   }
+  async function dropFile(payload) {
+    requireEditor();
+    const file = payload?.file;
+    if (!object(payload) || Object.keys(payload).some(key => !['file', 'target'].includes(key))
+      || typeof File === 'undefined' || !(file instanceof File) || file.size <= 0
+      || file.size > (file.type === 'application/json' ? 4 : 32) * 1024 * 1024) throw new Error('Choose an image or workflow JSON within the supported size limit.');
+    if (payload.target !== undefined && !referenceFields.has(payload.target)) throw new Error('Choose a valid reference input.');
+    if (payload.target && file.type !== 'application/json') {
+      return {fileImport: 'reference', mutationChanged: await uploadReference({file, target: payload.target})};
+    }
+    let workflow;
+    if (file.type === 'application/json') {
+      try { workflow = JSON.parse(await file.text()); }
+      catch { throw new Error('This file is not valid workflow JSON. Your current draft was kept.'); }
+      if (object(workflow) && !Array.isArray(workflow.nodes) && object(workflow.workflow)) workflow = workflow.workflow;
+    } else if (/^image\/(png|webp)$/.test(file.type)) {
+      const metadata = await import(new URL('scripts/pnginfo.js', base).href);
+      const read = file.type === 'image/png' ? metadata.getPngMetadata : metadata.getWebpMetadata;
+      if (typeof read !== 'function') throw new Error('The backend cannot read image workflow metadata yet. Retry the connection.');
+      const info = await read(file);
+      const attached = info?.workflow ?? info?.Workflow;
+      if (attached !== undefined && attached !== '') {
+        try { workflow = typeof attached === 'string' ? JSON.parse(attached) : attached; }
+        catch { throw new Error('The image workflow is invalid. Your current draft was kept.'); }
+      }
+    }
+    if (workflow !== undefined) {
+      await loadWorkflow({workflow});
+      return {fileImport: 'workflow'};
+    }
+    if (file.type === 'application/json') throw new Error('This JSON does not contain an editable workflow. Your current draft was kept.');
+    return {fileImport: 'reference', mutationChanged: await uploadReference({file, target: payload.target || 'referenceA'})};
+  }
+  // The advanced editor is a separate document, so its drops cannot bubble to
+  // the host. Let the same host action own loading, errors and Instant pause.
+  document.addEventListener('dragover', event => {
+    if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
+  }, true);
+  document.addEventListener('drop', event => {
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (!files.length) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    if (parentOrigin) window.parent.postMessage({channel, sessionId: config.sessionId, event: 'file-drop', files}, parentOrigin);
+  }, true);
   window.addEventListener('message', event => {
     const message = event.data;
     // Tauri/Wry's registered native scheme uses a tuple origin, like HTTP.
@@ -1529,7 +1573,7 @@
     const reply = value => event.source.postMessage({channel, sessionId: config.sessionId, requestId: message.requestId, ...value}, event.origin);
     bridgeQueue = bridgeQueue.then(async () => {
       try {
-        let mutationChanged;
+        let mutationChanged, imported;
         if (message.action === 'snapshot' && initialized && !loading && !queueAttempt) {
           const latest = await readLatest(true);
           if (latest.revision > latestRun.revision || (latest.revision > loadedRunRevision && !latestRun.workflow)) {
@@ -1547,7 +1591,8 @@
         else if (message.action === 'load-preset') await loadPreset();
         else if (message.action === 'load-latest') await loadLatest();
         else if (message.action === 'load-workflow') await loadWorkflow(message.payload);
-        reply({ok: true, snapshot: {...snapshot(), ...(mutationChanged !== undefined ? {mutationChanged} : {})}});
+        else if (message.action === 'drop-file') imported = await dropFile(message.payload);
+        reply({ok: true, snapshot: {...snapshot(), ...imported, ...(mutationChanged !== undefined ? {mutationChanged} : {})}});
       } catch (error) { showError(error); reply({ok: false, error: error?.message || String(error)}); }
     }).catch(showError);
   });

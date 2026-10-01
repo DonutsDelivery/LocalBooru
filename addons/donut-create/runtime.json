@@ -387,7 +387,7 @@
       "commit": "2806ebe12caada993e6305e3f441ce61ab22a11c",
       "path": "workflows/v5/DonutWF_v5.json",
       "source_sha256": "f06309a40fff7f8ff82fc9d7c23303814f940898842fa3d98be40f3fd8525383",
-      "bundled_sha256": "f00193911149dd97a98119a38d56aad91e4306261f139154f73b2c4f0f580dc0"
+      "bundled_sha256": "a3e8cca1c42170e86c012975896ef13c387faa9597a75248bcf014dcdad6000b"
     },
     "catalog": {
       "path": "model_sources.json",
@@ -404,9 +404,9 @@
         "src-tauri/inject/donut-api.js": "33c10dc59eb23127aefc63ad437ebd48bc37cbdb46fd79ecae408757e94657d8"
       },
       "browser_assets": {
-        "assets/base-workflow.json": "8af29c42593029eab87befdae691aff5314084ff352265970e582be9139b892e",
+        "assets/base-workflow.json": "60aa59e5fa8f7fc085b4387277c929e3ff650bf157d88cdf3a8225042fa790a7",
         "assets/donut-create.css": "45057b6e702e49117e69bf177205da386f96f0e4d796021ee1062e14a2b57fcb",
-        "assets/donut-create.js": "09adce581dd23f34800aadac8cccc52bf3531a4cfdbfa8a8e0d4af2e81bc051d"
+        "assets/donut-create.js": "ee27d6e6ec5c201a08feb182ccc2c9a15e2d29332b79e781edb790b545b89036"
       }
     }
   },

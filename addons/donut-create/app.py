@@ -201,6 +201,8 @@ class Controller:
         self.process: asyncio.subprocess.Process | None = None
         self.backend_error: str | None = None
         self.mutation_lock = asyncio.Lock()
+        self.backend_lock = asyncio.Lock()
+        self.closing = False
         self.workspace_streams: dict[str, dict[str, Any]] = {}
 
     def persist(self) -> None:
@@ -258,7 +260,7 @@ class Controller:
     async def readiness(self) -> dict[str, Any]:
         backend = self.config["backend_url"]
         result = {"running": False, "ready": False,
-                  "owned": self.config["mode"] == "managed" and self.process is not None and self.process.returncode is None,
+                  "owned": self.config["mode"] in {"managed", "local"} and self.process is not None and self.process.returncode is None,
                   "error": self.backend_error, "missing_nodes": [], "missing_models": []}
         try:
             info = await self.backend_json(backend, "object_info")
@@ -279,16 +281,22 @@ class Controller:
                 if filename not in catalog[folder]:
                     result["missing_models"].append(filename)
             result["ready"] = (bool(required) and not result["missing_nodes"] and not result["missing_models"])
-            if self.config["mode"] == "managed":
-                result["ready"] = result["ready"] and self.installer.ready() and result["owned"]
+            if self.config["mode"] in {"managed", "local"}:
+                result["ready"] = result["ready"] and result["owned"]
+                if self.config["mode"] == "managed":
+                    result["ready"] = result["ready"] and self.installer.ready()
                 if not result["owned"]:
-                    result["error"] = "The managed port 18010 is occupied by a backend this controller does not own."
+                    result["error"] = "Port 18010 is occupied by a backend this controller does not own."
             if not required:
                 result["error"] = "The bundled v5 workflow is unavailable. Reinstall Donut Create."
             elif not result["ready"] and not result["error"]:
                 result["error"] = "The backend is missing required workflow nodes or models."
         except HTTPException as error:
-            result["error"] = error.detail
+            result["error"] = self.backend_error or (None if result["owned"] else error.detail)
+            if self.process is not None and self.process.returncode is not None:
+                result["error"] = f"ComfyUI exited with code {self.process.returncode}. Check the installation and restart it."
+        result["controllable"] = self.config["mode"] in {"managed", "local"}
+        result["state"] = "running" if result["running"] else "starting" if result["owned"] else "stopped"
         return result
 
     async def status(self) -> dict[str, Any]:
@@ -297,71 +305,119 @@ class Controller:
                 **{key: setup[key] for key in ("catalog", "disk", "default_runtime", "supported_runtimes", "default_profile") if key in setup},
                 "session_ttl_seconds": self.ttl}
 
+    def local_installation(self, options: dict[str, Any]) -> tuple[Path, Path]:
+        folder = options.get("comfy_directory")
+        if not isinstance(folder, str) or not folder.strip():
+            raise HTTPException(400, "Choose the ComfyUI folder containing main.py.")
+        root = Path(folder).expanduser().resolve()
+        if not (root / "main.py").is_file() or not (root / "comfy").is_dir():
+            raise HTTPException(400, "Choose a ComfyUI installation containing main.py and the comfy folder.")
+        interpreter = options.get("python_executable")
+        if interpreter:
+            python = Path(interpreter).expanduser().absolute()
+        else:
+            relative = "Scripts/python.exe" if os.name == "nt" else "bin/python"
+            candidates = [base / env / relative for base in (root, root.parent) for env in ("venv", ".venv")]
+            candidates += [base / "python_embeded/python.exe" for base in (root, root.parent)]
+            python = next((path for path in candidates if path.is_file()), None)
+        if python is None or not python.is_file() or not os.access(python, os.X_OK) or not re.fullmatch(r"python(?:[0-9]+(?:\.[0-9]+)*)?(?:\.exe)?", python.name, re.I):
+            raise HTTPException(400, "Select the Python executable used by this ComfyUI installation.")
+        return root, python
+
     async def configure(self, options: dict[str, Any]) -> dict[str, Any]:
-        if options["mode"] == "existing" and not options.get("backend_url"):
-            raise HTTPException(400, "Enter the existing ComfyUI backend origin explicitly.")
-        try:
-            backend = validate_backend_url(options.get("backend_url") or MANAGED_URL)
-        except ValueError as error:
-            raise HTTPException(400, str(error)) from None
-        if options["mode"] == "managed":
-            backend = MANAGED_URL
-        self.config = {"mode": options["mode"], "backend_url": backend}
-        private_json(self.state_dir / "config.json", self.config)
+        async with self.backend_lock:
+            if self.closing:
+                raise HTTPException(503, "The creator add-on is shutting down.")
+            if options["mode"] not in {"managed", "existing", "local"}:
+                raise HTTPException(400, "Choose a supported backend mode.")
+            if self.process is not None and self.process.returncode is None:
+                raise HTTPException(409, "Stop ComfyUI before changing its backend configuration.")
+            if options["mode"] == "existing" and not options.get("backend_url"):
+                raise HTTPException(400, "Enter the existing ComfyUI backend origin explicitly.")
+            try:
+                backend = validate_backend_url(options.get("backend_url") or MANAGED_URL)
+            except ValueError as error:
+                raise HTTPException(400, str(error)) from None
+            config = {"mode": options["mode"], "backend_url": backend if options["mode"] == "existing" else MANAGED_URL}
+            if options["mode"] == "local":
+                root, python = self.local_installation(options)
+                config.update(comfy_directory=str(root), python_executable=str(python))
+            self.config = config
+            private_json(self.state_dir / "config.json", self.config)
         return await self.status()
 
     async def start_backend(self) -> dict[str, Any]:
-        if self.config["mode"] != "managed":
-            raise HTTPException(409, "Start the existing backend in its own application.")
+        async with self.backend_lock:
+            await self._start_backend()
+        return await self.status()
+
+    async def _start_backend(self) -> None:
+        if self.closing:
+            raise HTTPException(503, "The creator add-on is shutting down.")
+        if self.config["mode"] not in {"managed", "local"}:
+            raise HTTPException(409, "Register a local ComfyUI installation to control it, or use managed ComfyUI.")
         if self.process is not None and self.process.returncode is None:
-            return await self.status()
-        if not self.installer.ready():
-            raise HTTPException(409, "Finish managed setup before starting ComfyUI.")
+            return
+        if self.config["mode"] == "managed":
+            if not self.installer.ready():
+                raise HTTPException(409, "Finish managed setup before starting ComfyUI.")
+            root, python = Path(self.installer.backend_root), Path(self.installer.python_path)
+        else:
+            root, python = self.local_installation(self.config)
         if (await self.readiness())["running"]:
-            raise HTTPException(409, "The managed port is occupied by a backend this controller does not own.")
-        command = [str(self.installer.python_path), str(Path(self.installer.backend_root) / "main.py"),
-                   "--listen", "127.0.0.1", "--port", "18010"]
-        if self.installer.status().get("runtime") == "cpu":
+            raise HTTPException(409, "Port 18010 is occupied by a backend this controller does not own.")
+        command = [str(python), str(root / "main.py"), "--listen", "127.0.0.1", "--port", "18010"]
+        if self.config["mode"] == "managed" and self.installer.status().get("runtime") == "cpu":
             command.append("--cpu")
         environment = {key: value for key, value in os.environ.items()
                        if not any(word in key.upper() for word in ("TOKEN", "API_KEY", "PASSWORD", "SECRET"))}
         environment.pop("PYTHONPATH", None)
         environment.pop("PYTHONHOME", None)
-        environment.update(self.installer.backend_environment())
+        if self.config["mode"] == "managed":
+            environment.update(self.installer.backend_environment())
         environment["PYTHONUNBUFFERED"] = "1"
         try:
-            self.process = await asyncio.create_subprocess_exec(*command, cwd=str(self.installer.backend_root),
-                                                               env=environment, stdout=asyncio.subprocess.DEVNULL,
-                                                               stderr=asyncio.subprocess.DEVNULL)
+            self.process = await asyncio.create_subprocess_exec(*command, cwd=str(root), env=environment,
+                                                               stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
             self.backend_error = None
         except OSError:
-            self.backend_error = "The managed ComfyUI process could not start. Retry managed setup."
+            self.backend_error = "ComfyUI could not start. Check its installation and Python executable."
             raise HTTPException(502, self.backend_error) from None
-        return await self.status()
 
-    async def stop_backend(self) -> dict[str, Any]:
-        if self.config["mode"] != "managed":
-            raise HTTPException(409, "The existing backend is owned by its own application.")
+    async def _stop_backend(self) -> None:
+        if self.config["mode"] not in {"managed", "local"}:
+            raise HTTPException(409, "This URL-only backend is controlled by its host application.")
         process = self.process
         if process is not None and process.returncode is None:
-            process.terminate()
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
             try:
                 await asyncio.wait_for(process.wait(), timeout=10)
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
         self.process = None
+        self.backend_error = None
+
+    async def stop_backend(self) -> dict[str, Any]:
+        async with self.backend_lock:
+            await self._stop_backend()
+        return await self.status()
+
+    async def restart_backend(self) -> dict[str, Any]:
+        async with self.backend_lock:
+            await self._stop_backend()
+            await self._start_backend()
         return await self.status()
 
     async def close(self) -> None:
-        # The manager owns this controller and its managed child, never another backend.
-        if self.process is not None and self.process.returncode is None:
-            self.process.terminate()
-            try:
-                await asyncio.wait_for(self.process.wait(), 10)
-            except asyncio.TimeoutError:
-                self.process.kill()
-                await self.process.wait()
+        # Stop only our child, including when shutdown races with a restart.
+        self.closing = True
+        async with self.backend_lock:
+            if self.config["mode"] in {"managed", "local"}:
+                await self._stop_backend()
         stream_tasks = [stream["task"] for stream in self.workspace_streams.values()]
         for task in stream_tasks:
             task.cancel()
@@ -939,6 +995,8 @@ class ConfigRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: str
     backend_url: str | None = None
+    comfy_directory: str | None = None
+    python_executable: str | None = None
 
 
 class SetupRequest(BaseModel):
@@ -1135,8 +1193,8 @@ def create_app(controller: Controller | None = None) -> FastAPI:
 
     @application.post("/create/config")
     async def configure(body: ConfigRequest):
-        if body.mode not in {"managed", "existing"}:
-            raise HTTPException(400, "Choose managed or existing backend mode.")
+        if body.mode not in {"managed", "existing", "local"}:
+            raise HTTPException(400, "Choose managed, local installation, or URL connection mode.")
         return await current().configure(body.model_dump())
 
     @application.post("/create/setup")
@@ -1158,6 +1216,10 @@ def create_app(controller: Controller | None = None) -> FastAPI:
     @application.post("/create/backend/stop")
     async def stop_backend():
         return await current().stop_backend()
+
+    @application.post("/create/backend/restart")
+    async def restart_backend():
+        return await current().restart_backend()
 
     @application.post("/create/sessions")
     async def create_session(request: Request):

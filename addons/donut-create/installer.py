@@ -121,9 +121,8 @@ class Installer:
 
     @property
     def workflow_path(self):
-        installed = self.state_dir / "workflow.json"
-        if installed.is_file():
-            return installed
+        # This is the setup preset, not the studio draft. An old generated
+        # setup cache must not mask the defaults shipped by a newer add-on.
         return self.assets_root / "base-workflow.json" if self._status.get("profile") == "base" else ROOT / "workflow.json"
 
     def backend_environment(self):
@@ -596,18 +595,7 @@ class Installer:
         return record
 
     def _workflow(self, profile):
-        workflow = _read_json(ROOT / "workflow.json")
-        if profile == "base":
-            for graph in [workflow, *workflow["definitions"]["subgraphs"]]:
-                for node in graph["nodes"]:
-                    if node["id"] == 1122:
-                        node["widgets_values"][0] = "krea2_turbo_bf16.safetensors"
-                        node["title"] = "Krea2 base model · neutral starter"
-                    if node["id"] == 1124:
-                        node["widgets_values"][-1] = "Single model"
-                    if node["id"] == 1055:
-                        node["widgets_values"][1] = "[]"
-            workflow["extra"]["donut_workflow"]["name"] = "Donut Create · neutral starter v5"
+        workflow = _read_json(ROOT / ("assets/base-workflow.json" if profile == "base" else "workflow.json"))
         _atomic_json(self.state_dir / "workflow.json", workflow)
 
     def _capabilities(self, runtime):

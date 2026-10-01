@@ -43,6 +43,12 @@ export async function stopCreateBackend(signal) {
   return response.data
 }
 
+export async function restartCreateBackend(signal) {
+  const response = await apiClient.post(`${CREATE_API}/backend/restart`, undefined, { signal })
+  checkRequest(signal)
+  return response.data
+}
+
 export async function createStudioSession(signal) {
   const response = await apiClient.post(`${CREATE_API}/sessions`, { workspace: true }, { signal })
   checkRequest(signal)
