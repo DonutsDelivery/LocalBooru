@@ -13,7 +13,7 @@ vi.mock('./components/Music/MusicExperience', () => ({
   MusicPlayerProvider: ({ children }) => children, MusicPage: () => null, PersistentMusicPlayer: () => null,
 }))
 vi.mock('./hooks/useAddonStatus', () => ({ useAllAddonStatuses: () => ({ isInstalled: () => false }) }))
-vi.mock('./components/MasonryGrid', () => ({ default: ({ images }) => <div data-testid="gallery">{images.map(image => <span key={image.directory_id}>{image.filename}</span>)}</div> }))
+vi.mock('./components/MasonryGrid', () => ({ default: ({ images, onImageClick }) => <div data-testid="gallery">{images.map(image => <button key={image.directory_id} onClick={() => onImageClick(image)}>{image.filename}</button>)}</div> }))
 vi.mock('./components/Lightbox', () => ({ default: ({ images, currentIndex, total, onNav, onClose, onImageUpdate, onDelete }) => {
   const image = images[currentIndex]
   if (!image) return null
@@ -87,6 +87,22 @@ test('an authoritative scan refresh updates the standalone player without adding
   expect(screen.getByTestId('player-count').textContent).toBe('1/1')
   fireEvent.click(screen.getByRole('button', { name: 'Next video' }))
   expect(screen.getByTestId('playing-video').textContent).toBe('library-b:2:12:resume.mp4')
+})
+
+test('a stale history refresh cannot close a newer selected video when the previous video was removed', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByText('resume.mp4'))
+  await screen.findByTestId('playing-video')
+  let rejectPrevious
+  api.fetchImages.mockResolvedValueOnce({ images: [{ ...loaded, filename: 'refreshed.mp4' }], total: 1 })
+  api.fetchImage.mockImplementationOnce(() => new Promise((_, reject) => { rejectPrevious = reject }))
+  api.subscribeToLibraryEvents.mock.calls.at(-1)[0]({ type: 'task_completed', data: { task_type: 'scan_directory' } })
+  await waitFor(() => expect(rejectPrevious).toBeTypeOf('function'), { timeout: 2500 })
+  fireEvent.click(screen.getByRole('button', { name: 'loaded.mp4' }))
+  rejectPrevious({ response: { status: 404 } })
+  await screen.findByRole('button', { name: 'refreshed.mp4' })
+  expect(screen.getByTestId('playing-video').textContent).toBe('library-a:1:12:refreshed.mp4')
+  expect(screen.getByTestId('gallery').textContent).toBe('refreshed.mp4')
 })
 
 test('Clear All remains in the Continue Watching heading and clears history without selecting media', async () => {

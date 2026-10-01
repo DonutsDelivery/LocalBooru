@@ -1201,7 +1201,9 @@ function Gallery({ mediaType = 'image' }) {
         setPage(authoritative ? pageCount : 1)
         setHasMore(reconciled.images.length < result.total)
         publishedGalleryViewRef.current = galleryViewKey
-        if (authoritative && lightboxIndexRef.current && !reconciled.currentLocator && !standaloneCurrentExists) {
+        if (authoritative && lightboxIndexRef.current
+          && imageMatchesLocator(lightboxIndexRef.current, currentLocator)
+          && !reconciled.currentLocator && !standaloneCurrentExists) {
           loadingMoreRef.current = false
           lightboxPaginationGenerationRef.current += 1
           lightboxIndexRef.current = null
