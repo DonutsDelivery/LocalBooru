@@ -1,1 +1,9 @@
-notes: []
+notes:
+  - _ulid: 01M3WGEEW6F1E7Y0H54HG0BRBS
+    content: "Expanded by user: remove full-width branded header; Exit at top left controls,
+      Simple/Advanced/Setup above right effects. Reuse existing handlers and preserve mounted
+      workflow. Compact status badge and progress meter. Verify actual rendered CSS at
+      desktop/mobile and focused component interactions under host build gate."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T19:53:15.911Z
