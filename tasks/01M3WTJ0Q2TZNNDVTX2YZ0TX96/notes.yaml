@@ -1,1 +1,11 @@
-notes: []
+notes:
+  - _ulid: 01M3WTJEY38EP2G4B89HA0S9BK
+    content: Dedicated worktree /tmp/dmc-create-effect-collapse based main e320bcd. Reuse existing
+      effect group/slider fields; give every effects section a separate keyboard-accessible
+      disclosure button and activation switch. Disclosure state belongs to section and survives
+      activation changes. Keep inactive groups initially collapsed and active groups initially open,
+      and compatibility initially open. Synthetic component tests cover collapse while active,
+      expand while off, activation preserving collapsed state and strengths retained.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T22:50:12.803Z
