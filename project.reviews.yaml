@@ -7967,3 +7967,32 @@ reviews:
     created_at: 2026-10-01T23:05:36.280Z
     updated_at: 2026-10-01T23:06:40.965Z
     notes: []
+  - _ulid: 01M3WWR30PJ72RDR3T4GPD66FC
+    slugs:
+      - review-android-hls-startup
+    title: Review Android HLS startup and resolution fixes
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3WWR30PMYQ4FPFX3KSQGEEP
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-01T23:28:14.358Z
+    examined_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@android-svp-hls-startup"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+      head_branch: fix/android-svp-hls
+      head_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
+    threads: []
+    verdicts: []
+    created_at: 2026-10-01T23:28:14.358Z
+    updated_at: null
+    notes: []
