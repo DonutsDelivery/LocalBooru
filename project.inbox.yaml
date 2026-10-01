@@ -5,3 +5,25 @@ inbox:
     tags: []
     added_by: DonutsDelivery
     created_at: 2026-07-20T12:52:25.452Z
+  - _ulid: 01M3TEYK3QC1MJGEC7SVETFNTF
+    text: "Android SVP/downscale read-only investigation at main8a7d1b8: module-load Date.now()*1000
+      frontend transition counters compared against one server-global LAST_CLIENT_EPOCH
+      (playbackTransition.js/settings.rs) can permanently supersede older independent phone
+      sessions. SVP skips near-target-FPS before honoring lower resolution (addons/svp/app.py644).
+      Plain transcode width-only scaling ignores preset height and can upscale portrait sources
+      (transcode.rs700); SVP forces W/H aspect distortion and omits1080p_enhanced. Error-toast
+      expiry removes fail-open direct source; fallback quality does not synchronize outer selection.
+      CUDA/NVENC compiled-feature probe lacks usable-device/software retry. APK This Device has no
+      bundled ffmpeg/ffprobe/Python/vspipe; selected remotePC HLS path exists. Found local2.0.3 APK
+      hash10b7f4a07d674d46f18a9949b84bfbdb9586529b81963ee9688f76a2b7cc32a9; installed provenance
+      unknown; noADB.11 existing focused tests passed but miss these cases. Suggested fixes:
+      server-issued owner/session/generation ordering; durable effective-source fallback;
+      aspect-preserving no-upscale presets and plain transcode when interpolation unnecessary;
+      bounded software retry; capability-aware device UI; exactAPK synthetic
+      two-client/portrait/60FPS/GPU-failure acceptance. No source changes/restarts/builds."
+    tags:
+      - android
+      - svp
+      - investigation
+    added_by: DonutsDelivery
+    created_at: 2026-10-01T00:48:38.519Z
