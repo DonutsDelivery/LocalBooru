@@ -52,3 +52,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T06:05:52.665Z
+  - _ulid: 01M3V1BY8NP5XCDTAXWDSQGGX8
+    content: Currentcff canonical fullfrontend162node/47componenttests and Rust219/219 pass; cargo check
+      passed. Product sourceintegratedmain e769ac7 treeidenticalcff andpushed. Exactcff universal
+      packaging running; installer queued onlyafterverifiedexit0, then hosttoken,
+      stagedsignature/hash validation, preserve /Applications/LocalBooru.app inode,
+      openandleavealive. LatestlogsoutsideMacsource
+      ~/LocalBooru-builds/dmc-cffebce-{build,install}.log.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T06:10:30.294Z
