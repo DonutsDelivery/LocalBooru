@@ -10,8 +10,11 @@ description: Move owned job list above RunInstant/Generate in an upward-opening 
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Reviewed exactb1786c5, integrated and pushed mainf5f8f5e, focused22 plus
+  independent23 checks passed and responsive synthetic browser verified. Native installed/hash
+  matched, DMC reopened and left alive; Comfy preserved.
 depends_on: []
 context: []
 priority: 1
@@ -64,7 +67,23 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-01T01:29:05.153Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Reviewed exactb1786c5, integrated and pushed mainf5f8f5e, focused22 plus independent23 checks
+          passed and responsive synthetic browser verified. Native installed/hash matched, DMC
+          reopened and left alive; Comfy preserved.
+        previous: null
+      completed_at:
+        new: 2026-10-01T01:35:24.323Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-01T01:35:24.328Z
 created_at: 2026-10-01T01:13:21.620Z
 started_at: 2026-10-01T01:13:21.722Z
 submitted_at: 2026-10-01T01:26:49.348Z
+completed_at: 2026-10-01T01:35:24.323Z
 todos: []

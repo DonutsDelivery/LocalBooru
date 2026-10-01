@@ -38,3 +38,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T01:29:49.457Z
+  - _ulid: 01M3THM71M2EA2K7R40C8TBP5G
+    content: Native install wrapper exit0 release4m10s. Main/origin
+      f5f8f5ee68689d10b0c164b0c9350034936bce92. Built/installed/live executableSHA256
+      f4683eccef54e7c54d431198cbc15ac1875def67bbc61ccf37f4327a0fca28b5; installed frontend diff
+      matches build. OldDMC3938648/addon3938827 gracefully quit after install, reopened detached
+      DMC3990957 at installed path; addon3991064 listening127.0.0.1:18009; independentComfy3890977
+      uninterrupted. No Cargo/Rust writers remain. Syntheticfixture stopped, clean merged ancestor
+      taskworktree removed. Normal profile only startup/install receipt, no gallery testing. No
+      APK/GPU generation acceptance claimed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T01:35:24.213Z
