@@ -35,3 +35,19 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T00:57:57.550Z
+  - _ulid: 01M3TFZ5Q4C31WN5S67JX3V044
+    content: Integrated candidate a192143 into main6a5cd4783e34318a10123ea5e14926d89247e7d3 and pushed
+      origin/main (sameSHA). Independent review@review-create-preview-zoom closed/approved
+      gatepassing exact8a→a192. Install wrapper session37024 exited0 releasebuild4m13s. Native
+      build/installed/live /proc3938648
+      SHA9a9ed0eb7a9cb3957f278f8cf7598b0d0e54df866d5dc69d97f193abaf9a1ea0; installed frontend
+      matches build. After confirmedCargo/rustcexit, gracefullyquit oldDMC3887180,
+      detachedrelaunchnew3938648; remainsalive33sec, addon3938827 listens18009. ExistingComfy3890977
+      preserved. Deployed addonapp/js/workflow/base-workflow SHA match mainsources. Syntheticfixture
+      stopped and bothclean merged taskworktrees removed.
+      UnrelatedmainuntrackedMediaNavigationtest/originalfiles preserved. No
+      APKbuild/deviceorrealGPUgeneration acceptance claimed. Androidinvestigation preserved via
+      inbox; fixes notimplemented.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T01:06:26.148Z
