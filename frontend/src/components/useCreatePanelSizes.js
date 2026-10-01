@@ -14,7 +14,7 @@ export default function useCreatePanelSizes(expanded, expand) {
     } catch { return {} }
   })
   const [resizing, setResizing] = useState(false)
-  const [desktop, setDesktop] = useState(false)
+  const [desktop, setDesktop] = useState(() => typeof window !== 'undefined' && (window.matchMedia ? window.matchMedia('(min-width: 941px)').matches : window.innerWidth > 940))
   useEffect(() => {
     const measure = () => {
       setDesktop(window.matchMedia ? window.matchMedia('(min-width: 941px)').matches : window.innerWidth > 940)
@@ -88,5 +88,5 @@ export default function useCreatePanelSizes(expanded, expand) {
       },
     }
   }
-  return { workspace, resizing, separator, style: desktop ? { '--create-left-size': left + 'px', '--create-right-size': right + 'px', '--create-lower-size': expanded ? sizes.lower + 'px' : 'auto', '--create-lower-handle': expanded ? sizes.lower + 'px' : '44px' } : {} }
+  return { workspace, resizing, desktop, separator, style: desktop ? { '--create-left-size': left + 'px', '--create-right-size': right + 'px', '--create-lower-size': expanded ? sizes.lower + 'px' : 'auto', '--create-lower-handle': expanded ? sizes.lower + 'px' : '44px' } : {} }
 }

@@ -231,17 +231,15 @@ export default function CreateSettings({ onStatusChange, backendOnly = false, hi
       {status?.backend?.missing_nodes?.length > 0 && <p>Missing node packs or nodes: {status.backend.missing_nodes.join(', ')}</p>}
       {status?.backend?.missing_models?.length > 0 && <p>Missing models: {status.backend.missing_models.join(', ')}</p>}
       {!controllable && <p>To start, stop and restart from DMC, select Manage existing local installation on the computer hosting ComfyUI.</p>}
-      {controllable && (
-        <div className="create-actions">
-          <button type="button" disabled={busy || installing || status?.backend?.running || status?.backend?.owned} onClick={() => runAction('Starting backend', startCreateBackend)}>{action === 'Starting backend' ? 'Starting backend…' : 'Start ComfyUI'}</button>
-          <button type="button" disabled={loading || switchingServer || installing || !status?.backend?.owned || (action !== null && action !== 'Starting backend')} onClick={() => runAction('Stopping backend', stopCreateBackend, true)}>{action === 'Stopping backend' ? 'Stopping backend…' : 'Stop ComfyUI'}</button>
-          <button type="button" disabled={busy || installing || !status?.backend?.owned} onClick={() => runAction('Restarting backend', restartCreateBackend)}>{action === 'Restarting backend' ? 'Restarting backend…' : 'Restart ComfyUI'}</button>
-        </div>
-      )}
+      <div className="create-actions">
+        <button type="button" disabled={!controllable || busy || installing || status?.backend?.running || status?.backend?.owned} onClick={() => runAction('Starting backend', startCreateBackend)}>{action === 'Starting backend' ? 'Starting backend…' : 'Start ComfyUI'}</button>
+        <button type="button" disabled={!controllable || loading || switchingServer || installing || !status?.backend?.owned || (action !== null && action !== 'Starting backend')} onClick={() => runAction('Stopping backend', stopCreateBackend, true)}>{action === 'Stopping backend' ? 'Stopping backend…' : 'Stop ComfyUI'}</button>
+        <button type="button" disabled={!controllable || busy || installing || !status?.backend?.owned} onClick={() => runAction('Restarting backend', restartCreateBackend)}>{action === 'Restarting backend' ? 'Restarting backend…' : 'Restart ComfyUI'}</button>
+      </div>
     </div>
   )
   if (backendOnly) return <details className="create-backend-controls">
-    <summary>ComfyUI <span>{loading ? 'Checking…' : action ? action.replace(' backend', '…') : status?.backend?.ready ? 'Ready' : status?.backend?.owned ? 'Starting…' : status?.backend?.running ? 'Running' : 'Stopped'}</span></summary>
+    <summary title="ComfyUI backend controls" aria-label="ComfyUI backend controls">ComfyUI <svg className="create-backend-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg><span>{loading ? 'Checking…' : action ? action.replace(' backend', '…') : status?.backend?.ready ? 'Ready' : status?.backend?.owned ? 'Starting…' : status?.backend?.running ? 'Running' : 'Stopped'}</span></summary>
     <div className="create-backend-popover">{backendCard || <p>Open Setup to activate the creator add-on.</p>}</div>
   </details>
 

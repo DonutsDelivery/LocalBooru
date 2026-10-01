@@ -1205,15 +1205,14 @@ export default function CreateStudioHost() {
     </div>
   </section>
 
-  const workspaceNavigation = <nav className="create-workspace-navigation" aria-label="Studio navigation">
-    <div className="create-exit-slot"><button type="button" ref={closeButton} onClick={closeStudio}>Exit</button></div>
-    <div className="create-mode-actions">
+  const exitNavigation = <div className="create-exit-slot"><button type="button" ref={closeButton} onClick={closeStudio}>Exit</button></div>
+  const modeNavigation = <div className="create-mode-actions">
       {session && <div className="create-view-switch"><button type="button" data-create-view="simple" aria-pressed={simpleView} onClick={showSimpleStudio}>Simple</button>
         <button type="button" data-create-view="advanced" aria-pressed={!showSetup && studioView === 'advanced'} onClick={showAdvancedStudio}>Advanced</button></div>}
       <button type="button" data-create-view="setup" aria-pressed={showSetup} onClick={() => { if (!showSetup) navigationFocus.current = 'setup'; stopInstant(); setShowSetup(true) }}>Setup</button>
       {opened && <CreateSettings key={serverRevision} backendOnly onStatusChange={handleStatus} />}
     </div>
-  </nav>
+  const workspaceNavigation = <nav className="create-workspace-navigation" aria-label="Studio navigation">{exitNavigation}{modeNavigation}</nav>
   const mobileNavigation = <div className="create-mobile-workspace-nav" role="group" aria-label="Workspace panel">
     {[['controls', 'Controls'], ['results', 'Preview'], ['effects', 'Effects'], ['models', 'Models'], ['history', 'History']].map(([pane, label]) =>
       <button type="button" key={pane} aria-pressed={mobilePane === pane} onClick={() => setMobilePane(pane)}>{label}</button>)}
@@ -1240,7 +1239,7 @@ export default function CreateStudioHost() {
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : dropPending ? bridgeBusy || 'drop-file' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
               onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio}
               runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null} jobsContent={simpleView ? jobsContent : null} finalizeContent={simpleView ? finalizeContent : null}
-              navigation={simpleView ? workspaceNavigation : null} mobileNavigation={simpleView ? mobileNavigation : null}>
+              exitNavigation={simpleView ? exitNavigation : null} modeNavigation={simpleView ? modeNavigation : null} navigation={simpleView ? workspaceNavigation : null} mobileNavigation={simpleView ? mobileNavigation : null}>
               {simpleView ? resultsContent : null}
             </SimpleCreateControls>
           </div>}

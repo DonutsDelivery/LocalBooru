@@ -140,11 +140,24 @@ function SparkIcon() {
   </svg>
 }
 
+function EffectSection({ title, defaultOpen = false, toggle, children }) {
+  const [expanded, setExpanded] = useState(defaultOpen)
+  const id = useId()
+  return <section className="create-effect-group">
+    <div className="create-effect-heading">
+      <button type="button" className="create-effect-disclosure" aria-expanded={expanded} aria-controls={id}
+        onClick={() => setExpanded(open => !open)}><span aria-hidden="true">{expanded ? '▾' : '▸'}</span>{title}</button>
+      {toggle}
+    </div>
+    <div id={id} className="create-effect-settings" hidden={!expanded}>{children}</div>
+  </section>
+}
+
 export default function SimpleCreateControls({
   snapshot, activeTab, onTabChange, connected, connecting, busy, error, mobilePane,
   onPatch, onGenerate, onUpload, onUploadMask, onRetry, onAdvanced,
   onReferenceTools, referenceUrls = {}, runInstant, onRunInstantChange, onDraftChange,
-  children, historyContent, jobsContent, finalizeContent, navigation, mobileNavigation,
+  children, historyContent, jobsContent, finalizeContent, navigation, mobileNavigation, exitNavigation, modeNavigation,
 }) {
   const [drafts, setDrafts] = useState({})
   const [inputError, setInputError] = useState('')
@@ -363,24 +376,25 @@ export default function SimpleCreateControls({
 
   function feature(key, title, contents, note) {
     if (!available(key)) return null
-    return <section className="create-effect-group" key={key}>{switchField(key, title)}
-      {value(key) === true && <div className="create-effect-settings">{contents}{note && <p className="create-control-note">{note}</p>}</div>}
-    </section>
+    return <EffectSection key={key} title={title} defaultOpen={value(key) === true}
+      toggle={<input type="checkbox" role="switch" aria-label={title} checked={value(key) === true} disabled={locked}
+        onChange={event => choose(key, event.target.checked)} />}>
+      {contents}{note && <p className="create-control-note">{note}</p>}
+    </EffectSection>
   }
 
   function strengthFeature(key, title, contents, note) {
     if (!available(key)) return null
     const active = Number(value(key)) !== 0
-    return <section className="create-effect-group" key={key}>
-      <label className="create-toggle"><span>{title}<small>{active ? displayNumber(value(key)) : 'Off'}</small></span>
-        <input type="checkbox" role="switch" checked={active} disabled={locked} onChange={event => {
+    return <EffectSection key={key} title={title} defaultOpen={active}
+      toggle={<><small className="create-effect-value">{active ? displayNumber(value(key)) : 'Off'}</small>
+        <input type="checkbox" role="switch" aria-label={title} checked={active} disabled={locked} onChange={event => {
           if (!event.target.checked) rememberedStrength.current[key] = value(key)
           const initial = rememberedStrength.current[key] || fields[key].default || Math.min(fields[key].max ?? 1, Math.max(fields[key].min ?? 0, 1))
           choose(key, event.target.checked ? Number(initial) : 0)
-        }} />
-      </label>
-      {(active || Object.hasOwn(drafts, key)) && <div className="create-effect-settings">{numberField(key)}{contents}{note && <p className="create-control-note">{note}</p>}</div>}
-    </section>
+        }} /></>}>
+      {numberField(key)}{contents}{note && <p className="create-control-note">{note}</p>}
+    </EffectSection>
   }
 
   function referenceCard(key, label, scope) {
@@ -465,9 +479,10 @@ export default function SimpleCreateControls({
 
   // Comfy widget steps are not based on HTML's min offset; commit validates authored drafts.
   return <form ref={panels.workspace} style={panels.style} className={`create-simple-workspace${lowerExpanded ? ' create-lower-expanded' : ''}${panels.resizing ? ' create-panels-resizing' : ''}`} onSubmit={generate} noValidate>
-    {navigation}
+    {!panels.desktop && navigation}
     {mobileNavigation}
     <aside className="create-controls" aria-label="Image controls">
+      {panels.desktop && exitNavigation}
       <div className="create-control-tabs" role="tablist" aria-label="Studio controls">
         {['create', 'edit', 'finalize'].map(tab => <button type="button" role="tab" id={`create-tab-${tab}`} key={tab}
           aria-selected={activeTab === tab} aria-controls={`create-panel-${tab}`} tabIndex={activeTab === tab ? 0 : -1} disabled={submitting || sliding || !!busy}
@@ -541,9 +556,10 @@ export default function SimpleCreateControls({
     <div className="create-panel-divider create-panel-divider-lower" {...panels.separator('lower', 'Resize models and history pane')} />
     <main className="create-center-workspace">{children}</main>
     <aside className="create-effects" aria-label="Image effects">
+      {panels.desktop && modeNavigation}
       <header className="create-pane-heading"><h2>Effects</h2><span>Current recipe</span></header>
       <div className="create-effects-scroll">
-        {(available('compatibilityPreset') || available('tapStrength')) && <section className="create-effect-group">{selectField('compatibilityPreset')}{value('compatibilityPreset') !== 'Off' && numberField('tapStrength')}</section>}
+        {(available('compatibilityPreset') || available('tapStrength')) && <EffectSection key="compatibility" title="Compatibility" defaultOpen>{selectField('compatibilityPreset')}{value('compatibilityPreset') !== 'Off' && numberField('tapStrength')}</EffectSection>}
         {feature('decensor', 'Decensor', numberField('decensorWeight'))}
         {feature('upscale1', 'First upscale', upscaleSettings('upscale1'))}{feature('upscale2', 'Second upscale', upscaleSettings('upscale2'))}
         {feature('faceDetail', 'Face detail', <>{numberField('faceDenoise')}{numberField('maxFaces')}</>)}
