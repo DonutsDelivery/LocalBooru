@@ -200,6 +200,26 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(reading, 1)
         self.assertIn(second, self.controller.session(sid)["jobs"])
 
+    async def test_cancel_handles_a_queued_job_promoted_to_running_before_delete(self):
+        sid = await self.new_session()
+        own = await self.submit(sid)
+        original = self.controller.request_backend
+        async def promoted(backend, method, path, **kwargs):
+            if method == "POST" and path == "queue":
+                self.backend.pending = []
+                self.backend.running = [self.backend.row(own)]
+            return await original(backend, method, path, **kwargs)
+        with patch.object(self.controller, "request_backend", side_effect=promoted):
+            result = (await self.http.post(f"/create/sessions/{sid}/cancel")).json()
+        self.assertEqual(result["cancelled"], [own])
+        self.assertEqual(self.backend.running, [])
+        self.assertTrue(any(url.endswith(f"/api/jobs/{own}/cancel") for _, url, _, _ in self.backend.requests))
+        # A late authoritative completion remains recoverable after cancellation.
+        self.backend.complete(own)
+        state = (await self.http.get(f"/create/sessions/{sid}")).json()
+        self.assertEqual(state["jobs"][0]["status"], "completed")
+        self.assertEqual(len(state["outputs"]), 1)
+
     async def test_cancel_does_not_wait_for_completed_job_history(self):
         sid = await self.new_session()
         old = await self.submit(sid)

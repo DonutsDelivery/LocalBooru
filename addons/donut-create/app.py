@@ -973,7 +973,16 @@ class Controller:
                 response = await self.request_backend(session["backend_url"], "POST", "queue", json={"delete": sorted(pending)})
                 if not response.is_success:
                     raise HTTPException(502, "ComfyUI could not remove this studio's queued prompts.")
-                cancelled.extend(sorted(pending))
+                # A queued prompt may have started before the delete arrived.
+                # Recheck and use scoped interruption for any promoted owned job.
+                queue = await self.backend_json(session["backend_url"], "queue")
+                if not isinstance(queue, dict):
+                    raise HTTPException(502, "ComfyUI returned an invalid queue.")
+                still_pending = queue_ids(queue, "queue_pending") & pending
+                running = queue_ids(queue, "queue_running") & owned
+                cancelled.extend(sorted(pending - running - still_pending))
+                if still_pending:
+                    errors.append("ComfyUI did not remove all of this studio's queued prompts.")
             for prompt_id in sorted(running):
                 # ComfyUI's jobs API performs the ownership check atomically.
                 response = await self.request_backend(session["backend_url"], "POST", f"api/jobs/{prompt_id}/cancel", json={})
@@ -985,8 +994,6 @@ class Controller:
                     cancelled.append(prompt_id)
             for prompt_id in cancelled:
                 session["jobs"][prompt_id]["status"] = "cancelled"
-                if prompt_id in pending:
-                    session["jobs"][prompt_id]["history_reconciled"] = True
             self.persist()
             return {"cancelled": cancelled, "errors": errors, "session": self.public_session(session)}
 
