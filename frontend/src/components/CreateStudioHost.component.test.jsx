@@ -115,6 +115,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('Donut Create studio', () => {
+  test('keeps window controls and notifications interactive while the gallery is inert', async () => {
+    const windowAction = vi.fn()
+    const { container } = render(<>
+      <div className="title-bar"><button onClick={windowAction}>Window action</button></div>
+      <main data-testid="gallery">Gallery</main>
+      <ToastContainer />
+      <CreateStudioHost />
+    </>)
+    const titlebar = container.querySelector('.title-bar')
+    const gallery = screen.getByTestId('gallery')
+    titlebar.inert = false
+    gallery.inert = false
+    openStudio()
+    await screen.findByTitle('DonutUI creation studio')
+    expect(titlebar.inert).toBe(false)
+    expect(container.querySelector('.toast-container').inert).not.toBe(true)
+    expect(gallery.inert).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Window action' }))
+    expect(windowAction).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Exit', exact: true }))
+    expect(gallery.inert).toBe(false)
+  })
+
   test('places studio navigation over the sidebars and preserves it through setup and advanced mode', async () => {
     const { container } = render(<CreateStudioHost />)
     openStudio()

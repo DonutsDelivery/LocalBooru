@@ -165,7 +165,9 @@ export default function CreateStudioHost() {
   useEffect(() => {
     if (!opened) return
     const siblings = Array.from(host.current.parentElement.children)
-      .filter(element => element !== host.current && !element.classList.contains('toast-container'))
+      .filter(element => element !== host.current
+        && !element.classList.contains('toast-container')
+        && !element.classList.contains('title-bar'))
       .map(element => ({ element, inert: element.inert }))
     siblings.forEach(({ element }) => { element.inert = true })
     closeButton.current?.focus()
