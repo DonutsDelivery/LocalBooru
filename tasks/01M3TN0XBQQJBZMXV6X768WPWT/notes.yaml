@@ -1,1 +1,12 @@
-notes: []
+notes:
+  - _ulid: 01M3TNN8SHKF3XRTBWHWNPVHCR
+    content: "User clarified generic management for every existing installation, not a hard-coded
+      personal install. Added local folder/Python registration, serialized start/stop/restart,
+      owned-child-only shutdown, startup feedback and config protection. User also requested shipped
+      Euler/Simple, Rebalance, NAG 0.45, DecensorFix off, aesthetic LoRA 1/1 defaults; updating
+      recipe metadata revision intentionally. User reports broken ordinary image/workflow JSON drop:
+      existing reviewer continues focused drop implementation in same candidate, then reviews
+      independently authored lifecycle/defaults."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T02:45:53.073Z
