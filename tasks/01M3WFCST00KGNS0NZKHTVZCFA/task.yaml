@@ -1,0 +1,22 @@
+_ulid: 01M3WFCST00KGNS0NZKHTVZCFA
+slugs:
+  - move-dmc-build-cache
+title: Move shared DMC build caches to extra storage
+type: infra
+description: User requests build-cache relocation under /mnt/storage/Projects/extra_storage. Move
+  ~/.cache/localbooru/builds under dedicated external localbooru/builds path while holding host gate
+  and preserving all reusable cache contents. Verify copy before switching legacy path to symlink
+  and removing old cache. Keep app/backend alive, preserve source and private app data; no compiler
+  build needed.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-10-01T19:34:52.988Z
+todos: []
