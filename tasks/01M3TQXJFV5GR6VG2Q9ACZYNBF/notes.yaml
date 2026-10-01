@@ -28,3 +28,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-01T03:38:35.552Z
+  - _ulid: 01M3TSAG3T2ZB6TM073SEDEMDE
+    content: "Explicit integration blocker: required frontend component suite is queued as exec
+      session96802 behind host-heavy build token held by unrelated compiler PID20035 (over24min
+      elapsed). Candidate b816218 remains clean/unmerged, exact review
+      @review-create-exclusive-output pending only frontend evidence; all61 Python and9 adapter
+      tests plus focused eslint pass. User DMC7879/addon9149/Comfy3890977 remain alive. No native
+      build or install of this storage candidate claimed. Resume by polling session96802, finalize
+      exact-head review if green, merge/push main and use canonical install wrapper after prior
+      writer exits; preserve unrelated MediaNavigation test. The running queued check can finish
+      when the host token becomes available."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-01T03:49:54.426Z
