@@ -564,6 +564,8 @@ class Controller:
         return None
 
     def final_output(self, job: dict[str, Any], node_id: str) -> bool:
+        if str(node_id) in job.get("save_nodes", {}):
+            return job["save_nodes"][str(node_id)]
         node = job.get("prompt", {}).get(str(node_id), {})
         if node.get("class_type") not in {"SaveImage", "DonutImageSave"}:
             return False
@@ -631,7 +633,8 @@ class Controller:
             self.record_masks(session, output)
             self.record_previews(session, prompt_id, str(node_id), output)
             for image in output.get("images", []):
-                if (not isinstance(image, dict) or image.get("type") != "output"
+                if (not isinstance(image, dict) or image.get("type") not in {"output", "temp"}
+                        or (image.get("type") == "temp" and str(node_id) not in job.get("save_nodes", {}))
                         or not safe_relative(image.get("filename", ""))
                         or "/" in image["filename"]
                         or PurePosixPath(image["filename"]).suffix.lower() not in IMAGE_SUFFIXES
@@ -640,7 +643,8 @@ class Controller:
                 filename, subfolder = image["filename"], image.get("subfolder", "")
                 oid = hashlib.sha256(json.dumps([prompt_id, node_id, filename, subfolder]).encode()).hexdigest()[:32]
                 session["outputs"][oid] = {"id": oid, "prompt_id": prompt_id, "filename": filename,
-                    "subfolder": subfolder, "type": "output", "node_id": str(node_id),
+                    "subfolder": subfolder, "type": image["type"], "node_id": str(node_id),
+                    "storage": "comfy" if image["type"] == "output" else "temporary",
                     "final": self.final_output(job, str(node_id)),
                     "media_type": mimetypes.guess_type(filename)[0] or "application/octet-stream",
                     "url": f"/api/create/output/{session['id']}/{oid}",
@@ -894,6 +898,22 @@ class Controller:
         if workflow is not None and (not isinstance(workflow, dict) or not isinstance(workflow.get("nodes"), list)
                                      or len(json.dumps(workflow).encode()) > MAX_PROMPT):
             raise HTTPException(400, "Provide a valid workflow with the generation request.")
+        workflow_extra = workflow.get("extra") if isinstance(workflow, dict) else None
+        destination = workflow_extra.get("dmc_output_destination", "preview") if isinstance(workflow_extra, dict) else "preview"
+        if not isinstance(destination, str) or destination not in {"preview", "comfy"}:
+            raise HTTPException(400, "Choose a valid output destination.")
+        save_nodes = {}
+        for node_id, node in body["prompt"].items():
+            if node["class_type"] not in {"SaveImage", "DonutImageSave"}:
+                continue
+            save_nodes[str(node_id)] = self.final_output({"prompt": body["prompt"], "workflow": workflow}, str(node_id))
+            if node["class_type"] == "DonutImageSave":
+                node["inputs"]["root"] = "output" if destination == "comfy" else "temp"
+                node["inputs"]["show_previews"] = True
+            if destination != "comfy":
+                if node["class_type"] == "SaveImage":
+                    node["class_type"] = "PreviewImage"
+                    node["inputs"] = {"images": node["inputs"]["images"]} if "images" in node["inputs"] else {}
         body["client_id"] = "donut-create-" + session["id"]
         body["prompt_id"] = str(uuid.uuid4())
         response = await self.request_backend(session["backend_url"], "POST", "prompt", json=body)
@@ -907,7 +927,7 @@ class Controller:
             if any(prompt_id in entry["jobs"] for entry in self.sessions.values()):
                 raise HTTPException(502, "ComfyUI returned a prompt ID already owned by a studio.")
             session["jobs"][prompt_id] = {"id": prompt_id, "status": "queued", "created_at": self.clock(),
-                "prompt": body["prompt"], "workflow": workflow}
+                "prompt": body["prompt"], "workflow": workflow, "save_nodes": save_nodes}
             if workflow is not None:
                 session["latest_run_revision"] = session.get("latest_run_revision", 0) + 1
                 session["latest_run_workflow"] = workflow
@@ -957,7 +977,7 @@ class Controller:
         if output is None or session["jobs"].get(output["prompt_id"], {}).get("status") != "completed":
             raise HTTPException(404, "Completed studio output not found.")
         request = self.client.build_request("GET", session["backend_url"] + "/view", params={
-            "filename": output["filename"], "subfolder": output["subfolder"], "type": "output"})
+            "filename": output["filename"], "subfolder": output["subfolder"], "type": output.get("type", "output")})
         try:
             response = await self.client.send(request, stream=True)
         except httpx.HTTPError:
@@ -1382,7 +1402,7 @@ def create_app(controller: Controller | None = None) -> FastAPI:
                 output = next((entry for entry in session["outputs"].values()
                                if entry["filename"] == params.get("filename")
                                and entry["subfolder"] == params.get("subfolder", "")
-                               and params.get("type", "output") == "output"), None)
+                               and params.get("type", "output") == entry.get("type", "output")), None)
                 if output is None:
                     preview = any(entry["filename"] == params.get("filename")
                                   and entry["subfolder"] == params.get("subfolder", "")

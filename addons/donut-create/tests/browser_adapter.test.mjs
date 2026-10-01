@@ -125,6 +125,25 @@ test('empty first studio loads genuine v5, scopes API and queues edited panel pr
   assert.equal(env.queued[0][1].output['text:scene'].inputs.Text,'A blue glass vase in afternoon light.');
   assert.equal(nodeAt(env.queued[0][1].workflow,1126).widgets_values[0],'A blue glass vase in afternoon light.');
   assert.equal(nodeAt(JSON.parse(env.store.get(draftKey('synthetic-device-a'))),1126).widgets_values[0],'A blue glass vase in afternoon light.');
+  assert.equal(env.queued[0][1].workflow.extra.dmc_output_destination,'preview');
+  assert.equal(env.current().extra?.dmc_output_destination,undefined);
+});
+
+// AC: @donut-create-plugin ac-save-gallery
+test('advanced queue uses the selected output destination without editing the saved graph',async()=>{
+  const env=fixture(); await env.boot();
+  const replies=[];
+  const parent={postMessage(value){replies.push(value);}};
+  env.context.parent=parent;
+  env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',
+    sessionId:'synthetic-session',requestId:'destination',action:'snapshot',payload:{outputDestination:'comfy'}}});
+  await env.settle();
+  assert.equal(replies.length,1);
+  assert.equal(replies[0].error,undefined);
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.queued[0][1].workflow.extra.dmc_output_destination,'comfy');
+  assert.equal(env.current().extra?.dmc_output_destination,undefined);
+  assert.equal(JSON.parse(env.store.get(draftKey('synthetic-device-a'))).extra?.dmc_output_destination,undefined);
 });
 
 // AC: @donut-create-plugin ac-workflow-state
@@ -165,4 +184,33 @@ test('distinct device/backend keys isolate drafts even with identical managed or
   assert.notEqual(nodeAt(other.current(),1126).widgets_values[0],'Synthetic device A draft');
   const reopened=fixture({initial:stock,store,backend:'device-a-managed'}); await reopened.boot();
   assert.equal(nodeAt(reopened.current(),1126).widgets_values[0],'Synthetic device A draft');
+});
+
+// AC: @donut-create-plugin ac-mobile-shared-workspace
+// AC: @donut-create-plugin ac-workflow-state
+test('storage-only remote run does not advertise a changed workflow',async()=>{
+ const env=fixture();await env.boot();const unchanged=env.current();unchanged.extra={...unchanged.extra,dmc_output_destination:'preview'};
+ const fetch=env.api.fetchApi;env.api.fetchApi=async route=>route.startsWith('/dmc/workflow')?{ok:true,json:async()=>({revision:1,workflow:unchanged})}:fetch(route);
+ const replies=[];const parent={postMessage:v=>replies.push(v)};env.context.parent=parent;
+ env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'check',action:'snapshot',payload:{outputDestination:'preview'}}});await env.settle();
+ assert.equal(replies[0].snapshot.latestAvailable,false);assert.doesNotMatch(env.notice()||'',/newer run/);
+});
+
+// AC: @donut-create-plugin ac-mobile-shared-workspace
+// AC: @donut-create-plugin ac-workflow-state
+test('storage-only remote run preserves an unsaved local draft without notice',async()=>{
+ const env=fixture();await env.boot();const unchanged=env.current();unchanged.extra={...unchanged.extra,dmc_output_destination:'comfy'};env.editPrompt('Keep my unsaved synthetic violet vase.');
+ const fetch=env.api.fetchApi;env.api.fetchApi=async route=>route.startsWith('/dmc/workflow')?{ok:true,json:async()=>({revision:1,workflow:unchanged})}:fetch(route);
+ const replies=[];const parent={postMessage:v=>replies.push(v)};env.context.parent=parent;
+ env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'check',action:'snapshot',payload:{outputDestination:'preview'}}});await env.settle();
+ assert.equal(replies[0].snapshot.latestAvailable,false);assert.doesNotMatch(env.notice()||'',/newer run/);assert.equal(nodeAt(env.current(),1126).widgets_values[0],'Keep my unsaved synthetic violet vase.');
+});
+// AC: @donut-create-plugin ac-mobile-shared-workspace
+// AC: @donut-create-plugin ac-workflow-state
+test('changed external prompt still shows notice and preserves the local draft',async()=>{
+ const env=fixture();await env.boot();const changed=env.current();nodeAt(changed,1126).widgets_values[0]='Different external synthetic red vase.';changed.extra={...changed.extra,dmc_output_destination:'preview'};env.editPrompt('Keep my unsaved synthetic violet vase.');
+ const fetch=env.api.fetchApi;env.api.fetchApi=async route=>route.startsWith('/dmc/workflow')?{ok:true,json:async()=>({revision:1,workflow:changed})}:fetch(route);
+ const replies=[];const parent={postMessage:v=>replies.push(v)};env.context.parent=parent;
+ env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'check',action:'snapshot',payload:{outputDestination:'preview'}}});await env.settle();
+ assert.equal(replies[0].snapshot.latestAvailable,true);assert.match(env.notice()||'',/newer run/);assert.equal(nodeAt(env.current(),1126).widgets_values[0],'Keep my unsaved synthetic violet vase.');
 });

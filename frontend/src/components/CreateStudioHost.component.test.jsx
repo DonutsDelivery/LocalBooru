@@ -113,6 +113,31 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('Donut Create studio', () => {
+  // AC: @donut-create-plugin ac-save-gallery
+  test('offers exclusive ComfyUI saving and never automatically copies permanent outputs', async () => {
+    render(<CreateStudioHost />)
+    openStudio()
+    await screen.findByTitle('DonutUI creation studio')
+    fireEvent.click(await screen.findByRole('tab', { name: 'Finalize' }))
+    const destination = await screen.findByLabelText('Output destination')
+    fireEvent.change(destination, { target: { value: '__comfy_output__' } })
+    const automatic = screen.getByRole('switch', { name: 'Save output' })
+    expect(automatic.disabled).toBe(false)
+    fireEvent.click(automatic)
+    expect(screen.getByText(/Save output keeps images in ComfyUI only/)).toBeTruthy()
+    expect(api.apiClient.post.mock.calls.filter(([url]) => url === '/create/import')).toEqual([])
+    fireEvent.change(destination, { target: { value: 'library-b:1' } })
+    session = {...session, outputs: [...session.outputs, {id:'permanent-new',filename:'comfy.png',type:'output',
+      storage:'comfy',final:true,prompt_id:'owned-job',media_type:'image/png'}]}
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }))
+    await screen.findByText('comfy.png', {}, {timeout:5000})
+    expect(api.apiClient.post.mock.calls.filter(([url]) => url === '/create/import')).toEqual([])
+    session = {...session, outputs: [...session.outputs, {id:'temporary-new',filename:'staged.png',type:'temp',
+      storage:'temporary',final:true,prompt_id:'owned-job',media_type:'image/png'}]}
+    await waitFor(() => expect(api.apiClient.post.mock.calls.filter(([url]) => url === '/create/import'))
+      .toEqual([[ '/create/import', expect.objectContaining({output_id:'temporary-new',library_id:'library-b',directory_id:1}),
+        expect.objectContaining({signal:expect.any(AbortSignal)}) ]]), {timeout:5000})
+  })
   // AC: @donut-create-plugin ac-image-entry
   test('opens from Images without navigation or changing the gallery scroll', async () => {
     const { container } = render(<MemoryRouter initialEntries={['/?tags=landscape&directory=1']}>
@@ -180,9 +205,9 @@ describe('Donut Create studio', () => {
       const save = await screen.findByRole('button', { name: 'Save to library', exact: true })
       expect(save.disabled).toBe(true)
       fireEvent.click(await screen.findByRole('tab', { name: 'Finalize' }))
-      const destination = await screen.findByLabelText('Save to image directory')
+      const destination = await screen.findByLabelText('Output destination')
       expect(Array.from(destination.options).map(option => option.text)).toEqual([
-        'Choose a directory', 'Archive · Images B', 'Primary · Images A',
+        'Choose a directory', 'ComfyUI output folder', 'Archive · Images B', 'Primary · Images A',
       ])
       fireEvent.change(destination, { target: { value: 'library-b:1' } })
       fireEvent.click(save)
@@ -275,7 +300,7 @@ describe('Donut Create studio', () => {
     expect(screen.queryByRole('img', { name: 'old-server.png' })).toBeNull()
     expect(screen.getByRole('img', { name: 'new-server.png' })).toBeTruthy()
     fireEvent.click(await screen.findByRole('tab', { name: 'Finalize' }))
-    expect(Array.from((await screen.findByLabelText('Save to image directory')).options).map(option => option.text)).toEqual(['Choose a directory', 'New server · Fresh images'])
+    expect(Array.from((await screen.findByLabelText('Output destination')).options).map(option => option.text)).toEqual(['Choose a directory', 'ComfyUI output folder', 'New server · Fresh images'])
     expect(api.apiClient.get.mock.calls.slice(requestsBeforeSwitch).some(([url]) => url.includes('/sessions/scoped-session'))).toBe(false)
     expect(api.getApiUrl()).toBe('/remote/api')
   })
@@ -320,7 +345,7 @@ describe('Donut Create studio', () => {
       openStudio()
       await screen.findByRole('button', { name: 'Save to library', exact: true })
       fireEvent.click(await screen.findByRole('tab', { name: 'Finalize' }))
-      fireEvent.change(await screen.findByLabelText('Save to image directory'), { target: { value: 'library-a:1' } })
+      fireEvent.change(await screen.findByLabelText('Output destination'), { target: { value: 'library-a:1' } })
       fireEvent.click(screen.getByRole('button', { name: 'Save to library', exact: true }))
       await waitFor(() => expect(api.apiClient.post.mock.calls.some(([url]) => url === '/create/import')).toBe(true))
       serverEvent('donut-create-server-changing')

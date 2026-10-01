@@ -441,6 +441,63 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inputs["filename_prefix"], f"donut-create/{sid[:16]}/album/image")
         self.assertFalse(inputs["overwrite_mode"])
 
+    # AC: @donut-create-plugin ac-save-gallery
+    async def test_library_runs_stage_save_nodes_without_changing_the_workflow(self):
+        sid = await self.new_session()
+        workflow = {"nodes": [{"id": 1, "type": "DonutImageSave", "properties": {"dmc_final_output": True}}]}
+        job = await self.submit(sid, prompt={
+            "1": {"class_type": "DonutImageSave", "inputs": {"images": ["3", 0], "root": "output", "filename_prefix": "final"}},
+            "2": {"class_type": "SaveImage", "inputs": {"images": ["3", 0], "filename_prefix": "intermediate"}},
+            "3": {"class_type": "DonutText", "inputs": {"text": "synthetic"}},
+        }, extra={"extra_data": {"extra_pnginfo": {"workflow": workflow}}})
+        sent = json.loads(self.backend.requests[-1][3])
+        self.assertEqual(sent["prompt"]["1"]["inputs"]["root"], "temp")
+        self.assertEqual(sent["prompt"]["2"], {"class_type": "PreviewImage", "inputs": {"images": ["3", 0]}})
+        self.assertEqual(sent["extra_data"]["extra_pnginfo"]["workflow"], workflow)
+        self.backend.complete(job, images=[{"filename": "final.png", "subfolder": "donut-create/synthetic", "type": "temp"}])
+        self.backend.history[job]["outputs"] = {"1": self.backend.history[job]["outputs"]["8"]}
+        response = await self.http.get(f"/create/sessions/{sid}")
+        output = response.json()["outputs"][0]
+        self.assertTrue(output["final"])
+        self.assertEqual(output["type"], "temp")
+        self.assertEqual(output["storage"], "temporary")
+        self.assertEqual(output["workflow"], workflow)
+        fetched = await self.http.get(f"/create/sessions/{sid}/outputs/{output['id']}")
+        self.assertEqual(fetched.content, self.backend.image)
+        self.assertIn("type=temp", self.backend.requests[-1][1])
+
+    # AC: @donut-create-plugin ac-save-gallery
+    async def test_comfy_destination_retains_permanent_sinks_and_is_recorded(self):
+        sid = await self.new_session()
+        workflow = {"nodes": [], "extra": {"dmc_output_destination": "comfy"}}
+        job = await self.submit(sid, prompt={"8": {"class_type": "DonutImageSave", "inputs": {
+            "images": ["9", 0], "root": "output", "filename_prefix": "final"}}},
+            extra={"extra_data": {"extra_pnginfo": {"workflow": workflow}}})
+        sent = json.loads(self.backend.requests[-1][3])
+        self.assertEqual(sent["prompt"]["8"]["inputs"]["root"], "output")
+        self.backend.complete(job)
+        outputs = (await self.http.get(f"/create/sessions/{sid}")).json()["outputs"]
+        self.assertEqual(outputs[0]["storage"], "comfy")
+
+    # AC: @donut-create-plugin ac-job-ownership
+    async def test_ordinary_temporary_previews_do_not_become_saveable_results(self):
+        sid = await self.new_session()
+        job = await self.submit(sid, prompt={"8": {"class_type": "PreviewImage", "inputs": {"images": ["9", 0]}}})
+        self.backend.complete(job, images=[{"filename": "preview.png", "subfolder": "", "type": "temp"}])
+        public = (await self.http.get(f"/create/sessions/{sid}")).json()
+        self.assertEqual(public["outputs"], [])
+        self.assertEqual(len(public["previews"]), 1)
+
+    # AC: @donut-create-plugin ac-access-boundary
+    async def test_invalid_output_destination_is_rejected_before_queueing(self):
+        sid = await self.new_session()
+        for destination in ["other", [], {"path": "/private"}]:
+            response = await self.http.post(f"/studio/{sid}/prompt", json={
+                "prompt": {"1": {"class_type": "DonutText", "inputs": {"text": "synthetic"}}},
+                "extra_data": {"extra_pnginfo": {"workflow": {"nodes": [], "extra": {"dmc_output_destination": destination}}}}})
+            self.assertEqual(response.status_code, 400)
+        self.assertFalse(any(method == "POST" and url.endswith("/prompt") for method, url, *_ in self.backend.requests))
+
     # AC: @donut-create-plugin ac-workflow-state
     async def test_v5_linked_filename_and_lora_rows_queue_safely(self):
         sid = await self.new_session()

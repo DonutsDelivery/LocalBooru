@@ -25,6 +25,7 @@ import { listenStudioDesktopDrops, studioDropFile } from '../services/createStud
 import './CreateStudio.css'
 
 const CONNECTION_WAIT_MS = 5 * 60 * 1000
+const COMFY_OUTPUT = '__comfy_output__'
 
 export default function CreateStudioHost() {
   const [opened, setOpened] = useState(false)
@@ -46,6 +47,8 @@ export default function CreateStudioHost() {
   const [cancelling, setCancelling] = useState(false)
   const [saved, setSaved] = useState({})
   const [autoSave, setAutoSave] = useState(false)
+  const outputDestination = useRef('preview')
+  outputDestination.current = autoSave && destinationKey === COMFY_OUTPUT ? 'comfy' : 'preview'
   const [error, setError] = useState('')
   const [announcement, setAnnouncement] = useState('')
   const [switchingServer, setSwitchingServer] = useState(false)
@@ -404,7 +407,7 @@ export default function CreateStudioHost() {
     const requestGeneration = generation.current
     if (!currentBridge || !currentSession || serverChanging.current || !visible.current) return Promise.resolve(null)
     if (snapshotRequest.current?.bridge === currentBridge) return snapshotRequest.current.promise
-    const promise = currentBridge.request('snapshot', undefined, { timeout: 7000 })
+    const promise = currentBridge.request('snapshot', { outputDestination: outputDestination.current }, { timeout: 7000 })
       .then(nextSnapshot => {
         if (!mounted.current || generation.current !== requestGeneration || bridge.current !== currentBridge) return null
         acceptSnapshot(nextSnapshot)
@@ -559,7 +562,7 @@ export default function CreateStudioHost() {
       const ownsRequest = isInstant ? () => instantEnabled.current && instantEpoch.current === epoch
         && authoredRevision.current === version && !draftsWaiting.current && visible.current
         && !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)) : undefined
-      const nextSnapshot = await studioAction('generate', undefined, ownsRequest)
+      const nextSnapshot = await studioAction('generate', { outputDestination: outputDestination.current }, ownsRequest)
       for (const id of nextSnapshot.lastQueuedPromptIds || []) acknowledgedPrompts.current.add(id)
       if (!isInstant) setMobilePane('results')
       return nextSnapshot
@@ -902,14 +905,14 @@ export default function CreateStudioHost() {
     || output.media_type === 'image' || output.media_type.startsWith('image/')), [session?.outputs])
 
   useEffect(() => {
-    if (!autoSave || saving !== null || creatingDirectory || switchingServer || !session || !destinationKey) return
+    if (!autoSave || saving !== null || creatingDirectory || switchingServer || !session || !destinationKey || destinationKey === COMFY_OUTPUT) return
     const context = `${session.id}:${destinationKey}`
     if (!saveBaselines.current.has(context)) {
       saveBaselines.current.set(context, new Set(outputs.map(output => output.id)))
       return
     }
     const baseline = saveBaselines.current.get(context)
-    const next = outputs.find(output => output.final === true && !baseline.has(output.id) && !saved[`${output.id}:${destinationKey}`]
+    const next = outputs.find(output => output.final === true && output.storage !== 'comfy' && output.type !== 'output' && !baseline.has(output.id) && !saved[`${output.id}:${destinationKey}`]
       && !saveAttempts.current.has(`${session.id}:${output.id}:${destinationKey}`))
     if (next) saveOutput(next, true)
   }, [autoSave, saving, creatingDirectory, switchingServer, session, destinationKey, outputs, saved, saveOutput])
@@ -934,6 +937,10 @@ export default function CreateStudioHost() {
     if (key && key !== destinationKey) saveBaselines.current.set(`${sessionRef.current?.id}:${key}`, new Set((sessionRef.current?.outputs || []).map(output => output.id)))
     setDestinationKey(key)
   }
+
+  useEffect(() => {
+    syncSnapshot()
+  }, [autoSave, destinationKey, syncSnapshot])
 
   async function createSaveDirectory() {
     const destination = directories.find(directory => directory.key === destinationKey)
@@ -1022,31 +1029,35 @@ export default function CreateStudioHost() {
     .map(key => [key, fields[key]?.value]))
 
   const destinationControls = <div className="create-destination-controls">
-      <label className="create-field create-destination">Save to image directory
-        <select value={destination ? destinationKey : ''} disabled={creatingDirectory || switchingServer} onChange={event => changeDestination(event.target.value)}>
+      <label className="create-field create-destination">Output destination
+        <select value={destination || destinationKey === COMFY_OUTPUT ? destinationKey : ''} disabled={creatingDirectory || switchingServer} onChange={event => changeDestination(event.target.value)}>
           <option value="">Choose a directory</option>
+          <option value={COMFY_OUTPUT}>ComfyUI output folder</option>
           {directories.map(directory => <option key={directory.key} value={directory.key}>{directory.label}</option>)}
         </select>
       </label>
-      {!destination && libraries.length > 0 && <label className="create-field create-output-library">Output library
+      {!destination && destinationKey !== COMFY_OUTPUT && libraries.length > 0 && <label className="create-field create-output-library">Output library
         <select value={outputLibraryId} disabled={creatingDirectory} onChange={event => setOutputLibraryId(event.target.value)}>
           {libraries.map(library => <option key={library.id} value={library.id}>{library.label}</option>)}
         </select>
       </label>}
-      <button type="button" className="create-directory-button" title="Create or reuse an image-only Created Images folder in this library"
+      {destinationKey !== COMFY_OUTPUT && <button type="button" className="create-directory-button" title="Create or reuse an image-only Created Images folder in this library"
         disabled={creatingDirectory || switchingServer || (!destination && !outputLibraryId)} onClick={createSaveDirectory}>
         {creatingDirectory ? 'Creating output directory…' : 'Create output directory'}
-      </button>
-      {directories.length === 0 && <p className="create-control-note">Create an output directory here, or enable an Images directory in Directories.</p>}
+      </button>}
+      {directories.length === 0 && destinationKey !== COMFY_OUTPUT && <p className="create-control-note">Create an output directory here, or enable an Images directory in Directories.</p>}
     </div>
   const saveTools = <details className="create-save-tools">
-    <summary><span>Save destination</span><strong>{destination?.label || 'Choose a directory'}</strong></summary>
+    <summary><span>Save destination</span><strong>{destinationKey === COMFY_OUTPUT ? 'ComfyUI output folder' : destination?.label || 'Choose a directory'}</strong></summary>
     <div className="create-save-popover">{destinationControls}</div>
   </details>
-  const autoSaveControl = <label className="create-auto-save"><input type="checkbox" role="switch" checked={autoSave} disabled={!destination || creatingDirectory || switchingServer}
+  const autoSaveControl = <label className="create-auto-save"><input type="checkbox" role="switch" checked={autoSave} disabled={(!destination && destinationKey !== COMFY_OUTPUT) || creatingDirectory || switchingServer}
     onChange={event => changeAutoSave(event.target.checked)} />Save output</label>
   const finalizeContent = <div className="create-finalize">{destinationControls}{autoSaveControl}
-    <p className="create-control-note">Save output automatically adds completed final images to this directory. You can also save individual results from Preview or History.</p>
+    <p className="create-control-note">{destinationKey === COMFY_OUTPUT
+      ? 'Save output keeps images in ComfyUI only. They are not automatically copied into your DMC library.'
+      : 'Save output keeps final images in this DMC directory. ComfyUI uses temporary preview files. You can also save individual results from Preview or History.'}
+      {!autoSave && ' Saving is off: new runs stay temporary until you choose to save a result.'}</p>
   </div>
   const jobsContent = <div className="create-queue-bar">
     <details className="create-queue-details" onKeyDown={event => {

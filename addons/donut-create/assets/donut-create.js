@@ -695,6 +695,7 @@
   let lastError = '', parentOrigin = null, bridgeQueue = Promise.resolve(), queueAttempt = null;
   let latestRun = {revision: 0, workflow: null}, loadedRunRevision = 0, loadedRecipe = null;
   let presetControlsRevision = null;
+  let outputDestination = 'preview';
   let nodeInfo = {}, loraNames = [], lastQueuedPromptIds = [];
   const uploadedReferences = new Set();
   const uploadedMasks = new Map();
@@ -967,8 +968,9 @@
     ? Object.fromEntries(Object.keys(item).sort().map(name => [name, item[name]])) : item);
   const recipe = workflow => {
     let normalized = workflow;
-    if (object(workflow?.extra) && object(workflow.extra.ds) && ('scale' in workflow.extra.ds || 'offset' in workflow.extra.ds)) {
-      const extra = {...workflow.extra}; delete extra.ds;
+    if (object(workflow?.extra)) {
+      const extra = {...workflow.extra}; delete extra.dmc_output_destination;
+      if (object(extra.ds) && ('scale' in extra.ds || 'offset' in extra.ds)) delete extra.ds;
       normalized = {...workflow, extra};
     }
     return JSON.stringify(normalized, function (key, item) {
@@ -1573,6 +1575,10 @@
     const reply = value => event.source.postMessage({channel, sessionId: config.sessionId, requestId: message.requestId, ...value}, event.origin);
     bridgeQueue = bridgeQueue.then(async () => {
       try {
+        if (['snapshot', 'generate'].includes(message.action) && message.payload?.outputDestination !== undefined) {
+          if (!['preview', 'comfy'].includes(message.payload.outputDestination)) throw new Error('Choose a valid output destination.');
+          outputDestination = message.payload.outputDestination;
+        }
         let mutationChanged, imported;
         if (message.action === 'snapshot' && initialized && !loading && !queueAttempt) {
           const latest = await readLatest(true);
@@ -1646,6 +1652,9 @@
       const attempt = queueAttempt;
       try {
         await checkCapabilities(); saveDraft();
+        // Attach per-run storage intent without changing the editable graph.
+        if (object(args[1]?.workflow)) args[1] = {...args[1], workflow: {...args[1].workflow,
+          extra: {...args[1].workflow.extra, dmc_output_destination: outputDestination}}};
         const result = await originalQueue(...args);
         if (result?.error || result?.node_errors && Object.keys(result.node_errors).length) throw new Error(result.error?.message || 'The backend rejected this workflow. Check the Advanced editor for node errors.');
         if (attempt && result?.prompt_id) attempt.accepted++;

@@ -177,3 +177,17 @@ fixtures stay outside the repository. They do not download model weights,
 install backend dependencies, start ComfyUI, or establish GPU/Windows/Mac
 generation quality. Desktop integration checks use the repository's isolated
 app launcher.
+
+## Output destination
+
+Finalize selects one permanent destination. With **Save output** enabled, choose
+an image directory for automatic DMC imports, or **ComfyUI output folder** to
+keep backend outputs without importing them into DMC. With saving disabled, runs
+remain temporary until explicitly saved. Execution rewrites the known image save
+sinks; the editable workflow and its generation settings remain intact.
+
+DMC runs use ComfyUI temporary files for previews and transfer, rather than
+writing a second permanent copy into its output folder. Temporary files remain
+subject to ComfyUI’s temporary-directory cleanup. Earlier permanent outputs are
+not deleted. Choosing a DMC directory later does not automatically copy existing
+permanent ComfyUI results; an explicit **Save to library** remains available.
