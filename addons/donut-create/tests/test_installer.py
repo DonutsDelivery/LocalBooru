@@ -121,7 +121,7 @@ class InstallerTests(unittest.TestCase):
     def test_bundled_graph_keeps_real_bindings_and_safe_png_metadata(self):
         workflow = json.loads((ROOT / "workflow.json").read_text())
         self.assertEqual(len(workflow["nodes"]), 25)
-        self.assertEqual([len(g["nodes"]) for g in workflow["definitions"]["subgraphs"]], [17, 7, 15, 3])
+        self.assertEqual([len(g["nodes"]) for g in workflow["definitions"]["subgraphs"]], [19, 7, 17, 3])
         self.assertEqual(workflow["extra"]["donut_workflow"]["release"], "V5")
         self.assertNotIn("linearData", workflow["extra"])
         self.assertNotIn("anomalous_hashes", workflow["extra"])
@@ -131,9 +131,9 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(by_id[64]["widgets_values"][10])
         self.assertEqual(by_id[1153]["widgets_values"][0], "DonutCreate")
         self.assertEqual(by_id[996]["widgets_values"][16], "[]")
-        self.assertEqual(by_id[1126]["widgets_values"][0], by_id[56]["widgets_values"][0])
+        self.assertTrue(by_id[1126]["widgets_values"][0].endswith(by_id[56]["widgets_values"][0]))
         prompt_controls = by_id[1140]["properties"]["donut_app_controls"]["groups"][0]["controls"]
-        self.assertEqual([c["path"] for c in prompt_controls], [[1138, 1125], [1138, 1126], [1138, 1127]])
+        self.assertEqual([c["path"] for c in prompt_controls], [[1138, 1125], [1138, 1126], [1138, 1127], [1138, 1178]])
         self.assertNotIn("last_image", by_id[1152]["properties"])
         self.assertNotIn("stage_prompts", by_id[1152]["properties"])
         text = (ROOT / "workflow.json").read_text()
@@ -142,9 +142,9 @@ class InstallerTests(unittest.TestCase):
     # AC: @donut-create-plugin ac-managed-setup
     def test_explicit_base_preset_changes_models_but_original_profile_keeps_enabled_lora(self):
         original = json.loads((ROOT / "workflow.json").read_text())
-        bundled_base = json.loads(self.installer.workflow_path.read_text())
+        bundled_base = json.loads((ROOT / "assets/base-workflow.json").read_text())
         self.installer._workflow("base")
-        base = json.loads(self.installer.workflow_path.read_text())
+        base = json.loads((self.installer.state_dir / "workflow.json").read_text())
         self.assertEqual(bundled_base, base)
         by_id = lambda w: {n["id"]: n for g in [w, *w["definitions"]["subgraphs"]] for n in g["nodes"]}
         self.assertEqual(by_id(base)[1122]["widgets_values"][0], "krea2_turbo_bf16.safetensors")
@@ -156,9 +156,38 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(a["inputs"], b["inputs"])
             self.assertEqual(a["outputs"], b["outputs"])
         self.installer._workflow("workflow")
-        exact = json.loads(self.installer.workflow_path.read_text())
+        exact = json.loads((self.installer.state_dir / "workflow.json").read_text())
         self.assertEqual(exact, original)
         self.assertTrue(json.loads(by_id(exact)[1055]["widgets_values"][1])[0]["enabled"])
+
+    # AC: @donut-create-plugin ac-workflow-state
+    def test_shipped_recipe_defaults_and_provenance(self):
+        self.installer.state_dir.mkdir(parents=True, exist_ok=True)
+        (self.installer.state_dir / "workflow.json").write_text('{"nodes":[],"stale":true}')
+        self.assertEqual(self.installer.workflow_path, ROOT / "assets/base-workflow.json")
+        self.installer._status["profile"] = "workflow"
+        self.assertEqual(self.installer.workflow_path, ROOT / "workflow.json")
+        for file in (ROOT / "workflow.json", ROOT / "assets/base-workflow.json"):
+            workflow = json.loads(file.read_text())
+            nodes = {node["id"]: node for graph in [workflow, *workflow["definitions"]["subgraphs"]] for node in graph["nodes"]}
+            for node_id, expected in {
+                1014: {"sampler_name": "euler", "scheduler": "simple", "alpha": 0.45, "compatibility_preset": "Rebalance"},
+                993: {"sampler_name": "euler", "scheduler": "simple", "nag_enabled": True, "nag_alpha": 0.45},
+                1118: {"compatibility_preset": "Rebalance", "uncensorfix_controls": "Fusion only"},
+            }.items():
+                node = nodes[node_id]
+                named = node["widgets_values_named"]
+                order = node.get("properties", {}).get("donut_widget_order") or list(named)
+                for key, value in expected.items():
+                    self.assertEqual(named[key], value)
+                    self.assertEqual(node["widgets_values"][order.index(key)], value)
+            for row in json.loads(nodes[1055]["widgets_values_named"]["slots_json"]):
+                if row["lora_name"] == "krea2/Krea2_NSFW_Aesthetics_V1.safetensors":
+                    self.assertEqual((row["model_weight"], row["clip_weight"]), (1, 1))
+            self.assertEqual(workflow["extra"]["donut_workflow"]["controls_revision"], 1)
+        provenance = self.installer.manifest["provenance"]
+        self.assertEqual(provenance["workflow"]["bundled_sha256"], hashlib.sha256((ROOT / "workflow.json").read_bytes()).hexdigest())
+        self.assertEqual(provenance["donutui"]["browser_assets"]["assets/base-workflow.json"], hashlib.sha256((ROOT / "assets/base-workflow.json").read_bytes()).hexdigest())
 
     # AC: @donut-create-plugin ac-managed-setup
     def test_exact_download_is_activated_atomically_and_verified_file_is_reused(self):

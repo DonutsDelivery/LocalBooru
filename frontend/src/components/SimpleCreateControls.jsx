@@ -386,7 +386,7 @@ export default function SimpleCreateControls({
   function referenceCard(key, label, scope) {
     if (!available(key)) return null
     const inputId = `${uploadId}-${key}`
-    return <div className="create-reference-card" key={key}>
+    return <div className="create-reference-card" key={key} data-create-drop-reference={key}>
       <div className="create-reference-card-heading"><strong>{label}</strong>{hasReference(key) && <button type="button" className="create-text-button" disabled={locked} onClick={() => choose(key, '')}>Remove</button>}</div>
       <input id={inputId} className="create-sr-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff" disabled={locked} onChange={event => upload(event, key)} />
       <label className={`create-reference-upload${locked ? ' disabled' : ''}`} htmlFor={inputId}>

@@ -73,7 +73,7 @@ export default function CreateEditCanvas({
   reference, imageUrl, maskData, enabled, selectedArea, disabled, onChange, onUpload,
   cropData, cropEnabled = false, onCropChange, outputSize: fallbackSize = [1152, 896], pixelGrid = 64,
   outputSettings, referenceBUrl, cropBData, workspaceSwitch,
-  referenceLabel = 'Reference A', referenceOptions, onReferenceChange, onDraftChange,
+  referenceLabel = 'Reference A', referenceOptions, onReferenceChange, onDraftChange, dropReference,
 }) {
   const canvas = useRef(null)
   const stage = useRef(null)
@@ -361,7 +361,7 @@ export default function CreateEditCanvas({
 
   function uploadFile(file) { if (file && !locked) onUpload(file) }
 
-  return <section className="create-edit-workspace" aria-label="Image editing workspace">
+  return <section className="create-edit-workspace" aria-label="Image editing workspace" data-create-drop-reference={dropReference}>
     <header className="create-edit-heading">{workspaceSwitch}<div><h2>{referenceLabel}</h2><p>{enabled ? 'Crop, select, or extend your image.' : 'Choose the part of this reference to use.'}</p></div>
       <div className="create-edit-reference-switch">{referenceOptions?.map(option => <button type="button" key={option.id} aria-pressed={option.active} disabled={locked} onClick={() => onReferenceChange?.(option.id)}>{option.label}</button>)}
         <button type="button" disabled={locked} onClick={() => upload.current.click()}>{imageUrl ? 'Replace' : 'Add image'}</button></div>

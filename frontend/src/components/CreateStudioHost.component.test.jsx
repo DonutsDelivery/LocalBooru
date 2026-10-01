@@ -483,6 +483,7 @@ describe('Donut Create setup', () => {
 
   // AC: @donut-create-plugin ac-managed-setup
   test('connects to an existing backend without requesting managed downloads', async () => {
+    status.backend = { ready: false, running: false, owned: false }
     render(<CreateSettings />)
     await screen.findByText('Creator add-on is running')
     fireEvent.click(screen.getByLabelText('Connect existing ComfyUI'))

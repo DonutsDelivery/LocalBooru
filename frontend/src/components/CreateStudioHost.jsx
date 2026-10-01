@@ -21,6 +21,7 @@ import CreateEditCanvas from './CreateEditCanvas'
 import SimpleCreateControls from './SimpleCreateControls'
 import CreateResultPreview from './CreateResultPreview'
 import { createStudioBridge } from '../services/createStudioBridge'
+import { listenStudioDesktopDrops, studioDropFile } from '../services/createStudioDrop'
 import './CreateStudio.css'
 
 const CONNECTION_WAIT_MS = 5 * 60 * 1000
@@ -39,6 +40,7 @@ export default function CreateStudioHost() {
   const [outputLibraryId, setOutputLibraryId] = useState('')
   const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [workflowPending, setWorkflowPending] = useState(false)
+  const [dropPending, setDropPending] = useState(false)
   const [opening, setOpening] = useState(false)
   const [saving, setSaving] = useState(null)
   const [cancelling, setCancelling] = useState(false)
@@ -81,6 +83,8 @@ export default function CreateStudioHost() {
   const directoryCreateLock = useRef(false)
   const directoryRequestVersion = useRef(0)
   const pendingWorkflow = useRef(null)
+  const dropSequence = useRef(0)
+  const dropLock = useRef(false)
   const mounted = useRef(false)
   const visible = useRef(false)
   const trigger = useRef(null)
@@ -470,7 +474,7 @@ export default function CreateStudioHost() {
   }, [opened, studioSessionId, status?.backend?.ready])
 
   const studioAction = useCallback((action, payload, ownsRequest) => {
-    if (['load-workflow', 'load-latest', 'load-preset'].includes(action)) stopInstant()
+    if (['load-workflow', 'load-latest', 'load-preset', 'drop-file'].includes(action)) stopInstant()
     if (action !== 'load-workflow' && pendingWorkflow.current) {
       pendingWorkflow.current = null
       setWorkflowPending(false)
@@ -489,14 +493,14 @@ export default function CreateStudioHost() {
         setBridgeBusy(action)
         actionErrorVisible.current = false
         setBridgeError('')
-        const nextSnapshot = await currentBridge.request(action, payload, { timeout: ['upload-reference', 'upload-mask'].includes(action) ? 120000 : ['generate', 'load-workflow'].includes(action) ? 60000 : 15000 })
+        const nextSnapshot = await currentBridge.request(action, payload, { timeout: ['upload-reference', 'upload-mask', 'drop-file'].includes(action) ? 120000 : ['generate', 'load-workflow'].includes(action) ? 60000 : 15000 })
         if (!mounted.current || generation.current !== requestGeneration || bridge.current !== currentBridge) throw new DOMException('The studio session changed.', 'AbortError')
         acceptSnapshot(nextSnapshot)
-        if (['patch', 'upload-reference', 'upload-mask'].includes(action) && nextSnapshot.mutationChanged === true) {
+        if (['patch', 'upload-reference', 'upload-mask', 'drop-file'].includes(action) && nextSnapshot.mutationChanged === true) {
           authoredRevision.current += 1
           setGraphRevision(authoredRevision.current)
         }
-        if (action === 'load-workflow') {
+        if (action === 'load-workflow' || (action === 'drop-file' && nextSnapshot.fileImport === 'workflow')) {
           setControlsRevision(previous => previous + 1)
           setEditRevision(previous => previous + 1)
         }
@@ -577,6 +581,77 @@ export default function CreateStudioHost() {
   }, [studioAction])
 
   const uploadSubjectMask = useCallback(file => studioAction('upload-mask', { file }), [studioAction])
+
+  const importDroppedFiles = useCallback(async (files, target, readFile) => {
+    if (!visible.current || dropLock.current) return
+    const version = ++dropSequence.current
+    const requestGeneration = generation.current
+    const currentBridge = bridge.current
+    const valid = () => mounted.current && visible.current && dropSequence.current === version
+      && generation.current === requestGeneration && bridge.current === currentBridge && !serverChanging.current
+    dropLock.current = true
+    stopInstant()
+    setDropPending(true)
+    try {
+      if (files.length !== 1) throw new Error('Drop one image or workflow JSON at a time.')
+      if (!snapshotRef.current?.ready || !currentBridge) throw new Error('Wait for the studio connection, then drop the file again.')
+      const file = studioDropFile(readFile ? await readFile(files[0]) : files[0])
+      if (!valid()) return
+      const next = await studioAction('drop-file', { file, target }, valid)
+      if (!valid()) return
+      if (next.fileImport === 'workflow') {
+        setControlTab(next.fields?.editing?.value === true ? 'edit' : 'create')
+        if (!next.fields?.prompt?.available && !next.fields?.editPrompt?.available) setStudioView('advanced')
+        setAnnouncement('Workflow loaded. Review its saved settings before generating.')
+      } else {
+        const referenceTarget = target || 'referenceA'
+        if (!referenceTarget.startsWith('guidance')) setControlTab('edit')
+        setCanvasScope(referenceTarget.startsWith('guidance') ? 'guidance' : 'edit')
+        setCanvasReference(referenceTarget.endsWith('B') ? 'B' : 'A')
+        setCenterView('canvas')
+        setMobilePane('results')
+        setAnnouncement('Image added as an editing reference.')
+      }
+    } catch (dropError) {
+      if (valid() && dropError.name !== 'AbortError') setBridgeError(dropError.message)
+    } finally {
+      if (dropSequence.current === version) {
+        dropLock.current = false
+        if (mounted.current) setDropPending(false)
+      }
+    }
+  }, [studioAction, stopInstant])
+
+  useEffect(() => {
+    if (!opened) return
+    let active = true, unlisten
+    const targetAt = element => element?.closest?.('[data-create-drop-reference]')?.getAttribute('data-create-drop-reference') || undefined
+    const forwardDrop = event => {
+      if (event.source !== studioFrame.current?.contentWindow || !frameUrl
+        || event.origin !== new URL(frameUrl, window.location.href).origin
+        || event.data?.channel !== 'donut-create-basic-v1' || event.data.sessionId !== studioSessionId
+        || event.data.event !== 'file-drop' || !Array.isArray(event.data.files)) return
+      importDroppedFiles(event.data.files)
+    }
+    window.addEventListener('message', forwardDrop)
+    listenStudioDesktopDrops(async (event, readFile) => {
+      if (!active || !visible.current || !host.current) return
+      const point = { x: event.position.x / (window.devicePixelRatio || 1), y: event.position.y / (window.devicePixelRatio || 1) }
+      const rect = host.current.getBoundingClientRect()
+      if (point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) return
+      await importDroppedFiles(event.paths, targetAt(document.elementFromPoint(point.x, point.y)), readFile)
+    }, dropError => { if (active) setBridgeError(dropError.message) }).then(dispose => {
+      if (!active) dispose(); else unlisten = dispose
+    }).catch(dropError => { if (active) setBridgeError(dropError.message) })
+    return () => {
+      active = false
+      unlisten?.()
+      window.removeEventListener('message', forwardDrop)
+      dropSequence.current += 1
+      dropLock.current = false
+      if (mounted.current) setDropPending(false)
+    }
+  }, [opened, frameUrl, studioSessionId, importDroppedFiles])
 
   useEffect(() => {
     if (!studioSessionId || !status?.backend?.ready || switchingServer) return
@@ -1022,7 +1097,8 @@ export default function CreateStudioHost() {
       {!simpleView && (jobs.length > 0 || hasActiveJobs) && jobsContent}
       {simpleView && centerView === 'canvas' ? <CreateEditCanvas workspaceSwitch={centerSwitch} key={session.id + ':' + editRevision + ':' + canvasScope + ':' + canvasReference}
         reference={reference} imageUrl={referenceUrls[referenceKey] || ''} maskData={canMask ? fields.editMask?.value : null}
-        enabled={canMask} selectedArea={canMask && fields.inpaint?.value === true} disabled={!connected || !!bridgeBusy || workflowPending}
+        enabled={canMask} selectedArea={canMask && fields.inpaint?.value === true} disabled={!connected || !!bridgeBusy || workflowPending || dropPending}
+        dropReference={referenceKey}
         cropData={fields[cropKey]?.value} cropEnabled={canCrop} onCropChange={changeCrop}
         referenceLabel={(canvasScope === 'guidance' ? 'Guidance reference ' : 'Reference ') + canvasReference}
         referenceOptions={['A', ...(fields[canvasScope === 'guidance' ? 'guidanceUseReferenceB' : 'useReferenceB']?.value === true ? ['B'] : [])].map(id => ({ id, label: id, active: id === canvasReference }))}
@@ -1061,7 +1137,14 @@ export default function CreateStudioHost() {
   </section>
 
   return (
-    <div className="create-studio-host" hidden={!opened} ref={host}>
+    <div className="create-studio-host" hidden={!opened} ref={host}
+      onDragOverCapture={event => { if (visible.current && Array.from(event.dataTransfer?.types || []).includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
+      onDropCapture={event => {
+        const files = Array.from(event.dataTransfer?.files || [])
+        if (!visible.current || !files.length) return
+        event.preventDefault(); event.stopPropagation()
+        importDroppedFiles(files, event.target.closest?.('[data-create-drop-reference]')?.getAttribute('data-create-drop-reference') || undefined)
+      }}>
       <section className="create-studio-dialog" role="dialog" aria-modal="true" aria-labelledby="create-studio-title">
         <header className="create-studio-header">
           <div className="create-studio-brand"><div className="create-brand-mark" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4L12 3Z" /></svg></div>
@@ -1085,7 +1168,7 @@ export default function CreateStudioHost() {
         <div className={'create-studio-body create-view-' + (showSetup ? 'setup' : studioView) + ' create-mobile-' + mobilePane}>
           {session && <div className="create-controls-slot" hidden={!simpleView}>
             <SimpleCreateControls key={session.id + ':' + controlsRevision} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
-              connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
+              connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : dropPending ? bridgeBusy || 'drop-file' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
               onPatch={patchStudio} onGenerate={generateImage} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio}
               runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null} jobsContent={simpleView ? jobsContent : null} finalizeContent={simpleView ? finalizeContent : null}>
               {simpleView ? resultsContent : null}

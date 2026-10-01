@@ -12,6 +12,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder};
 
 pub mod addons;
 mod commands;
+mod create_drop;
 pub mod db;
 mod direct_file;
 pub mod native_video;
@@ -26,9 +27,9 @@ mod svp_manager_snapshot;
 use commands::{
     backend_get_local_ip, backend_get_network_settings, backend_get_port, backend_health_check,
     backend_restart, backend_start, backend_status, backend_stop, copy_image_to_clipboard,
-    get_app_version, load_paired_server_credentials, quit_app, set_remote_proxy,
-    show_image_context_menu, show_in_folder, store_paired_server_credentials, test_remote_server,
-    verify_remote_handshake,
+    get_app_version, load_paired_server_credentials, quit_app, read_create_drop_file,
+    set_remote_proxy, show_image_context_menu, show_in_folder, store_paired_server_credentials,
+    test_remote_server, verify_remote_handshake,
 };
 use direct_file::{
     direct_file_request_from_args, pick_direct_media_file, release_direct_media_file,
@@ -743,6 +744,16 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder.on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, position }) = event {
+                    crate::create_drop::grant_drop(paths);
+                    // Tauri emits its stock drop event before global window
+                    // listeners. Publish only after our read grants exist.
+                    let _ = window.emit_to(window.label(), "donut-create-file-drop", serde_json::json!({
+                        "paths": paths, "position": { "x": position.x, "y": position.y }
+                    }));
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let quit_flag: tauri::State<Arc<AtomicBool>> = window.app_handle().state();
                 if !should_hide_window_on_close(quit_flag.load(Ordering::SeqCst)) {
@@ -784,6 +795,7 @@ pub fn run() {
             quit_app,
             copy_image_to_clipboard,
             show_image_context_menu,
+            read_create_drop_file,
             pick_direct_media_file,
             release_direct_media_file,
             report_direct_file_stage,

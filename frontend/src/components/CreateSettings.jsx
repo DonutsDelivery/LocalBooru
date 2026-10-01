@@ -9,6 +9,7 @@ import {
   setupCreateBackend,
   startCreateBackend,
   stopCreateBackend,
+  restartCreateBackend,
 } from '../services/donutCreate'
 import './CreateStudio.css'
 
@@ -20,6 +21,8 @@ export default function CreateSettings({ onStatusChange }) {
   const [error, setError] = useState('')
   const [mode, setMode] = useState('managed')
   const [backendUrl, setBackendUrl] = useState('http://127.0.0.1:8188')
+  const [comfyDirectory, setComfyDirectory] = useState('')
+  const [pythonExecutable, setPythonExecutable] = useState('')
   const [runtime, setRuntime] = useState('cuda')
   const [profile, setProfile] = useState('base')
   const [hfToken, setHfToken] = useState('')
@@ -40,21 +43,24 @@ export default function CreateSettings({ onStatusChange }) {
   const refresh = useCallback(async () => {
     if (serverChanging.current || refreshGeneration.current === generation.current) return
     const requestGeneration = generation.current
+    const requestRevision = actionRevision.current
     const signal = requests.current.signal
     refreshGeneration.current = requestGeneration
     try {
       const response = await getAddon('donut-create', { signal })
       const nextAddon = response.addon
-      if (!mounted.current || requestGeneration !== generation.current) return
+      if (!mounted.current || requestGeneration !== generation.current || requestRevision !== actionRevision.current) return
       setAddon(nextAddon)
       if (nextAddon.installed && nextAddon.status === 'running') {
         const nextStatus = await getCreateStatus(signal)
-        if (!mounted.current || requestGeneration !== generation.current) return
+        if (!mounted.current || requestGeneration !== generation.current || requestRevision !== actionRevision.current) return
         setStatus(nextStatus)
         if (!initialized.current) {
           initialized.current = true
           setMode(nextStatus.mode || 'managed')
           setBackendUrl(nextStatus.mode === 'existing' ? nextStatus.backend_url || 'http://127.0.0.1:8188' : 'http://127.0.0.1:8188')
+          setComfyDirectory(nextStatus.comfy_directory || '')
+          setPythonExecutable(nextStatus.python_executable || '')
           setRuntime(nextStatus.setup?.default_runtime || 'cuda')
           setProfile(nextStatus.setup?.default_profile || 'base')
         }
@@ -172,11 +178,28 @@ export default function CreateSettings({ onStatusChange }) {
     })
   }
 
+  function configureBackend() {
+    runAction('Connecting', async (signal, ensureCurrent) => {
+      const nextStatus = await saveCreateConfig({ mode,
+        ...(mode === 'existing' ? { backend_url: backendUrl.trim() }
+          : mode === 'local' ? { comfy_directory: comfyDirectory.trim(),
+            ...(pythonExecutable.trim() ? { python_executable: pythonExecutable.trim() } : {}) } : {}),
+      }, signal)
+      ensureCurrent()
+      setComfyDirectory(nextStatus.comfy_directory || '')
+      setPythonExecutable(nextStatus.python_executable || '')
+      setStatus(nextStatus)
+      statusCallback.current?.(nextStatus)
+    })
+  }
+
   const setup = status?.setup || {}
   const installing = setup.running === true
   const busy = loading || action !== null || switchingServer
   const active = addon?.installed && addon.status === 'running'
   const configured = status?.mode === mode && (mode !== 'existing' || status.backend_url === backendUrl.trim())
+    && (mode !== 'local' || (status.comfy_directory === comfyDirectory.trim() && (status.python_executable || '') === pythonExecutable.trim()))
+  const controllable = ['managed', 'local'].includes(status?.mode)
   const catalog = status?.catalog || setup.catalog || {}
   const profiles = catalog.profiles || [
     { id: 'base', label: 'Neutral starter', description: 'Workflow v5 with Krea2 and no aesthetic LoRA.' },
@@ -215,15 +238,22 @@ export default function CreateSettings({ onStatusChange }) {
       <fieldset className="create-settings-card" disabled={!active || busy || installing}>
         <legend>ComfyUI backend</legend>
         <label className="create-radio"><input type="radio" name="create-backend" value="managed" checked={mode === 'managed'} onChange={() => setMode('managed')} />Managed ComfyUI</label>
+        <label className="create-radio"><input type="radio" name="create-backend" value="local" checked={mode === 'local'} onChange={() => setMode('local')} />Manage existing local installation</label>
         <label className="create-radio"><input type="radio" name="create-backend" value="existing" checked={mode === 'existing'} onChange={() => setMode('existing')} />Connect existing ComfyUI</label>
         {mode === 'existing' && (
           <label className="create-field">Backend URL
             <input type="url" value={backendUrl} placeholder="http://127.0.0.1:8188" onChange={event => setBackendUrl(event.target.value)} />
           </label>
         )}
-        <button type="button" disabled={configured || (mode === 'existing' && !/^https?:\/\//i.test(backendUrl.trim()))} onClick={() => runAction('Connecting', signal => saveCreateConfig({ mode, ...(mode === 'existing' ? { backend_url: backendUrl.trim() } : {}) }, signal))}>
-          {action === 'Connecting' ? 'Connecting…' : mode === 'existing' ? 'Connect backend' : 'Use managed backend'}
+        {mode === 'local' && <>
+          <label className="create-field">ComfyUI folder on this server<input value={comfyDirectory} placeholder="Folder containing main.py" onChange={event => setComfyDirectory(event.target.value)} /></label>
+          <label className="create-field">Python executable<input value={pythonExecutable} placeholder="Auto-detect the installation’s venv" onChange={event => setPythonExecutable(event.target.value)} /></label>
+          <p className="create-download-note">Uses your installed ComfyUI, models and node packs. DMC starts it on port 18010 and manages the process it launches.</p>
+        </>}
+        <button type="button" disabled={configured || status?.backend?.owned || (mode === 'local' && !comfyDirectory.trim()) || (mode === 'existing' && !/^https?:\/\//i.test(backendUrl.trim()))} onClick={configureBackend}>
+          {action === 'Connecting' ? 'Connecting…' : mode === 'existing' ? 'Connect backend' : mode === 'local' ? 'Use this installation' : 'Use managed backend'}
         </button>
+        {status?.backend?.owned && !configured && <p className="create-download-note">Stop ComfyUI before changing its backend configuration.</p>}
       </fieldset>
 
       {mode === 'managed' && (
@@ -276,14 +306,16 @@ export default function CreateSettings({ onStatusChange }) {
       {active && (
         <div className="create-settings-card">
           <h3>Backend status</h3>
-          <p role="status">{status?.backend?.ready ? 'Ready for image creation' : status?.backend?.running ? 'Checking workflow nodes and models…' : 'Backend is stopped or unavailable'}</p>
+          <p role="status">{action || (status?.backend?.ready ? 'Ready for image creation' : status?.backend?.owned && !status?.backend?.running ? 'ComfyUI is starting… This can take several minutes.' : status?.backend?.running ? 'Checking workflow nodes and models…' : 'Backend is stopped or unavailable')}</p>
           {status?.backend?.error && <p className="create-message error" role="alert">{status.backend.error}</p>}
           {status?.backend?.missing_nodes?.length > 0 && <p>Missing node packs or nodes: {status.backend.missing_nodes.join(', ')}</p>}
           {status?.backend?.missing_models?.length > 0 && <p>Missing models: {status.backend.missing_models.join(', ')}</p>}
-          {status?.mode === 'managed' && (
+          {!controllable && <p>To start, stop and restart from DMC, select Manage existing local installation on the computer hosting ComfyUI.</p>}
+          {controllable && (
             <div className="create-actions">
-              <button type="button" disabled={busy || installing || status?.backend?.running} onClick={() => runAction('Starting backend', startCreateBackend)}>{action === 'Starting backend' ? 'Starting backend…' : 'Start ComfyUI'}</button>
-              <button type="button" disabled={loading || switchingServer || installing || !status?.backend?.owned || (action !== null && action !== 'Starting backend')} onClick={() => runAction('Stopping backend', stopCreateBackend, true)}>Stop ComfyUI</button>
+              <button type="button" disabled={busy || installing || status?.backend?.running || status?.backend?.owned} onClick={() => runAction('Starting backend', startCreateBackend)}>{action === 'Starting backend' ? 'Starting backend…' : 'Start ComfyUI'}</button>
+              <button type="button" disabled={loading || switchingServer || installing || !status?.backend?.owned || (action !== null && action !== 'Starting backend')} onClick={() => runAction('Stopping backend', stopCreateBackend, true)}>{action === 'Stopping backend' ? 'Stopping backend…' : 'Stop ComfyUI'}</button>
+              <button type="button" disabled={busy || installing || !status?.backend?.owned} onClick={() => runAction('Restarting backend', restartCreateBackend)}>{action === 'Restarting backend' ? 'Restarting backend…' : 'Restart ComfyUI'}</button>
             </div>
           )}
         </div>

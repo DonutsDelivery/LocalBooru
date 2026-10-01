@@ -12,6 +12,23 @@ managed port is reported as a conflict; the add-on does not adopt that process
 or fall back to 8188. Connecting to another ComfyUI installation requires
 explicitly choosing Existing backend and entering its origin.
 
+To manage an existing installation, choose **Manage existing local installation**
+and enter its ComfyUI folder on the hosting server. The controller detects a
+`venv` or `.venv` Python in that folder or its parent; a Python executable can
+also be selected explicitly. This mode uses the installation's existing models
+and node packs without installing or downloading anything. Start, Stop and
+Restart control only the child DMC launches on port 18010. They are available
+through the same authorized routes to paired clients. URL-only connections
+remain controlled by their host application. Stop the owned child before
+changing backend configuration; restarting it preserves the studio's workflow
+and draft.
+
+Drop a workflow JSON, or a PNG/WebP containing embedded workflow metadata, into
+the studio to restore its settings. A plain image becomes an editing reference.
+Dropping an image onto a reference card or canvas replaces that reference and
+keeps the workflow. Imports pause Run Instant and never generate automatically;
+unrecognized editable graphs open in the Advanced editor.
+
 Install Python **3.12** before starting managed setup. Setup finds the sidecar's
 3.12 interpreter, `python3.12`, or Windows `py -3.12`; it reports a clear error
 before downloading if none is available. Managed setup requires an internet
@@ -98,6 +115,12 @@ also requires the selected accelerator to be available. A second live capability
 and model check occurs before the controller opens a studio session.
 
 ## Workflow and browser assets
+
+New v5 recipes default to **Euler / Simple**, **Rebalance**, **NAG 0.45** and
+**DecensorFix off**. The aesthetic LoRA in the original workflow profile uses
+model and text strengths of **1 / 1**; the neutral starter retains its empty
+LoRA stack. Saved workflows keep their own settings. Load setup preset explicitly
+to start from these defaults.
 
 [workflow.json](workflow.json) retains the v5 subgraphs, links, promoted inputs,
 and panel paths. Its personal prompt/reference/preview state has been removed.

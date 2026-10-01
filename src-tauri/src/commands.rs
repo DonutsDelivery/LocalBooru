@@ -20,6 +20,29 @@ const PAIRED_SERVER_CREDENTIAL_ACCOUNT: &str = "paired-server-credentials";
 const CREDENTIAL_DIR: &str = ".credentials";
 const PAIRED_CREDENTIAL_FILE: &str = "paired-server-credentials.json";
 
+#[derive(Serialize)]
+pub struct CreateDropFile {
+    name: String,
+    mime: String,
+    bytes: Vec<u8>,
+}
+
+#[tauri::command]
+pub async fn read_create_drop_file(
+    window: tauri::WebviewWindow,
+    path: PathBuf,
+) -> Result<CreateDropFile, String> {
+    if window.label() != "main" {
+        return Err("File drops are available only in the main window.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let (name, mime, bytes) = crate::create_drop::read_drop(&path)?;
+        Ok(CreateDropFile { name, mime, bytes })
+    })
+    .await
+    .map_err(|_| "The dropped file could not be read.".to_string())?
+}
+
 fn paired_credential_cache() -> &'static Mutex<Option<serde_json::Value>> {
     static CACHE: OnceLock<Mutex<Option<serde_json::Value>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
