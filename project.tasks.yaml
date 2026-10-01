@@ -1796,3 +1796,16 @@ tasks:
     started_at: 2026-10-01T19:52:36.333Z
     submitted_at: 2026-10-01T21:40:30.069Z
     completed_at: 2026-10-01T21:47:51.547Z
+  - _ulid: 01M3WTJ0Q2TZNNDVTX2YZ0TX96
+    slugs:
+      - create-effect-collapse
+    title: Allow independent collapse of Create effects
+    type: task
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 3
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-01T22:49:58.242Z

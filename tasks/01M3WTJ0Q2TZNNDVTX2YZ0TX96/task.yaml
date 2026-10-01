@@ -1,0 +1,21 @@
+_ulid: 01M3WTJ0Q2TZNNDVTX2YZ0TX96
+slugs:
+  - create-effect-collapse
+title: Allow independent collapse of Create effects
+type: task
+description: User requests expand/collapse of all right-panel effects regardless of activation.
+  Separate disclosure and enable controls, preserve effect values and activation on disclosure,
+  retain off-setting visibility rules, focused component regressions, merge main and install without
+  interrupting running DMC or ComfyUI.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-10-01T22:49:58.242Z
+todos: []
