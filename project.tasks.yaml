@@ -1985,6 +1985,7 @@ tasks:
     depends_on: []
     priority: 1
     tags: []
+    review_ref: "@review-owned-addon-port-recovery"
     notes_count: 2
     todos_count: 0
     created_at: 2026-10-02T05:00:41.137Z
