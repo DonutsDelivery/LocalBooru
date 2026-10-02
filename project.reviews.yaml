@@ -8911,9 +8911,26 @@ reviews:
           status: pass
           name: synthetic-benchmark
         timestamp: 2026-10-02T01:58:43.598Z
+      - _ulid: 01M3X5CC6TMGF02KY69CRDGHE5
+        actor: root-independent
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+            head_commit: 50c29946817c469c57d414d9c604eb3e4fd08b13
+          decision: approve
+        timestamp: 2026-10-02T01:59:07.738Z
+      - _ulid: 01M3X5CC6T3E2XNWX1B8HEW5ZG
+        actor: root-independent
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T01:59:07.739Z
     examined_commit: 50c29946817c469c57d414d9c604eb3e4fd08b13
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@svp-requested-nvof"
     subject:
@@ -8923,7 +8940,15 @@ reviews:
       head_branch: fix/svp-requested-nvof
       head_commit: 50c29946817c469c57d414d9c604eb3e4fd08b13
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+          head_commit: 50c29946817c469c57d414d9c604eb3e4fd08b13
+        decision: approve
+        reviewer: root-independent
+        role: reviewer
+        created_at: 2026-10-02T01:59:07.738Z
     created_at: 2026-10-02T01:58:25.057Z
-    updated_at: 2026-10-02T01:58:43.544Z
+    updated_at: 2026-10-02T01:59:07.738Z
     notes: []
