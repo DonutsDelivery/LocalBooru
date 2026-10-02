@@ -1727,7 +1727,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     svpFirstHandoffPendingRef.current = false
     setSvpStartupReady(true)
     if (video.readyState >= 2) setVideoFrameReadyKey(videoMediaKey)
-    if (Number.isFinite(resume.volume)) playback.restoreAudioState?.(resume.volume, Boolean(resume.muted))
+    // The knob remains available during handoff; a newer logical choice wins
+    // over the captured snapshot, without applying attenuation a second time.
+    playback.restoreAudioState?.(playbackAudioRef.current.volume, Boolean(playbackAudioRef.current.muted))
     if (resume.paused) {
       video.pause()
       // The replacement was already paused, so it may emit no pause event.

@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 const mocks = vi.hoisted(() => {
   const noop = () => {}
   return {
-    noop, initialSvp: false, embedded: true, configLoaded: true, listeners: null,
+    noop, initialSvp: false, embedded: true, configLoaded: true, realPlayback: false, listeners: null,
     bridge: {
       acquireSvpVideoHostEpoch: vi.fn(async () => 7),
       configureLocalVideoResolution: vi.fn(async () => true),
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => {
     },
     toast: { error: vi.fn(), success: vi.fn() },
     handleEncodedQuality: vi.fn(async () => {}),
-    sourceResolution: vi.fn(), dimensions: vi.fn(),
+    sourceResolution: vi.fn(), dimensions: vi.fn(), gain: vi.fn(),
     ui: { showUI: true, isFullscreen: false, resetHideTimer: noop, handleMouseMove: noop,
       handleTouchInteractionStart: noop, consumeRevealTap: () => false, cancelRevealTap: noop,
       handleToggleFullscreen: noop },
@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('../../api', () => ({
   getMediaUrl: path => path, getAssetUrl: path => path, isUsingLocalServer: () => mocks.embedded,
   getFileDimensions: (...args) => mocks.dimensions(...args),
+  getAudioGain: (...args) => mocks.gain(...args), savePlaybackPosition: async () => {},
   getPlaybackPosition: async () => ({}), fetchCollections: async () => ({ collections: [] }),
   getSVPConfig: async () => ({ enabled: mocks.initialSvp }),
   updateSVPConfig: async config => config,
@@ -42,7 +43,13 @@ vi.mock('../../hooks/useAddonStatus', () => ({ useAddonStatus: () => ({ installe
 vi.mock('../../hooks/useImageWorkflow', () => ({ useImageWorkflow: () => ({ available: false }) }))
 vi.mock('./hooks/useUIVisibility', () => ({ useUIVisibility: () => mocks.ui }))
 vi.mock('./hooks/useZoomPan', () => ({ useZoomPan: () => mocks.zoom }))
-vi.mock('./hooks/useVideoPlayback', () => ({ useVideoPlayback: ref => { mocks.mediaRef = ref; return mocks.playback } }))
+vi.mock('./hooks/useVideoPlayback', async () => {
+  const actual = await vi.importActual('./hooks/useVideoPlayback')
+  return { useVideoPlayback: (ref, ...args) => {
+    mocks.mediaRef = ref
+    return mocks.realPlayback ? actual.useVideoPlayback(ref, ...args) : mocks.playback
+  } }
+})
 vi.mock('./hooks/useWhisperSubtitles', () => ({ useWhisperSubtitles: () => mocks.subtitles }))
 vi.mock('./hooks/useCastSession', () => ({ useCastSession: () => ({ isCasting: false }) }))
 vi.mock('./hooks/useTimelinePreview', () => ({ useTimelinePreview: () => ({ previewFrames: [] }) }))
@@ -54,14 +61,18 @@ vi.mock('../ContextMenu', () => ({ default: () => null }))
 vi.mock('../SVPSideMenu', () => ({ default: () => null }))
 vi.mock('./hooks/useVideoStreaming', async () => {
   const { useState } = await import('react')
+  const { useAudioNormalization } = await vi.importActual('./hooks/useAudioNormalization')
   return { useVideoStreaming: ref => {
     const [svpConfig, setSvpConfig] = useState({ enabled: mocks.initialSvp })
+    const audio = useAudioNormalization(ref)
+    mocks.audio = audio
     return { nativeSvpPlayback: mocks.embedded, svpConfigLoaded: mocks.configLoaded, svpConfig, setSvpConfig,
       sourceResolution: { width: 1920, height: 1080 }, setSourceResolution: mocks.sourceResolution,
       streamTransitioningRef: { current: false }, opticalFlowConfig: { enabled: false },
       capturePlaybackIntent: () => ({ position: ref.current.currentTime, shouldPlay: !ref.current.paused }),
       handleQualityChange: mocks.handleEncodedQuality, setSvpError: mocks.noop, setSvpLoading: mocks.noop,
-      checkCodecFallback: mocks.noop,
+      checkCodecFallback: mocks.noop, getCurrentAbsoluteTime: () => ref.current?.currentTime ?? 0,
+      setAudioOutputVolume: audio.setOutputVolume, setAudioOutputMuted: audio.setOutputMuted,
     }
   } }
 })
@@ -86,6 +97,8 @@ beforeEach(() => {
   mocks.playback.handlePlaybackError = vi.fn()
   mocks.initialSvp = false
   mocks.configLoaded = true
+  mocks.realPlayback = false
+  mocks.gain.mockResolvedValue({ gain_db: 0 })
   mocks.embedded = true
   mocks.bridge.configureLocalVideoResolution.mockResolvedValue(true)
   mocks.bridge.verifyLocalVideoResolution.mockResolvedValue(true)
@@ -607,4 +620,34 @@ test('old physical seeked callback cannot unlock the replacement startup seek', 
   expect(replacement.play).not.toHaveBeenCalled()
   fireEvent.seeked(replacement)
   expect(replacement.play).toHaveBeenCalledOnce()
+})
+
+// AC: @native-svp-startup-gate ac-owned-handoff
+// AC: @logical-video-volume ac-normalization, ac-handoff
+test('visible volume change during filtered handoff retains latest logical gain with one attenuation', async () => {
+  mocks.initialSvp = true
+  mocks.realPlayback = true
+  localStorage.setItem('video_audio_preference', JSON.stringify({ volume: 0.35, muted: false }))
+  mocks.gain.mockResolvedValue({ gain_db: 20 * Math.log10(0.5) })
+  const { container } = mount()
+  const bootstrap = await videoReady(container)
+  bootstrap.__paused = true
+  await act(async () => mocks.audio.applyNormalization('/synthetic-1.mp4'))
+  expect(bootstrap.volume).toBeCloseTo(0.175)
+  fireEvent.loadedMetadata(bootstrap)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  await act(async () => mocks.listeners.onFilterChanged({ ...owner, enabled: true }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(bootstrap))
+  const replacement = await videoReady(container)
+  replacement.__paused = true
+  const knob = container.querySelector('.video-volume-slider')
+  expect(knob.value).toBe('0.35')
+  fireEvent.change(knob, { target: { value: '0.65' } })
+  expect(knob.value).toBe('0.65')
+  fireEvent.loadedMetadata(replacement)
+  fireEvent.loadedData(replacement)
+  expect(knob.value).toBe('0.65')
+  expect(JSON.parse(localStorage.getItem('video_audio_preference')).volume).toBe(0.65)
+  expect(replacement.volume).toBeCloseTo(0.325)
 })
