@@ -11,3 +11,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T03:11:10.654Z
+  - _ulid: 01M3XC63HN2B8MKTKWHB0GXWZG
+    content: Frozen product candidate is 91062f67ea3a7cd2efa5563353fb3f1c9825940e, branch
+      fix/direct-seek-responsiveness, base fb3ab86c47c0c172c64280641dfe0d9b5423910e in
+      /tmp/dmc-direct-seek-fix. Control checkout submission VCS metadata is not the product commit;
+      explicit code review version and this source linkage are authoritative. React30/30 and
+      native11 synthetic cases pass twice; pristine/legacy postimages match. Integration and
+      matching runtime deployment pending.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T03:58:02.293Z
