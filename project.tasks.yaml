@@ -1980,7 +1980,7 @@ tasks:
     title: Recover verified legacy addon listeners instead of failing occupied port
     type: bug
     spec_ref: "@owned-addon-port-recovery"
-    status: pending_review
+    status: completed
     blocked_by: []
     depends_on: []
     priority: 1
@@ -1991,6 +1991,7 @@ tasks:
     created_at: 2026-10-02T05:00:41.137Z
     started_at: 2026-10-02T05:00:42.587Z
     submitted_at: 2026-10-02T05:28:33.723Z
+    completed_at: 2026-10-02T05:29:39.221Z
   - _ulid: 01M3XGENVEK6FP686E055M85D8
     slugs:
       - create-sidebar-placement

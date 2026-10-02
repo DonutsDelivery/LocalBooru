@@ -6,8 +6,11 @@ type: bug
 spec_ref: "@owned-addon-port-recovery"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Approved exact9dfcdcbc merged into mainc07de281; root independent exact binary7
+  recovery+2shutdown checks pass and allfour sourcefiles reviewed. Matching app build in progress;
+  no live profile test performed. Control submit VCS linkage differs from authoritative sourcehead.
 depends_on: []
 context: []
 priority: 1
@@ -60,7 +63,24 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-02T05:28:33.723Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Approved exact9dfcdcbc merged into mainc07de281; root independent exact binary7
+          recovery+2shutdown checks pass and allfour sourcefiles reviewed. Matching app build in
+          progress; no live profile test performed. Control submit VCS linkage differs from
+          authoritative sourcehead.
+        previous: null
+      completed_at:
+        new: 2026-10-02T05:29:39.221Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-02T05:29:39.229Z
 created_at: 2026-10-02T05:00:41.137Z
 started_at: 2026-10-02T05:00:42.587Z
 submitted_at: 2026-10-02T05:28:33.723Z
+completed_at: 2026-10-02T05:29:39.221Z
 todos: []
