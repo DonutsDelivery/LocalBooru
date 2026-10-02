@@ -23,3 +23,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T04:34:52.223Z
+  - _ulid: 01M3XEWMJDSMSTATV3ZW291ETE
+    content: "Source audit while host-gated found two intent edges: geometry fallback during paused
+      startup must capture logical desired playing rather than physical paused state; paused
+      filtered replacement may emit no pause event, so handoff explicitly commits hook paused state
+      to prevent later canplay restarting. Tests cover active graph refresh true/false Manager
+      command sequence and subsequent canplay. Current clean combinedcandidate92d451b
+      includesvolume94 unchanged; sourceAPI/helperguards ready for review, no execution pass claimed
+      yet."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T04:45:17.773Z
