@@ -9547,3 +9547,32 @@ reviews:
     created_at: 2026-10-02T03:14:15.972Z
     updated_at: 2026-10-02T03:19:16.583Z
     notes: []
+  - _ulid: 01M3XC73SZNPQNH2R8X6TM9Q3T
+    slugs:
+      - review-original-http-seeking
+    title: Original HTTP seek responsiveness
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3XC73SZ3N9YDSEE854ER888
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-02T03:58:35.327Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@direct-seek-responsiveness"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: fb3ab86
+      head_branch: fix/direct-seek-responsiveness
+      head_commit: 91062f67ea3a7cd2efa5563353fb3f1c9825940e
+    threads: []
+    verdicts: []
+    created_at: 2026-10-02T03:58:35.327Z
+    updated_at: null
+    notes: []
