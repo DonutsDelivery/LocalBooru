@@ -376,6 +376,32 @@ smooth = core.svp2.SmoothFps(
     vectors["clip"], vectors["data"],
     smooth_params, src=clip, fps=src_fps
 )'''
+    # Advanced parameter strings and Manager graphs define their own engine.
+    # The built-in NVOF choice must use the actual optical-flow entry point;
+    # adding nvof:1 to Analyse still executes the classic vector pipeline.
+    if use_nvof and not any((custom_super, custom_analyse, custom_smooth)):
+        block = int(re.search(r"block:\{w:(\d+)", preset_config["analyse"]).group(1))
+        # NVOF's native grid is 4px. Resize only the vector source to retain
+        # the selected preset's motion grid; render at the full source size.
+        vector_width = width // block * 4 if width >= block else width
+        vector_height = height // block * 4 if height >= block else height
+        processing = f'''# Requested NVOF processing (preset: {preset})
+smooth_params = {smooth_params!r}
+if not hasattr(core.svp2, "SmoothFps_NVOF"):
+    raise RuntimeError("NVOF unavailable: installed SVPflow has no SmoothFps_NVOF")
+src_fps = clip.fps.numerator / clip.fps.denominator
+try:
+    vec_src = core.resize.Bicubic(
+        clip, width={vector_width}, height={vector_height},
+        src_width={width // block * block if width >= block else width},
+        src_height={height // block * block if height >= block else height}
+    )
+    smooth = core.svp2.SmoothFps_NVOF(
+        clip, smooth_params, vec_src=vec_src, src=clip, fps=src_fps
+    )
+except Exception as error:
+    raise RuntimeError("NVOF unavailable: " + str(error)) from error
+'''
     if graph_script is not None:
         plugin_setup = ""
         processing = graph_script
@@ -947,7 +973,12 @@ async def stop_all_streams(*, invalidate_pending: bool = True):
 
 
 def is_gpu_renderer_error(error: Optional[str]) -> bool:
-    return bool(error and "unable to init GPU-based renderer" in error)
+    return bool(error and any(marker in error for marker in (
+        "unable to init GPU-based renderer",
+        "NVOF unavailable:",
+        "SVSmoothFps: unable to init NVOF",
+        "SVSmoothFps: NVOF runtime error",
+    )))
 
 
 def _manager_source_info(file_path: str) -> dict:
