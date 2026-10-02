@@ -1853,7 +1853,7 @@ tasks:
     title: Improve SVP4K downscale streaming throughput
     type: bug
     spec_ref: "@svp-bounded-stream"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 3
@@ -1862,3 +1862,4 @@ tasks:
     todos_count: 0
     created_at: 2026-10-02T00:41:47.937Z
     started_at: 2026-10-02T00:42:26.901Z
+    submitted_at: 2026-10-02T00:52:32.423Z
