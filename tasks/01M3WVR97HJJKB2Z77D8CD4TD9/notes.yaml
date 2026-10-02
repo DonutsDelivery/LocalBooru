@@ -97,3 +97,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T00:19:52.433Z
+  - _ulid: 01M3X0FW8Y3E742DBN3G1FQKFH
+    content: After installation/start of maincee2138 Linux binary and matching deployed SVP source, user
+      retried current APK and confirmed both ordinary and SVP480p/720p playback now work. Runtime
+      receipt verifiesloadednewbinary,SVP/Createhealth200 and independentComfyprocess unchanged. New
+      APK build/delivery remains in progress.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T00:33:39.614Z
