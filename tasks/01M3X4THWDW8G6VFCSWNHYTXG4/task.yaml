@@ -1,0 +1,35 @@
+_ulid: 01M3X4THWDW8G6VFCSWNHYTXG4
+slugs:
+  - svp-requested-nvof
+title: Honor requested NVIDIA Optical Flow for Android SVP streams
+type: bug
+description: Honor explicit NVIDIA Optical Flow requests for Android SVP streams. Synthetic balanced
+  baseline has 1.13x headroom and OFA 0%; actual NVOF with the same 16px motion grid completes 12s
+  in 4.33s with OFA activity. Preserve cadence, shader, mask, selected motion-grid size,
+  disabled/capability/CPU fallback, and custom graph behavior. No automatic Fast preset or quality
+  reduction. Preserve requests=1 and sequential source ordering. Use isolated synthetic benchmarks
+  under host gate, no real profile/media requests or production runtime mutation.
+spec_ref: "@svp-platform-routing"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-02T01:49:23.864Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-02T01:49:23.865Z
+created_at: 2026-10-02T01:49:23.722Z
+started_at: 2026-10-02T01:49:23.864Z
+todos: []
