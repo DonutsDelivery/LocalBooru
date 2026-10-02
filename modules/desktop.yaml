@@ -1056,6 +1056,12 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: Native SVP is enabled for the current video
+            id: ac-no-early-play
+            then: The video remains physically paused without original picture or audio playback while metadata
+              registration can proceed
+            when: Metadata and canplay arrive before the owned SVP graph is ready
         tags: []
         created: 2026-10-02T04:22:44.328Z
         notes: []
