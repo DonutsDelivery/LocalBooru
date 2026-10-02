@@ -43,3 +43,19 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T02:15:20.935Z
+  - _ulid: 01M3X6H2E1RNG78N6TCGWVGW3H
+    content: "Frozen reviewed source candidate6285f67c4828a3c727f6d9339def13ed857b4d2c,15 explicit
+      paths, clean /tmp/dmc-svp-manager-isolation. Final focused Rust23/23 passed via required
+      wrapper/sharedtarget2jobs; Node12/12 passed including production callback generation guards,
+      bounded registration retry and actual status JSX React SSR/overlay behavior; patched C++
+      registration/readiness/relay/coexistence/inode-cleanup fixture passed. Canonical patch applies
+      to pristine upstream2.52.3; exact legacy SHA preimages recognized. No real Manager/media
+      acceptance. Source-independent runtime blocker: approved37canonical generators
+      exit0/6.97s,9486 generated files before/after, no header byte changes;
+      supplemental_dependency.tmp only changed; full Ninja still533(493CXX). Bounded wrapper now
+      forces NINJA_STATUS and rejects unrelated/unknown plan work before mutation. Parent owns
+      explicit review/source linkage and coordinated integration/runtime deployment; control submit
+      avoided to prevent wrong automatic source attribution."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T02:19:10.145Z
