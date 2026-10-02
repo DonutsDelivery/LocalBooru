@@ -732,6 +732,24 @@ features:
         tags: []
         created: 2026-07-17T07:36:47.181Z
         notes: []
+      - _ulid: 01M3XFP98Z8FKZTG97PB2FA6D1
+        slugs:
+          - owned-addon-port-recovery
+        title: Recover verified installed add-on listeners on restart
+        type: requirement
+        description: Linux add-on startup may reclaim a legacy listener only after proving same-user
+          installed add-on cwd, interpreter, uvicorn module/port, stable PID identity, and no other
+          live DMC owner. It stops/reaps that specific listener and launches a new tracked child;
+          foreign listeners and independent Comfy services remain untouched. Managed child drop
+          cleanup prevents abandoned starts.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-10-02T04:59:18.175Z
+        notes: []
     created: 2026-03-08T08:30:12.294Z
     notes: []
   - _ulid: 01KK692Z060X5XY08AV7BW0N5D
