@@ -10,8 +10,14 @@ description: User reports4K original to1080p SVP produces buffered video slower 
 spec_ref: "@svp-bounded-stream"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: "Approved closed review @review-svp-downscale-throughput at ca76bad99, 18 legacy and
+  3 NVENC focused tests. Integrated into main and pushed as
+  8033e90dc786a6a292601b6e975b69f922d98b29. Synthetic evidence: service heartbeat stalls 3.549s to
+  0.0515s, median pipeline throughput about 3.4 percent faster; fixed resolution/frame rate/quality
+  retained. Windows readiness regression resolved using mocked platform tests, actual Windows
+  playback unverified. Canonical Linux installer queued behind shared build gate."
 depends_on: []
 context: []
 priority: 3
@@ -71,7 +77,27 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-02T00:56:25.040Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: "Approved closed review @review-svp-downscale-throughput at ca76bad99, 18 legacy and 3 NVENC
+          focused tests. Integrated into main and pushed as
+          8033e90dc786a6a292601b6e975b69f922d98b29. Synthetic evidence: service heartbeat stalls
+          3.549s to 0.0515s, median pipeline throughput about 3.4 percent faster; fixed
+          resolution/frame rate/quality retained. Windows readiness regression resolved using mocked
+          platform tests, actual Windows playback unverified. Canonical Linux installer queued
+          behind shared build gate."
+        previous: null
+      completed_at:
+        new: 2026-10-02T01:00:42.898Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-02T01:00:42.907Z
 created_at: 2026-10-02T00:41:47.937Z
 started_at: 2026-10-02T00:42:26.901Z
 submitted_at: 2026-10-02T00:52:32.423Z
+completed_at: 2026-10-02T01:00:42.898Z
 todos: []
