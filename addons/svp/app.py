@@ -405,6 +405,11 @@ def read_exact(size):
 def write_plane(frame, plane, src, width, height):
     stride = frame.get_stride(plane)
     ptr = frame.get_write_ptr(plane)
+    # Aligned planes (including 1080p) need one copy, rather than one
+    # Python/ctypes call per row. Keep row copies for padded plane strides.
+    if stride == width:
+        ctypes.memmove(ptr.value, src, width * height)
+        return
     pos = 0
     for y in range(height):
         ctypes.memmove(ptr.value + y * stride, src[pos:pos + width], width)
@@ -823,13 +828,19 @@ class SVPStream:
             if not pipe:
                 continue
             try:
-                while final or select.select([pipe], [], [], 0)[0]:
-                    chunk = pipe.read(4096 if final else 1024)
+                # select only guarantees that some bytes are available.
+                # BufferedReader.read(size) can wait for the rest of size,
+                # blocking HLS HTTP requests on this same asyncio loop. A
+                # read1 performs at most one pipe read and returns available
+                # bytes. Even a final drain must not wait on live upstream
+                # stages when the encoder has already exited.
+                for _ in range(32):
+                    if not select.select([pipe], [], [], 0)[0]:
+                        break
+                    chunk = pipe.read1(4096)
                     if not chunk:
                         break
                     setattr(self, attr, (getattr(self, attr) + chunk)[-12000:])
-                    if not final and len(chunk) < 1024:
-                        break
             except Exception:
                 pass
 
