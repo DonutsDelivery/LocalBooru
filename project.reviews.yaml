@@ -9150,3 +9150,191 @@ reviews:
     created_at: 2026-10-02T02:22:16.946Z
     updated_at: 2026-10-02T02:22:18.696Z
     notes: []
+  - _ulid: 01M3X9NYS4GSV90ZG8FZMM3FPP
+    slugs:
+      - review-local-raw-resize
+    title: Review local decoded video resolution
+    author: DonutsDelivery
+    checks:
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
+        evidence: "Read19 changed paths and surrounding playback/lease/route code. All draft findings
+          corrected except newly confirmed cross-backend cleanup target under validation:
+          ownership-mode switch must not send global old-stream cleanup to newly selected backend.
+          No runtime/media/profile mutation."
+        name: source-review
+        required: true
+        runner: manual
+        created_at: 2026-10-02T03:14:16.611Z
+        completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
+        evidence: "Inspected exact288431f final20/20 pass (Lightbox12+routing8): pause/play seek/audio,
+          rapid choices, delayed prep/ACK, stock/endpoint-only runtime fallback, SVP handoff and
+          both backend directions. /tmp/dmc-raw-resize-component-final-receipt.txt. Separate
+          cleanup-target issue remains source gate."
+        name: focused-components
+        required: true
+        runner: Vitest
+        created_at: 2026-10-02T03:14:16.793Z
+        completed_at: 2026-10-02T03:14:16.793Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
+        evidence: Independent gated10/10 helper cases /tmp/dmc-raw-resize-review-node.log and inspected
+          final25/25 /tmp/dmc-raw-resize-node-receipt.txt; late successful acknowledgements now
+          require current owner.
+        name: focused-node
+        required: true
+        runner: node --test
+        created_at: 2026-10-02T03:14:16.979Z
+        completed_at: 2026-10-02T03:14:16.979Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
+        evidence: Inspected unchanged native source receipt24/24 pass
+          /tmp/dmc-raw-resize-rust-final-receipt.txt. Exact owner/epoch/resize revision, geometry
+          bounds, lease isolation and existing SVP regressions.
+        name: focused-rust
+        required: true
+        runner: scripts/run-cargo.sh test svp_
+        created_at: 2026-10-02T03:14:17.172Z
+        completed_at: 2026-10-02T03:14:17.172Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
+        evidence: Inspected12 actual raw CAPS pipelines plus production-helper
+          relay/registration/coexistence/inode cleanup receipts
+          /tmp/dmc-raw-resize-caps-final-receipt.txt and /tmp/dmc-raw-resize-relay-receipt.txt.
+          Landscape/portrait/even/no-upscale/PAR/FPS and geometry before opaque identity graph. No
+          installed native acceptance claimed.
+        name: cpp-runtime-fixture
+        required: true
+        runner: GStreamer/C++ synthetic fixtures
+        created_at: 2026-10-02T03:14:17.362Z
+        completed_at: 2026-10-02T03:14:17.362Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
+        evidence: Independently applied canonical patch to4 pristine2.52.3 files; exact two program
+          after-images equal legacy manifest. /tmp/dmc-raw-resize-review-pristine-patch.log. C++
+          hashes unchanged across544→288. Staged guarded compilation separately approved;
+          installation/runtime acceptance remains pending.
+        name: patch-provenance
+        required: true
+        runner: gated disposable pristine patch
+        created_at: 2026-10-02T03:14:17.558Z
+        completed_at: 2026-10-02T03:14:17.558Z
+    events:
+      - _ulid: 01M3X9NYS4E2HE5EZ9SYKWMQ8E
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-02T03:14:15.972Z
+      - _ulid: 01M3X9NZ8Q0CM2Q0AJ5C48WG7C
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-02T03:14:16.471Z
+      - _ulid: 01M3X9NZEM295QA51BG5RN5ES3
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: source-review
+        timestamp: 2026-10-02T03:14:16.660Z
+      - _ulid: 01M3X9NZMB4X7N425AJE21HRGE
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-components
+        timestamp: 2026-10-02T03:14:16.843Z
+      - _ulid: 01M3X9NZT8XBTYTBEAAXYRG1P4
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-node
+        timestamp: 2026-10-02T03:14:17.032Z
+      - _ulid: 01M3X9P006T27HBEK0G4YVG1RA
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-rust
+        timestamp: 2026-10-02T03:14:17.222Z
+      - _ulid: 01M3X9P066E8S7CAADNBWJJ33Q
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: cpp-runtime-fixture
+        timestamp: 2026-10-02T03:14:17.414Z
+      - _ulid: 01M3X9P0CB233PDC7AYJPPYGGS
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: patch-provenance
+        timestamp: 2026-10-02T03:14:17.612Z
+      - _ulid: 01M3X9P0JBVTCKZMHB990MN2MW
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01M3X9P0GQ8P2QWDTNQX3Q7S2P
+        timestamp: 2026-10-02T03:14:17.803Z
+    examined_commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
+    external_links: []
+    lifecycle_state: open
+    related_refs:
+      - "@restore-local-raw-resize"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+      head_branch: fix/local-raw-resize
+      head_commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
+    threads:
+      - _ulid: 01M3X9P0GQ8P2QWDTNQX3Q7S2P
+        anchor:
+          type: code
+          commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
+          line_end: 784
+          line_start: 772
+          path: frontend/src/components/Lightbox/hooks/useVideoStreaming.js
+          side: head
+        entries:
+          - _ulid: 01M3X9P0GQDKDTYE05KA75KJB4
+            author: DonutsDelivery
+            body: Ownership-mode cleanup runs after selection of the new backend, but stopTranscodeStream is an
+              unscoped POST through mutable current api.defaults.baseURL. A former remote transcode
+              therefore sends its stop to the new embedded server. Preserve client-side
+              teardown/state invalidation while avoiding cross-backend stop requests or bind cleanup
+              to its originating API owner. Reverse-stream regression tests currently check clearing
+              URLs, not the target of cleanup. Worker validating target with synthetic mocks; no
+              live endpoint requests.
+            created_at: 2026-10-02T03:14:17.751Z
+        kind: blocker
+    verdicts: []
+    created_at: 2026-10-02T03:14:15.972Z
+    updated_at: 2026-10-02T03:14:17.751Z
+    notes: []
