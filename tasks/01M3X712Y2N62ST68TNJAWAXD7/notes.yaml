@@ -59,3 +59,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T03:15:13.291Z
+  - _ulid: 01M3XA13N73CSF3J5RBTEBP8XY
+    content: Reviewed exact product head64a2a3542edcc67f957795a48c4086b8f8c4a729 integrated into main
+      fb3ab86. Review @review-local-raw-resize closed approved/passing with six current-head checks
+      and zero blockers. Source and synthetic acceptance complete; matching native
+      runtime/application staging, installation, and human playback acceptance remain separate
+      pending operational gates. Android native frame resize is not implemented.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T03:20:21.416Z
