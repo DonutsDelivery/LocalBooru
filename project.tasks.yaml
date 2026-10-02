@@ -1836,7 +1836,7 @@ tasks:
       - create-connection-screen
     title: Replace the blank Create connection screen with a studio loading layout
     type: bug
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 3
@@ -1844,3 +1844,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-02T00:37:00.806Z
+    started_at: 2026-10-02T00:37:02.205Z
