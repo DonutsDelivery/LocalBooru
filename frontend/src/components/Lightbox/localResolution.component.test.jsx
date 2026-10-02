@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 const mocks = vi.hoisted(() => {
   const noop = () => {}
   return {
-    noop, initialSvp: false, embedded: true, listeners: null,
+    noop, initialSvp: false, embedded: true, configLoaded: true, realPlayback: false, listeners: null,
     bridge: {
       acquireSvpVideoHostEpoch: vi.fn(async () => 7),
       configureLocalVideoResolution: vi.fn(async () => true),
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => {
     },
     toast: { error: vi.fn(), success: vi.fn() },
     handleEncodedQuality: vi.fn(async () => {}),
-    sourceResolution: vi.fn(),
+    sourceResolution: vi.fn(), dimensions: vi.fn(), gain: vi.fn(),
     ui: { showUI: true, isFullscreen: false, resetHideTimer: noop, handleMouseMove: noop,
       handleTouchInteractionStart: noop, consumeRevealTap: () => false, cancelRevealTap: noop,
       handleToggleFullscreen: noop },
@@ -29,7 +29,8 @@ const mocks = vi.hoisted(() => {
 })
 vi.mock('../../api', () => ({
   getMediaUrl: path => path, getAssetUrl: path => path, isUsingLocalServer: () => mocks.embedded,
-  getFileDimensions: async () => ({ width: 1920, height: 1080, fps: 24 }),
+  getFileDimensions: (...args) => mocks.dimensions(...args),
+  getAudioGain: (...args) => mocks.gain(...args), savePlaybackPosition: async () => {},
   getPlaybackPosition: async () => ({}), fetchCollections: async () => ({ collections: [] }),
   getSVPConfig: async () => ({ enabled: mocks.initialSvp }),
   updateSVPConfig: async config => config,
@@ -42,7 +43,13 @@ vi.mock('../../hooks/useAddonStatus', () => ({ useAddonStatus: () => ({ installe
 vi.mock('../../hooks/useImageWorkflow', () => ({ useImageWorkflow: () => ({ available: false }) }))
 vi.mock('./hooks/useUIVisibility', () => ({ useUIVisibility: () => mocks.ui }))
 vi.mock('./hooks/useZoomPan', () => ({ useZoomPan: () => mocks.zoom }))
-vi.mock('./hooks/useVideoPlayback', () => ({ useVideoPlayback: () => mocks.playback }))
+vi.mock('./hooks/useVideoPlayback', async () => {
+  const actual = await vi.importActual('./hooks/useVideoPlayback')
+  return { useVideoPlayback: (ref, ...args) => {
+    mocks.mediaRef = ref
+    return mocks.realPlayback ? actual.useVideoPlayback(ref, ...args) : mocks.playback
+  } }
+})
 vi.mock('./hooks/useWhisperSubtitles', () => ({ useWhisperSubtitles: () => mocks.subtitles }))
 vi.mock('./hooks/useCastSession', () => ({ useCastSession: () => ({ isCasting: false }) }))
 vi.mock('./hooks/useTimelinePreview', () => ({ useTimelinePreview: () => ({ previewFrames: [] }) }))
@@ -54,14 +61,18 @@ vi.mock('../ContextMenu', () => ({ default: () => null }))
 vi.mock('../SVPSideMenu', () => ({ default: () => null }))
 vi.mock('./hooks/useVideoStreaming', async () => {
   const { useState } = await import('react')
+  const { useAudioNormalization } = await vi.importActual('./hooks/useAudioNormalization')
   return { useVideoStreaming: ref => {
     const [svpConfig, setSvpConfig] = useState({ enabled: mocks.initialSvp })
-    return { nativeSvpPlayback: mocks.embedded, svpConfigLoaded: true, svpConfig, setSvpConfig,
+    const audio = useAudioNormalization(ref)
+    mocks.audio = audio
+    return { nativeSvpPlayback: mocks.embedded, svpConfigLoaded: mocks.configLoaded, svpConfig, setSvpConfig,
       sourceResolution: { width: 1920, height: 1080 }, setSourceResolution: mocks.sourceResolution,
       streamTransitioningRef: { current: false }, opticalFlowConfig: { enabled: false },
       capturePlaybackIntent: () => ({ position: ref.current.currentTime, shouldPlay: !ref.current.paused }),
       handleQualityChange: mocks.handleEncodedQuality, setSvpError: mocks.noop, setSvpLoading: mocks.noop,
-      checkCodecFallback: mocks.noop,
+      checkCodecFallback: mocks.noop, getCurrentAbsoluteTime: () => ref.current?.currentTime ?? 0,
+      setAudioOutputVolume: audio.setOutputVolume, setAudioOutputMuted: audio.setOutputMuted,
     }
   } }
 })
@@ -72,9 +83,22 @@ const images = [1, 2].map(id => ({ id, filename: `synthetic-${id}.mp4`, original
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
+  mocks.playback.isPlaying = true
+  mocks.playback.handleVideoPlay = vi.fn(() => { mocks.playback.isPlaying = true })
+  mocks.playback.handleVideoPause = vi.fn(() => { mocks.playback.isPlaying = false })
+  mocks.playback.volume = 1
+  mocks.playback.isMuted = false
+  mocks.playback.restoreAudioState = vi.fn((volume, muted) => {
+    mocks.mediaRef.current.volume = volume
+    mocks.mediaRef.current.muted = muted
+  })
+  mocks.dimensions.mockResolvedValue({ width: 1920, height: 1080, fps: 24 })
   mocks.playback.playbackError = null
   mocks.playback.handlePlaybackError = vi.fn()
   mocks.initialSvp = false
+  mocks.configLoaded = true
+  mocks.realPlayback = false
+  mocks.gain.mockResolvedValue({ gain_db: 0 })
   mocks.embedded = true
   mocks.bridge.configureLocalVideoResolution.mockResolvedValue(true)
   mocks.bridge.verifyLocalVideoResolution.mockResolvedValue(true)
@@ -110,6 +134,7 @@ test.each([false, true])('local replacement retains seek/audio and paused=%s wit
   const { container } = mount()
   const first = await videoReady(container)
   first.currentTime = 37; first.__paused = paused; first.volume = 0.35; first.muted = true
+  mocks.playback.volume = 0.35; mocks.playback.isMuted = true
   choose('720p')
   await waitFor(() => expect(container.querySelector('video')).not.toBe(first))
   const replacement = await videoReady(container)
@@ -279,7 +304,8 @@ test('switching backend gives a remote video a new physical host without local r
   expect(mocks.bridge.configureLocalVideoResolution).toHaveBeenCalledTimes(prepared)
 })
 
-test('missing resize and Manager runtime also restores original playhead with SVP requested', async () => {
+// AC: @native-svp-startup-gate ac-original
+test('missing resize and Manager runtime offers explicit original playback at the same position', async () => {
   mocks.initialSvp = true
   localStorage.setItem('video_quality_preference', '720p')
   mocks.bridge.verifyLocalVideoResolution.mockRejectedValue(new Error('Native video geometry is not ready; stock runtime'))
@@ -288,10 +314,18 @@ test('missing resize and Manager runtime also restores original playhead with SV
   })
   const { container } = mount()
   const first = await videoReady(container)
-  first.currentTime = 37; first.__paused = false
+  first.currentTime = 37; first.__paused = true
   fireEvent.loadedMetadata(first)
   await waitFor(() => expect(container.querySelector('video')).not.toBe(first), { timeout: 3000 })
+  const waiting = await videoReady(container)
+  fireEvent.loadedMetadata(waiting)
+  fireEvent.canPlay(waiting)
+  await waitFor(() => expect(screen.getByText('Play without SVP')).toBeDefined(), { timeout: 3000 })
+  expect(waiting.play).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByText('Play without SVP'))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(waiting))
   const original = await videoReady(container)
+  original.__paused = true
   fireEvent.loadedMetadata(original)
   fireEvent.seeked(original)
   expect(original.currentTime).toBe(37)
@@ -318,4 +352,302 @@ test('original error is visible, stops the loading grid and offers the existing 
   expect(screen.queryByRole('button', { name: 'Close video' })).toBeNull()
   fireEvent.click(closeVideo) // A detached recovery action cannot close the next item.
   expect(close).toHaveBeenCalledOnce()
+})
+
+// AC: @native-svp-startup-gate ac-no-early-play
+test('native SVP preloads and registers without autoplay or canplay starting audio', async () => {
+  mocks.initialSvp = true
+  const { container } = mount()
+  const video = await videoReady(container)
+  video.__paused = true
+  expect(video.autoplay).toBe(false)
+  fireEvent.loadedMetadata(video)
+  fireEvent.loadedData(video)
+  fireEvent.canPlay(video)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  expect(video.play).not.toHaveBeenCalled()
+  expect(video.paused).toBe(true)
+  expect(container.querySelector('.lightbox-video-loading-grid')).not.toBeNull()
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  // Physical preroll is paused, but Manager must see the requested autoplay intent.
+  expect(owner.paused).toBe(false)
+  fireEvent.play(video) // Guard unexpected native/backend play as well.
+  fireEvent.pause(video)
+  expect(video.pause).toHaveBeenCalled()
+  expect(mocks.playback.handleVideoPlay).not.toHaveBeenCalled()
+  expect(mocks.playback.handleVideoPause).not.toHaveBeenCalled()
+  await act(async () => mocks.listeners.onPaused({ ...owner, paused: true }))
+  expect(video.play).not.toHaveBeenCalled()
+})
+
+// AC: @native-svp-startup-gate ac-owned-handoff
+test.each([false, true])('owned filtered startup restores position/audio and intended paused=%s', async paused => {
+  mocks.initialSvp = true
+  mocks.playback.isPlaying = !paused
+  mocks.playback.volume = 0.35; mocks.playback.isMuted = true
+  const { container } = mount()
+  const original = await videoReady(container)
+  original.__paused = true
+  original.currentTime = 37; original.volume = 0.175; original.muted = true
+  fireEvent.loadedMetadata(original)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  // A paused bootstrap report/echo must not replace the user's playing intent.
+  await act(async () => mocks.listeners.onPaused({ ...owner, paused: true }))
+  await act(async () => mocks.listeners.onFilterChanged({ ...owner, enabled: true }))
+  await act(async () => mocks.listeners.onPaused({ ...owner, paused: true }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(original))
+  const filtered = await videoReady(container)
+  filtered.__paused = true
+  expect(filtered.autoplay).toBe(false)
+  fireEvent.loadedMetadata(filtered)
+  expect(filtered.currentTime).toBe(37)
+  fireEvent.canPlay(filtered)
+  expect(filtered.play).not.toHaveBeenCalled()
+  fireEvent.seeked(filtered)
+  expect(filtered.paused).toBe(paused)
+  expect(filtered.volume).toBe(0.35)
+  expect(filtered.muted).toBe(true)
+  expect(container.querySelector('.lightbox-video-loading-grid')).toBeNull()
+})
+
+// AC: @native-svp-startup-gate ac-missing-fps
+test('paused startup probes unknown FPS and reports missing FPS with an explicit fallback', async () => {
+  mocks.initialSvp = true
+  mocks.dimensions.mockResolvedValue({ width: 1920, height: 1080 })
+  const unknown = { ...images[0], video_fps: null, is_local_direct_file: true }
+  const { container } = render(<Lightbox images={[unknown]} currentIndex={0} onClose={mocks.noop} onNav={mocks.noop} />)
+  await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe(unknown.url))
+  const video = container.querySelector('video')
+  video.__paused = true
+  video.requestVideoFrameCallback = vi.fn()
+  fireEvent.loadedMetadata(video)
+  await waitFor(() => expect(mocks.dimensions).toHaveBeenCalledWith(unknown.file_path))
+  await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/frame rate/i))
+  expect(screen.getByText('Play without SVP')).toBeDefined()
+  expect(video.requestVideoFrameCallback).not.toHaveBeenCalled()
+  expect(video.play).not.toHaveBeenCalled()
+})
+
+// AC: @native-svp-startup-gate ac-original
+test('ordinary startup retains autoplay and canplay behavior', async () => {
+  const { container } = mount()
+  const video = await videoReady(container)
+  expect(video.autoplay).toBe(true)
+  fireEvent.canPlay(video)
+  expect(video.play).toHaveBeenCalledOnce()
+})
+
+// AC: @native-svp-startup-gate ac-missing-fps
+test('unknown FPS is probed successfully without advancing the unfiltered bootstrap', async () => {
+  mocks.initialSvp = true
+  const unknown = { ...images[0], video_fps: null }
+  const { container } = render(<Lightbox images={[unknown]} currentIndex={0} onClose={mocks.noop} onNav={mocks.noop} />)
+  const video = await videoReady(container)
+  video.__paused = true
+  fireEvent.loadedMetadata(video)
+  fireEvent.canPlay(video)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled && u.fps === 24)).toBe(true))
+  expect(mocks.dimensions).toHaveBeenCalledWith(unknown.file_path)
+  expect(video.play).not.toHaveBeenCalled()
+})
+
+// AC: @native-svp-startup-gate ac-original
+test.each([false, true])('cancel pending SVP restores intended paused=%s without a new canplay', async paused => {
+  mocks.initialSvp = true
+  mocks.playback.isPlaying = !paused
+  const { container } = mount()
+  const pending = await videoReady(container)
+  pending.__paused = true; pending.currentTime = 37
+  fireEvent.loadedMetadata(pending)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const oldOwner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  fireEvent.click(screen.getByTitle('Disable SVP interpolation'))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(pending))
+  const original = await videoReady(container)
+  original.__paused = true
+  fireEvent.loadedMetadata(original)
+  fireEvent.seeked(original)
+  expect(original.currentTime).toBe(37)
+  expect(original.paused).toBe(paused)
+  await act(async () => mocks.listeners.onFilterChanged({ ...oldOwner, enabled: true }))
+  expect(container.querySelector('video')).toBe(original)
+  expect(container.querySelector('.lightbox-video-loading-grid')).toBeNull()
+})
+
+// AC: @native-svp-startup-gate ac-owned-handoff
+test('late filter acknowledgment cannot start a navigated or superseded physical player', async () => {
+  mocks.initialSvp = true
+  const { container, rerender } = mount()
+  const old = await videoReady(container)
+  old.__paused = true
+  fireEvent.loadedMetadata(old)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  rerender(<Lightbox images={images} currentIndex={1} onClose={mocks.noop} onNav={mocks.noop} />)
+  const current = await videoReady(container, 1)
+  current.__paused = true
+  await act(async () => mocks.listeners.onFilterChanged({ ...owner, enabled: true }))
+  fireEvent.canPlay(current)
+  expect(container.querySelector('video')).toBe(current)
+  expect(current.play).not.toHaveBeenCalled()
+})
+
+// AC: @native-svp-startup-gate ac-no-early-play
+test('direct-file source waits for persisted SVP selection before attaching', async () => {
+  mocks.initialSvp = true
+  mocks.configLoaded = false
+  const direct = { ...images[0], is_local_direct_file: true }
+  const { container, rerender } = render(<Lightbox images={[direct]} currentIndex={0} onClose={mocks.noop} onNav={mocks.noop} />)
+  await waitFor(() => expect(mocks.bridge.configureLocalVideoResolution).toHaveBeenCalled())
+  expect(container.querySelector('video').getAttribute('src')).toBeNull()
+  mocks.configLoaded = true
+  rerender(<Lightbox images={[direct]} currentIndex={0} onClose={mocks.noop} onNav={mocks.noop} />)
+  const video = await videoReady(container)
+  expect(video.autoplay).toBe(false)
+  fireEvent.canPlay(video)
+  expect(video.play).not.toHaveBeenCalled()
+})
+
+// AC: @native-svp-startup-gate ac-no-early-play
+test('filtered preroll failure remains paused until explicit fallback', async () => {
+  mocks.initialSvp = true
+  const { container } = mount()
+  const original = await videoReady(container)
+  original.__paused = true
+  fireEvent.loadedMetadata(original)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  await act(async () => mocks.listeners.onFilterChanged({ ...owner, enabled: true }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(original))
+  const filtered = await videoReady(container)
+  filtered.__paused = true
+  fireEvent.error(filtered)
+  fireEvent.canPlay(filtered)
+  expect(filtered.play).not.toHaveBeenCalled()
+  expect(screen.getByText('Play without SVP')).toBeDefined()
+  expect(screen.getByRole('status').textContent).toMatch(/could not load/i)
+})
+
+// AC: @native-svp-startup-gate ac-owned-handoff
+test('initial zero-position filtered preroll starts once after acknowledgment, not before', async () => {
+  mocks.initialSvp = true
+  const { container } = mount()
+  const original = await videoReady(container)
+  original.__paused = true
+  fireEvent.loadedMetadata(original)
+  fireEvent.canPlay(original)
+  expect(original.play).not.toHaveBeenCalled()
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  await act(async () => mocks.listeners.onFilterChanged({ ...owner, enabled: true }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(original))
+  const filtered = await videoReady(container)
+  filtered.__paused = true
+  fireEvent.loadedMetadata(filtered)
+  expect(filtered.play).not.toHaveBeenCalled()
+  fireEvent.loadedData(filtered)
+  expect(filtered.play).toHaveBeenCalledOnce()
+  fireEvent.canPlay(filtered)
+  expect(filtered.play).toHaveBeenCalledOnce()
+  expect(container.querySelector('.lightbox-video-loading-grid')).toBeNull()
+})
+
+// AC: @native-svp-startup-gate ac-owned-handoff
+test.each([true, false])('active graph refresh preserves Manager intent with resume command=%s', async resumeCommand => {
+  mocks.initialSvp = true
+  const { container } = mount()
+  const bootstrap = await videoReady(container)
+  bootstrap.__paused = true
+  fireEvent.loadedMetadata(bootstrap)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const firstOwner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  await act(async () => mocks.listeners.onFilterChanged({ ...firstOwner, enabled: true }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(bootstrap))
+  const active = await videoReady(container)
+  active.__paused = true
+  fireEvent.loadedMetadata(active)
+  fireEvent.loadedData(active)
+  expect(active.paused).toBe(false)
+  active.currentTime = 37
+  fireEvent.play(active)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0].hostId).toBe(active.id))
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  active.play.mockClear()
+  await act(async () => mocks.listeners.onFilterChanged({ ...owner, enabled: true }))
+  expect(active.paused).toBe(true)
+  fireEvent.pause(active) // The physical handoff pause does not change UI intent.
+  expect(mocks.playback.handleVideoPause).not.toHaveBeenCalled()
+  // Established Manager commands retain their existing authority after startup.
+  await act(async () => mocks.listeners.onPaused({ ...owner, paused: true }))
+  if (resumeCommand) await act(async () => mocks.listeners.onPaused({ ...owner, paused: false }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(active))
+  const replacement = await videoReady(container)
+  replacement.__paused = true
+  fireEvent.loadedMetadata(replacement)
+  fireEvent.seeked(replacement)
+  expect(replacement.currentTime).toBe(37)
+  expect(replacement.paused).toBe(!resumeCommand)
+  fireEvent.canPlay(replacement)
+  expect(replacement.paused).toBe(!resumeCommand)
+})
+
+// AC: @native-svp-startup-gate ac-owned-handoff
+test('old physical seeked callback cannot unlock the replacement startup seek', async () => {
+  mocks.initialSvp = true
+  const { container } = mount()
+  const bootstrap = await videoReady(container)
+  bootstrap.__paused = true; bootstrap.currentTime = 37
+  // Capture the actual rendered callbacks. A detached DOM event may be dropped
+  // by React; invoke the callback to prove its own physical-owner invariant.
+  const propsKey = Object.keys(bootstrap).find(key => key.startsWith('__reactProps$'))
+  const oldSeeked = bootstrap[propsKey].onSeeked
+  const oldMetadata = bootstrap[propsKey].onLoadedMetadata
+  fireEvent.loadedMetadata(bootstrap)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  await act(async () => mocks.listeners.onFilterChanged({ ...owner, enabled: true }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(bootstrap))
+  const replacement = await videoReady(container)
+  replacement.__paused = true
+  fireEvent.loadedMetadata(replacement)
+  expect(replacement.currentTime).toBe(37)
+  act(() => {
+    oldSeeked({ currentTarget: bootstrap })
+    oldMetadata({ currentTarget: bootstrap })
+  })
+  fireEvent.canPlay(replacement)
+  expect(replacement.play).not.toHaveBeenCalled()
+  fireEvent.seeked(replacement)
+  expect(replacement.play).toHaveBeenCalledOnce()
+})
+
+// AC: @native-svp-startup-gate ac-owned-handoff
+// AC: @logical-video-volume ac-normalization, ac-handoff
+test('visible volume change during filtered handoff retains latest logical gain with one attenuation', async () => {
+  mocks.initialSvp = true
+  mocks.realPlayback = true
+  localStorage.setItem('video_audio_preference', JSON.stringify({ volume: 0.35, muted: false }))
+  mocks.gain.mockResolvedValue({ gain_db: 20 * Math.log10(0.5) })
+  const { container } = mount()
+  const bootstrap = await videoReady(container)
+  bootstrap.__paused = true
+  await act(async () => mocks.audio.applyNormalization('/synthetic-1.mp4'))
+  expect(bootstrap.volume).toBeCloseTo(0.175)
+  fireEvent.loadedMetadata(bootstrap)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  await act(async () => mocks.listeners.onFilterChanged({ ...owner, enabled: true }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(bootstrap))
+  const replacement = await videoReady(container)
+  replacement.__paused = true
+  const knob = container.querySelector('.video-volume-slider')
+  expect(knob.value).toBe('0.35')
+  fireEvent.change(knob, { target: { value: '0.65' } })
+  expect(knob.value).toBe('0.65')
+  fireEvent.loadedMetadata(replacement)
+  fireEvent.loadedData(replacement)
+  expect(knob.value).toBe('0.65')
+  expect(JSON.parse(localStorage.getItem('video_audio_preference')).volume).toBe(0.65)
+  expect(replacement.volume).toBeCloseTo(0.325)
 })
