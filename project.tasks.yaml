@@ -1908,7 +1908,7 @@ tasks:
     title: Restore same-machine decoded frame downscale
     type: task
     spec_ref: "@local-decoded-video-resolution"
-    status: pending_review
+    status: completed
     blocked_by: []
     depends_on: []
     priority: 3
@@ -1919,6 +1919,7 @@ tasks:
     created_at: 2026-10-02T02:27:54.946Z
     started_at: 2026-10-02T02:28:09.546Z
     submitted_at: 2026-10-02T03:05:49.514Z
+    completed_at: 2026-10-02T03:20:22.754Z
   - _ulid: 01M3X994M5HNA7XEHJE5TMJVQJ
     slugs:
       - direct-seek-responsiveness

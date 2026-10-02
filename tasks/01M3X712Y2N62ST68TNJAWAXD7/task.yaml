@@ -9,8 +9,11 @@ description: Per physical video owned raw resize before optional native Linux SV
 spec_ref: "@local-decoded-video-resolution"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Approved product64a2a35 merged to main fb3ab86; focused
+  component20/Node25/Rust24/caps12/relay proof passed. Runtime installation pending operational
+  work.
 depends_on: []
 context: []
 priority: 3
@@ -63,7 +66,22 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-02T03:14:16.231Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Approved product64a2a35 merged to main fb3ab86; focused component20/Node25/Rust24/caps12/relay
+          proof passed. Runtime installation pending operational work.
+        previous: null
+      completed_at:
+        new: 2026-10-02T03:20:22.754Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-02T03:20:22.763Z
 created_at: 2026-10-02T02:27:54.946Z
 started_at: 2026-10-02T02:28:09.546Z
 submitted_at: 2026-10-02T03:05:49.514Z
+completed_at: 2026-10-02T03:20:22.754Z
 todos: []
