@@ -8,7 +8,7 @@ description: User reports original non-SVP HTTP playback seeks poorly and repeat
   restart and buffer guards and preserve latest rapid seek intent without blocking UI. Source
   /tmp/dmc-direct-seek-fix on fix/direct-seek-responsiveness from mainba0c9f5; parent owns
   independent review/integration. Do not modify frozen raw-resize candidate or user runtime/profile.
-spec_ref: "@01KXPBZ25AK8A8QKB1FMYNNZX1"
+spec_ref: "@responsive-original-stream-seeking"
 meta_ref: null
 plan_ref: null
 status: in_progress
@@ -29,6 +29,13 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-02T03:07:34.216Z
+  - author: DonutsDelivery
+    changes:
+      spec_ref:
+        new: "@responsive-original-stream-seeking"
+        previous: "@01KXPBZ25AK8A8QKB1FMYNNZX1"
+    command: task-set
+    timestamp: 2026-10-02T03:27:05.492Z
 created_at: 2026-10-02T03:07:15.972Z
 started_at: 2026-10-02T03:07:34.215Z
 todos: []

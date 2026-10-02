@@ -1581,4 +1581,50 @@ features:
         notes: []
     created: 2026-07-16T16:38:14.885Z
     notes: []
+requirements:
+  - _ulid: 01M3XADCT7CYGXH2KHMDNQYDTW
+    slugs:
+      - responsive-original-stream-seeking
+    title: Responsive original stream seeking
+    type: requirement
+    description: Original video seeking preserves playback intent and responds to rapid user input. Slow
+      or rejected seeks do not freeze controls or leave an indefinite loading state. Interpolated
+      and encoded streams retain their respective seek behavior.
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    acceptance_criteria:
+      - given: an original video plays with interpolation and re-encoding disabled
+        id: ac-original-path
+        then: the player keeps the original source and its playing or paused intent without an interpolation
+          startup wait
+        when: the user seeks to another position
+      - given: an original video is at thirty seconds and earlier requested seeks have not settled
+        id: ac-rapid-relative
+        then: the requested position is fifty seconds, bounded by the video duration, and an older
+          completion cannot replace the latest request
+        when: the user requests forward ten, forward ten, backward ten, and forward ten seconds
+      - given: an original network video has a slow seek operation
+        id: ac-responsive-controls
+        then: the controls remain responsive during the wait and later seek input can supersede earlier
+          input without waiting for an earlier seek to finish
+        when: the user seeks and continues using playback controls
+      - given: a seek or completion is pending for one video
+        id: ac-owner-boundary
+        then: the old request cannot seek, pause, resume, or clear the new video state
+        when: the user changes video, playback source, or closes the player
+      - given: an original network seek is rejected
+        id: ac-rejected-seek
+        then: the player shows a visible error with a recovery action and does not remain indefinitely
+          loading
+        when: the rejection is reported
+      - given: a video uses interpolation or re-encoding
+        id: ac-stream-routing
+        then: playback seeks or prepares content at the requested position using that stream mode
+        when: the user seeks inside or outside the available stream content
+    tags: []
+    created: 2026-10-02T03:27:04.007Z
+    notes: []
 notes: []
