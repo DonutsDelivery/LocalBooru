@@ -742,6 +742,9 @@ features:
           live DMC owner. It stops/reaps that specific listener and launches a new tracked child;
           foreign listeners and independent Comfy services remain untouched. Managed child drop
           cleanup prevents abandoned starts.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
