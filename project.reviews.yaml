@@ -8847,3 +8847,32 @@ reviews:
     created_at: 2026-10-02T00:56:24.833Z
     updated_at: 2026-10-02T00:59:43.053Z
     notes: []
+  - _ulid: 01M3X5B2H1P4RS8TKPT2AGD99S
+    slugs:
+      - review-svp-requested-nvof
+    title: Review requested NVIDIA Optical Flow routing
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3X5B2GXBH08ZYBV8AN701K2
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-02T01:58:25.054Z
+    examined_commit: 50c29946817c469c57d414d9c604eb3e4fd08b13
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@svp-requested-nvof"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+      head_branch: fix/svp-requested-nvof
+      head_commit: 50c29946817c469c57d414d9c604eb3e4fd08b13
+    threads: []
+    verdicts: []
+    created_at: 2026-10-02T01:58:25.057Z
+    updated_at: null
+    notes: []
