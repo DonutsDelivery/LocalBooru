@@ -105,3 +105,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T00:33:39.614Z
+  - _ulid: 01M3X1R9TAH5KQE5F2SBX0Q9HZ
+    content: Universal APK built from main cee213815840d418695c79217b8a546f54372cca.
+      Signature/alignment/zip integrity and four ABIs verified; SHA256
+      693f8233d1ae66bd3138fea7bf5d6f79985d0666a0d68b8a47d97de914eae648. After user reconnected
+      Redmi, KDE Connect share exit 0 accepted the APK; no phone installation acceptance claimed.
+      Receipts /tmp/dmc-hls-release-20261002/android-verification.json and android-delivery.json.
+      Subsequent loading UI and server throughput revisions are separate from this artifact.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T00:55:44.202Z
