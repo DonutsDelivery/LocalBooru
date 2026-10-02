@@ -1690,9 +1690,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [shouldPlayDirect, image?.url, image?.file_path, image?.is_local_direct_file, localRawPlayback, localResolutionReady, localResolutionReadyKey])
 
   const [videoFrameReadyKey, setVideoFrameReadyKey] = useState(null)
-  const showVideoLoadingGrid = videoFrameReadyKey !== videoMediaKey
+  const showVideoLoadingGrid = !playback.playbackError && (videoFrameReadyKey !== videoMediaKey
     || (localRawPlayback && currentQuality !== 'original' && localResolutionVerified !== localResolutionReadyKey)
-    || (svpPathEnabled && !svpFailOpenRef.current && !svpFilterActiveRef.current)
+    || (svpPathEnabled && !svpFailOpenRef.current && !svpFilterActiveRef.current))
   const videoTitle = image?.title || image?.original_filename || image?.filename || 'Video'
 
   const finishSvpHandoff = (video) => {
@@ -2410,6 +2410,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onEnded={(event) => reportDirectFileStage('ended', event.currentTarget)}
               onError={(event) => {
                 reportDirectFileStage('error', event.currentTarget)
+                playback.handlePlaybackError?.(event.currentTarget)
                 failOpenNativeSvp(event.currentTarget)
               }}
               onContextMenu={handleVideoContextMenu}
@@ -2738,9 +2739,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               </div>
             )}
             {/* Generic stream error toast */}
-            {streaming.streamError && (
+            {(streaming.streamError || playback.playbackError) && (
               <div className="interpolate-error-toast">
-                {streaming.streamError}
+                {streaming.streamError || playback.playbackError}
+                {playback.playbackError && <button type="button" onClick={onClose}>Close video</button>}
               </div>
             )}
             {/* Subtitle install progress */}

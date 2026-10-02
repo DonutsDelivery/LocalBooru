@@ -1,6 +1,7 @@
 import { useCallback, useState, useRef, useEffect } from 'react'
 import { savePlaybackPosition } from '../../../api'
 import { formatTime } from '../utils/helpers'
+import { createDirectSeekController } from './directSeekController'
 
 /**
  * Hook for managing video playback state and controls
@@ -34,6 +35,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
   const [isPlaying, setIsPlaying] = useState(true) // Start autoplaying
   const [_currentTime, _setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [playbackError, setPlaybackError] = useState(null)
   const [isSeeking, setIsSeeking] = useState(false)
   const [videoDisplayMode, setVideoDisplayMode] = useState('fit') // 'fit' | 'fill' | 'original'
   const [videoNaturalSize, setVideoNaturalSize] = useState({ width: 0, height: 0 })
@@ -43,6 +45,18 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
   const timelineRef = useRef(null)
   const lastSavedPositionRef = useRef(0)
   const saveIntervalRef = useRef(null)
+  const directSeekRef = useRef(null)
+  if (!directSeekRef.current) directSeekRef.current = createDirectSeekController(
+    () => mediaRef.current,
+    () => setPlaybackError('Video playback failed. Close and reopen this video to retry.')
+  )
+
+  useEffect(() => {
+    const controller = directSeekRef.current
+    controller.clear()
+    setPlaybackError(null)
+    return () => controller.clear()
+  }, [imageId, svpStreamUrl, transcodeStreamUrl, svpDirectPlayback])
 
   // Refs for direct DOM updates during playback (bypasses React re-renders)
   const currentTimeRef = useRef(0)
@@ -96,9 +110,10 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     const video = mediaRef.current
     if (!video) return
     onSeekRequested?.(time)
-    if (!precise && video.fastSeek) video.fastSeek(time)
+    if (!svpDirectPlayback) directSeekRef.current.request(time, precise)
+    else if (!precise && video.fastSeek) video.fastSeek(time)
     else video.currentTime = time
-  }, [mediaRef, onSeekRequested])
+  }, [mediaRef, onSeekRequested, svpDirectPlayback])
 
   // Direct DOM update for timeline elements (no React re-render)
   const updateTimeDisplay = useCallback((time) => {
@@ -147,7 +162,9 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     if (!mediaRef.current) return
 
     // For HLS streams, currentTime is in HLS time, need to convert to absolute video time
-    const currentAbsoluteTime = getCurrentAbsoluteTime()
+    const currentAbsoluteTime = !svpStreamUrl && !transcodeStreamUrl && !svpDirectPlayback
+      ? directSeekRef.current.pendingTime() ?? mediaRef.current.currentTime
+      : getCurrentAbsoluteTime()
     const newTime = Math.max(0, Math.min(duration, currentAbsoluteTime + seconds))
 
     // For SVP streams, check if we need to restart from a new position
@@ -181,14 +198,10 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     }
 
     // Normal video seek (direct play) - use fastSeek for speed when available
-    const wasPlaying = !mediaRef.current.paused
     seekDirect(newTime)
     setCurrentTime(newTime)
-    // SVP keeps the play state across a flush. A redundant play() during its
-    // graph reset can block the WebKit pipeline.
-    if (wasPlaying && !svpDirectPlayback) {
-      mediaRef.current.play().catch(() => {})
-    }
+    // Seeking preserves the element's play/pause state. Do not issue another
+    // play() while the native pipeline is flushing an HTTP seek.
   }, [mediaRef, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, getCurrentAbsoluteTime, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime, seekDirect, svpDirectPlayback])
 
   // Toggle video play/pause
@@ -225,7 +238,10 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
   const handleTimeUpdate = useCallback(() => {
     if (!mediaRef.current || isSeeking) return
     // Don't update time display while waiting for pending seek or during stream transition
-    if (svpPendingSeek || streamTransitioningRef.current) return
+    if ((svpStreamUrl || transcodeStreamUrl || svpDirectPlayback)
+      && (svpPendingSeek || streamTransitioningRef.current)) return
+    if (!svpDirectPlayback && !svpStreamUrl && !transcodeStreamUrl
+      && directSeekRef.current.pendingTime() !== null) return
     // Add offset for streams that started from a seek position
     let actualTime = mediaRef.current.currentTime
     if (svpStreamUrl) {
@@ -234,10 +250,18 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
       actualTime += transcodeStartOffset
     }
     updateTimeDisplay(actualTime)
-  }, [mediaRef, isSeeking, svpPendingSeek, svpStreamUrl, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, streamTransitioningRef, updateTimeDisplay])
+  }, [mediaRef, isSeeking, svpPendingSeek, svpStreamUrl, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, streamTransitioningRef, svpDirectPlayback, updateTimeDisplay])
+
+  const handlePlaybackError = useCallback((video) => {
+    if (video !== mediaRef.current || (video.currentSrc && video.currentSrc !== video.src)) return
+    if (svpStreamUrl || transcodeStreamUrl || svpDirectPlayback) return
+    directSeekRef.current.clear()
+    setPlaybackError('Video playback failed. Close and reopen this video to retry.')
+  }, [mediaRef, svpStreamUrl, transcodeStreamUrl, svpDirectPlayback])
 
   // Get duration and natural size when video metadata loads
   const handleLoadedMetadata = useCallback((setSourceResolution) => {
+    setPlaybackError(null)
     if (!mediaRef.current) return
     // For HLS streams, use the known total duration from API if available
     // This allows the timeline to show the full video length even while segments are being generated
@@ -537,6 +561,8 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
 
   // Reset playback state
   const resetPlaybackState = useCallback(() => {
+    directSeekRef.current.clear()
+    setPlaybackError(null)
     setIsPlaying(true)
     setCurrentTime(0)
     setDuration(0)
@@ -575,6 +601,8 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     handleVideoPlay,
     handleVideoPause,
     handleTimeUpdate,
+    handlePlaybackError,
+    playbackError,
     handleLoadedMetadata,
     handleSeekStart,
     handleSeekMove,
