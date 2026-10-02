@@ -12,3 +12,27 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T01:49:23.973Z
+  - _ulid: 01M3X5B4C60GXXPVVJBEQPPS1Z
+    content: "Frozen candidate 50c29946817c469c57d414d9c604eb3e4fd08b13 in /tmp/dmc-svp-requested-nvof,
+      base 8033e90dc786a6a292601b6e975b69f922d98b29. Only app.py and tests/test_requested_nvof.py
+      changed. Official SVPflow API/dev docs and installed signature prove SmoothFps_NVOF is the
+      real requested engine; Analyse nvof flag still used classic pipeline/OFA0. Built-in requested
+      NVOF now uses preset motion-grid size and Bicubic vector source, same shader/mask/cadence/full
+      render size; custom Advanced strings and opaque Manager graph untouched, disabled CPU path and
+      missing-API/GPU-error fallback covered. No automatic Fast selection or identical
+      visual-quality claim. Exact app SHA256
+      d5c8e0122e34409c057ea30590622a733f18a0d44de635d1a2e7bb161748d1ec. Focused 32/32 passed at
+      committed head: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=addons/svp/tests python -m unittest
+      test_requested_nvof test_legacy_stderr test_legacy_stream_lifecycle test_nvenc_availability
+      test_manager_graph. Receipt /tmp/dmc-svp-nvof-focused-final.log. Host-gated final synthetic
+      three alternating 12s4K24 to1080p60 runs each: elapsed median10.1604s classic vs4.1376s NVOF
+      (~2.46x throughput), first playlist3.8817s vs1.6217s; OFA0 vs3%; all18 segments probed
+      valid1080p60 and both paths717 decoded frames/run. Benchmark
+      /tmp/dmc-svp-requested-nvof-final-benchmark.log; runner
+      /tmp/dmc-svp-requested-nvof-benchmark.py. No real media/profile requests, native builds, or
+      runtime changes. Normal DMC/Comfy preserved. Actual Android retry/native-platform acceptance
+      remains open. Parent must independently review and integrate into main. Control-checkout
+      submit auto-link may refer unrelated4235; this explicit range is authoritative."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T01:58:26.951Z
