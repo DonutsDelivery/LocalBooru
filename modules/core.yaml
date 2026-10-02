@@ -1714,7 +1714,7 @@ requirements:
       LoRAs are on the right, and image history stays below the central output.
     status:
       maturity: draft
-      implementation: in_progress
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
