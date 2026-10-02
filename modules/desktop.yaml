@@ -1004,7 +1004,7 @@ features:
           before optional SVP without encoding or replacing the original source.
         status:
           maturity: draft
-          implementation: in_progress
+          implementation: implemented
         depends_on: []
         implements: []
         relates_to: []
