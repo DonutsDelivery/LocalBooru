@@ -19,3 +19,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T02:04:32.703Z
+  - _ulid: 01M3X5QFG9CEBNEVHXN8YG0Q6T
+    content: "Further user confirmation: both SVP and VLC work now. Native player is using the shared
+      default /tmp/mpvsocket while DMC is exited. Preserve its listener and Manager configuration
+      during coordinated deployment. Coexistence with running DMC remains a separate acceptance
+      step."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T02:05:11.561Z
