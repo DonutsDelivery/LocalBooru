@@ -58,3 +58,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T00:58:54.755Z
+  - _ulid: 01M3X3CJXQE15TZ9VCVB438TWX
+    content: Canonical Linux install from pushed main8033e90 completed exit0. Built/installed binary
+      SHA256 61ac3d2b1cd459150c5fffbb87f58a97dd5e71d7e4281e2464ac3bf27a9d9ddc and 14 frontend asset
+      hashes match. Reopened via normal tray Quit and canonical run.sh, new DMC PID1810889 left
+      alive. Original Comfy3890977 preserved (existing backend ownedfalse); SVP and Create addon
+      health200 and deployed SVP source hash matches main. Receipts
+      /tmp/dmc-streaming-perf-release-20261002/{linux-install-receipt,runtime-receipt}.json. No
+      real-media acceptance test; newly reported Manager endpoint interference is tracked
+      separately.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T01:24:17.464Z
