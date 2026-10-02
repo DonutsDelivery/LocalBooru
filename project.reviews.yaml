@@ -8046,6 +8046,19 @@ reviews:
         required: true
         created_at: 2026-10-01T23:40:27.929Z
         completed_at: 2026-10-01T23:40:27.929Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 973a575b63cb24c084d0c0e5c6d257ac5d9d494e
+        evidence: Worker isolated actual current-command720p30FPS5s→854x48030/1 HLS:GPUCUDA/NVENC
+          exits0/segment475076bytes;CPUlibx264 exits0/segment417736bytes, valid ffprobe dimensions.
+          Disposable fixture removed. Native compiler now started after otherprojectgate released;
+          no real phone acceptance claimed.
+        name: ordinary-downscale
+        required: true
+        created_at: 2026-10-02T00:17:08.324Z
+        completed_at: 2026-10-02T00:17:08.324Z
     events:
       - _ulid: 01M3WWR30PMYQ4FPFX3KSQGEEP
         actor: DonutsDelivery
@@ -8109,6 +8122,13 @@ reviews:
           status: pass
           name: source-contracts
         timestamp: 2026-10-01T23:40:27.982Z
+      - _ulid: 01M3WZHM8PQ74VY49QCWH5V6R7
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: ordinary-downscale
+        timestamp: 2026-10-02T00:17:08.375Z
     examined_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
     external_links: []
     lifecycle_state: open
@@ -8123,5 +8143,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-01T23:28:14.358Z
-    updated_at: 2026-10-01T23:40:27.929Z
+    updated_at: 2026-10-02T00:17:08.324Z
     notes: []
