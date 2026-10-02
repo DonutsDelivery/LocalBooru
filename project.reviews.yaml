@@ -10133,3 +10133,32 @@ reviews:
     created_at: 2026-10-02T05:26:32.359Z
     updated_at: 2026-10-02T05:28:24.453Z
     notes: []
+  - _ulid: 01M3XHBM20FWX4CRR8YZF2VNT0
+    slugs:
+      - review-create-sidebar-placement
+    title: Create sidebar placement
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3XHBM20V5E32KBPTZZVP75N
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-02T05:28:25.920Z
+    examined_commit: 301a7ee51d5500802334b2ef7c8f87b4af42d2eb
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-sidebar-placement"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 7749580f14edc195a1381779d9f2ec774211cedf
+      head_branch: feat/create-sidebar-placement
+      head_commit: 301a7ee51d5500802334b2ef7c8f87b4af42d2eb
+    threads: []
+    verdicts: []
+    created_at: 2026-10-02T05:28:25.920Z
+    updated_at: null
+    notes: []

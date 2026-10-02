@@ -18,6 +18,7 @@ context: []
 priority: 2
 tags: []
 vcs_refs: []
+review_ref: "@review-create-sidebar-placement"
 submission_linkage:
   review_url: null
   branch: splice/mac-pairing
@@ -57,6 +58,13 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-02T05:22:04.034Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@review-create-sidebar-placement"
+        previous: null
+    command: review-link
+    timestamp: 2026-10-02T05:28:26.213Z
 created_at: 2026-10-02T05:12:37.486Z
 started_at: 2026-10-02T05:12:37.614Z
 submitted_at: 2026-10-02T05:22:04.034Z
