@@ -1,0 +1,22 @@
+_ulid: 01M3X0P0R7J3F1523GNXEQ950A
+slugs:
+  - create-connection-screen
+title: Replace the blank Create connection screen with a studio loading layout
+type: bug
+description: User screenshot shows a mostly empty studio with a disabled Connecting studio button
+  top-left. Show a responsive studio layout skeleton and centered truthful connection stage,
+  preserve Exit/Setup/backend navigation, and hand off to live controls without changing startup
+  ownership or user drafts. Focused deferred-session and setup/exit tests plus synthetic
+  desktop/mobile visual checks.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-10-02T00:37:00.806Z
+todos: []
