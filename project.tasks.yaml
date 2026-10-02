@@ -1944,7 +1944,7 @@ tasks:
     title: Gate native SVP playback until the owned graph is ready
     type: bug
     spec_ref: "@native-svp-startup-gate"
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 1
@@ -1952,3 +1952,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-02T04:22:52.207Z
+    started_at: 2026-10-02T04:22:53.867Z
