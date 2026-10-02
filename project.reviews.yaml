@@ -10034,7 +10034,23 @@ reviews:
       - review-owned-addon-port-recovery
     title: Review verified installed addon port recovery
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 7749580f14edc195a1381779d9f2ec774211cedf
+          head_commit: 9dfcdcbc08d15671b33fc6c854f63ab9a3071293
+        evidence: Exact source9dfcdcbc:7/7 real synthetic listener/recovery/drop tests +2/2 existing
+          stop_all tests pass; logs /tmp/dmc-addon-port-recovery-native-final4.log and
+          /tmp/dmc-addon-port-recovery-shutdown-final.log. Source
+          tree99d282533ba88d864ec29bee82129beb2b8369a6 and source4SHA/test executableSHA receipt
+          /tmp/dmc-addon-port-recovery-freeze.json. Tests used host gate/shared target/max2jobs; all
+          compiler writers exited. No real profile media or runtime acceptance.
+        name: focused-addon-recovery
+        required: true
+        runner: scripts/run-cargo.sh
+        created_at: 2026-10-02T05:27:08.153Z
+        completed_at: 2026-10-02T05:27:08.153Z
     events:
       - _ulid: 01M3XH8555922MVFQ78EYGHANH
         actor: DonutsDelivery
@@ -10049,6 +10065,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-02T05:27:06.680Z
+      - _ulid: 01M3XH985SG6Z55MAH401HPQR8
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-addon-recovery
+        timestamp: 2026-10-02T05:27:08.217Z
     examined_commit: 9dfcdcbc08d15671b33fc6c854f63ab9a3071293
     external_links: []
     lifecycle_state: open
@@ -10063,5 +10086,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-02T05:26:32.359Z
-    updated_at: 2026-10-02T05:27:06.621Z
+    updated_at: 2026-10-02T05:27:08.153Z
     notes: []
