@@ -9809,9 +9809,26 @@ reviews:
           status: pass
           name: independent-source-review
         timestamp: 2026-10-02T04:54:39.349Z
+      - _ulid: 01M3XFDTB9CZGC66Z74TKVWWZ6
+        actor: root
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: c4841436e325b39002d4be031f6754307c910bae
+            head_commit: 94edd9f7352eb42a897b03e4f93c73a5ec343003
+          decision: approve
+        timestamp: 2026-10-02T04:54:40.745Z
+      - _ulid: 01M3XFDTB915ZCX24WM78EJDV5
+        actor: root
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T04:54:40.745Z
     examined_commit: 94edd9f7352eb42a897b03e4f93c73a5ec343003
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@remember-video-volume"
     subject:
@@ -9821,9 +9838,17 @@ reviews:
       head_branch: fix/remember-video-volume
       head_commit: 94edd9f7352eb42a897b03e4f93c73a5ec343003
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: c4841436e325b39002d4be031f6754307c910bae
+          head_commit: 94edd9f7352eb42a897b03e4f93c73a5ec343003
+        decision: approve
+        reviewer: root
+        role: reviewer
+        created_at: 2026-10-02T04:54:40.745Z
     created_at: 2026-10-02T04:35:54.825Z
-    updated_at: 2026-10-02T04:54:39.291Z
+    updated_at: 2026-10-02T04:54:40.745Z
     notes: []
   - _ulid: 01M3XFCTHYJTS1KR133WCX2EKR
     slugs:
