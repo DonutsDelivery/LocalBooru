@@ -134,6 +134,9 @@ features:
         type: requirement
         description: Keep media viewing, metadata, playback, subtitles, and curation discoverable and
           touch-safe on phone screens.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
