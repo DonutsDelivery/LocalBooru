@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M3X9G9SXAREQ02X78836MTT7
+    content: "Plan: behavior-test the actual playback hook with delayed synthetic native seek completion
+      to prove rapid relative commands accumulate from latest intent, issue no duplicate play, and
+      do not restart HLS/SVP producers. Measure existing WebKit synchronous seek-event dispatch
+      versus its existing gst_element_call_async branch using an isolated GStreamer pipeline with a
+      deliberately slow synthetic seek callback and main-loop heartbeat. Only if reproduced,
+      coordinate narrowly scoped ordinary-HTTP async dispatch with parent-owned raw WebKit patches.
+      Preserve SVP, transcode, paused state, source replacement, and cleanup; tests use no user
+      media/profile."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T03:11:10.654Z
