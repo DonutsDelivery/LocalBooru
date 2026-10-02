@@ -36,3 +36,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T03:05:49.365Z
+  - _ulid: 01M3X9ED1HXGTBPGZSHQVW0NMX
+    content: "Reverse backend switch confirmed with actual useVideoStreaming rerender: frozen544da2d
+      retained remote transcode/SVP URLs after embedded native mode became active (red receipt
+      /tmp/dmc-raw-resize-reverse-before-receipt.txt). Minimal ownership cleanup dependency fix plus
+      two behavioral regressions committed as follow-up on the task branch. Final components20 pass
+      (Lightbox12+routes8), Node25 pass; native/C++ files and their prior Rust24/caps12/relay
+      receipts unchanged. Updated exact head sent to reviewer; pending_review remains. No runtime
+      changes."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T03:10:08.433Z
