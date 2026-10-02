@@ -27,3 +27,19 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T02:05:11.561Z
+  - _ulid: 01M3X6A2K6WEV0GQ9N34DASYJS
+    content: "Source candidate in /tmp/dmc-svp-manager-isolation, base8033e90. Confirmed legacy
+      WebProcess relay claims shared /tmp/mpvsocket while idle; no shared Manager config writes
+      found. Narrow fix: actual DOM video ID registration to owned WebProcess PID, private instance
+      namespace, backend epoch/revision lease and command/event guards, only active own mpvSockets
+      PID endpoint, legacy env key retired. Synthetic Node9 checks and C++
+      registration/relay/coexistence checks pass; focused Rust23 checks passed before final
+      compatibility guard, final rerun queued. Canonical patch applies to pristine upstream2.52.3;
+      exact legacy upgrade preimages checked. Runtime blocked by533-task cache plan;
+      approved37generator-only recovery changed no header bytes across9486 files and full dry-run
+      remains533. No app/profile playback, user config edits or shared socket mutation; no native
+      SVP acceptance claim. Independent reviewer donut_create_review reading source. Matching
+      app+runtime deployment held for compatible cache."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T02:15:20.935Z
