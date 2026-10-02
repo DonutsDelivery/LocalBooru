@@ -8303,6 +8303,66 @@ reviews:
         runner: independent-context
         created_at: 2026-10-02T00:50:48.294Z
         completed_at: 2026-10-02T00:50:48.294Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: d1130513985a305958e00fa51163897c5f2ff638
+        evidence: Final examined exactd1130513985a305958e00fa51163897c5f2ff638
+          basecee213815840d418695c79217b8a546f54372cca; clean status and diff--check. Read allfour
+          initialfiles and everyfollowup line; existing generation/serverchange/visibility guards
+          preserved. Dedicated connectionfailure display fixes firststatus-null path without
+          coupling saveerrors. Independently executed actual catch+statuspublisher callbacks
+          confirms interrupted then recovery. No graph/startup ownership mutations, no new
+          confirmedblocker.
+        name: source-contracts
+        required: true
+        runner: independent-source-and-callback-review
+        created_at: 2026-10-02T00:53:04.065Z
+        completed_at: 2026-10-02T00:53:04.065Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: d1130513985a305958e00fa51163897c5f2ff638
+        evidence: "Independently read updated /tmp/dmc-create-connection-preview/tests.log: exact worktree
+          frontend Vitest4.1.10,2files51/51pass start02:51:44 duration8.31s. New first-status
+          rejection/recovery and unrelateddirectoryerror behaviors cover resolvedfinding; original
+          pending-session handoff, Setup/Exit, failuretoast and previousCreate regressionchecks
+          preserved. Reviewer didnot launch duplicatebuild/tests."
+        name: focused-components
+        required: true
+        runner: parent-vitest-receipt-independently-read
+        created_at: 2026-10-02T00:53:04.239Z
+        completed_at: 2026-10-02T00:53:04.239Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: d1130513985a305958e00fa51163897c5f2ff638
+        evidence: "Loadingcomponent and scopedCSS byteunchanged by d113 followup versus parentT3 actualReact
+          synthetic1280x800/320x640 renders: centered status and no horizontaloverflow.
+          Independently inspected harness and media/gridrules. Parent execution attributed; no
+          normalprofile claim."
+        name: rendered-responsive-layout
+        required: true
+        runner: parent-browser-and-independent-source
+        created_at: 2026-10-02T00:53:04.409Z
+        completed_at: 2026-10-02T00:53:04.409Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: d1130513985a305958e00fa51163897c5f2ff638
+        evidence: Currenttask no spec_ref/trait ACs. Independent kspecvalidate has known unrelated
+          malformedrecords/verifySKILLmissingdescription; globalvalidationnotclean. Reviewcovers
+          exactfrontendcandidate with syntheticfocusedbehavior; no nativepackaging,
+          userprofiletesting, actualbackendaction orGPUjob. Parentintegration/install separate.
+        name: scope-and-validation-limits
+        required: false
+        runner: independent-context
+        created_at: 2026-10-02T00:53:04.584Z
+        completed_at: 2026-10-02T00:53:04.584Z
     events:
       - _ulid: 01M3X1F7EFYVCEB9YW5QD86003
         actor: donut_create_review
@@ -8352,9 +8412,74 @@ reviews:
           status: pass
           name: scope-and-validation-limits
         timestamp: 2026-10-02T00:50:48.346Z
+      - _ulid: 01M3X1KCXGARKTRE8GDZ5MDF2T
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_base: cee213815840d418695c79217b8a546f54372cca
+          new_head: d1130513985a305958e00fa51163897c5f2ff638
+          previous_head: a326a61fb1e3be8cfca18746051c6aac99495006
+        timestamp: 2026-10-02T00:53:03.537Z
+      - _ulid: 01M3X1KD3KPGVS1NJZGY712MA8
+        actor: DonutsDelivery
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01M3X1F829KZGAJ6Z7DHXSREFB
+        timestamp: 2026-10-02T00:53:03.731Z
+      - _ulid: 01M3X1KD9ADTGVXYG3PHN2M2RY
+        actor: DonutsDelivery
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01M3X1F829KZGAJ6Z7DHXSREFB
+        timestamp: 2026-10-02T00:53:03.914Z
+      - _ulid: 01M3X1KDFGT7W2SS9NXBHFTJA0
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-contracts
+        timestamp: 2026-10-02T00:53:04.112Z
+      - _ulid: 01M3X1KDMXN44KC4HNFJPSFN2C
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-components
+        timestamp: 2026-10-02T00:53:04.285Z
+      - _ulid: 01M3X1KDT8X6Q510BCF83NVHHP
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: rendered-responsive-layout
+        timestamp: 2026-10-02T00:53:04.456Z
+      - _ulid: 01M3X1KE0BWV3K3C6NHK856W21
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: scope-and-validation-limits
+        timestamp: 2026-10-02T00:53:04.651Z
+      - _ulid: 01M3X1KE5GQCFS7ZDC58KJ4TM1
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: cee213815840d418695c79217b8a546f54372cca
+            head_commit: d1130513985a305958e00fa51163897c5f2ff638
+          decision: approve
+        timestamp: 2026-10-02T00:53:04.816Z
+      - _ulid: 01M3X1KE5GFGYJ78S4X6ARPXBN
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T00:53:04.816Z
     examined_commit: a326a61fb1e3be8cfca18746051c6aac99495006
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@create-connection-screen"
     subject:
@@ -8362,7 +8487,7 @@ reviews:
       base_branch: main
       base_commit: cee213815840d418695c79217b8a546f54372cca
       head_branch: fix/create-connection-ui
-      head_commit: a326a61fb1e3be8cfca18746051c6aac99495006
+      head_commit: d1130513985a305958e00fa51163897c5f2ff638
     threads:
       - _ulid: 01M3X1F829KZGAJ6Z7DHXSREFB
         anchor:
@@ -8385,8 +8510,28 @@ reviews:
               first-poll-failure/recovery and unrelated-directory-error cases. Parent confirmed
               finding and is implementing display-only failure state."
             created_at: 2026-10-02T00:50:47.497Z
+          - _ulid: 01M3X1KD241ZYZNGGZE173JH7B
+            author: DonutsDelivery
+            body: Fixed and independently reviewed at clean exactd1130513985a305958e00fa51163897c5f2ff638.
+              Dedicated connectionFailed displaystate set only pollcatch, cleared by statuspublisher
+              and invalidation, avoids unrelated directoryerrors. Disposable execution of actual new
+              catch and handleStatus updaters proves firststatusnull error displaysfailure and
+              recoveredreadystatus clearsflag. Behavioral Host cases now cover first-status
+              failure/recovery and unrelated-directory error; independently read51/51 passed
+              receipt.
+            created_at: 2026-10-02T00:53:03.684Z
         kind: blocker
-    verdicts: []
+        resolved_at: 2026-10-02T00:53:03.865Z
+        resolved_by: DonutsDelivery
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: d1130513985a305958e00fa51163897c5f2ff638
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-02T00:53:04.816Z
     created_at: 2026-10-02T00:50:46.864Z
-    updated_at: 2026-10-02T00:50:48.294Z
+    updated_at: 2026-10-02T00:53:04.816Z
     notes: []
