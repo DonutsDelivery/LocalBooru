@@ -2,6 +2,7 @@ import { useCallback, useState, useRef, useEffect } from 'react'
 import { savePlaybackPosition } from '../../../api'
 import { formatTime } from '../utils/helpers'
 import { createDirectSeekController } from './directSeekController'
+import { readVideoAudioPreference, writeVideoAudioPreference } from './videoAudioPreference'
 
 /**
  * Hook for managing video playback state and controls
@@ -39,8 +40,9 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
   const [isSeeking, setIsSeeking] = useState(false)
   const [videoDisplayMode, setVideoDisplayMode] = useState('fit') // 'fit' | 'fill' | 'original'
   const [videoNaturalSize, setVideoNaturalSize] = useState({ width: 0, height: 0 })
-  const [volume, setVolume] = useState(1)
-  const [isMuted, setIsMuted] = useState(false)
+  const [audioPreference] = useState(readVideoAudioPreference)
+  const [volume, setVolume] = useState(audioPreference.volume)
+  const [isMuted, setIsMuted] = useState(audioPreference.muted)
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0)
   const timelineRef = useRef(null)
   const lastSavedPositionRef = useRef(0)
@@ -431,37 +433,32 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     seekDirect(seekTime, true)
   }, [mediaRef, isSeeking, duration, svpStreamUrl, svpBufferedDuration, svpStartOffset, transcodeStreamUrl, transcodeStartOffset, transcodeBufferedDuration, restartSVPFromPosition, restartTranscodeFromPosition, isStreamTimeBuffered, seekWithinStream, setSvpPendingSeek, setCurrentTime, seekDirect])
 
+  // Restore the user's logical gain, independently of normalization attenuation.
+  const restoreAudioState = useCallback((requestedVolume, muted) => {
+    const preference = writeVideoAudioPreference({ volume: requestedVolume, muted })
+    setVolume(preference.volume)
+    setIsMuted(preference.muted)
+    const handledVolume = setAudioOutputVolume?.(preference.volume)
+    const handledMuted = setAudioOutputMuted?.(preference.muted, preference.volume)
+    const media = mediaRef.current
+    if (media) {
+      if (!handledVolume) media.volume = preference.volume
+      if (!handledMuted) media.muted = preference.muted || preference.volume === 0
+    }
+  }, [mediaRef, setAudioOutputVolume, setAudioOutputMuted])
+
   // Handle volume change
   const handleVolumeChange = useCallback((e) => {
     const newVolume = parseFloat(e.target.value)
-    setVolume(newVolume)
-    if (mediaRef.current) {
-      const handledByAudioGraph = setAudioOutputVolume?.(newVolume)
-      if (!handledByAudioGraph) {
-        mediaRef.current.volume = newVolume
-        mediaRef.current.muted = newVolume === 0
-      }
-      setIsMuted(newVolume === 0)
-    }
-  }, [mediaRef, setAudioOutputVolume])
+    if (!Number.isFinite(newVolume)) return
+    restoreAudioState(Math.max(0, Math.min(1, newVolume)), newVolume === 0)
+  }, [restoreAudioState])
 
   // Toggle mute
   const toggleMute = useCallback(() => {
     if (!mediaRef.current) return
-    if (isMuted) {
-      const handledByAudioGraph = setAudioOutputMuted?.(false, volume)
-      if (!handledByAudioGraph) {
-        mediaRef.current.muted = false
-      }
-      setIsMuted(false)
-    } else {
-      const handledByAudioGraph = setAudioOutputMuted?.(true, volume)
-      if (!handledByAudioGraph) {
-        mediaRef.current.muted = true
-      }
-      setIsMuted(true)
-    }
-  }, [mediaRef, isMuted, volume, setAudioOutputMuted])
+    restoreAudioState(volume, !isMuted)
+  }, [mediaRef, isMuted, volume, restoreAudioState])
 
   // Increase playback speed
   const increaseSpeed = useCallback(() => {
@@ -496,20 +493,10 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
 
   // Adjust volume by delta
   const adjustVolume = useCallback((delta) => {
-    if (!mediaRef.current) return
+    if (!mediaRef.current || !Number.isFinite(delta)) return
     const newVolume = Math.max(0, Math.min(1, volume + delta))
-    setVolume(newVolume)
-    const handledByAudioGraph = setAudioOutputVolume?.(newVolume)
-    if (!handledByAudioGraph) {
-      mediaRef.current.volume = newVolume
-    }
-    if (newVolume > 0 && isMuted) {
-      setIsMuted(false)
-      if (!handledByAudioGraph) {
-        mediaRef.current.muted = false
-      }
-    }
-  }, [mediaRef, volume, isMuted, setAudioOutputVolume])
+    restoreAudioState(newVolume, newVolume === 0)
+  }, [mediaRef, volume, restoreAudioState])
 
   // Cycle video display mode
   const cycleDisplayMode = useCallback(() => {
@@ -534,8 +521,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     setDuration(restoredDuration)
     durationRef.current = restoredDuration
     setIsPlaying(!state.paused)
-    setVolume(restoredVolume)
-    setIsMuted(Boolean(state.muted))
+    restoreAudioState(restoredVolume, Boolean(state.muted))
     setPlaybackSpeed(restoredSpeed)
     setVideoDisplayMode(displayMode)
     const media = mediaRef.current
@@ -545,11 +531,9 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
       }
       if (media.readyState >= 1) applyPosition()
       else media.addEventListener('loadedmetadata', applyPosition, { once: true })
-      media.volume = restoredVolume
-      media.muted = Boolean(state.muted)
       media.playbackRate = restoredSpeed
       if (state.paused) media.pause()
-      else media.play().catch(() => {})
+      else if (interactionReadyRef?.current !== false) media.play().catch(() => {})
     }
     const unsupported = []
     if (state.selected_audio_track != null) unsupported.push('selected_audio_track')
@@ -557,7 +541,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     if (state.subtitle_delay) unsupported.push('subtitle_delay')
     if (state.svp_enabled) unsupported.push('native_svp_configuration')
     return unsupported
-  }, [mediaRef, setCurrentTime])
+  }, [mediaRef, setCurrentTime, restoreAudioState, interactionReadyRef])
 
   // Reset playback state
   const resetPlaybackState = useCallback(() => {
@@ -619,6 +603,7 @@ export function useVideoPlayback(mediaRef, streamState, imageId, directoryId, li
     adjustVolume,
     cycleDisplayMode,
     restorePlaybackState,
+    restoreAudioState,
     resetPlaybackState
   }
 }
