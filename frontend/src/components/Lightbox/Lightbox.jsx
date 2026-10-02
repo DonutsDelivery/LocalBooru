@@ -1728,8 +1728,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setSvpStartupReady(true)
     if (video.readyState >= 2) setVideoFrameReadyKey(videoMediaKey)
     if (Number.isFinite(resume.volume)) playback.restoreAudioState?.(resume.volume, Boolean(resume.muted))
-    if (resume.paused) video.pause()
-    else video.play().catch(() => {})
+    if (resume.paused) {
+      video.pause()
+      // The replacement was already paused, so it may emit no pause event.
+      // Commit the requested state before a later canplay attempts autoplay.
+      if (svpPathEnabled) playback.handleVideoPause()
+    } else video.play().catch(() => {})
     return true
   }
 

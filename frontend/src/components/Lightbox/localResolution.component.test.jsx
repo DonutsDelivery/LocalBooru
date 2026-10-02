@@ -73,8 +73,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   mocks.playback.isPlaying = true
-  mocks.playback.handleVideoPlay = vi.fn()
-  mocks.playback.handleVideoPause = vi.fn()
+  mocks.playback.handleVideoPlay = vi.fn(() => { mocks.playback.isPlaying = true })
+  mocks.playback.handleVideoPause = vi.fn(() => { mocks.playback.isPlaying = false })
   mocks.playback.volume = 1
   mocks.playback.isMuted = false
   mocks.playback.restoreAudioState = vi.fn((volume, muted) => {
@@ -574,5 +574,7 @@ test.each([true, false])('active graph refresh preserves Manager intent with res
   fireEvent.loadedMetadata(replacement)
   fireEvent.seeked(replacement)
   expect(replacement.currentTime).toBe(37)
+  expect(replacement.paused).toBe(!resumeCommand)
+  fireEvent.canPlay(replacement)
   expect(replacement.paused).toBe(!resumeCommand)
 })
