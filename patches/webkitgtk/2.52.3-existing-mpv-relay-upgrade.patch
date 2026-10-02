@@ -1,0 +1,357 @@
+# preimage a2c148bc70d301d84c67c777b91ea1b17664f65b2049e71581647010275f4726 986c31f46281eb177a2d07c4d15cd6df60d8b5efe6540bf2b5285495d50de434 Source/WebKit/WebProcess/gtk/WebProcessMainGtk.cpp
+# preimage 29a031afdc7b4966927984ae0df4b7fa3a35166344a8a8bee5532daa266b5a3d f3999fa57cca7b32a0b56615e9201ab446d459b66f1c7ddbdcfad0eb5672da17 Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+
+--- a/Source/WebKit/WebProcess/gtk/WebProcessMainGtk.cpp
++++ b/Source/WebKit/WebProcess/gtk/WebProcessMainGtk.cpp
+@@ -38,6 +38,9 @@
+ #include <sys/un.h>
+ #include <unistd.h>
+ 
++#include <wtf/glib/GUniquePtr.h>
++#include <atomic>
++#include <string>
+ #include <cerrno>
+ #include <cstring>
+ 
+@@ -141,67 +144,189 @@
+     return socketDescriptor;
+ }
+ 
++static bool localBooruPrivateHostFile(const std::string& path, std::string& value)
++{
++    struct stat metadata { };
++    if (lstat(path.c_str(), &metadata) || !S_ISREG(metadata.st_mode)
++        || metadata.st_uid != geteuid() || metadata.st_size > 256)
++        return false;
++    gchar* contents = nullptr;
++    gsize length = 0;
++    if (!g_file_get_contents(path.c_str(), &contents, &length, nullptr))
++        return false;
++    value.assign(contents, length);
++    g_free(contents);
++    return true;
++}
++
++static bool localBooruIsActiveVideoHost(const char* root)
++{
++    std::string active;
++    if (!localBooruPrivateHostFile(std::string(root) + "/active", active))
++        return false;
++    auto separator = active.find('\n');
++    if (separator == std::string::npos)
++        return false;
++    auto id = active.substr(0, separator);
++    constexpr const char* prefix = "localbooru-svp-host-";
++    if (id.compare(0, strlen(prefix), prefix) || id.size() <= strlen(prefix) || id.size() > strlen(prefix) + 80)
++        return false;
++    for (auto character : id.substr(strlen(prefix))) {
++        if (!g_ascii_isalnum(character) && character != '-')
++            return false;
++    }
++    auto pidEnd = active.find('\n', separator + 1);
++    if (pidEnd == std::string::npos || active.substr(separator + 1, pidEnd - separator - 1) != std::to_string(getpid()))
++        return false;
++    // Epoch/revision must be complete positive decimal fields. Partial or
++    // malformed writes cannot advertise a host.
++    auto cursor = pidEnd + 1;
++    for (unsigned field = 0; field < 2; ++field) {
++        auto end = active.find('\n', cursor);
++        if (end == std::string::npos || end == cursor || end - cursor > 20)
++            return false;
++        bool nonzero = false;
++        for (auto character : active.substr(cursor, end - cursor)) {
++            if (!g_ascii_isdigit(character))
++                return false;
++            nonzero |= character != '0';
++        }
++        if (!nonzero)
++            return false;
++        cursor = end + 1;
++    }
++    if (cursor != active.size())
++        return false;
++    std::string registered;
++    return localBooruPrivateHostFile(std::string(root) + "/" + id, registered)
++        && registered == std::to_string(getpid()) + "\n";
++}
++
++static void localBooruRemoveOwnedSocket(const char* path, ino_t inode)
++{
++    struct stat metadata { };
++    if (inode && !lstat(path, &metadata) && S_ISSOCK(metadata.st_mode)
++        && metadata.st_uid == geteuid() && metadata.st_ino == inode)
++        unlink(path);
++}
++
++static std::atomic<bool> localBooruMpvIdentityReady { false };
++static gboolean localBooruMarkVideoHostAsMpv(gpointer)
++{
++    prctl(PR_SET_NAME, "mpv", 0, 0, 0);
++    localBooruMpvIdentityReady.store(true);
++    return G_SOURCE_REMOVE;
++}
++
+ static gpointer localBooruMpvControlRelay(gpointer userData)
+ {
+     GUniquePtr<char> upstreamPath(static_cast<char*>(userData));
+-    constexpr const char* publicPath = "/tmp/mpvsocket";
+-
+-    // Never steal a live socket from mpv or another LocalBooru instance.
+-    if (auto existing = localBooruConnectUnixSocket(publicPath); existing >= 0) {
+-        close(existing);
++    const char* hostRoot = g_getenv("LOCALBOORU_MPV_CONTROL_HOST_ROOT");
++    if (!hostRoot || !*hostRoot)
+         return nullptr;
+-    }
+-    unlink(publicPath);
+-
+-    int listener = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+-    if (listener < 0)
+-        return nullptr;
+-
+-    sockaddr_un address { };
+-    address.sun_family = AF_UNIX;
+-    strcpy(address.sun_path, publicPath);
+-    if (bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0 || listen(listener, 8) < 0) {
+-        close(listener);
+-        return nullptr;
+-    }
+-    chmod(publicPath, S_IRUSR | S_IWUSR);
++    // SVP's mpvSockets discovery supports concurrent players. Never claim its
++    // single-player /tmp/mpvsocket or remove another process's PID entry.
++    constexpr const char* directory = "/tmp/mpvSockets";
++    std::string publicPath = std::string(directory) + "/" + std::to_string(getpid());
++    int listener = -1;
++    ino_t ownedInode = 0;
++    bool identityRequested = false;
+ 
+     while (true) {
++        if (!localBooruIsActiveVideoHost(hostRoot)) {
++            if (listener >= 0) {
++                close(listener);
++                listener = -1;
++                localBooruRemoveOwnedSocket(publicPath.c_str(), ownedInode);
++                ownedInode = 0;
++            }
++            g_usleep(250000);
++            continue;
++        }
++        if (!identityRequested) {
++            // Process identity belongs to the main thread, not this relay thread.
++            g_idle_add(localBooruMarkVideoHostAsMpv, nullptr);
++            identityRequested = true;
++        }
++        if (!localBooruMpvIdentityReady.load()) {
++            g_usleep(25000);
++            continue;
++        }
++        if (listener < 0) {
++            if (mkdir(directory, 0700) && errno != EEXIST)
++                return nullptr;
++            struct stat metadata { };
++            if (lstat(directory, &metadata) || !S_ISDIR(metadata.st_mode) || metadata.st_uid != geteuid())
++                return nullptr;
++            if (!lstat(publicPath.c_str(), &metadata)) {
++                if (!S_ISSOCK(metadata.st_mode) || metadata.st_uid != geteuid())
++                    return nullptr;
++                if (auto existing = localBooruConnectUnixSocket(publicPath.c_str()); existing >= 0) {
++                    close(existing);
++                    return nullptr;
++                }
++                // Only an owned stale entry with this process's exact PID.
++                localBooruRemoveOwnedSocket(publicPath.c_str(), metadata.st_ino);
++            }
++            listener = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
++            if (listener < 0)
++                return nullptr;
++            sockaddr_un address { };
++            address.sun_family = AF_UNIX;
++            if (publicPath.size() >= sizeof(address.sun_path)) {
++                close(listener);
++                return nullptr;
++            }
++            strcpy(address.sun_path, publicPath.c_str());
++            if (bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0 || listen(listener, 8) < 0) {
++                close(listener);
++                return nullptr;
++            }
++            if (lstat(publicPath.c_str(), &metadata)) {
++                close(listener);
++                return nullptr;
++            }
++            ownedInode = metadata.st_ino;
++            chmod(publicPath.c_str(), S_IRUSR | S_IWUSR);
++        }
++        pollfd descriptor { listener, POLLIN, 0 };
++        int ready = poll(&descriptor, 1, 250);
++        if (ready < 0 && errno == EINTR)
++            continue;
++        if (ready < 0)
++            break;
++        if (!ready || !localBooruIsActiveVideoHost(hostRoot))
++            continue;
+         int client = accept4(listener, nullptr, nullptr, SOCK_CLOEXEC);
+-        if (client < 0 && errno == EINTR)
+-            continue;
+         if (client < 0)
+-            break;
+-
++            continue;
+         int upstream = localBooruConnectUnixSocket(upstreamPath.get());
+         if (upstream < 0) {
+             close(client);
+             continue;
+         }
+-
+         auto* connection = new LocalBooruRelayConnection { client, upstream };
+-        g_thread_unref(g_thread_new("LocalBooru mpv control", localBooruRelayConnection, connection));
+-    }
+-
+-    close(listener);
+-    unlink(publicPath);
++        g_thread_unref(g_thread_new("DMC mpv control", localBooruRelayConnection, connection));
++    }
++    if (listener >= 0)
++        close(listener);
++    localBooruRemoveOwnedSocket(publicPath.c_str(), ownedInode);
+     return nullptr;
+ }
+ 
+ static gboolean startLocalBooruMpvControlRelay(gpointer data)
+ {
+-    prctl(PR_SET_NAME, "mpv", 0, 0, 0);
+     g_thread_unref(g_thread_new("LocalBooru mpv listener", localBooruMpvControlRelay, data));
+     return G_SOURCE_REMOVE;
+ }
+ 
+ static void startLocalBooruMpvControlRelayIfNeeded()
+ {
+-    const char* upstreamPath = g_getenv("LOCALBOORU_MPV_CONTROL_UPSTREAM");
+-    if (!upstreamPath || !*upstreamPath)
++    const char* upstreamPath = g_getenv("LOCALBOORU_MPV_CONTROL_UPSTREAM_V2");
++    if (!upstreamPath || !*upstreamPath || !g_getenv("LOCALBOORU_MPV_CONTROL_HOST_ROOT"))
+         return;
+     // SVP Manager applies some player-specific capabilities (including NVOF)
+-    // from the process identity behind /tmp/mpvsocket. This WebProcess is the
++    // from the process identity behind its PID socket. This WebProcess is the
+     // actual graph host and mpv-compatible endpoint, so expose that identity
+     // consistently with the protocol it implements.
+     // WebKit assigns its process name after platformInitialize(). Start from
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -24,6 +24,13 @@
+  */
+ 
+ #include "config.h"
++
++#include <mutex>
++#include <string>
++#include <unordered_map>
++#include <sys/stat.h>
++#include <unistd.h>
++#include <cstring>
+ #include "MediaPlayerPrivateGStreamer.h"
+ 
+ #if ENABLE(VIDEO) && USE(GSTREAMER)
+@@ -135,6 +142,75 @@
+ 
+ namespace WebCore {
+ 
++// DMC's selected video element registers the PID of its actual graph host.
++struct LocalBooruVideoHostRecord {
++    std::string path;
++    ino_t inode;
++};
++static std::mutex localBooruVideoHostsMutex;
++static std::unordered_map<const void*, LocalBooruVideoHostRecord> localBooruVideoHosts;
++
++static bool localBooruValidVideoHostId(const char* id)
++{
++    constexpr const char* prefix = "localbooru-svp-host-";
++    if (!id || strncmp(id, prefix, strlen(prefix)))
++        return false;
++    const char* token = id + strlen(prefix);
++    size_t length = strlen(token);
++    if (!length || length > 80)
++        return false;
++    for (const char* character = token; *character; ++character) {
++        if (!g_ascii_isalnum(*character) && *character != '-')
++            return false;
++    }
++    return true;
++}
++
++static void localBooruUnregisterVideoHost(const void* player)
++{
++    std::lock_guard<std::mutex> lock(localBooruVideoHostsMutex);
++    auto record = localBooruVideoHosts.find(player);
++    if (record == localBooruVideoHosts.end())
++        return;
++    struct stat metadata { };
++    if (!lstat(record->second.path.c_str(), &metadata)
++        && S_ISREG(metadata.st_mode) && metadata.st_uid == geteuid()
++        && metadata.st_ino == record->second.inode)
++        unlink(record->second.path.c_str());
++    localBooruVideoHosts.erase(record);
++}
++
++static void localBooruRegisterVideoHost(const void* player, const char* id)
++{
++    localBooruUnregisterVideoHost(player);
++    const char* root = g_getenv("LOCALBOORU_MPV_CONTROL_HOST_ROOT");
++    if (!root || !*root || !localBooruValidVideoHostId(id))
++        return;
++    struct stat directory { };
++    if (lstat(root, &directory) || !S_ISDIR(directory.st_mode) || directory.st_uid != geteuid())
++        return;
++    std::string path = std::string(root) + "/" + id;
++    std::string pid = std::to_string(getpid()) + "\n";
++    // A host ID belongs to one physical video element. Publish atomically
++    // without replacing a competing WebProcess's existing registration.
++    std::string temporary = std::string(root) + "/.host-XXXXXX";
++    int descriptor = g_mkstemp(temporary.data());
++    if (descriptor < 0)
++        return;
++    bool complete = write(descriptor, pid.data(), pid.size()) == static_cast<ssize_t>(pid.size());
++    close(descriptor);
++    bool published = complete && !link(temporary.c_str(), path.c_str());
++    unlink(temporary.c_str());
++    if (!published)
++        return;
++    struct stat metadata { };
++    if (lstat(path.c_str(), &metadata) || !S_ISREG(metadata.st_mode) || metadata.st_uid != geteuid())
++        return;
++    std::lock_guard<std::mutex> lock(localBooruVideoHostsMutex);
++    localBooruVideoHosts[player] = { path, metadata.st_ino };
++}
++
++
+ WTF_MAKE_TZONE_ALLOCATED_IMPL(MediaPlayerPrivateGStreamer);
+ 
+ static const FloatSize s_holePunchDefaultFrameSize(1280, 720);
+@@ -211,6 +287,7 @@
+ 
+ MediaPlayerPrivateGStreamer::~MediaPlayerPrivateGStreamer()
+ {
++    localBooruUnregisterVideoHost(this);
+     tearDown(true);
+ }
+ 
+@@ -1370,6 +1447,8 @@
+ {
+     if (!m_pipeline) [[unlikely]]
+         return;
++    if (auto player = m_player.get(); player && player->isVideoPlayer())
++        localBooruRegisterVideoHost(this, elementId.utf8().data());
+ 
+     auto objectName = GMallocString::unsafeAdoptFromUTF8(gst_object_get_name(GST_OBJECT_CAST(m_pipeline.get())));
+     auto currentName = String(objectName.span());
+@@ -3466,6 +3545,8 @@
+     ASSERT(!m_pipeline);
+ 
+     auto elementId = player->elementId();
++    if (player->isVideoPlayer())
++        localBooruRegisterVideoHost(this, elementId.utf8().data());
+     if (elementId.isEmpty())
+         elementId = "media-player"_s;
+ 

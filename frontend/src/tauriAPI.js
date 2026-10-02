@@ -293,6 +293,12 @@ const tauriAPI = {
     }
   },
 
+  acquireSvpVideoHostEpoch: async () => {
+    await tauriReady
+    if (!tauriInvoke) return null
+    return tauriInvoke('acquire_svp_video_host_epoch')
+  },
+
   updateSvpManagerPlayback: async (update) => {
     await tauriReady
     if (!tauriInvoke) return

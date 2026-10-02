@@ -22,6 +22,8 @@ pub mod server;
 pub mod services;
 #[cfg(desktop)]
 mod svp_manager_bridge;
+#[cfg(target_os = "linux")]
+mod svp_video_host;
 mod svp_manager_snapshot;
 
 use commands::{
@@ -46,7 +48,7 @@ use native_video::commands::{
 use native_video::coordinator::{DesktopPlayerMode, RuntimeCapabilities};
 use server::state::AppState;
 #[cfg(desktop)]
-use svp_manager_bridge::{update_svp_manager_playback, SvpManagerBridge};
+use svp_manager_bridge::{acquire_svp_video_host_epoch, update_svp_manager_playback, SvpManagerBridge};
 use svp_manager_snapshot::ManagerGraphSnapshotStore;
 
 /// Default port for the embedded HTTP server.
@@ -799,6 +801,8 @@ pub fn run() {
             pick_direct_media_file,
             release_direct_media_file,
             report_direct_file_stage,
+            #[cfg(desktop)]
+            acquire_svp_video_host_epoch,
             #[cfg(desktop)]
             update_svp_manager_playback,
             take_startup_media_file,

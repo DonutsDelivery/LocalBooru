@@ -19,7 +19,7 @@ use tokio::net::{UnixListener, UnixStream};
 
 use crate::svp_manager_snapshot::ManagerGraphSnapshotStore;
 
-#[cfg(unix)]
+#[cfg(target_os = "macos")]
 const MPV_SOCKET_PATH: &str = "/tmp/mpvsocket";
 #[cfg(target_os = "windows")]
 const MPV_SOCKET_PATH: &str = r"\\.\pipe\mpvpipe";
@@ -35,11 +35,16 @@ pub struct SvpPlaybackUpdate {
     pub duration: Option<f64>,
     pub paused: Option<bool>,
     pub media_key: Option<String>,
+    pub host_id: Option<String>,
+    pub host_epoch: Option<u64>,
+    pub host_revision: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FilterChanged {
+    #[serde(flatten)]
+    owner: PlaybackOwner,
     enabled: bool,
     script_path: Option<String>,
     graph_revision: Option<u64>,
@@ -49,8 +54,18 @@ struct FilterChanged {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PlaybackPaused {
+    #[serde(flatten)]
+    owner: PlaybackOwner,
     paused: bool,
     media_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaybackOwner {
+    host_id: Option<String>,
+    host_epoch: Option<u64>,
+    host_revision: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -96,6 +111,8 @@ pub struct SvpManagerBridge {
     filter_file: PathBuf,
     #[cfg(target_os = "linux")]
     script_file: PathBuf,
+    #[cfg(target_os = "linux")]
+    video_hosts: Arc<crate::svp_video_host::VideoHostLease>,
     #[cfg(unix)]
     control_socket: PathBuf,
 }
@@ -104,17 +121,23 @@ impl SvpManagerBridge {
     pub fn new(snapshots: ManagerGraphSnapshotStore) -> Self {
         #[cfg(target_os = "linux")]
         let uid = unsafe { libc::geteuid() };
+        #[cfg(target_os = "linux")]
+        let pid = std::process::id();
         Self {
             playback: Arc::new(Mutex::new(PlaybackState::default())),
             transition: Arc::new(Mutex::new(())),
             controller: Arc::new(Mutex::new(None)),
+            #[cfg(target_os = "linux")]
+            video_hosts: Arc::new(crate::svp_video_host::VideoHostLease::new(
+                snapshots.root().join("video-hosts"),
+            )),
             snapshots,
             #[cfg(target_os = "linux")]
-            filter_file: PathBuf::from(format!("/tmp/localbooru-svp-filter-{uid}")),
+            filter_file: PathBuf::from(format!("/tmp/localbooru-svp-filter-{uid}-{pid}")),
             #[cfg(target_os = "linux")]
-            script_file: PathBuf::from(format!("/tmp/localbooru-svp-script-{uid}")),
+            script_file: PathBuf::from(format!("/tmp/localbooru-svp-script-{uid}-{pid}")),
             #[cfg(target_os = "linux")]
-            control_socket: PathBuf::from(format!("/tmp/localbooru-mpv-control-{uid}")),
+            control_socket: PathBuf::from(format!("/tmp/localbooru-mpv-control-{uid}-{pid}")),
             #[cfg(target_os = "macos")]
             control_socket: PathBuf::from(MPV_SOCKET_PATH),
         }
@@ -124,14 +147,17 @@ impl SvpManagerBridge {
         std::env::set_var("LOCALBOORU_SVP_SNAPSHOT_ROOT", self.snapshots.root());
         #[cfg(target_os = "linux")]
         {
+            std::env::remove_var("LOCALBOORU_MPV_CONTROL_UPSTREAM");
             std::env::set_var("WEBKIT_GST_VIDEO_FILTER_FILE", &self.filter_file);
             std::env::set_var("LOCALBOORU_VS_SCRIPT_FILE", &self.script_file);
             let native_svp_enabled =
                 std::env::var("LOCALBOORU_ENABLE_NATIVE_SVP").as_deref() == Ok("1");
-            if native_svp_enabled {
-                std::env::set_var("LOCALBOORU_MPV_CONTROL_UPSTREAM", &self.control_socket);
+            if native_svp_enabled && self.video_hosts.prepare().is_ok() {
+                std::env::set_var("LOCALBOORU_MPV_CONTROL_HOST_ROOT", self.video_hosts.root());
+                std::env::set_var("LOCALBOORU_MPV_CONTROL_UPSTREAM_V2", &self.control_socket);
             } else {
-                std::env::remove_var("LOCALBOORU_MPV_CONTROL_UPSTREAM");
+                std::env::remove_var("LOCALBOORU_MPV_CONTROL_UPSTREAM_V2");
+                std::env::remove_var("LOCALBOORU_MPV_CONTROL_HOST_ROOT");
             }
 
             if let Some(home) = dirs::home_dir() {
@@ -182,14 +208,40 @@ impl SvpManagerBridge {
                 log::warn!("[SVPManager] rejecting control connection without peer PID");
                 continue;
             };
+            #[cfg(target_os = "linux")]
+            let ticket = {
+                let _transition = self
+                    .transition
+                    .lock()
+                    .map_err(|_| io::Error::other("transition state poisoned"))?;
+                let Some(ticket) = self
+                    .video_hosts
+                    .ticket()
+                    .filter(|ticket| ticket.pid == peer_pid)
+                else {
+                    continue;
+                };
+                if !self.claim_controller(peer_pid) {
+                    continue;
+                }
+                ticket
+            };
             let bridge = self.clone();
+            #[cfg(not(target_os = "linux"))]
             if !bridge.claim_controller(peer_pid) {
                 log::warn!("[SVPManager] rejecting competing controller process {peer_pid}");
                 continue;
             }
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                let result = bridge.handle_connection(stream, app).await;
+                let result = bridge
+                    .handle_connection(
+                        stream,
+                        app,
+                        #[cfg(target_os = "linux")]
+                        ticket,
+                    )
+                    .await;
                 bridge.release_controller(peer_pid);
                 if let Err(error) = result {
                     log::debug!("[SVPManager] control connection closed: {error}");
@@ -236,6 +288,14 @@ impl SvpManagerBridge {
                 *connections += 1;
                 true
             }
+            #[cfg(target_os = "linux")]
+            Some(_) if self.video_hosts.active_pid() == Some(pid) => {
+                // The previous graph host may retain an idle connection. Its
+                // captured lease ticket is invalid, so only the active host can
+                // replace this stale process claim.
+                *controller = Some((pid, 1));
+                true
+            }
             Some(_) => false,
             None => {
                 *controller = Some((pid, 1));
@@ -260,7 +320,12 @@ impl SvpManagerBridge {
         }
     }
 
-    async fn handle_connection<S>(&self, stream: S, app: AppHandle) -> io::Result<()>
+    async fn handle_connection<S>(
+        &self,
+        stream: S,
+        app: AppHandle,
+        #[cfg(target_os = "linux")] ticket: crate::svp_video_host::VideoHostTicket,
+    ) -> io::Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
@@ -277,7 +342,17 @@ impl SvpManagerBridge {
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
-            let result = self.handle_command(&command, &app);
+            let result = {
+                let _transition = self
+                    .transition
+                    .lock()
+                    .map_err(|_| io::Error::other("transition state poisoned"))?;
+                #[cfg(target_os = "linux")]
+                if self.video_hosts.ticket().as_ref() != Some(&ticket) {
+                    break;
+                }
+                self.handle_command(&command, &app)
+            };
             let response = match result {
                 Ok(data) => json!({"request_id": request_id, "error": "success", "data": data}),
                 Err(error) => json!({"request_id": request_id, "error": error}),
@@ -315,6 +390,13 @@ impl SvpManagerBridge {
             "path" if active => Ok(json!(state.path)),
             "path" => Err("property unavailable"),
             "mpv-version" => Ok(json!("mpv v0.41.0")),
+            #[cfg(target_os = "linux")]
+            "input-ipc-server" => self
+                .video_hosts
+                .active_pid()
+                .map(|pid| json!(crate::svp_video_host::manager_socket_path(pid)))
+                .ok_or("property unavailable"),
+            #[cfg(not(target_os = "linux"))]
             "input-ipc-server" => Ok(json!(MPV_SOCKET_PATH)),
             "working-directory" => Ok(json!(std::env::current_dir()
                 .unwrap_or_default()
@@ -396,6 +478,18 @@ impl SvpManagerBridge {
         }
     }
 
+    fn event_owner(&self) -> PlaybackOwner {
+        #[cfg(target_os = "linux")]
+        if let Some(ticket) = self.video_hosts.ticket() {
+            return PlaybackOwner {
+                host_id: Some(ticket.host_id),
+                host_epoch: Some(ticket.epoch),
+                host_revision: Some(ticket.revision),
+            };
+        }
+        PlaybackOwner::default()
+    }
+
     fn set_property(
         &self,
         property: &str,
@@ -412,7 +506,11 @@ impl SvpManagerBridge {
             };
             let _ = app.emit(
                 "svp-manager-set-paused",
-                PlaybackPaused { paused, media_key },
+                PlaybackPaused {
+                    owner: self.event_owner(),
+                    paused,
+                    media_key,
+                },
             );
         }
         Ok(Value::Null)
@@ -427,18 +525,15 @@ impl SvpManagerBridge {
             if !Path::new(script_path).is_file() {
                 return Err("invalid parameter");
             }
-            self.enable_filter(script_path, app).map_err(|_| "error")?;
+            self.enable_filter_locked(script_path, app)
+                .map_err(|_| "error")?;
         } else if matches!(action, "remove" | "del") && spec == "@svp" {
-            self.disable_filter(app).map_err(|_| "error")?;
+            self.disable_filter_locked(app).map_err(|_| "error")?;
         }
         Ok(Value::Null)
     }
 
-    fn enable_filter(&self, script_path: &str, app: &AppHandle) -> io::Result<()> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| io::Error::other("transition state poisoned"))?;
+    fn enable_filter_locked(&self, script_path: &str, app: &AppHandle) -> io::Result<()> {
         let (snapshot, changed) = self.snapshots.prepare_file(Path::new(script_path))?;
         if !changed
             && self
@@ -485,6 +580,7 @@ impl SvpManagerBridge {
         let _ = app.emit(
             "svp-manager-filter-changed",
             FilterChanged {
+                owner: self.event_owner(),
                 enabled: true,
                 script_path: Some(script_path.to_owned()),
                 graph_revision: Some(snapshot.revision),
@@ -494,11 +590,7 @@ impl SvpManagerBridge {
         Ok(())
     }
 
-    fn disable_filter(&self, app: &AppHandle) -> io::Result<()> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| io::Error::other("transition state poisoned"))?;
+    fn disable_filter_locked(&self, app: &AppHandle) -> io::Result<()> {
         if self
             .playback
             .lock()
@@ -525,6 +617,7 @@ impl SvpManagerBridge {
         let _ = app.emit(
             "svp-manager-filter-changed",
             FilterChanged {
+                owner: self.event_owner(),
                 enabled: false,
                 script_path: None,
                 graph_revision: None,
@@ -613,14 +706,65 @@ fn script_output_fps(path: &str, source_fps: f64) -> Option<f64> {
 }
 
 #[tauri::command]
+pub fn acquire_svp_video_host_epoch(
+    app: AppHandle,
+    bridge: State<'_, SvpManagerBridge>,
+) -> Result<u64, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let _transition = bridge
+            .transition
+            .lock()
+            .map_err(|_| "SVP transition state unavailable")?;
+        let epoch = bridge
+            .video_hosts
+            .acquire_epoch()
+            .map_err(|error| error.to_string())?;
+        bridge
+            .disable_filter_locked(&app)
+            .map_err(|error| error.to_string())?;
+        let mut state = bridge
+            .playback
+            .lock()
+            .map_err(|_| "SVP state unavailable")?;
+        state.enabled = false;
+        state.path = None;
+        state.media_key = None;
+        Ok(epoch)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, bridge);
+        Ok(0)
+    }
+}
+
+#[tauri::command]
 pub fn update_svp_manager_playback(
     app: AppHandle,
     bridge: State<'_, SvpManagerBridge>,
     update: SvpPlaybackUpdate,
 ) -> Result<(), String> {
+    let _transition = bridge
+        .transition
+        .lock()
+        .map_err(|_| "SVP transition state unavailable")?;
+    #[cfg(target_os = "linux")]
+    if !bridge
+        .video_hosts
+        .update(
+            update.enabled,
+            update.host_id.as_deref(),
+            update.host_epoch,
+            update.host_revision,
+        )
+        .map_err(|error| error.to_string())?
+    {
+        return Ok(());
+    }
     if !update.enabled {
         bridge
-            .disable_filter(&app)
+            .disable_filter_locked(&app)
             .map_err(|error| error.to_string())?;
     }
     let mut state = bridge
@@ -661,6 +805,11 @@ mod tests {
     #[test]
     fn svp_events_include_the_owning_media_key() {
         let filter = serde_json::to_value(FilterChanged {
+            owner: PlaybackOwner {
+                host_id: Some("localbooru-svp-host-video".into()),
+                host_epoch: Some(3),
+                host_revision: Some(7),
+            },
             enabled: true,
             script_path: Some("graph.vpy".into()),
             graph_revision: Some(7),
@@ -668,6 +817,11 @@ mod tests {
         })
         .unwrap();
         let paused = serde_json::to_value(PlaybackPaused {
+            owner: PlaybackOwner {
+                host_id: Some("localbooru-svp-host-video".into()),
+                host_epoch: Some(3),
+                host_revision: Some(7),
+            },
             paused: true,
             media_key: Some("library:42".into()),
         })
@@ -675,6 +829,11 @@ mod tests {
 
         assert_eq!(filter["mediaKey"], "library:42");
         assert_eq!(paused["mediaKey"], "library:42");
+        for event in [filter, paused] {
+            assert_eq!(event["hostId"], "localbooru-svp-host-video");
+            assert_eq!(event["hostEpoch"], 3);
+            assert_eq!(event["hostRevision"], 7);
+        }
     }
 
     // AC: @svp-manager-transitions ac-controller-ownership
@@ -689,6 +848,31 @@ mod tests {
         assert!(!bridge.claim_controller(202));
         bridge.release_controller(101);
         assert!(bridge.claim_controller(202));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn new_active_graph_host_replaces_only_stale_controller_claim() {
+        let bridge = test_bridge();
+        bridge.video_hosts.prepare().unwrap();
+        let epoch = bridge.video_hosts.acquire_epoch().unwrap();
+        assert!(bridge.claim_controller(101));
+        assert!(!bridge.claim_controller(202));
+        fs::write(
+            bridge.video_hosts.root().join("localbooru-svp-host-next"),
+            "202",
+        )
+        .unwrap();
+        assert!(bridge
+            .video_hosts
+            .update(true, Some("localbooru-svp-host-next"), Some(epoch), Some(1))
+            .unwrap());
+        assert!(bridge.claim_controller(202));
+        bridge.release_controller(101);
+        assert!(!bridge.claim_controller(303));
+        bridge.release_controller(202);
+        assert!(bridge.claim_controller(303));
+        fs::remove_dir_all(bridge.snapshots.root()).unwrap();
     }
 
     #[cfg(unix)]
