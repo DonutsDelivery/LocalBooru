@@ -9552,7 +9552,87 @@ reviews:
       - review-original-http-seeking
     title: Original HTTP seek responsiveness
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: fb3ab86
+          head_commit: 91062f67ea3a7cd2efa5563353fb3f1c9825940e
+        evidence: Read all9 changed paths, native surrounding seek/state/rate code, and frontend
+          source/owner/route/error lifecycle. Confirmed fixes for stale seeked, ordinary
+          physical/source error ownership, accepted-pending/no-op tickets, early PAUSED completion,
+          simultaneous workers and delayed-rate ordering. Frozen91062f67 clean, diff--check pass. No
+          remaining source blocker.
+        name: source-review
+        required: true
+        runner: manual independent review
+        created_at: 2026-10-02T03:59:50.828Z
+        completed_at: 2026-10-02T03:59:50.828Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: fb3ab86
+          head_commit: 91062f67ea3a7cd2efa5563353fb3f1c9825940e
+        evidence: Inspected /tmp/dmc-direct-seek-final-react.log:30/30 across actual playback hook9 +
+          Lightbox13 + routing8. Relative30→50 accumulation, keyframe/precise seek, clamp/pause,
+          source/removal/error, buffered/outside SVP/encoded routes, rendered ordinary
+          error/no-grid/Close and replacement recovery.
+        name: focused-components
+        required: true
+        runner: Vitest
+        created_at: 2026-10-02T03:59:51.061Z
+        completed_at: 2026-10-02T03:59:51.061Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: fb3ab86
+          head_commit: 91062f67ea3a7cd2efa5563353fb3f1c9825940e
+        evidence: Independently executed production full doSeek/seekToTarget/finishSeek/updatePlaybackRate
+          and updateStates seek tail compiled from canonical-pristine final source,11 scenarios +
+          nested-filter/HTTP/loop/rate guards. /tmp/dmc-direct-seek-review-native.log exit0.
+          Original slow seek dispatch260ms/mainloop270ms vs ordinaryHTTP .036ms/10ms; latest
+          target3s, max1 sender, earlyPAUSED marker, no-op/rejected/superseded/replacement behavior
+          and requested rate2 applied last. Rate events retain synchronous prior policy and are not
+          claimed stall-free.
+        name: native-seek-behavior
+        required: true
+        runner: independent gated GStreamer C++ fixture
+        created_at: 2026-10-02T03:59:51.291Z
+        completed_at: 2026-10-02T03:59:51.291Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: fb3ab86
+          head_commit: 91062f67ea3a7cd2efa5563353fb3f1c9825940e
+        evidence: Independently applied canonical patch to4 pristine pinned2.52.3 public files and verified
+          exact two C++ afterimages equal legacy manifest. /tmp/dmc-direct-seek-review-native.log.
+          Inspected legacy recognized/idempotent/unknown/mixed guards
+          /tmp/dmc-direct-seek-patch-hls-final-proof.txt. Final
+          Mediae9aa894efdad6e148c4457930687a3d31811e2ffc2bf46b86a0d24a39dbef301 and
+          WebProcess986c31f46281eb177a2d07c4d15cd6df60d8b5efe6540bf2b5285495d50de434. Existing
+          raw/relay helper section bytes remain unchanged
+          /tmp/dmc-direct-seek-preserved-helpers.log.
+        name: patch-provenance
+        required: true
+        runner: independent disposable pristine application
+        created_at: 2026-10-02T03:59:51.499Z
+        completed_at: 2026-10-02T03:59:51.499Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: fb3ab86
+          head_commit: 91062f67ea3a7cd2efa5563353fb3f1c9825940e
+        evidence: "Read @responsive-original-stream-seeking six ACs and verified standalone annotations with
+          matching actual behavior: original path/pause, rapid cumulative input, responsive native
+          ordinary dispatch, owner cleanup, rendered rejectedseek recovery/no indefinite loading,
+          and inside/outside encoded/SVP routing. No traits. Production-extracted executable
+          fixtures test behavior rather than source-string assertions. Existing unrelated validation
+          failures remain /tmp/dmc-direct-seek-review-kspec.log."
+        name: spec-coverage
+        required: true
+        runner: kspec AC/behavior audit
+        created_at: 2026-10-02T03:59:51.714Z
+        completed_at: 2026-10-02T03:59:51.714Z
     events:
       - _ulid: 01M3XC73SZ3N9YDSEE854ER888
         actor: DonutsDelivery
@@ -9560,9 +9640,75 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-02T03:58:35.327Z
+      - _ulid: 01M3XC9DBQN6SC1XCKARH8TT4P
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-02T03:59:50.647Z
+      - _ulid: 01M3XC9DK50KCFWV2H74R0K89K
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-review
+        timestamp: 2026-10-02T03:59:50.885Z
+      - _ulid: 01M3XC9DTPDCZC5HY59QT2G4DG
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-components
+        timestamp: 2026-10-02T03:59:51.126Z
+      - _ulid: 01M3XC9E1JWHVGPNS336384K6D
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: native-seek-behavior
+        timestamp: 2026-10-02T03:59:51.346Z
+      - _ulid: 01M3XC9E85EKDSCT56PN03EDK8
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: patch-provenance
+        timestamp: 2026-10-02T03:59:51.557Z
+      - _ulid: 01M3XC9EET1VFZPV5RTZ2ZMKBC
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: spec-coverage
+        timestamp: 2026-10-02T03:59:51.770Z
+      - _ulid: 01M3XC9ENPCXR8WSTKMXGH6YST
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3XC9EKPRJ9T0SMJ0P0K8CG7
+        timestamp: 2026-10-02T03:59:51.990Z
+      - _ulid: 01M3XC9EX2Z8V80EBB4WSMYH6P
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: fb3ab86
+            head_commit: 91062f67ea3a7cd2efa5563353fb3f1c9825940e
+          decision: approve
+        timestamp: 2026-10-02T03:59:52.226Z
+      - _ulid: 01M3XC9EX216N3YW7KVVEZ2NBH
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T03:59:52.226Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@direct-seek-responsiveness"
     subject:
@@ -9571,8 +9717,35 @@ reviews:
       base_commit: fb3ab86
       head_branch: fix/direct-seek-responsiveness
       head_commit: 91062f67ea3a7cd2efa5563353fb3f1c9825940e
-    threads: []
-    verdicts: []
+    threads:
+      - _ulid: 01M3XC9EKPRJ9T0SMJ0P0K8CG7
+        anchor:
+          type: code
+          commit: 91062f67ea3a7cd2efa5563353fb3f1c9825940e
+          line_end: 55
+          line_start: 46
+          path: docs/ORIGINAL_VIDEO_SEEKING.md
+          side: head
+        entries:
+          - _ulid: 01M3XC9EKPE7S29FH587T524C9
+            author: DonutsDelivery
+            body: Approval is exact source/synthetic acceptance. Matching guarded WebKit build, app
+              package/install and actual native/phone playback remain separate operational gates. No
+              user-media/profile, GPU or real-device test performed. Synthetic heartbeat proves this
+              blocking mechanism, not attribution to a particular user clip; PAUSED changes and
+              excluded rate/loop/HLS paths keep their previous policy. Approved C++ hashes may now
+              be used by the reviewed staged-only guarded build; no installation acceptance claimed.
+            created_at: 2026-10-02T03:59:51.926Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: fb3ab86
+          head_commit: 91062f67ea3a7cd2efa5563353fb3f1c9825940e
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-02T03:59:52.226Z
     created_at: 2026-10-02T03:58:35.327Z
-    updated_at: null
+    updated_at: 2026-10-02T03:59:52.226Z
     notes: []
