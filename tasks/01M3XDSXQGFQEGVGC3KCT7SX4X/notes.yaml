@@ -19,3 +19,18 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T04:33:06.630Z
+  - _ulid: 01M3XFDD8DKNFED1Z6EHYVH0MC
+    content: "Verified clean exact94edd9f7352eb42a897b03e4f93c73a5ec343003
+      fromc4841436e325b39002d4be031f6754307c910bae, branchfix/remember-video-volume
+      worktree/tmp/dmc-video-volume. Gated focused19/19 (coupled10+existing9 seek) exit0:
+      /tmp/dmc-video-volume-final-tests.log, session53953. Three productionfiles focused ESLint zero
+      errors/warnings /tmp/dmc-video-volume-lint.log; node syntax+diffcheck pass. Earlier10-case
+      runner executed completed code, NOT redbaseline. No runtime/privateprofile/media/native build
+      used. All4AC covered by behavioral annotations. Startupworker separately applies
+      latestlogicalgain on physicalhandoff and tests actual visible knob underattenuation. First
+      upgrade without savedlogicalchoice defaults100; cannot recover a prior never-persisted
+      setting. Parent independentlyreviews/integrates; originalcontrolcheckout autoVCS link may
+      differ—authoritative producthead94edd9f/basec484 above."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T04:54:27.341Z

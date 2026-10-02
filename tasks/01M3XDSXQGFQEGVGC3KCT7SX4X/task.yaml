@@ -9,7 +9,7 @@ description: Own only useVideoPlayback/useAudioNormalization, shared validated l
 spec_ref: "@logical-video-volume"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
@@ -17,6 +17,14 @@ priority: 2
 tags: []
 vcs_refs: []
 review_ref: "@review-logical-video-volume"
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-10-02T04:54:27.496Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -35,6 +43,27 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-02T04:35:55.058Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-10-02T04:54:27.496Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-02T04:54:27.500Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-02T04:54:27.500Z
 created_at: 2026-10-02T04:26:20.272Z
 started_at: 2026-10-02T04:26:20.398Z
+submitted_at: 2026-10-02T04:54:27.500Z
 todos: []
