@@ -43,3 +43,18 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T00:53:37.897Z
+  - _ulid: 01M3X1Y3X3D5NVFG01B97QXHZK
+    content: Review fix candidate ca76bad (following4e2d64a) preserves Windows final diagnostic tails
+      with conditional ctypes/msvcrt PeekNamedPipe readiness instead of socket-only select. read1
+      receives at most actual available bytes; failed/broken/closed pipe returns0. No EOF inference
+      from exited parent, so inherited writers and live upstream stages cannot make final reads
+      block. Four new platform-independent simulated Windows API fixtures cover exited fatal detail
+      under select rejection, live zero-ready never-read, failed API readiness, and bounded4096
+      size/64-bit handles. Final gated18legacy tests pass at committedhead (session92098 exit0;
+      /tmp/dmc-svp-final-platform-tests.log). Real Windows runtime not exercised; Linux readiness
+      semantics and previous synthetic throughput receipts remain applicable. Explicit source paths
+      remain addons/svp/app.py and addons/svp/tests/test_legacy_stderr.py only. No
+      main/runtime/build/package changes.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T00:58:54.755Z
