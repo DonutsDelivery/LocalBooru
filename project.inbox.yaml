@@ -27,3 +27,22 @@ inbox:
       - investigation
     added_by: DonutsDelivery
     created_at: 2026-10-01T00:48:38.519Z
+  - _ulid: 01M3X8A7Z52QWBNB760ABX2WBA
+    text: "Android on-device decoded-frame downscale is a distinct missing path, confirmed by user
+      discussion on 2026-10-02. APK currently uses WebView HTML video; no committed
+      Media3/SVPlayer/native frame implementation found. Existing original URL already supports
+      authenticated Range/206 through loopback proxy, so a local filesystem copy is unnecessary.
+      Investigated embedded direction: retain DMC UI/controls and add generation-owned Media3 native
+      surface with hardware decoder and bounded GPU resize before later processing. HTTP-original
+      transfer remains untranscoded; server SVP still needs encoded delivery to current APK.
+      Post-decode resize does not reduce original 4K codec reconstruction, so compare synthetic
+      WebView/native/no-resize/native-resize on actual medium-tier hardware before claiming
+      performance improvement. Android OS WebView provider package/signature restrictions prevent
+      simply shipping a desktop-style engine patch inside ordinary APK. No Android
+      code/build/runtime changes made in this investigation."
+    tags:
+      - android
+      - video
+      - downscale
+    added_by: DonutsDelivery
+    created_at: 2026-10-02T02:50:23.589Z
