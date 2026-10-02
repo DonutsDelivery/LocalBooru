@@ -747,6 +747,14 @@ features:
         relates_to: []
         tests: []
         traits: []
+        acceptance_criteria:
+          - given: A legacy same-user installed add-on listener occupies its configured port and has no live DMC
+              owner
+            id: ac-verified-recovery
+            then: Startup verifies exact interpreter, cwd, uvicorn arguments, process-group and stable PID
+              identity; stops only that installed controller and waits for release before launching
+              a new tracked child
+            when: That add-on is started
         tags: []
         created: 2026-10-02T04:59:18.175Z
         notes: []
