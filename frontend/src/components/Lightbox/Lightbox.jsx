@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useCallback, useState, useRef, useMemo } from 'react'
+import { createSVPVideoHostId, nextSVPVideoHostRevision, svpVideoHostUpdate, svpVideoHostOwnsEvent, publishSVPVideoHost } from '../../utils/svpVideoHost'
 import { getMediaUrl, getAssetUrl, isUsingLocalServer, getSVPConfig, updateSVPConfig, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo, uploadImage, getFileDimensions } from '../../api'
 import { isMobileApp } from '../../serverManager'
 import { getDesktopAPI } from '../../tauriAPI'
@@ -176,6 +177,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   const image = images[currentIndex]
   const currentImageKey = image?.url ?? image?.file_path ?? image?.id
+  const svpVideoHostId = useMemo(() => createSVPVideoHostId(), [currentImageKey, svpPipelineGeneration])
+  const [svpHostEpoch, setSvpHostEpoch] = useState(null)
+  const svpOwnersByMediaRef = useRef(new Map())
   activeImageKeyRef.current = currentImageKey
   const renderedImageUrl = isVideo(image?.original_filename)
     ? null
@@ -232,6 +236,21 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     && !streaming.opticalFlowStreamUrl
     && !streaming.transcodeStreamUrl
   )
+  const svpHostRevision = useMemo(() => nextSVPVideoHostRevision(), [svpVideoHostId, svpPathEnabled])
+  const svpHostOwner = useMemo(() => ({ hostId: svpVideoHostId, hostEpoch: svpHostEpoch, hostRevision: svpHostRevision }), [svpVideoHostId, svpHostEpoch, svpHostRevision])
+  const svpHostOwnerRef = useRef(svpHostOwner)
+  svpHostOwnerRef.current = svpHostOwner
+  svpOwnersByMediaRef.current.set(currentImageKey, svpHostOwner)
+
+  useEffect(() => {
+    if (!streaming.nativeSvpPlayback) return
+    let cancelled = false
+    getDesktopAPI()?.acquireSvpVideoHostEpoch?.().then(epoch => {
+      if (!cancelled) setSvpHostEpoch(epoch)
+    }).catch(error => console.warn('[SVPManager] host lease unavailable:', error))
+    return () => { cancelled = true }
+  }, [streaming.nativeSvpPlayback])
+
   const [svpConnectionIssue, setSvpConnectionIssue] = useState(null)
   const svpConnectionIssueText = svpPathEnabled && svpConnectionIssue?.imageKey === currentImageKey
     ? svpConnectionIssue.message
@@ -291,7 +310,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         clearTimeout(transition.timer)
         transition.timer = null
       }
-      getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(() => {})
+      const owner = svpOwnersByMediaRef.current.get(currentImageKey)
+      if (owner) getDesktopAPI()?.updateSvpManagerPlayback?.(svpVideoHostUpdate(owner, false)).catch(() => {})
+      svpOwnersByMediaRef.current.delete(currentImageKey)
     }
   }, [currentImageKey])
 
@@ -333,6 +354,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         || mediaRef.current !== video
         || activeImageKeyRef.current !== currentImageKey
         || !svpPathEnabled
+        || svpHostEpoch === null
         || !svpPathEnabledRef.current
         || svpFailOpenRef.current
         || !image?.file_path
@@ -341,8 +363,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         || video.videoWidth <= 0
         || video.videoHeight <= 0) return
     svpSourceFpsRef.current = fps
-    desktopAPI.updateSvpManagerPlayback({
-      enabled: true,
+    publishSVPVideoHost(update => desktopAPI.updateSvpManagerPlayback(update), svpVideoHostUpdate(svpHostOwner, true, {
       mediaKey: currentImageKey,
       path: image.file_path,
       width: video.videoWidth,
@@ -350,8 +371,16 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       fps,
       duration: Number.isFinite(video.duration) ? video.duration : 0,
       paused: video.paused,
-    }).catch(error => console.warn('[SVPManager] playback update failed:', error))
-  }, [currentImageKey, image?.file_path, svpPathEnabled])
+    }), () => svpVideoHostOwnsEvent(svpHostOwnerRef.current, svpHostOwner)).catch(error => {
+      if (!svpVideoHostOwnsEvent(svpHostOwnerRef.current, svpHostOwner)) return
+      console.warn('[SVPManager] playback update failed:', error)
+      svpFailOpenRef.current = true
+      svpInteractionReadyRef.current = true
+      setSvpStartupReady(true)
+      if (video.readyState >= 2) setVideoFrameReadyKey(`${currentImageKey}-${svpPipelineGeneration}`)
+      setSvpConnectionIssue({ imageKey: currentImageKey, message: String(error?.message ?? error) })
+    })
+  }, [currentImageKey, image?.file_path, svpPathEnabled, svpHostEpoch, svpHostOwner, svpPipelineGeneration])
 
   const measureAndReportSvpPlayback = useCallback((video) => {
     if (!svpPathEnabled || !image?.file_path) return
@@ -404,6 +433,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [currentImageKey, image?.file_path, image?.video_fps, image?.frame_rate, image?.fps, image?.is_local_direct_file, reportSvpPlayback, svpPathEnabled])
 
   useEffect(() => {
+    if (svpHostEpoch !== null) measureAndReportSvpPlayback(mediaRef.current)
+  }, [svpHostEpoch, measureAndReportSvpPlayback])
+
+  useEffect(() => {
     setImageLoadError(false)
     setImageRetryKey(0)
   }, [currentImageKey, previewUrl])
@@ -425,7 +458,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     let unsubscribe = () => {}
     let cancelled = false
     desktopAPI.subscribeToSvpManager({
-      onFilterChanged: ({ enabled, mediaKey }) => {
+      onFilterChanged: (payload) => {
+        if (!svpVideoHostOwnsEvent(svpHostOwnerRef.current, payload)) return
+        const { enabled, mediaKey } = payload
         if (!svpPathEnabledRef.current) return
         if (mediaKey && mediaKey !== activeImageKeyRef.current) return
         svpInteractionReadyRef.current = false
@@ -465,7 +500,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         // the SVP filter is being inserted, which can hang the WebView.
         // React releases the old element when the generation changes.
         transition.timer = setTimeout(() => {
-          if (svpTransitionRef.current.token !== token
+          if (!svpVideoHostOwnsEvent(svpHostOwnerRef.current, payload)
+              || svpTransitionRef.current.token !== token
               || activeImageKeyRef.current !== imageKey
               || mediaRef.current !== video) return
           svpTransitionRef.current.timer = null
@@ -477,6 +513,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         }, 150)
       },
       onPaused: (payload) => {
+        if (!svpVideoHostOwnsEvent(svpHostOwnerRef.current, payload)) return
         const paused = typeof payload === 'boolean' ? payload : payload?.paused
         const mediaKey = typeof payload === 'object' ? payload?.mediaKey : null
         if (!svpPathEnabledRef.current) return
@@ -533,18 +570,18 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       clearTimeout(transition.timer)
       transition.timer = null
     }
-    getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(() => {})
-  }, [svpPathEnabled, currentImageKey])
+    getDesktopAPI()?.updateSvpManagerPlayback?.(svpVideoHostUpdate(svpHostOwner, false)).catch(() => {})
+  }, [svpPathEnabled, currentImageKey, svpHostOwner])
 
   const failOpenNativeSvp = useCallback((video) => {
     if (!svpPathEnabled || !svpFilterActiveRef.current || svpFailOpenRef.current) return
     svpFailOpenRef.current = true
     svpFilterActiveRef.current = false
     if (svpInteractionReadyRef.current && isVideoMediaElement(video)) video.pause()
-    getDesktopAPI()?.updateSvpManagerPlayback?.({ enabled: false }).catch(error => {
+    getDesktopAPI()?.updateSvpManagerPlayback?.(svpVideoHostUpdate(svpHostOwner, false)).catch(error => {
       console.warn('[SVPManager] failed to disable broken native graph:', error)
     })
-  }, [svpPathEnabled])
+  }, [svpPathEnabled, svpHostOwner])
 
   useEffect(() => {
     const video = mediaRef.current
@@ -950,7 +987,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       streaming.setSvpConfig(previous => previous ? { ...previous, enabled: false } : previous)
       if (mediaRef.current?.readyState >= 2) setVideoFrameReadyKey(videoMediaKey)
       const desktopAPI = getDesktopAPI()
-      const disable = () => desktopAPI?.updateSvpManagerPlayback?.({ enabled: false })
+      const disable = () => desktopAPI?.updateSvpManagerPlayback?.(svpVideoHostUpdate(svpHostOwner, false))
         .catch(error => console.warn('[SVPManager] failed to cancel startup:', error))
       const initialDisable = disable()
       // Keep the UI responsive if Manager stalls while disabling its graph.
@@ -1019,7 +1056,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       })
 
     svpToggleWriteRef.current = write
-  }, [streaming, svpControlsReady])
+  }, [streaming, svpControlsReady, svpHostOwner])
 
   // Generate preview of adjustments
   const handleGeneratePreview = useCallback(async () => {
@@ -1552,7 +1589,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const videoMediaKey = `${currentImageKey}-${svpPipelineGeneration}`
   const [videoFrameReadyKey, setVideoFrameReadyKey] = useState(null)
   const showVideoLoadingGrid = videoFrameReadyKey !== videoMediaKey
-    || (svpPathEnabled && !svpFilterActiveRef.current)
+    || (svpPathEnabled && !svpFailOpenRef.current && !svpFilterActiveRef.current)
   const videoTitle = image?.title || image?.original_filename || image?.filename || 'Video'
 
   const finishSvpHandoff = (video) => {
@@ -2131,6 +2168,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <video
               key={videoMediaKey}
               ref={mediaRef}
+              id={svpVideoHostId}
               src={directVideoSrc}
               crossOrigin="anonymous"
               preload="auto"
@@ -2147,7 +2185,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                     && svpResumeRef.current.currentTime <= 0.05) {
                   finishSvpHandoff(event.currentTarget)
                 }
-                if (!svpResumeRef.current && (!svpPathEnabled || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
+                if (!svpResumeRef.current && (!svpPathEnabled || svpFailOpenRef.current || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
                   setVideoFrameReadyKey(videoMediaKey)
                 }
               }}
@@ -2158,7 +2196,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               }}
               onPlaying={(event) => {
                 reportDirectFileStage('playing', event.currentTarget)
-                if (!svpResumeRef.current && (!svpPathEnabled || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
+                if (!svpResumeRef.current && (!svpPathEnabled || svpFailOpenRef.current || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
                   setVideoFrameReadyKey(videoMediaKey)
                 }
               }}
@@ -2180,7 +2218,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 }
                 const previousTime = directFileLastTimeRef.current
                 const nextTime = event.currentTarget.currentTime
-                if (!svpResumeRef.current && nextTime > 0.1 && (!svpPathEnabled || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
+                if (!svpResumeRef.current && nextTime > 0.1 && (!svpPathEnabled || svpFailOpenRef.current || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
                   setVideoFrameReadyKey(videoMediaKey)
                 }
                 if (image?.is_local_direct_file && previousTime > 1 && nextTime < previousTime - 1) {
@@ -2275,7 +2313,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             >
               {/* Timeline and playback controls */}
               <div className="video-controls-row">
-              {!svpControlsReady && <span className="svp-starting-label" role="status">{svpStartupCancelPending ? 'Turning SVP off…' : svpConnectionIssueText || 'SVP starting…'}</span>}
+              {(!svpControlsReady || svpConnectionIssueText) && <span className="svp-starting-label" role="status">{svpStartupCancelPending ? 'Turning SVP off…' : svpConnectionIssueText || 'SVP starting…'}</span>}
               {svpConnectionIssueText && !svpStartupCancelPending && (
                 <button className="svp-fallback-btn" onClick={handleToggleSVP}>Play without SVP</button>
               )}
