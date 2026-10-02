@@ -8149,9 +8149,26 @@ reviews:
           status: pass
           name: native-streaming
         timestamp: 2026-10-02T00:19:52.978Z
+      - _ulid: 01M3WZQ2D11XHHFV6P877S40A9
+        actor: root
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+            head_commit: 973a575b63cb24c084d0c0e5c6d257ac5d9d494e
+          decision: approve
+        timestamp: 2026-10-02T00:20:06.689Z
+      - _ulid: 01M3WZQ2D1RTZV1PZ5SD7G16QJ
+        actor: root
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T00:20:06.689Z
     examined_commit: dc38ad1e89190a21b58c5d3bcb8dc50374f9096c
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@android-svp-hls-startup"
     subject:
@@ -8161,7 +8178,15 @@ reviews:
       head_branch: fix/android-svp-hls
       head_commit: 973a575b63cb24c084d0c0e5c6d257ac5d9d494e
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 973a575b63cb24c084d0c0e5c6d257ac5d9d494e
+        decision: approve
+        reviewer: root
+        role: reviewer
+        created_at: 2026-10-02T00:20:06.689Z
     created_at: 2026-10-01T23:28:14.358Z
-    updated_at: 2026-10-02T00:19:52.929Z
+    updated_at: 2026-10-02T00:20:06.689Z
     notes: []
