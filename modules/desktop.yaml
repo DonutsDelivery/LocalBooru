@@ -1067,6 +1067,11 @@ features:
             then: Playback begins only after handoff and retains intended playing or paused state, position,
               volume and mute; stale callbacks cannot start another player
             when: The owned filtered replacement becomes ready at the restored position
+          - given: The source has no valid FPS metadata
+            id: ac-missing-fps
+            then: Startup reports a visible connection issue and offers explicit playback without SVP, without
+              requiring unfiltered advancing frames
+            when: A metadata probe cannot provide FPS
         tags: []
         created: 2026-10-02T04:22:44.328Z
         notes: []
