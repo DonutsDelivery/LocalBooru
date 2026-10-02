@@ -8,3 +8,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T00:48:47.304Z
+  - _ulid: 01M3X1MC4FTHGFZ200V7D6334H
+    content: Candidate source is branch fix/create-connection-ui at
+      d1130513985a305958e00fa51163897c5f2ff638, base cee213815840d418695c79217b8a546f54372cca.
+      Cleared automatic submission linkage because control checkout metadata incorrectly referred to
+      unrelated splice/mac-pairing HEAD. Exact comparison and 51 focused tests are recorded in
+      approved closed review @review-create-connection-screen.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T00:53:35.503Z
