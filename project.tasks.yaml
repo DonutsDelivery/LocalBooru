@@ -1938,3 +1938,17 @@ tasks:
     started_at: 2026-10-02T03:07:34.215Z
     submitted_at: 2026-10-02T03:58:00.949Z
     completed_at: 2026-10-02T04:00:52.756Z
+  - _ulid: 01M3XDKJHFY9K3T7GS81HVSVEP
+    slugs:
+      - gate-native-svp-startup
+    title: Gate native SVP playback until the owned graph is ready
+    type: bug
+    spec_ref: "@native-svp-startup-gate"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-02T04:22:52.207Z
