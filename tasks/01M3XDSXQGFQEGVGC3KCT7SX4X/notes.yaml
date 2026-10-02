@@ -8,3 +8,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T04:26:20.538Z
+  - _ulid: 01M3XE6AJ6G78GD8286KQW0YFH
+    content: Clean isolated candidate94edd9f7352eb42a897b03e4f93c73a5ec343003 basec4841436
+      in/tmp/dmc-video-volume. Four source/test files only. Shared logical volume/mute preference
+      initializes both hooks, restoreAudioState(volume,muted) is agreed startup handoff API,
+      restorePlaybackState routes normalized setters and defers physical play while interaction not
+      ready. Tests authored first but baseline not executed; final coupled10 + existing9 seek checks
+      queued under host gate behind unrelated DonutStudio. Syntax/diff checks pass. Parent
+      independently reviews/integrates; no app/native/profile/media changes.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T04:33:06.630Z
