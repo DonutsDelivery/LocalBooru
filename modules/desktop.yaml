@@ -1034,6 +1034,11 @@ features:
             id: ac-labels
             then: choices describe resolution and raw resizing, with no bitrate or duplicate enhanced option
             when: the resolution menu opens
+          - given: Linux embedded playback may use stock or older WebKit and SVP is disabled
+            id: ac-runtime-proof
+            then: the current physical owner must verify negotiated scaler geometry; absent proof gets bounded
+              retries and a visible owned fallback to Original without encoding
+            when: a lower raw resolution is prepared and media metadata loads
         tags: []
         created: 2026-10-02T02:27:52.547Z
         notes: []
