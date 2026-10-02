@@ -755,6 +755,12 @@ features:
               identity; stops only that installed controller and waits for release before launching
               a new tracked child
             when: That add-on is started
+          - given: The port belongs to a foreign or ambiguous listener, a changed process identity or another
+              live DMC owner
+            id: ac-foreign-safety
+            then: Recovery refuses without signaling that listener or independent services and reports the
+              conflict
+            when: An add-on start is requested
         tags: []
         created: 2026-10-02T04:59:18.175Z
         notes: []
