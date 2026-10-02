@@ -49,3 +49,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T04:54:11.271Z
+  - _ulid: 01M3XJ7GM35YNSYXZK2YYM4E3G
+    content: Matching Linux app and patched WebKit runtime installed; app PID 2359476 uses promoted
+      runtime and WebProcess PID 2359511. Main c07de2813ab5df165b1dc072c3f9cba2f20bf61d pushed.
+      Focused 46/46 checks passed; real user-media playback not visually rechecked. App remains
+      open.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T05:43:39.907Z
