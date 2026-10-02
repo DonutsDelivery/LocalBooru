@@ -9749,3 +9749,32 @@ reviews:
     created_at: 2026-10-02T03:58:35.327Z
     updated_at: 2026-10-02T03:59:52.226Z
     notes: []
+  - _ulid: 01M3XEBET9Y2SMQAXYDHGJ9HJM
+    slugs:
+      - review-logical-video-volume
+    title: Logical video volume restoration
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3XEBET96H4T6P437K5KT1WT
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-02T04:35:54.825Z
+    examined_commit: 94edd9f7352eb42a897b03e4f93c73a5ec343003
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@remember-video-volume"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: c4841436e325b39002d4be031f6754307c910bae
+      head_branch: fix/remember-video-volume
+      head_commit: 94edd9f7352eb42a897b03e4f93c73a5ec343003
+    threads: []
+    verdicts: []
+    created_at: 2026-10-02T04:35:54.825Z
+    updated_at: null
+    notes: []
