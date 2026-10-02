@@ -1,1 +1,15 @@
-notes: []
+notes:
+  - _ulid: 01M3XFRX3F113C6MVGPAPSMK5P
+    content: "User explicitly requests kill or reattach when installed add-on blocks its own port. Root
+      verified stale Create controller2055661 was reparented1272; graceful operational recovery
+      succeeded, but exact prior exit cause unknown. Concrete source hole: spawn_sidecar lacks
+      kill_on_drop; normalstop_all/traycleanup alreadyexists. Plan Linuxonly /proc listener→exact
+      installed command/cwd/interpreter/UID/freshprocessgroup+live-parent guard+PIDidentity via
+      pidfd; blockinginspection offasync loop; boundedTERM thenownedgroupKILL escalation;
+      waitrelease thenexistingdeploy/start. Preservehealthyforeignconflictguard and
+      independentComfy. Isolated branchfix/owned-addon-port-recovery base7749580. Synthetic realTCP
+      listeningfixtures, norealprofile/controller tests or runtimechanges; nativefocused checks
+      gatedrequiredCargo wrapper2jobs/sharedtarget."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T05:00:44.015Z
