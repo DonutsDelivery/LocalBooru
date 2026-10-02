@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M3XDKNM1EREVG62H4AP5Z21K
+    content: "User requires no video/audio before SVP actually loads. Source c484 initial autoPlay=true
+      and generic canplay calls play while graph readiness hides frames. Approach: pause bootstrap
+      without losing desired play intent; publish metadata/probed FPS without advancing frames;
+      owned filter acknowledgment remount then restore position/audio before start. Preserve
+      existing controls/handoff, ordinary/HLS routing and raw geometry. Tests first: initial pending
+      canplay/loadeddata, graph handoff at nonzero position, paused intent, stale owner, unknown FPS
+      visible fallback, original unchanged. Isolated branch fix/native-svp-startup-gate at
+      /tmp/dmc-svp-startup-gate; no profile/runtime/native changes."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T04:22:55.361Z
