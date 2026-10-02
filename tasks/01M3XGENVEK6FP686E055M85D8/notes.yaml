@@ -1,0 +1,13 @@
+notes:
+  - _ulid: 01M3XGEP45GNA99F06JZRP1ZWE
+    content: "Plan: /tmp/dmc-create-sidebar-layout branchfeat/create-sidebar-placement
+      base7749580f14edc195a1381779d9f2ec774211cedf. Move existing keyed field renderings without
+      changing adaptermapping; left upscalers remain mounted acrossCreate/Edit/Finalize. Right
+      mounted model/effect subregions selected by existingmobilepanes; lowerHistory-only keeps
+      expansion/resizer. EditingLoRA joins right whenEdittab. Testsfirst
+      DOMplacement/allconditionalupscale fields, no-opdisclosures+tab/pane survival, precise
+      LoRA/upscale patch+gesture lock, mobilepane targeting and resizekeyboard. Scopeactualbehavior
+      tests, no source scans/private data/appbuild. Parent reviews earlydraft and exactfrozenhead."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T05:12:37.765Z

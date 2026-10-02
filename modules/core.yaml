@@ -1705,4 +1705,43 @@ requirements:
     tags: []
     created: 2026-10-02T04:26:19.143Z
     notes: []
+  - _ulid: 01M3XGEMR20CMQA4CJKV8H3G18
+    slugs:
+      - create-sidebar-layout
+    title: Create sidebar control placement
+    type: requirement
+    description: Upscaling controls are grouped with the image controls on the left, model recipes and
+      LoRAs are on the right, and image history stays below the central output.
+    status:
+      maturity: draft
+      implementation: in_progress
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    acceptance_criteria:
+      - given: a workflow exposing upscaling, model recipes and LoRAs
+        id: ac-placement
+        then: all upscaler settings appear in the left sidebar, model recipe and LoRA settings appear in the
+          right sidebar, and only history appears in the lower bar
+        when: the simple Create workspace is displayed
+      - given: current enabled states, values and disclosure choices
+        id: ac-state
+        then: the control values and independent disclosures remain intact without changing the workflow
+          merely to rearrange the workspace
+        when: the user changes tabs or panes
+      - given: a visible model, LoRA or upscaler control
+        id: ac-controls
+        then: the current workflow receives the chosen setting with the existing precision and draft
+          acknowledgement behavior
+        when: the user changes a setting or drags and releases a strength slider
+      - given: a desktop or mobile Create workspace
+        id: ac-responsive
+        then: all relocated controls remain reachable and the output stays in the central workspace with
+          history accessible separately
+        when: the user resizes desktop panels or switches mobile panes
+    tags: []
+    created: 2026-10-02T05:12:36.354Z
+    notes: []
 notes: []
