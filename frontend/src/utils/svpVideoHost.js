@@ -29,10 +29,11 @@ export async function publishSVPVideoHost(send, update, isCurrent, wait = delay 
   for (let attempt = 0; attempt < 5 && isCurrent(); attempt++) {
     try {
       await send(update)
-      return true
+      return isCurrent()
     } catch (error) {
       if (!isCurrent()) return false
-      if (!String(error?.message ?? error).includes('SVP video host is not registered') || attempt === 4) throw error
+      const message = String(error?.message ?? error)
+      if (!(message.includes('SVP video host is not registered') || message.includes('video geometry is not ready')) || attempt === 4) throw error
       await wait(250)
     }
   }

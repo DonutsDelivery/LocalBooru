@@ -305,6 +305,18 @@ const tauriAPI = {
     await tauriInvoke('update_svp_manager_playback', { update })
   },
 
+  configureLocalVideoResolution: async (update) => {
+    await tauriReady
+    if (!tauriInvoke) throw new Error('Native video resolution bridge is unavailable')
+    return tauriInvoke('configure_local_video_resolution', { update })
+  },
+
+  verifyLocalVideoResolution: async (update) => {
+    await tauriReady
+    if (!tauriInvoke) throw new Error('Native video geometry is not ready; runtime bridge is unavailable')
+    return tauriInvoke('verify_local_video_resolution', { update })
+  },
+
   subscribeToSvpManager: async ({ onFilterChanged, onPaused } = {}) => {
     await tauriReady
     if (!tauriEvent) return () => {}

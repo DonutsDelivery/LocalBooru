@@ -48,7 +48,10 @@ use native_video::commands::{
 use native_video::coordinator::{DesktopPlayerMode, RuntimeCapabilities};
 use server::state::AppState;
 #[cfg(desktop)]
-use svp_manager_bridge::{acquire_svp_video_host_epoch, update_svp_manager_playback, SvpManagerBridge};
+use svp_manager_bridge::{
+    acquire_svp_video_host_epoch, configure_local_video_resolution, update_svp_manager_playback,
+    verify_local_video_resolution, SvpManagerBridge,
+};
 use svp_manager_snapshot::ManagerGraphSnapshotStore;
 
 /// Default port for the embedded HTTP server.
@@ -803,6 +806,10 @@ pub fn run() {
             report_direct_file_stage,
             #[cfg(desktop)]
             acquire_svp_video_host_epoch,
+            #[cfg(desktop)]
+            configure_local_video_resolution,
+            #[cfg(desktop)]
+            verify_local_video_resolution,
             #[cfg(desktop)]
             update_svp_manager_playback,
             take_startup_media_file,

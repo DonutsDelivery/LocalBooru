@@ -29,6 +29,7 @@ import { shouldRestartStalledSVP } from './svpStallGuard'
 import { getCodecFallbackStartPosition } from './codecFallback'
 import { shouldStartSVPPlayback } from './svpBuffering'
 import { svpPlaybackError } from '../../../utils/svpPlayback'
+import { localRawResizeAvailable } from '../../../utils/localVideoResolution'
 import {
   capturePlaybackIntent as captureTransitionIntent,
   createPlaybackTransitionOwner,
@@ -54,7 +55,8 @@ const svpMSEClient = {
  */
 export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus = {}) {
   const { svpInstalled = false, enabled = true } = addonStatus
-  const nativeSvpPlayback = isLinuxDesktopApp()
+  const nativeSvpPlayback = localRawResizeAvailable(isLinuxDesktopApp(), isUsingLocalServer())
+  const previousNativePlaybackRef = useRef(nativeSvpPlayback)
   const mseSvpPlayback = isWindowsOrMacDesktopApp() && typeof MediaSource !== 'undefined'
   const svpMseControllerRef = useRef(null)
   const imageRef = useRef(image)
@@ -723,6 +725,9 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       return  // No cleanup needed on first mount
     }
 
+    const backendOwnershipChanged = previousNativePlaybackRef.current !== nativeSvpPlayback
+    previousNativePlaybackRef.current = nativeSvpPlayback
+
     const shouldStopVideoBackends = videoBackendCleanupRef.current.replace(
       videoBackendProducerMayExist(),
     )
@@ -768,7 +773,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
     // Only actual video lifecycles may own backend producers. Ordinary image
     // navigation must not issue global SVP/transcode cleanup requests.
-    const backendCleanup = shouldStopVideoBackends
+    // Stop APIs resolve through the current selected server. Once ownership
+    // switches, those global calls would target the new backend rather than
+    // the producer being released. Client teardown above still runs fully.
+    const backendCleanup = shouldStopVideoBackends && !backendOwnershipChanged
       ? Promise.all([
           stopSVPStream(playbackGeneration).catch(() => {}),
           stopInterpolatedStream().catch(() => {}),
@@ -780,7 +788,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       cleanupDoneRef.current = true
       setCleanupSeq(s => s + 1)
     })
-  }, [currentImageKey, videoBackendProducerMayExist])
+  }, [currentImageKey, nativeSvpPlayback, videoBackendProducerMayExist])
 
   // Native GTK owns playback exclusively. Tear down every browser/HLS producer
   // as soon as native ownership is selected so two decoders cannot run.
@@ -900,7 +908,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       // Desktop LocalBooru uses the original WebKit player with the
       // Manager-controlled GStreamer/VapourSynth filter. Do not start the
       // retired local HLS producer in that mode.
-      if (svpConfig?.enabled && nativeSvpPlayback) {
+      if (nativeSvpPlayback) {
         if (image.file_path) applyNormalization(image.file_path)
       }
       // Remote/mobile clients retain the existing streaming route.
@@ -1607,6 +1615,13 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       return
     }
 
+    // Local resolution changes are owned by the physical WebKit player. SVP
+    // settings changes must not route that original source through an encoder.
+    if (nativeSvpPlayback && !codecFallbackActive && !transcodeStreamUrl) {
+      if (image.file_path) applyNormalization(image.file_path)
+      return
+    }
+
     const transition = beginPlaybackTransition(playbackIntent || capturePlaybackIntent())
     const absoluteTime = transition.intent.position
     console.log('[Lightbox] Current absolute time:', absoluteTime)
@@ -1742,7 +1757,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         finishPlaybackTransition(transition)
       }
     }
-  }, [image, mediaRef, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, svpInstalled, svpConfig, opticalFlowConfig, applyNormalization, restartSVPFromPosition, stopSVP, startSVPStream, resetGain, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition])
+  }, [image, mediaRef, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, svpInstalled, svpConfig, opticalFlowConfig, applyNormalization, restartSVPFromPosition, stopSVP, startSVPStream, resetGain, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition, nativeSvpPlayback, codecFallbackActive])
   handleQualityChangeRef.current = handleQualityChange
 
   // Check if browser can't decode the video codec (e.g. HEVC on Linux WebKitGTK/Chromium)
