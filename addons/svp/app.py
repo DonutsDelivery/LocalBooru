@@ -58,6 +58,28 @@ def _is_macos():
     return sys.platform == "darwin"
 
 
+def _stderr_ready_bytes(pipe) -> int:
+    """Return a safe read size without waiting for a process or pipe EOF."""
+    if not _is_windows():
+        return 4096 if select.select([pipe], [], [], 0)[0] else 0
+
+    # Windows select only accepts sockets. PeekNamedPipe also accepts the
+    # anonymous pipes created by Popen, including pipes with inherited writers.
+    import ctypes
+    import msvcrt
+
+    peek = ctypes.WinDLL("kernel32", use_last_error=True).PeekNamedPipe
+    peek.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32,
+                     ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32), ctypes.c_void_p]
+    peek.restype = ctypes.c_int
+    available = ctypes.c_uint32()
+    handle = msvcrt.get_osfhandle(pipe.fileno())
+    if not peek(handle, None, 0, None, ctypes.byref(available), None):
+        # Broken/closed pipes have no more readable bytes.
+        return 0
+    return min(available.value, 4096)
+
+
 def get_svp_plugin_path() -> Optional[str]:
     env = os.environ.get("LOCALBOORU_SVP_PLUGIN_PATH")
     if env and os.path.isdir(env):
@@ -405,6 +427,11 @@ def read_exact(size):
 def write_plane(frame, plane, src, width, height):
     stride = frame.get_stride(plane)
     ptr = frame.get_write_ptr(plane)
+    # Aligned planes (including 1080p) need one copy, rather than one
+    # Python/ctypes call per row. Keep row copies for padded plane strides.
+    if stride == width:
+        ctypes.memmove(ptr.value, src, width * height)
+        return
     pos = 0
     for y in range(height):
         ctypes.memmove(ptr.value + y * stride, src[pos:pos + width], width)
@@ -823,13 +850,20 @@ class SVPStream:
             if not pipe:
                 continue
             try:
-                while final or select.select([pipe], [], [], 0)[0]:
-                    chunk = pipe.read(4096 if final else 1024)
+                # Readiness only guarantees that some bytes are available.
+                # BufferedReader.read(size) can wait for the rest of size,
+                # blocking HLS HTTP requests on this same asyncio loop. A
+                # read1 performs at most one pipe read and returns available
+                # bytes. Even a final drain must not wait on live upstream
+                # stages when the encoder has already exited.
+                for _ in range(32):
+                    ready_bytes = _stderr_ready_bytes(pipe)
+                    if not ready_bytes:
+                        break
+                    chunk = pipe.read1(ready_bytes)
                     if not chunk:
                         break
                     setattr(self, attr, (getattr(self, attr) + chunk)[-12000:])
-                    if not final and len(chunk) < 1024:
-                        break
             except Exception:
                 pass
 
