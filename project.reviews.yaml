@@ -8606,6 +8606,73 @@ reviews:
         runner: independent-context
         created_at: 2026-10-02T00:56:26.184Z
         completed_at: 2026-10-02T00:56:26.184Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: ca76bad99b4e48ba11f58be06f9e85467855fd1d
+        evidence: Exactca76bad source independently tested:18/18legacy tests
+          /tmp/dmc-svp-review-legacy-final.log and3/3NVENC /tmp/dmc-svp-review-nvenc-final.log.
+          Covers originalquality/lifecycle, realPOSIXpartialandfinalpipe no-wait, bounded12000tail,
+          generatedcontiguous/paddedbytecopy, simulatedWindows
+          readiness/finaldetail/64bithandle/closedAPI cases. No compiler/GPU/userprofile launch.
+        name: focused-python
+        required: true
+        runner: independent-unittest
+        created_at: 2026-10-02T00:59:42.266Z
+        completed_at: 2026-10-02T00:59:42.266Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: ca76bad99b4e48ba11f58be06f9e85467855fd1d
+        evidence: Finalexaminedcommitca76bad99b4e48ba11f58be06f9e85467855fd1d
+          againstcee213815840d418695c79217b8a546f54372cca; frozen cleanconfirmed.
+          Independentlyreviewed all2paths and callers/generatedplanegeometry/processownership.
+          POSIXselect/read1 singleconsumer safeavailablebyte read,32boundediterations;
+          WindowsPeekNamedPipe+available count preserves non-wait andfataldiagnostics. c_void_p
+          preservesHANDLEwidth,c_uint32 matchesDWORD. Exact sourceplanes+zero-fill guarantee
+          width*heightmemmove size; rowfallback preservespadding. No
+          quality/preset/scaling/HLS/session mutation, no unresolvedblocker.
+        name: source-contracts
+        required: true
+        runner: independent-source-review
+        created_at: 2026-10-02T00:59:42.455Z
+        completed_at: 2026-10-02T00:59:42.455Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: ca76bad99b4e48ba11f58be06f9e85467855fd1d
+        evidence: Priorbenchmark from4e2d64 performancepatch before ca76platformhelper; no exactca76GPUrerun
+          claimed. Independent scripts/receipts inspection verified archivedbaseline equals gitcee.
+          Threealternating samples each medianelapsed11.091497->10.717903,
+          firstplaylist4.483595->3.887198, heartbeat3.549060->0.051532seconds.
+          Allruns3segments/noerrors; firstsegment perrun ffprobe1920x1080/60 only, notallsegments.
+          ca76retainsPOSIXreadiness/read1 algorithm andcontiguouscopies withhelpercall; measurement
+          supports narrowstallfix, notuniversalrealtimeguarantee. ParentGPUexecutionattributed,
+          syntheticonly.
+        name: synthetic-benchmark-provenance
+        required: true
+        runner: independent-receipt-and-script-review
+        created_at: 2026-10-02T00:59:42.643Z
+        completed_at: 2026-10-02T00:59:42.643Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: ca76bad99b4e48ba11f58be06f9e85467855fd1d
+        evidence: Reviewed linked @svp-bounded-stream3ACs andexistingbehavioralannotations; no
+          inheritedtraits. Narrowlegacydelta doesnotchangebuffer/seek/audio contracts
+          orclaimfullspecacceptance. Known unrelatedglobalvalidationerrors documented.
+          RealWindows/macOS/runtime/user-media playback/normalprofile/GPU independentacceptance
+          notrun; Windowscoverage is simulatedAPI behavior andprimaryAPI/source review.
+          Parentintegration/install separate.
+        name: spec-and-platform-limits
+        required: false
+        runner: independent-context
+        created_at: 2026-10-02T00:59:42.826Z
+        completed_at: 2026-10-02T00:59:42.826Z
     events:
       - _ulid: 01M3X1SHG1ZHZNGQ1EPKSGYX0M
         actor: donut_create_review
@@ -8655,9 +8722,74 @@ reviews:
           status: pass
           name: spec-and-platform-limits
         timestamp: 2026-10-02T00:56:26.231Z
+      - _ulid: 01M3X1ZHS05Z015NHBC2TT6H49
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_base: cee213815840d418695c79217b8a546f54372cca
+          new_head: ca76bad99b4e48ba11f58be06f9e85467855fd1d
+          previous_head: 4e2d64ab87e435761b4602b35b9a3cf84118e34e
+        timestamp: 2026-10-02T00:59:41.728Z
+      - _ulid: 01M3X1ZHZCHQGH1BZBZDA3EF8Q
+        actor: DonutsDelivery
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01M3X1SJ2C9F01T703AYMZM7QQ
+        timestamp: 2026-10-02T00:59:41.932Z
+      - _ulid: 01M3X1ZJ5CX694TX0J8QW81R44
+        actor: DonutsDelivery
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01M3X1SJ2C9F01T703AYMZM7QQ
+        timestamp: 2026-10-02T00:59:42.124Z
+      - _ulid: 01M3X1ZJBBWG4PNJHF4EJSRQ1D
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-python
+        timestamp: 2026-10-02T00:59:42.315Z
+      - _ulid: 01M3X1ZJH8WAB6BNA3KM4R0Q73
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-contracts
+        timestamp: 2026-10-02T00:59:42.504Z
+      - _ulid: 01M3X1ZJQ6CP8CKD8ZF2YND3HX
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: synthetic-benchmark-provenance
+        timestamp: 2026-10-02T00:59:42.694Z
+      - _ulid: 01M3X1ZJWTSF7NRJ5CZJ7EZ9CT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: spec-and-platform-limits
+        timestamp: 2026-10-02T00:59:42.874Z
+      - _ulid: 01M3X1ZK2DJV97XS1H11TWJP3G
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: cee213815840d418695c79217b8a546f54372cca
+            head_commit: ca76bad99b4e48ba11f58be06f9e85467855fd1d
+          decision: approve
+        timestamp: 2026-10-02T00:59:43.053Z
+      - _ulid: 01M3X1ZK2DQK1FD5YT3VWFCW6C
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T00:59:43.053Z
     examined_commit: 4e2d64ab87e435761b4602b35b9a3cf84118e34e
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@svp-downscale-throughput"
     subject:
@@ -8665,7 +8797,7 @@ reviews:
       base_branch: main
       base_commit: cee213815840d418695c79217b8a546f54372cca
       head_branch: fix/svp-downscale-throughput
-      head_commit: 4e2d64ab87e435761b4602b35b9a3cf84118e34e
+      head_commit: ca76bad99b4e48ba11f58be06f9e85467855fd1d
     threads:
       - _ulid: 01M3X1SJ2C9F01T703AYMZM7QQ
         anchor:
@@ -8687,8 +8819,31 @@ reviews:
               live upstream stages; add simulated unsupportedpipe/exited and liveupstream
               regression. Parent/controller owner notified. No real Windows/profile test claimed."
             created_at: 2026-10-02T00:56:25.420Z
+          - _ulid: 01M3X1ZHXWW7SQRJHKX6D4Y03Z
+            author: DonutsDelivery
+            body: "Fixed at frozen cleanca76bad99b4e48ba11f58be06f9e85467855fd1d. Windows branch uses
+              PeekNamedPipe availablebytes rather than select or exited-process EOF assumptions;
+              reads atmost available4096bytes and returns0 when no data/API failure.
+              Simulatedfinalfataldetail/livezeroready/brokenpipe/64bithandle regressions
+              independentlypassed along with POSIX livepartial/final/no-wait cases. No
+              actualWindowsruntime claim. PrimaryAPI documentation supports anonymous readpipe and
+              correctsignature:
+              https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-peek\
+              namedpipe . Its synchronous multithreadhandle caveat considered; source has one
+              stderrreader perpipe/no concurrentreads."
+            created_at: 2026-10-02T00:59:41.884Z
         kind: blocker
-    verdicts: []
+        resolved_at: 2026-10-02T00:59:42.074Z
+        resolved_by: DonutsDelivery
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: ca76bad99b4e48ba11f58be06f9e85467855fd1d
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-02T00:59:43.053Z
     created_at: 2026-10-02T00:56:24.833Z
-    updated_at: 2026-10-02T00:56:26.184Z
+    updated_at: 2026-10-02T00:59:43.053Z
     notes: []
