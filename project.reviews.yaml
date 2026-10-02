@@ -8239,3 +8239,154 @@ reviews:
     created_at: 2026-10-01T23:28:14.358Z
     updated_at: 2026-10-02T00:20:06.689Z
     notes: []
+  - _ulid: 01M3X1F7EGJB41R7ZWB8JEV4C6
+    slugs:
+      - review-create-connection-screen
+    title: Review truthful Create connection loading and session handoff
+    author: donut_create_review
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: a326a61fb1e3be8cfca18746051c6aac99495006
+        evidence: "Independently read /tmp/dmc-create-connection-preview/tests.log exacta326 worktree
+          frontend: twofiles49/49 passed start02:47:52 duration6.51s. New deferredsession tests
+          cover skeleton→iframe, Setup+Exit during pending session, session rejection→Setup+toast.
+          Initialstatus-null polling failure not covered; blocker recorded, followup tests
+          required."
+        name: focused-components
+        required: true
+        runner: parent-vitest-receipt-independently-read
+        created_at: 2026-10-02T00:50:47.707Z
+        completed_at: 2026-10-02T00:50:47.707Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: a326a61fb1e3be8cfca18746051c6aac99495006
+        evidence: Allfour changed files plus surrounding Hoststartup/poll/exit/invalidation and scoped CSS
+          read. Startup ownership, graph/draft handling, backend actions unchanged. Clean exacta326
+          verified. Waiting initial-null connection error finding fix; no other confirmed source
+          blocker.
+        name: source-contracts
+        required: true
+        runner: independent-source-and-callback-review
+        created_at: 2026-10-02T00:50:47.891Z
+        completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: a326a61fb1e3be8cfca18746051c6aac99495006
+        evidence: Parent synthetic actualReact/T3 renders1280x800 and320x640 reported centeredstatus and
+          viewportwidthscrollWidth; independently inspected external harness importing actual
+          Loading+CSS and matching grid/media rules. No realprofile/native/GPU claim. No compiler or
+          browser launched by reviewer.
+        name: rendered-responsive-layout
+        required: true
+        runner: parent-browser-receipt-and-harness-inspection
+        created_at: 2026-10-02T00:50:48.085Z
+        completed_at: 2026-10-02T00:50:48.085Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: a326a61fb1e3be8cfca18746051c6aac99495006
+        evidence: Task no linked spec_ref/trait ACs. kspecvalidate captured
+          /tmp/dmc-connection-review-validation.log and still has unrelated malformed
+          items/verifySKILLmissing-description; globalvalidation notclean. No native packaging,
+          userprofile functional checks, actual backend/GPU generation. Parent handles
+          integration/install; all apps preserved.
+        name: scope-and-validation-limits
+        required: false
+        runner: independent-context
+        created_at: 2026-10-02T00:50:48.294Z
+        completed_at: 2026-10-02T00:50:48.294Z
+    events:
+      - _ulid: 01M3X1F7EFYVCEB9YW5QD86003
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-02T00:50:46.863Z
+      - _ulid: 01M3X1F7XPY77MRKR8CS2YPD8K
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-02T00:50:47.350Z
+      - _ulid: 01M3X1F84JSY8D8G3AZBX0JMN5
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01M3X1F829KZGAJ6Z7DHXSREFB
+        timestamp: 2026-10-02T00:50:47.570Z
+      - _ulid: 01M3X1F8AC4K638KBPQWWSVVX6
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-components
+        timestamp: 2026-10-02T00:50:47.756Z
+      - _ulid: 01M3X1F8G6TS59CYM95FF4679Z
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: source-contracts
+        timestamp: 2026-10-02T00:50:47.942Z
+      - _ulid: 01M3X1F8PZPSPQR79NY253QD76
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: rendered-responsive-layout
+        timestamp: 2026-10-02T00:50:48.159Z
+      - _ulid: 01M3X1F8WT2MQBXXSMQ968T39H
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: scope-and-validation-limits
+        timestamp: 2026-10-02T00:50:48.346Z
+    examined_commit: a326a61fb1e3be8cfca18746051c6aac99495006
+    external_links: []
+    lifecycle_state: open
+    related_refs:
+      - "@create-connection-screen"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: cee213815840d418695c79217b8a546f54372cca
+      head_branch: fix/create-connection-ui
+      head_commit: a326a61fb1e3be8cfca18746051c6aac99495006
+    threads:
+      - _ulid: 01M3X1F829KZGAJ6Z7DHXSREFB
+        anchor:
+          type: code
+          commit: a326a61fb1e3be8cfca18746051c6aac99495006
+          line_end: 1239
+          line_start: 1239
+          path: frontend/src/components/CreateStudioHost.jsx
+          side: head
+        entries:
+          - _ulid: 01M3X1F8293Q4GH332PD9GVHMV
+            author: DonutsDelivery
+            body: "Initial connection failure still presents a busy Preparing/Connecting screen. When the first
+              getAddon/getCreateStatus request rejects before a status exists, poll catch retains
+              statusnull and sets error. connectionFailed additionally requires
+              status.backend.ready===false, so it evaluatesfalse. Independently executed the actual
+              catch updater and prop expression: statusnull,error nonempty,openingfalse =>
+              connectionFailedfalse. Track connection failure separately or handle initialnull,
+              without treating directory/save errors as connection errors; add behavioral
+              first-poll-failure/recovery and unrelated-directory-error cases. Parent confirmed
+              finding and is implementing display-only failure state."
+            created_at: 2026-10-02T00:50:47.497Z
+        kind: blocker
+    verdicts: []
+    created_at: 2026-10-02T00:50:46.864Z
+    updated_at: 2026-10-02T00:50:48.294Z
+    notes: []
