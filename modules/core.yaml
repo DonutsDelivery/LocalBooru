@@ -1590,6 +1590,9 @@ requirements:
     description: Original video seeking preserves playback intent and responds to rapid user input. Slow
       or rejected seeks do not freeze controls or leave an indefinite loading state. Interpolated
       and encoded streams retain their respective seek behavior.
+    status:
+      maturity: draft
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
