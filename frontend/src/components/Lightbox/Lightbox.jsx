@@ -531,8 +531,6 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           svpResumeRef.current = {
             currentTime: video.currentTime,
             paused: !wasInteractionReady ? !requestedPlayingRef.current : video.paused,
-            volume: playbackAudioRef.current.volume,
-            muted: playbackAudioRef.current.muted,
             imageKey,
             media: video,
           }
