@@ -11,3 +11,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T04:22:55.361Z
+  - _ulid: 01M3XE9HNZFPE2AVR3T8NS2YMK
+    content: Startup product slice19eb535 is committed with explicit two-path staging. Combined isolated
+      candidate e68a6dcc contains unchanged volume94edd9f ancestor because Lightbox now uses
+      restoreAudioState(volume,muted). Focused React tests queued via host gate; receipts pending,
+      no runtime acceptance claimed. NativeSVP configloading direct-file sources are withheld until
+      selection known. Initial Manager pause echoes before/after graph acknowledgment retain
+      requested intent until first handoff; old pipeline pauses immediately on graph transition.
+      Unknown FPS requires metadata probe or visible explicit fallback. Initial preroll failure does
+      not silently start original.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T04:34:52.223Z
