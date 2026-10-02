@@ -312,6 +312,7 @@ test('missing resize and Manager runtime offers explicit original playback at th
   fireEvent.click(screen.getByText('Play without SVP'))
   await waitFor(() => expect(container.querySelector('video')).not.toBe(waiting))
   const original = await videoReady(container)
+  original.__paused = true
   fireEvent.loadedMetadata(original)
   fireEvent.seeked(original)
   expect(original.currentTime).toBe(37)
