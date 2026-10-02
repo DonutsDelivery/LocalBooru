@@ -8868,6 +8868,21 @@ reviews:
         runner: unittest
         created_at: 2026-10-02T01:58:42.178Z
         completed_at: 2026-10-02T01:58:42.178Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+          head_commit: 50c29946817c469c57d414d9c604eb3e4fd08b13
+        evidence: Reviewed pinned8033 baseline generator versus candidate d5c8e012 app.py repeated benchmark
+          and all18 segment ffprobe receipts. Same12s4K24 synthetic input to1080p60, requests1,
+          Balanced grid16/shader23/mask100; medians10.1604s→4.1376s, initial
+          playlist3.8817s→1.6217s, eachrun717frames. Actual OFA0→3%. Engine changes to explicitly
+          requested NVOF; no identical visual quality or real-phone playback claim.
+        name: synthetic-benchmark
+        required: true
+        runner: SVP-FFmpeg
+        created_at: 2026-10-02T01:58:43.544Z
+        completed_at: 2026-10-02T01:58:43.544Z
     events:
       - _ulid: 01M3X5B2GXBH08ZYBV8AN701K2
         actor: DonutsDelivery
@@ -8889,6 +8904,13 @@ reviews:
           status: pass
           name: focused-python
         timestamp: 2026-10-02T01:58:42.231Z
+      - _ulid: 01M3X5BMME9KZANY7H229CVD7M
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: synthetic-benchmark
+        timestamp: 2026-10-02T01:58:43.598Z
     examined_commit: 50c29946817c469c57d414d9c604eb3e4fd08b13
     external_links: []
     lifecycle_state: open
@@ -8903,5 +8925,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-02T01:58:25.057Z
-    updated_at: 2026-10-02T01:58:42.178Z
+    updated_at: 2026-10-02T01:58:43.544Z
     notes: []
