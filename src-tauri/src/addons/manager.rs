@@ -1163,16 +1163,25 @@ impl AddonManager {
         let app_dir = self.addon_dir(id);
         let port = manifest.port.expect("sidecar addons must have a port");
 
-        // A healthy orphan from a previous app instance must not be mistaken
-        // for the process we are about to start. It can otherwise make a
-        // failed bind look like a successful addon launch.
+        // Never adopt health from an untracked listener. Linux can reclaim an
+        // exact installed legacy controller, then launch a new owned child.
         if tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
             .await
             .is_ok()
         {
-            let message = format!("Addon '{}' cannot start: port {} is already in use", id, port);
-            self.set_status(id, AddonStatus::Error(message.clone()));
-            return Err(message);
+            #[cfg(target_os = "linux")]
+            let recovery =
+                super::port_recovery::recover_installed_listener(&python, &app_dir, port).await;
+            #[cfg(not(target_os = "linux"))]
+            let recovery: Result<(), String> = Err("port is already in use".into());
+            if let Err(error) = recovery {
+                let message = format!(
+                    "Addon '{}' cannot start: port {} is already in use: {}",
+                    id, port, error
+                );
+                self.set_status(id, AddonStatus::Error(message.clone()));
+                return Err(message);
+            }
         }
 
         // Always deploy the latest embedded sources before starting.

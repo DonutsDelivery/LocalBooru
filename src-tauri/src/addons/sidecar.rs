@@ -508,6 +508,7 @@ pub async fn spawn_sidecar(
     .current_dir(app_dir)
     .stdout(std::process::Stdio::piped())
     .stderr(std::process::Stdio::piped())
+    .kill_on_drop(true)
     .env("PYTHONUNBUFFERED", "1");
 
     for (key, value) in envs {
