@@ -17,14 +17,7 @@ context: []
 priority: 3
 tags: []
 vcs_refs: []
-submission_linkage:
-  review_url: null
-  branch: splice/mac-pairing
-  captured_at: 2026-10-02T00:52:32.417Z
-  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
-  remote: null
-  remote_url: null
-  upstream_ref: null
+submission_linkage: null
 history:
   - author: DonutsDelivery
     changes:
@@ -56,6 +49,20 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-02T00:52:32.424Z
+  - author: DonutsDelivery
+    changes:
+      submission_linkage:
+        new: null
+        previous:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-10-02T00:52:32.417Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+    command: task-set
+    timestamp: 2026-10-02T00:53:36.716Z
 created_at: 2026-10-02T00:41:47.937Z
 started_at: 2026-10-02T00:42:26.901Z
 submitted_at: 2026-10-02T00:52:32.423Z
