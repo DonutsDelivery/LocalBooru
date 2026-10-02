@@ -1872,7 +1872,7 @@ tasks:
     title: Isolate DMC SVP Manager endpoints from external players
     type: bug
     spec_ref: "@svp-platform-routing"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 2
@@ -1882,6 +1882,7 @@ tasks:
     todos_count: 0
     created_at: 2026-10-02T01:11:55.688Z
     started_at: 2026-10-02T01:12:09.838Z
+    submitted_at: 2026-10-02T02:24:51.871Z
   - _ulid: 01M3X4THWDW8G6VFCSWNHYTXG4
     slugs:
       - svp-requested-nvof
