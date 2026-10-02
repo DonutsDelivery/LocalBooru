@@ -1042,6 +1042,23 @@ features:
         tags: []
         created: 2026-10-02T02:27:52.547Z
         notes: []
+      - _ulid: 01M3XDKAV8J3D3SSKETDMJPDNY
+        slugs:
+          - native-svp-startup-gate
+        title: Wait for native SVP before playback
+        type: requirement
+        description: Native SVP startup preloads metadata while physically paused. Only the owned ready
+          filtered pipeline may produce playback. Explicit disabling restores ordinary playback.
+          This user-requested startup contract overrides unfiltered startup allowed by
+          svp-manager-transitions ac-no-active-graph.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        tags: []
+        created: 2026-10-02T04:22:44.328Z
+        notes: []
     created: 2026-07-16T23:26:05.987Z
     notes: []
   - _ulid: 01M3QPHNQWY7Q1XRBEAJKNK4E5
