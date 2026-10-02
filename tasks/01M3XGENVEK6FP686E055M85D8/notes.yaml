@@ -29,3 +29,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T05:22:03.869Z
+  - _ulid: 01M3XJ7DYAWSK0057JK77VCGW0
+    content: "Deployed and pushed main c07de2813ab5df165b1dc072c3f9cba2f20bf61d. Linux DMC remains open
+      as PID 2359476 with matching final app binary. Upscalers left, models/LoRAs right, History
+      lower bar; independent 57/57 component checks and synthetic desktop/mobile browser layout
+      inspection passed. Deployment receipt:
+      /tmp/dmc-local-raw-release-20261002/operational-deployment-receipt.json."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T05:43:37.162Z
