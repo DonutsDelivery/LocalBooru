@@ -2340,6 +2340,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onClick={curationMode || vrActive ? undefined : handleVideoClick}
               onLoadStart={(event) => reportDirectFileStage('loadstart', event.currentTarget)}
               onLoadedData={(event) => {
+                if (mediaRef.current !== event.currentTarget) return
                 reportDirectFileStage('loadeddata', event.currentTarget)
                 if (svpResumeRef.current?.imageKey === currentImageKey
                     && svpResumeRef.current.currentTime <= 0.05) {
@@ -2378,6 +2379,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 reportDirectFileStage('pause', event.currentTarget)
               }}
               onTimeUpdate={(event) => {
+                if (mediaRef.current !== event.currentTarget) return
                 if (!svpResumeRef.current || svpResumeRef.current.media === event.currentTarget) {
                   playback.handleTimeUpdate(event)
                 }
@@ -2403,6 +2405,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 }
               }}
               onLoadedMetadata={(event) => {
+                if (mediaRef.current !== event.currentTarget) return
                 handleLoadedMetadataWithResolution(event)
                 verifyLocalResolution(event.currentTarget)
                 const resume = svpResumeRef.current
@@ -2421,6 +2424,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 reportDirectFileStage('loadedmetadata', event.currentTarget)
               }}
               onCanPlay={(event) => {
+                if (mediaRef.current !== event.currentTarget) return
                 if (svpResumeRef.current?.imageKey === currentImageKey) {
                   finishSvpHandoff(event.currentTarget)
                 } else {
@@ -2432,6 +2436,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               onStalled={(event) => reportDirectFileStage('stalled', event.currentTarget)}
               onSeeking={(event) => reportDirectFileStage('seeking', event.currentTarget)}
               onSeeked={(event) => {
+                if (mediaRef.current !== event.currentTarget) return
                 const resume = svpResumeRef.current
                 if (resume?.imageKey === currentImageKey
                     && Math.abs(event.currentTarget.currentTime - resume.currentTime) <= 0.5) {

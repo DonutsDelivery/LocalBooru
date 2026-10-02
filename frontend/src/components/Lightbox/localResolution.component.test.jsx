@@ -578,3 +578,33 @@ test.each([true, false])('active graph refresh preserves Manager intent with res
   fireEvent.canPlay(replacement)
   expect(replacement.paused).toBe(!resumeCommand)
 })
+
+// AC: @native-svp-startup-gate ac-owned-handoff
+test('old physical seeked callback cannot unlock the replacement startup seek', async () => {
+  mocks.initialSvp = true
+  const { container } = mount()
+  const bootstrap = await videoReady(container)
+  bootstrap.__paused = true; bootstrap.currentTime = 37
+  // Capture the actual rendered callbacks. A detached DOM event may be dropped
+  // by React; invoke the callback to prove its own physical-owner invariant.
+  const propsKey = Object.keys(bootstrap).find(key => key.startsWith('__reactProps$'))
+  const oldSeeked = bootstrap[propsKey].onSeeked
+  const oldMetadata = bootstrap[propsKey].onLoadedMetadata
+  fireEvent.loadedMetadata(bootstrap)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  await act(async () => mocks.listeners.onFilterChanged({ ...owner, enabled: true }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(bootstrap))
+  const replacement = await videoReady(container)
+  replacement.__paused = true
+  fireEvent.loadedMetadata(replacement)
+  expect(replacement.currentTime).toBe(37)
+  act(() => {
+    oldSeeked({ currentTarget: bootstrap })
+    oldMetadata({ currentTarget: bootstrap })
+  })
+  fireEvent.canPlay(replacement)
+  expect(replacement.play).not.toHaveBeenCalled()
+  fireEvent.seeked(replacement)
+  expect(replacement.play).toHaveBeenCalledOnce()
+})
