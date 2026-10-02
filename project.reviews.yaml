@@ -9778,3 +9778,33 @@ reviews:
     created_at: 2026-10-02T04:35:54.825Z
     updated_at: null
     notes: []
+  - _ulid: 01M3XFCTHYJTS1KR133WCX2EKR
+    slugs:
+      - review-native-svp-startup-gate
+    title: Gate native SVP playback until owned filtered preroll
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M3XFCTHYHQSQZ83VY49R3FV9
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-02T04:54:08.190Z
+    examined_commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@gate-native-svp-startup"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: c4841436e325b39002d4be031f6754307c910bae
+      head_branch: fix/native-svp-startup-gate
+      head_commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
+      merge_base_commit: c4841436e325b39002d4be031f6754307c910bae
+    threads: []
+    verdicts: []
+    created_at: 2026-10-02T04:54:08.190Z
+    updated_at: null
+    notes: []
