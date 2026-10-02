@@ -1072,6 +1072,11 @@ features:
             then: Startup reports a visible connection issue and offers explicit playback without SVP, without
               requiring unfiltered advancing frames
             when: A metadata probe cannot provide FPS
+          - given: Native SVP startup is pending or ordinary playback was requested
+            id: ac-original
+            then: Existing original playback behavior remains available and an abandoned SVP acknowledgment
+              cannot later resume it
+            when: SVP is explicitly disabled or an ordinary video is opened
         tags: []
         created: 2026-10-02T04:22:44.328Z
         notes: []
