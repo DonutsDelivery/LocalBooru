@@ -34,3 +34,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T04:54:27.341Z
+  - _ulid: 01M3XJ7HXKDE2QEJWHKK4S38H8
+    content: Linux app installed and reopened, main c07de2813ab5df165b1dc072c3f9cba2f20bf61d pushed.
+      Logical volume/mute preference persistence verified with focused 19/19 checks. Previously
+      unsaved logical gain cannot be recovered; choices made after this update persist.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T05:43:41.235Z
