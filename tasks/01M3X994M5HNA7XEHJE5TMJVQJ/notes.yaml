@@ -21,3 +21,28 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T03:58:02.293Z
+  - _ulid: 01M3XC76X45B3FTJQ69THWZ249
+    content: "Frozen clean candidate 91062f67ea3a7cd2efa5563353fb3f1c9825940e on
+      fix/direct-seek-responsiveness from main fb3ab86, /tmp/dmc-direct-seek-fix. Reproduced delayed
+      native relative-intent loss and synchronous FLUSH main-loop stalls with synthetic fixtures
+      only. Fixed frame coalescing/latest intent, redundant play, stale original stream guards,
+      source/element cleanup and visible original error + Close video recovery. Native ordinary HTTP
+      dispatch uses existing async path/latest-overlap slot with accepted/dispatched tickets and
+      pending-worker completion guard; preserves nested SVP, native HLS playlists, loop and rate
+      paths; rate request applies after outstanding dispatch. Focused React 30/30 passed; native
+      extracted functions/state tail 11 scenarios + guards passed twice, ~260ms synchronous baseline
+      versus <=0.16ms async dispatch/max heartbeat ~10.2ms, PAUSED stage <=0.05ms synthetic. Current
+      rejected seek is visible terminal error; old rejected work advances newer queued intent.
+      Existing explicit rate changes remain synchronous (measured ~260ms synthetic) and are excluded
+      from new dispatch policy. Final canonical/legacy fresh proof Media
+      e9aa894efdad6e148c4457930687a3d31811e2ffc2bf46b86a0d24a39dbef301, WebProcess
+      986c31f46281eb177a2d07c4d15cd6df60d8b5efe6540bf2b5285495d50de434. Raw/relay helper sections
+      byte unchanged; no redundant unchanged tests rerun. Receipts outside repo:
+      /tmp/dmc-direct-seek-final-react.log, /tmp/dmc-http-seek-production-repeat.log,
+      /tmp/dmc-direct-seek-patch-hls-final-proof.txt, /tmp/dmc-direct-seek-preserved-helpers.log.
+      Explicit code review @review-original-http-seeking; parent handles task submission linkage,
+      independent approval, main integration and matching runtime deployment. No user profile/media
+      requests, process/config mutations, pushes or package builds."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T03:58:38.501Z
