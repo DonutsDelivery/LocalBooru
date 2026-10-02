@@ -9855,7 +9855,70 @@ reviews:
       - review-native-svp-startup-gate
     title: Gate native SVP playback until owned filtered preroll
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: c4841436e325b39002d4be031f6754307c910bae
+          head_commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
+        evidence: "Exact4de1b52d01bb21a2c271717769cd050df945e6a8 fromc4841436, clean. Independent scope is
+          worker Lightbox.jsx and localResolution.component.test.jsx only. Verified
+          config/source/autoplay gating, intended-vs-physical pause separation, owned filtered
+          position/ready handoff, explicit failure fallback, unknownFPS probe ownership, posthandoff
+          Manager authority and original/remote routing. Review findings fixed: currentphysical
+          guards before readiness mutations; latest logical gain beats stale captured snapshot;
+          paused replacement commits hook state before latercanplay. No source blocker."
+        name: source-review
+        required: true
+        runner: Independent source review
+        created_at: 2026-10-02T04:56:43.331Z
+        completed_at: 2026-10-02T04:56:43.331Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: c4841436e325b39002d4be031f6754307c910bae
+          head_commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
+        evidence: Independently executed exacthead Lightbox29+seek9=38/38 exit0
+          /tmp/dmc-svp-startup-independent-review.log session9850, then actual routing8/8 exit0
+          /tmp/dmc-svp-startup-independent-routing.log session44760. Total46/46 across threefiles.
+          Worker also46/46 /tmp/dmc-svp-startup-after.log. No livecompilerwriter remained after
+          checks.
+        name: focused-components
+        required: true
+        runner: Independent gated Vitest
+        created_at: 2026-10-02T04:56:43.556Z
+        completed_at: 2026-10-02T04:56:43.556Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: c4841436e325b39002d4be031f6754307c910bae
+          head_commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
+        evidence: Read @native-svp-startup-gate four ACs. Behavioral tests cover no bootstrap autoplay/audio
+          beforegraph; intended paused/playing with restoredposition and current logicalvolume/mute;
+          stalefilterowners/capturedoldphysicalcallbacks; failed/unknownFPS explicit fallback;
+          ordinaryautoplay/canceloldack and retained Android/encoded routing. Captured React
+          hostcallbacktest proves callback owner guard, not actual native delivery of an unmounted
+          event. Visiblevolume test runs realplayback+normalization hooks under .5attenuation.
+        name: spec-coverage
+        required: true
+        runner: Independent acceptance audit
+        created_at: 2026-10-02T04:56:43.767Z
+        completed_at: 2026-10-02T04:56:43.767Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: c4841436e325b39002d4be031f6754307c910bae
+          head_commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
+        evidence: Volume94edd9f ancestor is unchanged in combinedhead and authored by thisreviewer, so not
+          self-approved here. Independently confirmed @review-logical-video-volume is
+          closed/approved/passing for exact94edd9f/basec484 with zeroblockers; root independently
+          reran19/19 /tmp/dmc-volume-independent-review.log. Approval here covers
+          workerstartup2paths and relies on that separatevolume disposition.
+        name: volume-independent-review
+        required: true
+        runner: Separate root review
+        created_at: 2026-10-02T04:56:43.970Z
+        completed_at: 2026-10-02T04:56:43.970Z
     events:
       - _ulid: 01M3XFCTHYHQSQZ83VY49R3FV9
         actor: DonutsDelivery
@@ -9870,9 +9933,61 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-02T04:54:09.923Z
+      - _ulid: 01M3XFHJ3WEJRJWVK0EF2VMXG4
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-review
+        timestamp: 2026-10-02T04:56:43.388Z
+      - _ulid: 01M3XFHJASPAHBGGE9NDX6SDX2
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-components
+        timestamp: 2026-10-02T04:56:43.609Z
+      - _ulid: 01M3XFHJHEMAVSS6XHHV609DFN
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: spec-coverage
+        timestamp: 2026-10-02T04:56:43.822Z
+      - _ulid: 01M3XFHJQSKTZT78E4AT8ZC6GJ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: volume-independent-review
+        timestamp: 2026-10-02T04:56:44.025Z
+      - _ulid: 01M3XFHJY2TWY98ZCN04EVWDXP
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3XFHJWAZVFJX8Z9G4ZNPDXX
+        timestamp: 2026-10-02T04:56:44.226Z
+      - _ulid: 01M3XFHK4A3Z9SG2MP0NMP60DJ
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: c4841436e325b39002d4be031f6754307c910bae
+            head_commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
+          decision: approve
+        timestamp: 2026-10-02T04:56:44.426Z
+      - _ulid: 01M3XFHK4APF85VWBDBGP7CNBP
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T04:56:44.426Z
     examined_commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@gate-native-svp-startup"
     subject:
@@ -9882,8 +9997,35 @@ reviews:
       head_branch: fix/native-svp-startup-gate
       head_commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
       merge_base_commit: c4841436e325b39002d4be031f6754307c910bae
-    threads: []
-    verdicts: []
+    threads:
+      - _ulid: 01M3XFHJWAZVFJX8Z9G4ZNPDXX
+        anchor:
+          type: code
+          commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
+          line_end: 1714
+          line_start: 1714
+          path: frontend/src/components/Lightbox/Lightbox.jsx
+          side: head
+        entries:
+          - _ulid: 01M3XFHJWBQ1CNJASQQ13BGE68
+            author: DonutsDelivery
+            body: Approval is source and synthetic behavior only. No user profile/media, real native SVP
+              startup, device playback, GPU, packaging or installation acceptance performed here.
+              Direct-file authorized opening already probes video_fps and frontend preserves it;
+              unknown FPS probing may visibly fail for an unwatched direct file without permissions
+              relaxation. New volume preference cannot reconstruct an older never-persisted
+              app-level gain. Parent owns matching application build/integration/deployment.
+            created_at: 2026-10-02T04:56:44.171Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: c4841436e325b39002d4be031f6754307c910bae
+          head_commit: 4de1b52d01bb21a2c271717769cd050df945e6a8
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-02T04:56:44.426Z
     created_at: 2026-10-02T04:54:08.190Z
-    updated_at: 2026-10-02T04:54:09.864Z
+    updated_at: 2026-10-02T04:56:44.426Z
     notes: []
