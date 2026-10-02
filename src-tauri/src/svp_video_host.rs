@@ -8,6 +8,13 @@ use std::{
 
 pub(crate) const HOST_PREFIX: &str = "localbooru-svp-host-";
 
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VideoResolutionBounds {
+    pub max_width: u32,
+    pub max_height: u32,
+}
+
 pub(crate) fn valid_host_id(id: &str) -> bool {
     id.strip_prefix(HOST_PREFIX).is_some_and(|token| {
         !token.is_empty()
@@ -32,6 +39,9 @@ struct LeaseState {
     epoch: u64,
     revision: u64,
     current: Option<String>,
+    resize_revision: u64,
+    resize_current: Option<String>,
+    resize_bounds: Option<VideoResolutionBounds>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,6 +78,7 @@ impl VideoHostLease {
         }
         fs::set_permissions(&self.root, fs::Permissions::from_mode(0o700))?;
         let _ = fs::remove_file(self.root.join("active"));
+        let _ = fs::remove_file(self.root.join("resize-active"));
         Ok(())
     }
 
@@ -82,8 +93,174 @@ impl VideoHostLease {
             .ok_or_else(|| io::Error::other("video host epoch exhausted"))?;
         state.revision = 0;
         state.current = None;
+        state.resize_revision = 0;
+        state.resize_bounds = None;
+        if let Some(id) = state.resize_current.take() {
+            let _ = fs::remove_file(self.root.join(format!("{id}.resize")));
+            let _ = fs::remove_file(self.root.join(format!("{id}.geometry")));
+        }
+        let _ = fs::remove_file(self.root.join("resize-active"));
         let _ = fs::remove_file(self.root.join("active"));
         Ok(state.epoch)
+    }
+
+    /// Prepare before attaching the source. Raw resize never advertises an MPV
+    /// endpoint, and stale Manager cleanup cannot remove the selected resolution.
+    pub(crate) fn configure_resolution(
+        &self,
+        id: &str,
+        epoch: u64,
+        revision: u64,
+        bounds: Option<VideoResolutionBounds>,
+    ) -> io::Result<bool> {
+        if !valid_host_id(id)
+            || bounds.is_some_and(|bounds| {
+                !(2..=16384).contains(&bounds.max_width)
+                    || !(2..=16384).contains(&bounds.max_height)
+            })
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid video resolution contract",
+            ));
+        }
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("video host state poisoned"))?;
+        if epoch == 0
+            || epoch != state.epoch
+            || revision < state.resize_revision
+            || (revision == state.resize_revision && state.resize_current.as_deref() != Some(id))
+        {
+            return Ok(false);
+        }
+        let requested_bounds = bounds;
+        let bounds = bounds.unwrap_or(VideoResolutionBounds {
+            max_width: 0,
+            max_height: 0,
+        });
+        let target = self.root.join(format!("{id}.resize"));
+        let temporary = self.root.join("resize.tmp");
+        fs::write(
+            &temporary,
+            format!(
+                "{epoch}\n{revision}\n{}\n{}\n",
+                bounds.max_width, bounds.max_height
+            ),
+        )?;
+        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))?;
+        fs::rename(&temporary, target)?;
+        fs::write(&temporary, format!("{id}\n{epoch}\n{revision}\n"))?;
+        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))?;
+        fs::rename(&temporary, self.root.join("resize-active"))?;
+        if let Some(previous) = state
+            .resize_current
+            .replace(id.to_owned())
+            .filter(|previous| previous != id)
+        {
+            let _ = fs::remove_file(self.root.join(format!("{previous}.resize")));
+            let _ = fs::remove_file(self.root.join(format!("{previous}.geometry")));
+        }
+        state.resize_revision = revision;
+        state.resize_bounds = requested_bounds;
+        Ok(true)
+    }
+
+    pub(crate) fn playback_geometry(
+        &self,
+        id: Option<&str>,
+        epoch: Option<u64>,
+        resize_revision: Option<u64>,
+    ) -> io::Result<Option<(u32, u32)>> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("video host state poisoned"))?;
+        if state.resize_current.is_none() {
+            return Ok(None);
+        }
+        if state.resize_current.as_deref() != id
+            || epoch != Some(state.epoch)
+            || resize_revision != Some(state.resize_revision)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "Native video geometry is not ready for this resolution owner",
+            ));
+        }
+        if state.resize_bounds.is_none() {
+            return Ok(None);
+        }
+        drop(state);
+        self.input_geometry(id, epoch).map(Some).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "Native video geometry is not ready; matching scaler runtime is required",
+            )
+        })
+    }
+
+    pub(crate) fn verify_resolution(&self, id: &str, epoch: u64, revision: u64) -> io::Result<()> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("video host state poisoned"))?;
+        if state.resize_current.as_deref() != Some(id)
+            || state.epoch != epoch
+            || state.resize_revision != revision
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "Native video geometry is not ready for this resolution owner",
+            ));
+        }
+        drop(state);
+        self.playback_geometry(Some(id), Some(epoch), Some(revision))
+            .map(|_| ())
+    }
+
+    /// The scaler reports its actual negotiated input to the Manager graph;
+    /// never substitute that graph's possibly different output dimensions.
+    pub(crate) fn input_geometry(
+        &self,
+        id: Option<&str>,
+        epoch: Option<u64>,
+    ) -> Option<(u32, u32)> {
+        let state = self.state.lock().ok()?;
+        let id = id.filter(|id| valid_host_id(id))?;
+        if epoch != Some(state.epoch) || state.resize_current.as_deref() != Some(id) {
+            return None;
+        }
+        let path = self.root.join(format!("{id}.geometry"));
+        let metadata = fs::symlink_metadata(&path).ok()?;
+        if !metadata.is_file()
+            || metadata.uid() != unsafe { libc::geteuid() }
+            || metadata.len() > 128
+        {
+            return None;
+        }
+        let raw = fs::read_to_string(path).ok()?;
+        let fields: Vec<u64> = raw.lines().map(str::parse).collect::<Result<_, _>>().ok()?;
+        if fields.len() != 6
+            || fields[0] != state.epoch
+            || fields[1] != state.resize_revision
+            || fields[2..]
+                .iter()
+                .any(|value| *value == 0 || *value > 16384)
+        {
+            return None;
+        }
+        if let Some(bounds) = state.resize_bounds {
+            if fields[4] > u64::from(bounds.max_width)
+                || fields[5] > u64::from(bounds.max_height)
+                || fields[4] > fields[2]
+                || fields[5] > fields[3]
+            {
+                return None;
+            }
+        }
+        Some((fields[4] as u32, fields[5] as u32))
     }
 
     /// Both late enables and stale cleanup are rejected, including old documents.
@@ -180,6 +357,90 @@ mod tests {
         lease.prepare().unwrap();
         lease.acquire_epoch().unwrap();
         lease
+    }
+
+    // AC: @local-decoded-video-resolution ac-local-raw
+    // AC: @local-decoded-video-resolution ac-ownership
+    #[test]
+    fn raw_resolution_prepares_before_registration_without_advertising_manager() {
+        let lease = fixture();
+        let first = "localbooru-svp-host-first";
+        let second = "localbooru-svp-host-second";
+        let bounds = Some(VideoResolutionBounds {
+            max_width: 1280,
+            max_height: 720,
+        });
+        assert!(lease.verify_resolution(first, 1, 2).is_err());
+        assert!(lease.configure_resolution(first, 1, 2, bounds).unwrap());
+        assert_eq!(
+            fs::read_to_string(lease.root.join(format!("{first}.resize"))).unwrap(),
+            "1\n2\n1280\n720\n"
+        );
+        assert!(!lease.root.join("active").exists());
+        assert!(lease.update(false, Some(first), Some(1), Some(2)).unwrap());
+        assert!(lease.root.join(format!("{first}.resize")).exists());
+        assert!(lease.configure_resolution(second, 1, 3, None).unwrap());
+        assert!(lease.verify_resolution(second, 1, 3).is_ok());
+        assert!(lease.verify_resolution(first, 1, 2).is_err());
+        assert!(!lease.configure_resolution(first, 1, 2, bounds).unwrap());
+        assert!(!lease.configure_resolution(first, 1, 3, bounds).unwrap());
+        assert!(!lease.root.join(format!("{first}.resize")).exists());
+        assert_eq!(
+            fs::read_to_string(lease.root.join(format!("{second}.resize"))).unwrap(),
+            "1\n3\n0\n0\n"
+        );
+        assert_eq!(lease.acquire_epoch().unwrap(), 2);
+        assert!(!lease.configure_resolution(first, 1, 100, bounds).unwrap());
+        assert!(!lease.root.join("resize-active").exists());
+        assert!(lease.configure_resolution(first, 2, 1, bounds).unwrap());
+        assert!(lease
+            .playback_geometry(Some(first), Some(2), Some(1))
+            .is_err());
+        fs::write(
+            lease.root.join(format!("{first}.geometry")),
+            "2\n1\n2160\n3840\n404\n720\n",
+        )
+        .unwrap();
+        assert_eq!(lease.input_geometry(Some(first), Some(2)), Some((404, 720)));
+        assert!(lease.verify_resolution(first, 2, 1).is_ok());
+        assert_eq!(
+            lease
+                .playback_geometry(Some(first), Some(2), Some(1))
+                .unwrap(),
+            Some((404, 720))
+        );
+        assert!(lease
+            .playback_geometry(Some(first), Some(2), Some(2))
+            .is_err());
+        fs::write(
+            lease.root.join(format!("{first}.geometry")),
+            "2\n1\n3840\n2160\n3840\n2160\n",
+        )
+        .unwrap();
+        assert!(lease
+            .playback_geometry(Some(first), Some(2), Some(1))
+            .is_err());
+        assert_eq!(lease.input_geometry(Some(second), Some(2)), None);
+        assert_eq!(lease.input_geometry(Some(first), Some(1)), None);
+        fs::write(
+            lease.root.join(format!("{first}.geometry")),
+            "2\n0\n2160\n3840\n404\n720\n",
+        )
+        .unwrap();
+        assert_eq!(lease.input_geometry(Some(first), Some(2)), None);
+        assert!(lease.configure_resolution("../bad", 2, 2, bounds).is_err());
+        assert!(lease
+            .configure_resolution(
+                first,
+                2,
+                2,
+                Some(VideoResolutionBounds {
+                    max_width: 0,
+                    max_height: 720
+                })
+            )
+            .is_err());
+        fs::remove_dir_all(lease.root()).unwrap();
     }
 
     // AC: @svp-platform-routing ac-linux-route

@@ -38,6 +38,19 @@ pub struct SvpPlaybackUpdate {
     pub host_id: Option<String>,
     pub host_epoch: Option<u64>,
     pub host_revision: Option<u64>,
+    pub resize_revision: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LocalVideoResolutionUpdate {
+    pub host_id: String,
+    pub host_epoch: u64,
+    pub host_revision: u64,
+    #[cfg(target_os = "linux")]
+    pub bounds: Option<crate::svp_video_host::VideoResolutionBounds>,
+    #[cfg(not(target_os = "linux"))]
+    pub bounds: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -152,9 +165,13 @@ impl SvpManagerBridge {
             std::env::set_var("LOCALBOORU_VS_SCRIPT_FILE", &self.script_file);
             let native_svp_enabled =
                 std::env::var("LOCALBOORU_ENABLE_NATIVE_SVP").as_deref() == Ok("1");
-            if native_svp_enabled && self.video_hosts.prepare().is_ok() {
+            if self.video_hosts.prepare().is_ok() {
                 std::env::set_var("LOCALBOORU_MPV_CONTROL_HOST_ROOT", self.video_hosts.root());
-                std::env::set_var("LOCALBOORU_MPV_CONTROL_UPSTREAM_V2", &self.control_socket);
+                if native_svp_enabled {
+                    std::env::set_var("LOCALBOORU_MPV_CONTROL_UPSTREAM_V2", &self.control_socket);
+                } else {
+                    std::env::remove_var("LOCALBOORU_MPV_CONTROL_UPSTREAM_V2");
+                }
             } else {
                 std::env::remove_var("LOCALBOORU_MPV_CONTROL_UPSTREAM_V2");
                 std::env::remove_var("LOCALBOORU_MPV_CONTROL_HOST_ROOT");
@@ -740,6 +757,58 @@ pub fn acquire_svp_video_host_epoch(
 }
 
 #[tauri::command]
+pub fn configure_local_video_resolution(
+    bridge: State<'_, SvpManagerBridge>,
+    update: LocalVideoResolutionUpdate,
+) -> Result<bool, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let _transition = bridge
+            .transition
+            .lock()
+            .map_err(|_| "video transition state unavailable")?;
+        bridge
+            .video_hosts
+            .configure_resolution(
+                &update.host_id,
+                update.host_epoch,
+                update.host_revision,
+                update.bounds,
+            )
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (bridge, update);
+        Err("Decoded frame resizing requires the Linux desktop player".into())
+    }
+}
+
+#[tauri::command]
+pub fn verify_local_video_resolution(
+    bridge: State<'_, SvpManagerBridge>,
+    update: LocalVideoResolutionUpdate,
+) -> Result<bool, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let _transition = bridge
+            .transition
+            .lock()
+            .map_err(|_| "video transition state unavailable")?;
+        bridge
+            .video_hosts
+            .verify_resolution(&update.host_id, update.host_epoch, update.host_revision)
+            .map(|_| true)
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (bridge, update);
+        Err("Decoded frame resizing requires the Linux desktop player".into())
+    }
+}
+
+#[tauri::command]
 pub fn update_svp_manager_playback(
     app: AppHandle,
     bridge: State<'_, SvpManagerBridge>,
@@ -749,6 +818,21 @@ pub fn update_svp_manager_playback(
         .transition
         .lock()
         .map_err(|_| "SVP transition state unavailable")?;
+    #[cfg(target_os = "linux")]
+    let geometry = if update.enabled {
+        bridge
+            .video_hosts
+            .playback_geometry(
+                update.host_id.as_deref(),
+                update.host_epoch,
+                update.resize_revision,
+            )
+            .map_err(|error| error.to_string())?
+    } else {
+        None
+    };
+    #[cfg(not(target_os = "linux"))]
+    let geometry: Option<(u32, u32)> = None;
     #[cfg(target_os = "linux")]
     if !bridge
         .video_hosts
@@ -778,8 +862,14 @@ pub fn update_svp_manager_playback(
     } else {
         None
     };
-    state.width = update.width.unwrap_or(0);
-    state.height = update.height.unwrap_or(0);
+    state.width = geometry
+        .map(|(width, _)| width)
+        .or(update.width)
+        .unwrap_or(0);
+    state.height = geometry
+        .map(|(_, height)| height)
+        .or(update.height)
+        .unwrap_or(0);
     state.fps = update.fps.unwrap_or(0.0);
     state.duration = update.duration.unwrap_or(0.0);
     state.paused = update.paused.unwrap_or(true);

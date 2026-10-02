@@ -16,6 +16,8 @@ spec.loader.exec_module(prepare)
 
 HEADER = r'''
 #include <glib.h>
+#include <gst/video/video.h>
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cerrno>
@@ -147,9 +149,9 @@ def main(source):
         registration = "// DMC's selected video element" + media.split("// DMC's selected video element", 1)[1].split("WTF_MAKE_TZONE_ALLOCATED_IMPL", 1)[0]
         cpp = root / "fixture.cpp"
         cpp.write_text(HEADER + relay + registration + TEST)
-        flags = shlex.split(subprocess.check_output(["pkg-config", "--cflags", "--libs", "glib-2.0"], text=True))
+        flags = shlex.split(subprocess.check_output(["pkg-config", "--cflags", "--libs", "glib-2.0", "gstreamer-video-1.0"], text=True))
         helper = os.environ.get("HOST_HEAVY_BUILD_HELPER", str(Path.home() / ".local/bin/host-heavy-build"))
-        subprocess.run([helper, "run", "--project", "localbooru-svp-isolation-test", "--worktree", str(REPO), "--wait", "21600", "--", "g++", "-std=c++17", "-pthread", str(cpp), "-o", str(root / "fixture"), *flags], check=True)
+        subprocess.run([helper, "run", "--project", "localbooru-svp-isolation-test", "--worktree", str(REPO), "--wait", "0", "--", "g++", "-std=c++17", "-pthread", str(cpp), "-o", str(root / "fixture"), *flags], check=True)
         subprocess.run([str(root / "fixture"), str(root)], check=True, timeout=15)
 
 

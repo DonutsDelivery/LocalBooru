@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { createSVPVideoHostId, nextSVPVideoHostRevision, svpVideoHostUpdate, svpVideoHostOwnsEvent, publishSVPVideoHost } from '../../utils/svpVideoHost'
+import { prepareLocalResolution } from '../../utils/localVideoResolution'
 import { getMediaUrl, getAssetUrl, isUsingLocalServer, getSVPConfig, updateSVPConfig, getPlaybackPosition, fetchCollections, addToCollection, createCollection, getShareNetworkInfo, uploadImage, getFileDimensions } from '../../api'
 import { isMobileApp } from '../../serverManager'
 import { getDesktopAPI } from '../../tauriAPI'
@@ -177,7 +178,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   const image = images[currentIndex]
   const currentImageKey = image?.url ?? image?.file_path ?? image?.id
-  const svpVideoHostId = useMemo(() => createSVPVideoHostId(), [currentImageKey, svpPipelineGeneration])
+  const embeddedVideoBackend = isUsingLocalServer()
+  const svpVideoHostId = useMemo(() => createSVPVideoHostId(), [currentImageKey, svpPipelineGeneration, embeddedVideoBackend])
+  const videoMediaKey = `${currentImageKey}-${svpPipelineGeneration}-${svpVideoHostId}`
   const [svpHostEpoch, setSvpHostEpoch] = useState(null)
   const svpOwnersByMediaRef = useRef(new Map())
   activeImageKeyRef.current = currentImageKey
@@ -236,11 +239,65 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     && !streaming.opticalFlowStreamUrl
     && !streaming.transcodeStreamUrl
   )
+  const localRawPlayback = Boolean(streaming.nativeSvpPlayback && !casting.isCasting
+    && !streaming.codecFallbackActive && !streaming.transcodeStreamUrl
+    && !streaming.svpStreamUrl && !streaming.opticalFlowStreamUrl)
+  const resolutionRevision = useMemo(() => nextSVPVideoHostRevision(), [svpVideoHostId])
+  const resolutionOwner = useMemo(() => ({ hostId: svpVideoHostId, hostEpoch: svpHostEpoch, hostRevision: resolutionRevision }), [svpVideoHostId, svpHostEpoch, resolutionRevision])
   const svpHostRevision = useMemo(() => nextSVPVideoHostRevision(), [svpVideoHostId, svpPathEnabled])
   const svpHostOwner = useMemo(() => ({ hostId: svpVideoHostId, hostEpoch: svpHostEpoch, hostRevision: svpHostRevision }), [svpVideoHostId, svpHostEpoch, svpHostRevision])
   const svpHostOwnerRef = useRef(svpHostOwner)
   svpHostOwnerRef.current = svpHostOwner
   svpOwnersByMediaRef.current.set(currentImageKey, svpHostOwner)
+
+  const [localResolutionReady, setLocalResolutionReady] = useState(null)
+  const [localResolutionVerified, setLocalResolutionVerified] = useState(null)
+  const localResolutionProbeRef = useRef(null)
+  const localResolutionReadyKey = `${svpVideoHostId}:${svpHostEpoch}`
+  useEffect(() => {
+    if (!localRawPlayback || !isVideoFile || svpHostEpoch === null) return
+    let cancelled = false
+    prepareLocalResolution(
+      update => getDesktopAPI().configureLocalVideoResolution(update),
+      resolutionOwner, currentQuality,
+      () => !cancelled && mountedRef.current
+        && svpHostOwnerRef.current.hostId === resolutionOwner.hostId
+        && svpHostOwnerRef.current.hostEpoch === resolutionOwner.hostEpoch,
+    ).then(ready => {
+      if (ready) setLocalResolutionReady(localResolutionReadyKey)
+    }).catch(async error => {
+      if (cancelled) return
+      toast.error(`Failed to set video resolution: ${error.message}`)
+      if (currentQuality === 'original') return
+      try {
+        const ready = await prepareLocalResolution(
+          update => getDesktopAPI().configureLocalVideoResolution(update),
+          resolutionOwner, 'original', () => !cancelled && mountedRef.current
+            && svpHostOwnerRef.current.hostId === resolutionOwner.hostId
+            && svpHostOwnerRef.current.hostEpoch === resolutionOwner.hostEpoch,
+        )
+        if (ready) {
+          setCurrentQuality('original')
+          setLocalResolutionReady(localResolutionReadyKey)
+        }
+      } catch (fallbackError) {
+        if (!cancelled) toast.error(`Failed to restore Original resolution: ${fallbackError.message}`)
+      }
+    })
+    return () => { cancelled = true }
+  }, [localRawPlayback, isVideoFile, svpHostEpoch, resolutionOwner, currentQuality, localResolutionReadyKey])
+
+  // Store original dimensions independently from resized player output.
+  useEffect(() => {
+    if (!localRawPlayback || !image?.file_path || image?.is_local_direct_file) return
+    let cancelled = false
+    getFileDimensions(image.file_path).then(info => {
+      if (!cancelled && info?.width > 0 && info?.height > 0) {
+        streaming.setSourceResolution({ width: info.width, height: info.height })
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [localRawPlayback, currentImageKey, image?.file_path, image?.is_local_direct_file, streaming.setSourceResolution])
 
   useEffect(() => {
     if (!streaming.nativeSvpPlayback) return
@@ -366,6 +423,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     publishSVPVideoHost(update => desktopAPI.updateSvpManagerPlayback(update), svpVideoHostUpdate(svpHostOwner, true, {
       mediaKey: currentImageKey,
       path: image.file_path,
+      resizeRevision: resolutionRevision,
       width: video.videoWidth,
       height: video.videoHeight,
       fps,
@@ -377,10 +435,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       svpFailOpenRef.current = true
       svpInteractionReadyRef.current = true
       setSvpStartupReady(true)
-      if (video.readyState >= 2) setVideoFrameReadyKey(`${currentImageKey}-${svpPipelineGeneration}`)
+      if (video.readyState >= 2) setVideoFrameReadyKey(videoMediaKey)
       setSvpConnectionIssue({ imageKey: currentImageKey, message: String(error?.message ?? error) })
     })
-  }, [currentImageKey, image?.file_path, svpPathEnabled, svpHostEpoch, svpHostOwner, svpPipelineGeneration])
+  }, [currentImageKey, image?.file_path, svpPathEnabled, svpHostEpoch, svpHostOwner, videoMediaKey, resolutionRevision])
 
   const measureAndReportSvpPlayback = useCallback((video) => {
     if (!svpPathEnabled || !image?.file_path) return
@@ -562,7 +620,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     if (svpPathEnabled) return
     svpFilterActiveRef.current = false
     svpFailOpenRef.current = false
-    svpResumeRef.current = null
+    if (!svpResumeRef.current?.rawResolution) svpResumeRef.current = null
     const transition = svpTransitionRef.current
     transition.active = false
     transition.token += 1
@@ -590,7 +648,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       // mediaRef here: it may already point at the next video's element.
       if (mediaRef.current !== video) releaseVideoMedia(video)
     }
-  }, [currentImageKey])
+  }, [currentImageKey, svpVideoHostId])
 
   // Zoom and pan hook
   const zoomPan = useZoomPan(
@@ -965,12 +1023,49 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [shareStream.shareUrl])
 
   // Handle quality change
-  const handleQualityChange = useCallback(async (qualityId) => {
-    const playbackIntent = streaming.capturePlaybackIntent()
+  const localResolutionChangeRef = useRef(0)
+  const handleQualityChange = useCallback(async (qualityId, requestedIntent = null) => {
+    const playbackIntent = requestedIntent || streaming.capturePlaybackIntent()
+    if (localRawPlayback && isVideoMediaElement(mediaRef.current)) {
+      const video = mediaRef.current
+      const owner = svpHostOwnerRef.current
+      const generation = ++localResolutionChangeRef.current
+      const previous = svpResumeRef.current
+      // Repeated clicks while a replacement is loading retain the last actual
+      // playback intent, rather than capturing that replacement's zero time.
+      svpResumeRef.current = previous?.imageKey === currentImageKey ? {
+        ...previous, rawResolution: true,
+      } : {
+        currentTime: playbackIntent.position, paused: !playbackIntent.shouldPlay,
+        volume: video.volume, muted: video.muted,
+        imageKey: currentImageKey, media: video, rawResolution: true,
+      }
+      const pending = svpResumeRef.current
+      video.pause()
+      // An existing graph was generated for the previous input dimensions.
+      // Withdraw it before preparing the replacement physical media element.
+      try {
+        await getDesktopAPI().updateSvpManagerPlayback(svpVideoHostUpdate(owner, false))
+      } catch (error) {
+        if (mountedRef.current && generation === localResolutionChangeRef.current
+            && currentImageKey === activeImageKeyRef.current && mediaRef.current === video) {
+          if (svpResumeRef.current === pending) svpResumeRef.current = null
+          if (!pending.paused) video.play().catch(() => {})
+          toast.error(`Failed to change video resolution: ${error.message}`)
+        }
+        return
+      }
+      if (!mountedRef.current || generation !== localResolutionChangeRef.current
+          || currentImageKey !== activeImageKeyRef.current || mediaRef.current !== video) return
+      setCurrentQuality(qualityId)
+      localStorage.setItem('video_quality_preference', qualityId)
+      setSvpPipelineGeneration(generation => generation + 1)
+      return
+    }
     setCurrentQuality(qualityId)
     localStorage.setItem('video_quality_preference', qualityId)
     await streaming.handleQualityChange(qualityId, playbackIntent)
-  }, [streaming])
+  }, [streaming, localRawPlayback, currentImageKey])
 
   // Toggle SVP on/off
   const handleToggleSVP = useCallback(() => {
@@ -1010,16 +1105,23 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         svpDesiredEnabledRef.current = Boolean(updatedConfig.enabled)
         streaming.setSvpConfig(updatedConfig)
         if (newEnabled) {
-          if (!streaming.nativeSvpPlayback) {
+          if (streaming.nativeSvpPlayback) {
+            await handleQualityChange(currentQuality, playbackIntent)
+          } else {
             streaming.startSVPStream(playbackIntent.position, playbackIntent, true).catch(error => {
               console.error('Failed to start SVP:', error)
             })
           }
         } else {
-          setCurrentQuality('original')
-          localStorage.setItem('video_quality_preference', 'original')
-          if (!cancelingStartup) {
-            streaming.handleQualityChange('original', playbackIntent).catch(error => {
+          if (!streaming.nativeSvpPlayback) {
+            setCurrentQuality('original')
+            localStorage.setItem('video_quality_preference', 'original')
+          }
+          if (!cancelingStartup || streaming.nativeSvpPlayback) {
+            const restore = streaming.nativeSvpPlayback
+              ? handleQualityChange(currentQuality, playbackIntent)
+              : streaming.handleQualityChange('original', playbackIntent)
+            restore.catch(error => {
               console.error('Failed to restore original playback:', error)
             })
           }
@@ -1056,7 +1158,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       })
 
     svpToggleWriteRef.current = write
-  }, [streaming, svpControlsReady, svpHostOwner])
+  }, [streaming, svpControlsReady, svpHostOwner, handleQualityChange, currentQuality])
 
   // Generate preview of adjustments
   const handleGeneratePreview = useCallback(async () => {
@@ -1516,8 +1618,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Handle loaded metadata with source resolution setter
   const handleLoadedMetadataWithResolution = useCallback(() => {
-    playback.handleLoadedMetadata(streaming.setSourceResolution)
-  }, [playback.handleLoadedMetadata, streaming.setSourceResolution])
+    playback.handleLoadedMetadata(localRawPlayback ? () => {} : streaming.setSourceResolution)
+  }, [playback.handleLoadedMetadata, streaming.setSourceResolution, localRawPlayback])
 
   // Handle video canplay event - ensure video plays even if autoPlay is blocked
   // Also reset hide timer to ensure auto-hide works on mobile/Capacitor
@@ -1559,7 +1661,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       && !streaming.transcodeStreamUrl
       && !streaming.svpLoading
       && !streaming.codecFallbackActive
-      && (currentQuality === 'original' || (streaming.nativeSvpPlayback && streaming.svpConfig?.enabled))
+      && (currentQuality === 'original' || streaming.nativeSvpPlayback)
       && (!streaming.svpConfig?.enabled || streaming.nativeSvpPlayback || streaming.svpError)
       && (!streaming.opticalFlowConfig?.enabled || streaming.opticalFlowError)
   }, [
@@ -1576,6 +1678,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // The asset protocol serves from the filesystem directly, bypassing this bottleneck.
   const directVideoSrc = useMemo(() => {
     if (!shouldPlayDirect || !image?.url) return undefined
+    if (localRawPlayback && localResolutionReady !== localResolutionReadyKey) return undefined
     if (image?.is_local_direct_file) {
       return getMediaUrl(image.url)
     }
@@ -1584,18 +1687,19 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       if (assetUrl) return assetUrl
     }
     return getMediaUrl(image.url)
-  }, [shouldPlayDirect, image?.url, image?.file_path, image?.is_local_direct_file])
+  }, [shouldPlayDirect, image?.url, image?.file_path, image?.is_local_direct_file, localRawPlayback, localResolutionReady, localResolutionReadyKey])
 
-  const videoMediaKey = `${currentImageKey}-${svpPipelineGeneration}`
   const [videoFrameReadyKey, setVideoFrameReadyKey] = useState(null)
   const showVideoLoadingGrid = videoFrameReadyKey !== videoMediaKey
+    || (localRawPlayback && currentQuality !== 'original' && localResolutionVerified !== localResolutionReadyKey)
     || (svpPathEnabled && !svpFailOpenRef.current && !svpFilterActiveRef.current)
   const videoTitle = image?.title || image?.original_filename || image?.filename || 'Video'
 
   const finishSvpHandoff = (video) => {
     const resume = svpResumeRef.current
     if (!resume || resume.imageKey !== currentImageKey || mediaRef.current !== video) return false
-    if (resume.media === video || !svpFilterActiveRef.current) return false
+    if (localRawPlayback && currentQuality !== 'original' && localResolutionVerified !== localResolutionReadyKey) return false
+    if (resume.media === video || (svpPathEnabled && !svpFilterActiveRef.current && !svpFailOpenRef.current)) return false
     if (resume.awaitingSeek) return false
     if (Math.abs(video.currentTime - resume.currentTime) > 0.5) return false
     svpResumeRef.current = null
@@ -1603,9 +1707,42 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     svpInteractionReadyRef.current = true
     setSvpStartupReady(true)
     if (video.readyState >= 2) setVideoFrameReadyKey(videoMediaKey)
-    if (!resume.paused) video.play().catch(() => {})
+    if (Number.isFinite(resume.volume)) video.volume = resume.volume
+    if (resume.muted !== undefined) video.muted = resume.muted
+    if (resume.paused) video.pause()
+    else video.play().catch(() => {})
     return true
   }
+
+  const verifyLocalResolution = useCallback((video) => {
+    if (!localRawPlayback || currentQuality === 'original' || !isVideoMediaElement(video)
+        || mediaRef.current !== video || !video.getAttribute('src') || video.readyState < 1
+        || localResolutionReady !== localResolutionReadyKey) return
+    if (localResolutionProbeRef.current === localResolutionReadyKey) return
+    localResolutionProbeRef.current = localResolutionReadyKey
+    const probeGeneration = localResolutionChangeRef.current
+    const isCurrent = () => mountedRef.current && mediaRef.current === video
+      && localResolutionChangeRef.current === probeGeneration
+      && svpHostOwnerRef.current.hostId === resolutionOwner.hostId
+      && svpHostOwnerRef.current.hostEpoch === resolutionOwner.hostEpoch
+    publishSVPVideoHost(async update => {
+      const ready = await getDesktopAPI().verifyLocalVideoResolution(update)
+      if (!ready) throw new Error('Native video geometry is not ready for this resolution owner')
+    }, { ...resolutionOwner, bounds: null }, isCurrent).then(ready => {
+      if (ready) setLocalResolutionVerified(localResolutionReadyKey)
+    }).catch(error => {
+      if (!isCurrent()) return
+      toast.error(`Decoded frame resize is unavailable: ${error.message}. Restoring Original.`)
+      handleQualityChange('original').catch(fallbackError => {
+        if (isCurrent()) toast.error(`Failed to restore Original resolution: ${fallbackError.message}`)
+      })
+    })
+  }, [localRawPlayback, currentQuality, localResolutionReady, localResolutionReadyKey, resolutionOwner, handleQualityChange])
+
+  useEffect(() => {
+    verifyLocalResolution(mediaRef.current)
+    if (localResolutionVerified === localResolutionReadyKey) finishSvpHandoff(mediaRef.current)
+  }, [verifyLocalResolution, localResolutionVerified, localResolutionReadyKey])
 
   const directFileStartedRef = useRef(false)
   const directFileLastTimeRef = useRef(0)
@@ -2232,9 +2369,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               }}
               onLoadedMetadata={(event) => {
                 handleLoadedMetadataWithResolution(event)
+                verifyLocalResolution(event.currentTarget)
                 const resume = svpResumeRef.current
                 if (resume && resume.imageKey === currentImageKey
-                    && resume.media !== event.currentTarget && svpFilterActiveRef.current) {
+                    && resume.media !== event.currentTarget && (!svpPathEnabled || svpFilterActiveRef.current || svpFailOpenRef.current)) {
                   // The replacement element starts paused. Seek before any
                   // playback so neither video nor audio can start at 00:00.
                   if (resume.currentTime > 0.05) {
@@ -2244,7 +2382,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 } else if (resume && resume.imageKey !== currentImageKey) {
                   svpResumeRef.current = null
                 }
-                if (!svpResumeRef.current) measureAndReportSvpPlayback(event.currentTarget)
+                measureAndReportSvpPlayback(event.currentTarget)
                 reportDirectFileStage('loadedmetadata', event.currentTarget)
               }}
               onCanPlay={(event) => {
@@ -2279,7 +2417,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <VRVideoViewport
               active={vrActive}
               videoRef={mediaRef}
-              mediaKey={`${currentImageKey}-${svpPipelineGeneration}`}
+              mediaKey={videoMediaKey}
               filename={image.original_filename || image.filename}
               onUnavailable={handleVRUnavailable}
               onTap={curationMode ? undefined : handleVideoClick}
@@ -2846,7 +2984,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               if (!configChanged) return
 
               streaming.setSvpError(null)
-              if (!newConfig.enabled) {
+              if (streaming.nativeSvpPlayback) {
+                await handleQualityChange(currentQuality, playbackIntent)
+              } else if (!newConfig.enabled) {
                 setCurrentQuality('original')
                 localStorage.setItem('video_quality_preference', 'original')
                 await streaming.handleQualityChange('original', playbackIntent)
@@ -2867,13 +3007,14 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       )}
 
       {/* Quality selector */}
-      {isVideoFile && !(streaming.nativeSvpPlayback && streaming.svpConfig?.enabled) && (
+      {isVideoFile && (
         <QualitySelector
           isOpen={showQualitySelector}
           onClose={() => setShowQualitySelector(false)}
           currentQuality={currentQuality}
           onQualityChange={handleQualityChange}
           sourceResolution={streaming.sourceResolution}
+          rawResize={localRawPlayback}
         />
       )}
 

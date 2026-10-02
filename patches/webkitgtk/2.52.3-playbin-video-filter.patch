@@ -1,11 +1,236 @@
 diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -3571,6 +3571,32 @@ void MediaPlayerPrivateGStreamer::createGSTPlayBin(const URL& url)
-         if (auto* scale = makeGStreamerElement("scaletempo"_s))
-             g_object_set(m_pipeline.get(), "audio-filter", scale, nullptr);
-     }
+@@ -26,0 +27,9 @@
++
++#include <algorithm>
++#include <cerrno>
++#include <mutex>
++#include <string>
++#include <unordered_map>
++#include <sys/stat.h>
++#include <unistd.h>
++#include <cstring>
+@@ -137,0 +147,210 @@
++// DMC's selected video element registers the PID of its actual graph host.
++struct LocalBooruVideoHostRecord {
++    std::string path;
++    ino_t inode;
++};
++static std::mutex localBooruVideoHostsMutex;
++static std::unordered_map<const void*, LocalBooruVideoHostRecord> localBooruVideoHosts;
++
++static bool localBooruValidVideoHostId(const char* id)
++{
++    constexpr const char* prefix = "localbooru-svp-host-";
++    if (!id || strncmp(id, prefix, strlen(prefix)))
++        return false;
++    const char* token = id + strlen(prefix);
++    size_t length = strlen(token);
++    if (!length || length > 80)
++        return false;
++    for (const char* character = token; *character; ++character) {
++        if (!g_ascii_isalnum(*character) && *character != '-')
++            return false;
++    }
++    return true;
++}
++
++static void localBooruUnregisterVideoHost(const void* player)
++{
++    std::lock_guard<std::mutex> lock(localBooruVideoHostsMutex);
++    auto record = localBooruVideoHosts.find(player);
++    if (record == localBooruVideoHosts.end())
++        return;
++    struct stat metadata { };
++    if (!lstat(record->second.path.c_str(), &metadata)
++        && S_ISREG(metadata.st_mode) && metadata.st_uid == geteuid()
++        && metadata.st_ino == record->second.inode)
++        unlink(record->second.path.c_str());
++    localBooruVideoHosts.erase(record);
++}
++
++static void localBooruRegisterVideoHost(const void* player, const char* id)
++{
++    localBooruUnregisterVideoHost(player);
++    const char* root = g_getenv("LOCALBOORU_MPV_CONTROL_HOST_ROOT");
++    if (!root || !*root || !localBooruValidVideoHostId(id))
++        return;
++    struct stat directory { };
++    if (lstat(root, &directory) || !S_ISDIR(directory.st_mode) || directory.st_uid != geteuid())
++        return;
++    std::string path = std::string(root) + "/" + id;
++    std::string pid = std::to_string(getpid()) + "\n";
++    // A host ID belongs to one physical video element. Publish atomically
++    // without replacing a competing WebProcess's existing registration.
++    std::string temporary = std::string(root) + "/.host-XXXXXX";
++    int descriptor = g_mkstemp(temporary.data());
++    if (descriptor < 0)
++        return;
++    bool complete = write(descriptor, pid.data(), pid.size()) == static_cast<ssize_t>(pid.size());
++    close(descriptor);
++    bool published = complete && !link(temporary.c_str(), path.c_str());
++    unlink(temporary.c_str());
++    if (!published)
++        return;
++    struct stat metadata { };
++    if (lstat(path.c_str(), &metadata) || !S_ISREG(metadata.st_mode) || metadata.st_uid != geteuid())
++        return;
++    std::lock_guard<std::mutex> lock(localBooruVideoHostsMutex);
++    localBooruVideoHosts[player] = { path, metadata.st_ino };
++}
++
++
++// DMC raw resolution is scoped to one physical video host, independently of SVP.
++struct LocalBooruResizeContract {
++    guint64 epoch { 0 };
++    guint64 revision { 0 };
++    guint width { 0 };
++    guint height { 0 };
++    std::string geometryPath;
++};
++
++static bool localBooruReadResizeContract(const char* id, LocalBooruResizeContract& contract)
++{
++    const char* root = g_getenv("LOCALBOORU_MPV_CONTROL_HOST_ROOT");
++    if (!root || !*root || !localBooruValidVideoHostId(id))
++        return false;
++    auto readPrivate = [](const std::string& path, std::string& result) {
++        struct stat metadata { };
++        if (lstat(path.c_str(), &metadata) || !S_ISREG(metadata.st_mode)
++            || metadata.st_uid != geteuid() || metadata.st_size > 256)
++            return false;
++        gchar* contents = nullptr;
++        gsize size = 0;
++        if (!g_file_get_contents(path.c_str(), &contents, &size, nullptr))
++            return false;
++        result.assign(contents, size);
++        g_free(contents);
++        return true;
++    };
++    std::string path = std::string(root) + "/" + id;
++    std::string raw, selected;
++    if (!readPrivate(path + ".resize", raw) || !readPrivate(std::string(root) + "/resize-active", selected))
++        return false;
++    gchar** fields = g_strsplit(raw.c_str(), "\n", -1);
++    bool valid = g_strv_length(fields) == 5 && !*fields[4];
++    guint64 values[4] { };
++    for (unsigned index = 0; valid && index < 4; ++index) {
++        if (!*fields[index]) { valid = false; break; }
++        for (const char* character = fields[index]; *character; ++character)
++            if (!g_ascii_isdigit(*character)) { valid = false; break; }
++        if (!valid) break;
++        char* end = nullptr;
++        errno = 0;
++        values[index] = g_ascii_strtoull(fields[index], &end, 10);
++        valid = !errno && end && !*end;
++    }
++    g_strfreev(fields);
++    if (!valid || !values[0] || !values[1]
++        || !((!values[2] && !values[3]) || (values[2] >= 2 && values[2] <= 16384 && values[3] >= 2 && values[3] <= 16384)))
++        return false;
++    std::string expected = std::string(id) + "\n" + std::to_string(values[0]) + "\n" + std::to_string(values[1]) + "\n";
++    if (selected != expected)
++        return false;
++    contract = { values[0], values[1], static_cast<guint>(values[2]), static_cast<guint>(values[3]), path + ".geometry" };
++    return true;
++}
++
++struct LocalBooruResizeProbe {
++    LocalBooruResizeContract contract;
++    GstElement* capsFilter;
++};
++
++static GstPadProbeReturn localBooruResizeCaps(GstPad*, GstPadProbeInfo* info, gpointer data)
++{
++    auto* probe = static_cast<LocalBooruResizeProbe*>(data);
++    auto* event = GST_PAD_PROBE_INFO_EVENT(info);
++    if (GST_EVENT_TYPE(event) != GST_EVENT_CAPS)
++        return GST_PAD_PROBE_OK;
++    GstCaps* caps = nullptr;
++    gst_event_parse_caps(event, &caps);
++    GstVideoInfo input;
++    if (!caps || !gst_video_info_from_caps(&input, caps))
++        return GST_PAD_PROBE_OK;
++    guint width = GST_VIDEO_INFO_WIDTH(&input), height = GST_VIDEO_INFO_HEIGHT(&input);
++    guint outputWidth = width, outputHeight = height;
++    if (width > probe->contract.width || height > probe->contract.height) {
++        guint64 numerator, denominator;
++        if (static_cast<guint64>(probe->contract.width) * height <= static_cast<guint64>(probe->contract.height) * width) {
++            numerator = probe->contract.width;
++            denominator = width;
++        } else {
++            numerator = probe->contract.height;
++            denominator = height;
++        }
++        outputWidth = std::min(width, static_cast<guint>(width * numerator / denominator));
++        outputHeight = std::min(height, static_cast<guint>(height * numerator / denominator));
++        // Even dimensions suit planar formats without growing tiny sources.
++        outputWidth = width < 2 ? width : std::max(2U, outputWidth & ~1U);
++        outputHeight = height < 2 ? height : std::max(2U, outputHeight & ~1U);
++    }
++    GstCaps* target = gst_caps_copy(caps);
++    gst_caps_set_simple(target, "width", G_TYPE_INT, static_cast<gint>(outputWidth), "height", G_TYPE_INT, static_cast<gint>(outputHeight), nullptr);
++    g_object_set(probe->capsFilter, "caps", target, nullptr);
++    gst_caps_unref(target);
++    // This is the geometry upstream of the opaque Manager graph. Output HTML
++    // dimensions may instead reflect a resize performed by that graph itself.
++    auto geometry = std::to_string(probe->contract.epoch) + "\n" + std::to_string(probe->contract.revision) + "\n"
++        + std::to_string(width) + "\n" + std::to_string(height) + "\n" + std::to_string(outputWidth) + "\n" + std::to_string(outputHeight) + "\n";
++    g_file_set_contents(probe->contract.geometryPath.c_str(), geometry.c_str(), geometry.size(), nullptr);
++    return GST_PAD_PROBE_OK;
++}
++
++static GstElement* localBooruComposeVideoFilter(const LocalBooruResizeContract* resize, GstElement* filter)
++{
++    if (!resize || !resize->width || !resize->height)
++        return filter;
++    GstElement* scale = gst_element_factory_make("videoscale", nullptr);
++    GstElement* caps = gst_element_factory_make("capsfilter", nullptr);
++    GstElement* bin = gst_bin_new(nullptr);
++    if (!scale || !caps || !bin) {
++        if (scale) gst_object_unref(scale);
++        if (caps) gst_object_unref(caps);
++        if (bin) gst_object_unref(bin);
++        return filter;
++    }
++    gst_bin_add_many(GST_BIN(bin), scale, caps, nullptr);
++    bool linked = gst_element_link(scale, caps);
++    if (filter) {
++        gst_bin_add(GST_BIN(bin), filter);
++        linked = linked && gst_element_link(caps, filter);
++    }
++    GstPad* sink = gst_element_get_static_pad(scale, "sink");
++    GstPad* source = gst_element_get_static_pad(filter ? filter : caps, "src");
++    if (!linked || !sink || !source) {
++        if (sink) gst_object_unref(sink);
++        if (source) gst_object_unref(source);
++        gst_object_unref(bin);
++        return nullptr;
++    }
++    auto* probe = new LocalBooruResizeProbe { *resize, GST_ELEMENT(gst_object_ref(caps)) };
++    gst_pad_add_probe(sink, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, localBooruResizeCaps, probe, [](gpointer data) {
++        auto* probe = static_cast<LocalBooruResizeProbe*>(data);
++        gst_object_unref(probe->capsFilter);
++        delete probe;
++    });
++    gst_element_add_pad(bin, gst_ghost_pad_new("sink", sink));
++    gst_element_add_pad(bin, gst_ghost_pad_new("src", source));
++    gst_object_unref(sink);
++    gst_object_unref(source);
++    return bin;
++}
++
++
+@@ -213,0 +433 @@
++    localBooruUnregisterVideoHost(this);
+@@ -1372,0 +1593,2 @@
++    if (auto player = m_player.get(); player && player->isVideoPlayer())
++        localBooruRegisterVideoHost(this, elementId.utf8().data());
+@@ -3468,0 +3691,2 @@
++    if (player->isVideoPlayer())
++        localBooruRegisterVideoHost(this, elementId.utf8().data());
+@@ -3573,0 +3798,30 @@
 +
 +    // Deinterlacing doubles the frame-processing work and most LocalBooru
 +    // content is progressive. Keep it off, especially for the WebGL VR path.
@@ -25,39 +250,32 @@ diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStrea
 +            }
 +        }
 +    }
++    GstElement* videoFilter = nullptr;
 +    if (videoFilterName && *videoFilterName) {
-+        if (auto* videoFilter = makeGStreamerElement(CStringView::unsafeFromUTF8(videoFilterName))) {
-+            GST_INFO_OBJECT(pipeline(), "Using application video filter: %s", videoFilterName);
-+            g_object_set(m_pipeline.get(), "video-filter", videoFilter, nullptr);
-+        } else
++        videoFilter = makeGStreamerElement(CStringView::unsafeFromUTF8(videoFilterName));
++        if (!videoFilter)
 +            GST_WARNING_OBJECT(pipeline(), "Unable to create application video filter: %s", videoFilterName);
 +    }
- #if ENABLE(MEDIA_TELEMETRY)
-     MediaTelemetryReport::singleton().reportDrmInfo(getDrm());
-     MediaTelemetryReport::singleton().reportPlaybackState(MediaTelemetryReport::AVPipelineState::Create);
++    LocalBooruResizeContract resize;
++    bool ownsResolution = player->isVideoPlayer() && localBooruReadResizeContract(elementId.utf8().data(), resize);
++    videoFilter = localBooruComposeVideoFilter(ownsResolution ? &resize : nullptr, videoFilter);
++    if (videoFilter)
++        g_object_set(m_pipeline.get(), "video-filter", videoFilter, nullptr);
 
 diff --git a/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp b/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
 --- a/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
 +++ b/Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp
-@@ -66,5 +66,10 @@ String findWebKitProcess(const char* processName)
- String executablePathOfWebProcess()
- {
+@@ -67,0 +68,5 @@
 +    if (const char* localBooruProcessPath = g_getenv("LOCALBOORU_WEB_PROCESS_PATH")) {
 +        String processPath = FileSystem::stringFromFileSystemRepresentation(localBooruProcessPath);
 +        if (FileSystem::fileExists(processPath))
 +            return processPath;
 +    }
- #if PLATFORM(WPE)
-     return findWebKitProcess("WPEWebProcess");
- #else
 
 diff --git a/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMapperANGLE.cpp b/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMapperANGLE.cpp
 --- a/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMapperANGLE.cpp
 +++ b/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMapperANGLE.cpp
-@@ -38,6 +38,17 @@
- #include <wtf/StdLibExtras.h>
- #include <wtf/TZoneMallocInlines.h>
- 
+@@ -40,0 +41,11 @@
 +#if ENABLE(VIDEO) && USE(GSTREAMER_GL)
 +#include "GStreamerCommon.h"
 +#include "PlatformDisplay.h"
@@ -69,18 +287,13 @@ diff --git a/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMap
 +#undef GST_USE_UNSTABLE_API
 +#endif
 +
- #if ENABLE(MEDIA_STREAM) || ENABLE(WEB_CODECS)
- #include "VideoFrame.h"
- #if USE(GSTREAMER)
-@@ -207,9 +218,156 @@
- }
- 
- #if ENABLE(VIDEO)
+@@ -210,3 +221,150 @@
 -bool GraphicsContextGLTextureMapperANGLE::copyTextureFromVideoFrame(VideoFrame&, PlatformGLObject, GCGLenum, GCGLint, GCGLenum, GCGLenum, GCGLenum, bool, bool)
+-{
+-    // FIXME: Implement copy-free (or at least, software copy-free) texture transfer.
 +#if USE(GSTREAMER_GL)
 +static GRefPtr<GstCaps> copyCapsAsGLMemory(GstCaps* caps, const char* format)
- {
--    // FIXME: Implement copy-free (or at least, software copy-free) texture transfer.
++{
 +    auto converted = adoptGRef(gst_caps_copy(caps));
 +    gst_caps_set_features(converted.get(), 0, gst_caps_features_new(GST_CAPS_FEATURE_MEMORY_GL_MEMORY, nullptr));
 +    gst_caps_set_simple(converted.get(), "format", G_TYPE_STRING, format, "texture-target", G_TYPE_STRING, "2D", nullptr);
@@ -228,10 +441,8 @@ diff --git a/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMap
 +    UNUSED_PARAM(premultiplyAlpha);
 +    UNUSED_PARAM(flipY);
 +#endif
-     return false;
- }
- #endif
 
+diff --git a/Source/WebKit/WebProcess/gtk/WebProcessMainGtk.cpp b/Source/WebKit/WebProcess/gtk/WebProcessMainGtk.cpp
 --- a/Source/WebKit/WebProcess/gtk/WebProcessMainGtk.cpp
 +++ b/Source/WebKit/WebProcess/gtk/WebProcessMainGtk.cpp
 @@ -33,0 +34,12 @@
@@ -519,92 +730,3 @@ diff --git a/Source/WebCore/platform/graphics/texmap/GraphicsContextGLTextureMap
 @@ -66,0 +347,2 @@
 +        startLocalBooruMpvControlRelayIfNeeded();
 +
-
---- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-+++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -26,0 +27,7 @@
-+
-+#include <mutex>
-+#include <string>
-+#include <unordered_map>
-+#include <sys/stat.h>
-+#include <unistd.h>
-+#include <cstring>
-@@ -137,0 +145,69 @@
-+// DMC's selected video element registers the PID of its actual graph host.
-+struct LocalBooruVideoHostRecord {
-+    std::string path;
-+    ino_t inode;
-+};
-+static std::mutex localBooruVideoHostsMutex;
-+static std::unordered_map<const void*, LocalBooruVideoHostRecord> localBooruVideoHosts;
-+
-+static bool localBooruValidVideoHostId(const char* id)
-+{
-+    constexpr const char* prefix = "localbooru-svp-host-";
-+    if (!id || strncmp(id, prefix, strlen(prefix)))
-+        return false;
-+    const char* token = id + strlen(prefix);
-+    size_t length = strlen(token);
-+    if (!length || length > 80)
-+        return false;
-+    for (const char* character = token; *character; ++character) {
-+        if (!g_ascii_isalnum(*character) && *character != '-')
-+            return false;
-+    }
-+    return true;
-+}
-+
-+static void localBooruUnregisterVideoHost(const void* player)
-+{
-+    std::lock_guard<std::mutex> lock(localBooruVideoHostsMutex);
-+    auto record = localBooruVideoHosts.find(player);
-+    if (record == localBooruVideoHosts.end())
-+        return;
-+    struct stat metadata { };
-+    if (!lstat(record->second.path.c_str(), &metadata)
-+        && S_ISREG(metadata.st_mode) && metadata.st_uid == geteuid()
-+        && metadata.st_ino == record->second.inode)
-+        unlink(record->second.path.c_str());
-+    localBooruVideoHosts.erase(record);
-+}
-+
-+static void localBooruRegisterVideoHost(const void* player, const char* id)
-+{
-+    localBooruUnregisterVideoHost(player);
-+    const char* root = g_getenv("LOCALBOORU_MPV_CONTROL_HOST_ROOT");
-+    if (!root || !*root || !localBooruValidVideoHostId(id))
-+        return;
-+    struct stat directory { };
-+    if (lstat(root, &directory) || !S_ISDIR(directory.st_mode) || directory.st_uid != geteuid())
-+        return;
-+    std::string path = std::string(root) + "/" + id;
-+    std::string pid = std::to_string(getpid()) + "\n";
-+    // A host ID belongs to one physical video element. Publish atomically
-+    // without replacing a competing WebProcess's existing registration.
-+    std::string temporary = std::string(root) + "/.host-XXXXXX";
-+    int descriptor = g_mkstemp(temporary.data());
-+    if (descriptor < 0)
-+        return;
-+    bool complete = write(descriptor, pid.data(), pid.size()) == static_cast<ssize_t>(pid.size());
-+    close(descriptor);
-+    bool published = complete && !link(temporary.c_str(), path.c_str());
-+    unlink(temporary.c_str());
-+    if (!published)
-+        return;
-+    struct stat metadata { };
-+    if (lstat(path.c_str(), &metadata) || !S_ISREG(metadata.st_mode) || metadata.st_uid != geteuid())
-+        return;
-+    std::lock_guard<std::mutex> lock(localBooruVideoHostsMutex);
-+    localBooruVideoHosts[player] = { path, metadata.st_ino };
-+}
-+
-+
-@@ -213,0 +290 @@
-+    localBooruUnregisterVideoHost(this);
-@@ -1372,0 +1450,2 @@
-+    if (auto player = m_player.get(); player && player->isVideoPlayer())
-+        localBooruRegisterVideoHost(this, elementId.utf8().data());
-@@ -3468,0 +3548,2 @@
-+    if (player->isVideoPlayer())
-+        localBooruRegisterVideoHost(this, elementId.utf8().data());

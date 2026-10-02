@@ -1,19 +1,12 @@
-import { useState, useEffect } from 'react'
+import { videoQualityOptions } from '../utils/localVideoResolution'
 import './QualitySelector.css'
 
-export default function QualitySelector({ isOpen, onClose, currentQuality, onQualityChange, sourceResolution }) {
+export default function QualitySelector({ isOpen, onClose, currentQuality, onQualityChange, sourceResolution, rawResize = false }) {
   if (!isOpen) return null
 
   // Define quality options with metadata
   // Bitrates based on relative pixel count to 1080p @ 20 Mbps
-  const qualityOptions = [
-    { id: 'original', label: 'Original', description: 'No transcoding', maxHeight: Infinity },
-    { id: '1440p', label: '1440p (QHD)', description: '30 Mbps', maxHeight: 1440 },
-    { id: '1080p_enhanced', label: '1080p Enhanced', description: '20 Mbps', maxHeight: 1080 },
-    { id: '1080p', label: '1080p', description: '12 Mbps', maxHeight: 1080 },
-    { id: '720p', label: '720p', description: '8 Mbps', maxHeight: 720 },
-    { id: '480p', label: '480p', description: '4 Mbps', maxHeight: 480 },
-  ]
+  const qualityOptions = videoQualityOptions(rawResize)
 
   // Filter options based on source resolution (prevent upscaling)
   let availableOptions = qualityOptions
@@ -37,12 +30,12 @@ export default function QualitySelector({ isOpen, onClose, currentQuality, onQua
   return (
     <>
       <div className="quality-selector-popup" onClick={(e) => e.stopPropagation()}>
-        <div className="quality-selector-header">Quality</div>
+        <div className="quality-selector-header">{rawResize ? 'Resolution' : 'Quality'}</div>
         <div className="quality-options">
           {availableOptions.map(option => (
             <button
               key={option.id}
-              className={`quality-option ${currentQuality === option.id ? 'active' : ''}`}
+              className={`quality-option ${(rawResize && currentQuality === '1080p_enhanced' ? '1080p' : currentQuality) === option.id ? 'active' : ''}`}
               onClick={() => handleQualitySelect(option.id)}
             >
               <div className="quality-option-content">
