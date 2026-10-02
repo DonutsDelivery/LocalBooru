@@ -781,7 +781,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       cleanupDoneRef.current = true
       setCleanupSeq(s => s + 1)
     })
-  }, [currentImageKey, videoBackendProducerMayExist])
+  }, [currentImageKey, nativeSvpPlayback, videoBackendProducerMayExist])
 
   // Native GTK owns playback exclusively. Tear down every browser/HLS producer
   // as soon as native ownership is selected so two decoders cannot run.

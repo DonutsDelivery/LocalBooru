@@ -87,3 +87,21 @@ test('Android SVP keeps the server encoded interpolation transport', async () =>
   expect(api.playVideoSVP).toHaveBeenCalled()
   expect(api.playVideoTranscode).not.toHaveBeenCalled()
 })
+
+// AC: @local-decoded-video-resolution ac-remote
+// AC: @local-decoded-video-resolution ac-ownership
+test.each([false, true])('switching remote encoded playback to embedded clears the old stream, SVP=%s', async svp => {
+  Object.assign(state, { linux: true, embedded: false, svp })
+  const { result, rerender } = mount('720p')
+  await waitFor(() => expect(svp ? result.current.svpStreamUrl : result.current.transcodeStreamUrl)
+    .toBe(svp ? '/synthetic-svp.m3u8' : '/synthetic-transcode.m3u8'))
+  const encodedStarts = api.playVideoTranscode.mock.calls.length + api.playVideoSVP.mock.calls.length
+  state.embedded = true
+  rerender()
+  await waitFor(() => {
+    expect(result.current.nativeSvpPlayback).toBe(true)
+    expect(result.current.transcodeStreamUrl).toBeNull()
+    expect(result.current.svpStreamUrl).toBeNull()
+  })
+  expect(api.playVideoTranscode.mock.calls.length + api.playVideoSVP.mock.calls.length).toBe(encodedStarts)
+})
