@@ -9239,6 +9239,91 @@ reviews:
         runner: gated disposable pristine patch
         created_at: 2026-10-02T03:14:17.558Z
         completed_at: 2026-10-02T03:14:17.558Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 64a2a3542edcc67f957795a48c4086b8f8c4a729
+        evidence: Independent review of all19 changed paths and surrounding native/Manager/route ownership
+          code, plus final64a2a35 cleanup fix and target-recording regression. Exact frozen head
+          clean. All confirmed lifecycle, mobile cfg, missing-runtime/geometry, stale success,
+          backend reverse-switch and cleanup-target findings corrected. Spec6 ACs behaviorally
+          covered. No remaining source blocker. No runtime/media/profile mutation.
+        name: source-review
+        required: true
+        runner: manual
+        created_at: 2026-10-02T03:19:15.193Z
+        completed_at: 2026-10-02T03:19:15.193Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 64a2a3542edcc67f957795a48c4086b8f8c4a729
+        evidence: "Inspected exact64a2a35 final20/20 pass (Lightbox12+routing8): playhead/play/pause/audio,
+          rapid choices, delayed preparation/ACK, stock/endpoint-only runtime fallback, SVP handoff,
+          backend directions and stop-target ownership.
+          /tmp/dmc-raw-resize-component-final-receipt.txt. Red target proof preserved
+          /tmp/dmc-raw-resize-cleanup-target-before-receipt.txt."
+        name: focused-components
+        required: true
+        runner: Vitest
+        created_at: 2026-10-02T03:19:15.384Z
+        completed_at: 2026-10-02T03:19:15.384Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 64a2a3542edcc67f957795a48c4086b8f8c4a729
+        evidence: Independent gated10/10 helper cases /tmp/dmc-raw-resize-review-node.log and inspected
+          final25/25 /tmp/dmc-raw-resize-node-receipt.txt; late successful acknowledgements now
+          require current owner.
+        name: focused-node
+        required: true
+        runner: node --test
+        created_at: 2026-10-02T03:19:15.573Z
+        completed_at: 2026-10-02T03:19:15.573Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 64a2a3542edcc67f957795a48c4086b8f8c4a729
+        evidence: Inspected unchanged native source receipt24/24 pass
+          /tmp/dmc-raw-resize-rust-final-receipt.txt. Exact owner/epoch/resize revision, geometry
+          bounds, lease isolation and existing SVP regressions.
+        name: focused-rust
+        required: true
+        runner: scripts/run-cargo.sh test svp_
+        created_at: 2026-10-02T03:19:15.763Z
+        completed_at: 2026-10-02T03:19:15.763Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 64a2a3542edcc67f957795a48c4086b8f8c4a729
+        evidence: Inspected12 actual raw CAPS pipelines plus production-helper
+          relay/registration/coexistence/inode cleanup receipts
+          /tmp/dmc-raw-resize-caps-final-receipt.txt and /tmp/dmc-raw-resize-relay-receipt.txt.
+          Landscape/portrait/even/no-upscale/PAR/FPS and geometry before opaque identity graph. No
+          installed native acceptance claimed.
+        name: cpp-runtime-fixture
+        required: true
+        runner: GStreamer/C++ synthetic fixtures
+        created_at: 2026-10-02T03:19:15.954Z
+        completed_at: 2026-10-02T03:19:15.954Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 64a2a3542edcc67f957795a48c4086b8f8c4a729
+        evidence: Independently applied canonical patch to4 pristine2.52.3 files; exact two C++ afterimages
+          equal legacy manifest. /tmp/dmc-raw-resize-review-pristine-patch.log. Native/C++ unchanged
+          in frontend-only544→288→64. Staged guarded compilation approved separately;
+          installation/runtime acceptance pending.
+        name: patch-provenance
+        required: true
+        runner: gated disposable pristine patch
+        created_at: 2026-10-02T03:19:16.151Z
+        completed_at: 2026-10-02T03:19:16.151Z
     events:
       - _ulid: 01M3X9NYS4E2HE5EZ9SYKWMQ8E
         actor: DonutsDelivery
@@ -9302,9 +9387,95 @@ reviews:
           kind: blocker
           thread_ulid: 01M3X9P0GQ8P2QWDTNQX3Q7S2P
         timestamp: 2026-10-02T03:14:17.803Z
+      - _ulid: 01M3X9Z2E2HSXJ9H0VB3Z17B5Q
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_base: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          new_head: 64a2a3542edcc67f957795a48c4086b8f8c4a729
+          previous_head: 288431febaa349cf4c8299df7cd2998bd6119d3a
+        timestamp: 2026-10-02T03:19:14.626Z
+      - _ulid: 01M3X9Z2MWZGYTFWTF9TMPKFBQ
+        actor: DonutsDelivery
+        event_type: thread_replied
+        payload:
+          thread_ulid: 01M3X9P0GQ8P2QWDTNQX3Q7S2P
+        timestamp: 2026-10-02T03:19:14.844Z
+      - _ulid: 01M3X9Z2V6ZN9S694HANVQ2W7Z
+        actor: DonutsDelivery
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01M3X9P0GQ8P2QWDTNQX3Q7S2P
+        timestamp: 2026-10-02T03:19:15.046Z
+      - _ulid: 01M3X9Z31EPJBNJM0H2JJ40RHQ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-review
+        timestamp: 2026-10-02T03:19:15.246Z
+      - _ulid: 01M3X9Z379K34DDG7J5C0KRD7X
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-components
+        timestamp: 2026-10-02T03:19:15.434Z
+      - _ulid: 01M3X9Z3D84JWZRN2ZAD4JESJP
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-node
+        timestamp: 2026-10-02T03:19:15.624Z
+      - _ulid: 01M3X9Z3K4WP4DXW9QHJ6NPTT9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-rust
+        timestamp: 2026-10-02T03:19:15.813Z
+      - _ulid: 01M3X9Z3S77M9KJV2T1A7F6925
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: cpp-runtime-fixture
+        timestamp: 2026-10-02T03:19:16.007Z
+      - _ulid: 01M3X9Z3ZAAR8H83BA2NW0XH4T
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: patch-provenance
+        timestamp: 2026-10-02T03:19:16.202Z
+      - _ulid: 01M3X9Z45DNMHQJW2P7ZF5VAWR
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3X9Z43VPFDJ21MC1Y51FRJ6
+        timestamp: 2026-10-02T03:19:16.397Z
+      - _ulid: 01M3X9Z4B724MA1MVN751978MR
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+            head_commit: 64a2a3542edcc67f957795a48c4086b8f8c4a729
+          decision: approve
+        timestamp: 2026-10-02T03:19:16.583Z
+      - _ulid: 01M3X9Z4B785NQ0894KJZ8QF93
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T03:19:16.583Z
     examined_commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@restore-local-raw-resize"
     subject:
@@ -9312,7 +9483,7 @@ reviews:
       base_branch: main
       base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
       head_branch: fix/local-raw-resize
-      head_commit: 288431febaa349cf4c8299df7cd2998bd6119d3a
+      head_commit: 64a2a3542edcc67f957795a48c4086b8f8c4a729
     threads:
       - _ulid: 01M3X9P0GQ8P2QWDTNQX3Q7S2P
         anchor:
@@ -9333,8 +9504,46 @@ reviews:
               URLs, not the target of cleanup. Worker validating target with synthetic mocks; no
               live endpoint requests.
             created_at: 2026-10-02T03:14:17.751Z
+          - _ulid: 01M3X9Z2K73N3V40TEKVR6DRXP
+            author: DonutsDelivery
+            body: "Confirmed red target-recording cases on288431f, then inspected64a2a35: ownership-mode switch
+              skips current-server global stop calls while abort/invalidation/HLS/ref/state teardown
+              remains. Final actual-hook/component20/20 pass explicitly asserts no stop reaches the
+              newly selected embedded backend. /tmp/dmc-raw-resize-cleanup-target-before-receipt.txt
+              and /tmp/dmc-raw-resize-component-final-receipt.txt. No remaining blocker."
+            created_at: 2026-10-02T03:19:14.791Z
         kind: blocker
-    verdicts: []
+        resolved_at: 2026-10-02T03:19:14.993Z
+        resolved_by: DonutsDelivery
+      - _ulid: 01M3X9Z43VPFDJ21MC1Y51FRJ6
+        anchor:
+          type: code
+          commit: 64a2a3542edcc67f957795a48c4086b8f8c4a729
+          line_end: 39
+          line_start: 39
+          path: docs/LOCAL_VIDEO_RESOLUTION.md
+          side: head
+        entries:
+          - _ulid: 01M3X9Z43VWTZA37WDY5K87N7K
+            author: DonutsDelivery
+            body: "Source/synthetic acceptance only: matching WebKit staged build/install and actual native
+              playback remain separate operational gates. No user-media/profile, GPU throughput or
+              phone/Windows/Mac runtime acceptance claimed. Original compressed4K is still decoded
+              at original size. Prior remote producer cleanup remains idle/session behavior instead
+              of a captured-origin API redesign; no misdirected stop is sent to the new server.
+              Existing unrelated kspec validation failures remain documented
+              /tmp/dmc-raw-resize-review-kspec.log."
+            created_at: 2026-10-02T03:19:16.347Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: ba0c9f55436cb3ecfff4df12f2aea53a8e8e6b58
+          head_commit: 64a2a3542edcc67f957795a48c4086b8f8c4a729
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-02T03:19:16.583Z
     created_at: 2026-10-02T03:14:15.972Z
-    updated_at: 2026-10-02T03:14:17.751Z
+    updated_at: 2026-10-02T03:19:16.583Z
     notes: []
