@@ -291,7 +291,8 @@ test('switching backend gives a remote video a new physical host without local r
   expect(mocks.bridge.configureLocalVideoResolution).toHaveBeenCalledTimes(prepared)
 })
 
-test('missing resize and Manager runtime also restores original playhead with SVP requested', async () => {
+// AC: @native-svp-startup-gate ac-original
+test('missing resize and Manager runtime offers explicit original playback at the same position', async () => {
   mocks.initialSvp = true
   localStorage.setItem('video_quality_preference', '720p')
   mocks.bridge.verifyLocalVideoResolution.mockRejectedValue(new Error('Native video geometry is not ready; stock runtime'))
@@ -300,9 +301,16 @@ test('missing resize and Manager runtime also restores original playhead with SV
   })
   const { container } = mount()
   const first = await videoReady(container)
-  first.currentTime = 37; first.__paused = false
+  first.currentTime = 37; first.__paused = true
   fireEvent.loadedMetadata(first)
   await waitFor(() => expect(container.querySelector('video')).not.toBe(first), { timeout: 3000 })
+  const waiting = await videoReady(container)
+  fireEvent.loadedMetadata(waiting)
+  fireEvent.canPlay(waiting)
+  await waitFor(() => expect(screen.getByText('Play without SVP')).toBeDefined(), { timeout: 3000 })
+  expect(waiting.play).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByText('Play without SVP'))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(waiting))
   const original = await videoReady(container)
   fireEvent.loadedMetadata(original)
   fireEvent.seeked(original)
@@ -324,8 +332,6 @@ test('original error is visible, stops the loading grid and offers the existing 
   const closeVideo = screen.getByRole('button', { name: 'Close video' })
   fireEvent.click(closeVideo)
   expect(close).toHaveBeenCalledOnce()
-  mocks.playback.isPlaying = true
-  mocks.dimensions.mockResolvedValue({ width: 1920, height: 1080, fps: 24 })
   mocks.playback.playbackError = null
   view.rerender(<Lightbox images={images} currentIndex={1} onClose={close} onNav={mocks.noop} />)
   await videoReady(view.container, 1)
