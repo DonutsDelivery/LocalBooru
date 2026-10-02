@@ -761,6 +761,11 @@ features:
             then: Recovery refuses without signaling that listener or independent services and reports the
               conflict
             when: An add-on start is requested
+          - given: A managed add-on child has been spawned
+            id: ac-child-cleanup
+            then: The child is terminated; normal explicit exit continues using owned process-tree cleanup,
+              without stopping independent ComfyUI services
+            when: Its child handle is dropped or startup is abandoned
         tags: []
         created: 2026-10-02T04:59:18.175Z
         notes: []
