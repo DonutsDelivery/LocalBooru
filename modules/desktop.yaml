@@ -1051,6 +1051,9 @@ features:
           filtered pipeline may produce playback. Explicit disabling restores ordinary playback.
           This user-requested startup contract overrides unfiltered startup allowed by
           svp-manager-transitions ac-no-active-graph.
+        status:
+          maturity: draft
+          implementation: in_progress
         depends_on: []
         implements: []
         relates_to: []
