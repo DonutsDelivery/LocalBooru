@@ -1,5 +1,5 @@
 # preimage a2c148bc70d301d84c67c777b91ea1b17664f65b2049e71581647010275f4726 986c31f46281eb177a2d07c4d15cd6df60d8b5efe6540bf2b5285495d50de434 Source/WebKit/WebProcess/gtk/WebProcessMainGtk.cpp
-# preimage 29a031afdc7b4966927984ae0df4b7fa3a35166344a8a8bee5532daa266b5a3d daba7a6f70c9958261f48b03eecb8335f435d202193ba925d1bd062cd557bd32 Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+# preimage 29a031afdc7b4966927984ae0df4b7fa3a35166344a8a8bee5532daa266b5a3d e9aa894efdad6e148c4457930687a3d31811e2ffc2bf46b86a0d24a39dbef301 Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 
 --- a/Source/WebKit/WebProcess/gtk/WebProcessMainGtk.cpp
 +++ b/Source/WebKit/WebProcess/gtk/WebProcessMainGtk.cpp
@@ -221,7 +221,9 @@
 +#include <sys/stat.h>
 +#include <unistd.h>
 +#include <cstring>
-@@ -137,0 +147,210 @@
+@@ -91,0 +101 @@
++#include <wtf/Function.h>
+@@ -137,0 +148,210 @@
 +// DMC's selected video element registers the PID of its actual graph host.
 +struct LocalBooruVideoHostRecord {
 +    std::string path;
@@ -432,24 +434,164 @@
 +}
 +
 +
-@@ -213,0 +433 @@
+@@ -213,0 +434 @@
 +    localBooruUnregisterVideoHost(this);
-@@ -1372,0 +1593,2 @@
+@@ -569,0 +791,48 @@
++// HTTP range seeks can wait for decoder/streaming locks during FLUSH. Keep
++// that event dispatch off the WebProcess main thread. SVP, looping and rate
++// changes retain their existing dispatch policy.
++static bool localBooruShouldDispatchSeekAsync(GstElement* pipeline, bool isHTTP, bool isLooping, bool isChangingRate)
++{
++    if (!isHTTP || isLooping || isChangingRate)
++        return false;
++    auto* iterator = gst_bin_iterate_recurse(GST_BIN(pipeline));
++    GValue item = G_VALUE_INIT;
++    bool hasInterpolation = false;
++    bool done = false;
++    while (!done) {
++        switch (gst_iterator_next(iterator, &item)) {
++        case GST_ITERATOR_OK: {
++            auto* element = GST_ELEMENT(g_value_get_object(&item));
++            auto* factory = gst_element_get_factory(element);
++            hasInterpolation = factory && !g_strcmp0(gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory)), "localbooruvs");
++            g_value_reset(&item);
++            done = hasInterpolation;
++            break;
++        }
++        case GST_ITERATOR_RESYNC:
++            gst_iterator_resync(iterator);
++            break;
++        case GST_ITERATOR_ERROR:
++            hasInterpolation = true; // Unknown graph keeps the existing policy.
++            done = true;
++            break;
++        case GST_ITERATOR_DONE:
++            done = true;
++            break;
++        }
++    }
++    if (G_VALUE_TYPE(&item))
++        g_value_unset(&item);
++    gst_iterator_free(iterator);
++    return !hasInterpolation;
++}
++
++static void localBooruAcceptHTTPSeek(GstElement* pipeline, bool isHTTP, bool isLooping, bool isChangingRate)
++{
++    if (!localBooruShouldDispatchSeekAsync(pipeline, isHTTP, isLooping, isChangingRate))
++        return;
++    // A newer accepted intent invalidates failures even if dispatch is pending.
++    auto generation = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(pipeline), "localbooru-http-seek-generation")) + 1;
++    g_object_set_data(G_OBJECT(pipeline), "localbooru-http-seek-generation", GSIZE_TO_POINTER(generation));
++}
++
+@@ -573,0 +843,2 @@
++    Function<void(bool)> completionCallback;
++    gsize generation { 0 };
+@@ -613,0 +885,9 @@
++    bool asyncHTTP = !isAsync && localBooruShouldDispatchSeekAsync(m_pipeline.get(), m_url.protocolIsInHTTPFamily() && !m_url.path().endsWithIgnoringASCIICase(".m3u8"_s), player->isLooping(), m_isChangingRate);
++    if (asyncHTTP) {
++        auto generation = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(m_pipeline.get()), "localbooru-http-seek-generation"));
++        g_object_set_data(G_OBJECT(m_pipeline.get()), "localbooru-http-dispatched-seek-generation", GSIZE_TO_POINTER(generation));
++        // PAUSED can arrive before the worker sends FLUSH. Do not finish the
++        // seek from that state notification while dispatch is outstanding.
++        g_object_set_data(G_OBJECT(m_pipeline.get()), "localbooru-http-seek-dispatch-pending", GSIZE_TO_POINTER(generation));
++    }
++
+@@ -635 +915 @@
+-    if (isAsync) {
++    if (isAsync || asyncHTTP) {
+@@ -636,0 +917,39 @@
++        if (asyncHTTP) {
++            // The pipeline identity plus ticket rejects late failed workers,
++            // including a newer seek to the same timestamp.
++            auto generation = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(m_pipeline.get()), "localbooru-http-seek-generation"));
++            data->generation = generation;
++            data->completionCallback = [weakThis = ThreadSafeWeakPtr { *this }, pipeline = m_pipeline, generation](bool succeeded) {
++                RunLoop::mainSingleton().dispatch([weakThis, pipeline, generation, succeeded] {
++                    auto protectedThis = weakThis.get();
++                    if (!protectedThis || protectedThis->m_pipeline != pipeline
++                        || GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(pipeline.get()), "localbooru-http-dispatched-seek-generation")) != generation)
++                        return;
++                    g_object_set_data(G_OBJECT(pipeline.get()), "localbooru-http-seek-dispatch-pending", nullptr);
++                    if (succeeded) {
++                        protectedThis->updateStates();
++                        return;
++                    }
++                    if (GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(pipeline.get()), "localbooru-http-seek-generation")) != generation) {
++                        // A newer accepted seek is queued, not another worker.
++                        // Complete the old operation and dispatch that intent,
++                        // even when it requests the same timestamp again.
++                        if (protectedThis->m_timeOfOverlappingSeek.isValid()) {
++                            auto target = SeekTarget { protectedThis->m_timeOfOverlappingSeek };
++                            protectedThis->m_isSeeking = false;
++                            protectedThis->m_isSeekPending = false;
++                            protectedThis->m_timeOfOverlappingSeek = MediaTime::invalidTime();
++                            protectedThis->seekToTarget(target);
++                        }
++                        return;
++                    }
++                    protectedThis->m_isSeeking = false;
++                    protectedThis->m_isSeekPending = false;
++                    protectedThis->m_timeOfOverlappingSeek = MediaTime::invalidTime();
++                    // A rejected flush cannot promise the old buffer remains
++                    // intact. Surface a media error instead of waiting forever
++                    // in the artificial zero-buffer/paused state.
++                    protectedThis->loadingFailed(MediaPlayer::NetworkState::DecodeError, MediaPlayer::ReadyState::HaveNothing, true);
++                });
++            };
++        }
+@@ -641,0 +961,5 @@
++
++            if (data->completionCallback && GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(pipeline), "localbooru-http-seek-generation")) != data->generation) {
++                data->completionCallback(false);
++                return;
++            }
+@@ -649 +973,3 @@
+-            if (!gst_element_send_event(pipeline, data->event.leakRef()))
++            if (!gst_element_send_event(pipeline, data->event.leakRef())) {
++                if (data->completionCallback)
++                    data->completionCallback(false);
+@@ -651 +977,4 @@
+-
++            }
++
++            if (data->completionCallback)
++                data->completionCallback(true);
+@@ -706 +1035 @@
+-        if (m_isSeekPending) {
++        if (m_isSeekPending || localBooruShouldDispatchSeekAsync(m_pipeline.get(), m_url.protocolIsInHTTPFamily() && !m_url.path().endsWithIgnoringASCIICase(".m3u8"_s), player->isLooping(), m_isChangingRate)) {
+@@ -708 +1037,3 @@
+-            m_seekTarget = target;
++            localBooruAcceptHTTPSeek(m_pipeline.get(), m_url.protocolIsInHTTPFamily() && !m_url.path().endsWithIgnoringASCIICase(".m3u8"_s), player->isLooping(), m_isChangingRate);
++            if (m_isSeekPending)
++                m_seekTarget = target;
+@@ -719,0 +1051 @@
++    localBooruAcceptHTTPSeek(m_pipeline.get(), m_url.protocolIsInHTTPFamily() && !m_url.path().endsWithIgnoringASCIICase(".m3u8"_s), player->isLooping(), m_isChangingRate);
+@@ -743 +1075,2 @@
+-    if (isMediaStreamPlayer() || !m_isChangingRate)
++    if (isMediaStreamPlayer() || !m_isChangingRate
++        || (m_pipeline && g_object_get_data(G_OBJECT(m_pipeline.get()), "localbooru-http-seek-dispatch-pending")))
+@@ -1372,0 +1706,2 @@
 +    if (auto player = m_player.get(); player && player->isVideoPlayer())
 +        localBooruRegisterVideoHost(this, elementId.utf8().data());
-@@ -3468,0 +3691,2 @@
+@@ -3101 +3436,2 @@
+-        } else if (m_isSeeking && !(state == GST_STATE_PLAYING && pending == GST_STATE_PAUSED))
++        } else if (m_isSeeking && !g_object_get_data(G_OBJECT(m_pipeline.get()), "localbooru-http-seek-dispatch-pending")
++            && !(state == GST_STATE_PLAYING && pending == GST_STATE_PAUSED))
+@@ -3468,0 +3805,2 @@
 +    if (player->isVideoPlayer())
 +        localBooruRegisterVideoHost(this, elementId.utf8().data());
-@@ -3592,0 +3817 @@
+@@ -3592,0 +3931 @@
 +    GstElement* videoFilter = nullptr;
-@@ -3594,4 +3819,2 @@
+@@ -3594,4 +3933,2 @@
 -        if (auto* videoFilter = makeGStreamerElement(CStringView::unsafeFromUTF8(videoFilterName))) {
 -            GST_INFO_OBJECT(pipeline(), "Using application video filter: %s", videoFilterName);
 -            g_object_set(m_pipeline.get(), "video-filter", videoFilter, nullptr);
 -        } else
 +        videoFilter = makeGStreamerElement(CStringView::unsafeFromUTF8(videoFilterName));
 +        if (!videoFilter)
-@@ -3599,0 +3823,5 @@
+@@ -3599,0 +3937,5 @@
 +    LocalBooruResizeContract resize;
 +    bool ownsResolution = player->isVideoPlayer() && localBooruReadResizeContract(elementId.utf8().data(), resize);
 +    videoFilter = localBooruComposeVideoFilter(ownsResolution ? &resize : nullptr, videoFilter);

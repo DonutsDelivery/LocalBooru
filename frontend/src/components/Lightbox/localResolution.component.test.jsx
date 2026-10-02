@@ -72,6 +72,8 @@ const images = [1, 2].map(id => ({ id, filename: `synthetic-${id}.mp4`, original
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
+  mocks.playback.playbackError = null
+  mocks.playback.handlePlaybackError = vi.fn()
   mocks.initialSvp = false
   mocks.embedded = true
   mocks.bridge.configureLocalVideoResolution.mockResolvedValue(true)
@@ -295,4 +297,25 @@ test('missing resize and Manager runtime also restores original playhead with SV
   expect(original.currentTime).toBe(37)
   expect(original.paused).toBe(false)
   expect(mocks.handleEncodedQuality).not.toHaveBeenCalled()
+})
+
+// AC: @responsive-original-stream-seeking ac-rejected-seek, ac-owner-boundary
+test('original error is visible, stops the loading grid and offers the existing close/reopen recovery', async () => {
+  mocks.playback.playbackError = 'Video playback failed. Close and reopen this video to retry.'
+  const close = vi.fn()
+  const view = render(<Lightbox images={images} currentIndex={0} onClose={close} onNav={mocks.noop} />)
+  const video = await videoReady(view.container)
+  fireEvent.error(video)
+  expect(mocks.playback.handlePlaybackError).toHaveBeenCalledWith(video)
+  expect(screen.getByText(/Close and reopen this video/)).toBeTruthy()
+  expect(view.container.querySelector('.lightbox-video-loading-grid')).toBeNull()
+  const closeVideo = screen.getByRole('button', { name: 'Close video' })
+  fireEvent.click(closeVideo)
+  expect(close).toHaveBeenCalledOnce()
+  mocks.playback.playbackError = null
+  view.rerender(<Lightbox images={images} currentIndex={1} onClose={close} onNav={mocks.noop} />)
+  await videoReady(view.container, 1)
+  expect(screen.queryByRole('button', { name: 'Close video' })).toBeNull()
+  fireEvent.click(closeVideo) // A detached recovery action cannot close the next item.
+  expect(close).toHaveBeenCalledOnce()
 })
