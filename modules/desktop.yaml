@@ -995,6 +995,45 @@ features:
         tags: []
         created: 2026-07-16T23:26:16.354Z
         notes: []
+      - _ulid: 01M3X710K38ZA02SR28G4A937N
+        slugs:
+          - local-decoded-video-resolution
+        title: Local decoded video resolution
+        type: requirement
+        description: Linux desktop playback using its embedded media backend can downscale decoded frames
+          before optional SVP without encoding or replacing the original source.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        acceptance_criteria:
+          - given: a Linux desktop uses its embedded backend and a decodable local video
+            id: ac-local-raw
+            then: the original URL and audio remain and decoded frames resize before optional SVP without an
+              encoded stream
+            when: a lower resolution is selected with SVP disabled or enabled
+          - given: a resolution rectangle is selected for a video of any orientation
+            id: ac-geometry
+            then: dimensions fit the rectangle, preserve aspect and source pixel aspect, never upscale, and use
+              even dimensions when resizing; Manager sees actual resized geometry
+            when: raw caps negotiate
+          - given: Android or another client uses a remote server
+            id: ac-remote
+            then: existing encoded HLS quality handling is retained and no local resize contract is published
+            when: a streamed quality is selected
+          - given: resolution selection races navigation, SVP handoff or another selection
+            id: ac-ownership
+            then: only the current physical media owner applies configuration and playback position, paused
+              state and audio intent are preserved
+            when: the player transitions
+          - given: local decoded resizing is available
+            id: ac-labels
+            then: choices describe resolution and raw resizing, with no bitrate or duplicate enhanced option
+            when: the resolution menu opens
+        tags: []
+        created: 2026-10-02T02:27:52.547Z
+        notes: []
     created: 2026-07-16T23:26:05.987Z
     notes: []
   - _ulid: 01M3QPHNQWY7Q1XRBEAJKNK4E5
