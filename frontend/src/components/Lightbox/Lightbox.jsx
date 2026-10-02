@@ -1034,7 +1034,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Handle quality change
   const localResolutionChangeRef = useRef(0)
   const handleQualityChange = useCallback(async (qualityId, requestedIntent = null) => {
-    const playbackIntent = requestedIntent || streaming.capturePlaybackIntent()
+    const playbackIntent = requestedIntent || (svpPathEnabled && !svpInteractionReadyRef.current ? {
+      position: svpResumeRef.current?.currentTime ?? mediaRef.current?.currentTime ?? 0,
+      shouldPlay: !(svpResumeRef.current?.paused ?? !requestedPlayingRef.current),
+    } : streaming.capturePlaybackIntent())
     if (localRawPlayback && isVideoMediaElement(mediaRef.current)) {
       const video = mediaRef.current
       const owner = svpHostOwnerRef.current
@@ -1074,7 +1077,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setCurrentQuality(qualityId)
     localStorage.setItem('video_quality_preference', qualityId)
     await streaming.handleQualityChange(qualityId, playbackIntent)
-  }, [streaming, localRawPlayback, currentImageKey, playback.volume, playback.isMuted])
+  }, [streaming, localRawPlayback, currentImageKey, playback.volume, playback.isMuted, svpPathEnabled])
 
   // Toggle SVP on/off
   const handleToggleSVP = useCallback(() => {
