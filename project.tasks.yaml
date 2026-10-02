@@ -1926,7 +1926,7 @@ tasks:
     title: Restore responsive original-stream seeking
     type: bug
     spec_ref: "@responsive-original-stream-seeking"
-    status: pending_review
+    status: completed
     blocked_by: []
     depends_on: []
     priority: 2
@@ -1937,3 +1937,4 @@ tasks:
     created_at: 2026-10-02T03:07:15.972Z
     started_at: 2026-10-02T03:07:34.215Z
     submitted_at: 2026-10-02T03:58:00.949Z
+    completed_at: 2026-10-02T04:00:52.756Z
