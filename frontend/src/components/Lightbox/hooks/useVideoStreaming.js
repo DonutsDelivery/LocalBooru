@@ -56,6 +56,7 @@ const svpMSEClient = {
 export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus = {}) {
   const { svpInstalled = false, enabled = true } = addonStatus
   const nativeSvpPlayback = localRawResizeAvailable(isLinuxDesktopApp(), isUsingLocalServer())
+  const previousNativePlaybackRef = useRef(nativeSvpPlayback)
   const mseSvpPlayback = isWindowsOrMacDesktopApp() && typeof MediaSource !== 'undefined'
   const svpMseControllerRef = useRef(null)
   const imageRef = useRef(image)
@@ -724,6 +725,9 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
       return  // No cleanup needed on first mount
     }
 
+    const backendOwnershipChanged = previousNativePlaybackRef.current !== nativeSvpPlayback
+    previousNativePlaybackRef.current = nativeSvpPlayback
+
     const shouldStopVideoBackends = videoBackendCleanupRef.current.replace(
       videoBackendProducerMayExist(),
     )
@@ -769,7 +773,10 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
 
     // Only actual video lifecycles may own backend producers. Ordinary image
     // navigation must not issue global SVP/transcode cleanup requests.
-    const backendCleanup = shouldStopVideoBackends
+    // Stop APIs resolve through the current selected server. Once ownership
+    // switches, those global calls would target the new backend rather than
+    // the producer being released. Client teardown above still runs fully.
+    const backendCleanup = shouldStopVideoBackends && !backendOwnershipChanged
       ? Promise.all([
           stopSVPStream(playbackGeneration).catch(() => {}),
           stopInterpolatedStream().catch(() => {}),

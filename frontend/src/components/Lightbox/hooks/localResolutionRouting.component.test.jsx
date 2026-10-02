@@ -3,14 +3,15 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 
 const state = vi.hoisted(() => ({ linux: true, mobile: false, embedded: true, svp: false }))
 const api = vi.hoisted(() => ({
+  cleanupTargets: [],
   getMediaUrl: vi.fn(path => path), getAssetUrl: vi.fn(path => `asset://${path}`),
   isUsingLocalServer: vi.fn(() => state.embedded),
   getSVPConfig: vi.fn(async () => ({ enabled: state.svp })),
   playVideoInterpolated: vi.fn(), stopInterpolatedStream: vi.fn(async () => {}),
   playVideoSVP: vi.fn(async () => ({ success: true, stream_url: '/synthetic-svp.m3u8' })),
-  stopSVPStream: vi.fn(async () => {}),
+  stopSVPStream: vi.fn(async () => { api.cleanupTargets.push({ type: 'svp', embedded: state.embedded }) }),
   playVideoTranscode: vi.fn(async () => ({ success: true, stream_url: '/synthetic-transcode.m3u8' })),
-  stopTranscodeStream: vi.fn(async () => {}),
+  stopTranscodeStream: vi.fn(async () => { api.cleanupTargets.push({ type: 'transcode', embedded: state.embedded }) }),
   openSVPProcessingSession: vi.fn(), getSVPProcessingEvents: vi.fn(), fetchSVPProcessingSegment: vi.fn(),
   acknowledgeSVPInitSegment: vi.fn(), acknowledgeSVPMediaSegment: vi.fn(), pauseSVPProcessingSession: vi.fn(),
   resumeSVPProcessingSession: vi.fn(), seekSVPProcessingSession: vi.fn(), stopSVPProcessingSession: vi.fn(),
@@ -31,6 +32,7 @@ const image = { filename: 'synthetic.mp4', original_filename: 'synthetic.mp4', f
 let video
 beforeEach(() => {
   vi.clearAllMocks()
+  api.cleanupTargets.length = 0
   Object.assign(state, { linux: true, mobile: false, embedded: true, svp: false })
   video = document.createElement('video')
   video.currentTime = 37
@@ -96,6 +98,7 @@ test.each([false, true])('switching remote encoded playback to embedded clears t
   await waitFor(() => expect(svp ? result.current.svpStreamUrl : result.current.transcodeStreamUrl)
     .toBe(svp ? '/synthetic-svp.m3u8' : '/synthetic-transcode.m3u8'))
   const encodedStarts = api.playVideoTranscode.mock.calls.length + api.playVideoSVP.mock.calls.length
+  const cleanupsBeforeSwitch = api.cleanupTargets.length
   state.embedded = true
   rerender()
   await waitFor(() => {
@@ -104,4 +107,7 @@ test.each([false, true])('switching remote encoded playback to embedded clears t
     expect(result.current.svpStreamUrl).toBeNull()
   })
   expect(api.playVideoTranscode.mock.calls.length + api.playVideoSVP.mock.calls.length).toBe(encodedStarts)
+  // The API base already points at the new embedded server at this point.
+  // It must not receive a global stop for a producer owned by the old remote.
+  expect(api.cleanupTargets.slice(cleanupsBeforeSwitch).some(target => target.embedded)).toBe(false)
 })
