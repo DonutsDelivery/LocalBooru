@@ -46,3 +46,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T03:58:38.501Z
+  - _ulid: 01M3XJ7K7XEHHJGBN596KRNX8Q
+    content: Matching Linux app and patched WebKit runtime deployed, main
+      c07de2813ab5df165b1dc072c3f9cba2f20bf61d pushed. Runtime artifact and loaded-process
+      identities verified. App stays open; real user-media playback was not performed for smoke
+      testing.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T05:43:42.590Z
