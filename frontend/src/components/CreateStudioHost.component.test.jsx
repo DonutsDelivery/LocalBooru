@@ -298,11 +298,27 @@ describe('Donut Create studio', () => {
     const summary = await screen.findByText('ComfyUI', { selector: 'summary' })
     expect(summary.closest('.create-mode-actions')).toBeTruthy()
     summary.closest('details').open = true
-    const restart = screen.getByRole('button', { name: 'Restart ComfyUI' })
+    const restart = await screen.findByRole('button', { name: 'Restart ComfyUI' })
     await waitFor(() => expect(restart.disabled).toBe(false))
     fireEvent.click(restart)
     await waitFor(() => expect(api.apiClient.post.mock.calls.some(([url]) => url.endsWith('/backend/restart'))).toBe(true))
     expect(screen.getByTitle('DonutUI creation studio')).toBeTruthy()
+  })
+
+  test('shows disabled backend actions and management instructions for a URL-only connection', async () => {
+    status = { ...status, mode: 'existing', backend: { ...status.backend, owned: false } }
+    render(<CreateSettings backendOnly />)
+    const summary = await screen.findByText('ComfyUI', { selector: 'summary' })
+    expect(summary.getAttribute('aria-label')).toBe('ComfyUI backend controls')
+    expect(summary.querySelector('svg')).toBeTruthy()
+    summary.closest('details').open = true
+    const start = await screen.findByRole('button', { name: 'Start ComfyUI' })
+    expect(start.disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Stop ComfyUI' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Restart ComfyUI' }).disabled).toBe(true)
+    expect(screen.getByText(/select Manage existing local installation/)).toBeTruthy()
+    fireEvent.click(start)
+    expect(api.apiClient.post).not.toHaveBeenCalled()
   })
 
   test.each(['before', 'during'])('discards status polls begun %s a backend stop across all views', async when => {
