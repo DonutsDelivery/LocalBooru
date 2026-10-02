@@ -9754,7 +9754,20 @@ reviews:
       - review-logical-video-volume
     title: Logical video volume restoration
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: c4841436e325b39002d4be031f6754307c910bae
+          head_commit: 94edd9f7352eb42a897b03e4f93c73a5ec343003
+        evidence: Exact 94edd9f clean; host-gated independent 19/19 tests pass,
+          /tmp/dmc-volume-independent-review.log. New coupled logical gain/mute/normalization and
+          old seeking tests.
+        name: focused-coupled-hooks
+        required: true
+        runner: root-independent
+        created_at: 2026-10-02T04:54:37.869Z
+        completed_at: 2026-10-02T04:54:37.869Z
     events:
       - _ulid: 01M3XEBET96H4T6P437K5KT1WT
         actor: DonutsDelivery
@@ -9769,6 +9782,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-02T04:54:36.555Z
+      - _ulid: 01M3XFDQK8MZWN85A9WNANQ8Q9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-coupled-hooks
+        timestamp: 2026-10-02T04:54:37.928Z
     examined_commit: 94edd9f7352eb42a897b03e4f93c73a5ec343003
     external_links: []
     lifecycle_state: open
@@ -9783,7 +9803,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-02T04:35:54.825Z
-    updated_at: 2026-10-02T04:54:36.498Z
+    updated_at: 2026-10-02T04:54:37.869Z
     notes: []
   - _ulid: 01M3XFCTHYJTS1KR133WCX2EKR
     slugs:
