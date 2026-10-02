@@ -11,8 +11,12 @@ description: User screenshot shows a mostly empty studio with a disabled Connect
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Approved closed review @review-create-connection-screen at d113051, 51 focused tests
+  and synthetic desktop/mobile renders. Integrated into main as
+  581f3db9007b9144b1de36d5b9645c6cc6f7ab14. Runtime install will be combined with the independently
+  reviewed SVP performance fix.
 depends_on: []
 context: []
 priority: 3
@@ -72,7 +76,24 @@ history:
           upstream_ref: null
     command: task-set
     timestamp: 2026-10-02T00:53:34.209Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Approved closed review @review-create-connection-screen at d113051, 51 focused tests and
+          synthetic desktop/mobile renders. Integrated into main as
+          581f3db9007b9144b1de36d5b9645c6cc6f7ab14. Runtime install will be combined with the
+          independently reviewed SVP performance fix.
+        previous: null
+      completed_at:
+        new: 2026-10-02T00:54:09.285Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-02T00:54:09.292Z
 created_at: 2026-10-02T00:37:00.806Z
 started_at: 2026-10-02T00:37:02.205Z
 submitted_at: 2026-10-02T00:52:00.102Z
+completed_at: 2026-10-02T00:54:09.285Z
 todos: []
