@@ -1630,4 +1630,39 @@ requirements:
     tags: []
     created: 2026-10-02T03:27:04.007Z
     notes: []
+  - _ulid: 01M3XDSWM77ZSXV1A5WR4XZ42P
+    slugs:
+      - logical-video-volume
+    title: Remember logical video volume
+    type: requirement
+    description: Video controls retain the chosen per-device volume and mute state across sessions,
+      independently of automatic audio attenuation.
+    status:
+      maturity: draft
+      implementation: in_progress
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    acceptance_criteria:
+      - given: a saved user volume and mute setting
+        id: ac-restore
+        then: the controls and audio output restore the same chosen setting
+        when: video playback opens again
+      - given: a user volume with automatic audio attenuation
+        id: ac-normalization
+        then: the displayed user volume stays unchanged and attenuation is applied once
+        when: attenuation changes or the player is replaced
+      - given: missing, invalid, or inaccessible saved preferences
+        id: ac-validation
+        then: playback uses safe default settings and controls remain usable
+        when: video playback opens or its volume changes
+      - given: a restored playback volume and mute setting
+        id: ac-handoff
+        then: the restored logical setting remains authoritative
+        when: playback continues and its attenuation changes
+    tags: []
+    created: 2026-10-02T04:26:19.143Z
+    notes: []
 notes: []

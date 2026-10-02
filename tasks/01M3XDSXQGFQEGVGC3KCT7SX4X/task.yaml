@@ -1,0 +1,32 @@
+_ulid: 01M3XDSXQGFQEGVGC3KCT7SX4X
+slugs:
+  - remember-video-volume
+title: Synchronize remembered video volume and normalization
+type: bug
+description: Own only useVideoPlayback/useAudioNormalization, shared validated logical video audio
+  preference helper and focused tests. Persist per-device logical gain/mute; never infer from
+  attenuated DOM. Parent coordinates Lightbox handoff with startup worker.
+spec_ref: "@logical-video-volume"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-02T04:26:20.398Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-02T04:26:20.398Z
+created_at: 2026-10-02T04:26:20.272Z
+started_at: 2026-10-02T04:26:20.398Z
+todos: []

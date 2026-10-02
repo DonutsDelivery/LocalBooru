@@ -1,0 +1,10 @@
+notes:
+  - _ulid: 01M3XDSXZTXZYZK7M6ESRD4865
+    content: "User-authorized narrow fix from main c4841436. Plan: one validated localStorage preference
+      for both hooks; normalization restores logical output, playback controls persist updates;
+      restorePlaybackState uses audio output setters. Tests first: reopen, invalid/blocked storage,
+      attenuation one-time, physical replacement, restore/reset. No profile/media/runtime changes;
+      parent integrates after independent review."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T04:26:20.538Z
