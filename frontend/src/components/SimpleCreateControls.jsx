@@ -162,7 +162,6 @@ export default function SimpleCreateControls({
   const [drafts, setDrafts] = useState({})
   const [inputError, setInputError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [lowerTab, setLowerTab] = useState('models')
   const [lowerExpanded, setLowerExpanded] = useState(false)
   const [sliding, setSliding] = useState(false)
   const panels = useCreatePanelSizes(lowerExpanded, setLowerExpanded)
@@ -475,8 +474,6 @@ export default function SimpleCreateControls({
     </>
   }
 
-  const lowerMode = mobilePane === 'history' ? 'history' : mobilePane === 'models' ? 'models' : lowerTab
-
   // Comfy widget steps are not based on HTML's min offset; commit validates authored drafts.
   return <form ref={panels.workspace} style={panels.style} className={`create-simple-workspace${lowerExpanded ? ' create-lower-expanded' : ''}${panels.resizing ? ' create-panels-resizing' : ''}`} onSubmit={generate} noValidate>
     {!panels.desktop && navigation}
@@ -529,7 +526,6 @@ export default function SimpleCreateControls({
               {value('geometryMode') === 'Legacy output-linked' && <><div className="create-control-pair">{numberField('cropAX')}{numberField('cropAY')}</div>{value('useReferenceB') === true && <div className="create-control-pair">{numberField('cropBX')}{numberField('cropBY')}</div>}</>}
               {numberField('groundingPx')}{selectField('groundingSchedule')}
               {available('groundingSchedule') && value('groundingSchedule') !== 'constant' && <div className="create-control-pair">{numberField('groundingStartPx')}{numberField('groundingEndPx')}</div>}
-              {selectField('editLora')}{value('editLora') && value('editLora') !== 'None' && numberField('editLoraStrength')}
             </details>
             {value('inpaint') === true && numberField('maskFeather')}{sizing()}
           </>}
@@ -540,6 +536,12 @@ export default function SimpleCreateControls({
           <button type="button" className="create-advanced-link" disabled={locked} onClick={() => commit({ ...draftRef.current }).then(onAdvanced).catch(() => {})}>Open full workflow editor <span aria-hidden="true">↗</span></button>
         </details>}
         {activeTab === 'finalize' && finalizeContent}
+        {['upscale1', 'upscale2', 'postUpscale'].some(available) && <section className="create-upscalers" aria-label="Image upscaling">
+          <h3>Upscaling</h3>
+          {feature('upscale1', 'First upscale', upscaleSettings('upscale1'))}{feature('upscale2', 'Second upscale', upscaleSettings('upscale2'))}
+          {feature('postUpscale', 'Final upscale', <>{selectField('postUpscaleModel')}{selectField('postUpscaleVae')}{numberField('postUpscaleScale')}
+            <div className="create-control-pair">{numberField('postUpscaleSteps')}{numberField('postUpscaleDenoise')}</div>{selectField('postUpscaleColorCorrection')}</>)}
+        </section>}
         {inputError && <p className="create-message error" role="alert">{inputError}</p>}
       </div>
       <footer className="create-generate-footer">
@@ -552,32 +554,35 @@ export default function SimpleCreateControls({
       </footer>
     </aside>
     <div className="create-panel-divider create-panel-divider-left" {...panels.separator('left', 'Resize controls pane')} />
-    <div className="create-panel-divider create-panel-divider-right" {...panels.separator('right', 'Resize effects pane')} />
-    <div className="create-panel-divider create-panel-divider-lower" {...panels.separator('lower', 'Resize models and history pane')} />
+    <div className="create-panel-divider create-panel-divider-right" {...panels.separator('right', 'Resize models and effects pane')} />
+    <div className="create-panel-divider create-panel-divider-lower" {...panels.separator('lower', 'Resize history pane')} />
     <main className="create-center-workspace">{children}</main>
-    <aside className="create-effects" aria-label="Image effects">
+    <aside className="create-effects" aria-label="Models and image effects">
       {panels.desktop && modeNavigation}
-      <header className="create-pane-heading"><h2>Effects</h2><span>Current recipe</span></header>
+      <header className="create-pane-heading"><h2>{panels.desktop ? 'Models & effects' : mobilePane === 'models' ? 'Models & LoRAs' : 'Effects'}</h2><span>Current recipe</span></header>
       <div className="create-effects-scroll">
-        {(available('compatibilityPreset') || available('tapStrength')) && <EffectSection key="compatibility" title="Compatibility" defaultOpen>{selectField('compatibilityPreset')}{value('compatibilityPreset') !== 'Off' && numberField('tapStrength')}</EffectSection>}
-        {feature('decensor', 'Decensor', numberField('decensorWeight'))}
-        {feature('upscale1', 'First upscale', upscaleSettings('upscale1'))}{feature('upscale2', 'Second upscale', upscaleSettings('upscale2'))}
-        {feature('faceDetail', 'Face detail', <>{numberField('faceDenoise')}{numberField('maxFaces')}</>)}
-        {feature('postUpscale', 'Final upscale', <>{selectField('postUpscaleModel')}{selectField('postUpscaleVae')}{numberField('postUpscaleScale')}
-          <div className="create-control-pair">{numberField('postUpscaleSteps')}{numberField('postUpscaleDenoise')}</div>{selectField('postUpscaleColorCorrection')}</>)}
-        {strengthFeature('nagStrength', 'NAG', null, 'Scale 0 turns NAG off.')}{strengthFeature('sdaStrength', 'SDA')}
-        {strengthFeature('toneStrength', 'ToneLab', <>{selectField('toneModel')}{switchField('toneApplyToEdits', 'Apply to edits')}</>)}
-        {!['compatibilityPreset', 'tapStrength', 'decensor', 'upscale1', 'upscale2', 'faceDetail', 'postUpscale', 'nagStrength', 'sdaStrength', 'toneStrength'].some(available)
-          && <p className="create-control-note">Effects appear when the loaded workflow exposes them.</p>}
+        <div className="create-model-workspace" hidden={!panels.desktop && mobilePane !== 'models'}>
+          {['modelMode', 'model'].some(available) && <section className="create-model-recipe"><h3>Model recipe</h3>{selectField('modelMode')}{selectField('model')}
+            {merging && <>{selectField('secondaryModel')}{numberField('modelBlend')}<p className="create-control-note">Changing this blend applies one balance across the model. Advanced block weights stay intact until you change it.</p></>}
+          </section>}{loraRows()}
+          {activeTab === 'edit' && available('editLora') && <section className="create-model-recipe"><h3>Editing LoRA</h3>
+            {selectField('editLora')}{value('editLora') && value('editLora') !== 'None' && numberField('editLoraStrength')}
+          </section>}
+        </div>
+        <div className="create-effects-workspace" hidden={!panels.desktop && mobilePane !== 'effects'}>
+          {(available('compatibilityPreset') || available('tapStrength')) && <EffectSection key="compatibility" title="Compatibility" defaultOpen>{selectField('compatibilityPreset')}{value('compatibilityPreset') !== 'Off' && numberField('tapStrength')}</EffectSection>}
+          {feature('decensor', 'Decensor', numberField('decensorWeight'))}
+          {feature('faceDetail', 'Face detail', <>{numberField('faceDenoise')}{numberField('maxFaces')}</>)}
+          {strengthFeature('nagStrength', 'NAG', null, 'Scale 0 turns NAG off.')}{strengthFeature('sdaStrength', 'SDA')}
+          {strengthFeature('toneStrength', 'ToneLab', <>{selectField('toneModel')}{switchField('toneApplyToEdits', 'Apply to edits')}</>)}
+          {!['compatibilityPreset', 'tapStrength', 'decensor', 'faceDetail', 'nagStrength', 'sdaStrength', 'toneStrength'].some(available)
+            && <p className="create-control-note">Effects appear when the loaded workflow exposes them.</p>}
+        </div>
       </div>
     </aside>
-    <section className={`create-lower-pane create-lower-${lowerMode}`} aria-label="Models and image history">
-      <div className="create-lower-tabs" role="tablist" aria-label="Models and history">{['models', 'history'].map(tab => <button type="button" role="tab" aria-selected={lowerMode === tab} key={tab} onClick={() => { setLowerTab(tab); setLowerExpanded(true) }}>{tab === 'models' ? 'Models & LoRAs' : 'History'}</button>)}<button type="button" className="create-lower-collapse" aria-expanded={lowerExpanded} aria-controls="create-lower-content" aria-label={lowerExpanded ? 'Collapse models and history' : 'Expand models and history'} onClick={() => setLowerExpanded(previous => !previous)}>{lowerExpanded ? '⌄' : '⌃'}</button></div>
-      <div id="create-lower-content" className="create-lower-scroll">{lowerMode === 'models' ? <div className="create-model-workspace">
-        {['modelMode', 'model'].some(available) && <section className="create-model-recipe"><h3>Model recipe</h3>{selectField('modelMode')}{selectField('model')}
-          {merging && <>{selectField('secondaryModel')}{numberField('modelBlend')}<p className="create-control-note">Changing this blend applies one balance across the model. Advanced block weights stay intact until you change it.</p></>}
-        </section>}{loraRows()}
-      </div> : historyContent}</div>
+    <section className="create-lower-pane create-lower-history" aria-label="Image history">
+      <div className="create-lower-tabs" role="tablist" aria-label="Image history"><button type="button" role="tab" id="create-history-tab" aria-controls="create-lower-content" aria-selected="true" onClick={() => setLowerExpanded(true)}>History</button><button type="button" className="create-lower-collapse" aria-expanded={lowerExpanded} aria-controls="create-lower-content" aria-label={lowerExpanded ? 'Collapse history' : 'Expand history'} onClick={() => setLowerExpanded(previous => !previous)}>{lowerExpanded ? '⌄' : '⌃'}</button></div>
+      <div id="create-lower-content" className="create-lower-scroll" role="tabpanel" aria-labelledby="create-history-tab" hidden={panels.desktop && !lowerExpanded}>{historyContent}</div>
     </section>
   </form>
 }
