@@ -532,3 +532,40 @@ test('initial zero-position filtered preroll starts once after acknowledgment, n
   expect(filtered.play).toHaveBeenCalledOnce()
   expect(container.querySelector('.lightbox-video-loading-grid')).toBeNull()
 })
+
+// AC: @native-svp-startup-gate ac-owned-handoff
+test.each([true, false])('active graph refresh preserves Manager intent with resume command=%s', async resumeCommand => {
+  mocks.initialSvp = true
+  const { container } = mount()
+  const bootstrap = await videoReady(container)
+  bootstrap.__paused = true
+  fireEvent.loadedMetadata(bootstrap)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.some(([u]) => u.enabled)).toBe(true))
+  const firstOwner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  await act(async () => mocks.listeners.onFilterChanged({ ...firstOwner, enabled: true }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(bootstrap))
+  const active = await videoReady(container)
+  active.__paused = true
+  fireEvent.loadedMetadata(active)
+  fireEvent.loadedData(active)
+  expect(active.paused).toBe(false)
+  active.currentTime = 37
+  fireEvent.play(active)
+  await waitFor(() => expect(mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0].hostId).toBe(active.id))
+  const owner = mocks.bridge.updateSvpManagerPlayback.mock.calls.filter(([u]) => u.enabled).at(-1)[0]
+  active.play.mockClear()
+  await act(async () => mocks.listeners.onFilterChanged({ ...owner, enabled: true }))
+  expect(active.paused).toBe(true)
+  fireEvent.pause(active) // The physical handoff pause does not change UI intent.
+  expect(mocks.playback.handleVideoPause).not.toHaveBeenCalled()
+  // Established Manager commands retain their existing authority after startup.
+  await act(async () => mocks.listeners.onPaused({ ...owner, paused: true }))
+  if (resumeCommand) await act(async () => mocks.listeners.onPaused({ ...owner, paused: false }))
+  await waitFor(() => expect(container.querySelector('video')).not.toBe(active))
+  const replacement = await videoReady(container)
+  replacement.__paused = true
+  fireEvent.loadedMetadata(replacement)
+  fireEvent.seeked(replacement)
+  expect(replacement.currentTime).toBe(37)
+  expect(replacement.paused).toBe(!resumeCommand)
+})
