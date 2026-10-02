@@ -8535,3 +8535,160 @@ reviews:
     created_at: 2026-10-02T00:50:46.864Z
     updated_at: 2026-10-02T00:53:04.816Z
     notes: []
+  - _ulid: 01M3X1SHG1H1S1DBXWSGF1PNQH
+    slugs:
+      - review-svp-downscale-throughput
+    title: Review SVP nonblocking diagnostics and plane-copy throughput
+    author: donut_create_review
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: 4e2d64ab87e435761b4602b35b9a3cf84118e34e
+        evidence: Independently ran PYTHONDONTWRITEBYTECODE=1 python unittest discover legacytests14/14pass
+          (/tmp/dmc-svp-review-legacy-tests.log), separate NVENC3/3pass
+          (/tmp/dmc-svp-review-nvenc-tests.log). Four new behavioral tests execute actual pipe drain
+          and generatedwrite_plane, confirming partial-live/final-live reads nonblocking, 12000byte
+          tail and contiguous/padded output bytefidelity. POSIX tests intentionallyskipWindows;
+          foundmissing Windowsfinaldiagnostic coverage separately.
+        name: focused-python
+        required: true
+        runner: independent-unittest
+        created_at: 2026-10-02T00:56:25.624Z
+        completed_at: 2026-10-02T00:56:25.624Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: 4e2d64ab87e435761b4602b35b9a3cf84118e34e
+        evidence: Reviewed twochangedpaths plus generated YUV420P8 frame source,
+          processcreation/defaultBufferedReader, draincallers, errors andcleanup. Contiguouscopy
+          sourceplane has exact width*height bytes with existing zero-fill/lastframe fallback;
+          paddedstrides retain rowwrites. Singleconsumer read1+POSIXselect and32reads keeps
+          ticksbounded and tails12000bytes. Quality/scaling/preset/HLS/session settings unchanged.
+          Windowsfinal diagnostic blocker remains.
+        name: source-contracts
+        required: true
+        runner: independent-source-review
+        created_at: 2026-10-02T00:56:25.801Z
+        completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: 4e2d64ab87e435761b4602b35b9a3cf84118e34e
+        evidence: "Independently read /tmp/dmc-svp-repeat-benchmark.py/log and stagebenchmarkscript;
+          archivedbaseline app.py exactlyequals gitcee2138. Recomputed3alternating samples/state:
+          medianelapsed11.091497->10.717903s, firstplaylist4.483595->3.887198s,
+          heartbeat3.549060->0.051532s. Eachrun3segments/noerror. Scriptffprobes firstsegment only
+          (1920x1080/60), notallsegments; constrainvalidationclaim accordingly. Reviewer
+          didnotrunGPUbenchmark; parentexecutionattributed. Synthetictestsrc2 outside repo, no
+          private-media acceptance."
+        name: synthetic-benchmark-provenance
+        required: true
+        runner: independent-receipt-and-script-review
+        created_at: 2026-10-02T00:56:25.985Z
+        completed_at: 2026-10-02T00:56:25.985Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: cee213815840d418695c79217b8a546f54372cca
+          head_commit: 4e2d64ab87e435761b4602b35b9a3cf84118e34e
+        evidence: Read @svp-bounded-stream ac-bounded-buffer/ac-transactional-seek/ac-av-timeline and
+          existing behavioralannotations; noinheritedtraits. This narrowlegacyperformance delta
+          leaves existingbuffer/seek/audio implementationsunchanged and
+          doesnotclaimfullrequirementacceptance. Independentvalidate stillreports
+          knownunrelatedmalformedspecs/verifySKILLmissingdescription. No nativebuild,
+          Windows/macOSruntime or realprofile/media testing. Mainintegration/install parentowned.
+        name: spec-and-platform-limits
+        required: false
+        runner: independent-context
+        created_at: 2026-10-02T00:56:26.184Z
+        completed_at: 2026-10-02T00:56:26.184Z
+    events:
+      - _ulid: 01M3X1SHG1ZHZNGQ1EPKSGYX0M
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-02T00:56:24.833Z
+      - _ulid: 01M3X1SHY14CB41V69YP5JC6S6
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-02T00:56:25.281Z
+      - _ulid: 01M3X1SJ4MZFSWZTEBA5KBHSHV
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: blocker
+          thread_ulid: 01M3X1SJ2C9F01T703AYMZM7QQ
+        timestamp: 2026-10-02T00:56:25.492Z
+      - _ulid: 01M3X1SJAA4AW5JB85M0AKD6ZE
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-python
+        timestamp: 2026-10-02T00:56:25.674Z
+      - _ulid: 01M3X1SJFTS5HN5BDRZGHJT4ED
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: source-contracts
+        timestamp: 2026-10-02T00:56:25.850Z
+      - _ulid: 01M3X1SJP8YSZYCPG5X4F15900
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: synthetic-benchmark-provenance
+        timestamp: 2026-10-02T00:56:26.056Z
+      - _ulid: 01M3X1SJVQ6P7RWRC32GAZ97CY
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: spec-and-platform-limits
+        timestamp: 2026-10-02T00:56:26.231Z
+    examined_commit: 4e2d64ab87e435761b4602b35b9a3cf84118e34e
+    external_links: []
+    lifecycle_state: open
+    related_refs:
+      - "@svp-downscale-throughput"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: cee213815840d418695c79217b8a546f54372cca
+      head_branch: fix/svp-downscale-throughput
+      head_commit: 4e2d64ab87e435761b4602b35b9a3cf84118e34e
+    threads:
+      - _ulid: 01M3X1SJ2C9F01T703AYMZM7QQ
+        anchor:
+          type: code
+          commit: 4e2d64ab87e435761b4602b35b9a3cf84118e34e
+          line_end: 845
+          line_start: 839
+          path: addons/svp/app.py
+          side: head
+        entries:
+          - _ulid: 01M3X1SJ2C3DSA41ZF25CZ4TZA
+            author: DonutsDelivery
+            body: "Windows final diagnostic regression: final=True now also invokes select on Popen stderr
+              pipes. Windowsselect supports sockets only (local select.select.__doc__), so OSError
+              is swallowed and final error tail is lost. Independently executed baseline and
+              candidate _drain_stderr(final=True) with terminated syntheticproc/BytesIO fataldetail
+              and select patched to Windows unsupportedpipe OSError: baseline retained fataltext,
+              candidate tail empty. Preserve platform-safe final/error draining without blocking
+              live upstream stages; add simulated unsupportedpipe/exited and liveupstream
+              regression. Parent/controller owner notified. No real Windows/profile test claimed."
+            created_at: 2026-10-02T00:56:25.420Z
+        kind: blocker
+    verdicts: []
+    created_at: 2026-10-02T00:56:24.833Z
+    updated_at: 2026-10-02T00:56:26.184Z
+    notes: []
