@@ -79,3 +79,21 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T00:16:54.818Z
+  - _ulid: 01M3WZPMFHE5JVPSAM0J767Z1W
+    content: "Final clean candidate973a575b63cb24c084d0c0e5c6d257ac5d9d494e on fix/android-svp-hls at
+      /tmp/dmc-android-svp-hls (source checkout, base main e320bcd). Required-gated Linux native
+      settings14/14 and transcode9/9 pass, both Cargo sessions57154/61399 exit0. Live
+      Cargo/rustc/Ninja/Docker process inspection confirms previous writers exited before reporting
+      completion. Logs outside repository: /tmp/dmc-android-svp-rust-settings.log and
+      /tmp/dmc-android-svp-rust-transcode.log. Python13/13 and JavaScript11/11 pass; root
+      independently reran them. Actual disposable720p→480p ordinary GPU+CPU outputs validated by
+      ffprobe, as did SVP720p60→480p60. Confirmed ordinary500 cause: installed/currentDMC FFmpeg9
+      rejects vsync option; fps_mode succeeds. SVP503 startup collision repaired operationally by
+      root and user confirms SVP works. Legacy timestamp bucket and single explicit-play producer
+      replacement retained for old clients; updated client cleanup scoped. No real user
+      media/profile testing, no APK/package build, no source push/merge; root owns review
+      @review-android-hls-startup and main integration. Task-submit metadata may refer to control
+      checkout; reviewed product candidate is exact973a575 above."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T00:19:52.433Z
