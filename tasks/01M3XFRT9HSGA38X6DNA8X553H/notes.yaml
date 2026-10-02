@@ -42,3 +42,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T05:27:09.579Z
+  - _ulid: 01M3XJ7FA104CQQ2Y1FV938NQD
+    content: "Deployed and pushed main c07de2813ab5df165b1dc072c3f9cba2f20bf61d. New app automatically
+      reclaimed stale installed SVP addon listener and launched fresh owned PID 2359754; Donut
+      Create owned PID 2359888, both parent DMC 2359476 and HTTP health 200. Independent ComfyUI PID
+      3890977 and SVPManager PID 5228 preserved. Independent exact-binary recovery/shutdown fixtures
+      9/9 passed. Deployment receipt:
+      /tmp/dmc-local-raw-release-20261002/operational-deployment-receipt.json."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T05:43:38.561Z
