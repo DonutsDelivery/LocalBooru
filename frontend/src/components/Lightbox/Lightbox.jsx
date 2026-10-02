@@ -1589,7 +1589,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const videoMediaKey = `${currentImageKey}-${svpPipelineGeneration}`
   const [videoFrameReadyKey, setVideoFrameReadyKey] = useState(null)
   const showVideoLoadingGrid = videoFrameReadyKey !== videoMediaKey
-    || (svpPathEnabled && !svpFilterActiveRef.current)
+    || (svpPathEnabled && !svpFailOpenRef.current && !svpFilterActiveRef.current)
   const videoTitle = image?.title || image?.original_filename || image?.filename || 'Video'
 
   const finishSvpHandoff = (video) => {
@@ -2313,7 +2313,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             >
               {/* Timeline and playback controls */}
               <div className="video-controls-row">
-              {!svpControlsReady && <span className="svp-starting-label" role="status">{svpStartupCancelPending ? 'Turning SVP off…' : svpConnectionIssueText || 'SVP starting…'}</span>}
+              {(!svpControlsReady || svpConnectionIssueText) && <span className="svp-starting-label" role="status">{svpStartupCancelPending ? 'Turning SVP off…' : svpConnectionIssueText || 'SVP starting…'}</span>}
               {svpConnectionIssueText && !svpStartupCancelPending && (
                 <button className="svp-fallback-btn" onClick={handleToggleSVP}>Play without SVP</button>
               )}
