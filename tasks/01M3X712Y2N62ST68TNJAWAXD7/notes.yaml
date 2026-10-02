@@ -47,3 +47,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T03:10:08.433Z
+  - _ulid: 01M3X9QPRBEGK98S2GBGHW8VWP
+    content: Target-recording actual-hook regression proved remote→embedded ownership change sent
+      existing global stop APIs through the newly selected embedded backend at288431f. Narrow
+      follow-up skips server cleanup on this ownership-mode change while retaining request
+      invalidation, HLS/client teardown and stream state reset. Both transcode/SVP target cases now
+      pass; final components20 and Node25 pass. Old backend server cleanup is left to its existing
+      idle/session behavior because a captured origin-scoped stop API is outside this bounded fix.
+      Native/C++ files and prior receipts/hashes unchanged. Updated clean exact-head sent to
+      reviewer; pending_review.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T03:15:13.291Z
