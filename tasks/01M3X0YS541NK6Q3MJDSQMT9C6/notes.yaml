@@ -10,3 +10,28 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T00:49:18.697Z
+  - _ulid: 01M3X1JD71KRPREGSJ202BHA98
+    content: "Review candidate 4e2d64a in /tmp/dmc-svp-downscale-throughput, branch
+      fix/svp-downscale-throughput, clean base cee2138. Changed explicit paths: addons/svp/app.py
+      and addons/svp/tests/test_legacy_stderr.py only. Nonblocking read1 plus POSIX readiness and
+      bounded per-tick drain prevents live stderr pipes blocking HLS serving; diagnostic tail
+      remains 12000 bytes. Contiguous source planes use one memmove each; padded strides retain row
+      copies. No quality, scaling backend, segment duration, session ownership, or desktop runtime
+      changes. Final gated legacy tests: 14/14 pass (session16742, exit0); new tests cover partial
+      progress, live final drain, bounded error detail, contiguous/padded byte fidelity and copy
+      counts. Initial old code failed two blocking-pipe proofs. Repeated gated synthetic A/B
+      (session40292 exit0): 12s 3840x2160 24fps H264 testsrc2, 30M NVENC p1 source, 1920x1080
+      target60 balanced NVOF, requests1, NVENC p1 encoding, 4s HLS. Three alternating runs per
+      source state: cee2138 median pipeline11.091s / firstplaylist4.484s / maxsteadyheartbeat3.549s;
+      candidate10.718s /3.887s /0.0515s. All six runs produced three HLS segments with
+      ffprobe1920x1080/60fps and no errors. Receipt /tmp/dmc-svp-repeat-benchmark.log and
+      reproducible external script /tmp/dmc-svp-repeat-benchmark.py. Stage receipts
+      /tmp/dmc-svp-throughput-baseline.log and /tmp/dmc-svp-throughput-fixed.log: decode CPU
+      Lanczos179.7fps vs CUDA187.5fps baseline (three samples each); isolated SVP74.5 to78.7fps and
+      NVENC586 to624fps (one sample each; timing noise possible). GPU scaling gives modest benefit
+      and was not introduced. Real clip codec/complexity/preset may still run below realtime; no
+      real-profile playback performed. DMC1711194 and ComfyUI3890977 preserved; no source changes to
+      main, no compiler/package build."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T00:52:31.074Z
