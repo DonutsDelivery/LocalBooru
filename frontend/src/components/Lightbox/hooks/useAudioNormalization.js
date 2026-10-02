@@ -1,5 +1,6 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getAudioGain } from '../../../api'
+import { readVideoAudioPreference } from './videoAudioPreference'
 
 /**
  * Applies audio peak attenuation to a video element.
@@ -8,9 +9,10 @@ import { getAudioGain } from '../../../api'
  * (SVP / transcode) already apply peak attenuation in FFmpeg with -af volume=XdB.
  */
 export function useAudioNormalization(mediaRef) {
+  const [preference] = useState(readVideoAudioPreference)
   const attenuationRef = useRef(1)
-  const outputVolumeRef = useRef(1)
-  const outputMutedRef = useRef(false)
+  const outputVolumeRef = useRef(preference.volume)
+  const outputMutedRef = useRef(preference.muted)
   const requestSeqRef = useRef(0)
 
   const applyElementVolume = useCallback(() => {
@@ -22,6 +24,8 @@ export function useAudioNormalization(mediaRef) {
     video.volume = Math.max(0, Math.min(1, effectiveVolume))
     video.muted = outputMutedRef.current || outputVolumeRef.current === 0
   }, [mediaRef])
+
+  useEffect(() => { applyElementVolume() }, [applyElementVolume])
 
   // Apply attenuation for direct play. Positive gain is ignored intentionally.
   const applyNormalization = useCallback(async (filePath) => {
