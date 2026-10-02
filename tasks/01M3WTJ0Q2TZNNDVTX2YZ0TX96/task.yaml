@@ -10,8 +10,10 @@ description: User requests expand/collapse of all right-panel effects regardless
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Reviewed502c approved and integrated mainfc06b7e; final46/46 focused tests +
+  synthetic1280/360/320 render pass, no blockers. Packaging follows combined streaming integration.
 depends_on: []
 context: []
 priority: 3
@@ -64,7 +66,23 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-01T23:05:36.510Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Reviewed502c approved and integrated mainfc06b7e; final46/46 focused tests +
+          synthetic1280/360/320 render pass, no blockers. Packaging follows combined streaming
+          integration.
+        previous: null
+      completed_at:
+        new: 2026-10-02T00:21:03.953Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-02T00:21:03.960Z
 created_at: 2026-10-01T22:49:58.242Z
 started_at: 2026-10-01T22:50:11.459Z
 submitted_at: 2026-10-01T23:02:18.915Z
+completed_at: 2026-10-02T00:21:03.953Z
 todos: []
