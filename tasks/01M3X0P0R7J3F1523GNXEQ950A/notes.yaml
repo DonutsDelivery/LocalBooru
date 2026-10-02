@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M3X1BJP8Q3WV7DDVYM97TN3N
+    content: "Committed a326a61 against cee2138. Focused Host and Simple controls tests: 49 passed.
+      Actual React synthetic collaborative-browser desktop 1280x800 and mobile 320x640 renders show
+      centered connection stage, usable Exit/Setup, and scrollWidth equal to viewport. Evidence
+      /tmp/dmc-create-connection-preview/tests.log and browser screenshots outside repository.
+      Awaiting independent review."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T00:48:47.304Z
