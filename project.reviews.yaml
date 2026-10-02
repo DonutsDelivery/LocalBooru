@@ -9768,6 +9768,19 @@ reviews:
         runner: root-independent
         created_at: 2026-10-02T04:54:37.869Z
         completed_at: 2026-10-02T04:54:37.869Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: c4841436e325b39002d4be031f6754307c910bae
+          head_commit: 94edd9f7352eb42a897b03e4f93c73a5ec343003
+        evidence: Reviewed all four files at 94edd9f. Validated logical preference independent from
+          attenuation, blocked storage fallback, replacement restoration, no source routing changes.
+          First upgrade cannot reconstruct previously unsaved logical gain.
+        name: independent-source-review
+        required: true
+        runner: root
+        created_at: 2026-10-02T04:54:39.291Z
+        completed_at: 2026-10-02T04:54:39.291Z
     events:
       - _ulid: 01M3XEBET96H4T6P437K5KT1WT
         actor: DonutsDelivery
@@ -9789,6 +9802,13 @@ reviews:
           status: pass
           name: focused-coupled-hooks
         timestamp: 2026-10-02T04:54:37.928Z
+      - _ulid: 01M3XFDRZNX52EA6W6NGABD2Q5
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-review
+        timestamp: 2026-10-02T04:54:39.349Z
     examined_commit: 94edd9f7352eb42a897b03e4f93c73a5ec343003
     external_links: []
     lifecycle_state: open
@@ -9803,7 +9823,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-02T04:35:54.825Z
-    updated_at: 2026-10-02T04:54:37.869Z
+    updated_at: 2026-10-02T04:54:39.291Z
     notes: []
   - _ulid: 01M3XFCTHYJTS1KR133WCX2EKR
     slugs:
