@@ -7888,6 +7888,23 @@ reviews:
         runner: scope-limits
         created_at: 2026-10-01T23:06:40.965Z
         completed_at: 2026-10-01T23:06:40.965Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+        evidence: "Independently read /tmp/dmc-create-layout/collapse-tests-final.log: exact
+          /tmp/dmc-create-effect-collapse frontend Vitest4.1.10, two files,46/46 passed,
+          start02:18:42 duration6.53s. Parent session76218 exit0. Reviewed behavioral cases
+          including independent effect disclosures/activation/remembered strengths,
+          desktop-to-mobile nav and disabled URL-only lifecycle actions. Independently confirmed
+          clean frozen502c8e97, basee320bcdce and diff--check clean. Process inspection finds no
+          active Cargo/rustc/Ninja writer; no duplicate build or tests launched."
+        name: focused-components
+        required: true
+        runner: vitest-host-gated-parent-run-independently-read
+        created_at: 2026-10-02T00:20:09.405Z
+        completed_at: 2026-10-02T00:20:09.405Z
     events:
       - _ulid: 01M3WVEMRQ8W4FHRF8MQMSAV2Q
         actor: donut_create_review
@@ -7951,9 +7968,33 @@ reviews:
           status: skipped
           name: native-profile-backend-GPU
         timestamp: 2026-10-01T23:06:41.021Z
+      - _ulid: 01M3WZQ53HWRWVZRH9WWDVT2H7
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-components
+        timestamp: 2026-10-02T00:20:09.458Z
+      - _ulid: 01M3WZQ59G8P5XQZ3T510GHWHX
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+            head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+          decision: approve
+        timestamp: 2026-10-02T00:20:09.648Z
+      - _ulid: 01M3WZQ59GPNAS0Y4V4VMG8V7Z
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T00:20:09.649Z
     examined_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@create-effect-collapse"
     subject:
@@ -7963,9 +8004,17 @@ reviews:
       head_branch: fix/create-effect-collapse
       head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: e320bcdce451414b71bb20cbe4185f3ac38bfd49
+          head_commit: 502c8e97bc2048d55b30c2e7e060e47ebf2ae1e4
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-02T00:20:09.648Z
     created_at: 2026-10-01T23:05:36.280Z
-    updated_at: 2026-10-01T23:06:40.965Z
+    updated_at: 2026-10-02T00:20:09.648Z
     notes: []
   - _ulid: 01M3WWR30PJ72RDR3T4GPD66FC
     slugs:
