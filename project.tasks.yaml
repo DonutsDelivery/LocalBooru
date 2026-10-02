@@ -1902,3 +1902,17 @@ tasks:
     started_at: 2026-10-02T01:49:23.864Z
     submitted_at: 2026-10-02T01:58:27.105Z
     completed_at: 2026-10-02T01:59:43.229Z
+  - _ulid: 01M3X712Y2N62ST68TNJAWAXD7
+    slugs:
+      - restore-local-raw-resize
+    title: Restore same-machine decoded frame downscale
+    type: task
+    spec_ref: "@local-decoded-video-resolution"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 3
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-02T02:27:54.946Z
