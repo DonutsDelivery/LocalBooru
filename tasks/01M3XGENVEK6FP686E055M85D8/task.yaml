@@ -11,13 +11,21 @@ description: User-authorized narrow Create layout move frommain7749580 in isolat
 spec_ref: "@create-sidebar-layout"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 2
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-10-02T05:22:04.029Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -29,6 +37,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-02T05:12:37.614Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-10-02T05:22:04.029Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-02T05:22:04.034Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-02T05:22:04.034Z
 created_at: 2026-10-02T05:12:37.486Z
 started_at: 2026-10-02T05:12:37.614Z
+submitted_at: 2026-10-02T05:22:04.034Z
 todos: []

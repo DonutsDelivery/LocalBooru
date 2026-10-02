@@ -11,3 +11,21 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T05:12:37.765Z
+  - _ulid: 01M3XGZYYXY2C68GHHG4N4HQHK
+    content: Frozen source candidate301a7ee51d5500802334b2ef7c8f87b4af42d2eb in
+      /tmp/dmc-create-sidebar-layout branchfeat/create-sidebar-placement,
+      base7749580f14edc195a1381779d9f2ec774211cedf. Only
+      SimpleCreateControls.jsx/CreateStudio.css/SimpleCreateControls.component.test.jsx changed.
+      Existing upscaler renderings relocated left across Create/Edit/Finalize;
+      modelrecipe/general+EditingLoRAs right (EditingLoRA remains Edit-only); History only lower.
+      Mobile Models/Effects retain mounted right subregions and drafts; History remains separate.
+      Collapsed desktopHistory explicitly hidden; <=300px right container strengths stacked
+      full-width. Baseline17checks:5fail12pass /tmp/dmc-create-layout/sidebar-before-tests.log.
+      Final gated57/57 pass (Simple17+Host40), exit0 /tmp/dmc-create-layout/sidebar-final-tests.log;
+      scoped JSX/test ESLint zero warnings; diffcheck clean. Existing Host save/server assertions
+      unchanged. Synthetic DOM behavior covers all4AC; actual CSS browser narrow-sidebar/mobile
+      geometry review remains parent-owned acceptance gate. No appbuild, native/backend/player
+      edits, profile or GPU test.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T05:22:03.869Z
