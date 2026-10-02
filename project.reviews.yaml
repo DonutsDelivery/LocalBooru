@@ -8952,3 +8952,201 @@ reviews:
     created_at: 2026-10-02T01:58:25.057Z
     updated_at: 2026-10-02T01:59:07.738Z
     notes: []
+  - _ulid: 01M3X6PRVJV964BSPCVBV03MKG
+    slugs:
+      - review-svp-manager-endpoint-isolation
+    title: Review native SVP Manager endpoint isolation
+    author: DonutsDelivery
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+          head_commit: 6285f67c4828a3c727f6d9339def13ed857b4d2c
+        evidence: Read all15 changed paths and surrounding interaction. Registered actual host PID,
+          per-document epoch/phase revision, atomic command ticket rechecks, owner-tagged
+          events/timers, private session paths, inode cleanup, V2 fail-closed compatibility, bounded
+          missing-registration retries/display, and independent desktop command cfg. Earlier
+          generation/display/parser issues corrected before final head; no remaining source
+          correctness blocker.
+        name: source-review
+        required: true
+        runner: manual
+        created_at: 2026-10-02T02:22:17.544Z
+        completed_at: 2026-10-02T02:22:17.544Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+          head_commit: 6285f67c4828a3c727f6d9339def13ed857b4d2c
+        evidence: "Independent host-gated12/12 pass at6285f67: actual callbacks reject stale same-media
+          host/phase/document events, valid event remounts, timer ownership change rejection, retry
+          grace/failure/cancel, production grid and JSX SSR availability display.
+          /tmp/dmc-svp-review-node-final.log."
+        name: focused-node
+        required: true
+        runner: node --test
+        created_at: 2026-10-02T02:22:17.728Z
+        completed_at: 2026-10-02T02:22:17.728Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+          head_commit: 6285f67c4828a3c727f6d9339def13ed857b4d2c
+        evidence: Inspected final gated Rust receipt23/23 pass /tmp/dmc-svp-isolation-rust-freeze.log.
+          Covers video-host registry, tombstones/document epochs, malformed/symlink markers, PID
+          endpoint, controller replacement, peer transport/events and existing SVP regressions.
+          Final6285 display-only follow-up leaves Rust sources identical to compiled candidate.
+        name: focused-rust
+        required: true
+        runner: scripts/run-cargo.sh test svp_
+        created_at: 2026-10-02T02:22:17.916Z
+        completed_at: 2026-10-02T02:22:17.916Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+          head_commit: 6285f67c4828a3c727f6d9339def13ed857b4d2c
+        evidence: "Inspected final gated C++ production-helper behavior receipt
+          /tmp/dmc-svp-isolation-cpp-freeze.log: exact legacy patch applied in disposable source,
+          registration exclusivity, readiness parsing, forwarding, idle/disable publication,
+          default/other-PID coexistence and replacement inode preservation pass. No normal
+          socket/media/config use; not real installed-runtime acceptance."
+        name: cpp-runtime-fixture
+        required: true
+        runner: scripts/test-webkit-mpv-isolation.py
+        created_at: 2026-10-02T02:22:18.101Z
+        completed_at: 2026-10-02T02:22:18.101Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+          head_commit: 6285f67c4828a3c727f6d9339def13ed857b4d2c
+        evidence: Independent gated canonical patch applied to4 public pristine2.52.3 program files outside
+          repo. Resulting2 changed runtime source hashes exactly equal reviewed legacy after-images;
+          read-only recognized legacy preimage/dry-run also passes.
+          /tmp/dmc-svp-review-pristine-patch.log. Incremental plan rejects533 and custom-progress
+          parser bypass; source unchanged by refusal.
+        name: patch-provenance
+        required: true
+        runner: disposable pristine tar fixture
+        created_at: 2026-10-02T02:22:18.285Z
+        completed_at: 2026-10-02T02:22:18.285Z
+    events:
+      - _ulid: 01M3X6PRVH723FGSP340CA7ATX
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-02T02:22:16.946Z
+      - _ulid: 01M3X6PS9XGFXAW242N7GBHK2C
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-02T02:22:17.405Z
+      - _ulid: 01M3X6PSFR28XQN38MGYM42BZN
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-review
+        timestamp: 2026-10-02T02:22:17.592Z
+      - _ulid: 01M3X6PSNKZ3HQ24PR6X6XF7MF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-node
+        timestamp: 2026-10-02T02:22:17.779Z
+      - _ulid: 01M3X6PSVEV0Y0X4C1CY9VA2FE
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-rust
+        timestamp: 2026-10-02T02:22:17.966Z
+      - _ulid: 01M3X6PT16A57WWF7TCX2CHRN8
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: cpp-runtime-fixture
+        timestamp: 2026-10-02T02:22:18.151Z
+      - _ulid: 01M3X6PT6XP1WG1KP4KN5PSZMX
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: patch-provenance
+        timestamp: 2026-10-02T02:22:18.333Z
+      - _ulid: 01M3X6PTCK1MEN2ZJ4QSJFERB7
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M3X6PTB24HFCZM8BZ3H9HVV4
+        timestamp: 2026-10-02T02:22:18.515Z
+      - _ulid: 01M3X6PTJ8C2T2V8TAF7YDAB61
+        actor: donut_create_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+            head_commit: 6285f67c4828a3c727f6d9339def13ed857b4d2c
+          decision: approve
+        timestamp: 2026-10-02T02:22:18.696Z
+      - _ulid: 01M3X6PTJ8A76N319GXCG2Y0FB
+        actor: donut_create_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T02:22:18.696Z
+    examined_commit: 6285f67c4828a3c727f6d9339def13ed857b4d2c
+    external_links: []
+    lifecycle_state: closed
+    related_refs:
+      - "@svp-manager-endpoint-isolation"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+      head_branch: fix/svp-manager-endpoint-isolation
+      head_commit: 6285f67c4828a3c727f6d9339def13ed857b4d2c
+    threads:
+      - _ulid: 01M3X6PTB24HFCZM8BZ3H9HVV4
+        anchor:
+          type: code
+          commit: 6285f67c4828a3c727f6d9339def13ed857b4d2c
+          line_end: 77
+          line_start: 68
+          path: docs/svp-manager-endpoint-isolation.md
+          side: head
+        entries:
+          - _ulid: 01M3X6PTB3NHERG5A485M9HM41
+            author: DonutsDelivery
+            body: "Approval is source/synthetic ownership only. Runtime upgrade remains blocked: full Ninja
+              dry-run533 tasks includes493 CXX. Independent37-target generator recovery closure had0
+              compile/link;9486 generated-file inventories differ only supplemental_dependency.tmp,
+              but subsequent plan remains533. Wrapper refuses this cache. Do not deploy new app
+              before matching supported runtime; no manual two-recipe link or skipped dependency
+              closure is approved. Native SVP discovery/interpolation and Windows/Mac user-profile
+              acceptance remain unverified. kspec validate retains pre-existing malformed items and
+              verify/SKILL.md missing-description, unrelated to this source delta."
+            created_at: 2026-10-02T02:22:18.467Z
+        kind: nit
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 8033e90dc786a6a292601b6e975b69f922d98b29
+          head_commit: 6285f67c4828a3c727f6d9339def13ed857b4d2c
+        decision: approve
+        reviewer: donut_create_review
+        role: reviewer
+        created_at: 2026-10-02T02:22:18.696Z
+    created_at: 2026-10-02T02:22:16.946Z
+    updated_at: 2026-10-02T02:22:18.696Z
+    notes: []
