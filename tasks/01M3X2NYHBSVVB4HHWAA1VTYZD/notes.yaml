@@ -1,1 +1,11 @@
-notes: []
+notes:
+  - _ulid: 01M3X51J0NG6MAJRA8MT4X9MHZ
+    content: "Independent native player investigation: VLC has both SVP modules and control interface;
+      existing VapourSynth runtime alias registration is correct. Set only VLC avcodec-hw=none to
+      match existing SVP launch hwdec=false, per official Linux filter compatibility guidance. No
+      Manager or mpv configuration rewrite. System mpv v0.41.0 filter capability probe has no
+      VapourSynth; preparing an isolated same-version build with that feature enabled outside
+      repository, preserving system packages."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T01:53:13.237Z
