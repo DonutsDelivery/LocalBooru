@@ -1845,3 +1845,17 @@ tasks:
     todos_count: 0
     created_at: 2026-10-02T00:37:00.806Z
     started_at: 2026-10-02T00:37:02.205Z
+  - _ulid: 01M3X0YS541NK6Q3MJDSQMT9C6
+    slugs:
+      - svp-downscale-throughput
+    title: Improve SVP4K downscale streaming throughput
+    type: bug
+    spec_ref: "@svp-bounded-stream"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 3
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-02T00:41:47.937Z
