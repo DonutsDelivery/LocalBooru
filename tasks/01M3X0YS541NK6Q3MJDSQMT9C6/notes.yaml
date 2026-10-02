@@ -35,3 +35,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T00:52:31.074Z
+  - _ulid: 01M3X1MEF9MJQZ29MFPZJE111M
+    content: Candidate source is branch fix/svp-downscale-throughput at
+      4e2d64ab87e435761b4602b35b9a3cf84118e34e, base cee213815840d418695c79217b8a546f54372cca.
+      Cleared control-checkout automatic linkage to unrelated splice/mac-pairing HEAD; explicit
+      reviewed source comparison is authoritative. Real-media pipeline testing not performed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T00:53:37.897Z
