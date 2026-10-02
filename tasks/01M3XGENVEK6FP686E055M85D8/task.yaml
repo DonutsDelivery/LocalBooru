@@ -11,8 +11,12 @@ description: User-authorized narrow Create layout move frommain7749580 in isolat
 spec_ref: "@create-sidebar-layout"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Approved exact301a7ee merged to mainc07de281; root independently passed57 focused
+  tests and actual React/CSS synthetic desktop/mobile9 viewport-pane checks. Matching app build in
+  progress; deployment tracked separately. Control submit VCS metadata differs from authoritative
+  product head.
 depends_on: []
 context: []
 priority: 2
@@ -65,7 +69,24 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-02T05:28:26.213Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Approved exact301a7ee merged to mainc07de281; root independently passed57 focused tests and
+          actual React/CSS synthetic desktop/mobile9 viewport-pane checks. Matching app build in
+          progress; deployment tracked separately. Control submit VCS metadata differs from
+          authoritative product head.
+        previous: null
+      completed_at:
+        new: 2026-10-02T05:29:37.823Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-02T05:29:37.830Z
 created_at: 2026-10-02T05:12:37.486Z
 started_at: 2026-10-02T05:12:37.614Z
 submitted_at: 2026-10-02T05:22:04.034Z
+completed_at: 2026-10-02T05:29:37.823Z
 todos: []
