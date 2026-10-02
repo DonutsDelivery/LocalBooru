@@ -171,6 +171,14 @@ class LegacyStreamLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.status_code, 504)
         self.assertTrue(stream.stopped)
 
+    async def test_enhanced_1080p_quality_keeps_its_requested_resolution(self):
+        stream = FakeStream()
+        self.request.payload['target_resolution'] = '1080p_enhanced'
+        with patch.object(svp_app, 'SVPStream', return_value=stream) as create_stream:
+            result = await svp_app.play(self.request)
+        self.assertTrue(result['success'])
+        self.assertEqual(create_stream.call_args.kwargs['target_resolution'], (1920, 1080))
+
 
 if __name__ == "__main__":
     unittest.main()

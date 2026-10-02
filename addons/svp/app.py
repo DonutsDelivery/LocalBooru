@@ -235,9 +235,17 @@ def check_nvenc() -> bool:
     if not ffmpeg:
         return False
     try:
-        r = subprocess.run([ffmpeg, "-hide_banner", "-encoders"],
-                           capture_output=True, text=True, timeout=5)
-        return "h264_nvenc" in r.stdout if r.returncode == 0 else False
+        # An encoder listing only reports build features, even when the host has
+        # no usable NVIDIA device/driver. Verify that an encoder can open before
+        # selecting it for the HLS pipeline.
+        r = subprocess.run(
+            [ffmpeg, "-hide_banner", "-loglevel", "error",
+             "-f", "lavfi", "-i", "color=size=256x144:rate=1",
+             "-frames:v", "1", "-an", "-c:v", "h264_nvenc",
+             "-preset", "p1", "-tune", "ll", "-f", "null", "-"],
+            capture_output=True, timeout=5,
+        )
+        return r.returncode == 0
     except Exception:
         return False
 
@@ -642,7 +650,8 @@ class SVPStream:
         self._duration = info["duration"]
 
         fps_ratio = self.target_fps / self._src_fps if self._src_fps > 0 else 2.0
-        if 0.95 <= fps_ratio <= 1.05:
+        interpolation_needed = not 0.95 <= fps_ratio <= 1.05
+        if not interpolation_needed and not self.target_resolution:
             self._error = f"Source fps ({self._src_fps:.2f}) already near target ({self.target_fps}fps)"
             return None
 
@@ -658,6 +667,9 @@ class SVPStream:
             custom_super=self.custom_super,
             custom_analyse=self.custom_analyse,
             custom_smooth=self.custom_smooth,
+            # A quality change still needs HLS when the source cadence already
+            # meets the target. Retain its CFR without applying interpolation.
+            graph_script=None if interpolation_needed else "smooth = clip",
         )
         script_path = self._temp_dir / "svp_stdin.vpy"
         script_path.write_text(script)
@@ -847,6 +859,9 @@ class SVPStream:
                         proc.kill()
                     except Exception:
                         pass
+                for pipe in (proc.stdin, proc.stdout, proc.stderr):
+                    if pipe:
+                        pipe.close()
         self._decode_proc = self._vspipe_proc = self._ffmpeg_proc = None
 
     async def stop_async(self):
@@ -1111,7 +1126,8 @@ async def play(request: Request):
     res = None
     if req.target_resolution:
         presets = {"480p": (854, 480), "720p": (1280, 720), "1080p": (1920, 1080),
-                   "1440p": (2560, 1440), "4k": (3840, 2160)}
+                   "1080p_enhanced": (1920, 1080), "1440p": (2560, 1440),
+                   "4k": (3840, 2160), "2160p": (3840, 2160)}
         res = presets.get(req.target_resolution)
 
     def make_stream(use_nvof: bool) -> SVPStream:

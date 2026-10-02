@@ -26,25 +26,30 @@ struct HwCaps {
     scale_cuda: bool,
 }
 
-#[cfg(target_os = "windows")]
-fn run_ffmpeg_probe(args: &[&str]) -> std::io::Result<std::process::Output> {
-    use std::os::windows::process::CommandExt;
+fn run_ffmpeg_probe(args: &[&str]) -> bool {
     let mut command = std::process::Command::new("ffmpeg");
     command
         .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .creation_flags(0x08000000); // CREATE_NO_WINDOW
-    command.output()
-}
-
-#[cfg(not(target_os = "windows"))]
-fn run_ffmpeg_probe(args: &[&str]) -> std::io::Result<std::process::Output> {
-    std::process::Command::new("ffmpeg")
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let Ok(mut child) = command.spawn() else {
+        return false;
+    };
+    for _ in 0..50 {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(_) => break,
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    false
 }
 
 impl HwCaps {
@@ -54,38 +59,63 @@ impl HwCaps {
     }
 }
 
+fn probe_hw_caps(mut probe: impl FnMut(&[&str]) -> bool) -> HwCaps {
+    // Build-feature listings succeed even if the driver/device is unavailable.
+    let nvenc = probe(&[
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=size=256x144:rate=1",
+        "-frames:v",
+        "1",
+        "-an",
+        "-c:v",
+        "h264_nvenc",
+        "-preset",
+        "p1",
+        "-f",
+        "null",
+        "-",
+    ]);
+    let cuda = nvenc
+        && probe(&[
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-init_hw_device",
+            "cuda=gpu:0",
+            "-filter_hw_device",
+            "gpu",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=size=256x144:rate=1",
+            "-frames:v",
+            "1",
+            "-vf",
+            "format=nv12,hwupload,scale_cuda=256:144",
+            "-an",
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            "p1",
+            "-f",
+            "null",
+            "-",
+        ]);
+    HwCaps {
+        nvenc,
+        cuda_hwaccel: cuda,
+        scale_cuda: cuda,
+    }
+}
+
 fn detect_hw_caps() -> &'static HwCaps {
     HW_CAPS.get_or_init(|| {
-        let mut hw = HwCaps {
-            nvenc: false,
-            cuda_hwaccel: false,
-            scale_cuda: false,
-        };
-
-        // Check encoders (NVENC)
-        if let Ok(output) = run_ffmpeg_probe(&["-encoders"]) {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                hw.nvenc = stdout.contains("h264_nvenc");
-            }
-        }
-
-        // Check hwaccels (cuda)
-        if let Ok(output) = run_ffmpeg_probe(&["-hwaccels"]) {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                hw.cuda_hwaccel = stdout.contains("cuda");
-            }
-        }
-
-        // Check filters (scale_cuda)
-        if let Ok(output) = run_ffmpeg_probe(&["-filters"]) {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                hw.scale_cuda = stdout.contains("scale_cuda");
-            }
-        }
-
+        let hw = probe_hw_caps(run_ffmpeg_probe);
         log::info!(
             "[Transcode] Hardware caps: NVENC={}, CUDA hwaccel={}, scale_cuda={}, full_gpu={}",
             hw.nvenc,
@@ -454,8 +484,15 @@ impl TranscodeManager {
         std::fs::create_dir_all(&hls_dir)
             .map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
-        // Build FFmpeg command
-        let cmd = build_ffmpeg_command(
+        // Retry hardware startup once using a fully software pipeline. Codec,
+        // decode or driver failures can still occur after the capability probe.
+        let hw = detect_hw_caps();
+        let software = HwCaps {
+            nvenc: false,
+            cuda_hwaccel: false,
+            scale_cuda: false,
+        };
+        let mut commands = vec![build_ffmpeg_command(
             file_path,
             &hls_dir,
             start_position,
@@ -464,102 +501,36 @@ impl TranscodeManager {
             &video_info,
             target_fps,
             audio_gain_db,
-        );
-
-        log::info!(
-            "[Transcode {}] Starting FFmpeg: {}",
-            stream_id,
-            cmd.join(" ")
-        );
-
-        // Spawn FFmpeg — on Linux, set PR_SET_PDEATHSIG so the child is killed
-        // automatically when the parent process exits (even via SIGKILL / process::exit).
-        // On Windows, hide the console window to prevent cmd.exe popup flashes.
-        let mut ffmpeg_cmd = Command::new(&cmd[0]);
-        ffmpeg_cmd
-            .args(&cmd[1..])
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-
-        #[cfg(target_os = "linux")]
-        unsafe {
-            ffmpeg_cmd.pre_exec(|| {
-                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
-                Ok(())
-            });
+            hw,
+        )];
+        if hw.nvenc && !quality.remux {
+            commands.push(build_ffmpeg_command(
+                file_path,
+                &hls_dir,
+                start_position,
+                quality,
+                force_cfr,
+                &video_info,
+                target_fps,
+                audio_gain_db,
+                &software,
+            ));
         }
-
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::CommandExt;
-            ffmpeg_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        }
-
-        let child = ffmpeg_cmd
-            .spawn()
-            .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
-
-        let mut stream = TranscodeStream {
+        let stream = TranscodeStream {
             stream_id: stream_id.clone(),
             hls_dir: hls_dir.clone(),
             temp_dir,
-            process: Some(child),
+            process: None,
             playlist_ready: false,
             duration: video_info.duration,
             width: video_info.width,
             height: video_info.height,
             start_position,
         };
-        if !self.owns_transition(transition_epoch) {
-            stream.stop();
-            return Err("Transcode start was superseded".into());
-        }
-
-        // Wait for playlist + first segment
-        let playlist_path = hls_dir.join("playlist.m3u8");
-        let segment_path = hls_dir.join(if quality.remux {
-            "segment_0.m4s"
-        } else {
-            "segment_0.ts"
-        });
-
-        for attempt in 0..200 {
-            if !self.owns_transition(transition_epoch) {
-                stream.stop();
-                return Err("Transcode start was superseded".into());
-            }
-            // 20 seconds max (200 * 100ms)
-            if playlist_path.exists() && segment_path.exists() {
-                if let Ok(meta) = std::fs::metadata(&segment_path) {
-                    if meta.len() > 1000 {
-                        stream.playlist_ready = true;
-                        log::info!(
-                            "[Transcode {}] Ready after {:.1}s",
-                            stream_id,
-                            attempt as f64 * 0.1
-                        );
-                        break;
-                    }
-                }
-            }
-
-            // Check if FFmpeg already died
-            if let Some(ref mut proc) = stream.process {
-                if let Ok(Some(status)) = proc.try_wait() {
-                    if !status.success() {
-                        let _ = stream.process.take();
-                        return Err("FFmpeg exited early".into());
-                    }
-                }
-            }
-
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-
-        if !stream.playlist_ready {
-            stream.stop();
-            return Err("Timeout waiting for HLS playlist".into());
-        }
+        let stream = start_hls_attempts(stream, &commands, quality.remux, || {
+            self.owns_transition(transition_epoch)
+        })
+        .await?;
 
         let info = TranscodeStreamInfo {
             stream_id: stream_id.clone(),
@@ -612,6 +583,123 @@ impl TranscodeManager {
     }
 }
 
+/// Start HLS with bounded retries, retaining stderr while continuously draining
+/// the pipe so FFmpeg cannot stall once its diagnostics fill the pipe buffer.
+async fn start_hls_attempts(
+    mut stream: TranscodeStream,
+    commands: &[Vec<String>],
+    remux: bool,
+    owns_transition: impl Fn() -> bool,
+) -> Result<TranscodeStream, String> {
+    use tokio::io::AsyncReadExt;
+    let mut failures = Vec::new();
+    for (attempt, cmd) in commands.iter().enumerate() {
+        if !owns_transition() {
+            return Err("Transcode start was superseded".into());
+        }
+        std::fs::create_dir_all(&stream.hls_dir)
+            .map_err(|error| format!("Failed to create temp dir: {error}"))?;
+        log::info!(
+            "[Transcode {}] Starting FFmpeg: {}",
+            stream.stream_id,
+            cmd.join(" ")
+        );
+        let mut ffmpeg_cmd = Command::new(&cmd[0]);
+        ffmpeg_cmd
+            .args(&cmd[1..])
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        #[cfg(target_os = "linux")]
+        unsafe {
+            ffmpeg_cmd.pre_exec(|| {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                Ok(())
+            });
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            ffmpeg_cmd.creation_flags(0x08000000);
+        }
+        let mut child = ffmpeg_cmd
+            .spawn()
+            .map_err(|error| format!("Failed to spawn FFmpeg: {error}"))?;
+        let mut stderr = child.stderr.take().expect("piped FFmpeg stderr");
+        let diagnostics = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let output = diagnostics.clone();
+        let mut reader = tokio::spawn(async move {
+            let mut buffer = [0u8; 4096];
+            while let Ok(count) = stderr.read(&mut buffer).await {
+                if count == 0 {
+                    break;
+                }
+                let mut tail = output.lock().unwrap_or_else(|error| error.into_inner());
+                tail.extend_from_slice(&buffer[..count]);
+                if tail.len() > 8192 {
+                    let excess = tail.len() - 8192;
+                    tail.drain(..excess);
+                }
+            }
+        });
+        stream.process = Some(child);
+        let playlist = stream.hls_dir.join("playlist.m3u8");
+        let segment = stream.hls_dir.join(if remux {
+            "segment_0.m4s"
+        } else {
+            "segment_0.ts"
+        });
+        let mut failure = "Timeout waiting for HLS playlist".to_string();
+        for tick in 0..200 {
+            if !owns_transition() {
+                stream.stop();
+                reader.abort();
+                return Err("Transcode start was superseded".into());
+            }
+            if playlist.exists()
+                && std::fs::metadata(&segment)
+                    .map(|meta| meta.len() > 1000)
+                    .unwrap_or(false)
+            {
+                stream.playlist_ready = true;
+                log::info!(
+                    "[Transcode {}] Ready after {:.1}s",
+                    stream.stream_id,
+                    tick as f64 * 0.1
+                );
+                return Ok(stream);
+            }
+            if let Some(process) = stream.process.as_mut() {
+                if let Ok(Some(status)) = process.try_wait() {
+                    // Let the stderr reader capture the final error before reporting it.
+                    let _ = tokio::time::timeout(Duration::from_secs(1), &mut reader).await;
+                    failure = format!("FFmpeg exited before HLS became ready ({status})");
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let detail = {
+            let tail = diagnostics
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            String::from_utf8_lossy(&tail).trim().to_string()
+        };
+        if !detail.is_empty() {
+            failure.push_str(&format!(": {detail}"));
+        }
+        failures.push(failure);
+        stream.stop();
+        reader.abort();
+        if attempt + 1 < commands.len() {
+            log::warn!(
+                "[Transcode {}] Hardware startup failed; retrying software encoding",
+                stream.stream_id
+            );
+        }
+    }
+    Err(failures.join("\nSoftware retry: "))
+}
+
 /// Information returned when a transcode stream starts successfully.
 #[derive(serde::Serialize)]
 pub struct TranscodeStreamInfo {
@@ -643,9 +731,8 @@ fn build_ffmpeg_command(
     video_info: &VideoInfo,
     target_fps: Option<u32>,
     audio_gain_db: Option<f64>,
+    hw: &HwCaps,
 ) -> Vec<String> {
-    let hw = detect_hw_caps();
-
     // Packet-copy remux path (e.g. Apple HEVC passthrough): no re-encode.
     if quality.remux {
         return build_packet_copy_remux_command(file_path, hls_dir, start_position, video_info);
@@ -743,7 +830,7 @@ fn build_ffmpeg_command(
 
     if force_cfr && output_fps > 0.0 {
         cmd.extend(["-r".into(), format!("{}", output_fps)]);
-        cmd.extend(["-vsync".into(), "cfr".into()]);
+        cmd.extend(["-fps_mode".into(), "cfr".into()]);
     }
 
     // Force keyframes every 2 seconds
@@ -888,6 +975,206 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+
+    #[test]
+    fn failed_device_probes_choose_software_for_encoded_qualities() {
+        let hw = probe_hw_caps(|args| {
+            assert!(args.contains(&"color=size=256x144:rate=1"));
+            assert!(!args.contains(&"-encoders"));
+            false
+        });
+        assert!(!hw.nvenc);
+        assert!(!hw.full_gpu());
+        let info = VideoInfo {
+            width: 1920,
+            height: 1080,
+            duration: 5.0,
+            avg_fps: 24.0,
+            has_audio: false,
+        };
+        for preset in ["480p", "720p", "1080p", "1440p", "4k"] {
+            let quality = QualityPreset {
+                resolution: Some(preset.into()),
+                ..Default::default()
+            };
+            let cmd = build_ffmpeg_command(
+                "/synthetic/video.mp4",
+                Path::new("/synthetic/hls"),
+                0.0,
+                &quality,
+                true,
+                &info,
+                None,
+                None,
+                &hw,
+            );
+            assert!(cmd.iter().any(|arg| arg == "libx264"));
+            assert!(cmd.iter().any(|arg| arg == "-fps_mode"));
+            assert!(!cmd.iter().any(|arg| arg == "-vsync"));
+            assert!(!cmd.iter().any(|arg| arg == "h264_nvenc" || arg == "cuda"));
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_hardware_hls_retries_software_with_synthetic_video() {
+        let root = std::env::temp_dir().join(format!("dmc-synthetic-hls-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.mp4");
+        let generated = Command::new("ffmpeg")
+            .args([
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=160x90:rate=24",
+                "-t",
+                "5",
+                "-an",
+                "-c:v",
+                "libx264",
+                "-threads",
+                "1",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&source)
+            .output()
+            .await
+            .unwrap();
+        assert!(
+            generated.status.success(),
+            "{}",
+            String::from_utf8_lossy(&generated.stderr)
+        );
+        let output = root.join("output");
+        let hls_dir = output.join("hls");
+        let info = VideoInfo {
+            width: 160,
+            height: 90,
+            duration: 5.0,
+            avg_fps: 24.0,
+            has_audio: false,
+        };
+        let software = HwCaps {
+            nvenc: false,
+            cuda_hwaccel: false,
+            scale_cuda: false,
+        };
+        let quality = QualityPreset {
+            resolution: Some("480p".into()),
+            bitrate: Some("1536K".into()),
+            remux: false,
+        };
+        let commands = vec![
+            vec![
+                "sh".into(),
+                "-c".into(),
+                "printf 'synthetic CUDA device unavailable' >&2; exit 1".into(),
+            ],
+            build_ffmpeg_command(
+                source.to_str().unwrap(),
+                &hls_dir,
+                0.0,
+                &quality,
+                true,
+                &info,
+                None,
+                None,
+                &software,
+            ),
+        ];
+        let stream = TranscodeStream {
+            stream_id: "synthetic".into(),
+            hls_dir,
+            temp_dir: output.clone(),
+            process: None,
+            playlist_ready: false,
+            duration: 5.0,
+            width: 160,
+            height: 90,
+            start_position: 0.0,
+        };
+        let stream = start_hls_attempts(stream, &commands, false, || true)
+            .await
+            .unwrap();
+        assert!(stream.playlist_ready);
+        assert!(
+            stream
+                .hls_dir
+                .join("segment_0.ts")
+                .metadata()
+                .unwrap()
+                .len()
+                > 1000
+        );
+        assert!(
+            std::fs::read_to_string(stream.hls_dir.join("playlist.m3u8"))
+                .unwrap()
+                .contains("#EXTINF")
+        );
+        drop(stream);
+        assert!(!output.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_hls_start_preserves_stderr_and_cleans_output() {
+        let root =
+            std::env::temp_dir().join(format!("dmc-synthetic-hls-error-{}", uuid::Uuid::new_v4()));
+        let stream = TranscodeStream {
+            stream_id: "synthetic".into(),
+            hls_dir: root.join("hls"),
+            temp_dir: root.clone(),
+            process: None,
+            playlist_ready: false,
+            duration: 5.0,
+            width: 160,
+            height: 90,
+            start_position: 0.0,
+        };
+        let commands = vec![vec![
+            "sh".into(),
+            "-c".into(),
+            "printf 'synthetic encoder unavailable' >&2; exit 1".into(),
+        ]];
+        let error = start_hls_attempts(stream, &commands, false, || true)
+            .await
+            .err()
+            .unwrap();
+        assert!(error.contains("synthetic encoder unavailable"));
+        assert!(!root.exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn superseded_hls_attempt_never_retries_or_publishes() {
+        // AC: @reliable-stream-transitions ac-stop-superseded-producer
+        let root =
+            std::env::temp_dir().join(format!("dmc-synthetic-hls-stop-{}", uuid::Uuid::new_v4()));
+        let stream = TranscodeStream {
+            stream_id: "synthetic".into(),
+            hls_dir: root.join("hls"),
+            temp_dir: root.clone(),
+            process: None,
+            playlist_ready: false,
+            duration: 5.0,
+            width: 160,
+            height: 90,
+            start_position: 0.0,
+        };
+        let checks = std::sync::atomic::AtomicUsize::new(0);
+        let commands = vec![vec!["sleep".into(), "30".into()], vec!["true".into()]];
+        let result = start_hls_attempts(stream, &commands, false, || {
+            checks.fetch_add(1, Ordering::SeqCst) == 0
+        })
+        .await;
+        assert_eq!(result.err().unwrap(), "Transcode start was superseded");
+        assert_eq!(checks.load(Ordering::SeqCst), 2);
+        assert!(!root.exists());
+    }
 
     fn manager() -> TranscodeManager {
         TranscodeManager {
