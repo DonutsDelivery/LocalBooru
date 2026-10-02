@@ -20,6 +20,7 @@ import CreateSettings from './CreateSettings'
 import CreateEditCanvas from './CreateEditCanvas'
 import SimpleCreateControls from './SimpleCreateControls'
 import CreateResultPreview from './CreateResultPreview'
+import CreateStudioLoading from './CreateStudioLoading'
 import { createStudioBridge } from '../services/createStudioBridge'
 import { listenStudioDesktopDrops, studioDropFile } from '../services/createStudioDrop'
 import { toast } from './Toast'
@@ -1030,6 +1031,7 @@ export default function CreateStudioHost() {
   }, [opened, error, bridgeError, snapshot?.ready])
 
   const simpleView = !showSetup && studioView === 'simple'
+  const waitingForStudio = !session && !showSetup
   useEffect(() => {
     if (!opened) return
     const target = navigationFocus.current
@@ -1227,13 +1229,14 @@ export default function CreateStudioHost() {
         event.preventDefault(); event.stopPropagation()
         importDroppedFiles(files, event.target.closest?.('[data-create-drop-reference]')?.getAttribute('data-create-drop-reference') || undefined)
       }}>
-      <section className="create-studio-dialog" role="dialog" aria-modal="true" aria-labelledby="create-studio-title">
+      <section className={'create-studio-dialog' + (waitingForStudio ? ' create-awaiting-studio' : '')} role="dialog" aria-modal="true" aria-labelledby="create-studio-title">
         <h1 id="create-studio-title" className="create-sr-status">Create images</h1>
         {(!session || !simpleView) && workspaceNavigation}
         <p className="create-sr-status" role="status" aria-live="polite">{announcement}</p>
         {switchingServer && <p className="create-message" role="status">Connecting to the selected server…</p>}
         {workflowPending && <p className="create-message" role="status">{bridgeBusy === 'load-workflow' ? 'Loading the saved workflow…' : 'The saved workflow is waiting for the studio to be ready.'}</p>}
         <div className={'create-studio-body create-view-' + (showSetup ? 'setup' : studioView) + ' create-mobile-' + mobilePane}>
+          {waitingForStudio && <CreateStudioLoading opening={opening} backendReady={!!status?.backend?.ready} connectionFailed={!!error && !opening && status?.backend?.ready === false} />}
           {session && <div className="create-controls-slot" hidden={!simpleView}>
             <SimpleCreateControls key={session.id + ':' + controlsRevision} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : dropPending ? bridgeBusy || 'drop-file' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
@@ -1243,7 +1246,7 @@ export default function CreateStudioHost() {
               {simpleView ? resultsContent : null}
             </SimpleCreateControls>
           </div>}
-          <div className="create-studio-main" hidden={!!session && simpleView}>
+          <div className="create-studio-main" hidden={waitingForStudio || (!!session && simpleView)}>
             {/* The same mounted graph backs simple controls and the advanced editor. */}
             {session && <iframe key={frameRevision} ref={studioFrame} title="DonutUI creation studio" src={frameUrl} className="create-studio-frame" hidden={showSetup || studioView !== 'advanced'} referrerPolicy="no-referrer" onLoad={frameLoaded} />}
             <div className="create-studio-setup" hidden={!showSetup && !!session}>
@@ -1251,7 +1254,6 @@ export default function CreateStudioHost() {
               <button type="button" className="create-primary create-launch" disabled={switchingServer || opening || (!session && !status?.backend?.ready)} onClick={() => session ? showSimpleStudio() : launchStudio()}>
                 {opening ? 'Connecting studio…' : session ? 'Return to studio' : 'Open studio'}
               </button>
-              {!showSetup && !session && <p>Connecting to the creator…</p>}
             </div>
           </div>
           {session && !simpleView && resultsContent}
