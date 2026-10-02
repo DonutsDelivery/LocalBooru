@@ -314,11 +314,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     : null
   const svpInteractionReadyRef = useRef(true)
   const svpInteractionKeyRef = useRef(null)
+  const svpFirstHandoffPendingRef = useRef(false)
   const [svpStartupReady, setSvpStartupReady] = useState(false)
   const svpInteractionKey = svpPathEnabled ? currentImageKey : null
   if (svpInteractionKeyRef.current !== svpInteractionKey) {
     svpInteractionKeyRef.current = svpInteractionKey
     svpInteractionReadyRef.current = !svpPathEnabled
+    svpFirstHandoffPendingRef.current = svpPathEnabled
   }
   const svpControlsReady = !svpStartupCancelPending
     && (!svpPathEnabled || (svpInteractionReadyRef.current && svpStartupReady))
@@ -404,6 +406,13 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     },
   }, libraryImageId, image?.directory_id, image?.library_id)
 
+  // A native SVP bootstrap is physically paused while its requested autoplay
+  // state remains available to Manager and the filtered-player handoff.
+  const requestedPlayingRef = useRef(playback.isPlaying)
+  requestedPlayingRef.current = playback.isPlaying
+  const playbackAudioRef = useRef(null)
+  playbackAudioRef.current = { volume: playback.volume, muted: playback.isMuted }
+
   const reportSvpPlayback = useCallback((video = mediaRef.current, fps = svpSourceFpsRef.current) => {
     const desktopAPI = getDesktopAPI()
     if (!desktopAPI?.updateSvpManagerPlayback
@@ -428,14 +437,14 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       height: video.videoHeight,
       fps,
       duration: Number.isFinite(video.duration) ? video.duration : 0,
-      paused: video.paused,
+      paused: !svpInteractionReadyRef.current
+        ? (svpResumeRef.current?.paused ?? !requestedPlayingRef.current)
+        : video.paused,
     }), () => svpVideoHostOwnsEvent(svpHostOwnerRef.current, svpHostOwner)).catch(error => {
       if (!svpVideoHostOwnsEvent(svpHostOwnerRef.current, svpHostOwner)) return
       console.warn('[SVPManager] playback update failed:', error)
-      svpFailOpenRef.current = true
-      svpInteractionReadyRef.current = true
-      setSvpStartupReady(true)
-      if (video.readyState >= 2) setVideoFrameReadyKey(videoMediaKey)
+      // Registration failure must not start an unfiltered original while SVP
+      // remains selected. The explicit fallback button cancels this startup.
       setSvpConnectionIssue({ imageKey: currentImageKey, message: String(error?.message ?? error) })
     })
   }, [currentImageKey, image?.file_path, svpPathEnabled, svpHostEpoch, svpHostOwner, videoMediaKey, resolutionRevision])
@@ -451,43 +460,30 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       reportSvpPlayback(video, metadataFps)
       return
     }
-    const sampleDecodedFrames = () => {
-      if (mediaRef.current !== video || activeImageKeyRef.current !== currentImageKey) return
-      if (!video.requestVideoFrameCallback) return
-      let previousMediaTime = null
-      const sampleFrame = (_now, metadata) => {
-        if (mediaRef.current !== video || activeImageKeyRef.current !== currentImageKey) return
-        if (previousMediaTime !== null && metadata.mediaTime > previousMediaTime) {
-          const measuredFps = 1 / (metadata.mediaTime - previousMediaTime)
-          if (Number.isFinite(measuredFps) && measuredFps > 1 && measuredFps < 240) {
-            reportSvpPlayback(video, measuredFps)
-            return
-          }
-        }
-        previousMediaTime = metadata.mediaTime
-        video.requestVideoFrameCallback(sampleFrame)
-      }
-      video.requestVideoFrameCallback(sampleFrame)
+    // Advancing decoded-frame sampling cannot bootstrap a player that must
+    // remain paused until SVP loads. Probe the file even for direct-file opens.
+    if (svpFpsProbePendingRef.current?.video === video
+        && svpFpsProbePendingRef.current.imageKey === currentImageKey) return
+    const probe = { video, imageKey: currentImageKey }
+    const ownsProbe = () => svpFpsProbePendingRef.current === probe
+      && mediaRef.current === video && activeImageKeyRef.current === currentImageKey
+      && svpPathEnabledRef.current
+    const unavailable = () => {
+      if (ownsProbe()) setSvpConnectionIssue({ imageKey: currentImageKey,
+        message: 'SVP cannot determine the source frame rate.' })
     }
-    if (!image?.is_local_direct_file && !svpFpsProbePendingRef.current) {
-      const probe = { video, imageKey: currentImageKey }
-      svpFpsProbePendingRef.current = probe
-      getFileDimensions(image.file_path)
-        .then(info => {
-          if (svpFpsProbePendingRef.current !== probe) return
-          const fps = Number(info?.fps)
-          if (Number.isFinite(fps) && fps > 0) reportSvpPlayback(video, fps)
-          else sampleDecodedFrames()
-        })
-        .catch(() => {
-          if (svpFpsProbePendingRef.current === probe) sampleDecodedFrames()
-        })
-        .finally(() => {
-          if (svpFpsProbePendingRef.current === probe) svpFpsProbePendingRef.current = null
-        })
-      return
-    }
-    sampleDecodedFrames()
+    svpFpsProbePendingRef.current = probe
+    getFileDimensions(image.file_path)
+      .then(info => {
+        if (!ownsProbe()) return
+        const fps = Number(info?.fps)
+        if (Number.isFinite(fps) && fps > 0) reportSvpPlayback(video, fps)
+        else unavailable()
+      })
+      .catch(unavailable)
+      .finally(() => {
+        if (svpFpsProbePendingRef.current === probe) svpFpsProbePendingRef.current = null
+      })
   }, [currentImageKey, image?.file_path, image?.video_fps, image?.frame_rate, image?.fps, image?.is_local_direct_file, reportSvpPlayback, svpPathEnabled])
 
   useEffect(() => {
@@ -521,6 +517,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         const { enabled, mediaKey } = payload
         if (!svpPathEnabledRef.current) return
         if (mediaKey && mediaKey !== activeImageKeyRef.current) return
+        const wasInteractionReady = svpInteractionReadyRef.current
         svpInteractionReadyRef.current = false
         setSvpStartupReady(false)
         setVideoFrameReadyKey(null)
@@ -528,19 +525,22 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         if (enabled) setSvpConnectionIssue(null)
         else setSvpConnectionIssue({ imageKey: activeImageKeyRef.current, message: 'SVP disconnected.' })
         const video = mediaRef.current
-        // A graph can arrive before the source has loaded. The next load will
-        // pick it up without tearing down an active media pipeline.
-        if (!isVideoMediaElement(video) || (!video.currentSrc && video.readyState === 0)) return
+        if (!isVideoMediaElement(video)) return
         const imageKey = activeImageKeyRef.current
         if (!svpResumeRef.current) {
           svpResumeRef.current = {
             currentTime: video.currentTime,
-            paused: video.paused,
+            paused: !wasInteractionReady ? !requestedPlayingRef.current : video.paused,
+            volume: playbackAudioRef.current.volume,
+            muted: playbackAudioRef.current.muted,
             imageKey,
             media: video,
           }
         }
 
+        // Keep the captured intent, but stop the old pipeline before hiding
+        // it for a graph handoff. Its pause event must not replace that intent.
+        video.pause()
         const transition = svpTransitionRef.current
         transition.active = true
         transition.token += 1
@@ -578,6 +578,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         if (mediaKey && mediaKey !== activeImageKeyRef.current) return
         const video = mediaRef.current
         if (!isVideoMediaElement(video)) return
+        // Manager can echo the physical bootstrap pause before installing its
+        // graph. That suspension is not the user's requested paused state.
+        if (svpFirstHandoffPendingRef.current && !svpInteractionReadyRef.current) return
         const imageKey = activeImageKeyRef.current
         const resume = svpResumeRef.current
         if (resume && resume.imageKey !== imageKey) {
@@ -632,14 +635,20 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [svpPathEnabled, currentImageKey, svpHostOwner])
 
   const failOpenNativeSvp = useCallback((video) => {
-    if (!svpPathEnabled || !svpFilterActiveRef.current || svpFailOpenRef.current) return
+    if (mediaRef.current !== video || !svpPathEnabled || !svpFilterActiveRef.current || svpFailOpenRef.current) return
+    if (svpFirstHandoffPendingRef.current) {
+      svpFilterActiveRef.current = false
+      setSvpConnectionIssue({ imageKey: currentImageKey, message: 'SVP could not load this video.' })
+      getDesktopAPI()?.updateSvpManagerPlayback?.(svpVideoHostUpdate(svpHostOwner, false)).catch(() => {})
+      return
+    }
     svpFailOpenRef.current = true
     svpFilterActiveRef.current = false
     if (svpInteractionReadyRef.current && isVideoMediaElement(video)) video.pause()
     getDesktopAPI()?.updateSvpManagerPlayback?.(svpVideoHostUpdate(svpHostOwner, false)).catch(error => {
       console.warn('[SVPManager] failed to disable broken native graph:', error)
     })
-  }, [svpPathEnabled, svpHostOwner])
+  }, [svpPathEnabled, svpHostOwner, currentImageKey])
 
   useEffect(() => {
     const video = mediaRef.current
@@ -1037,7 +1046,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
         ...previous, rawResolution: true,
       } : {
         currentTime: playbackIntent.position, paused: !playbackIntent.shouldPlay,
-        volume: video.volume, muted: video.muted,
+        volume: playback.volume, muted: playback.isMuted,
         imageKey: currentImageKey, media: video, rawResolution: true,
       }
       const pending = svpResumeRef.current
@@ -1065,7 +1074,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     setCurrentQuality(qualityId)
     localStorage.setItem('video_quality_preference', qualityId)
     await streaming.handleQualityChange(qualityId, playbackIntent)
-  }, [streaming, localRawPlayback, currentImageKey])
+  }, [streaming, localRawPlayback, currentImageKey, playback.volume, playback.isMuted])
 
   // Toggle SVP on/off
   const handleToggleSVP = useCallback(() => {
@@ -1074,7 +1083,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     const newEnabled = !desiredEnabled
     const generation = ++svpToggleGenerationRef.current
     const cancelingStartup = streaming.nativeSvpPlayback && !svpControlsReady && !newEnabled
-    const playbackIntent = cancelingStartup ? null : streaming.capturePlaybackIntent()
+    const playbackIntent = cancelingStartup ? {
+      position: svpResumeRef.current?.currentTime ?? mediaRef.current?.currentTime ?? 0,
+      shouldPlay: !(svpResumeRef.current?.paused ?? !requestedPlayingRef.current),
+    } : streaming.capturePlaybackIntent()
     svpDesiredEnabledRef.current = newEnabled
 
     if (cancelingStartup) {
@@ -1626,7 +1638,8 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // Also check if browser can decode the video codec (fallback to transcode if not)
   const handleVideoCanPlay = useCallback((e) => {
     const streamActive = Boolean(streaming.svpStreamUrl || streaming.transcodeStreamUrl || streaming.opticalFlowStreamUrl)
-    if (!casting.isCasting && !streamActive && playback.isPlaying) {
+    if (mediaRef.current === e.target && !casting.isCasting && !streamActive && playback.isPlaying
+        && (!svpPathEnabled || (svpInteractionReadyRef.current && e.target.paused))) {
       e.target.play().catch(() => {})
     }
     resetHideTimer()
@@ -1634,6 +1647,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [
     casting.isCasting,
     playback.isPlaying,
+    svpPathEnabled,
     resetHideTimer,
     streaming.svpStreamUrl,
     streaming.transcodeStreamUrl,
@@ -1678,6 +1692,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // The asset protocol serves from the filesystem directly, bypassing this bottleneck.
   const directVideoSrc = useMemo(() => {
     if (!shouldPlayDirect || !image?.url) return undefined
+    if (streaming.nativeSvpPlayback && !streaming.svpConfigLoaded) return undefined
     if (localRawPlayback && localResolutionReady !== localResolutionReadyKey) return undefined
     if (image?.is_local_direct_file) {
       return getMediaUrl(image.url)
@@ -1687,7 +1702,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       if (assetUrl) return assetUrl
     }
     return getMediaUrl(image.url)
-  }, [shouldPlayDirect, image?.url, image?.file_path, image?.is_local_direct_file, localRawPlayback, localResolutionReady, localResolutionReadyKey])
+  }, [shouldPlayDirect, image?.url, image?.file_path, image?.is_local_direct_file, localRawPlayback, localResolutionReady, localResolutionReadyKey, streaming.nativeSvpPlayback, streaming.svpConfigLoaded])
 
   const [videoFrameReadyKey, setVideoFrameReadyKey] = useState(null)
   const showVideoLoadingGrid = !playback.playbackError && (videoFrameReadyKey !== videoMediaKey
@@ -1698,6 +1713,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const finishSvpHandoff = (video) => {
     const resume = svpResumeRef.current
     if (!resume || resume.imageKey !== currentImageKey || mediaRef.current !== video) return false
+    if (svpPathEnabled && video.readyState < 2) return false
     if (localRawPlayback && currentQuality !== 'original' && localResolutionVerified !== localResolutionReadyKey) return false
     if (resume.media === video || (svpPathEnabled && !svpFilterActiveRef.current && !svpFailOpenRef.current)) return false
     if (resume.awaitingSeek) return false
@@ -1705,10 +1721,10 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     svpResumeRef.current = null
     svpTransitionRef.current.active = false
     svpInteractionReadyRef.current = true
+    svpFirstHandoffPendingRef.current = false
     setSvpStartupReady(true)
     if (video.readyState >= 2) setVideoFrameReadyKey(videoMediaKey)
-    if (Number.isFinite(resume.volume)) video.volume = resume.volume
-    if (resume.muted !== undefined) video.muted = resume.muted
+    if (Number.isFinite(resume.volume)) playback.restoreAudioState?.(resume.volume, Boolean(resume.muted))
     if (resume.paused) video.pause()
     else video.play().catch(() => {})
     return true
@@ -2309,7 +2325,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               src={directVideoSrc}
               crossOrigin="anonymous"
               preload="auto"
-              autoPlay={!svpResumeRef.current}
+              autoPlay={!svpPathEnabled && !svpResumeRef.current}
               playsInline
               loop={false}
               className={`lightbox-media video-display-${playback.videoDisplayMode} ${vrActive ? 'vr-video-source' : ''} ${streaming.svpStreamUrl ? 'svp-streaming' : streaming.opticalFlowStreamUrl ? 'interpolated-streaming' : streaming.transcodeStreamUrl ? 'transcode-streaming' : ''}`}
@@ -2327,17 +2343,29 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 }
               }}
               onPlay={(event) => {
+                if (mediaRef.current !== event.currentTarget) return
+                if (svpPathEnabled && !svpInteractionReadyRef.current) {
+                  event.currentTarget.pause()
+                  return
+                }
                 playback.handleVideoPlay(event)
                 reportSvpPlayback(event.currentTarget)
                 reportDirectFileStage('play', event.currentTarget)
               }}
               onPlaying={(event) => {
+                if (mediaRef.current !== event.currentTarget) return
+                if (svpPathEnabled && !svpInteractionReadyRef.current) {
+                  event.currentTarget.pause()
+                  return
+                }
                 reportDirectFileStage('playing', event.currentTarget)
                 if (!svpResumeRef.current && (!svpPathEnabled || svpFailOpenRef.current || (svpFilterActiveRef.current && !svpTransitionRef.current.active))) {
                   setVideoFrameReadyKey(videoMediaKey)
                 }
               }}
               onPause={(event) => {
+                if (mediaRef.current !== event.currentTarget) return
+                if (svpPathEnabled && !svpInteractionReadyRef.current) return
                 playback.handleVideoPause(event)
                 reportSvpPlayback(event.currentTarget)
                 reportDirectFileStage('pause', event.currentTarget)
