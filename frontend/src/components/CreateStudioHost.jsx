@@ -34,6 +34,7 @@ export default function CreateStudioHost() {
   const [started, setStarted] = useState(false)
   const [showSetup, setShowSetup] = useState(false)
   const [status, setStatus] = useState(null)
+  const [connectionFailed, setConnectionFailed] = useState(false)
   const [session, setSession] = useState(null)
   const [frameUrl, setFrameUrl] = useState('')
   const [frameRevision, setFrameRevision] = useState(0)
@@ -218,6 +219,7 @@ export default function CreateStudioHost() {
     pendingWorkflow.current = null
     sessionRef.current = null
     setStatus(null)
+    setConnectionFailed(false)
     setSession(null)
     setFrameUrl('')
     setSaved({})
@@ -283,6 +285,7 @@ export default function CreateStudioHost() {
   const handleStatus = useCallback(nextStatus => {
     if (serverChanging.current) return
     setStatus(nextStatus)
+    setConnectionFailed(false)
     const current = sessionRef.current
     if (current?.backend_url && nextStatus?.backend_url && current.backend_url !== nextStatus.backend_url) {
       invalidateSession('The backend changed. Open a new studio session to continue.')
@@ -359,6 +362,7 @@ export default function CreateStudioHost() {
         if ([404, 410].includes(pollError.response?.status) && sessionRef.current) {
           invalidateSession('The studio session expired or became unavailable. Open the studio again to reconnect.')
         } else {
+          setConnectionFailed(true)
           setStatus(previous => previous ? { ...previous, backend: { ...previous.backend, ready: false } } : null)
           setError(createErrorMessage(pollError))
         }
@@ -1236,7 +1240,7 @@ export default function CreateStudioHost() {
         {switchingServer && <p className="create-message" role="status">Connecting to the selected server…</p>}
         {workflowPending && <p className="create-message" role="status">{bridgeBusy === 'load-workflow' ? 'Loading the saved workflow…' : 'The saved workflow is waiting for the studio to be ready.'}</p>}
         <div className={'create-studio-body create-view-' + (showSetup ? 'setup' : studioView) + ' create-mobile-' + mobilePane}>
-          {waitingForStudio && <CreateStudioLoading opening={opening} backendReady={!!status?.backend?.ready} connectionFailed={!!error && !opening && status?.backend?.ready === false} />}
+          {waitingForStudio && <CreateStudioLoading opening={opening} backendReady={!!status?.backend?.ready} connectionFailed={connectionFailed && !opening} />}
           {session && <div className="create-controls-slot" hidden={!simpleView}>
             <SimpleCreateControls key={session.id + ':' + controlsRevision} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : dropPending ? bridgeBusy || 'drop-file' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}

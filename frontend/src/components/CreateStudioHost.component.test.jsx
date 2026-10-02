@@ -170,6 +170,34 @@ describe('Donut Create studio', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Synthetic connection unavailable')
   })
 
+  test('shows an interrupted connection before the first status and recovers on retry', async () => {
+    api.apiClient.get.mockRejectedValue(new Error('Synthetic controller unavailable'))
+    render(<CreateStudioHost />)
+    openStudio()
+    const loading = await screen.findByRole('region', { name: 'Studio connection' })
+    await within(loading).findByText('Studio connection interrupted')
+    expect(loading.getAttribute('aria-busy')).toBe('false')
+    expect(screen.getByRole('button', { name: 'Setup', exact: true }).disabled).toBe(false)
+    api.apiClient.get.mockImplementation(async url => ({ data: url.endsWith('/status') ? status : session }))
+    await screen.findByTitle('DonutUI creation studio', {}, { timeout: 3000 })
+    expect(screen.queryByRole('region', { name: 'Studio connection' })).toBeNull()
+  })
+
+  test('does not label a save directory error as a studio connection failure', async () => {
+    const pendingStatus = deferred()
+    api.apiClient.get.mockImplementation(async () => pendingStatus.promise)
+    api.fetchDirectories.mockRejectedValue(new Error('Synthetic directory unavailable'))
+    render(<CreateStudioHost />)
+    openStudio()
+    const loading = await screen.findByRole('region', { name: 'Studio connection' })
+    await waitFor(() => expect(api.fetchDirectories).toHaveBeenCalled())
+    await act(async () => {})
+    expect(within(loading).getByText('Preparing your studio')).toBeTruthy()
+    expect(within(loading).queryByText('Studio connection interrupted')).toBeNull()
+    await act(async () => { pendingStatus.resolve({ data: status }); await pendingStatus.promise })
+    await screen.findByTitle('DonutUI creation studio')
+  })
+
   test('shows an acknowledged queue submission before the next session poll', async () => {
     session.jobs = []
     session.outputs = []
