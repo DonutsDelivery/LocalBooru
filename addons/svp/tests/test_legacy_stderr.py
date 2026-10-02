@@ -1,4 +1,5 @@
 import ctypes
+import io
 import os
 import sys
 import threading
@@ -6,7 +7,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app as svp_app  # noqa: E402
@@ -50,6 +51,56 @@ class LegacyStderrTests(unittest.TestCase):
         stream._drain_stderr(final=True)
         self.assertEqual(len(stream._decode_stderr), 12000)
         self.assertTrue(stream._decode_stderr.endswith(b' encoder failed'))
+
+
+class WindowsStderrTests(unittest.TestCase):
+    def windows_readiness(self, peek):
+        self.enterContext(patch.object(svp_app, '_is_windows', return_value=True))
+        self.enterContext(patch.object(svp_app.select, 'select', side_effect=OSError('Windows pipes unsupported')))
+        self.enterContext(patch.dict(sys.modules, {'msvcrt': SimpleNamespace(get_osfhandle=lambda _fd: 0x100000001)}))
+        self.enterContext(patch.object(ctypes, 'WinDLL', return_value=SimpleNamespace(PeekNamedPipe=peek), create=True))
+
+    def test_final_exited_process_keeps_error_tail_without_select(self):
+        payload = b'FFmpeg synthetic fatal detail'
+        pipe = io.BytesIO(payload)
+        pipe.fileno = lambda: 42
+
+        def peek(_handle, _buffer, _size, _read, available, _remaining):
+            available._obj.value = len(payload) - pipe.tell()
+            return 1
+
+        self.windows_readiness(Mock(side_effect=peek))
+        stream = object.__new__(svp_app.SVPStream)
+        stream._decode_proc = SimpleNamespace(stderr=pipe, poll=lambda: 1)
+        stream._vspipe_proc = stream._ffmpeg_proc = None
+        stream._decode_stderr = b''
+        stream._drain_stderr(final=True)
+        self.assertEqual(stream._decode_stderr, payload)
+
+    def test_live_pipe_with_no_ready_bytes_is_never_read(self):
+        peek = Mock(return_value=1)  # available starts at zero
+        self.windows_readiness(peek)
+        pipe = Mock()
+        stream = object.__new__(svp_app.SVPStream)
+        stream._decode_proc = SimpleNamespace(stderr=pipe, poll=lambda: None)
+        stream._vspipe_proc = stream._ffmpeg_proc = None
+        stream._decode_stderr = b''
+        stream._drain_stderr(final=True)
+        pipe.read1.assert_not_called()
+        self.assertEqual(stream._decode_stderr, b'')
+
+    def test_failed_or_closed_windows_pipe_has_no_ready_bytes(self):
+        self.windows_readiness(Mock(return_value=0))
+        self.assertEqual(svp_app._stderr_ready_bytes(Mock()), 0)
+
+    def test_windows_ready_size_is_bounded_and_preserves_64_bit_handle(self):
+        def peek(handle, _buffer, _size, _read, available, _remaining):
+            self.assertEqual(handle, 0x100000001)
+            available._obj.value = 10000
+            return 1
+
+        self.windows_readiness(Mock(side_effect=peek))
+        self.assertEqual(svp_app._stderr_ready_bytes(Mock()), 4096)
 
 
 class StdinPlaneCopyTests(unittest.TestCase):
