@@ -1062,6 +1062,11 @@ features:
             then: The video remains physically paused without original picture or audio playback while metadata
               registration can proceed
             when: Metadata and canplay arrive before the owned SVP graph is ready
+          - given: The intended playback state is captured while startup is paused
+            id: ac-owned-handoff
+            then: Playback begins only after handoff and retains intended playing or paused state, position,
+              volume and mute; stale callbacks cannot start another player
+            when: The owned filtered replacement becomes ready at the restored position
         tags: []
         created: 2026-10-02T04:22:44.328Z
         notes: []
