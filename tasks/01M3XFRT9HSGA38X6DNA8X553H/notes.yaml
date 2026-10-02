@@ -13,3 +13,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T05:00:44.015Z
+  - _ulid: 01M3XGVB94WE3MDFEN87SJJ6JC
+    content: "Refined safety plan per root review: all recovery signals use the verified listener pidfd
+      only, never a negative process-group signal. Reverify the full installation tuple after pidfd
+      acquisition; protect parent executables by basename including deleted/upgraded paths.
+      Root-owned PID1 with parent0 and systemd/init comm is the only exception for an unreadable
+      parent executable. TERM grace15s then PID-only KILL; forced escalation cannot promise
+      descendant cleanup, while graceful controller shutdown is proven to stop its synthetic owned
+      backend and leave an independent service alive. Initial focused compile succeeded,5/7 tests;
+      two positive fixtures exposed PID1 proof gap now corrected. Actual spawn_sidecar drop test
+      passes."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T05:19:32.644Z
