@@ -34,3 +34,18 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T04:45:17.773Z
+  - _ulid: 01M3XFCXJ7QG74KNT22Y9Q9HJ7
+    content: Frozen clean candidate4de1b52d01bb21a2c271717769cd050df945e6a8 (basec484; unchangedvolume94
+      ancestor). Host-gated NODE_ENV=test focused suites all PASS46/46:29renderedLightbox
+      startup/raw-resolution/error/real-volume;9direct-original-seek;8local raw/HLSrouting. Receipt
+      /tmp/dmc-svp-startup-after.log; queueddriver47406 exit0. Disposablec484 baseline with
+      same29Lightbox tests reproduces15fail/14pass, expectedexit1, /tmp/dmc-svp-startup-before.log;
+      driver78810. Tests do not prove actual nativeSVP cadence or old-detached DOM event delivery;
+      oldreadinesscallback test directly invokes production renderedcallback ownerguard. Formal code
+      review @review-native-svp-startup-gate records explicit productbase/head/branch rather than
+      controlcheckout autosubmit. Root coordinates independentreview, tasksubmit correctlinkage,
+      mainintegration and matching app/runtime installation. No runtime/profile/config/media changes
+      or packagebuild.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T04:54:11.271Z
