@@ -10092,9 +10092,26 @@ reviews:
           status: pass
           name: independent-source-and-behavior
         timestamp: 2026-10-02T05:28:22.903Z
+      - _ulid: 01M3XHBJM47HR7R122TW2RC37H
+        actor: root
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 7749580f14edc195a1381779d9f2ec774211cedf
+            head_commit: 9dfcdcbc08d15671b33fc6c854f63ab9a3071293
+          decision: approve
+        timestamp: 2026-10-02T05:28:24.453Z
+      - _ulid: 01M3XHBJM59A4NBD3Z80RQXBYX
+        actor: root
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-02T05:28:24.453Z
     examined_commit: 9dfcdcbc08d15671b33fc6c854f63ab9a3071293
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@recover-owned-addon-port"
     subject:
@@ -10104,7 +10121,15 @@ reviews:
       head_branch: fix/owned-addon-port-recovery
       head_commit: 9dfcdcbc08d15671b33fc6c854f63ab9a3071293
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 7749580f14edc195a1381779d9f2ec774211cedf
+          head_commit: 9dfcdcbc08d15671b33fc6c854f63ab9a3071293
+        decision: approve
+        reviewer: root
+        role: reviewer
+        created_at: 2026-10-02T05:28:24.452Z
     created_at: 2026-10-02T05:26:32.359Z
-    updated_at: 2026-10-02T05:28:22.840Z
+    updated_at: 2026-10-02T05:28:24.453Z
     notes: []
