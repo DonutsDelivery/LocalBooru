@@ -9,3 +9,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-02T01:53:13.237Z
+  - _ulid: 01M3X5P9HYSBW2FT93NBYCSDRP
+    content: "User acceptance: after fully closing and launching VLC normally again, user explicitly
+      confirms SVP activates. The scoped persisted avcodec-hw=none change matches existing SVP menu
+      hwdec=false and resolves standalone VLC launch. Root additionally installed same-version
+      standalone mpv v0.41.0 with VapourSynth enabled and changed only user desktop entry; isolated
+      synthetic filter execution exit0. No SVP Manager socket/config edit. DMC endpoint isolation
+      runtime remains pending independent review and bounded WebKit cache deployment."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-02T02:04:32.703Z
