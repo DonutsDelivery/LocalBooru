@@ -58,6 +58,7 @@ function MediaItem({ image, useFullImage = false, onClick, isSelectable = false,
   // Determine if we should use preview frames for hover animation
   const previewIdentity = timelinePreviewIdentityKey(previewLocator)
   const isVideoFile = isGridVideo(image)
+  const videoFilename = image?.original_filename || image?.filename || ''
   const fileStatus = image?.file_status || 'available'
   const workflow = useImageWorkflow(image, !!contextMenu && !isVideoFile && fileStatus === 'available')
 
@@ -320,6 +321,7 @@ function MediaItem({ image, useFullImage = false, onClick, isSelectable = false,
       className={`media-item ${loaded ? 'loaded' : 'loading'} ${fileStatus !== 'available' ? 'unavailable' : ''} ${isSelectable ? 'selectable' : ''} ${isSelected ? 'selected' : ''}`}
       data-image-id={image.id}
       data-image-key={imageIdentityKey(image)}
+      title={isVideoFile ? videoFilename : undefined}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onMouseEnter={handleMouseEnter}
@@ -387,6 +389,10 @@ function MediaItem({ image, useFullImage = false, onClick, isSelectable = false,
 
       {/* File status overlay */}
       {renderStatusOverlay()}
+
+      {isVideoFile && videoFilename && (
+        <span className="video-filename">{videoFilename}</span>
+      )}
 
       {contextMenu && (
         <ContextMenu

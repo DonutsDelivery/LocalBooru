@@ -174,6 +174,24 @@ button.rating-badge.clickable.updating {
   margin-left: 2px;
 }
 
+.video-filename {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  padding: 22px 10px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  color: #fff;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  text-shadow: 0 1px 2px #000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
 .media-error {
   min-height: 150px;
   display: flex;
