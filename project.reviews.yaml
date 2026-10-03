@@ -11304,6 +11304,19 @@ reviews:
         required: true
         created_at: 2026-10-03T18:32:34.517Z
         completed_at: 2026-10-03T18:32:34.517Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: 1e1a8c3
+        evidence: "Actual signed APK+AAB built at1e1a8c361ef918dc562fd159f768b37faea9ec33: permanent
+          cert,4ABIs,SDK36,nondebug,APK16KB zip alignment,64bitELF LOAD+RELRO16KB and bundletool
+          AAB16KB verified. SHA256SUMS both pass; exact-source beta manifest SEALED. Final emulator
+          recheck running."
+        name: release-android-artifacts
+        required: true
+        created_at: 2026-10-03T18:32:36.025Z
+        completed_at: 2026-10-03T18:32:36.025Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11416,6 +11429,13 @@ reviews:
           status: pass
           name: ruby-generator-reproduction
         timestamp: 2026-10-03T18:32:34.600Z
+      - _ulid: 01M41GM6GXGQDJ940R0ZK2W62Y
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: release-android-artifacts
+        timestamp: 2026-10-03T18:32:36.125Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11445,5 +11465,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:32:34.517Z
+    updated_at: 2026-10-03T18:32:36.025Z
     notes: []
