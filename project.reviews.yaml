@@ -10681,6 +10681,18 @@ reviews:
         required: true
         created_at: 2026-10-03T04:58:07.481Z
         completed_at: 2026-10-03T04:58:07.481Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: 5ca1dae
+        evidence: Queued scripts/run-cargo.sh test --locked --lib --no-run; after writer exit run
+          python_runtime/platform_paths/transcode unit filters. Shared gate held by active prior
+          Arbit build.
+        name: recovered-native-focused-tests
+        required: true
+        created_at: 2026-10-03T04:58:08.916Z
+        completed_at: null
     events:
       - _ulid: 01M401ZZVYHZ2MF587YV1YN1BB
         actor: DonutsDelivery
@@ -10702,6 +10714,13 @@ reviews:
           status: pass
           name: python-platform-discovery-tls
         timestamp: 2026-10-03T04:58:07.547Z
+      - _ulid: 01M4020WPKZPAH2P8F1BBZNMP4
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: recovered-native-focused-tests
+        timestamp: 2026-10-03T04:58:08.980Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: draft
@@ -10717,5 +10736,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T04:58:07.481Z
+    updated_at: 2026-10-03T04:58:08.916Z
     notes: []
