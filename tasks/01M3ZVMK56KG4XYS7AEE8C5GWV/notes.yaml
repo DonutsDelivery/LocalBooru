@@ -19,3 +19,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T03:41:53.981Z
+  - _ulid: 01M3ZZB9Q5AYZ9QDC0BG4WJZNK
+    content: "Real Windows 11 x64 synthetic runtime check found SSL default-store download failure;
+      fixed installer to add certifi roots already supplied by controller httpx, retaining OS trust
+      and mandatory hostname/certificate verification. Re-executed actual installer download opener
+      on Windows with app-private Python 3.12.15 and Unicode/space venv: HTTPS 200. Mac runtime
+      HTTPS also 200. Four focused discovery/TLS tests pass. Desktop Rust check --locked --lib
+      --tests now passes after restoring relocated public build-cache compatibility alias; focused
+      native unit tests waiting behind subsequent host build."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T04:11:24.261Z
