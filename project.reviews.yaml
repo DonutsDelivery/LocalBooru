@@ -10784,9 +10784,16 @@ reviews:
           status: pass
           name: recovered-native-focused-tests
         timestamp: 2026-10-03T05:09:16.990Z
+      - _ulid: 01M4036V48YS9WXV87VFNKA7HM
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-03T05:18:52.552Z
     examined_commit: 5ca1dae
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@desktop-platform-paths"
       - "@android-local-library"
@@ -10813,5 +10820,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T05:09:16.927Z
+    updated_at: 2026-10-03T05:18:52.478Z
     notes: []
