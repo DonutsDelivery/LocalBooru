@@ -7,3 +7,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T01:53:54.011Z
+  - _ulid: 01M3ZR463CJ59XVW57932GPQMC
+    content: Approved source 03d3bb3e725470c43f7b4ae71948cd8c901effcd integrated into main as f59b4d0
+      and pushed. Wrapped no-bundle release build exit0; public artifact hash
+      eadc54ca91419ad7a59a81d4b52272fbb135243d09f51f40aa566a3f2454cc99 and frontend manifest
+      retained outside repo. Installed app/frontend atomically after graceful Quit, reopened normal
+      DMC and left alive. No formal tests or actual gallery visual inspection run.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T02:05:11.149Z
