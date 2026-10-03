@@ -10472,6 +10472,14 @@ reviews:
           status: fail
           name: User visual playback acceptance
         timestamp: 2026-10-03T02:17:11.128Z
+      - _ulid: 01M3ZRZMCD7CM2E6ZBTHRH0SQN
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_base: f59b4d0
+          new_head: abde425
+          previous_head: 600c9d0
+        timestamp: 2026-10-03T02:20:10.509Z
     examined_commit: 600c9d0
     external_links: []
     lifecycle_state: draft
@@ -10480,13 +10488,13 @@ reviews:
     subject:
       type: code
       base_branch: main
-      base_commit: f4c601e
+      base_commit: f59b4d0
       head_branch: fix/linux-raw-resize-followup
-      head_commit: 600c9d0
+      head_commit: abde425
     threads: []
     verdicts: []
     created_at: 2026-10-03T01:38:30.897Z
-    updated_at: 2026-10-03T02:17:11.057Z
+    updated_at: 2026-10-03T02:20:10.436Z
     notes: []
   - _ulid: 01M3ZQK2GXP9GWA5WNQCWCAR0V
     slugs:
