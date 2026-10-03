@@ -27,7 +27,7 @@ struct HwCaps {
 }
 
 fn run_ffmpeg_probe(args: &[&str]) -> bool {
-    let mut command = std::process::Command::new("ffmpeg");
+    let mut command = std::process::Command::new(crate::platform_paths::helper("ffmpeg"));
     command
         .args(args)
         .stdout(Stdio::null())
@@ -147,7 +147,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
     };
 
     // Get video stream info
-    if let Ok(output) = Command::new("ffprobe")
+    if let Ok(output) = Command::new(crate::platform_paths::helper("ffprobe"))
         .args([
             "-v",
             "error",
@@ -187,7 +187,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
 
     // If stream-level duration is missing (MKV etc.), query format-level
     if info.duration <= 0.0 {
-        if let Ok(output) = Command::new("ffprobe")
+        if let Ok(output) = Command::new(crate::platform_paths::helper("ffprobe"))
             .args([
                 "-v",
                 "error",
@@ -211,7 +211,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
     }
 
     // Check for audio stream
-    if let Ok(output) = Command::new("ffprobe")
+    if let Ok(output) = Command::new(crate::platform_paths::helper("ffprobe"))
         .args([
             "-v",
             "error",
@@ -250,7 +250,7 @@ async fn detect_video_info(path: &str) -> VideoInfo {
 /// Uses ffmpeg volumedetect on the first 15 seconds for a quick estimate.
 /// Returns a non-positive dB value. Quiet sources are never amplified.
 pub async fn detect_audio_gain(path: &str) -> Option<f64> {
-    let output = Command::new("ffmpeg")
+    let output = Command::new(crate::platform_paths::helper("ffmpeg"))
         .args([
             "-i",
             path,
@@ -745,7 +745,12 @@ fn build_ffmpeg_command(
 
     let use_gpu_pipeline = hw.full_gpu() && !needs_minterpolate;
 
-    let mut cmd: Vec<String> = vec!["ffmpeg".into(), "-y".into()];
+    let mut cmd: Vec<String> = vec![
+        crate::platform_paths::helper("ffmpeg")
+            .to_string_lossy()
+            .into_owned(),
+        "-y".into(),
+    ];
 
     // Hybrid seeking: input seek (fast) + output seek (accurate)
     let mut effective_start = start_position;
@@ -927,7 +932,12 @@ fn build_packet_copy_remux_command(
     start_position: f64,
     video_info: &VideoInfo,
 ) -> Vec<String> {
-    let mut cmd = vec!["ffmpeg".into(), "-y".into()];
+    let mut cmd = vec![
+        crate::platform_paths::helper("ffmpeg")
+            .to_string_lossy()
+            .into_owned(),
+        "-y".into(),
+    ];
     let effective_start = if video_info.duration > 0.0 {
         start_position.clamp(0.0, (video_info.duration - 1.0).max(0.0))
     } else {
@@ -1021,7 +1031,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("dmc-synthetic-hls-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let source = root.join("source.mp4");
-        let generated = Command::new("ffmpeg")
+        let generated = Command::new(crate::platform_paths::helper("ffmpeg"))
             .args([
                 "-loglevel",
                 "error",

@@ -205,7 +205,7 @@ fn cast_direct_play_reject(path: &Path, reason: &str) -> bool {
 }
 
 async fn is_chromecast_direct_play_safe(path: &Path) -> bool {
-    let output = match Command::new("ffprobe")
+    let output = match Command::new(crate::platform_paths::helper("ffprobe"))
         .args([
             "-v",
             "error",
@@ -310,7 +310,7 @@ async fn is_chromecast_direct_play_safe(path: &Path) -> bool {
         return cast_direct_play_reject(path, "720p frame rate is above 60 fps");
     }
 
-    let audio_output = match Command::new("ffprobe")
+    let audio_output = match Command::new(crate::platform_paths::helper("ffprobe"))
         .args([
             "-v",
             "error",

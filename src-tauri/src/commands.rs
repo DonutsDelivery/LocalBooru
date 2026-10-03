@@ -53,24 +53,7 @@ fn paired_credential_cache() -> &'static Mutex<Option<serde_json::Value>> {
 /// including Android, where the OS keyring is unavailable and credentials were
 /// previously lost on every app restart (the "pairing invalid the next day" bug).
 fn paired_credential_file_path(#[allow(unused)] app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let data_dir = if let Ok(portable_data) = std::env::var("LOCALBOORU_PORTABLE_DATA") {
-        PathBuf::from(portable_data)
-    } else {
-        #[cfg(mobile)]
-        {
-            app.path()
-                .app_data_dir()
-                .map_err(|error| format!("App data directory is unavailable: {error}"))?
-        }
-        #[cfg(desktop)]
-        {
-            #[cfg(target_os = "windows")]
-            let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-            #[cfg(not(target_os = "windows"))]
-            let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-            base.join(".localbooru")
-        }
-    };
+    let data_dir = crate::get_data_dir(app)?;
     Ok(data_dir.join(CREDENTIAL_DIR).join(PAIRED_CREDENTIAL_FILE))
 }
 

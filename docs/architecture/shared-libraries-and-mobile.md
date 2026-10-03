@@ -94,6 +94,35 @@ selected catalog and permissions before enabling access.
 
 ## Existing foundations and gaps
 
+### Platform requirements (user clarification, 2026-10-03)
+
+DMC must work for ordinary installations, including a local library on Android;
+the developer's folders, shell, Python installation, and paired PC are not prerequisites.
+
+- Native app data, bundled resources, credentials, addon environments, and media
+  helpers resolve from OS/application locations. Mac launches from Finder must
+  work without shell startup files. Existing libraries keep their location.
+- Desktop addon setup supplies its own pinned Python when a compatible existing
+  interpreter is absent. It preserves system Python and user-selected ComfyUI
+  installations. Python availability alone does not establish GPU/node support.
+- Android's **This Device** indexes permitted local images, videos, and music in
+  place. Android grants determine available media types. Selecting a paired
+  server is optional, and restarting must retain an explicit local selection.
+- Local media metadata and thumbnails use Android APIs instead of requiring
+  desktop FFmpeg/Python. Paired desktop generation and server-side video
+  processing remain separate from phone-local library access.
+- Acceptance covers fresh and upgraded installs, denied/partial/revoked media
+  permissions, spaces and Unicode, offline local use, and restart persistence.
+  A desktop path test or emulator APK does not establish full Mac, Windows,
+  or OEM Android support. Shipping claims require the exact package on hardware.
+
+The current local Android implementation covers MediaStore shared storage;
+cloud document providers/SAF and HEIC import are not implemented. Desktop helper
+lookup includes packaged and standard Homebrew locations, but new Mac/Windows
+installers still need bundled or installed FFmpeg. Occupied addon port recovery
+currently uses Linux process APIs. These remain release acceptance gaps.
+
+
 The audit covered DMC `main` at `4b24ab1` and the available DonutBooru worktrees.
 Repository records describe prior acceptance, not a new observation of live
 production behavior.

@@ -67,6 +67,15 @@ const tauriAPI = {
   // Open native folder picker dialog
   addDirectory: async () => {
     await tauriReady
+    if (/Android/i.test(navigator.userAgent) && tauriInvoke) {
+      try {
+        const result = await tauriInvoke('android_pick_media_directory')
+        return result?.directory || null
+      } catch (error) {
+        // Tauri rejects native Result errors as strings; callers display .message.
+        throw typeof error === 'string' ? new Error(error) : error
+      }
+    }
     if (!tauriDialog) return null
     try {
       const result = await tauriDialog.open({

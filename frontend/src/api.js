@@ -86,10 +86,8 @@ export async function updateServerConfig(workingUrl = null) {
         certValidated = false
         // Clear remote proxy on Tauri
         if (isTauriApp()) {
-          try {
-            const { invoke } = await import('@tauri-apps/api/core')
-            await invoke('set_remote_proxy', { url: null, fallbackUrl: null, token: null })
-          } catch (e) { console.warn('[API] Failed to clear remote proxy:', e) }
+          const { invoke } = await import('@tauri-apps/api/core')
+          await invoke('set_remote_proxy', { url: null, fallbackUrl: null, token: null })
         }
         api.defaults.baseURL = getApiUrl()
         return

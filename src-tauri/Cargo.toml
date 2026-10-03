@@ -54,6 +54,7 @@ p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 rsa = { version = "0.9", features = ["sha2"] }
 subtle = "2"
 tar = "0.4"
+flate2 = "1"
 zstd = "0.13"
 
 # File watching

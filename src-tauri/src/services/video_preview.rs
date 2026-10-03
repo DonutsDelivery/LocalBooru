@@ -16,7 +16,7 @@ fn suppress_console_window(_command: &mut Command) {}
 pub fn check_ffmpeg_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        let mut command = Command::new("ffmpeg");
+        let mut command = Command::new(crate::platform_paths::helper("ffmpeg"));
         command
             .arg("-version")
             .stdout(std::process::Stdio::null())
@@ -30,7 +30,7 @@ pub fn check_ffmpeg_available() -> bool {
 pub fn check_ffprobe_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        let mut command = Command::new("ffprobe");
+        let mut command = Command::new(crate::platform_paths::helper("ffprobe"));
         command
             .arg("-version")
             .stdout(std::process::Stdio::null())
@@ -41,12 +41,13 @@ pub fn check_ffprobe_available() -> bool {
 }
 
 /// Get video metadata (width, height, duration) in a single ffprobe call.
+#[cfg(not(target_os = "android"))]
 pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
     if !check_ffprobe_available() {
         return None;
     }
 
-    let mut command = Command::new("ffprobe");
+    let mut command = Command::new(crate::platform_paths::helper("ffprobe"));
     command.args([
         "-v",
         "error",
@@ -122,7 +123,7 @@ pub fn get_hwaccel_args() -> Vec<String> {
         if !check_ffmpeg_available() {
             return vec![];
         }
-        let mut command = Command::new("ffmpeg");
+        let mut command = Command::new(crate::platform_paths::helper("ffmpeg"));
         command.arg("-hwaccels");
         suppress_console_window(&mut command);
         let output = command.output().ok();
@@ -175,6 +176,7 @@ pub fn delete_preview_frames(data_dir: &Path, file_hash: &str) -> bool {
 ///
 /// Uses batched ffmpeg (single command with multiple -ss/-i pairs) for 3-4x speedup.
 /// Skips first/last 5% to avoid black frames.
+#[cfg(not(target_os = "android"))]
 pub fn extract_preview_frames(
     video_path: &str,
     output_dir: &Path,
@@ -201,7 +203,11 @@ pub fn extract_preview_frames(
     let hwaccel = get_hwaccel_args();
 
     let mut cmd_args: Vec<String> = low_priority;
-    cmd_args.push("ffmpeg".into());
+    cmd_args.push(
+        crate::platform_paths::helper("ffmpeg")
+            .to_string_lossy()
+            .into_owned(),
+    );
     cmd_args.push("-y".into());
 
     // Add skip_frame for keyframe-only decoding
@@ -361,6 +367,7 @@ fn publish_preview_staging(
 /// Generate a video thumbnail using ffmpeg.
 ///
 /// Seeks to the middle of the video and extracts a single keyframe.
+#[cfg(not(target_os = "android"))]
 pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) -> bool {
     if !check_ffmpeg_available() {
         log::warn!("Cannot generate video thumbnail: ffmpeg is unavailable");
@@ -378,7 +385,11 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
     // hardware acceleration.
     for position in [seek_time, 0.0] {
         let mut cmd_args = get_low_priority_prefix();
-        cmd_args.push("ffmpeg".into());
+        cmd_args.push(
+            crate::platform_paths::helper("ffmpeg")
+                .to_string_lossy()
+                .into_owned(),
+        );
         cmd_args.extend([
             "-hide_banner".into(),
             "-loglevel".into(),
@@ -509,4 +520,22 @@ mod tests {
         assert!(output_dir.join(".complete").is_file());
         let _ = std::fs::remove_dir_all(root);
     }
+}
+
+#[cfg(target_os = "android")]
+pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
+    crate::android_media::metadata(file_path)
+}
+#[cfg(target_os = "android")]
+pub fn extract_preview_frames(
+    video_path: &str,
+    output_dir: &Path,
+    num_frames: usize,
+    frame_width: u32,
+) -> Vec<PathBuf> {
+    crate::android_media::previews(video_path, output_dir, num_frames, frame_width)
+}
+#[cfg(target_os = "android")]
+pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) -> bool {
+    crate::android_media::thumbnail(video_path, output_path, size)
 }

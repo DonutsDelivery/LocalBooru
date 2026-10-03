@@ -125,10 +125,13 @@ function DirectoriesPage() {
       const libraryId = requireAddTargetLibrary()
       const api = getDesktopAPI()
       if (api?.addDirectory) {
-        const path = await api.addDirectory()
+        const selected = await api.addDirectory()
+        const path = typeof selected === 'string' ? selected : selected?.path
         if (path) {
-          setNewDirectoryMedia({ show_images: false, show_videos: false, show_music: true })
-          setPendingDirectory({ path, libraryId })
+          setNewDirectoryMedia(typeof selected === 'object'
+            ? { show_images: selected.show_images, show_videos: selected.show_videos, show_music: selected.show_music }
+            : { show_images: false, show_videos: false, show_music: true })
+          setPendingDirectory({ path, libraryId, name: selected?.name, allowedMedia: typeof selected === 'object' ? selected : null })
         }
       } else {
         toast.warning('Directory picker only available in desktop app')
@@ -146,8 +149,9 @@ function DirectoriesPage() {
       const add = pendingDirectory.isParent ? addParentDirectory : addDirectory
       const result = await add(pendingDirectory.path, {
         library_id: pendingDirectory.libraryId,
+        name: pendingDirectory.name,
         ...newDirectoryMedia,
-        auto_tag: newDirectoryMedia.show_images || newDirectoryMedia.show_videos,
+        auto_tag: !pendingDirectory.allowedMedia && (newDirectoryMedia.show_images || newDirectoryMedia.show_videos),
       })
       if (pendingDirectory.isParent) {
         toast.success(result.message)
@@ -167,10 +171,13 @@ function DirectoriesPage() {
       const libraryId = requireAddTargetLibrary()
       const api = getDesktopAPI()
       if (api?.addDirectory) {
-        const path = await api.addDirectory()
+        const selected = await api.addDirectory()
+        const path = typeof selected === 'string' ? selected : selected?.path
         if (path) {
-          setNewDirectoryMedia({ show_images: false, show_videos: false, show_music: true })
-          setPendingDirectory({ path, libraryId, isParent: true })
+          setNewDirectoryMedia(typeof selected === 'object'
+            ? { show_images: selected.show_images, show_videos: selected.show_videos, show_music: selected.show_music }
+            : { show_images: false, show_videos: false, show_music: true })
+          setPendingDirectory({ path, libraryId, isParent: true, name: selected?.name, allowedMedia: typeof selected === 'object' ? selected : null })
         }
       } else {
         toast.warning('Directory picker only available in desktop app')
@@ -568,12 +575,14 @@ function DirectoriesPage() {
                       <input
                         type="checkbox"
                         checked={newDirectoryMedia[key]}
+                        disabled={pendingDirectory.allowedMedia && !pendingDirectory.allowedMedia[key]}
                         onChange={event => setNewDirectoryMedia(current => ({ ...current, [key]: event.target.checked }))}
                       />
                       {label}
                     </label>
                   ))}
                 </div>
+                {pendingDirectory.allowedMedia && <p>To include another media type, choose the folder again and allow access.</p>}
                 <p>Only selected media types will be indexed. Music cover images stay out of Images when Images is off.</p>
                 <div className="directory-media-actions">
                   <button className="add-directory-btn" onClick={confirmAddDirectory} disabled={addingDirectory || !Object.values(newDirectoryMedia).some(Boolean)}>
