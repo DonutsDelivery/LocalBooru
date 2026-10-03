@@ -11035,3 +11035,32 @@ reviews:
     created_at: 2026-10-03T04:57:39.455Z
     updated_at: 2026-10-03T06:00:16.204Z
     notes: []
+  - _ulid: 01M415VJZJ5VNDRK9SH7KHPN8H
+    slugs:
+      - review-dmc-runtime-identity
+    title: Review DMC runtime identity and upgrade compatibility
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M415VJZHDJES7ZMRYKQWTV2Q
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-03T15:24:23.922Z
+    examined_commit: 29678af
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@dmc-runtime-identity"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: aed7b6f
+      head_branch: fix/dmc-runtime-identity
+      head_commit: 29678af
+    threads: []
+    verdicts: []
+    created_at: 2026-10-03T15:24:23.922Z
+    updated_at: null
+    notes: []

@@ -16,6 +16,7 @@ context: []
 priority: 2
 tags: []
 vcs_refs: []
+review_ref: "@review-dmc-runtime-identity"
 submission_linkage:
   review_url: null
   branch: splice/mac-pairing
@@ -55,6 +56,13 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-03T15:23:48.592Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@review-dmc-runtime-identity"
+        previous: null
+    command: review-link
+    timestamp: 2026-10-03T15:24:24.158Z
 created_at: 2026-10-03T15:17:01.721Z
 started_at: 2026-10-03T15:18:04.553Z
 submitted_at: 2026-10-03T15:23:48.592Z
