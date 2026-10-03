@@ -13,3 +13,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T20:52:07.882Z
+  - _ulid: 01M41S3BPGBM05XA3914QGMRD4
+    content: Prepared published Wry0.54.1 vendor patch, root patch and lockfile retain all pre-existing
+      dependency versions/bindings. Only Android mod.rs/main_pipe.rs behavior changes; portable
+      helper tests are included by normal app Rust tests. Separate lightweight harness references
+      this exact helper; waiting canonical host gate while Windows756 completes. Patch returns real
+      version through original channel with10+50second bounded grace, handles late canceled reply,
+      preserves Java/disconnection errors. No broad Tauri/Wry upgrade. Signed APK/AAB and cold-boot
+      acceptance will follow before final disposition.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T21:00:41.553Z
