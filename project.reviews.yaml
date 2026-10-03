@@ -12123,9 +12123,26 @@ reviews:
           status: pass
           name: native-mac
         timestamp: 2026-10-03T22:29:17.218Z
+      - _ulid: 01M41Y5M5VCMRHP31Z7V79586H
+        actor: root
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+            head_commit: 0dbd77b02c8276b1db03b99cdea0158adbd0762e
+          decision: approve
+        timestamp: 2026-10-03T22:29:18.651Z
+      - _ulid: 01M41Y5M5VYZFB4FC13S24W95J
+        actor: root
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: closed
+        timestamp: 2026-10-03T22:29:18.651Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@dmc-remote-startup-tailscale"
     subject:
@@ -12135,7 +12152,15 @@ reviews:
       head_branch: fix/remote-startup-tailscale
       head_commit: 0dbd77b02c8276b1db03b99cdea0158adbd0762e
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+          head_commit: 0dbd77b02c8276b1db03b99cdea0158adbd0762e
+        decision: approve
+        reviewer: root
+        role: reviewer
+        created_at: 2026-10-03T22:29:18.651Z
     created_at: 2026-10-03T21:59:08.973Z
-    updated_at: 2026-10-03T22:29:17.141Z
+    updated_at: 2026-10-03T22:29:18.651Z
     notes: []
