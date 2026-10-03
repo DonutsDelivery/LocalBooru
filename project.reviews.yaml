@@ -11148,3 +11148,32 @@ reviews:
     created_at: 2026-10-03T15:24:23.922Z
     updated_at: 2026-10-03T15:25:11.528Z
     notes: []
+  - _ulid: 01M41FM6HFWSQAH9KBGJ3JPTSD
+    slugs:
+      - dmc-210-source-review
+    title: DMC 2.1.0 release preparation source (publication gates remain open)
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-03T18:15:07.567Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@dmc-first-release"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 032191a
+      head_branch: release/dmc-2.1.0
+      head_commit: "9e28762"
+    threads: []
+    verdicts: []
+    created_at: 2026-10-03T18:15:07.567Z
+    updated_at: null
+    notes: []

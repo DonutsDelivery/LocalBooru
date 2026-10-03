@@ -2136,6 +2136,7 @@ tasks:
     depends_on: []
     priority: 1
     tags: []
+    review_ref: "@dmc-210-source-review"
     notes_count: 4
     todos_count: 0
     created_at: 2026-10-03T16:27:59.333Z

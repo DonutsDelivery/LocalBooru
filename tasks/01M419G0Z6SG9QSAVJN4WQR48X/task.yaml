@@ -16,6 +16,7 @@ context: []
 priority: 1
 tags: []
 vcs_refs: []
+review_ref: "@dmc-210-source-review"
 history:
   - author: DonutsDelivery
     changes:
@@ -27,6 +28,13 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-03T16:28:57.881Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@dmc-210-source-review"
+        previous: null
+    command: review-link
+    timestamp: 2026-10-03T18:15:07.806Z
 created_at: 2026-10-03T16:27:59.333Z
 started_at: 2026-10-03T16:28:57.881Z
 todos: []
