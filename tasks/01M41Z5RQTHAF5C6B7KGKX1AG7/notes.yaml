@@ -39,3 +39,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T23:35:39.297Z
+  - _ulid: 01M422123X4PPASG262QJXA8BN
+    content: "Acceptance correction: user says successful app connection occurred after Mac returned to
+      local Wi-Fi. This proves current connection only; active transport and real off-LAN failover
+      remain unconfirmed. Mac curl through PC Tailscale address200 is transport evidence, not an
+      off-LAN app acceptance claim. External release receipts corrected."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T23:36:43.389Z
