@@ -10318,9 +10318,26 @@ reviews:
           status: pass
           name: Guarded native runtime build
         timestamp: 2026-10-03T01:06:29.044Z
+      - _ulid: 01M3ZMRRBK6BWFG7RZ1AWM9CRP
+        actor: root
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: c07de2813ab5df165b1dc072c3f9cba2f20bf61d
+            head_commit: b76091a
+          decision: approve
+        timestamp: 2026-10-03T01:06:30.899Z
+      - _ulid: 01M3ZMRRBMA1Y6ZRXB841VE9PE
+        actor: root
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-03T01:06:30.900Z
     examined_commit: b76091a
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@linux-raw-resize-rendering"
     subject:
@@ -10330,7 +10347,15 @@ reviews:
       head_branch: fix/linux-raw-resize-rendering
       head_commit: b76091a
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: c07de2813ab5df165b1dc072c3f9cba2f20bf61d
+          head_commit: b76091a
+        decision: approve
+        reviewer: root
+        role: reviewer
+        created_at: 2026-10-03T01:06:30.899Z
     created_at: 2026-10-03T00:51:52.944Z
-    updated_at: 2026-10-03T01:06:28.982Z
+    updated_at: 2026-10-03T01:06:30.900Z
     notes: []
