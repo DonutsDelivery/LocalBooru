@@ -2045,3 +2045,17 @@ tasks:
     started_at: 2026-10-03T01:53:22.653Z
     submitted_at: 2026-10-03T01:58:32.976Z
     completed_at: 2026-10-03T02:05:50.198Z
+  - _ulid: 01M3ZVMK56KG4XYS7AEE8C5GWV
+    slugs:
+      - desktop-platform-paths
+    title: Make desktop addon and bundled resource paths independent of developer shells
+    type: bug
+    spec_ref: "@donut-create-plugin"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-03T03:06:34.469Z
