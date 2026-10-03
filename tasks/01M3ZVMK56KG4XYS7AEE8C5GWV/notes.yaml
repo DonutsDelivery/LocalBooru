@@ -8,3 +8,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T03:26:47.424Z
+  - _ulid: 01M3ZXN8XX9PCNR183XH5HR7GM
+    content: "Implemented shared OS application-data resolution (preserving existing Mac legacy
+      libraries), resource-based bundled frontend lookup, standard Mac/Windows Python discovery,
+      pinned app-private Python 3.12 fallback with SHA-256/size validation and bounded safe
+      extraction, and FFmpeg/ffprobe resource/Homebrew lookup. Verified official arm64 runtime on
+      real Mac macOS 26.6.2: Python 3.12.15, SSL/venv/ensurepip and pip in Unicode/space paths.
+      Focused Python and frontend picker tests pass. Native Rust check queued behind existing host
+      build; fresh packaged Mac/Windows acceptance still pending."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T03:41:53.981Z
