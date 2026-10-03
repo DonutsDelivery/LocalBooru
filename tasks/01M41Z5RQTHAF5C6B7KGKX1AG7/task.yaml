@@ -6,13 +6,21 @@ type: bug
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: fix/mac-server-selection
+  captured_at: 2026-10-03T22:53:26.233Z
+  commit: 95e547ad4d51ce6a745003548ab75dbfc470cf8f
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -24,6 +32,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-03T22:47:18.431Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: fix/mac-server-selection
+          captured_at: 2026-10-03T22:53:26.233Z
+          commit: 95e547ad4d51ce6a745003548ab75dbfc470cf8f
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-03T22:53:26.240Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-03T22:53:26.240Z
 created_at: 2026-10-03T22:46:51.898Z
 started_at: 2026-10-03T22:47:18.430Z
+submitted_at: 2026-10-03T22:53:26.240Z
 todos: []
