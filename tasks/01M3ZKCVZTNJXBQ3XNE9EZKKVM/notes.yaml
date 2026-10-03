@@ -17,3 +17,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T00:45:32.342Z
+  - _ulid: 01M3ZM4VXQS6Q5ESY1GM1G24MX
+    content: Frozen native source b76091a174857f14524b1543056cbe064c7f3e06; isolated worktree
+      /tmp/dmc-linux-raw-resize-rendering. Exact C++ changes add raw SystemMemory caps before
+      playbin negotiation and remove accelerator-only caps features from resized output. Source
+      review recorded, guarded native build queued behind host token. Behavioral tests are not being
+      run in this turn; real playback confirmation remains pending after install.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T00:55:39.191Z
