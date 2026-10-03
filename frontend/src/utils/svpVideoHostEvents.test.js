@@ -20,7 +20,7 @@ function fixture() {
     pause() { pauses++ }, play() { return Promise.resolve() } }
   const context = {
     svpVideoHostOwnsEvent, svpHostOwnerRef: ref(owner), svpPathEnabledRef: ref(true),
-    activeImageKeyRef: ref('synthetic-media'), svpInteractionReadyRef: ref(true),
+    activeImageKeyRef: ref('synthetic-media'), svpInteractionReadyRef: ref(true), svpFirstHandoffPendingRef: ref(false),
     svpFilterActiveRef: ref(true), mediaRef: ref(video), svpResumeRef: ref(null),
     svpTransitionRef: ref({ active: false, token: 0, timer: null }),
     setSvpStartupReady() {}, setVideoFrameReadyKey() {}, setSvpConnectionIssue() {},
@@ -65,4 +65,13 @@ test('current pause works and unleased non-Linux desktop events retain compatibi
   assert.equal(f.receipt().pauses, 1)
   assert.equal(svpVideoHostOwnsEvent({ hostEpoch: 0 }, { paused: true }), true)
   assert.equal(svpVideoHostOwnsEvent({ hostEpoch: null }, { paused: true }), false)
+})
+
+test('physical bootstrap pause does not become a user pause before SVP is ready', () => {
+  const f = fixture()
+  f.context.svpFirstHandoffPendingRef.current = true
+  f.context.svpInteractionReadyRef.current = false
+  f.paused({ ...f.owner, paused: true, mediaKey: 'synthetic-media' })
+  assert.equal(f.receipt().pauses, 0)
+  assert.equal(f.context.svpResumeRef.current, null)
 })
