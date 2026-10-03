@@ -154,3 +154,17 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T20:42:44.469Z
+  - _ulid: 01M41RXR36DKMRVRHAGMCNTYES
+    content: Signed Android756 real non-loopback emulator network path QR nonce handshake passes,
+      replay400, unauthenticated401, paired image/video/music206, host-only settings403, revoked
+      identity401. Receipt android-paired-api-756dd55.json; native-client scan/remoteUI still
+      unverified. Immediate cold-boot signedAPK startup exposed SIGABRT; panic PC decoded from
+      shipped ELF RELA metadata proves Wry0.54.1 Android mod.rs474:38. Release blocker tracked and
+      active @dmc-android-cold-boot-timeout. Fix prepared on separate main-based branch while
+      frozen756 Windows build finishes; exact source artifact provenance will be refreshed after
+      verification. Old failed Linux images removed; working Linux toolchain image relocated as
+      external Docker-save archive with all8 diff-layer SHA and imageID verified, freeing rootspace;
+      linux artifacts retained. No user app/library touched.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T20:57:37.638Z
