@@ -2059,3 +2059,17 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-03T03:06:34.469Z
+  - _ulid: 01M3ZVMMFZJ2V2MPMGY7YXEEAQ
+    slugs:
+      - android-local-library
+    title: Enable Android on-device images video and music library access
+    type: bug
+    spec_ref: "@library-management"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-03T03:06:35.902Z
