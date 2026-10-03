@@ -6,13 +6,21 @@ type: bug
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: fix/connected-address-discovery
+  captured_at: 2026-10-03T23:59:03.702Z
+  commit: 585f4589fa7b7ea6dbc3e2f294ccb6b42cd8c387
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -24,6 +32,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-03T23:40:26.657Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: fix/connected-address-discovery
+          captured_at: 2026-10-03T23:59:03.702Z
+          commit: 585f4589fa7b7ea6dbc3e2f294ccb6b42cd8c387
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-03T23:59:03.707Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-03T23:59:03.708Z
 created_at: 2026-10-03T23:39:38.280Z
 started_at: 2026-10-03T23:40:26.657Z
+submitted_at: 2026-10-03T23:59:03.707Z
 todos: []
