@@ -81,7 +81,9 @@ localbooru_build_acquire_lock() {
     fi
   fi
 
-  exec 8>>"$state_dir/build-cache.lock"
+  local host_lock_dir="${XDG_STATE_HOME:-$HOME/.local/state}/host-heavy-build"
+  mkdir -p "$host_lock_dir"
+  exec 8>>"$host_lock_dir/heavy-build.lock"
 
   local lock_acquired=0
   if [[ "$timeout" == 0 || "$timeout" == 0.0 ]]; then
