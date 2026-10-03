@@ -22,7 +22,8 @@ features:
     description: Gallery grid with masonry layout, lazy loading. 30+ filter params. Sorting, saved
       searches, directory/library selector.
     status:
-      implementation: implemented
+      maturity: draft
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
