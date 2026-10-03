@@ -2067,7 +2067,7 @@ tasks:
     title: Enable Android on-device images video and music library access
     type: bug
     spec_ref: "@library-management"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -2076,6 +2076,7 @@ tasks:
     todos_count: 0
     created_at: 2026-10-03T03:06:35.902Z
     started_at: 2026-10-03T03:07:20.041Z
+    submitted_at: 2026-10-03T04:57:38.222Z
   - _ulid: 01M401Q5Y8PT91N17GAX1YTM0Y
     slugs:
       - desktop-media-helper-packaging
