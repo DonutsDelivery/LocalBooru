@@ -10359,3 +10359,32 @@ reviews:
     created_at: 2026-10-03T00:51:52.944Z
     updated_at: 2026-10-03T01:06:30.900Z
     notes: []
+  - _ulid: 01M3ZPKBBHGDPV7X8PM7NPBWZC
+    slugs:
+      - review-linux-raw-resize-renderer
+    title: Review decoded resize GL texture rendering
+    author: root
+    checks: []
+    events:
+      - _ulid: 01M3ZPKBBGJ663DB33NP4RVA3M
+        actor: root
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-03T01:38:30.896Z
+    examined_commit: 600c9d0
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@linux-raw-resize-rendering"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: f4c601e
+      head_branch: fix/linux-raw-resize-followup
+      head_commit: 600c9d0
+    threads: []
+    verdicts: []
+    created_at: 2026-10-03T01:38:30.897Z
+    updated_at: null
+    notes: []
