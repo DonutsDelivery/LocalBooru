@@ -79,3 +79,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T02:16:24.392Z
+  - _ulid: 01M3ZSPRP099JNA8GEERBDX3KW
+    content: Built and installed candidate abde425 (renderer68e9ebc). DMC3639739/WebProcess3639769 map
+      replacement, with no global DMABuf override. App and both addons plus independently running
+      ComfyUI are healthy; app left alive. Source upgrade validation matches
+      current/memory/raw/legacy paths; pristine full patch dry-run passes. No formal tests run.
+      Retain task worktree and defer main integration pending manual combined playback acceptance.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T02:32:48.576Z
