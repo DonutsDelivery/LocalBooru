@@ -10834,6 +10834,13 @@ reviews:
           status: pass
           name: python-platform-discovery-tls
         timestamp: 2026-10-03T05:19:44.386Z
+      - _ulid: 01M404N6HP2KGVHYG69MJAQG6Y
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: ae36973
+          previous_head: "7186811"
+        timestamp: 2026-10-03T05:44:11.575Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: open
@@ -10845,7 +10852,7 @@ reviews:
       base_branch: main
       base_commit: f59b4d0
       head_branch: fix/platform-local-libraries
-      head_commit: "7186811"
+      head_commit: ae36973
     threads:
       - _ulid: 01M40210Q9XH6N5ERX4VXSB26R
         entries:
@@ -10863,5 +10870,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T05:19:44.318Z
+    updated_at: 2026-10-03T05:44:11.509Z
     notes: []
