@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M415G0MS30ZN6PDDFC2VMP49
+    content: Finish existing branding using an explicit donutmediacenter desktop binary and matching
+      launch/install/release consumers. Android process identity can be independent of stable
+      applicationId. Preserve native ABI, user-data locations, app identifiers, package manager
+      identity and build locks. Review resolved Cargo target and launcher/packaging consumers; run
+      focused existing launcher checks as requested by repository verification instructions.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T15:18:04.697Z
