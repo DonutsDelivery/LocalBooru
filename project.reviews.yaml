@@ -11203,6 +11203,20 @@ reviews:
         required: true
         created_at: 2026-10-03T18:16:59.471Z
         completed_at: 2026-10-03T18:16:59.471Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: 1e1a8c3
+        evidence: "scripts/test-run-cargo.sh and scripts/test-build-startup-status.sh pass: active canonical
+          host lock blocks mock Cargo and Docker release, release status truthful, lock released
+          when wrapper completes even with surviving child, exact source forwarded, missing runtime
+          refuses implicit build. Prior Cargo test caught stale compatibility-lock fixture; fixture
+          and release wrapper corrected."
+        name: build-lock-behavior
+        required: true
+        created_at: 2026-10-03T18:19:57.239Z
+        completed_at: 2026-10-03T18:19:57.239Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11259,6 +11273,13 @@ reviews:
           new_head: 1e1a8c3
           previous_head: "9e28762"
         timestamp: 2026-10-03T18:19:55.852Z
+      - _ulid: 01M41FX1FW768GBCT5JAGCZ6PA
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: build-lock-behavior
+        timestamp: 2026-10-03T18:19:57.309Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11288,5 +11309,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:19:55.774Z
+    updated_at: 2026-10-03T18:19:57.239Z
     notes: []
