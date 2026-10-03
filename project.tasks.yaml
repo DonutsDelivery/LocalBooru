@@ -2056,6 +2056,7 @@ tasks:
     depends_on: []
     priority: 1
     tags: []
+    review_ref: "@review-platform-local-libraries"
     notes_count: 5
     todos_count: 0
     created_at: 2026-10-03T03:06:34.469Z
@@ -2072,6 +2073,7 @@ tasks:
     depends_on: []
     priority: 1
     tags: []
+    review_ref: "@review-platform-local-libraries"
     notes_count: 6
     todos_count: 0
     created_at: 2026-10-03T03:06:35.902Z

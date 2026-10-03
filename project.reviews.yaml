@@ -10652,3 +10652,33 @@ reviews:
     created_at: 2026-10-03T01:55:50.429Z
     updated_at: 2026-10-03T02:03:17.094Z
     notes: []
+  - _ulid: 01M401ZZVZ2V7BKB92ZFM6JM6M
+    slugs:
+      - review-platform-local-libraries
+    title: Desktop platform paths and Android local media
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M401ZZVYHZ2MF587YV1YN1BB
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-03T04:57:39.455Z
+    examined_commit: 5ca1dae
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@desktop-platform-paths"
+      - "@android-local-library"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: f59b4d0
+      head_branch: fix/platform-local-libraries
+      head_commit: 5ca1dae
+    threads: []
+    verdicts: []
+    created_at: 2026-10-03T04:57:39.455Z
+    updated_at: null
+    notes: []
