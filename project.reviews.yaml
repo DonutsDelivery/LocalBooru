@@ -11784,7 +11784,20 @@ reviews:
       - dmc-android-startup-review
     title: DMC Android cold-boot WebView probe repair
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+          head_commit: 6872818bb06966ef4ff2404ca5b3925e4f0edf5b
+        evidence: Exact archive/tree450dfab native Mac:238 Rust tests including5 exact Android helper
+          behaviors, locked check,183 Node and147 component tests pass. Full package build remains
+          active; no hardware-runtime/support claim.
+        name: native-mac-tests
+        required: true
+        runner: native-apple-silicon
+        created_at: 2026-10-03T21:15:19.789Z
+        completed_at: 2026-10-03T21:15:19.789Z
     events:
       - _ulid: 01M41SY15EYT876SP2QQNQSMR8
         actor: DonutsDelivery
@@ -11792,6 +11805,13 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-03T21:15:15.503Z
+      - _ulid: 01M41SY5HF3D9SBGD3DVSRTEEP
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: native-mac-tests
+        timestamp: 2026-10-03T21:15:19.984Z
     examined_commit: 6872818bb06966ef4ff2404ca5b3925e4f0edf5b
     external_links: []
     lifecycle_state: draft
@@ -11806,5 +11826,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T21:15:15.503Z
-    updated_at: null
+    updated_at: 2026-10-03T21:15:19.789Z
     notes: []
