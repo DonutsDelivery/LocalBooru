@@ -8,3 +8,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T03:21:00.657Z
+  - _ulid: 01M3ZXNAG9NCTEGNN4T3A0RV15
+    content: Implemented native MediaStore picker with granular/selected-photo permissions and no
+      original-file copies, Android MediaMetadataRetriever metadata/thumbnail/preview paths, and
+      persisted This Device startup selection. Focused frontend native picker tests pass. Created
+      and launched dedicated disposable Android API35 emulator; APK compile and permission/local
+      image-video-music acceptance pending behind host build gate.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T03:41:55.593Z
