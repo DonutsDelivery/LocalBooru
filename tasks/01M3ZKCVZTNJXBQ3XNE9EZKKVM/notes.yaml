@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M3ZKHR6FTK42QH4T5PZKKYQS
+    content: "Investigation: installed app/runtime hashes match prior deployed c07de28 and 3eb518a7.
+      Readiness source and native scaler inspected; scaler currently copies all input caps,
+      including accelerator memory/upload features, and exposes ANY-memory passthrough templates.
+      Checking rendering negotiation versus physical-player handoff. No user profile/media used as a
+      fixture and no formal test commands run."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T00:45:12.783Z
