@@ -46,3 +46,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T22:26:21.741Z
+  - _ulid: 01M41Y9G19EQN987P6ZNTASS92
+    content: "Mac installation completed: /Applications/DonutMediaCenter.app runningPID27252, local
+      /health200, installed executable
+      SHAf2ed268cc6a923c37eaa0a3c504c1a07175ef618fd18254bad2e7f75d5da7455 matches verified package,
+      installed canonicalICNS2cf2a4c0 matches source. Old /Applications/LocalBooru.app now
+      compatibility symlink; previous app bundles retained outside repository; reopened app left
+      alive. Main7f1d83f5 tree66f055fb equals reviewed/built0dbd77b0 tree. No user
+      library/credential/config changed or copied, no normal-profile test suite; user-side actual
+      gallery/fallback acceptance still pending."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T22:31:25.481Z
