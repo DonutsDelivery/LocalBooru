@@ -49,3 +49,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T01:32:21.933Z
+  - _ulid: 01M3ZPJ9NES97QHPMFGCA7VWY7
+    content: "Diagnostic reproduction: native contract reports 3840x2160 -> 852x480; sink logs show
+      matching resized P010_10LE CPU caps becoming DMA_DRM P010 and new-preroll arriving at appsink
+      while user sees black. Candidate 600c9d0 removes DMABuf caps from the selected per-player
+      appsink only when owned resize bounds are nonzero and no application/SVP filter is present,
+      keeping GL texture caps. Source format/scaler/audio/seek/remote code unchanged. Static diff
+      reviewed; no formal tests run. Guarded runtime build queued; actual visual acceptance required
+      after install."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T01:37:56.399Z
