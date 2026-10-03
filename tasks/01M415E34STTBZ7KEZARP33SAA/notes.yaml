@@ -8,3 +8,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T15:18:04.697Z
+  - _ulid: 01M415TFT44GATPA5M0MBZF0PC
+    content: Implemented and reviewed candidate 29678af over aed7b6f. Cargo metadata resolves
+      donutmediacenter bin/default-run with unchanged native library. Existing regular and dev
+      launcher behavior checks pass (dev test requires unsetting inherited
+      LOCALBOORU_DEV_TARGET_DIR). Release version consistency, shell syntax, Android XML parse and
+      git diff checks pass. Old local shortcut explicitly execs new binary rather than preserving
+      symlink basename. Full platform builds and Android runtime upgrade validation not run;
+      installed user app remains running unchanged.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T15:23:47.908Z
