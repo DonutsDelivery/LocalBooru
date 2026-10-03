@@ -2161,7 +2161,7 @@ tasks:
       - dmc-remote-startup-tailscale
     title: Fix paired remote startup offline error storm and Tailscale address retention
     type: bug
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 1
@@ -2169,3 +2169,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-03T21:40:00.249Z
+    started_at: 2026-10-03T21:40:01.573Z
