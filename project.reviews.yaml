@@ -12046,6 +12046,20 @@ reviews:
         runner: native-mac-wrapper
         created_at: 2026-10-03T22:17:16.597Z
         completed_at: 2026-10-03T22:17:16.597Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+          head_commit: 0dbd77b02c8276b1db03b99cdea0158adbd0762e
+        evidence: Exact0dbd77b0 tree66f055fb native canonical wrapper exited0.189Node+157component+238Rust
+          pass; locked check, both arm64/x86_64, bundle identity/version, canonical icon, DMG/ZIP
+          integrity, ad-hoc signature and checksums pass. Live cargo/rustc writers absent. Hardware
+          product acceptance and DeveloperID/notarization remain separate release gates.
+        name: native-mac
+        required: true
+        runner: native-mac-wrapper
+        created_at: 2026-10-03T22:29:17.141Z
+        completed_at: 2026-10-03T22:29:17.141Z
     events:
       - _ulid: 01M41WECXC1KJQZTN299FXFJCA
         actor: DonutsDelivery
@@ -12102,6 +12116,13 @@ reviews:
           status: pass
           name: native-mac-tests
         timestamp: 2026-10-03T22:17:16.669Z
+      - _ulid: 01M41Y5JS278YSQRYQNT22JFK1
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: native-mac
+        timestamp: 2026-10-03T22:29:17.218Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -12116,5 +12137,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T21:59:08.973Z
-    updated_at: 2026-10-03T22:17:16.597Z
+    updated_at: 2026-10-03T22:29:17.141Z
     notes: []
