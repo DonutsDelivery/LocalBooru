@@ -10657,7 +10657,18 @@ reviews:
       - review-platform-local-libraries
     title: Desktop platform paths and Android local media
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: 5ca1dae
+        evidence: "Recovered head5ca1dae: vitest two focused files, five behavior tests passed; frontend
+          production build passed."
+        name: frontend-local-library-tests
+        required: true
+        created_at: 2026-10-03T04:58:06.045Z
+        completed_at: 2026-10-03T04:58:06.045Z
     events:
       - _ulid: 01M401ZZVYHZ2MF587YV1YN1BB
         actor: DonutsDelivery
@@ -10665,6 +10676,13 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-03T04:57:39.455Z
+      - _ulid: 01M4020SX98ZV13ZPH0KJBXS7J
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-local-library-tests
+        timestamp: 2026-10-03T04:58:06.121Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: draft
@@ -10680,5 +10698,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: null
+    updated_at: 2026-10-03T04:58:06.045Z
     notes: []
