@@ -1,0 +1,17 @@
+_ulid: 01M41Z5RQTHAF5C6B7KGKX1AG7
+slugs:
+  - dmc-mac-server-selection
+title: Repair Mac server selection without blank reloads
+type: bug
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-10-03T22:46:51.898Z
+todos: []
