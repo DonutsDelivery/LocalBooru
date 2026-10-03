@@ -10728,6 +10728,28 @@ reviews:
         required: true
         created_at: 2026-10-03T05:09:16.927Z
         completed_at: 2026-10-03T05:09:16.927Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: "7186811"
+        evidence: "Head7186811: focused Vitest two files/five tests rerun and passed. Production frontend
+          build passed at unchanged frontend5ca1dae."
+        name: frontend-local-library-tests
+        required: true
+        created_at: 2026-10-03T05:19:44.017Z
+        completed_at: 2026-10-03T05:19:44.017Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: "7186811"
+        evidence: "Head7186811: four Python behavior tests rerun and passed; public manifest/source
+          unchanged from previous Mac/Windows synthetic runtime and HTTPS validation."
+        name: python-platform-discovery-tls
+        required: true
+        created_at: 2026-10-03T05:19:44.318Z
+        completed_at: 2026-10-03T05:19:44.318Z
     events:
       - _ulid: 01M401ZZVYHZ2MF587YV1YN1BB
         actor: DonutsDelivery
@@ -10798,6 +10820,20 @@ reviews:
           new_head: "7186811"
           previous_head: 5ca1dae
         timestamp: 2026-10-03T05:19:03.891Z
+      - _ulid: 01M4038DFCS0YAAE0D9T8334WC
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-local-library-tests
+        timestamp: 2026-10-03T05:19:44.108Z
+      - _ulid: 01M4038DR2CAG2B0DV4MVAJ5PZ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: python-platform-discovery-tls
+        timestamp: 2026-10-03T05:19:44.386Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: open
@@ -10827,5 +10863,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T05:19:03.822Z
+    updated_at: 2026-10-03T05:19:44.318Z
     notes: []
