@@ -11266,6 +11266,18 @@ reviews:
         required: true
         created_at: 2026-10-03T18:29:07.675Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: 1e1a8c3
+        evidence: "Rerun at1e1a8c3: check-release-version passes2.1.0, apply-ios-icons copies18opaque RGB
+          icons into actual Tauri catalog, git diff --check passes; focused gate/startup shell
+          syntax and tests passed."
+        name: version-icons-and-syntax
+        required: true
+        created_at: 2026-10-03T18:32:31.391Z
+        completed_at: 2026-10-03T18:32:31.391Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11357,6 +11369,13 @@ reviews:
           status: running
           name: release-android-artifacts
         timestamp: 2026-10-03T18:29:07.740Z
+      - _ulid: 01M41GM1ZGZQD71WVC4F5YKY75
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: version-icons-and-syntax
+        timestamp: 2026-10-03T18:32:31.472Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11386,5 +11405,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:29:07.675Z
+    updated_at: 2026-10-03T18:32:31.391Z
     notes: []
