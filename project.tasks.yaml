@@ -2089,3 +2089,17 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-03T04:52:50.760Z
+  - _ulid: 01M401Q78BW0K4TD297EDE3X9R
+    slugs:
+      - desktop-addon-port-recovery
+    title: Recover owned addon listeners on Mac and Windows
+    type: bug
+    spec_ref: "@donut-create-plugin"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-03T04:52:52.107Z
