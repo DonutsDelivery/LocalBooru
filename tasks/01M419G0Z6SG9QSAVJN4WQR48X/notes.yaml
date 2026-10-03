@@ -70,3 +70,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T18:42:43.778Z
+  - _ulid: 01M41HT24ZT3Y8JAMY97FVXX5P
+    content: Resumed final756dd55 release build. Native Mac archive SHA7123c9b0 matches; staging Git
+      index omitted14canonical tracked-but-ignored paths. Added only explicit canonical archive
+      files/symlink; exact tree now f7896cab13fb1b49f7f89866f333f1001c88c57d. Final native wrapper
+      running with external artifact folder. Android queued behind existing DonutStudio host token;
+      no bypass. Version/icon/launcher gates rerun pass. No publication or stable-support promotion.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T18:53:16.831Z
