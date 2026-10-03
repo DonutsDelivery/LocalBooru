@@ -11229,6 +11229,17 @@ reviews:
         required: true
         created_at: 2026-10-03T18:25:20.495Z
         completed_at: 2026-10-03T18:25:20.495Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: 1e1a8c3
+        evidence: scripts/test-run-launcher.sh passes against source1e1a8c3 using synthetic installed app
+          and mock activation; normal user app not launched or closed.
+        name: launcher-continuity
+        required: true
+        created_at: 2026-10-03T18:28:09.902Z
+        completed_at: 2026-10-03T18:28:09.902Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11299,6 +11310,13 @@ reviews:
           status: pass
           name: native-mac-unit-tests
         timestamp: 2026-10-03T18:25:20.561Z
+      - _ulid: 01M41GC2KHRRTST0Z2YYSV4PNT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: launcher-continuity
+        timestamp: 2026-10-03T18:28:09.970Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11328,5 +11346,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:25:20.495Z
+    updated_at: 2026-10-03T18:28:09.902Z
     notes: []
