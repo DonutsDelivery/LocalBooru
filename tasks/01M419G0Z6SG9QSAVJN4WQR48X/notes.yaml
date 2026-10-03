@@ -10,3 +10,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T16:28:58.025Z
+  - _ulid: 01M41BQCJ1VD2WF9C62BKP78N0
+    content: Candidate 9a4f140 first Android build completed Rust for all four ABIs but failed Kotlin
+      because cached Tauri codegen omitted TauriActivity in this worktree. Added durable app
+      build-script regeneration from resolved dependency templates and 16KB RELRO linker flags in
+      475c8c4; release retry queued behind shared host gate. Linux preflight reports NEEDS_BOOTSTRAP
+      with stale WebKit patch hash; toolchain Docker images absent. Configured real Mac SSH
+      unreachable and local Mac VM SSH stopped. Full stable matrix remains unsealed. DMC profile and
+      permanent signing key preflight passed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T17:06:57.731Z
