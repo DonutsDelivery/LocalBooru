@@ -12169,7 +12169,19 @@ reviews:
       - dmc-mac-selection-review
     title: Mac server selection regression review
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "12 focused tests pass: Settings switching and failure recovery, paired edit
+          primary/fallback credentials, picker callbacks, verified selection/rollback, desktop Basic
+          auth."
+        name: focused-regressions
+        required: true
+        runner: vitest
+        created_at: 2026-10-03T22:53:43.662Z
+        completed_at: 2026-10-03T22:53:43.662Z
     events:
       - _ulid: 01M41ZHV1AREME3N9B75TGH7AY
         actor: DonutsDelivery
@@ -12177,6 +12189,13 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-03T22:53:27.466Z
+      - _ulid: 01M41ZJAXNTPEE8PC4QA96CJYT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-regressions
+        timestamp: 2026-10-03T22:53:43.733Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -12189,5 +12208,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T22:53:27.466Z
-    updated_at: null
+    updated_at: 2026-10-03T22:53:43.662Z
     notes: []
