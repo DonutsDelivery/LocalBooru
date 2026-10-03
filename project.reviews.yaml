@@ -11217,6 +11217,18 @@ reviews:
         required: true
         created_at: 2026-10-03T18:19:57.239Z
         completed_at: 2026-10-03T18:19:57.239Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: 1e1a8c3
+        evidence: "Canonical native Apple Silicon wrapper: 233 Rust library tests pass at
+          RUST_TEST_THREADS=2; locked cargo check passes. Mac frontend183+147 pass with one worker.
+          Actual universal executable build remains running; no stable Mac acceptance claim."
+        name: native-mac-unit-tests
+        required: true
+        created_at: 2026-10-03T18:25:20.495Z
+        completed_at: 2026-10-03T18:25:20.495Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11280,6 +11292,13 @@ reviews:
           status: pass
           name: build-lock-behavior
         timestamp: 2026-10-03T18:19:57.309Z
+      - _ulid: 01M41G6X5H0F8E6X53VRENY49V
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: native-mac-unit-tests
+        timestamp: 2026-10-03T18:25:20.561Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11309,5 +11328,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:19:57.239Z
+    updated_at: 2026-10-03T18:25:20.495Z
     notes: []
