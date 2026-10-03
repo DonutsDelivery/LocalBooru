@@ -111,3 +111,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T19:48:03.121Z
+  - _ulid: 01M41MZQBRG4KKV7NFW71XW5TQ
+    content: Approved release-preparation commits are now integrated into main
+      via0abd2a85029094fe509895e8774c04514eb27127, preserving unrelatedMediaNavigation componenttest
+      andexternalcache. Frozenpackage source remains756dd55 (ancestor ofmain), exacttree unchanged.
+      No push/tag/publish/store submission. Keep task active whileLinuxfinalbuildrunning
+      andWindows/pairedremote/nativeacceptance/store listing gates remain.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T19:48:48.121Z
