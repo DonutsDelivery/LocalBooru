@@ -10669,6 +10669,18 @@ reviews:
         required: true
         created_at: 2026-10-03T04:58:06.045Z
         completed_at: 2026-10-03T04:58:06.045Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: 5ca1dae
+        evidence: Recovered installer/test sources retrieved from synthetic Mac fixture; four tests pass
+          locally. Before reboot actual Mac/Windows Python3.12.15 Unicode/space venv and verified
+          HTTPS200 checks passed.
+        name: python-platform-discovery-tls
+        required: true
+        created_at: 2026-10-03T04:58:07.481Z
+        completed_at: 2026-10-03T04:58:07.481Z
     events:
       - _ulid: 01M401ZZVYHZ2MF587YV1YN1BB
         actor: DonutsDelivery
@@ -10683,6 +10695,13 @@ reviews:
           status: pass
           name: frontend-local-library-tests
         timestamp: 2026-10-03T04:58:06.121Z
+      - _ulid: 01M4020V9VTPST4GN7NNP0CJPF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: python-platform-discovery-tls
+        timestamp: 2026-10-03T04:58:07.547Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: draft
@@ -10698,5 +10717,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T04:58:06.045Z
+    updated_at: 2026-10-03T04:58:07.481Z
     notes: []
