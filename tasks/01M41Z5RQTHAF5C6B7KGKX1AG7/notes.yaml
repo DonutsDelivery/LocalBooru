@@ -10,3 +10,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T22:53:05.085Z
+  - _ulid: 01M41ZN1JY09K4F7BFSNYQWFGN
+    content: Reviewed/approved fix integrated into main42a7a052 (tree0d01926d). Prepared tracked-source
+      archive and native build/install scripts outside repository. Mac Tailscale100.113.200.12 is
+      now Online=false and SSH times out, so native build and installation remain pending; user
+      asked to restore connection. Source-level focused tests and real-browser edit target check
+      pass, but installed Mac acceptance is not yet claimed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T22:55:12.478Z
