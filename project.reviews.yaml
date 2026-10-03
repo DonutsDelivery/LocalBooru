@@ -11820,6 +11820,19 @@ reviews:
         required: true
         created_at: 2026-10-03T21:15:26.677Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+          head_commit: 6872818bb06966ef4ff2404ca5b3925e4f0edf5b
+        evidence: "Published Wry0.54.1 comparison: only Android mod.rs/main_pipe.rs behavior modified,
+          helper/doc added, SECURITY trailing whitespace normalized. All desktop source/Kotlin
+          templates byte-identical. Existing dependency versions/bindings retained. External
+          android-startup-vendor-review-6872818.json."
+        name: narrow-vendor-diff
+        required: true
+        created_at: 2026-10-03T21:16:10.987Z
+        completed_at: 2026-10-03T21:16:10.987Z
     events:
       - _ulid: 01M41SY15EYT876SP2QQNQSMR8
         actor: DonutsDelivery
@@ -11848,6 +11861,13 @@ reviews:
           status: running
           name: android-cold-boot-ui
         timestamp: 2026-10-03T21:15:26.971Z
+      - _ulid: 01M41SZQDJYNG20RE64RSMR3FD
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: narrow-vendor-diff
+        timestamp: 2026-10-03T21:16:11.059Z
     examined_commit: 6872818bb06966ef4ff2404ca5b3925e4f0edf5b
     external_links: []
     lifecycle_state: draft
@@ -11862,5 +11882,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T21:15:15.503Z
-    updated_at: 2026-10-03T21:15:26.677Z
+    updated_at: 2026-10-03T21:16:10.987Z
     notes: []
