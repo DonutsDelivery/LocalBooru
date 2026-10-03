@@ -10445,6 +10445,18 @@ reviews:
         runner: root
         created_at: 2026-10-03T02:32:45.322Z
         completed_at: 2026-10-03T02:32:45.322Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: abde425
+        evidence: Corrected combined candidate abde425 is installed and DMC reopened. Await both resized SVP
+          off and resized SVP on playback; prior candidate combined path failed.
+        name: User visual playback acceptance
+        required: true
+        runner: user
+        created_at: 2026-10-03T02:32:47.024Z
+        completed_at: null
     events:
       - _ulid: 01M3ZPKBBGJ663DB33NP4RVA3M
         actor: root
@@ -10502,6 +10514,13 @@ reviews:
           status: pass
           name: Guarded renderer runtime build
         timestamp: 2026-10-03T02:32:45.398Z
+      - _ulid: 01M3ZSPQ87K3912ZF5PPGWQ2EZ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: User visual playback acceptance
+        timestamp: 2026-10-03T02:32:47.112Z
     examined_commit: 600c9d0
     external_links: []
     lifecycle_state: draft
@@ -10516,7 +10535,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T01:38:30.897Z
-    updated_at: 2026-10-03T02:32:45.322Z
+    updated_at: 2026-10-03T02:32:47.024Z
     notes: []
   - _ulid: 01M3ZQK2GXP9GWA5WNQCWCAR0V
     slugs:
