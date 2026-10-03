@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { createUnavailableLibraryToastGate, shouldSuppressOptionalNotFound } from './apiErrors.js'
+import { createUnavailableLibraryToastGate, createRemoteConnectionToastGate, isRemoteConnectionFailure, shouldSuppressOptionalNotFound } from './apiErrors.js'
 
 // AC: @identity-safe-timeline-previews ac-optional-failure
 test('only request-scoped optional 404 responses suppress error toasts', () => {
@@ -27,4 +27,25 @@ test('unrelated errors and explicit mutations are never throttled', () => {
   assert.equal(suppress({ method: 'get' }, 500, offline, 1000), false)
   assert.equal(suppress({ method: 'get' }, 404, 'Image not found', 1000), false)
   assert.equal(suppress({ method: 'get' }, 404, offline, 1000), false)
+})
+
+test('one remote outage covers repeated stats and gallery errors', () => {
+  const gate = createRemoteConnectionToastGate()
+  const failure = 'Proxy error: error sending request for url (http://example.invalid/api/images)'
+  assert.equal(gate({ method: 'get', url: '/library/stats' }, 502, failure, 1000), false)
+  assert.equal(gate({ method: 'get', url: '/images' }, 502, failure, 1001), true)
+  assert.equal(gate({ method: 'get' }, 502, failure, 601001), false)
+})
+
+test('both failed addresses count as one outage; real server and mutation errors stay visible', () => {
+  const gate = createRemoteConnectionToastGate()
+  const failure = 'Proxy error (primary + fallback): first / second'
+  assert.equal(isRemoteConnectionFailure(502, { detail: failure }), true)
+  assert.equal(gate({ method: 'get' }, 502, failure, 1000), false)
+  assert.equal(gate({ method: 'post' }, 502, failure, 1001), false)
+  assert.equal(gate({ method: 'get' }, 502, 'Bad Gateway', 1001), false)
+  assert.equal(gate({ method: 'get' }, 500, failure, 1001), false)
+  assert.equal(gate({ method: 'get' }, 401, failure, 1001), false)
+  assert.equal(gate({ method: 'get' }, 502, failure, 1001), true)
+  assert.equal(createRemoteConnectionToastGate()({ method: 'get' }, 502, failure, 1001), false)
 })

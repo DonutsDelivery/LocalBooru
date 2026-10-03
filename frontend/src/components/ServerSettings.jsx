@@ -9,6 +9,7 @@ import {
   setActiveServerId,
   testServerConnection,
   serverFromQrHandshake,
+  pairingUrls,
   isMobileApp,
   isTauriApp,
   LOCAL_SERVER,
@@ -110,22 +111,20 @@ export default function ServerSettings({ onServerChange }) {
             return
           }
 
-          // Try connecting - local first, then public
+          // Try the advertised LAN, Tailscale, and public addresses in order.
           let workingUrl = null
-          let urls = []
-          if (qrData.local) urls.push(qrData.local)
-          if (qrData.public) urls.push(qrData.public)
+          const urls = pairingUrls(qrData)
 
           for (const url of urls) {
             const result = await testServerConnection(url)
-            if (result.success) {
+            if (result.success || (result.error === 'Authentication required' && qrData.nonce)) {
               workingUrl = url
               break
             }
           }
 
           if (!workingUrl) {
-            setScanError('Could not connect to server. Make sure you are on the same network.')
+            setScanError('Could not connect to server. Check your LAN or Tailscale connection.')
             return
           }
 

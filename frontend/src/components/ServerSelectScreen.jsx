@@ -10,6 +10,7 @@ import {
   probeServer,
   pingAllServers,
   serverFromQrHandshake,
+  pairingUrls,
   isMobileApp,
   LOCAL_SERVER
 } from '../serverManager'
@@ -82,24 +83,29 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   async function handleConnect(server) {
     setConnecting(server.id)
     setInlineError(null)
-    // Probe primary, then fallback URL on network failure
-    const result = await probeServer(server)
-    if (result.success) {
-      await setActiveServerId(server.id)
-      await updateServerConfig(result.url)
-      onConnect?.()
-    } else {
-      // Update status to show it's offline
-      setStatuses(prev => ({ ...prev, [server.id]: 'offline' }))
-      const isAuthError = result.error?.includes('401') || result.error?.includes('Authentication')
-      if (isAuthError) {
-        setStatuses(prev => ({ ...prev, [server.id]: 'auth_failed' }))
-        setInlineError(`Authentication failed for ${server.name}. Please re-scan QR code to re-pair.`)
+    try {
+      // Probe primary, then fallback URL on network failure
+      const result = await probeServer(server)
+      if (result.success) {
+        await setActiveServerId(server.id)
+        await updateServerConfig(result.url)
+        onConnect?.()
       } else {
-        setInlineError(`Could not connect to ${server.name}: ${result.error}`)
+        // Update status to show it's offline
+        setStatuses(prev => ({ ...prev, [server.id]: 'offline' }))
+        const isAuthError = result.error?.includes('401') || result.error?.includes('Authentication')
+        if (isAuthError) {
+          setStatuses(prev => ({ ...prev, [server.id]: 'auth_failed' }))
+          setInlineError(`Authentication failed for ${server.name}. Please re-scan QR code to re-pair.`)
+        } else {
+          setInlineError(`Could not connect to ${server.name}: ${result.error}`)
+        }
       }
+    } catch (error) {
+      setInlineError(`Could not open ${server.name}: ${error.message || error}`)
+    } finally {
+      setConnecting(null)
     }
-    setConnecting(null)
   }
 
   async function handleEditSave(serverData) {
@@ -147,7 +153,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
           return
         }
 
-        // Try connecting - local first, then public
+        // Try advertised LAN, Tailscale, and public addresses in order.
         // On Tauri mobile, use IPC to bypass WebView mixed-content restrictions
         const useTauriIPC = window.__TAURI_INTERNALS__ !== undefined
         let invoke
@@ -156,9 +162,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
         }
 
         let workingUrl = null
-        let urls = []
-        if (qrData.local) urls.push(qrData.local)
-        if (qrData.public) urls.push(qrData.public)
+        const urls = pairingUrls(qrData)
 
         const errors = []
         for (const url of urls) {
@@ -169,7 +173,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
             } else {
               testResult = await testServerConnection(url)
             }
-            if (testResult.success) {
+            if (testResult.success || (testResult.error === 'Authentication required' && qrData.nonce)) {
               workingUrl = url
               break
             }

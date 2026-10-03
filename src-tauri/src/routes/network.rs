@@ -196,18 +196,31 @@ fn save_network_settings_to_file(data_dir: &Path, network: &Value) -> Result<(),
 
 // ─── Network helpers ─────────────────────────────────────────────────────────
 
-/// Get all local IPv4 addresses by scanning common private ranges.
-///
-/// Falls back to just the primary IP if interface enumeration is unavailable.
+/// Enumerate interfaces on desktop/mobile without depending on shell PATH.
 fn get_all_local_ips() -> Vec<String> {
     let mut ips = Vec::new();
     if let Some(primary) = get_local_ip() {
         ips.push(primary);
     }
-    // On Linux we can try reading /proc/net/fib_trie or similar, but for
-    // simplicity (and cross-platform parity) we just return the primary IP.
-    // The Python version uses netifaces which isn't available here yet.
+    if let Ok(interfaces) = if_addrs::get_if_addrs() {
+        for interface in interfaces {
+            if let std::net::IpAddr::V4(ip) = interface.ip() {
+                let address = ip.to_string();
+                if !ip.is_loopback() && !ip.is_unspecified() && !ips.contains(&address) {
+                    ips.push(address);
+                }
+            }
+        }
+    }
     ips
+}
+
+fn tailscale_url(ips: &[String], port: u16) -> Option<String> {
+    ips.iter().find_map(|address| {
+        let ip: std::net::Ipv4Addr = address.parse().ok()?;
+        let octets = ip.octets();
+        (octets[0] == 100 && (octets[1] & 0b1100_0000) == 64).then(|| format!("http://{ip}:{port}"))
+    })
 }
 
 /// Test whether a TCP port is available for binding.
@@ -398,13 +411,10 @@ async fn get_qr_data(State(state): State<AppState>) -> Result<Json<Value>, AppEr
         let local_ip = get_local_ip();
 
         // Build local URL (always include if we have an IP)
-        let local_url = local_ip.as_ref().map(|ip| {
-            let lp = settings
-                .get("local_port")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(port as u64);
-            format!("http://{}:{}", ip, lp)
-        });
+        let local_url = local_ip
+            .as_ref()
+            .map(|ip| format!("http://{}:{}", ip, port));
+        let tailscale_url = tailscale_url(&get_all_local_ips(), port);
 
         // Public URL requires UPnP -- not yet implemented
         let public_url: Option<String> = None;
@@ -427,6 +437,7 @@ async fn get_qr_data(State(state): State<AppState>) -> Result<Json<Value>, AppEr
             "version": 2,
             "name": "DonutMediaCenter",
             "local": local_url,
+            "tailscale": tailscale_url,
             "public": public_url,
             "auth": auth_required,
             "fingerprint": null,
@@ -627,4 +638,35 @@ async fn verify_handshake(
         "serverId": state.library_manager().primary().uuid,
         "serverName": state.library_manager().primary().name
     })))
+}
+
+#[cfg(test)]
+mod address_tests {
+    use super::tailscale_url;
+
+    #[test]
+    fn advertises_owned_tailscale_address_with_actual_listener_port() {
+        let ips = vec!["192.168.1.10".into(), "100.64.1.10".into()];
+        assert_eq!(
+            tailscale_url(&ips, 8934),
+            Some("http://100.64.1.10:8934".into())
+        );
+    }
+
+    #[test]
+    fn tailscale_range_boundaries_and_absence_are_explicit() {
+        for address in ["100.64.0.1", "100.127.255.254"] {
+            assert!(tailscale_url(&[address.into()], 8790).is_some());
+        }
+        for address in [
+            "100.63.255.254",
+            "100.128.0.1",
+            "192.168.1.10",
+            "127.0.0.1",
+            "invalid",
+        ] {
+            assert_eq!(tailscale_url(&[address.into()], 8790), None);
+        }
+        assert_eq!(tailscale_url(&[], 8790), None);
+    }
 }

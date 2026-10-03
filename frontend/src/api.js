@@ -5,7 +5,7 @@ import axios from 'axios'
 import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 import { adjustmentQuery } from './utils/imageAdjustments.js'
-import { createUnavailableLibraryToastGate, shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
+import { createUnavailableLibraryToastGate, createRemoteConnectionToastGate, isRemoteConnectionFailure, shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
 import { remoteMediaProxyUrl } from './utils/remoteMediaRouting.js'
 import { splitTagFilters } from './utils/tagFilters.js'
 import { runtimeDiagnosticTimeoutMs } from './components/autoTaggerRuntime.js'
@@ -21,6 +21,7 @@ let currentCertFingerprint = null  // TLS certificate fingerprint for pinning
 let certValidated = false  // Whether certificate has been validated this session
 let unavailableToastServerId = null
 let suppressRepeatedUnavailableLibraryToast = createUnavailableLibraryToastGate()
+let suppressRepeatedRemoteConnectionToast = createRemoteConnectionToastGate()
 
 const LOCAL_SERVER_PORT = import.meta.env?.VITE_LOCALBOORU_PORT || '8790'
 
@@ -75,6 +76,7 @@ export async function updateServerConfig(workingUrl = null) {
     if (serverId !== unavailableToastServerId) {
       unavailableToastServerId = serverId
       suppressRepeatedUnavailableLibraryToast = createUnavailableLibraryToastGate()
+      suppressRepeatedRemoteConnectionToast = createRemoteConnectionToastGate()
     }
     if (server) {
       // Local embedded server — use relative URLs like desktop
@@ -138,14 +140,12 @@ export async function updateServerConfig(workingUrl = null) {
       // On Tauri mobile, configure the local server to proxy to remote server
       // This avoids mixed-content blocks (https://tauri.localhost -> http://...)
       if (isTauriApp()) {
-        try {
-          const { invoke } = await import('@tauri-apps/api/core')
-          await invoke('set_remote_proxy', {
-            url: primaryUrl,
-            fallbackUrl,
-            token: server.token || null,
-          })
-        } catch (e) { console.warn('[API] Failed to set remote proxy:', e) }
+        const { invoke } = await import('@tauri-apps/api/core')
+        await invoke('set_remote_proxy', {
+          url: primaryUrl,
+          fallbackUrl,
+          token: server.token || null,
+        })
       }
 
       // Update axios base URL
@@ -224,7 +224,12 @@ const STARTUP_GRACE_PERIOD = 10000 // 10 seconds
 
 // Add response interceptor to show errors as popups (only for real errors)
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response.config?.baseURL?.endsWith('/remote/api')) {
+      suppressRepeatedRemoteConnectionToast = createRemoteConnectionToastGate()
+    }
+    return response
+  },
   (error) => {
     const url = error.config?.url || 'unknown'
     const method = error.config?.method?.toUpperCase() || 'UNKNOWN'
@@ -243,9 +248,15 @@ api.interceptors.response.use(
     const suppressOptionalNotFound = shouldSuppressOptionalNotFound(error.config, status)
     const suppressUnavailableLibrary = !duringStartup && !isTransient && !suppressOptionalNotFound
       && suppressRepeatedUnavailableLibraryToast(error.config, status, data?.detail)
+    const suppressRemoteConnection = !duringStartup && !isTransient
+      && suppressRepeatedRemoteConnectionToast(error.config, status, data)
 
     // Only show popup for real errors after startup
-    if (!duringStartup && !isTransient && !suppressOptionalNotFound && !suppressUnavailableLibrary) {
+    if (!duringStartup && !isTransient && !suppressOptionalNotFound && !suppressUnavailableLibrary && !suppressRemoteConnection) {
+      if (isRemoteConnectionFailure(status, data) && method === 'GET') {
+        import('./components/Toast').then(m => m.toast.error('The remote library is offline. Open Servers to retry, edit its fallback address, or choose This Device.'))
+        return Promise.reject(error)
+      }
       let message = `API Error: ${method} ${url}\n\nStatus: ${status || 'Network Error'}`
 
       if (data) {
@@ -266,7 +277,7 @@ api.interceptors.response.use(
 
       // Show toast with error details
       import('./components/Toast').then(m => m.toast.error(message))
-    } else if (!suppressOptionalNotFound && !suppressUnavailableLibrary) {
+    } else if (!suppressOptionalNotFound && !suppressUnavailableLibrary && !suppressRemoteConnection) {
       // Unexpected transient errors remain visible in the console without query data.
       console.warn(`[API] ${duringStartup ? 'Startup' : 'Transient'} error: ${method} ${url.split('?')[0]} (${status || 'network'})`, error.message)
     }

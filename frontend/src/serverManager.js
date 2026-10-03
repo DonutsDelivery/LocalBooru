@@ -56,6 +56,12 @@ function createServer(data) {
   }
 }
 
+export function pairingUrls(qrData) {
+  return [...new Set([qrData.local, qrData.tailscale, qrData.public]
+    .filter(url => typeof url === 'string' && /^https?:\/\//i.test(url))
+    .map(url => url.replace(/\/+$/, '')))]
+}
+
 export function serverFromQrHandshake(qrData, workingUrl, handshake) {
   if (!handshake?.success || !handshake.token) {
     throw new Error(handshake?.error || 'The server did not issue a device credential')
@@ -67,6 +73,7 @@ export function serverFromQrHandshake(qrData, workingUrl, handshake) {
     id: handshake.serverId,
     name: handshake.serverName || qrData.name || 'DonutMediaCenter Server',
     url: workingUrl,
+    fallbackUrl: pairingUrls(qrData).find(url => url !== workingUrl.replace(/\/+$/, '')) || null,
     token: handshake.token,
     username: null,
     password: null,
@@ -277,6 +284,11 @@ export async function getActiveServer() {
 //   { success: false, error, networkFailure: false } on HTTP error response (server reachable)
 export async function testServerConnection(url, username = null, password = null, token = null) {
   try {
+    const target = /^https?:\/\//i.test(url) ? url : `http://${url}`
+    if (isTauriApp()) {
+      const { invoke } = await import('@tauri-apps/api/core')
+      return await invoke('test_remote_server', { url: target, username, password, token })
+    }
     const headers = {}
     if (token) {
       headers['Authorization'] = 'Bearer ' + token
@@ -285,7 +297,6 @@ export async function testServerConnection(url, username = null, password = null
     }
 
     // Patch legacy saves that omitted the scheme.
-    const target = /^https?:\/\//i.test(url) ? url : `http://${url}`
     const response = await fetch(`${target}/api`, {
       method: 'GET',
       headers,
