@@ -10716,6 +10716,18 @@ reviews:
         required: false
         created_at: 2026-10-03T04:58:11.677Z
         completed_at: 2026-10-03T04:58:11.677Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: 5ca1dae
+        evidence: Recovered head 5ca1dae compiled with scripts/run-cargo.sh test --locked --lib --no-run.
+          Fresh executable passed python_runtime (3), platform_paths (3), transcode (9). Cargo
+          writer exited before sequential Android build was queued.
+        name: recovered-native-focused-tests
+        required: true
+        created_at: 2026-10-03T05:09:16.927Z
+        completed_at: 2026-10-03T05:09:16.927Z
     events:
       - _ulid: 01M401ZZVYHZ2MF587YV1YN1BB
         actor: DonutsDelivery
@@ -10765,6 +10777,13 @@ reviews:
           kind: nit
           thread_ulid: 01M40210Q9XH6N5ERX4VXSB26R
         timestamp: 2026-10-03T04:58:13.160Z
+      - _ulid: 01M402N91Y8F6D4KX3YQGBEW9D
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: recovered-native-focused-tests
+        timestamp: 2026-10-03T05:09:16.990Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: draft
@@ -10794,5 +10813,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T04:58:13.097Z
+    updated_at: 2026-10-03T05:09:16.927Z
     notes: []
