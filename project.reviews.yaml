@@ -11166,6 +11166,18 @@ reviews:
         required: true
         created_at: 2026-10-03T18:15:45.161Z
         completed_at: 2026-10-03T18:15:45.161Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: "9e28762"
+        evidence: Local183 Node tests and147 component tests pass. Native Mac frontend also passes at
+          VITEST_MAX_WORKERS=1; no assertions removed. Prior parallel worker focus timing failure
+          retained in evidence.
+        name: frontend-suite
+        required: true
+        created_at: 2026-10-03T18:15:46.539Z
+        completed_at: 2026-10-03T18:15:46.539Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11187,6 +11199,13 @@ reviews:
           status: pass
           name: version-icons-and-syntax
         timestamp: 2026-10-03T18:15:45.225Z
+      - _ulid: 01M41FNCNEDZ23PEK2F1VQM7BK
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-suite
+        timestamp: 2026-10-03T18:15:46.606Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11201,5 +11220,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:15:45.161Z
+    updated_at: 2026-10-03T18:15:46.539Z
     notes: []
