@@ -11252,6 +11252,13 @@ reviews:
           status: pass
           name: ruby-generator-reproduction
         timestamp: 2026-10-03T18:16:59.539Z
+      - _ulid: 01M41FX02C7S1G4TJ0A4RMYE2F
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 1e1a8c3
+          previous_head: "9e28762"
+        timestamp: 2026-10-03T18:19:55.852Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11262,7 +11269,7 @@ reviews:
       base_branch: main
       base_commit: 032191a
       head_branch: release/dmc-2.1.0
-      head_commit: "9e28762"
+      head_commit: 1e1a8c3
     threads:
       - _ulid: 01M41FQJEJ2CN68K7ZHHNFAG6W
         anchor:
@@ -11281,5 +11288,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:16:59.471Z
+    updated_at: 2026-10-03T18:19:55.774Z
     notes: []
