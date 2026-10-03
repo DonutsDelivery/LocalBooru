@@ -100,3 +100,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T19:39:43.021Z
+  - _ulid: 01M41MYBDGY11Q8ZJ0SNC27R5B
+    content: "Final756 AndroidAPK+AABhelper exited0, allsigning/alignment/ABI/versiongates pass.
+      Exact-sourcebeta manifestSEALED; stablemanifestPREPAREDfull7rowmatrix.
+      InstalledAPKhash5e054dd...matchesfinalartifact on16KBAndroid16.1, firstInstallTime
+      preserved,syntheticcollection preserved, galleryvisuallyopens;
+      nativeimage/video/musicmetadata,ranges,WEBPthumbnails,8timelineframes pass. Source-only review
+      approved withallrequiredgatespassing. Fullrelease task remains inprogress:
+      Linuxbuild/Windows/pairedremote/nativeacceptance/store declarations/publication unresolved."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T19:48:03.121Z
