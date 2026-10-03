@@ -11040,7 +11040,33 @@ reviews:
       - review-dmc-runtime-identity
     title: Review DMC runtime identity and upgrade compatibility
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: aed7b6f
+          head_commit: 29678af
+        evidence: Existing test-run-launcher.sh and test-launch-dev-desktop.sh pass. Disposable installer
+          executed with fake Cargo and synthetic sleep binary; old localbooru entry execs real
+          donutmediacenter path, forwards arguments, exposes branded kernel comm (15-byte Linux
+          truncation), and repeat --if-missing succeeds. No user data/profile accessed.
+        name: Launcher and installer compatibility
+        required: true
+        created_at: 2026-10-03T15:24:47.165Z
+        completed_at: 2026-10-03T15:24:47.165Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: aed7b6f
+          head_commit: 29678af
+        evidence: Offline Cargo metadata selects only donutmediacenter as bin and default-run, preserving
+          localbooru_lib ABI. Shell syntax, Android manifests XML parsing, release-version
+          consistency and whitespace checks pass. Reviewed all packaging consumers and persistent
+          identifiers; no stored-data paths, credentials, plugin ABI or app IDs changed.
+        name: Resolved identity and packaging consistency
+        required: true
+        created_at: 2026-10-03T15:24:47.430Z
+        completed_at: 2026-10-03T15:24:47.430Z
     events:
       - _ulid: 01M415VJZHDJES7ZMRYKQWTV2Q
         actor: DonutsDelivery
@@ -11048,6 +11074,20 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-03T15:24:23.922Z
+      - _ulid: 01M415W9RGH10JPFJY7EKZ4QDZ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: Launcher and installer compatibility
+        timestamp: 2026-10-03T15:24:47.248Z
+      - _ulid: 01M415WA02ZFFWTD123898CP45
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: Resolved identity and packaging consistency
+        timestamp: 2026-10-03T15:24:47.490Z
     examined_commit: 29678af
     external_links: []
     lifecycle_state: draft
@@ -11062,5 +11102,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T15:24:23.922Z
-    updated_at: null
+    updated_at: 2026-10-03T15:24:47.430Z
     notes: []
