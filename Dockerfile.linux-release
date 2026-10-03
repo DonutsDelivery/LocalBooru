@@ -46,6 +46,19 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && python3 -m pip install --break-system-packages --no-cache-dir 'Cython==3.2.8'
 
+# WebKit 2.52.3's offlineasm generator fails with Ubuntu's Ruby 3.2.
+# Use the same Ruby version as the verified native WebKit build, with the
+# upstream archive digest pinned. This interpreter is build tooling only.
+RUN curl -fsSL https://cache.ruby-lang.org/pub/ruby/3.4/ruby-3.4.8.tar.xz -o /tmp/ruby.tar.xz \
+ && echo '53a8ec71111449cbbd42224d8d27c493fa6ded228636731051c48604d4255d68  /tmp/ruby.tar.xz' | sha256sum -c - \
+ && tar -xJf /tmp/ruby.tar.xz -C /tmp \
+ && cd /tmp/ruby-3.4.8 \
+ && ./configure --prefix=/opt/ruby --disable-install-doc --disable-yjit \
+ && make -j2 \
+ && make install \
+ && /opt/ruby/bin/ruby --version \
+ && rm -rf /tmp/ruby.tar.xz /tmp/ruby-3.4.8
+
 RUN mkdir -p /build /dist /ccache \
  && chown -R 1000:1000 /build /dist /ccache
 

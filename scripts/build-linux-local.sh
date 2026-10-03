@@ -159,8 +159,8 @@ printf '==> Linux persistent build cache before build: %s (limit: %sG)\n' \
   "$(du -sh "$BUILD_ROOT" | cut -f1)" "$BUILD_LIMIT_GB"
 
 native_runtime_cache_missing=()
-if [[ ! -e "$BUILD_ROOT/webkit-build/.localbooru-config-ubuntu24-gtk3-v2" ]]; then
-  native_runtime_cache_missing+=("webkit-build/.localbooru-config-ubuntu24-gtk3-v2")
+if [[ ! -e "$BUILD_ROOT/webkit-build/.localbooru-config-ubuntu24-gtk3-ruby34-v3" ]]; then
+  native_runtime_cache_missing+=("webkit-build/.localbooru-config-ubuntu24-gtk3-ruby34-v3")
 fi
 if [[ ! -s "$BUILD_ROOT/webkit-build/lib/libwebkit2gtk-4.1.so.0" ]]; then
   native_runtime_cache_missing+=("webkit-build/lib/libwebkit2gtk-4.1.so.0")
