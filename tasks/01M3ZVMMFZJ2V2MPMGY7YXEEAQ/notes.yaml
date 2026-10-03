@@ -47,3 +47,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T04:25:51.540Z
+  - _ulid: 01M4013M0FSHEYJXQB9BZWYRP0
+    content: "Limited-access acceptance completed before reboot: Android permission picker selected one
+      synthetic photo only; native directory list showed photo/music folders and omitted the
+      unselected video folder. PNG original returns200; unselected MP4 returns404. Host reboot
+      removed /tmp worktree before commit; implementation recovered into persistent
+      /home/user/Programs/Claude Projects/dmc-platform-local-libraries, checkpoint commit5c4f598.
+      Recovered source verification is being repeated; earlier runtime evidence is retained
+      separately."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T04:42:09.807Z
