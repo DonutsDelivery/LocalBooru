@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M3ZWSKM0SYKGN8HKWPKNHHWQ
+    content: Finder-style Mac audit finds the real Apple Silicon machine has only Apple Python3.9 and no
+      Python3.12 in SSH PATH. Fixed resource-root lookup, shared library/credential storage
+      resolver, standard Mac/Windows Python discovery, and Mac child PATH. Synthetic focused tests
+      pass. Fresh-install interpreter availability still needs an app-private portable Python
+      bootstrap before addon support can be promised to normal users.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T03:26:47.424Z
