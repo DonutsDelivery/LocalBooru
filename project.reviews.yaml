@@ -11478,6 +11478,13 @@ reviews:
         payload:
           thread_ulid: 01M41GSSFJ1QE3FPVG51BYW23M
         timestamp: 2026-10-03T18:37:21.091Z
+      - _ulid: 01M41HA7AA0FJZ6KMXF2JH9E8C
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 756dd55
+          previous_head: edf4c00
+        timestamp: 2026-10-03T18:44:37.834Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11488,7 +11495,7 @@ reviews:
       base_branch: main
       base_commit: 032191a
       head_branch: release/dmc-2.1.0
-      head_commit: edf4c00
+      head_commit: 756dd55
     threads:
       - _ulid: 01M41FQJEJ2CN68K7ZHHNFAG6W
         anchor:
@@ -11527,5 +11534,5 @@ reviews:
         resolved_by: DonutsDelivery
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:37:21.007Z
+    updated_at: 2026-10-03T18:44:37.743Z
     notes: []
