@@ -13,6 +13,8 @@ repository = "https://github.com/DonutsDelivery/LocalBooru"
 edition = "2021"
 
 [patch.crates-io]
+# Android provider-version query tolerates cold startup and canceled replies.
+wry = { path = "vendor/wry" }
 # Released 0.31.10 source with upstream's dependency-only fixes for
 # RUSTSEC-2026-0194 and RUSTSEC-2026-0195.
 wayland-scanner = { path = "vendor/wayland-scanner" }

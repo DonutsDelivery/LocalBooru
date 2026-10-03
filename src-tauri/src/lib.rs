@@ -885,3 +885,7 @@ mod tests {
         assert!(!should_hide_window_on_close(true));
     }
 }
+// Exercise the same Android version-response code on host test runners.
+#[cfg(test)]
+#[path = "../../vendor/wry/src/android/version_reply.rs"]
+mod android_webview_version_reply;
