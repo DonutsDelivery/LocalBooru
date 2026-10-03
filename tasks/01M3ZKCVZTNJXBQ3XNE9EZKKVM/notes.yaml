@@ -8,3 +8,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T00:45:12.783Z
+  - _ulid: 01M3ZKJB9PMD8Z701N4SHWB0TB
+    content: "User confirms Original works and resized video works with SVP enabled; black rendering
+      occurs only with SVP disabled. Scope native scaler capability negotiation: constrain resize
+      bin to ordinary system-memory raw caps before upstream negotiation, strip accelerator-only
+      features from requested output caps, preserve formats/PAR/FPS and optional downstream SVP. No
+      frontend handoff or remote quality changes planned."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T00:45:32.342Z
