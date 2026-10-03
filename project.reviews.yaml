@@ -10235,3 +10235,32 @@ reviews:
     created_at: 2026-10-02T05:28:25.920Z
     updated_at: 2026-10-02T05:28:31.855Z
     notes: []
+  - _ulid: 01M3ZKXYZGDVNA19SQ30YA2N73
+    slugs:
+      - review-linux-raw-resize-rendering
+    title: Review Linux raw resize memory negotiation
+    author: root
+    checks: []
+    events:
+      - _ulid: 01M3ZKXYZFTZD81V17RE9CM3H6
+        actor: root
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-03T00:51:52.943Z
+    examined_commit: b76091a
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@linux-raw-resize-rendering"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: c07de2813ab5df165b1dc072c3f9cba2f20bf61d
+      head_branch: fix/linux-raw-resize-rendering
+      head_commit: b76091a
+    threads: []
+    verdicts: []
+    created_at: 2026-10-03T00:51:52.944Z
+    updated_at: null
+    notes: []
