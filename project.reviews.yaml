@@ -11153,7 +11153,19 @@ reviews:
       - dmc-210-source-review
     title: DMC 2.1.0 release preparation source (publication gates remain open)
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: "9e28762"
+        evidence: Version2.1.0 consistency passes; 18 opaque RGB iOS icons applied to actual Tauri catalog;
+          desktop/Android generated icon dimensions and canonical donut/play identity inspected;
+          Linux wrapper bash syntax and git diff --check pass.
+        name: version-icons-and-syntax
+        required: true
+        created_at: 2026-10-03T18:15:45.161Z
+        completed_at: 2026-10-03T18:15:45.161Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11168,6 +11180,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-03T18:15:43.828Z
+      - _ulid: 01M41FNBA9TZWM40XTDRTMPCP7
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: version-icons-and-syntax
+        timestamp: 2026-10-03T18:15:45.225Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11182,5 +11201,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:15:43.761Z
+    updated_at: 2026-10-03T18:15:45.161Z
     notes: []
