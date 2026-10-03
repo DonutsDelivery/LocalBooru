@@ -1,1 +1,10 @@
-notes: []
+notes:
+  - _ulid: 01M3ZWF0ZHEMF6FXQ4BRJJDT08
+    content: Found mobile folder picker explicitly unsupported upstream and no media permissions.
+      Implementing native selected-type MediaStore folder selection, in-place indexing, persisted
+      This Device startup, and Android-native video metadata/thumbnails/previews so no external
+      ffmpeg is needed for library browsing. Validation will use only synthetic media in a
+      disposable emulator; real Redmi is not connected to ADB.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T03:21:00.657Z
