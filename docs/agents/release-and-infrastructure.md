@@ -38,7 +38,7 @@ cargo install tauri-cli --version 2.9.4 --locked
 The script runs version checks, frontend tests/build, locked Rust tests/checks,
 builds `universal-apple-darwin`, verifies both architectures, bundle ID, minimum
 macOS version, DMG integrity, ad-hoc signature, ZIP integrity, and SHA-256. It
-writes `LocalBooru-macOS-universal.dmg`, `.zip`, and `SHA256SUMS-macOS` beneath
+writes `DonutMediaCenter-macOS-universal.dmg`, `.zip`, and `SHA256SUMS-macOS` beneath
 `dist-macos/`. Do not bypass a failed architecture, signature, version, or DMG
 check. Ad-hoc signing is local/inspection evidence, not Developer ID signing or
 notarization.
@@ -109,8 +109,8 @@ key setup; do not copy credentials or hard-code the laptop's address.
 ssh windse whoami
 ssh -o User=peter windse whoami
 ssh windse 'powershell.exe -NoProfile -NonInteractive -Command "Get-ComputerInfo | Select-Object WindowsProductName, OsVersion"'
-scp ./LocalBooru-Windows-Setup.exe 'windse:C:/Users/t3remote/Downloads/'
-scp ./LocalBooru-Windows.zip 'windse:C:/Users/t3remote/Downloads/'
+scp ./DonutMediaCenter-Windows-Setup.exe 'windse:C:/Users/t3remote/Downloads/'
+scp ./DonutMediaCenter-Windows.zip 'windse:C:/Users/t3remote/Downloads/'
 ```
 
 Stage the exact locally built installer/ZIP by source SHA and artifact hash in a
@@ -216,12 +216,12 @@ wrappers.
 
 `dist-windows-local/` must contain:
 
-- `LocalBooru-Windows-Setup.exe` — unsigned NSIS installer;
-- `LocalBooru-Windows.zip` — portable x64 executable and license;
+- `DonutMediaCenter-Windows-Setup.exe` — unsigned NSIS installer;
+- `DonutMediaCenter-Windows.zip` — portable x64 executable and license;
 - `SHA256SUMS-Windows` — LF-terminated basename-only hashes.
 
 The container verifies ZIP and NSIS integrity, extracts the installer, requires
-both standalone and installed `LocalBooru.exe` payloads to be PE32+ x86-64,
+both standalone and installed `donutmediacenter.exe` payloads to be PE32+ x86-64,
 rejects private checkout/build paths, and verifies hashes again on the host. The
 outer NSIS launcher may correctly be an i386 PE32 stub. Docker/Wine packaging is
 not Windows GUI acceptance: before publication, install and run the artifacts
@@ -306,11 +306,11 @@ runtime opt-out; ordinary WebKit/GStreamer playback remains available.
 
 `dist-linux-local/` must contain:
 
-- `LocalBooru-Linux.AppImage`
-- `LocalBooru-Linux.deb`
-- `LocalBooru-Linux.rpm`
-- `LocalBooru-Linux.zip`
-- `LocalBooru-Native-Runtime-Sources.tar.xz`
+- `DonutMediaCenter-Linux.AppImage`
+- `DonutMediaCenter-Linux.deb`
+- `DonutMediaCenter-Linux.rpm`
+- `DonutMediaCenter-Linux.zip`
+- `DonutMediaCenter-Native-Runtime-Sources.tar.xz`
 - `SHA256SUMS`
 
 The source archive accompanies the modified LGPL runtime and includes the exact

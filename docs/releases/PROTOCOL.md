@@ -12,7 +12,11 @@ Prepare releases from a clean committed worktree, not the user's library.
 Tauri desktop icons, native Android resources and the iOS icon set. Mirror the
 Android launcher resources into `frontend/android` and the primary PNG/ICO into
 `assets` and `frontend/public` when retaining legacy builds. Check adaptive and
-round icons as well as PNG, ICO and ICNS payloads.
+round icons as well as PNG, ICO and ICNS payloads. Flatten regenerated iOS
+PNGs to RGB over `#15191D` (for example with Pillow), and run
+`scripts/apply-ios-icons.py` after `cargo tauri ios init`. The iOS inspection
+workflow copies those committed icons into the newly generated asset catalog
+and rejects missing, transparent or incorrectly sized images.
 
 ## Android
 
@@ -51,6 +55,10 @@ this product-owned profile with the DonutsDelivery shared release core rather
 than using its obsolete LocalBooru filenames. Prepare separate desktop stable
 and Android beta manifests. The store AAB and its evidence accompany the Android
 preparation; the current shared core seals APK rows only.
+
+`scripts/build-release-matrix.sh` invokes the Linux and Windows platform
+wrappers sequentially with the same frozen source commit. Native Mac builds
+use `scripts/build-macos-ci.sh`; Cargo calls take the host gate on macOS too.
 
 Manifests remain PREPARED until every required artifact, checksum, format and
 signing gate passes. Preserve the complete matrix when a platform fails. Do not

@@ -98,6 +98,8 @@ def main():
         if args.aab:
             command += ['--aab']
         run(*command, env=env)
+        if run('git', 'rev-parse', 'HEAD', capture=True).strip() != source or run('git', 'status', '--porcelain', '--untracked-files=all', capture=True).strip():
+            raise ValueError('Release source changed during the build; rebuild from clean exact source')
         marker.write_text(json.dumps({'sourceCommit': source, 'version': version})+'\n')
     if not marker.is_file() or json.loads(marker.read_text()).get('sourceCommit') != source:
         raise ValueError('Existing Android outputs lack matching exact-source provenance; rebuild them')

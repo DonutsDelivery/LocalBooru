@@ -1,4 +1,8 @@
 # Add project specific ProGuard rules here.
+# Rust locates this generated Kotlin getter through JNI, so R8 cannot see its caller.
+-keepclassmembers class com.localbooru.app.TauriActivity {
+    public app.tauri.plugin.PluginManager getPluginManager();
+}
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 #

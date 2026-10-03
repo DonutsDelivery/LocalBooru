@@ -33,6 +33,7 @@ src-tauri/gen/android/local.properties
 src-tauri/gen/android/.idea/
 src-tauri/gen/android/app/.cxx/
 src-tauri/gen/schemas/
+src-tauri/gen/apple/
 
 # Python
 __pycache__/
