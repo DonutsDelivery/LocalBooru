@@ -2313,6 +2313,7 @@ function AppShell() {
         // Restore an explicitly selected paired server. Local libraries remain
         // available on Mac/Windows as well as Linux.
         const serverList = await getServers()
+        setServers(serverList)
         const active = await getActiveServer()
         if (active && active.id !== LOCAL_SERVER.id) {
           addLog(`Restoring paired server ${active.name || active.id}`)
