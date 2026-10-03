@@ -12182,6 +12182,18 @@ reviews:
         runner: vitest
         created_at: 2026-10-03T22:53:43.662Z
         completed_at: 2026-10-03T22:53:43.662Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: "Synthetic real-browser fixture at1280x800: coordinate click near right edge of Edit opens
+          Edit Server; no connection/probe begins. Active card transform removed; Edit/Remove
+          targets40px fixed."
+        name: browser-edit-target
+        required: true
+        runner: t3-preview
+        created_at: 2026-10-03T22:53:45.066Z
+        completed_at: 2026-10-03T22:53:45.066Z
     events:
       - _ulid: 01M41ZHV1AREME3N9B75TGH7AY
         actor: DonutsDelivery
@@ -12196,6 +12208,13 @@ reviews:
           status: pass
           name: focused-regressions
         timestamp: 2026-10-03T22:53:43.733Z
+      - _ulid: 01M41ZJC9HNTSQ3JRKA24P1QWF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: browser-edit-target
+        timestamp: 2026-10-03T22:53:45.137Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -12208,5 +12227,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T22:53:27.466Z
-    updated_at: 2026-10-03T22:53:43.662Z
+    updated_at: 2026-10-03T22:53:45.066Z
     notes: []
