@@ -106,3 +106,8 @@ plans/
 .kspec-dispatch-workspace.json
 .kspec-dispatch-shadow-mutation
 # <<< kspec managed
+
+# Prepared Android store artifacts
+/DonutMediaCenter.aab
+/DonutMediaCenter-Android.json
+/SHA256SUMS-Android

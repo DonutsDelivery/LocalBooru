@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.localbooru.app',
-  appName: 'LocalBooru',
+  appName: 'DonutMediaCenter',
   webDir: 'dist',
   server: {
     // Use http scheme to allow loading resources from local http servers
