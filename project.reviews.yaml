@@ -10750,6 +10750,70 @@ reviews:
         required: true
         created_at: 2026-10-03T05:19:44.318Z
         completed_at: 2026-10-03T05:19:44.318Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: ae36973
+        evidence: "Final headae36973: two focused Vitest files/six behavior tests passed, including native
+          rejection strings. Final APK frontend production build passed."
+        name: frontend-local-library-tests
+        required: true
+        created_at: 2026-10-03T05:59:05.740Z
+        completed_at: 2026-10-03T05:59:05.740Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: ae36973
+        evidence: Four Python behavior tests rerun at final headae36973; passed. Earlier real Mac/Windows
+          isolated Unicode-space Python3.12.15 venv and verified HTTPS200 evidence retained; runtime
+          manifest/source unchanged.
+        name: python-platform-discovery-tls
+        required: true
+        created_at: 2026-10-03T05:59:06.036Z
+        completed_at: 2026-10-03T05:59:06.036Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: ae36973
+        evidence: Final headae36973 freshly compiled through scripts/run-cargo.sh test --locked --lib
+          --no-run; writer exited. Fresh executable passed python_runtime3, platform_paths3,
+          transcode9 and exact-preview-identity1 (16 total).
+        name: recovered-native-focused-tests
+        required: true
+        created_at: 2026-10-03T05:59:06.276Z
+        completed_at: 2026-10-03T05:59:06.276Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: ae36973
+        evidence: "Final headae36973 x86_64 debug APK built through gated wrapper and installed in
+          disposable API35 AVD. APK SHA256
+          bfd4595294d42d8c75112cbffa147bb3408ce03ad9c3be71338aa3fa809b07d5. Readable denial/cancel
+          without added folders; limited selected PNG200/unselected MP4404; full grants fresh
+          Unicode media metadata/thumbnails/range206 and8 native timeline frames. WiFi/data off:
+          original image rendered, video picture advanced, music AudioFlinger app-owned44100Hz/zero
+          underruns. Explicit This Device survived restart with reachable saved synthetic remote, no
+          remote requests; local gallery/API persisted."
+        name: recovered-android-package
+        required: true
+        created_at: 2026-10-03T05:59:06.525Z
+        completed_at: 2026-10-03T05:59:06.525Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: ae36973
+        evidence: This change establishes generic path/Python discovery and Android MediaStore local media.
+          Fresh shipping Mac/Windows full generation and OEM Android acceptance remain unverified.
+          FFmpeg packaging and non-Linux occupied addon ports have separate priority1 tasks.
+        name: full-shipping-platform-acceptance
+        required: true
+        created_at: 2026-10-03T05:59:06.746Z
+        completed_at: 2026-10-03T05:59:06.746Z
     events:
       - _ulid: 01M401ZZVYHZ2MF587YV1YN1BB
         actor: DonutsDelivery
@@ -10841,6 +10905,41 @@ reviews:
           new_head: ae36973
           previous_head: "7186811"
         timestamp: 2026-10-03T05:44:11.575Z
+      - _ulid: 01M405GFV7YKS7YG447GRWZDB9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-local-library-tests
+        timestamp: 2026-10-03T05:59:05.831Z
+      - _ulid: 01M405GG3GP6RA5JYPY85C6PDR
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: python-platform-discovery-tls
+        timestamp: 2026-10-03T05:59:06.096Z
+      - _ulid: 01M405GGBWHVCKSHZ396QF4PVD
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: recovered-native-focused-tests
+        timestamp: 2026-10-03T05:59:06.364Z
+      - _ulid: 01M405GGJS3KP35JMKM95WXJFK
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: recovered-android-package
+        timestamp: 2026-10-03T05:59:06.585Z
+      - _ulid: 01M405GGST0NBMFX2PE9G93KPN
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: full-shipping-platform-acceptance
+        timestamp: 2026-10-03T05:59:06.810Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: open
@@ -10870,5 +10969,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T05:44:11.509Z
+    updated_at: 2026-10-03T05:59:06.746Z
     notes: []
