@@ -11927,7 +11927,20 @@ reviews:
       - dmc-remote-connectivity-review
     title: Remote pairing and offline startup review
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+          head_commit: 81cad89559b559c82ce8981825d0dcbfe40f6e08
+        evidence: "9 Node and 8 Vitest tests passed on exact 81cad895 source: QR address retention,
+          credentialed fallback, auth rejection boundaries, proxy primary selection/configuration
+          failure, endpoint-independent outage notices."
+        name: focused-frontend
+        required: true
+        runner: root
+        created_at: 2026-10-03T21:59:42.093Z
+        completed_at: 2026-10-03T21:59:42.093Z
     events:
       - _ulid: 01M41WECXC1KJQZTN299FXFJCA
         actor: DonutsDelivery
@@ -11935,6 +11948,13 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-03T21:59:08.973Z
+      - _ulid: 01M41WFDATMZMQH35V2AACHSKB
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-frontend
+        timestamp: 2026-10-03T21:59:42.170Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -11949,5 +11969,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T21:59:08.973Z
-    updated_at: null
+    updated_at: 2026-10-03T21:59:42.093Z
     notes: []
