@@ -11457,6 +11457,22 @@ reviews:
         required: false
         created_at: 2026-10-03T19:44:58.509Z
         completed_at: 2026-10-03T19:44:58.509Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: 756dd55
+        evidence: "Final756dd55 signedAPK+AAB helper exited0: pinned
+          permanentcert,4ABIs,SDK36,versionCode2001000,nondebug,APK16KB ZIP+64bitELF LOAD/RELRO
+          andbundletool16KB verified. Bothhashespass; exactsource beta manifestSEALED.
+          ExactAPKinstalled over2.0.3 upgradefixture onAndroid16.1/page16384;
+          installedAPKhashmatches,priorcollectionpreserved,currentgalleryvisuallyopens.
+          Nativeimage/video/musicmetadata,range206,WEBPthumbs,8timelineframes pass.
+          Pairedremote/fullreleasegates remain open outside source review."
+        name: release-android-artifacts
+        required: true
+        created_at: 2026-10-03T19:47:23.551Z
+        completed_at: 2026-10-03T19:47:23.551Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11680,6 +11696,13 @@ reviews:
           status: pass
           name: native-mac-package
         timestamp: 2026-10-03T19:44:58.576Z
+      - _ulid: 01M41MX4V02JWB6KT61ZG2S14Z
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: release-android-artifacts
+        timestamp: 2026-10-03T19:47:23.616Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11729,5 +11752,5 @@ reviews:
         resolved_by: DonutsDelivery
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T19:44:58.509Z
+    updated_at: 2026-10-03T19:47:23.551Z
     notes: []
