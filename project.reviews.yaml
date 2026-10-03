@@ -10289,9 +10289,16 @@ reviews:
           status: running
           name: Guarded native runtime build
         timestamp: 2026-10-03T00:51:56.148Z
+      - _ulid: 01M3ZM4TK9W9NF65SS0HN9R7Y3
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-03T00:55:37.833Z
     examined_commit: b76091a
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@linux-raw-resize-rendering"
     subject:
@@ -10303,5 +10310,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T00:51:52.944Z
-    updated_at: 2026-10-03T00:51:56.080Z
+    updated_at: 2026-10-03T00:55:37.773Z
     notes: []
