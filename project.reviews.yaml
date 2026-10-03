@@ -11857,6 +11857,18 @@ reviews:
         required: true
         created_at: 2026-10-03T21:25:17.234Z
         completed_at: 2026-10-03T21:25:17.234Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+          head_commit: 6872818bb06966ef4ff2404ca5b3925e4f0edf5b
+        evidence: 6872818 signed four-ABI APK26cb3540 and AAB48156fca verified; wrapper exited0; SDK36/16KB
+          pinned-cert gates pass.
+        name: signed-android-build
+        required: true
+        runner: android-wrapper
+        created_at: 2026-10-03T22:00:37.016Z
+        completed_at: 2026-10-03T22:00:37.016Z
     events:
       - _ulid: 01M41SY15EYT876SP2QQNQSMR8
         actor: DonutsDelivery
@@ -11906,6 +11918,13 @@ reviews:
           status: pass
           name: native-mac-package
         timestamp: 2026-10-03T21:25:17.302Z
+      - _ulid: 01M41WH2ZAX078KT2CGDGSKBMM
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: signed-android-build
+        timestamp: 2026-10-03T22:00:37.099Z
     examined_commit: 6872818bb06966ef4ff2404ca5b3925e4f0edf5b
     external_links: []
     lifecycle_state: draft
@@ -11920,7 +11939,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T21:15:15.503Z
-    updated_at: 2026-10-03T21:25:17.234Z
+    updated_at: 2026-10-03T22:00:37.016Z
     notes: []
   - _ulid: 01M41WECXDY6T0ZVW5R9F81ZZH
     slugs:
