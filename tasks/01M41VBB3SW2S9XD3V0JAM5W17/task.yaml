@@ -1,0 +1,23 @@
+_ulid: 01M41VBB3SW2S9XD3V0JAM5W17
+slugs:
+  - dmc-remote-startup-tailscale
+title: Fix paired remote startup offline error storm and Tailscale address retention
+type: bug
+description: User Mac outside host LAN sees repeated502 /library/stats and /images requests to
+  saved192.168.0.253 URL. Live read-only check proves Mac local backend200 and PC
+  Tailscale100.64.170.92:8790/health200 while LAN unreachable. Fix durable pairing address
+  advertisement/retention and desktop restore probe/fallback; one actionable offline state instead
+  of repeated endpoint toasts. Preserve protected credentials and local libraries. Verify focused
+  behavior before source integration; no publication.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-10-03T21:40:00.249Z
+todos: []

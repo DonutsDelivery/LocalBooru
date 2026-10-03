@@ -2156,3 +2156,16 @@ tasks:
     todos_count: 0
     created_at: 2026-10-03T20:48:56.560Z
     started_at: 2026-10-03T20:50:30.842Z
+  - _ulid: 01M41VBB3SW2S9XD3V0JAM5W17
+    slugs:
+      - dmc-remote-startup-tailscale
+    title: Fix paired remote startup offline error storm and Tailscale address retention
+    type: bug
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-03T21:40:00.249Z
