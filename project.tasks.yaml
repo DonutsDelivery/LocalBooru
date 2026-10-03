@@ -2190,3 +2190,16 @@ tasks:
     started_at: 2026-10-03T22:47:18.430Z
     submitted_at: 2026-10-03T22:53:26.240Z
     completed_at: 2026-10-03T23:31:14.291Z
+  - _ulid: 01M4226CX8E3S8ZX1NP6GA7T9S
+    slugs:
+      - dmc-connected-address-discovery
+    title: Automatically learn connected servers Tailscale fallback addresses
+    type: bug
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-03T23:39:38.280Z
