@@ -36,3 +36,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T22:17:17.961Z
+  - _ulid: 01M41Y07DD9K7WAN75CRXRGYZY
+    content: Submission linkage repaired from actualfix/remote-startup-tailscale worktree0dbd77b0
+      (initial submit had captured control-plane splice/mac-pairing4235). Global kspec validate
+      reports130schema errors in existing modules and missing-description in verify skill; product
+      commits touch no specs/modules/skills. This bug task has no linked spec/inherited traits.
+      Validation output retained externally at releases/2.1.0/remote-kspec-validation.txt; these
+      unrelated metadata failures do not replace focused product verification.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T22:26:21.741Z
