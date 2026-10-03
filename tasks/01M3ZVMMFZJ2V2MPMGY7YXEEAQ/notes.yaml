@@ -66,3 +66,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T05:18:40.172Z
+  - _ulid: 01M404N7WV89YBV8KEQACZAYGW
+    content: Recovered APK7186811 installed successfully in disposable API35 emulator. Fresh
+      Unicode-path media indexing, native320x180 video metadata/duration15.023, WebP image/video
+      thumbnails, HTTP206 originals/music and8 native timeline frames passed. Native permission
+      rejection is a string and UI displayed undefined; ae36973 normalizes it to Error with
+      behavioral regression test. Six focused frontend tests pass. Final APK build queued to verify
+      actual error toast.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T05:44:12.955Z
