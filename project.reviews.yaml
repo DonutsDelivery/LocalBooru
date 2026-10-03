@@ -11178,6 +11178,18 @@ reviews:
         required: true
         created_at: 2026-10-03T18:15:46.539Z
         completed_at: 2026-10-03T18:15:46.539Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: "9e28762"
+        evidence: "/tmp/dmc-release-kspec-validation.log: existing unrelated control-plane schema/trait
+          errors and verify/SKILL.md missing description; release task has no spec_ref and release
+          source changes do not modify those specs."
+        name: control-plane-validation
+        required: false
+        created_at: 2026-10-03T18:15:47.895Z
+        completed_at: 2026-10-03T18:15:47.895Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11206,6 +11218,13 @@ reviews:
           status: pass
           name: frontend-suite
         timestamp: 2026-10-03T18:15:46.606Z
+      - _ulid: 01M41FNDZT5T8GWN3YD86X0M2W
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: control-plane-validation
+        timestamp: 2026-10-03T18:15:47.963Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11220,5 +11239,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:15:46.539Z
+    updated_at: 2026-10-03T18:15:47.895Z
     notes: []
