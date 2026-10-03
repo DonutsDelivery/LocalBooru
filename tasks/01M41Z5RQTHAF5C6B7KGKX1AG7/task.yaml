@@ -6,8 +6,10 @@ type: bug
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Reviewed fix integrated into main; canonical native Mac build verified, installed,
+  reopened and left running. User remote-gallery acceptance remains a release acceptance item.
 depends_on: []
 context: []
 priority: 1
@@ -60,7 +62,22 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-03T22:53:27.727Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Reviewed fix integrated into main; canonical native Mac build verified, installed, reopened and
+          left running. User remote-gallery acceptance remains a release acceptance item.
+        previous: null
+      completed_at:
+        new: 2026-10-03T23:31:14.291Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-03T23:31:14.298Z
 created_at: 2026-10-03T22:46:51.898Z
 started_at: 2026-10-03T22:47:18.430Z
 submitted_at: 2026-10-03T22:53:26.240Z
+completed_at: 2026-10-03T23:31:14.291Z
 todos: []
