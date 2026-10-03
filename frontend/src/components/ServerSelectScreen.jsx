@@ -68,10 +68,15 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   async function handleConnectLocal() {
     setConnecting(LOCAL_SERVER.id)
     setInlineError(null)
-    await setActiveServerId(LOCAL_SERVER.id)
-    await updateServerConfig()
-    onConnect?.()
-    setConnecting(null)
+    try {
+      await setActiveServerId(LOCAL_SERVER.id)
+      await updateServerConfig()
+      onConnect?.()
+    } catch (error) {
+      setInlineError(`Could not open this device's library: ${error.message || error}`)
+    } finally {
+      setConnecting(null)
+    }
   }
 
   async function handleConnect(server) {
@@ -265,7 +270,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
               This Device
               <span className="local-badge">Local</span>
             </div>
-            <div className="server-select-url">Embedded server</div>
+            <div className="server-select-url">Images, videos and music on this device</div>
           </div>
 
           <div className="server-select-actions">

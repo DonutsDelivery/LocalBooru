@@ -11,12 +11,15 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder};
 
 pub mod addons;
+#[cfg(target_os = "android")]
+mod android_media;
 mod commands;
 mod create_drop;
 pub mod db;
 mod direct_file;
 pub mod native_video;
 pub mod online;
+mod platform_paths;
 pub mod routes;
 pub mod server;
 pub mod services;
@@ -67,41 +70,35 @@ fn get_server_port() -> u16 {
         .unwrap_or(DEFAULT_PORT)
 }
 
-/// Get the data directory path (same logic as Python config.py).
-fn get_data_dir(#[allow(unused)] app: &tauri::App) -> PathBuf {
-    // Check for portable mode
-    if let Ok(portable_data) = std::env::var("LOCALBOORU_PORTABLE_DATA") {
-        let path = PathBuf::from(portable_data);
-        std::fs::create_dir_all(&path).ok();
-        return path;
-    }
-
-    // Mobile (Android/iOS): use Tauri's app data directory
-    #[cfg(mobile)]
-    {
-        return app
-            .path()
-            .app_data_dir()
-            .unwrap_or_else(|_| PathBuf::from("."));
-    }
-
-    // Desktop: ~/.localbooru (Linux/Mac) or %APPDATA%\.localbooru (Windows)
-    #[cfg(desktop)]
-    {
-        #[cfg(target_os = "windows")]
-        let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        #[cfg(not(target_os = "windows"))]
-        let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-
-        let data_dir = base.join(".localbooru");
-        std::fs::create_dir_all(&data_dir).ok();
-        data_dir
-    }
+/// Resolve library and credential storage consistently on every native platform.
+/// Preserve existing desktop libraries; never fall back to the process cwd.
+pub(crate) fn get_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let data_dir = if let Some(portable) = std::env::var_os("LOCALBOORU_PORTABLE_DATA") {
+        PathBuf::from(portable)
+    } else {
+        #[cfg(mobile)]
+        { app.path().app_data_dir().map_err(|error| error.to_string())? }
+        #[cfg(desktop)]
+        {
+            #[cfg(target_os = "windows")]
+            let base = dirs::config_dir();
+            #[cfg(not(target_os = "windows"))]
+            let base = dirs::home_dir();
+            platform_paths::desktop_data_dir(std::env::consts::OS, base, app.path().app_data_dir().map_err(|error| error.to_string()))?
+        }
+    };
+    std::fs::create_dir_all(&data_dir).map_err(|error| format!("Cannot create application storage: {error}"))?;
+    Ok(data_dir)
 }
 
 /// Resolve the frontend dist directory.
 #[cfg(desktop)]
-fn get_frontend_dir() -> Option<PathBuf> {
+fn get_frontend_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    // Includes Contents/Resources on macOS, independently of Finder's cwd.
+    if let Ok(resources) = app.path().resource_dir() {
+        let dist = resources.join("frontend/dist");
+        if dist.join("index.html").is_file() { return Some(dist); }
+    }
     // In dev mode, Tauri serves the frontend via devUrl.
     // In production, the frontend is bundled at a known relative path.
     let exe_dir = std::env::current_exe()
@@ -307,6 +304,9 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_http::init());
 
+    #[cfg(target_os = "android")]
+    { builder = builder.plugin(android_media::init()); }
+
     // Desktop-only plugins
     #[cfg(desktop)]
     {
@@ -335,7 +335,8 @@ pub fn run() {
         )?;
 
         // ── Initialize AppState (database + config) ──
-        let data_dir = get_data_dir(app);
+        let data_dir = get_data_dir(app.handle())?;
+        platform_paths::init(app.path().resource_dir().ok());
         let port = get_server_port();
         // Before any pool opens the main database: probe for confirmed
         // corruption so a poisoned WAL from a crash/kill can never turn the
@@ -421,7 +422,7 @@ pub fn run() {
 
         // ── Start embedded axum server ──
         #[cfg(desktop)]
-        let frontend_dir = get_frontend_dir();
+        let frontend_dir = get_frontend_dir(app.handle());
         #[cfg(mobile)]
         let frontend_dir: Option<PathBuf> = None;
 
@@ -794,6 +795,8 @@ pub fn run() {
             backend_get_port,
             backend_get_local_ip,
             backend_get_network_settings,
+            #[cfg(target_os = "android")]
+            android_media::android_pick_media_directory,
             // IPC commands
             show_in_folder,
             get_app_version,

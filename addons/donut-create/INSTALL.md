@@ -29,9 +29,13 @@ Dropping an image onto a reference card or canvas replaces that reference and
 keeps the workflow. Imports pause Run Instant and never generate automatically;
 unrecognized editable graphs open in the Advanced editor.
 
-Install Python **3.12** before starting managed setup. Setup finds the sidecar's
-3.12 interpreter, `python3.12`, or Windows `py -3.12`; it reports a clear error
-before downloading if none is available. Managed setup requires an internet
+Desktop addon installation uses an existing Python **3.12** when available,
+including standard Homebrew/python.org locations on macOS. Otherwise DMC
+downloads a pinned, SHA-256 verified Python 3.12 runtime into its own application
+data folder on Linux x86_64/ARM64, macOS Apple Silicon/Intel, and Windows x64.
+It does not change the system Python or require shell configuration. Android
+connects to a desktop for generation; it does not install ComfyUI on the phone.
+Managed setup requires an internet
 connection and space for the selected model files plus a 16 GiB environment
 reserve. The reserve is an estimate for dependencies and download/build caches.
 

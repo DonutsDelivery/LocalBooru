@@ -3184,6 +3184,7 @@ dependencies = [
  "chrono",
  "dashmap",
  "dirs 5.0.1",
+ "flate2",
  "futures-core",
  "futures-util",
  "gdk",

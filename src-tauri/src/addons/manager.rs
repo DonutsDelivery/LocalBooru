@@ -979,8 +979,7 @@ impl AddonManager {
         }
 
         // Find a usable Python interpreter
-        let python =
-            sidecar::find_python().ok_or_else(|| "Could not find Python 3 on PATH".to_string())?;
+        let python = super::python_runtime::interpreter(&self.data_dir, id == "donut-create")?;
         if id == "auto-tagger" {
             sidecar::validate_python_minor(&python, 10, 13)?;
         }
@@ -1038,8 +1037,7 @@ impl AddonManager {
         if id == "auto-tagger" {
             let managed_python = sidecar::get_venv_python(&venv_dir);
             if sidecar::validate_python_minor(&managed_python, 10, 13).is_err() {
-                let python = sidecar::find_python()
-                    .ok_or_else(|| "Could not find Python 3 on PATH".to_string())?;
+                let python = super::python_runtime::interpreter(&self.data_dir, false)?;
                 sidecar::validate_python_minor(&python, 10, 13)?;
                 std::fs::remove_dir_all(&venv_dir).map_err(|error| {
                     format!(

@@ -2270,7 +2270,10 @@ function AppShell() {
         const serverList = await getServers()
         addLog(`Found ${serverList.length} saved servers`)
 
-        if (serverList.length === 0) {
+        const active = await getActiveServer()
+        if (active?.id === LOCAL_SERVER.id) {
+          await updateServerConfig()
+        } else if (serverList.length === 0) {
           // First launch — show server picker with "This Device" option
           addLog('No servers — showing server selector')
           setServers([])
@@ -2307,9 +2310,8 @@ function AppShell() {
           }
         }
       } else if (isWindowsOrMacDesktopApp()) {
-        // Mac/Windows are library clients: restore the last paired remote
-        // server (or show the picker). Linux desktop stays on its embedded
-        // library and must not attach the remote proxy.
+        // Restore an explicitly selected paired server. Local libraries remain
+        // available on Mac/Windows as well as Linux.
         const serverList = await getServers()
         const active = await getActiveServer()
         if (active && active.id !== LOCAL_SERVER.id) {
@@ -2324,7 +2326,12 @@ function AppShell() {
       addLog('Client server initialization complete')
       setMobileReady(true)
     }
-    initMobile().catch(err => addLog(`initMobile error: ${err.message || err}`))
+    initMobile().catch(err => {
+      addLog(`initMobile error: ${err.message || err}`)
+      setConnectionError('Could not restore the selected library. Choose This Device or reconnect to a server.')
+      setShowServerSetup(true)
+      setMobileReady(true)
+    })
   }, [addLog])
 
   // Show loading while backend starts (Tauri)

@@ -1,4 +1,4 @@
-"""Isolated, resumable Donut Create setup. Only the standard library is needed.
+"""Isolated, resumable Donut Create setup using the controller's HTTPS trust roots.
 
 The sidecar's small environment runs this installer. ComfyUI and all of its
 dependencies live in a separate backend environment under the add-on state root.
@@ -13,6 +13,7 @@ import platform
 import re
 import shutil
 import signal
+import ssl
 import subprocess
 import sys
 import tarfile
@@ -47,6 +48,20 @@ class SafeRedirects(urllib.request.HTTPRedirectHandler):
         if redirected and (before.scheme, before.netloc) != (after.scheme, after.netloc):
             redirected.remove_header("Authorization")
         return redirected
+
+
+def download_opener():
+    # Portable Python cannot rely on every Windows/macOS installation already
+    # having cached OS roots. httpx supplies certifi in the controller venv.
+    # Keep OS trust too, and never disable hostname/certificate verification.
+    context = ssl.create_default_context()
+    try:
+        import certifi
+    except ImportError:
+        pass  # Standalone development checks still use verified OS trust.
+    else:
+        context.load_verify_locations(cafile=certifi.where())
+    return urllib.request.build_opener(SafeRedirects(), urllib.request.HTTPSHandler(context=context))
 
 
 def _read_json(path, default=None):
@@ -95,7 +110,7 @@ class Installer:
         self._process = None
         self._process_children = set()
         self._tokens = {}
-        self._opener = urllib.request.build_opener(SafeRedirects())
+        self._opener = download_opener()
         self._status = _read_json(self.state_dir / "setup.json", {})
         self._status.setdefault("state", "idle")
         self._status.setdefault("phase", "idle")
@@ -511,6 +526,11 @@ class Installer:
         candidate = shutil.which("python3.12")
         if candidate:
             return [candidate]
+        if platform.system() == "Darwin":
+            for path in (Path("/opt/homebrew/bin/python3.12"), Path("/usr/local/bin/python3.12"),
+                         Path("/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12")):
+                if path.is_file() and os.access(path, os.X_OK):
+                    return [str(path)]
         if os.name == "nt" and shutil.which("py"):
             return [shutil.which("py"), "-3.12"]
         raise SetupError("Install Python 3.12, then Retry. The managed ComfyUI environment is isolated from the add-on's interpreter.")
