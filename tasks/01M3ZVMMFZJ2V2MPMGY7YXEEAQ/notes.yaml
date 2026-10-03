@@ -58,3 +58,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T04:42:09.807Z
+  - _ulid: 01M4036F1CSX7M9MX0JF2RZC2F
+    content: "Reproduced missing native previews in earlier APK: readable video original HTTP200,
+      preview-frames count0/generating false because route still required desktop FFmpeg.
+      Commit7186811 allows Android native extraction while preserving the desktop FFmpeg gate. Fresh
+      APK acceptance now includes timeline frames."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T05:18:40.172Z
