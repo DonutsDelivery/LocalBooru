@@ -130,3 +130,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T19:51:47.076Z
+  - _ulid: 01M41NF6YQV78DDEFT4XHVEHT9
+    content: "Backgroundbuild supervisors nowdetached fromtoolsession:
+      Linuxfinalstillcompiling,Ninja2jobs; WindowsqueuedafterLinuxwriter/containerexit
+      with12GiBdisk/16GiBavailablememoryguards andcanonicalheavygate. SecondinactiveCargo cache1.9GB
+      main/src-tauri/target moved toextra_storage
+      afterchecksumcopy/noopenwriters/private-librarycheck,
+      originalpathsymlinkkept;rootnow17GiBfree. DisposableAndroidemulator gracefullystopped
+      afterfinalAPKacceptance; normaluserDMCnotclosed/reinstalled. No releasecompletion
+      claim/taskcompletion/push/publication."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T19:57:15.607Z
