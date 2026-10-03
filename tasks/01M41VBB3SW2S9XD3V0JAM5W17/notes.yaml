@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M41W169NQN89JJ38BKM1RDY6
+    content: Live Mac currently on192.168.1.x, PC on192.168.0.253; PC health over100.64.170.92 works
+      from Mac, LAN URL fails. Host middleware already accepts Tailscale ranges. Found
+      get_all_local_ips stub returns only primary; QR omits Tail address; serverFromQrHandshake
+      discards alternate QR URLs; Mac restores active remote without probe. Implementing interface
+      enumeration via pinned if-addrs0.14 (one new lock package; existing versions unchanged),
+      retain alternate URLs, native authenticated probes with networkFailure classification, startup
+      picker on offline and endpoint-independent outage toast cooldown. No user
+      library/config/credential file copied or changed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T21:51:56.214Z
