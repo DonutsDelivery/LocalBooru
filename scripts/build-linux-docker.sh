@@ -272,11 +272,12 @@ package_deb() {
   dpkg-deb -R "$base" "$stage"
   install_runtime_tree "$stage"
 
-  real_binary="$stage/usr/bin/localbooru"
+  real_binary="$stage/usr/bin/donutmediacenter"
   test -x "$real_binary"
-  install -m 0755 "$real_binary" "$stage/usr/lib/localbooru/localbooru"
+  install -m 0755 "$real_binary" "$stage/usr/lib/localbooru/donutmediacenter"
   cc -O2 -Wall -Wextra -Werror "$ROOT/release/linux/localbooru-launcher.c" \
-    -o "$stage/usr/bin/localbooru"
+    -o "$stage/usr/bin/donutmediacenter"
+  ln -sfn donutmediacenter "$stage/usr/bin/localbooru"
   installed_size="$(du -sk "$stage/usr" | cut -f1)"
   python3 -c 'import pathlib,sys,re; p=pathlib.Path(sys.argv[1]); s=p.read_text(); p.write_text(re.sub(r"(?m)^Installed-Size:.*$", "Installed-Size: " + sys.argv[2], s))' \
     "$stage/DEBIAN/control" "$installed_size"
@@ -305,10 +306,11 @@ package_rpm() {
     (cd "$extracted" && rpm2cpio "$base_rpm" | cpio -idm --quiet)
     cp -a "$extracted/usr" "$stage/"
     install_runtime_tree "$stage"
-    real_binary="$stage/usr/bin/localbooru"
-    install -m 0755 "$real_binary" "$stage/usr/lib/localbooru/localbooru"
+    real_binary="$stage/usr/bin/donutmediacenter"
+    install -m 0755 "$real_binary" "$stage/usr/lib/localbooru/donutmediacenter"
     cc -O2 -Wall -Wextra -Werror "$ROOT/release/linux/localbooru-launcher.c" \
-      -o "$stage/usr/bin/localbooru"
+      -o "$stage/usr/bin/donutmediacenter"
+    ln -sfn donutmediacenter "$stage/usr/bin/localbooru"
   fi
 
   fpm -s dir -t rpm -C "$stage" \

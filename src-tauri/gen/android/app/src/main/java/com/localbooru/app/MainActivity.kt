@@ -37,13 +37,13 @@ class MainActivity : TauriActivity() {
     // while the WebView serves from https://tauri.localhost. Without this, all
     // HTTP requests (XHR, fetch, img src, video src) would be blocked.
     webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-    Log.i("LocalBooru", "onWebViewCreate: mixedContentMode set to ALWAYS_ALLOW")
+    Log.i("DonutMediaCenter", "onWebViewCreate: mixedContentMode set to ALWAYS_ALLOW")
 
     // LocalBooru drives video playback from its own controls/autoplay state.
     // Android WebView otherwise requires a gesture for media with audio, which
     // can make direct-play video appear to run with muted or blocked audio.
     webView.settings.mediaPlaybackRequiresUserGesture = false
-    Log.i("LocalBooru", "onWebViewCreate: mediaPlaybackRequiresUserGesture=false")
+    Log.i("DonutMediaCenter", "onWebViewCreate: mediaPlaybackRequiresUserGesture=false")
 
     // Inject system bar insets as CSS variables since env(safe-area-inset-*) is
     // unreliable in Android WebView with edge-to-edge. The listener re-fires on
@@ -68,7 +68,7 @@ class MainActivity : TauriActivity() {
         """.trimIndent(),
         null
       )
-      Log.i("LocalBooru", "Insets (dp): top=$top bottom=$bottom left=$left right=$right")
+      Log.i("DonutMediaCenter", "Insets (dp): top=$top bottom=$bottom left=$left right=$right")
       insets
     }
     // Apply current insets immediately (the listener only fires on changes), and
@@ -105,7 +105,7 @@ class MainActivity : TauriActivity() {
     }
     isImmersive = immersive
     appWebView?.post { appWebView?.requestApplyInsets() }
-    Log.i("LocalBooru", if (immersive) "Entered immersive mode" else "Exited immersive mode")
+    Log.i("DonutMediaCenter", if (immersive) "Entered immersive mode" else "Exited immersive mode")
   }
 
   inner class ImmersiveBridge {

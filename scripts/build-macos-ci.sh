@@ -40,7 +40,7 @@ git -C "$ROOT" diff --exit-code -- Cargo.lock
 
 APP="$BUNDLE_DIR/macos/DonutMediaCenter.app"
 DMG="$(find "$BUNDLE_DIR/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
-BINARY="$APP/Contents/MacOS/localbooru"
+BINARY="$APP/Contents/MacOS/donutmediacenter"
 INFO_PLIST="$APP/Contents/Info.plist"
 
 [[ -d "$APP" ]]

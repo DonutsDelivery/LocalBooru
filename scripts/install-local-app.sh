@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 INSTALL_DIR="$DATA_HOME/localbooru/local-build"
-INSTALLED_APP="$INSTALL_DIR/localbooru"
+INSTALLED_APP="$INSTALL_DIR/donutmediacenter"
 INSTALLED_FRONTEND="$INSTALL_DIR/frontend/dist/index.html"
 LOCK_DIR="$STATE_HOME/localbooru"
 LOCK_FILE="$LOCK_DIR/install.lock"
@@ -21,7 +21,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/install-local-app.sh [--if-missing]
 
-Build and atomically install the standalone LocalBooru desktop executable.
+Build and atomically install the standalone DonutMediaCenter desktop executable.
 
   --if-missing  Skip the build when an executable is already installed.
 EOF
@@ -39,7 +39,7 @@ done
 mkdir -p "$INSTALL_DIR" "$LOCK_DIR"
 exec 9>"$LOCK_FILE"
 flock -w "$LOCK_TIMEOUT" 9 || {
-  echo "ERROR: timed out waiting for another LocalBooru install" >&2
+  echo "ERROR: timed out waiting for another DonutMediaCenter install" >&2
   exit 1
 }
 
@@ -58,7 +58,7 @@ fi
 
 exec 8>"$BUILD_LOCK_FILE"
 flock -w "$LOCK_TIMEOUT" 8 || {
-  echo "ERROR: timed out waiting for another LocalBooru build or cleanup" >&2
+  echo "ERROR: timed out waiting for another DonutMediaCenter build or cleanup" >&2
   exit 1
 }
 
@@ -80,7 +80,7 @@ fi
 if [[ "$TARGET_DIR" != /* ]]; then
   TARGET_DIR="$ROOT/$TARGET_DIR"
 fi
-BUILT_APP="$TARGET_DIR/release/localbooru"
+BUILT_APP="$TARGET_DIR/release/donutmediacenter"
 BUILT_FRONTEND="$ROOT/frontend/dist"
 
 if [[ ! -s "$BUILT_APP" || ! -x "$BUILT_APP" ]]; then
@@ -95,7 +95,7 @@ fi
 FRONTEND_ROOT="$INSTALL_DIR/frontend"
 FINAL_DIST="$FRONTEND_ROOT/dist"
 mkdir -p "$FRONTEND_ROOT"
-STAGED_APP="$(mktemp "$INSTALL_DIR/.localbooru.XXXXXX")"
+STAGED_APP="$(mktemp "$INSTALL_DIR/.donutmediacenter.XXXXXX")"
 STAGED_DIST="$(mktemp -d "$FRONTEND_ROOT/.dist.XXXXXX")"
 BACKUP_DIST=""
 DIST_PUBLISHED=0
@@ -126,6 +126,14 @@ mv "$STAGED_DIST" "$FINAL_DIST"
 DIST_PUBLISHED=1
 mv -f "$STAGED_APP" "$INSTALLED_APP"
 COMMITTED=1
+# Old desktop entries may still execute this path. Forward them to the current
+# binary rather than leaving a second, stale app installed.
+cat >"$STAGED_APP" <<'EOF'
+#!/bin/sh
+exec "$(dirname -- "$(readlink -f -- "$0")")/donutmediacenter" "$@"
+EOF
+chmod 0755 "$STAGED_APP"
+mv -Tf "$STAGED_APP" "$INSTALL_DIR/localbooru"
 rm -rf "$BACKUP_DIST"
 BACKUP_DIST=""
 trap - EXIT

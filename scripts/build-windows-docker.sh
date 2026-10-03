@@ -90,7 +90,7 @@ cargo tauri build \
   --config src-tauri/tauri.windows.conf.json
 [[ "$(sha256sum Cargo.lock | cut -d' ' -f1)" == "$LOCK_HASH_BEFORE" ]]
 
-BINARY="$RELEASE_DIR/localbooru.exe"
+BINARY="$RELEASE_DIR/donutmediacenter.exe"
 mapfile -t INSTALLERS < <(
   find "$RELEASE_DIR/bundle/nsis" -maxdepth 1 -type f -name '*.exe' -print
 )
@@ -147,11 +147,11 @@ for path in payload.rglob('*.exe'):
         _, value = machine(path)
     except (AssertionError, OSError, struct.error):
         continue
-    if path.name.lower() == 'localbooru.exe':
+    if path.name.lower() == 'donutmediacenter.exe':
         assert value == 0x8664, f'{path}: expected x64 PE, got {value:#x}'
         installed.append(path)
-assert installed, 'NSIS payload is missing x64 LocalBooru.exe'
-print('Standalone and NSIS payload contain x64 PE32+ LocalBooru executables')
+assert installed, 'NSIS payload is missing x64 DonutMediaCenter executable'
+print('Standalone and NSIS payload contain x64 PE32+ DonutMediaCenter executables')
 PY
 
 (

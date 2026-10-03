@@ -55,8 +55,8 @@ if has_bundle deb; then
   dpkg-deb --info "$DIST/DonutMediaCenter-Linux.deb" >/dev/null
   mkdir -p "$WORK/deb"
   dpkg-deb -x "$DIST/DonutMediaCenter-Linux.deb" "$WORK/deb"
-  require_file "$WORK/deb/usr/bin/localbooru"
-  require_file "$WORK/deb/usr/lib/localbooru/localbooru"
+  require_file "$WORK/deb/usr/bin/donutmediacenter"
+  require_file "$WORK/deb/usr/lib/localbooru/donutmediacenter"
   [[ "$(dpkg-deb -f "$DIST/DonutMediaCenter-Linux.deb" Installed-Size)" -gt 200000 ]]
   verify_runtime_tree "$WORK/deb"
 fi
@@ -64,7 +64,7 @@ fi
 if has_bundle rpm; then
   require_file "$DIST/DonutMediaCenter-Linux.rpm"
   rpm -K "$DIST/DonutMediaCenter-Linux.rpm" 2>&1 | grep -E 'digests OK|NOT OK|NOKEY' >/dev/null
-  rpm -qpl "$DIST/DonutMediaCenter-Linux.rpm" | grep '/usr/bin/localbooru' >/dev/null
+  rpm -qpl "$DIST/DonutMediaCenter-Linux.rpm" | grep '/usr/bin/donutmediacenter' >/dev/null
   rpm -qpl "$DIST/DonutMediaCenter-Linux.rpm" \
     | grep '/usr/lib/localbooru/native-svp/bin/mpv' >/dev/null
   rpm -qpR "$DIST/DonutMediaCenter-Linux.rpm" | grep '^gtk3$' >/dev/null
@@ -87,8 +87,8 @@ fi
 
 # Report, but do not hide, the actual portability floor of the final app.
 for binary in \
-  "$WORK/deb/usr/lib/localbooru/localbooru" \
-  "$WORK/squashfs-root/usr/bin/localbooru"; do
+  "$WORK/deb/usr/lib/localbooru/donutmediacenter" \
+  "$WORK/squashfs-root/usr/bin/donutmediacenter"; do
   [[ -f "$binary" ]] || continue
   floor="$(objdump -T "$binary" 2>/dev/null | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1 || true)"
   echo "Verified $(file -b "$binary"); maximum glibc symbol: ${floor:-none}"

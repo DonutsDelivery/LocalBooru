@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast desktop entry for the last successfully built LocalBooru Dev binary.
+# Fast desktop entry for the last successfully built DonutMediaCenter Dev binary.
 # Rebuilding is intentionally separate: a desktop click must never wait behind
 # the shared compiler lock.
 set -euo pipefail
@@ -12,11 +12,11 @@ DEV_TARGET_DIR="${LOCALBOORU_DEV_TARGET_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/loc
 if [[ -n "${LOCALBOORU_DEV_BINARY:-}" ]]; then
     DEV_BINARY="$LOCALBOORU_DEV_BINARY"
 else
-    DEV_BINARY="$DEV_TARGET_DIR/debug/localbooru"
+    DEV_BINARY="$DEV_TARGET_DIR/debug/donutmediacenter"
 fi
 
 if [[ ! -x "$DEV_BINARY" ]]; then
-    echo "LocalBooru Dev binary is missing: $DEV_BINARY" >&2
+    echo "DonutMediaCenter Dev binary is missing: $DEV_BINARY" >&2
     echo "Rebuild explicitly with: $ROOT/run-dev.sh" >&2
     exit 1
 fi
@@ -30,7 +30,7 @@ vite_ready() {
 }
 
 if ! vite_ready; then
-    echo "Starting LocalBooru Dev frontend on port $VITE_PORT (log: $DEV_LOG)" >&2
+    echo "Starting DonutMediaCenter Dev frontend on port $VITE_PORT (log: $DEV_LOG)" >&2
     (
         cd "$ROOT/frontend"
         nohup npm run dev -- --port "$VITE_PORT" >>"$DEV_LOG" 2>&1 &
@@ -43,7 +43,7 @@ if ! vite_ready; then
 fi
 
 if ! vite_ready; then
-    echo "LocalBooru Dev frontend did not open port $VITE_PORT; see $DEV_LOG" >&2
+    echo "DonutMediaCenter Dev frontend did not open port $VITE_PORT; see $DEV_LOG" >&2
     exit 1
 fi
 

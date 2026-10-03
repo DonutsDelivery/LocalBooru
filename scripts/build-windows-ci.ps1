@@ -37,7 +37,7 @@ try {
 
 git -C $Root diff --exit-code -- Cargo.lock
 
-$Binary = Join-Path $ReleaseDir 'localbooru.exe'
+$Binary = Join-Path $ReleaseDir 'donutmediacenter.exe'
 $Installer = Get-ChildItem -Path $BundleDir -Filter '*.exe' -File | Select-Object -First 1
 if (-not (Test-Path $Binary -PathType Leaf)) { throw "Missing standalone executable: $Binary" }
 if (-not $Installer) { throw "Missing NSIS installer under $BundleDir" }

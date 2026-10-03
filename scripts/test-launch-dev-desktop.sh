@@ -66,7 +66,7 @@ grep -F 'Rebuild explicitly with:' "$TEMP_DIR/missing.out" >/dev/null
 # Without an explicit test override, the launcher uses the one canonical
 # per-user dev target rather than a worktree-local or named candidate target.
 mkdir -p "$XDG_CACHE_HOME/localbooru/builds/dev-target/debug"
-cp "$TEMP_DIR/localbooru" "$XDG_CACHE_HOME/localbooru/builds/dev-target/debug/localbooru"
+cp "$TEMP_DIR/localbooru" "$XDG_CACHE_HOME/localbooru/builds/dev-target/debug/donutmediacenter"
 rm -f "$FAKE_BINARY_ARGS"
 "$ROOT/scripts/launch-dev-desktop.sh" "/tmp/canonical image.png"
 [[ "$(<"$FAKE_BINARY_ARGS")" == "/tmp/canonical image.png" ]]

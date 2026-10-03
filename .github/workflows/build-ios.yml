@@ -49,8 +49,8 @@ jobs:
             exit 1
           fi
           echo "Found Info.plist at: $PLIST"
-          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'LocalBooru uses the camera to scan QR codes for server pairing'" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'LocalBooru connects to servers on your local network'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'DonutMediaCenter uses the camera to scan QR codes for server pairing'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'DonutMediaCenter connects to servers on your local network'" "$PLIST"
 
       - name: Disable code signing
         run: |
