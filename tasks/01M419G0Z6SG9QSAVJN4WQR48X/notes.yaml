@@ -21,3 +21,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T17:06:57.731Z
+  - _ulid: 01M41D6NK76VSV3ACMHN705409
+    content: "Signed APK+AAB from 475c8c4 passed certificate/ABI/SDK/ZIP/ELF/bundletool gates. Exact
+      optimized APK then failed launch on disposable 16KB emulator: R8 removed JNI getPluginManager.
+      Added targeted keep rule, opaque RGB iOS icons and actual catalog copy, complete stable matrix
+      wrapper, source-change rejection, and portable Mac host gate in 3b0fd01. Rebuild running.
+      Prior published release-signed beta installed with same certificate and synthetic collection
+      for upgrade continuity. Mac reachable via Tailscale; exact source archive d0353dbe... staged,
+      native universal build PID 59631 running with Node20, existing target cache, 2 jobs. No
+      publication."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T17:32:47.079Z
