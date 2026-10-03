@@ -1,1 +1,12 @@
-notes: []
+notes:
+  - _ulid: 01M422Z92AVATAH05CX45GT403
+    content: Implement connected authenticated /network discovery on connect, every five minutes and on
+      focus/online, persisting learned metadata through the existing serialized protected-storage
+      mutation path. Preserve explicit fallbacks and credentials, rotate automatic fallbacks, stop
+      probing on authentication rejection, and guard stale discoveries at both frontend generation
+      and native proxy state. Synthetic tests cover restart persistence, concurrent edits, async
+      discovery, stale responses, actual listener port and stable identity. User confirmed the
+      already installed Mac fallback works over a mobile hotspot (real off-LAN acceptance).
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T23:53:13.547Z
