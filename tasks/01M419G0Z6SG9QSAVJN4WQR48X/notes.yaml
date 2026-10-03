@@ -1,1 +1,12 @@
-notes: []
+notes:
+  - _ulid: 01M419HT987NQD88CMDXBRA19G
+    content: Prepare 2.1.0 as the first public DMC release candidate. Reuse canonical donut/play SVG for
+      platform icons, correct Mac title and legacy mobile labels, bump all version sources,
+      release-sign Android APK+AAB with pinned existing external key, enforce 16KB native alignment
+      and target SDK 36, generate exact-source manifests/checksums and release notes. Builds stay
+      serialized behind host gate; user apps and unrelated files preserved. Shared release profile
+      still names LocalBooru artifacts and needs a product-owned DMC profile snapshot for
+      preparation. Publication is not requested.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T16:28:58.025Z
