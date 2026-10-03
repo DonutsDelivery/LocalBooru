@@ -11941,6 +11941,18 @@ reviews:
         runner: root
         created_at: 2026-10-03T21:59:42.093Z
         completed_at: 2026-10-03T21:59:42.093Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+          head_commit: 81cad89559b559c82ce8981825d0dcbfe40f6e08
+        evidence: Canonical tree a8a34e9da9d6acbcc272a408273032d21cb044bd matches staging tree d15c640b.
+          Running scripts/build-macos-ci.sh with host gate and two jobs.
+        name: native-mac
+        required: true
+        runner: native-mac-wrapper
+        created_at: 2026-10-03T21:59:43.592Z
+        completed_at: null
     events:
       - _ulid: 01M41WECXC1KJQZTN299FXFJCA
         actor: DonutsDelivery
@@ -11955,6 +11967,13 @@ reviews:
           status: pass
           name: focused-frontend
         timestamp: 2026-10-03T21:59:42.170Z
+      - _ulid: 01M41WFESMS583Y15WS1W5G666
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: native-mac
+        timestamp: 2026-10-03T21:59:43.668Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -11969,5 +11988,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T21:59:08.973Z
-    updated_at: 2026-10-03T21:59:42.093Z
+    updated_at: 2026-10-03T21:59:43.592Z
     notes: []
