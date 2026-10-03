@@ -10240,7 +10240,22 @@ reviews:
       - review-linux-raw-resize-rendering
     title: Review Linux raw resize memory negotiation
     author: root
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: c07de2813ab5df165b1dc072c3f9cba2f20bf61d
+          head_commit: b76091a
+        evidence: Reviewed all four changed paths and exact ten-line C++ addition. Lower raw resize
+          initializes SystemMemory caps before negotiation, removes accelerator features from
+          resized caps, retains format/PAR/FPS and downstream GL sink/SVP filter. No frontend,
+          original/no-resize, seeking, audio, SVP graph, remote encoder changes. Upgrade accepts
+          only complete known source tuples and verifies postimages. Static diff clean; no
+          behavioral tests run.
+        name: Native resize scope and capability review
+        required: true
+        created_at: 2026-10-03T00:51:54.599Z
+        completed_at: 2026-10-03T00:51:54.599Z
     events:
       - _ulid: 01M3ZKXYZFTZD81V17RE9CM3H6
         actor: root
@@ -10248,6 +10263,13 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-03T00:51:52.943Z
+      - _ulid: 01M3ZKY0N6PTXW4HGSXFAGYE09
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: Native resize scope and capability review
+        timestamp: 2026-10-03T00:51:54.663Z
     examined_commit: b76091a
     external_links: []
     lifecycle_state: draft
@@ -10262,5 +10284,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T00:51:52.944Z
-    updated_at: null
+    updated_at: 2026-10-03T00:51:54.599Z
     notes: []
