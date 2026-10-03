@@ -10382,6 +10382,17 @@ reviews:
         runner: root
         created_at: 2026-10-03T01:39:16.880Z
         completed_at: 2026-10-03T01:39:16.880Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: f4c601e
+          head_commit: 600c9d0
+        evidence: Build session 24837 queued through host-wide build token; no overlapping native compile
+          started.
+        name: Guarded renderer runtime build
+        required: true
+        created_at: 2026-10-03T01:39:18.749Z
+        completed_at: null
     events:
       - _ulid: 01M3ZPKBBGJ663DB33NP4RVA3M
         actor: root
@@ -10396,6 +10407,13 @@ reviews:
           status: pass
           name: Renderer scope and ownership review
         timestamp: 2026-10-03T01:39:16.952Z
+      - _ulid: 01M3ZPMT55GMVR3JM0HXETCS4Z
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: Guarded renderer runtime build
+        timestamp: 2026-10-03T01:39:18.821Z
     examined_commit: 600c9d0
     external_links: []
     lifecycle_state: draft
@@ -10410,5 +10428,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T01:38:30.897Z
-    updated_at: 2026-10-03T01:39:16.880Z
+    updated_at: 2026-10-03T01:39:18.749Z
     notes: []
