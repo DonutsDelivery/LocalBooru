@@ -2109,3 +2109,16 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-03T04:52:52.107Z
+  - _ulid: 01M415E34STTBZ7KEZARP33SAA
+    slugs:
+      - dmc-runtime-identity
+    title: Use DonutMediaCenter executable and runtime identity
+    type: bug
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 2
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-03T15:17:01.721Z
