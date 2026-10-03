@@ -24,3 +24,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T21:00:41.553Z
+  - _ulid: 01M41S6D13XBG57RY1VH0EFSK8
+    content: Candidate fix committed6872818bb06966ef4ff2404ca5b3925e4f0edf5b on
+      fix/android-webview-startup-timeout; main remains existing reviewed0abd while verification
+      pending. Exact-source signed APK+AAB supervisor queued after focused real helper tests pass
+      and shared gate becomes available. Windows prior756 build finished0; canonical DMC PE
+      icon6frames verified and seven-row prior desktop manifest sealed. Prior artifacts/evidence
+      stay756 provenance, never relabeled. External toolchain cache archive validated before
+      Docker-local image removal.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T21:02:21.219Z
