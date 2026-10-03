@@ -10364,7 +10364,24 @@ reviews:
       - review-linux-raw-resize-renderer
     title: Review decoded resize GL texture rendering
     author: root
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f4c601e
+          head_commit: 600c9d0
+        evidence: "Reviewed exact 600c9d0 source delta: helper removes only memory:DMABuf alternatives from
+          the selected appsink before negotiation; call requires owned nonzero resize and absent
+          application/SVP filter. Original/SVP/remote/seeking/audio/frontend source untouched.
+          Iterator, boxed caps ownership and writable copies reviewed; exact deployed preimage
+          ebd7f1 and new postimage dccdcec upgrade retained along with earlier tuples. Runtime logs
+          showed resized P010_10LE -> DMA_DRM P010 and appsink preroll, establishing resize reached
+          sink but not visual success. Root source review, not independent or behavioral tests."
+        name: Renderer scope and ownership review
+        required: true
+        runner: root
+        created_at: 2026-10-03T01:39:16.880Z
+        completed_at: 2026-10-03T01:39:16.880Z
     events:
       - _ulid: 01M3ZPKBBGJ663DB33NP4RVA3M
         actor: root
@@ -10372,6 +10389,13 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-03T01:38:30.896Z
+      - _ulid: 01M3ZPMRARZ0EJMX5GEKT93H2S
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: Renderer scope and ownership review
+        timestamp: 2026-10-03T01:39:16.952Z
     examined_commit: 600c9d0
     external_links: []
     lifecycle_state: draft
@@ -10386,5 +10410,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T01:38:30.897Z
-    updated_at: null
+    updated_at: 2026-10-03T01:39:16.880Z
     notes: []
