@@ -12274,7 +12274,19 @@ reviews:
       - dmc-connected-address-discovery-review
     title: Connected server address discovery review
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 42a7a052
+          head_commit: 585f4589
+        evidence: 8 serverManager Node tests and 22 component tests across API restore, native credential
+          persistence, settings, picker and outage handling; production Vite build passes.
+        name: focused-frontend
+        required: true
+        runner: node+vitest
+        created_at: 2026-10-03T23:59:38.940Z
+        completed_at: 2026-10-03T23:59:38.940Z
     events:
       - _ulid: 01M4239YYHNK3T652B819843CP
         actor: DonutsDelivery
@@ -12289,6 +12301,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-03T23:59:37.509Z
+      - _ulid: 01M423B1G8C5M8Y8QSX8EQ8JJT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-frontend
+        timestamp: 2026-10-03T23:59:39.016Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -12303,5 +12322,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T23:59:03.633Z
-    updated_at: 2026-10-03T23:59:37.436Z
+    updated_at: 2026-10-03T23:59:38.940Z
     notes: []
