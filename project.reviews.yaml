@@ -11779,3 +11779,32 @@ reviews:
     created_at: 2026-10-03T18:15:07.567Z
     updated_at: 2026-10-03T19:47:25.061Z
     notes: []
+  - _ulid: 01M41SY15FKCZMFGF2Y4M3ZC1K
+    slugs:
+      - dmc-android-startup-review
+    title: DMC Android cold-boot WebView probe repair
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M41SY15EYT876SP2QQNQSMR8
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-03T21:15:15.503Z
+    examined_commit: 6872818bb06966ef4ff2404ca5b3925e4f0edf5b
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@dmc-android-cold-boot-timeout"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+      head_branch: fix/android-webview-startup-timeout
+      head_commit: 6872818bb06966ef4ff2404ca5b3925e4f0edf5b
+    threads: []
+    verdicts: []
+    created_at: 2026-10-03T21:15:15.503Z
+    updated_at: null
+    notes: []
