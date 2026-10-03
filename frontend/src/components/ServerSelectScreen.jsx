@@ -7,14 +7,13 @@ import {
   removeServer,
   setActiveServerId,
   testServerConnection,
-  probeServer,
   pingAllServers,
   serverFromQrHandshake,
   pairingUrls,
   isMobileApp,
   LOCAL_SERVER
 } from '../serverManager'
-import { updateServerConfig, verifyHandshake } from '../api'
+import { updateServerConfig, connectToServer, verifyHandshake } from '../api'
 import { validateDesktopPairingRequest } from '../devicePairing'
 import { scanQrCode } from '../qrScanner'
 import PhonePairingApproval from './PhonePairingApproval'
@@ -67,11 +66,11 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   }
 
   async function handleConnectLocal() {
+    if (connecting) return
     setConnecting(LOCAL_SERVER.id)
     setInlineError(null)
     try {
-      await setActiveServerId(LOCAL_SERVER.id)
-      await updateServerConfig()
+      await connectToServer(LOCAL_SERVER)
       onConnect?.()
     } catch (error) {
       setInlineError(`Could not open this device's library: ${error.message || error}`)
@@ -81,27 +80,14 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
   }
 
   async function handleConnect(server) {
+    if (connecting) return
     setConnecting(server.id)
     setInlineError(null)
     try {
-      // Probe primary, then fallback URL on network failure
-      const result = await probeServer(server)
-      if (result.success) {
-        await setActiveServerId(server.id)
-        await updateServerConfig(result.url)
-        onConnect?.()
-      } else {
-        // Update status to show it's offline
-        setStatuses(prev => ({ ...prev, [server.id]: 'offline' }))
-        const isAuthError = result.error?.includes('401') || result.error?.includes('Authentication')
-        if (isAuthError) {
-          setStatuses(prev => ({ ...prev, [server.id]: 'auth_failed' }))
-          setInlineError(`Authentication failed for ${server.name}. Please re-scan QR code to re-pair.`)
-        } else {
-          setInlineError(`Could not connect to ${server.name}: ${result.error}`)
-        }
-      }
+      await connectToServer(server)
+      onConnect?.()
     } catch (error) {
+      setStatuses(prev => ({ ...prev, [server.id]: /Authentication|401/.test(error.message || error) ? 'auth_failed' : 'offline' }))
       setInlineError(`Could not open ${server.name}: ${error.message || error}`)
     } finally {
       setConnecting(null)
@@ -455,14 +441,14 @@ function AddServerModal({ server, onSave, onClose }) {
     setUrl(normalizedUrl)
     if (normalizedFallback) setFallbackUrl(normalizedFallback)
 
-    const primary = await testServerConnection(normalizedUrl, username, password)
+    const primary = await testServerConnection(normalizedUrl, username, password, server?.token)
     if (primary.success) {
       setTestResult({ ...primary, usedFallback: false })
       setTesting(false)
       return
     }
     if (normalizedFallback && primary.networkFailure) {
-      const fb = await testServerConnection(normalizedFallback, username, password)
+      const fb = await testServerConnection(normalizedFallback, username, password, server?.token)
       if (fb.success) {
         setTestResult({ success: true, usedFallback: true })
         setTesting(false)

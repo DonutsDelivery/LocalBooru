@@ -2,7 +2,7 @@
  * DonutMediaCenter API client - supports both local and multi-server mode
  */
 import axios from 'axios'
-import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, LOCAL_SERVER, probeServer } from './serverManager'
+import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, getActiveServerId, setActiveServerId, LOCAL_SERVER, probeServer } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 import { adjustmentQuery } from './utils/imageAdjustments.js'
 import { createUnavailableLibraryToastGate, createRemoteConnectionToastGate, isRemoteConnectionFailure, shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
@@ -175,6 +175,23 @@ export async function updateServerConfig(workingUrl = null) {
   }
 }
 
+// Verify before changing the active library. Restore it if native proxy setup fails.
+export async function connectToServer(server) {
+  const result = server.id === LOCAL_SERVER.id
+    ? { success: true, url: null }
+    : await probeServer(server)
+  if (!result.success) throw new Error(result.error || 'Connection failed')
+  const previousId = await getActiveServerId()
+  try {
+    await setActiveServerId(server.id)
+    await updateServerConfig(result.url)
+  } catch (error) {
+    await setActiveServerId(previousId)
+    try { await updateServerConfig() } catch { /* report the original setup failure */ }
+    throw error
+  }
+}
+
 // Check if connected to a server (for mobile app)
 // Returns true on desktop, or on mobile when using local server or a configured remote server
 export function isServerConfigured() {
@@ -195,10 +212,10 @@ const api = axios.create({
 export const apiClient = api
 
 
-// Add request interceptor for auth on mobile and certificate validation
+// Add paired native-client auth and certificate validation
 api.interceptors.request.use(async (config) => {
-  if (isMobileApp()) {
-    // Add auth header if available
+  if (isTauriClient() && currentServerUrl) {
+    // Add auth header for paired desktop and mobile libraries
     if (currentServerAuth) {
       config.headers['Authorization'] = currentServerAuth
     }

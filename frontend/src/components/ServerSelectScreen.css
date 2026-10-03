@@ -67,7 +67,7 @@
 }
 
 .server-select-card:active {
-  transform: scale(0.98);
+  background: var(--bg-tertiary, #252542);
 }
 
 .server-select-card.connecting {
@@ -480,4 +480,21 @@
   width: 100% !important;
   height: 100% !important;
   object-fit: cover !important;
+}
+
+/* Pressing a card must not move Edit away from the pointer. */
+.server-select-actions .edit-server-btn,
+.server-select-actions .delete-server-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
 }

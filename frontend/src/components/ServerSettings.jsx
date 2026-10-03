@@ -6,15 +6,15 @@ import {
   updateServer,
   removeServer,
   getActiveServerId,
-  setActiveServerId,
   testServerConnection,
+  probeServer,
   serverFromQrHandshake,
   pairingUrls,
   isMobileApp,
   isTauriApp,
   LOCAL_SERVER,
 } from '../serverManager'
-import { updateServerConfig, verifyHandshake } from '../api'
+import { updateServerConfig, connectToServer, verifyHandshake } from '../api'
 import { validateDesktopPairingRequest } from '../devicePairing'
 import { scanQrCode } from '../qrScanner'
 import PhonePairingApproval from './PhonePairingApproval'
@@ -28,6 +28,8 @@ export default function ServerSettings({ onServerChange }) {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingServer, setEditingServer] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [connecting, setConnecting] = useState(null)
+  const [connectionError, setConnectionError] = useState(null)
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState(null)
   const [desktopPairingRequest, setDesktopPairingRequest] = useState(null)
@@ -49,11 +51,19 @@ export default function ServerSettings({ onServerChange }) {
   }
 
   async function handleSetActive(id) {
-    await setActiveServerId(id)
-    setActiveServerIdState(id)
-    await updateServerConfig()
-    onServerChange?.()
-    if (!mobileClient) window.location.reload()
+    if (connecting) return
+    setConnecting(id)
+    setConnectionError(null)
+    try {
+      const server = id === LOCAL_SERVER.id ? LOCAL_SERVER : servers.find(s => s.id === id)
+      await connectToServer(server)
+      setActiveServerIdState(id)
+      onServerChange?.()
+    } catch (error) {
+      setConnectionError(`Could not open this library: ${error.message || error}`)
+    } finally {
+      setConnecting(null)
+    }
   }
 
   async function handleDelete(id) {
@@ -65,16 +75,20 @@ export default function ServerSettings({ onServerChange }) {
   }
 
   async function handleSaveServer(serverData) {
-    if (editingServer) {
-      await updateServer(editingServer.id, serverData)
-    } else {
-      await addServer(serverData)
+    try {
+      const saved = editingServer
+        ? await updateServer(editingServer.id, serverData)
+        : await addServer(serverData)
+      await loadServers()
+      if (await getActiveServerId() === saved.id) {
+        await connectToServer(saved)
+        onServerChange?.()
+      }
+      setShowAddModal(false)
+      setEditingServer(null)
+    } catch (error) {
+      setConnectionError(`Could not save this connection: ${error.message || error}`)
     }
-    await loadServers()
-    await updateServerConfig()
-    setShowAddModal(false)
-    setEditingServer(null)
-    onServerChange?.()
   }
 
   function handleEdit(server) {
@@ -198,6 +212,8 @@ export default function ServerSettings({ onServerChange }) {
         </div>
       )}
 
+      {connectionError && <div role="alert" className="scan-error">{connectionError}</div>}
+      {connecting && <p role="status">Connecting…</p>}
       {servers.length === 0 && mobileClient ? (
         <div className="no-servers">
           <p>No servers configured.</p>
@@ -273,14 +289,14 @@ function ServerCard({ server, isActive, onSetActive, onEdit, onDelete }) {
 
   async function testConnection() {
     setTesting(true)
-    const result = await testServerConnection(server.url, server.username, server.password, server.token)
+    const result = await probeServer(server)
     setStatus(result.success ? 'connected' : 'error')
     setTesting(false)
   }
 
   useEffect(() => {
     testConnection()
-  }, [server.url])
+  }, [server.url, server.fallbackUrl, server.token, server.username, server.password])
 
   return (
     <div className={`server-card ${isActive ? 'active' : ''}`} onClick={onSetActive}>
@@ -346,14 +362,14 @@ function AddServerModal({ server, onSave, onClose }) {
     setUrl(normalizedUrl)
     if (normalizedFallback) setFallbackUrl(normalizedFallback)
 
-    const primary = await testServerConnection(normalizedUrl, username, password)
+    const primary = await testServerConnection(normalizedUrl, username, password, server?.token)
     if (primary.success) {
       setTestResult({ ...primary, usedFallback: false })
       setTesting(false)
       return
     }
     if (normalizedFallback && primary.networkFailure) {
-      const fb = await testServerConnection(normalizedFallback, username, password)
+      const fb = await testServerConnection(normalizedFallback, username, password, server?.token)
       if (fb.success) {
         setTestResult({ success: true, usedFallback: true })
         setTesting(false)
