@@ -10256,6 +10256,18 @@ reviews:
         required: true
         created_at: 2026-10-03T00:51:54.599Z
         completed_at: 2026-10-03T00:51:54.599Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: c07de2813ab5df165b1dc072c3f9cba2f20bf61d
+          head_commit: b76091a
+        evidence: Queued under host-wide heavy-build gate; staging receipt expected at
+          /mnt/storage/Projects/extra_storage/localbooru/builds/raw-resize-memory-20261003/build-receipt.json.
+          Existing DonutStudio compile preserved.
+        name: Guarded native runtime build
+        required: true
+        created_at: 2026-10-03T00:51:56.080Z
+        completed_at: null
     events:
       - _ulid: 01M3ZKXYZFTZD81V17RE9CM3H6
         actor: root
@@ -10270,6 +10282,13 @@ reviews:
           status: pass
           name: Native resize scope and capability review
         timestamp: 2026-10-03T00:51:54.663Z
+      - _ulid: 01M3ZKY23KBNKD0Q0YTQ33G7AE
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: Guarded native runtime build
+        timestamp: 2026-10-03T00:51:56.148Z
     examined_commit: b76091a
     external_links: []
     lifecycle_state: draft
@@ -10284,5 +10303,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T00:51:52.944Z
-    updated_at: 2026-10-03T00:51:54.599Z
+    updated_at: 2026-10-03T00:51:56.080Z
     notes: []
