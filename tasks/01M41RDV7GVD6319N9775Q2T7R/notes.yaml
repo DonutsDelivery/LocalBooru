@@ -45,3 +45,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T21:14:10.883Z
+  - _ulid: 01M41WH1GW7YSNCCHJM2MNV9RF
+    content: 6872818 signed four-ABI APK+AAB wrapper exited0; Mac238Rust+330frontend and
+      universalpackage verification passed. Exact signed APK cold launch independently reproduced
+      FORTIFY pthread_mutex_lock called on a destroyed mutex within about3s, process exited. Warm
+      launch /health200. External acceptance helper erroneously used /api/health (404); corrected to
+      /health, but that does not explain independently recorded native crash. Acceptance remains
+      failed; no source integration or release publication. Branch0c211299 additionally ignores
+      generated .kotlin build state.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T22:00:35.613Z
