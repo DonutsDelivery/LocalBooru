@@ -1,1 +1,15 @@
-notes: []
+notes:
+  - _ulid: 01M41RKP29RC4T59X6QNF17HSF
+    content: "Crash location resolved from signed lib ELF RELA metadata: Wry0.54.1
+      src/android/mod.rs:474:38, platform_webview_version. A bare upstream return-error backport is
+      insufficient: Tauri2.10 caches is_ok and later rejects WebView creation when query errors.
+      Keep current dependency version and vendor a narrow Android-only patch: receive actual version
+      over the same request channel with a bounded60second cold-start budget (10+50), propagate
+      channel/JNI errors, and tolerate a canceled version receiver when the Java thread replies
+      late. Host-portable tests execute the exact response helper for
+      ready/delayed/disconnected/timeout/JNI-error cases. No fabricated version or unrelated
+      dependency upgrade. Existing756 artifacts retained as prior candidate, clean main-based fix
+      worktree created; all shipping artifacts need refreshed provenance after review."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T20:52:07.882Z
