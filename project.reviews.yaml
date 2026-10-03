@@ -11392,6 +11392,18 @@ reviews:
         required: false
         created_at: 2026-10-03T18:53:15.338Z
         completed_at: 2026-10-03T18:53:15.338Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: 756dd55
+        evidence: Exact756dd55 archive/tree native Mac wrapper rerun:183 Node and147 component tests pass
+          with VITEST_MAX_WORKERS=1; no assertions removed. Final-source log
+          ~/LocalBooru-builds/dmc-release-756dd55-macos.log.
+        name: frontend-suite
+        required: true
+        created_at: 2026-10-03T18:58:17.616Z
+        completed_at: 2026-10-03T18:58:17.616Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11580,6 +11592,13 @@ reviews:
           status: pass
           name: old-development-launcher-fixture
         timestamp: 2026-10-03T18:53:15.424Z
+      - _ulid: 01M41J37YJ9S4B4J56QY9FE0Y8
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-suite
+        timestamp: 2026-10-03T18:58:17.682Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11629,5 +11648,5 @@ reviews:
         resolved_by: DonutsDelivery
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:53:15.338Z
+    updated_at: 2026-10-03T18:58:17.616Z
     notes: []
