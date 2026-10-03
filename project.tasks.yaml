@@ -2051,7 +2051,7 @@ tasks:
     title: Make desktop addon and bundled resource paths independent of developer shells
     type: bug
     spec_ref: "@donut-create-plugin"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -2060,6 +2060,7 @@ tasks:
     todos_count: 0
     created_at: 2026-10-03T03:06:34.469Z
     started_at: 2026-10-03T03:07:18.553Z
+    submitted_at: 2026-10-03T04:57:36.851Z
   - _ulid: 01M3ZVMMFZJ2V2MPMGY7YXEEAQ
     slugs:
       - android-local-library
