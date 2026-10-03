@@ -11240,6 +11240,19 @@ reviews:
         required: true
         created_at: 2026-10-03T18:28:09.902Z
         completed_at: 2026-10-03T18:28:09.902Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: 1e1a8c3
+        evidence: test-run-dev.sh expects A LocalBooru development session is already running; run-dev.sh
+          says DonutMediaCenter. Both mismatching strings verified already in base032191a. Failure
+          occurs on this exact grep; no release diff touches either file. Test fixture correction
+          remains follow-up, not production regression.
+        name: old-development-launcher-fixture
+        required: false
+        created_at: 2026-10-03T18:28:11.276Z
+        completed_at: 2026-10-03T18:28:11.276Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11317,6 +11330,13 @@ reviews:
           status: pass
           name: launcher-continuity
         timestamp: 2026-10-03T18:28:09.970Z
+      - _ulid: 01M41GC3YHY8CTZJEHP6XEHD51
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: old-development-launcher-fixture
+        timestamp: 2026-10-03T18:28:11.346Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11346,5 +11366,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:28:09.902Z
+    updated_at: 2026-10-03T18:28:11.276Z
     notes: []
