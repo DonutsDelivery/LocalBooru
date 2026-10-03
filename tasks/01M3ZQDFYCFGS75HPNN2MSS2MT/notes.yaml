@@ -1,1 +1,9 @@
-notes: []
+notes:
+  - _ulid: 01M3ZQFGTVG83DXFXRRZG6X32R
+    content: Reuse MediaItem video detection and thumbnail wrapper. Add original_filename/filename text
+      as a pointer-transparent bottom overlay, readable dark gradient and single-line ellipsis, with
+      full filename on tile title. Keep image tiles and preview/selection handlers unchanged. Build
+      frontend after active native writer exits; no formal tests requested.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T01:53:54.011Z
