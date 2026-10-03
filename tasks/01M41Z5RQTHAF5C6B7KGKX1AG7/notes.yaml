@@ -31,3 +31,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T23:31:12.943Z
+  - _ulid: 01M421Z3H1NZR40HRM2C9MH6FX
+    content: User now confirms Mac-to-PC connection succeeds with the saved Tailscale fallback. PC
+      server was found stopped; restored existing installed app through launcher with a local
+      compatibility binary alias, verified PC listener0.0.0.0:8790 and Mac Tailscale API200, left
+      both apps running. Connection user acceptance now confirmed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T23:35:39.297Z
