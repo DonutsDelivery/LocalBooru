@@ -2,6 +2,9 @@ fn main() {
     // Tauri's dependency build script can remain cached across worktrees. Ensure
     // its generated activity is also present in this app's Android project.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
+        // Align both LOAD segments and the RELRO boundary for 16KB devices.
+        println!("cargo:rustc-link-arg=-Wl,-z,max-page-size=16384");
+        println!("cargo:rustc-link-arg=-Wl,-z,common-page-size=16384");
         for key in [
             "WRY_ANDROID_KOTLIN_FILES_OUT_DIR",
             "WRY_ANDROID_PACKAGE",
