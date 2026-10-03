@@ -10704,6 +10704,18 @@ reviews:
         required: true
         created_at: 2026-10-03T04:58:10.282Z
         completed_at: null
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: 5ca1dae
+        evidence: Scope limited to path/interpreter foundations and MediaStore Android local library. No
+          fresh shipping Mac/Windows generation or OEM Android certification claimed; helper
+          packaging and non-Linux port recovery tracked separately.
+        name: full-shipping-platform-acceptance
+        required: false
+        created_at: 2026-10-03T04:58:11.677Z
+        completed_at: 2026-10-03T04:58:11.677Z
     events:
       - _ulid: 01M401ZZVYHZ2MF587YV1YN1BB
         actor: DonutsDelivery
@@ -10739,6 +10751,13 @@ reviews:
           status: running
           name: recovered-android-package
         timestamp: 2026-10-03T04:58:10.352Z
+      - _ulid: 01M4020ZCVJKS6RKTFJ55V13C3
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: full-shipping-platform-acceptance
+        timestamp: 2026-10-03T04:58:11.739Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: draft
@@ -10754,5 +10773,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T04:58:10.282Z
+    updated_at: 2026-10-03T04:58:11.677Z
     notes: []
