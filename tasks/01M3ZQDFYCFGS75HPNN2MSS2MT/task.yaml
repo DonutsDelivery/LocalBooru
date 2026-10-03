@@ -9,8 +9,10 @@ description: Render an always-visible filename overlay along the bottom of video
 spec_ref: "@media-browsing"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Filename overlay source reviewed; frontend and wrapped desktop builds exit0; merged
+  and pushed main f59b4d0; installed exact app/frontend hashes and reopened DMC. No tests run.
 depends_on: []
 context: []
 priority: 2
@@ -63,7 +65,22 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-03T01:58:32.976Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Filename overlay source reviewed; frontend and wrapped desktop builds exit0; merged and pushed
+          main f59b4d0; installed exact app/frontend hashes and reopened DMC. No tests run.
+        previous: null
+      completed_at:
+        new: 2026-10-03T02:05:50.198Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-03T02:05:50.204Z
 created_at: 2026-10-03T01:52:47.564Z
 started_at: 2026-10-03T01:53:22.653Z
 submitted_at: 2026-10-03T01:58:32.976Z
+completed_at: 2026-10-03T02:05:50.198Z
 todos: []
