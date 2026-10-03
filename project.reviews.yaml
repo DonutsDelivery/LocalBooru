@@ -11225,6 +11225,13 @@ reviews:
           status: fail
           name: control-plane-validation
         timestamp: 2026-10-03T18:15:47.963Z
+      - _ulid: 01M41FQJGR3C6588R35QJDG2QS
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M41FQJEJ2CN68K7ZHHNFAG6W
+        timestamp: 2026-10-03T18:16:58.136Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11236,8 +11243,23 @@ reviews:
       base_commit: 032191a
       head_branch: release/dmc-2.1.0
       head_commit: "9e28762"
-    threads: []
+    threads:
+      - _ulid: 01M41FQJEJ2CN68K7ZHHNFAG6W
+        anchor:
+          type: structured
+          section: scope
+        entries:
+          - _ulid: 01M41FQJEJZM6XN9MXVT7V6J8C
+            author: DonutsDelivery
+            body: This is source-preparation review only. It does not approve publication, store submission, or
+              stable platform support. Exact-source signed Android outputs are rebuilding after
+              Linux recipe fix. Linux/Windows package builds, Linux ordinary/SVP visual acceptance,
+              paired Android remote behavior, native desktop helper/runtime acceptance, and store
+              enrollment/declarations remain release gates. Prior Mac failures and control-plane
+              validation issues are retained rather than hidden.
+            created_at: 2026-10-03T18:16:58.066Z
+        kind: nit
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:15:47.895Z
+    updated_at: 2026-10-03T18:16:58.066Z
     notes: []
