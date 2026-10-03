@@ -11107,9 +11107,26 @@ reviews:
           status: skipped
           name: Full platform builds and upgrade acceptance
         timestamp: 2026-10-03T15:25:10.139Z
+      - _ulid: 01M415X1F7EJG0YQEPWP9TCNHS
+        actor: codex-root
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: aed7b6f
+            head_commit: 29678af
+          decision: approve
+        timestamp: 2026-10-03T15:25:11.528Z
+      - _ulid: 01M415X1F89PEZYP968SC7QSC9
+        actor: codex-root
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: closed
+        timestamp: 2026-10-03T15:25:11.528Z
     examined_commit: 29678af
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@dmc-runtime-identity"
     subject:
@@ -11119,7 +11136,15 @@ reviews:
       head_branch: fix/dmc-runtime-identity
       head_commit: 29678af
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: aed7b6f
+          head_commit: 29678af
+        decision: approve
+        reviewer: codex-root
+        role: reviewer
+        created_at: 2026-10-03T15:25:11.527Z
     created_at: 2026-10-03T15:24:23.922Z
-    updated_at: 2026-10-03T15:25:10.077Z
+    updated_at: 2026-10-03T15:25:11.528Z
     notes: []
