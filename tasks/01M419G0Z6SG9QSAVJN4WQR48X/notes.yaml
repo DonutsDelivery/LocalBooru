@@ -33,3 +33,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T17:32:47.079Z
+  - _ulid: 01M41FG5YRJ1BPKRPCE80AF77A
+    content: 1d3ed65 signed APK+AAB passed hash/certificate/SDK36/four-ABI/16KB ELF gates. Exact signed
+      upgrade from published 2.0.3 retains UID, install time and synthetic collection on Android
+      16.1 PAGE_SIZE=16384. Native media picker permissions/indexing, Unicode fixture metadata, WEBP
+      thumbnails, 206 video/audio range serving and eight timeline frames passed. Native Mac
+      frontend tests passed at one worker; Rust build running. Linux cold bootstrap failed
+      offlineasm under Ruby3.2; identical generator passed Ruby3.4.8. Durable checksum-pinned Ruby
+      toolchain/cache version fix committed 9e28762. Rebuilding exact-source Android and native Mac
+      candidates; full desktop matrix still unsealed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T18:12:55.896Z
