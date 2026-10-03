@@ -86,6 +86,8 @@ def main():
     config = json.loads((ROOT/'release/android.json').read_text())
     env = signing_env(config)
     version = json.loads((ROOT/'src-tauri/tauri.conf.json').read_text())['version']
+    major, minor, patch = map(int, version.split('-', 1)[0].split('.'))
+    version_code = major * 1000000 + minor * 1000 + patch
     source = run('git', 'rev-parse', 'HEAD', capture=True).strip()
     if run('git', 'status', '--porcelain', '--untracked-files=all', capture=True).strip():
         raise ValueError('Release source must be committed and clean before building/signing')
@@ -120,7 +122,7 @@ def main():
             raise ValueError('Signed APK certificate mismatch')
         run('zipalign', '-c', '-P', '16', '4', str(apk), env=env)
         badging = run('aapt2', 'dump', 'badging', str(apk), env=env, capture=True)
-        for expected in [f"name='{config['packageId']}'", f"versionName='{version}'", f"targetSdkVersion:'{config['targetSdk']}'", "application-label:'DonutMediaCenter'"]:
+        for expected in [f"name='{config['packageId']}'", f"versionName='{version}'", f"versionCode='{version_code}'", f"targetSdkVersion:'{config['targetSdk']}'", "application-label:'DonutMediaCenter'"]:
             if expected not in badging:
                 raise ValueError(f'APK metadata mismatch: {expected}')
         if 'application-debuggable' in badging:
@@ -146,7 +148,7 @@ def main():
             if 'PAGE_ALIGNMENT_16K' not in bundle_config:
                 raise ValueError('App bundle is missing 16KB native packaging alignment')
             artifacts.append((aab, native_alignment(aab)))
-        evidence = {'version': version, 'sourceCommit': source,
+        evidence = {'version': version, 'versionCode': version_code, 'sourceCommit': source,
                     'packageId': config['packageId'], 'targetSdk': config['targetSdk'], 'abis': abis,
                     'signingCertificateSha256': config['signingCertificateSha256'], 'artifacts': []}
         for artifact, alignment in artifacts:

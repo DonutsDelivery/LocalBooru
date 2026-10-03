@@ -77,7 +77,7 @@ if "$ROOT/run-dev.sh" >"$TEMP_DIR/second-output" 2>&1; then
   printf 'duplicate development launch unexpectedly succeeded\n' >&2
   exit 1
 fi
-grep -F 'A LocalBooru development session is already running.' \
+grep -F 'A DonutMediaCenter development session is already running.' \
   "$TEMP_DIR/second-output" >/dev/null
 [[ "$(wc -l <"$FAKE_NPM_CALLS")" -eq 1 ]]
 

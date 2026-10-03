@@ -23,6 +23,8 @@ def fail(label: str, actual, expected) -> None:
 
 root_package = read_json("package.json")
 expected = root_package["version"]
+major, minor, patch = map(int, expected.split("-", 1)[0].split("."))
+android_version_code = major * 1000000 + minor * 1000 + patch
 checks = {
     "package-lock.json": read_json("package-lock.json")["version"],
     "package-lock root package": read_json("package-lock.json")["packages"][""]["version"],
@@ -49,6 +51,7 @@ literal_checks = {
     "Rust app-version fallback": ("src-tauri/src/commands.rs", rf'unwrap_or_else\(\|\| "{re.escape(expected)}"\.to_string\(\)\)'),
     "macOS bundle assertion": ("scripts/build-macos-ci.sh", rf'CFBundleShortVersionString[^\n]+"{re.escape(expected)}"'),
     "Android version name": ("frontend/android/app/build.gradle", rf'versionName "{re.escape(expected)}"'),
+    "Android version code": ("frontend/android/app/build.gradle", rf'versionCode {android_version_code}\b'),
 }
 for label, (path, pattern) in literal_checks.items():
     if not re.search(pattern, read_text(path)):
