@@ -45,3 +45,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T18:12:55.896Z
+  - _ulid: 01M41G7QCD1MJS9TQ5EZNFQRYG
+    content: "Frozen source is now 1e1a8c3. Focused shell tests caught stale gate assumptions: corrected
+      Cargo fixture and made Docker wrapper acquire canonical host lock directly rather than depend
+      on a local compatibility symlink; both gate/startup suites pass. Signed Android final-source
+      rebuild running from external dev-target; old1d3 artifact and runtime evidence retained. Mac9e
+      source233Rust tests/check and330frontend tests pass, universal build running. Inactive main
+      target cache moved with checksum-zero-difference verification to external storage; main
+      symlink preserved, root free about12GB; user apps untouched. Code review
+      @dmc-210-source-review stays source-prep only, full release task active."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T18:25:47.405Z
