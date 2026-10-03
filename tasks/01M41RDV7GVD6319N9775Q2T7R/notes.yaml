@@ -56,3 +56,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T22:00:35.613Z
+  - _ulid: 01M41X2WE4E8123SZW8DY2W0SM
+    content: "Second identical16KB emulator full cold boot on signed6872818 did not abort; native
+      backend reached /health200 after24.54s, PID1636 persisted, crash buffer empty. UI acceptance
+      still FAIL: screenshot after34s and later shows native white DMC splash with no gallery; no
+      onWebViewCreate log. Backend health alone is insufficient. Preserved
+      android-cold-retry-6872818.json/png and later.png; earlier FORTIFY failure remains recorded."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T22:10:20.228Z
