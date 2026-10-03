@@ -2141,3 +2141,16 @@ tasks:
     todos_count: 0
     created_at: 2026-10-03T16:27:59.333Z
     started_at: 2026-10-03T16:28:57.881Z
+  - _ulid: 01M41RDV7GVD6319N9775Q2T7R
+    slugs:
+      - dmc-android-cold-boot-timeout
+    title: Fix Android cold-boot WebView-version timeout crash before DMC 2.1.0 release
+    type: bug
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-03T20:48:56.560Z

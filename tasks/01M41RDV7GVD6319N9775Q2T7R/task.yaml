@@ -1,0 +1,26 @@
+_ulid: 01M41RDV7GVD6319N9775Q2T7R
+slugs:
+  - dmc-android-cold-boot-timeout
+title: Fix Android cold-boot WebView-version timeout crash before DMC 2.1.0 release
+type: bug
+description: "Exact permanently signed 756dd55 APK on disposable Android16.1/16384-page emulator
+  aborts when launched immediately after cold boot during host build load; ordinary second launch
+  recovers. Crash binary panic-location decoded from ELF relocations proves Wry0.54.1
+  src/android/mod.rs:474:38 platform_webview_version unwrap of ten-second GetWebViewVersion response
+  timeout. Evidence outside repo: android-cold-boot-crash-756dd55.txt/json under
+  ~/.local/state/localbooru/releases/2.1.0. Fix the dependency/platform startup behavior durably,
+  preserve existing user library and signing identity, add focused timeout behavior coverage,
+  rebuild exact-source signed APK/AAB and verify cold boot plus normal startup and pairing. Do not
+  substitute API health for visible UI startup. No publication until fixed."
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-10-03T20:48:56.560Z
+todos: []
