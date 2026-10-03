@@ -66,7 +66,7 @@ printf '%s\n' \
   ExecuteCallback \
   ass \
   2 \
-  localbooru \
+  donutmediacenter \
   "/tmp/image with spaces.png" \
   "$PWD" >"$TEMP_DIR/expected-busctl-arguments.log"
 cmp "$TEMP_DIR/expected-busctl-arguments.log" "$BUSCTL_TEST_LOG"
@@ -89,11 +89,11 @@ exec 9>&-
 mkdir -p \
   "$TEMP_DIR/data/localbooru/local-build" \
   "$TEMP_DIR/data/localbooru/local-build/frontend/dist"
-cat >"$TEMP_DIR/data/localbooru/local-build/localbooru" <<'EOF'
+cat >"$TEMP_DIR/data/localbooru/local-build/donutmediacenter" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >"$LAUNCHER_TEST_LOG"
 EOF
-chmod +x "$TEMP_DIR/data/localbooru/local-build/localbooru"
+chmod +x "$TEMP_DIR/data/localbooru/local-build/donutmediacenter"
 printf '<!doctype html>\n' > \
   "$TEMP_DIR/data/localbooru/local-build/frontend/dist/index.html"
 export LAUNCHER_TEST_LOG="$TEMP_DIR/installed-arguments.log"

@@ -1,13 +1,18 @@
 [package]
 name = "localbooru"
 version = "2.0.5"
-description = "Local image library with automatic tagging"
+description = "Local image, video, and music library"
 authors = ["DonutsDelivery <donutsdelivery@users.noreply.github.com>"]
 license = "MIT"
 repository = "https://github.com/DonutsDelivery/LocalBooru"
 edition = "2021"
 rust-version = "1.77.2"
-default-run = "localbooru"
+default-run = "donutmediacenter"
+
+# Keep the package and library identifiers stable for existing mobile bindings.
+[[bin]]
+name = "donutmediacenter"
+path = "src/main.rs"
 
 [lib]
 name = "localbooru_lib"

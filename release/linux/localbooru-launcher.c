@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Installed as /usr/bin/localbooru by the Linux package builder. The real Tauri
+// Installed as /usr/bin/donutmediacenter by the Linux package builder. The real Tauri
 // executable lives under /usr/lib/localbooru so this launcher can select the
 // bundled patched WebKit runtime before the dynamic loader starts the app.
 #define _GNU_SOURCE
@@ -55,13 +55,13 @@ int main(int argc, char **argv) {
         setenv("LOCALBOORU_ENABLE_NATIVE_SVP", "1", 1) != 0)
         goto env_error;
 
-    snprintf(path, sizeof(path), "%s/localbooru", root);
+    snprintf(path, sizeof(path), "%s/donutmediacenter", root);
     argv[0] = path;
     execv(path, argv);
-    fprintf(stderr, "LocalBooru launcher: exec %s failed: %s\n", path, strerror(errno));
+    fprintf(stderr, "DonutMediaCenter launcher: exec %s failed: %s\n", path, strerror(errno));
     return 127;
 
 env_error:
-    fprintf(stderr, "LocalBooru launcher: failed to configure runtime: %s\n", strerror(errno));
+    fprintf(stderr, "DonutMediaCenter launcher: failed to configure runtime: %s\n", strerror(errno));
     return 126;
 }

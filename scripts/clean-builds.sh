@@ -110,6 +110,7 @@ ROOT_REAL="$(canonical "$ROOT")"
 HOME_REAL="$(canonical "$HOME")"
 PROTECTED_PATHS=(
   "$DATA_HOME/localbooru/local-build/localbooru"
+  "$DATA_HOME/localbooru/local-build/donutmediacenter"
   "$ROOT/LocalBooru.apk"
   "$ROOT/DonutMediaCenter.apk"
   "$ROOT/updates"

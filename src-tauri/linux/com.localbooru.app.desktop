@@ -2,7 +2,7 @@
 Name=DonutMediaCenter
 Comment=Browse images and videos and listen to local music
 GenericName=Local Media Library
-Exec=localbooru %U
+Exec=donutmediacenter %U
 Icon=com.localbooru.app
 Terminal=false
 Type=Application
@@ -10,9 +10,9 @@ Categories=AudioVideo;Player;
 Keywords=images;videos;music;albums;gallery;media;
 MimeType=image/bmp;image/gif;image/jpeg;image/png;image/tiff;image/webp;video/3gpp;video/avi;video/mp4;video/mpeg;video/ogg;video/quicktime;video/webm;video/x-flv;video/x-matroska;video/x-ms-wmv;
 StartupNotify=true
-StartupWMClass=localbooru
+StartupWMClass=donutmediacenter
 Actions=NewWindow;
 
 [Desktop Action NewWindow]
 Name=New Window
-Exec=localbooru --new-window
+Exec=donutmediacenter --new-window

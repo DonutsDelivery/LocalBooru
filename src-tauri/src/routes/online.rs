@@ -424,7 +424,7 @@ fn client() -> Result<reqwest::Client, AppError> {
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(20))
         .redirect(Policy::none())
-        .user_agent(format!("LocalBooru/{}", env!("CARGO_PKG_VERSION")))
+        .user_agent(format!("DonutMediaCenter/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| AppError::Internal(e.to_string()))
 }

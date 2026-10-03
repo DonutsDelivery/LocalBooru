@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-APP="$DATA_HOME/localbooru/local-build/localbooru"
+APP="$DATA_HOME/localbooru/local-build/donutmediacenter"
 FRONTEND="$DATA_HOME/localbooru/local-build/frontend/dist/index.html"
 STATE_DIR="$STATE_HOME/localbooru"
 LOG="$STATE_DIR/run.log"
@@ -32,7 +32,7 @@ if command -v busctl >/dev/null 2>&1; then
         ExecuteCallback \
         ass \
         "$argument_count" \
-        localbooru \
+        donutmediacenter \
         "$@" \
         "$PWD" >>"$LOG" 2>&1; then
       exit 0
