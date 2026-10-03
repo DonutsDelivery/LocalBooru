@@ -12164,3 +12164,30 @@ reviews:
     created_at: 2026-10-03T21:59:08.973Z
     updated_at: 2026-10-03T22:29:18.651Z
     notes: []
+  - _ulid: 01M41ZHV1AMNSHPG26253Q612F
+    slugs:
+      - dmc-mac-selection-review
+    title: Mac server selection regression review
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M41ZHV1AREME3N9B75TGH7AY
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-03T22:53:27.466Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs: []
+    subject:
+      type: task
+      content_hash: ""
+      ref: "@dmc-mac-server-selection"
+      shadow_commit: ""
+    threads: []
+    verdicts: []
+    created_at: 2026-10-03T22:53:27.466Z
+    updated_at: null
+    notes: []
