@@ -12,8 +12,12 @@ description: User Mac outside host LAN sees repeated502 /library/stats and /imag
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Reviewed exact0dbd77b0 and merged into main after focused tests plus native
+  Mac346frontend/238Rust tests and universal packaging verification passed. Retains pairing
+  addresses, credentialed fallback and usable offline picker, suppresses repeated outage notices. No
+  push/publication.
 depends_on: []
 context: []
 priority: 1
@@ -87,7 +91,24 @@ history:
           upstream_ref: null
     command: task-set
     timestamp: 2026-10-03T22:26:20.411Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Reviewed exact0dbd77b0 and merged into main after focused tests plus native
+          Mac346frontend/238Rust tests and universal packaging verification passed. Retains pairing
+          addresses, credentialed fallback and usable offline picker, suppresses repeated outage
+          notices. No push/publication.
+        previous: null
+      completed_at:
+        new: 2026-10-03T22:29:37.561Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-03T22:29:37.571Z
 created_at: 2026-10-03T21:40:00.249Z
 started_at: 2026-10-03T21:40:01.573Z
 submitted_at: 2026-10-03T22:01:23.915Z
+completed_at: 2026-10-03T22:29:37.561Z
 todos: []
