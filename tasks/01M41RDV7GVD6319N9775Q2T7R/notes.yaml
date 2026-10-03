@@ -35,3 +35,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T21:02:21.219Z
+  - _ulid: 01M41SW223QZ0X85X8SJ7844B6
+    content: Native exact-tree687 Mac verification passed all238 Rust tests (including5 exact
+      Android-response-helper cases), locked check and330 frontend tests. Universal package link
+      still active. Local focused harness and signed APK/AAB wait behind other project host gate;
+      running agents/builds preserved. Windows756 installer+portable and6 embedded canonical DMC
+      icon frames verified, receipt retained; Windows hardware acceptance host unreachable. No
+      source integration/publication yet.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T21:14:10.883Z
