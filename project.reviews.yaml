@@ -11345,6 +11345,18 @@ reviews:
         required: true
         created_at: 2026-10-03T18:44:39.362Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: 756dd55
+        evidence: "Rerunat756: Cargo build gate,container startup status and development launcher safety
+          tests allpass against canonical lock. Mockedcommands only; no hiddencompile
+          ornormaluserprofilelaunch. Correctedstaleidentityfixture nowpasses."
+        name: build-lock-behavior
+        required: true
+        created_at: 2026-10-03T18:44:40.886Z
+        completed_at: 2026-10-03T18:44:40.886Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11505,6 +11517,13 @@ reviews:
           status: running
           name: release-android-artifacts
         timestamp: 2026-10-03T18:44:39.456Z
+      - _ulid: 01M41HAACE0B2GFRK68ANVAH3Q
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: build-lock-behavior
+        timestamp: 2026-10-03T18:44:40.974Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11554,5 +11573,5 @@ reviews:
         resolved_by: DonutsDelivery
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:44:39.362Z
+    updated_at: 2026-10-03T18:44:40.886Z
     notes: []
