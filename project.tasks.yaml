@@ -2016,15 +2016,13 @@ tasks:
     title: Fix black Linux decoded-frame resize playback
     type: bug
     spec_ref: "@local-decoded-video-resolution"
-    status: completed
+    status: pending
     blocked_by: []
     depends_on: []
     priority: 1
     tags: []
     review_ref: "@review-linux-raw-resize-rendering"
-    notes_count: 4
+    notes_count: 5
     todos_count: 0
     created_at: 2026-10-03T00:42:32.822Z
-    started_at: 2026-10-03T00:43:06.708Z
     submitted_at: 2026-10-03T00:51:51.565Z
-    completed_at: 2026-10-03T01:07:36.732Z
