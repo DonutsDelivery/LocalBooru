@@ -11922,3 +11922,32 @@ reviews:
     created_at: 2026-10-03T21:15:15.503Z
     updated_at: 2026-10-03T21:25:17.234Z
     notes: []
+  - _ulid: 01M41WECXDY6T0ZVW5R9F81ZZH
+    slugs:
+      - dmc-remote-connectivity-review
+    title: Remote pairing and offline startup review
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M41WECXC1KJQZTN299FXFJCA
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-03T21:59:08.973Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@dmc-remote-startup-tailscale"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+      head_branch: fix/remote-startup-tailscale
+      head_commit: 81cad89559b559c82ce8981825d0dcbfe40f6e08
+    threads: []
+    verdicts: []
+    created_at: 2026-10-03T21:59:08.973Z
+    updated_at: null
+    notes: []
