@@ -11317,6 +11317,21 @@ reviews:
         required: true
         created_at: 2026-10-03T18:32:36.025Z
         completed_at: 2026-10-03T18:32:36.025Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: edf4c00
+        evidence: Actual1e signed APKversionCode2001000 matches resolved Tauri
+          major*1000000+minor*1000+patch. Corrected legacygradle2010000→2001000 inedf4; version gate
+          passes matching source and rejects deliberately mismatched legacycode in external
+          temporary source fixture. Signing helper now verifies APKversionCode and records it. No
+          Tauri/mobile native app code changed; final-source rebuild pending after current Linux
+          bootstrap slice.
+        name: android-upgrade-code
+        required: true
+        created_at: 2026-10-03T18:36:58.139Z
+        completed_at: 2026-10-03T18:36:58.139Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11450,6 +11465,13 @@ reviews:
           new_head: edf4c00
           previous_head: 1e1a8c3
         timestamp: 2026-10-03T18:36:56.625Z
+      - _ulid: 01M41GW6FSNZ72F6Q9RFHS3F7N
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: android-upgrade-code
+        timestamp: 2026-10-03T18:36:58.233Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11497,5 +11519,5 @@ reviews:
         kind: blocker
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:36:56.542Z
+    updated_at: 2026-10-03T18:36:58.139Z
     notes: []
