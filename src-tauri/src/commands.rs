@@ -662,13 +662,20 @@ pub async fn set_remote_proxy(
     url: Option<String>,
     fallback_url: Option<String>,
     token: Option<String>,
+    expected_url: Option<String>,
 ) -> Result<(), String> {
     log::info!(
         "[Proxy] Setting remote proxy to: {:?} (fallback: {:?})",
         url,
         fallback_url
     );
-    state.set_remote_proxy(url, fallback_url, token).await;
+    if let Some(expected_url) = expected_url {
+        state
+            .refresh_remote_proxy_fallback(&expected_url, fallback_url, token)
+            .await;
+    } else {
+        state.set_remote_proxy(url, fallback_url, token).await;
+    }
     Ok(())
 }
 

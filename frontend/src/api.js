@@ -2,7 +2,7 @@
  * DonutMediaCenter API client - supports both local and multi-server mode
  */
 import axios from 'axios'
-import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, getActiveServerId, setActiveServerId, LOCAL_SERVER, probeServer } from './serverManager'
+import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, getActiveServerId, setActiveServerId, LOCAL_SERVER, probeServer, serverConnectionUrls, learnServerAddresses } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
 import { adjustmentQuery } from './utils/imageAdjustments.js'
 import { createUnavailableLibraryToastGate, createRemoteConnectionToastGate, isRemoteConnectionFailure, shouldSuppressOptionalNotFound } from './utils/apiErrors.js'
@@ -22,6 +22,11 @@ let certValidated = false  // Whether certificate has been validated this sessio
 let unavailableToastServerId = null
 let suppressRepeatedUnavailableLibraryToast = createUnavailableLibraryToastGate()
 let suppressRepeatedRemoteConnectionToast = createRemoteConnectionToastGate()
+
+let serverConfigGeneration = 0
+let addressRefreshTimer = null
+let addressRefreshAbort = null
+let addressRefreshListener = null
 
 const LOCAL_SERVER_PORT = import.meta.env?.VITE_LOCALBOORU_PORT || '8790'
 
@@ -60,6 +65,14 @@ export function getApiUrl() {
 // per request while running on the fallback network (e.g. Tailscale when the LAN URL is unreachable).
 export async function updateServerConfig(workingUrl = null) {
   if (!isTauriClient()) return
+  const generation = ++serverConfigGeneration
+  clearInterval(addressRefreshTimer)
+  addressRefreshAbort?.abort()
+  addressRefreshAbort = null
+  if (addressRefreshListener) {
+    window.removeEventListener('online', addressRefreshListener)
+    window.removeEventListener('focus', addressRefreshListener)
+  }
 
   // /remote/api stays the same URL while its paired backend changes. The
   // studio must discard its old capability before it can target that backend.
@@ -115,27 +128,13 @@ export async function updateServerConfig(workingUrl = null) {
 
       // Determine which URL to use as proxy primary. If the caller didn't tell us
       // which one was just verified, fall back to the cached probe result, then probe.
-      let primaryUrl = server.url
-      let fallbackUrl = server.fallbackUrl || null
-      if (server.fallbackUrl) {
-        let resolved = workingUrl || server._lastReachableUrl || null
-        if (!resolved) {
-          try {
-            const probe = await probeServer(server)
-            if (probe.success && probe.url) resolved = probe.url
-          } catch { /* probe failed; fall through to default */ }
-        }
-        if (resolved) {
-          primaryUrl = resolved
-          fallbackUrl = resolved === server.url ? (server.fallbackUrl || null) : server.url
-        }
+      const urls = serverConnectionUrls(server)
+      let primaryUrl = workingUrl || server._lastReachableUrl || urls[0]
+      if (!workingUrl && !server._lastReachableUrl && urls.length > 1) {
+        const result = await probeServer(server)
+        if (result.success) primaryUrl = result.url
       }
-
-      // Normalize: reqwest's URL parser rejects scheme-less inputs with a "builder error".
-      // Older saved entries may have been written without `http://`; patch them on the way out.
-      const ensureScheme = u => (u && !/^https?:\/\//i.test(u)) ? `http://${u}` : u
-      primaryUrl = ensureScheme(primaryUrl)
-      fallbackUrl = ensureScheme(fallbackUrl)
+      const fallbackUrl = urls.find(url => url !== primaryUrl) || null
 
       // On Tauri mobile, configure the local server to proxy to remote server
       // This avoids mixed-content blocks (https://tauri.localhost -> http://...)
@@ -150,6 +149,13 @@ export async function updateServerConfig(workingUrl = null) {
 
       // Update axios base URL
       api.defaults.baseURL = getApiUrl()
+
+      // Address discovery never holds up connecting, queuing, or playback.
+      addressRefreshListener = () => { void refreshConnectedServerAddresses(server.id, primaryUrl, generation) }
+      addressRefreshListener()
+      addressRefreshTimer = setInterval(addressRefreshListener, 300_000)
+      window.addEventListener('online', addressRefreshListener)
+      window.addEventListener('focus', addressRefreshListener)
 
       // Validate certificate on first connection to HTTPS server
       if (isHttps(server.url) && currentCertFingerprint) {
@@ -172,6 +178,36 @@ export async function updateServerConfig(workingUrl = null) {
     }
   } finally {
     window.dispatchEvent(new CustomEvent('donut-create-server-changed'))
+  }
+}
+
+export async function refreshConnectedServerAddresses(serverId, workingUrl, generation = serverConfigGeneration) {
+  if (generation !== serverConfigGeneration || addressRefreshAbort) return
+  const controller = new AbortController()
+  addressRefreshAbort = controller
+  try {
+    const server = await getActiveServer()
+    if (!server || server.id !== serverId || generation !== serverConfigGeneration) return
+    // Use the active local proxy and captured credentials without foreground error toasts.
+    const headers = currentServerAuth ? { Authorization: currentServerAuth } : {}
+    const response = await axios.get(`${getApiUrl()}/network/addresses`, { headers, timeout: 5000, signal: controller.signal })
+    if (generation !== serverConfigGeneration) return
+    const learned = await learnServerAddresses(serverId, response.data, workingUrl,
+      () => generation === serverConfigGeneration)
+    if (!learned || generation !== serverConfigGeneration) return
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('set_remote_proxy', {
+      url: workingUrl,
+      fallbackUrl: serverConnectionUrls(learned).find(url => url !== workingUrl) || null,
+      token: learned.token || null,
+      expectedUrl: workingUrl,
+    })
+    window.dispatchEvent(new CustomEvent('dmc-server-addresses-updated'))
+  } catch (error) {
+    // Older/offline peers can keep their existing saved connection unchanged.
+    if (!controller.signal.aborted) console.debug('[Servers] Address refresh unavailable:', error.message || error)
+  } finally {
+    if (addressRefreshAbort === controller) addressRefreshAbort = null
   }
 }
 

@@ -37,6 +37,16 @@ export default function ServerSettings({ onServerChange }) {
   // Load servers on mount
   useEffect(() => {
     loadServers()
+    let disposed = false
+    const refreshAddresses = async () => {
+      const updated = await getServers()
+      if (!disposed) setServers(updated)
+    }
+    window.addEventListener('dmc-server-addresses-updated', refreshAddresses)
+    return () => {
+      disposed = true
+      window.removeEventListener('dmc-server-addresses-updated', refreshAddresses)
+    }
   }, [])
 
   async function loadServers() {
