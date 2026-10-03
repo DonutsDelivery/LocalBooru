@@ -19,8 +19,8 @@ These identifiers deliberately remain stable:
   names, native plugin ABI and shared build locks.
 - Linux single-instance D-Bus address and desktop file/icon identity.
 
-Linux package launchers and the local installer provide a `localbooru`
-compatibility link to `donutmediacenter` for existing shortcuts. The real
+Linux packages and the local installer provide a `localbooru` compatibility
+launcher that executes `donutmediacenter` for existing shortcuts. The real
 executable and process use the current name. Bundled native runtime resources
 remain under `/usr/lib/localbooru`, independent of the executable name.
 

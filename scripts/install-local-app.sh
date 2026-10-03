@@ -128,7 +128,11 @@ mv -f "$STAGED_APP" "$INSTALLED_APP"
 COMMITTED=1
 # Old desktop entries may still execute this path. Forward them to the current
 # binary rather than leaving a second, stale app installed.
-ln -s donutmediacenter "$STAGED_APP"
+cat >"$STAGED_APP" <<'EOF'
+#!/bin/sh
+exec "$(dirname -- "$(readlink -f -- "$0")")/donutmediacenter" "$@"
+EOF
+chmod 0755 "$STAGED_APP"
 mv -Tf "$STAGED_APP" "$INSTALL_DIR/localbooru"
 rm -rf "$BACKUP_DIST"
 BACKUP_DIST=""
