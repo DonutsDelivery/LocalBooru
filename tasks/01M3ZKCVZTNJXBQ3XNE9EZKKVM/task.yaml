@@ -9,7 +9,7 @@ description: User reports lower decoded-frame resolution produces a black player
 spec_ref: "@local-decoded-video-resolution"
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 closed_reason: null
 depends_on: []
@@ -97,8 +97,18 @@ history:
         previous: 2026-10-03T01:07:36.732Z
     command: task-reset
     timestamp: 2026-10-03T01:30:44.317Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-03T01:30:46.071Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-03T01:30:46.072Z
 created_at: 2026-10-03T00:42:32.822Z
-started_at: null
+started_at: 2026-10-03T01:30:46.071Z
 submitted_at: 2026-10-03T00:51:51.565Z
 completed_at: null
 todos: []
