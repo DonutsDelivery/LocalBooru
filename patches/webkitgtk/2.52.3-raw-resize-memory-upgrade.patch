@@ -1,0 +1,16 @@
+# preimage e9aa894efdad6e148c4457930687a3d31811e2ffc2bf46b86a0d24a39dbef301 ebd7f1a383c897097523233a8e248a39ee72d3652c4ca45a5a5ed22e81f6bdd7 Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -305,0 +306,3 @@
++    // videoscale cannot resize accelerator-only buffers. Negotiate ordinary
++    // raw memory here; the downstream WebKit GL sink uploads the resized frame.
++    gst_caps_set_features(target, 0, gst_caps_features_new_empty());
+@@ -329,0 +333,7 @@
++    // Constrain memory before playbin negotiates its decoder/converter path.
++    // Otherwise videoscale's ANY-feature passthrough caps can select GL/DMABuf
++    // frames, which only work at their original dimensions without an SVP
++    // filter downstream already requiring system-memory I420.
++    GstCaps* raw = gst_caps_from_string("video/x-raw");
++    g_object_set(caps, "caps", raw, nullptr);
++    gst_caps_unref(raw);

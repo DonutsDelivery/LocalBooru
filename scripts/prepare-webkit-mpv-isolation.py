@@ -43,21 +43,26 @@ PATCH = Path(__file__).resolve().parents[1] / "patches/webkitgtk/2.52.3-existing
 def prepare(source, apply=False):
     entries = [line.split()[2:] for line in PATCH.read_text().splitlines()
                if line.startswith("# preimage ")]
-    states = []
-    for before, after, relative in entries:
-        path = source / relative
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        if digest not in (before, after):
-            raise ValueError(f"Unrecognized source preimage: {relative}; inspect/rebase the upgrade patch")
-        states.append(digest == after)
-    if all(states):
+    digests = {relative: hashlib.sha256((source / relative).read_bytes()).hexdigest()
+               for _, _, relative in entries}
+    if all(digests[relative] == after for _, after, relative in entries):
         return "already upgraded"
-    if any(states):
-        raise ValueError("Partially upgraded source; inspect before continuing")
-    subprocess.run(["patch", "--batch", "--forward", "--dry-run", "-p1", "-i", str(PATCH)],
+    # Also recognize the exact previously deployed relay/scaler as a complete
+    # tuple. A partial or unknown installation must still be rejected.
+    memory_patch = PATCH.with_name("2.52.3-raw-resize-memory-upgrade.patch")
+    memory_entries = [line.split()[2:] for line in memory_patch.read_text().splitlines()
+                      if line.startswith("# preimage ")]
+    memory_before = {relative: before for before, _, relative in memory_entries}
+    selected_patch = PATCH
+    if all(digests[relative] == memory_before.get(relative, after)
+           for _, after, relative in entries):
+        selected_patch = memory_patch
+    elif not all(digests[relative] == before for before, _, relative in entries):
+        raise ValueError("Unrecognized or partially upgraded source; inspect/rebase the upgrade patch")
+    subprocess.run(["patch", "--batch", "--forward", "--dry-run", "-p1", "-i", str(selected_patch)],
                    cwd=source, check=True, stdout=subprocess.DEVNULL)
     if apply:
-        subprocess.run(["patch", "--batch", "--forward", "-p1", "-i", str(PATCH)],
+        subprocess.run(["patch", "--batch", "--forward", "-p1", "-i", str(selected_patch)],
                        cwd=source, check=True, stdout=subprocess.DEVNULL)
         for _, after, relative in entries:
             if hashlib.sha256((source / relative).read_bytes()).hexdigest() != after:

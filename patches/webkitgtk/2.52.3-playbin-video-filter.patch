@@ -13,7 +13,7 @@ diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStrea
 +#include <cstring>
 @@ -91,0 +101 @@
 +#include <wtf/Function.h>
-@@ -137,0 +148,210 @@
+@@ -137,0 +148,220 @@
 +// DMC's selected video element registers the PID of its actual graph host.
 +struct LocalBooruVideoHostRecord {
 +    std::string path;
@@ -172,6 +172,9 @@ diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStrea
 +        outputHeight = height < 2 ? height : std::max(2U, outputHeight & ~1U);
 +    }
 +    GstCaps* target = gst_caps_copy(caps);
++    // videoscale cannot resize accelerator-only buffers. Negotiate ordinary
++    // raw memory here; the downstream WebKit GL sink uploads the resized frame.
++    gst_caps_set_features(target, 0, gst_caps_features_new_empty());
 +    gst_caps_set_simple(target, "width", G_TYPE_INT, static_cast<gint>(outputWidth), "height", G_TYPE_INT, static_cast<gint>(outputHeight), nullptr);
 +    g_object_set(probe->capsFilter, "caps", target, nullptr);
 +    gst_caps_unref(target);
@@ -196,6 +199,13 @@ diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStrea
 +        if (bin) gst_object_unref(bin);
 +        return filter;
 +    }
++    // Constrain memory before playbin negotiates its decoder/converter path.
++    // Otherwise videoscale's ANY-feature passthrough caps can select GL/DMABuf
++    // frames, which only work at their original dimensions without an SVP
++    // filter downstream already requiring system-memory I420.
++    GstCaps* raw = gst_caps_from_string("video/x-raw");
++    g_object_set(caps, "caps", raw, nullptr);
++    gst_caps_unref(raw);
 +    gst_bin_add_many(GST_BIN(bin), scale, caps, nullptr);
 +    bool linked = gst_element_link(scale, caps);
 +    if (filter) {
@@ -224,9 +234,9 @@ diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStrea
 +}
 +
 +
-@@ -213,0 +434 @@
+@@ -213,0 +444 @@
 +    localBooruUnregisterVideoHost(this);
-@@ -569,0 +791,48 @@
+@@ -569,0 +801,48 @@
 +// HTTP range seeks can wait for decoder/streaming locks during FLUSH. Keep
 +// that event dispatch off the WebProcess main thread. SVP, looping and rate
 +// changes retain their existing dispatch policy.
@@ -275,10 +285,10 @@ diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStrea
 +    g_object_set_data(G_OBJECT(pipeline), "localbooru-http-seek-generation", GSIZE_TO_POINTER(generation));
 +}
 +
-@@ -573,0 +843,2 @@
+@@ -573,0 +853,2 @@
 +    Function<void(bool)> completionCallback;
 +    gsize generation { 0 };
-@@ -613,0 +885,9 @@
+@@ -613,0 +895,9 @@
 +    bool asyncHTTP = !isAsync && localBooruShouldDispatchSeekAsync(m_pipeline.get(), m_url.protocolIsInHTTPFamily() && !m_url.path().endsWithIgnoringASCIICase(".m3u8"_s), player->isLooping(), m_isChangingRate);
 +    if (asyncHTTP) {
 +        auto generation = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(m_pipeline.get()), "localbooru-http-seek-generation"));
@@ -288,10 +298,10 @@ diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStrea
 +        g_object_set_data(G_OBJECT(m_pipeline.get()), "localbooru-http-seek-dispatch-pending", GSIZE_TO_POINTER(generation));
 +    }
 +
-@@ -635 +915 @@
+@@ -635 +925 @@
 -    if (isAsync) {
 +    if (isAsync || asyncHTTP) {
-@@ -636,0 +917,39 @@
+@@ -636,0 +927,39 @@
 +        if (asyncHTTP) {
 +            // The pipeline identity plus ticket rejects late failed workers,
 +            // including a newer seek to the same timestamp.
@@ -331,48 +341,48 @@ diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStrea
 +                });
 +            };
 +        }
-@@ -641,0 +961,5 @@
+@@ -641,0 +971,5 @@
 +
 +            if (data->completionCallback && GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(pipeline), "localbooru-http-seek-generation")) != data->generation) {
 +                data->completionCallback(false);
 +                return;
 +            }
-@@ -649 +973,3 @@
+@@ -649 +983,3 @@
 -            if (!gst_element_send_event(pipeline, data->event.leakRef()))
 +            if (!gst_element_send_event(pipeline, data->event.leakRef())) {
 +                if (data->completionCallback)
 +                    data->completionCallback(false);
-@@ -651 +977,4 @@
+@@ -651 +987,4 @@
 -
 +            }
 +
 +            if (data->completionCallback)
 +                data->completionCallback(true);
-@@ -706 +1035 @@
+@@ -706 +1045 @@
 -        if (m_isSeekPending) {
 +        if (m_isSeekPending || localBooruShouldDispatchSeekAsync(m_pipeline.get(), m_url.protocolIsInHTTPFamily() && !m_url.path().endsWithIgnoringASCIICase(".m3u8"_s), player->isLooping(), m_isChangingRate)) {
-@@ -708 +1037,3 @@
+@@ -708 +1047,3 @@
 -            m_seekTarget = target;
 +            localBooruAcceptHTTPSeek(m_pipeline.get(), m_url.protocolIsInHTTPFamily() && !m_url.path().endsWithIgnoringASCIICase(".m3u8"_s), player->isLooping(), m_isChangingRate);
 +            if (m_isSeekPending)
 +                m_seekTarget = target;
-@@ -719,0 +1051 @@
+@@ -719,0 +1061 @@
 +    localBooruAcceptHTTPSeek(m_pipeline.get(), m_url.protocolIsInHTTPFamily() && !m_url.path().endsWithIgnoringASCIICase(".m3u8"_s), player->isLooping(), m_isChangingRate);
-@@ -743 +1075,2 @@
+@@ -743 +1085,2 @@
 -    if (isMediaStreamPlayer() || !m_isChangingRate)
 +    if (isMediaStreamPlayer() || !m_isChangingRate
 +        || (m_pipeline && g_object_get_data(G_OBJECT(m_pipeline.get()), "localbooru-http-seek-dispatch-pending")))
-@@ -1372,0 +1706,2 @@
+@@ -1372,0 +1716,2 @@
 +    if (auto player = m_player.get(); player && player->isVideoPlayer())
 +        localBooruRegisterVideoHost(this, elementId.utf8().data());
-@@ -3101 +3436,2 @@
+@@ -3101 +3446,2 @@
 -        } else if (m_isSeeking && !(state == GST_STATE_PLAYING && pending == GST_STATE_PAUSED))
 +        } else if (m_isSeeking && !g_object_get_data(G_OBJECT(m_pipeline.get()), "localbooru-http-seek-dispatch-pending")
 +            && !(state == GST_STATE_PLAYING && pending == GST_STATE_PAUSED))
-@@ -3468,0 +3805,2 @@
+@@ -3468,0 +3815,2 @@
 +    if (player->isVideoPlayer())
 +        localBooruRegisterVideoHost(this, elementId.utf8().data());
-@@ -3573,0 +3912,30 @@
+@@ -3573,0 +3922,30 @@
 +
 +    // Deinterlacing doubles the frame-processing work and most LocalBooru
 +    // content is progressive. Keep it off, especially for the WebGL VR path.
