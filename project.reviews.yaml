@@ -10501,6 +10501,20 @@ reviews:
         required: true
         created_at: 2026-10-03T01:57:54.161Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f4c601e
+          head_commit: 03d3bb3
+        evidence: Exact source 03d3bb3 frontend Vite build and wrapped Tauri no-bundle release build
+          completed exit0. Previous Cargo/Rust/compiler writers exited. Public app/frontend hash
+          manifest retained at
+          /mnt/storage/Projects/extra_storage/localbooru/builds/video-filename-overlay-20261003/build-receipt.json.
+          Seven existing Rust warnings; no tests or actual gallery UI validation run.
+        name: Desktop frontend and app build
+        required: true
+        created_at: 2026-10-03T02:03:15.432Z
+        completed_at: 2026-10-03T02:03:15.432Z
     events:
       - _ulid: 01M3ZQK2GW8E9N0VP3P7G9VEAA
         actor: root
@@ -10522,6 +10536,13 @@ reviews:
           status: running
           name: Desktop frontend and app build
         timestamp: 2026-10-03T01:57:54.229Z
+      - _ulid: 01M3ZR0N56M4J7247W7S2C5Y5X
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: Desktop frontend and app build
+        timestamp: 2026-10-03T02:03:15.494Z
     examined_commit: 03d3bb3
     external_links: []
     lifecycle_state: draft
@@ -10536,5 +10557,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T01:55:50.429Z
-    updated_at: 2026-10-03T01:57:54.161Z
+    updated_at: 2026-10-03T02:03:15.432Z
     notes: []
