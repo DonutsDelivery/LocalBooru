@@ -30,3 +30,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T04:11:24.261Z
+  - _ulid: 01M4002TM56KZ6CYQZETZHXR5C
+    content: "Focused Rust python_runtime::tests executed: 3 pass (pinned platform manifest, archive
+      safety, actual tar extraction into spaces/Unicode); desktop tests binary built successfully.
+      Focused Mac Python discovery/TLS tests refreshed on real Apple Silicon: all 4 pass. Full
+      Mac/Windows application generation acceptance remains unverified; this task addresses native
+      storage/resource discovery and app-private Python prerequisites."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T04:24:15.237Z
