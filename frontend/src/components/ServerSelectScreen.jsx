@@ -10,6 +10,7 @@ import {
   probeServer,
   pingAllServers,
   serverFromQrHandshake,
+  pairingUrls,
   isMobileApp,
   LOCAL_SERVER
 } from '../serverManager'
@@ -156,9 +157,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
         }
 
         let workingUrl = null
-        let urls = []
-        if (qrData.local) urls.push(qrData.local)
-        if (qrData.public) urls.push(qrData.public)
+        const urls = pairingUrls(qrData)
 
         const errors = []
         for (const url of urls) {
@@ -169,7 +168,7 @@ export default function ServerSelectScreen({ servers: initialServers, serverStat
             } else {
               testResult = await testServerConnection(url)
             }
-            if (testResult.success) {
+            if (testResult.success || (testResult.error === 'Authentication required' && qrData.nonce)) {
               workingUrl = url
               break
             }

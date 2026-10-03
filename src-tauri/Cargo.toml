@@ -86,6 +86,7 @@ dashmap = "6"
 walkdir = "2"
 mime_guess = "2"
 dirs = "5"
+if-addrs = "=0.14.0"
 
 # Auth
 jsonwebtoken = "9"

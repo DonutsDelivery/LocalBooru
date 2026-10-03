@@ -2261,7 +2261,7 @@ function AppShell() {
   // Initialize server configuration for mobile app
   useEffect(() => {
     async function initMobile() {
-      const { isMobileApp, isWindowsOrMacDesktopApp, getServers, getActiveServer, setActiveServerId, pingAllServers, LOCAL_SERVER } = await import('./serverManager')
+      const { isMobileApp, isWindowsOrMacDesktopApp, getServers, getActiveServer, setActiveServerId, pingAllServers, probeServer, LOCAL_SERVER } = await import('./serverManager')
       const { updateServerConfig, healthCheck: apiHealthCheck } = await import('./api')
 
       addLog(`isMobileApp=${isMobileApp()}, isTauri=${isTauri}`)
@@ -2316,7 +2316,15 @@ function AppShell() {
         const active = await getActiveServer()
         if (active && active.id !== LOCAL_SERVER.id) {
           addLog(`Restoring paired server ${active.name || active.id}`)
-          await updateServerConfig()
+          const result = await probeServer(active)
+          if (result.success) {
+            await updateServerConfig(result.url)
+          } else {
+            setServers(serverList)
+            setServerStatuses({ [active.id]: result.error === 'Authentication required' ? 'auth_failed' : 'offline' })
+            setConnectionError(`Could not connect to ${active.name || 'the selected server'}. Retry, edit its fallback address, or choose This Device.`)
+            setShowServerSetup(true)
+          }
         } else if (!active && serverList.length > 0) {
           setServers(serverList)
           setServerStatuses(await pingAllServers(serverList))

@@ -497,42 +497,63 @@ pub async fn copy_image_to_clipboard(
 /// Test connection to a remote server (used by mobile QR pairing).
 /// Routes through Rust to avoid mixed-content blocks in the WebView.
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TestServerResult {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    pub network_failure: bool,
 }
 
 #[tauri::command]
-pub async fn test_remote_server(url: String) -> Result<TestServerResult, String> {
+pub async fn test_remote_server(
+    url: String,
+    username: Option<String>,
+    password: Option<String>,
+    token: Option<String>,
+) -> Result<TestServerResult, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
-        .danger_accept_invalid_certs(true)
+        // Legacy QR discovery carries no credential. Authenticated probes use
+        // normal TLS validation, matching the browser probe's trust boundary.
+        .danger_accept_invalid_certs(token.is_none() && username.is_none() && password.is_none())
         .build()
         .map_err(|e| e.to_string())?;
 
-    match client.get(format!("{}/api", url)).send().await {
+    let request = client.get(format!("{}/api", url.trim_end_matches('/')));
+    let request = if let Some(token) = token {
+        request.bearer_auth(token)
+    } else if let (Some(username), Some(password)) = (username, password) {
+        request.basic_auth(username, Some(password))
+    } else {
+        request
+    };
+    match request.send().await {
         Ok(resp) => {
             if resp.status() == 401 {
                 Ok(TestServerResult {
                     success: false,
                     error: Some("Authentication required".into()),
+                    network_failure: false,
                 })
             } else if !resp.status().is_success() {
                 Ok(TestServerResult {
                     success: false,
                     error: Some(format!("Server returned {}", resp.status())),
+                    network_failure: false,
                 })
             } else {
                 Ok(TestServerResult {
                     success: true,
                     error: None,
+                    network_failure: false,
                 })
             }
         }
         Err(e) => Ok(TestServerResult {
             success: false,
             error: Some(e.to_string()),
+            network_failure: true,
         }),
     }
 }
@@ -712,5 +733,78 @@ mod tests {
         // AC: @windows-copy-image ac-2
         let error = decode_clipboard_image(b"not an image").unwrap_err();
         assert!(error.contains("Failed to decode image for clipboard"));
+    }
+
+    async fn probe_fixture(expected_auth: &'static str) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let router = axum::Router::new().route(
+            "/api",
+            axum::routing::get(move |headers: axum::http::HeaderMap| async move {
+                if headers.get("authorization").and_then(|v| v.to_str().ok()) == Some(expected_auth)
+                {
+                    axum::http::StatusCode::OK
+                } else {
+                    axum::http::StatusCode::UNAUTHORIZED
+                }
+            }),
+        );
+        let worker = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        (url, worker)
+    }
+
+    #[tokio::test]
+    async fn native_remote_probe_retains_bearer_authorization() {
+        let (url, worker) = probe_fixture("Bearer synthetic-credential").await;
+        let result = super::test_remote_server(
+            format!("{url}/"),
+            None,
+            None,
+            Some("synthetic-credential".into()),
+        )
+        .await
+        .unwrap();
+        assert!(result.success);
+        assert!(!result.network_failure);
+        assert_eq!(
+            serde_json::to_value(&result).unwrap()["networkFailure"],
+            false
+        );
+        worker.abort();
+    }
+
+    #[tokio::test]
+    async fn native_remote_probe_distinguishes_auth_from_network_failure() {
+        let (url, worker) = probe_fixture("Bearer synthetic-credential").await;
+        let result = super::test_remote_server(url, None, None, None)
+            .await
+            .unwrap();
+        assert!(!result.success);
+        assert!(!result.network_failure);
+        assert_eq!(result.error.as_deref(), Some("Authentication required"));
+        worker.abort();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let result = super::test_remote_server(url, None, None, None)
+            .await
+            .unwrap();
+        assert!(!result.success);
+        assert!(result.network_failure);
+    }
+
+    #[tokio::test]
+    async fn native_remote_probe_supports_legacy_basic_authorization() {
+        let (url, worker) = probe_fixture("Basic Zml4dHVyZTpmaXh0dXJl").await;
+        let result =
+            super::test_remote_server(url, Some("fixture".into()), Some("fixture".into()), None)
+                .await
+                .unwrap();
+        assert!(result.success);
+        assert!(!result.network_failure);
+        worker.abort();
     }
 }
