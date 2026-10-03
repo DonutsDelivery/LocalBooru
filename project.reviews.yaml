@@ -10791,6 +10791,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-03T05:18:52.552Z
+      - _ulid: 01M403766KT6VAK7Q7MW78A9KN
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: "7186811"
+          previous_head: 5ca1dae
+        timestamp: 2026-10-03T05:19:03.891Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: open
@@ -10802,7 +10809,7 @@ reviews:
       base_branch: main
       base_commit: f59b4d0
       head_branch: fix/platform-local-libraries
-      head_commit: 5ca1dae
+      head_commit: "7186811"
     threads:
       - _ulid: 01M40210Q9XH6N5ERX4VXSB26R
         entries:
@@ -10820,5 +10827,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T05:18:52.478Z
+    updated_at: 2026-10-03T05:19:03.822Z
     notes: []
