@@ -37,3 +37,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T04:19:00.804Z
+  - _ulid: 01M4005RNMNE35Q530QF0WKZ8Y
+    content: "Offline music playback verified in native APK: album Play produced active Android
+      AudioFlinger track owned by app PID, MP3 44.1kHz, zero underruns. Video lightbox visually
+      rendered synthetic moving pattern and advanced playback position offline. Revoking all
+      image/video/selected permissions kills/restarts app as expected; indexed original PNG/MP4 file
+      endpoints then return404 rather than bypassing grants. Android limited-selection test in
+      progress."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T04:25:51.540Z
