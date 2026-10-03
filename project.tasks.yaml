@@ -2033,7 +2033,7 @@ tasks:
     title: Show filenames along bottom of video thumbnails
     type: task
     spec_ref: "@media-browsing"
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 2
@@ -2041,3 +2041,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-03T01:52:47.564Z
+    started_at: 2026-10-03T01:53:22.653Z
