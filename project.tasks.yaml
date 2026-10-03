@@ -2178,7 +2178,7 @@ tasks:
       - dmc-mac-server-selection
     title: Repair Mac server selection without blank reloads
     type: bug
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 1
@@ -2186,3 +2186,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-03T22:46:51.898Z
+    started_at: 2026-10-03T22:47:18.430Z
