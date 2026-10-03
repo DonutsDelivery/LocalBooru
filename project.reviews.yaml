@@ -12232,9 +12232,25 @@ reviews:
           status: pass
           name: frontend-build
         timestamp: 2026-10-03T22:53:46.545Z
+      - _ulid: 01M41ZJF0HSCN417CYBXSXJZBF
+        actor: codex
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: approve
+        timestamp: 2026-10-03T22:53:47.921Z
+      - _ulid: 01M41ZJF0HRYPJX66JK3FDSMFS
+        actor: codex
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: closed
+        timestamp: 2026-10-03T22:53:47.921Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs: []
     subject:
       type: task
@@ -12242,7 +12258,14 @@ reviews:
       ref: "@dmc-mac-server-selection"
       shadow_commit: ""
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: approve
+        reviewer: codex
+        role: reviewer
+        created_at: 2026-10-03T22:53:47.920Z
     created_at: 2026-10-03T22:53:27.466Z
-    updated_at: 2026-10-03T22:53:46.475Z
+    updated_at: 2026-10-03T22:53:47.921Z
     notes: []
