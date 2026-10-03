@@ -36,6 +36,16 @@ test('Android cancellation returns no directory and permission failures remain v
   await expect(tauriAPI.addDirectory()).rejects.toThrow('Media access denied')
 })
 
+test('native Android permission rejection strings provide a readable error message', async () => {
+  window.__TAURI_INTERNALS__ = {}
+  vi.stubGlobal('navigator', { userAgent: 'Android' })
+  invoke.mockRejectedValue('Media access was not granted. Allow access and try again.')
+  const { tauriAPI } = await import('./tauriAPI')
+  await expect(tauriAPI.addDirectory()).rejects.toMatchObject({
+    message: 'Media access was not granted. Allow access and try again.'
+  })
+})
+
 test('Mac keeps the native desktop folder picker and filenames with spaces', async () => {
   window.__TAURI_INTERNALS__ = {}
   vi.stubGlobal('navigator', { userAgent: 'Macintosh' })

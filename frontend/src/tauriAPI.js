@@ -68,8 +68,13 @@ const tauriAPI = {
   addDirectory: async () => {
     await tauriReady
     if (/Android/i.test(navigator.userAgent) && tauriInvoke) {
-      const result = await tauriInvoke('android_pick_media_directory')
-      return result?.directory || null
+      try {
+        const result = await tauriInvoke('android_pick_media_directory')
+        return result?.directory || null
+      } catch (error) {
+        // Tauri rejects native Result errors as strings; callers display .message.
+        throw typeof error === 'string' ? new Error(error) : error
+      }
     }
     if (!tauriDialog) return null
     try {
