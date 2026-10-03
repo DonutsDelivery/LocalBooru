@@ -320,7 +320,7 @@ pub fn get_app_version(app: AppHandle) -> String {
     app.config()
         .version
         .clone()
-        .unwrap_or_else(|| "2.0.5".to_string())
+        .unwrap_or_else(|| "2.1.0".to_string())
 }
 
 /// Quit the application

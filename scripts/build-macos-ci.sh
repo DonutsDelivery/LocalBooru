@@ -30,11 +30,11 @@ npm --prefix "$ROOT/frontend" ci
 npm --prefix "$ROOT/frontend" test
 npm --prefix "$ROOT/frontend" run build
 
-cargo test --locked --manifest-path "$ROOT/src-tauri/Cargo.toml" --lib
-cargo check --locked --manifest-path "$ROOT/src-tauri/Cargo.toml"
+"$ROOT/scripts/run-cargo.sh" test --locked --manifest-path "$ROOT/src-tauri/Cargo.toml" --lib
+"$ROOT/scripts/run-cargo.sh" check --locked --manifest-path "$ROOT/src-tauri/Cargo.toml"
 (
   cd "$ROOT"
-  cargo tauri build --ci --target "$TARGET" --bundles app,dmg
+  "$ROOT/scripts/run-cargo.sh" tauri build --ci --target "$TARGET" --bundles app,dmg
 )
 git -C "$ROOT" diff --exit-code -- Cargo.lock
 
@@ -51,7 +51,7 @@ INFO_PLIST="$APP/Contents/Info.plist"
 ARCHS="$(lipo -archs "$BINARY")"
 [[ " $ARCHS " == *" arm64 "* ]]
 [[ " $ARCHS " == *" x86_64 "* ]]
-[[ "$(plutil -extract CFBundleShortVersionString raw "$INFO_PLIST")" == "2.0.5" ]]
+[[ "$(plutil -extract CFBundleShortVersionString raw "$INFO_PLIST")" == "2.1.0" ]]
 [[ "$(plutil -extract CFBundleIdentifier raw "$INFO_PLIST")" == "com.localbooru.app" ]]
 [[ "$(plutil -extract LSMinimumSystemVersion raw "$INFO_PLIST")" == "11.0" ]]
 hdiutil verify "$DMG"

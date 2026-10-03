@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "id": "localbooru",
+  "name": "DonutMediaCenter",
+  "source": {
+    "repository": "DonutsDelivery/LocalBooru",
+    "publicRepository": "DonutsDelivery/LocalBooru",
+    "version": {
+      "kind": "json",
+      "path": "src-tauri/tauri.conf.json",
+      "field": "version"
+    }
+  },
+  "channels": {
+    "stable": {
+      "build": {
+        "owner": "local",
+        "command": "scripts/build-release-matrix.sh"
+      },
+      "artifacts": [
+        {
+          "id": "linux-appimage",
+          "platform": "linux",
+          "architecture": "x86_64",
+          "kind": "appimage",
+          "source": "dist-linux-local/DonutMediaCenter-Linux.AppImage",
+          "filename": "DonutMediaCenter-Linux.AppImage",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "appimage"
+          ],
+          "publishTo": [
+            "vps",
+            "github",
+            "website"
+          ]
+        },
+        {
+          "id": "linux-deb",
+          "platform": "linux",
+          "architecture": "x86_64",
+          "kind": "deb",
+          "source": "dist-linux-local/DonutMediaCenter-Linux.deb",
+          "filename": "DonutMediaCenter-Linux.deb",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "deb"
+          ],
+          "publishTo": [
+            "vps",
+            "github",
+            "website"
+          ]
+        },
+        {
+          "id": "linux-rpm",
+          "platform": "linux",
+          "architecture": "x86_64",
+          "kind": "rpm",
+          "source": "dist-linux-local/DonutMediaCenter-Linux.rpm",
+          "filename": "DonutMediaCenter-Linux.rpm",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "rpm"
+          ],
+          "publishTo": [
+            "vps",
+            "github",
+            "website"
+          ]
+        },
+        {
+          "id": "linux-zip",
+          "platform": "linux",
+          "architecture": "x86_64",
+          "kind": "zip",
+          "source": "dist-linux-local/DonutMediaCenter-Linux.zip",
+          "filename": "DonutMediaCenter-Linux.zip",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "zip"
+          ],
+          "publishTo": [
+            "vps",
+            "github",
+            "website"
+          ]
+        },
+        {
+          "id": "native-sources",
+          "platform": "source",
+          "architecture": "all",
+          "kind": "source-offer",
+          "source": "dist-linux-local/DonutMediaCenter-Native-Runtime-Sources.tar.xz",
+          "filename": "DonutMediaCenter-Native-Runtime-Sources.tar.xz",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "source-offer"
+          ],
+          "publishTo": [
+            "vps",
+            "github"
+          ]
+        },
+        {
+          "id": "windows-installer",
+          "platform": "windows",
+          "architecture": "x86_64",
+          "kind": "installer",
+          "source": "dist-windows-local/DonutMediaCenter-Windows-Setup.exe",
+          "filename": "DonutMediaCenter-Windows-Setup.exe",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "pe"
+          ],
+          "publishTo": [
+            "vps",
+            "github",
+            "website"
+          ]
+        },
+        {
+          "id": "windows-zip",
+          "platform": "windows",
+          "architecture": "x86_64",
+          "kind": "zip",
+          "source": "dist-windows-local/DonutMediaCenter-Windows.zip",
+          "filename": "DonutMediaCenter-Windows.zip",
+          "required": true,
+          "minSize": 1000000,
+          "validators": [
+            "sha256",
+            "zip"
+          ],
+          "publishTo": [
+            "vps",
+            "github",
+            "website"
+          ]
+        }
+      ]
+    },
+    "beta": {
+      "build": {
+        "owner": "local",
+        "command": "scripts/build-android-apk.sh --keep-cache --aab",
+        "signingKeyRef": "localbooru"
+      },
+      "artifacts": [
+        {
+          "id": "android-universal",
+          "platform": "android",
+          "architecture": "universal",
+          "kind": "apk",
+          "source": "DonutMediaCenter.apk",
+          "filename": "DonutMediaCenter-Android-universal.apk",
+          "required": true,
+          "minSize": 10000000,
+          "validators": [
+            "sha256",
+            "apk-release-signing"
+          ],
+          "android": {
+            "packageId": "com.localbooru.app",
+            "abis": [
+              "arm64-v8a",
+              "armeabi-v7a",
+              "x86",
+              "x86_64"
+            ],
+            "signingCertificateSha256": "6ac8ec14f78afe7303ab6e0384c2237a77da35c8d990ad180601aedc7ad8057d"
+          },
+          "publishTo": [
+            "vps",
+            "github",
+            "website"
+          ]
+        }
+      ]
+    }
+  },
+  "destinations": {
+    "github": {
+      "enabled": true,
+      "repository": "DonutsDelivery/LocalBooru"
+    },
+    "vps": {
+      "enabled": true,
+      "pathTemplate": "/opt/donutsdelivery/downloads/localbooru/{version}/{filename}"
+    },
+    "website": {
+      "enabled": true,
+      "route": "/localbooru"
+    },
+    "aur": {
+      "enabled": false
+    },
+    "announcements": {
+      "enabled": true,
+      "discord": true,
+      "postiz": [
+        "x",
+        "facebook",
+        "bluesky"
+      ]
+    }
+  },
+  "readiness": {
+    "status": "migration",
+    "blockers": [
+      "Shared VPS/GitHub/website beta publication adapters are not implemented yet."
+    ]
+  },
+  "platformExclusions": [
+    {
+      "platform": "macos",
+      "reason": "Native build availability is not real-hardware product acceptance.",
+      "requiredEvidence": [
+        "Real Apple hardware installation and launch",
+        "Database, gallery, video, and sidecar acceptance",
+        "Long-running import and rendering acceptance"
+      ]
+    }
+  ]
+}

@@ -73,7 +73,7 @@ prepare_webkit() {
   local build_dir="$BUILD/webkit-build"
   local patch_file="$ROOT/patches/webkitgtk/2.52.3-playbin-video-filter.patch"
   local patch_hash
-  local configure_stamp="$build_dir/.localbooru-config-ubuntu24-gtk3-v2"
+  local configure_stamp="$build_dir/.localbooru-config-ubuntu24-gtk3-ruby34-v3"
   patch_hash="$(sha256sum "$patch_file" | cut -d' ' -f1)"
 
   download_checked \
@@ -98,6 +98,7 @@ prepare_webkit() {
       -DCMAKE_CXX_COMPILER=clang++ \
       -DCMAKE_C_COMPILER_LAUNCHER=ccache \
       -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+      -DRuby_EXECUTABLE=/opt/ruby/bin/ruby \
       -DUSE_GTK4=OFF \
       -DENABLE_DOCUMENTATION=OFF \
       -DENABLE_INTROSPECTION=OFF \

@@ -34,7 +34,7 @@ cmp "$TEMP_DIR/expected-args" "$FAKE_CARGO_ARGS"
 LOCALBOORU_BUILD_JOBS=1 "$ROOT/scripts/run-cargo.sh" check
 [[ "$(<"$FAKE_CARGO_JOBS")" == "1" ]]
 
-exec 9>>"$XDG_STATE_HOME/localbooru/build-cache.lock"
+exec 9>>"$XDG_STATE_HOME/host-heavy-build/heavy-build.lock"
 flock -n 9
 if "$ROOT/scripts/run-cargo.sh" test >"$TEMP_DIR/locked-output" 2>&1; then
   echo "run-cargo unexpectedly bypassed the active build lock" >&2

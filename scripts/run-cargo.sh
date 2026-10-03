@@ -18,12 +18,33 @@ JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
   exit 2
 }
 
-mkdir -p "$STATE_DIR"
-exec 8>>"$STATE_DIR/build-cache.lock"
+LOCK_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/host-heavy-build"
+mkdir -p "$LOCK_DIR"
+export CARGO_BUILD_JOBS="$JOBS"
+
+# macOS has flock(2), but no flock command in its standard tools.
+if [[ "$(uname -s)" == Darwin ]]; then
+  exec python3 - "$LOCK_DIR/heavy-build.lock" "$LOCK_TIMEOUT" "$@" <<'PY'
+import fcntl, os, sys, time
+lock = open(sys.argv[1], 'a')
+deadline = time.monotonic() + float(sys.argv[2])
+while True:
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        break
+    except BlockingIOError:
+        if time.monotonic() >= deadline:
+            sys.exit('ERROR: timed out waiting for the host heavy-build gate')
+        time.sleep(0.1)
+os.set_inheritable(lock.fileno(), True)
+os.execvp('cargo', ['cargo', *sys.argv[3:]])
+PY
+fi
+
+exec 8>>"$LOCK_DIR/heavy-build.lock"
 if ! flock -w "$LOCK_TIMEOUT" 8; then
   echo "ERROR: timed out waiting for another LocalBooru Cargo or release build" >&2
   exit 75
 fi
 
-export CARGO_BUILD_JOBS="$JOBS"
 exec cargo "$@"

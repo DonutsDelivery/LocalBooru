@@ -16,7 +16,7 @@ const status = source.slice(statusStart + 1, statusEnd)
 const compiled = transformSync(`(${status})`, { loader: 'jsx', format: 'cjs' }).code
 
 function display({ ready = true, failed = false, controls = false, issue = null } = {}) {
-  const context = { React, videoFrameReadyKey: ready ? 'synthetic-media-0' : null, videoMediaKey: 'synthetic-media-0',
+  const context = { React, playback: { playbackError: null }, videoFrameReadyKey: ready ? 'synthetic-media-0' : null, videoMediaKey: 'synthetic-media-0',
     localRawPlayback: false, currentQuality: 'original', localResolutionVerified: null, localResolutionReadyKey: 'synthetic-host',
     svpPathEnabled: true, svpFilterActiveRef: { current: false }, svpFailOpenRef: { current: failed },
     svpControlsReady: controls, svpConnectionIssueText: issue, svpStartupCancelPending: false }

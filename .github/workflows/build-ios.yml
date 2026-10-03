@@ -40,6 +40,9 @@ jobs:
       - name: Initialize iOS project
         run: cargo tauri ios init
 
+      - name: Apply DMC icons
+        run: python3 scripts/apply-ios-icons.py
+
       - name: Add iOS permissions
         run: |
           PLIST=$(find src-tauri/gen/apple -name "Info.plist" -not -path "*/build/*" | head -1)
@@ -105,15 +108,15 @@ jobs:
           # Package as IPA (IPA is just a zip with Payload/ structure)
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
-          zip -r LocalBooru.ipa Payload/
+          zip -r DonutMediaCenter.ipa Payload/
           rm -rf Payload/
 
           echo "IPA created:"
-          ls -lh LocalBooru.ipa
+          ls -lh DonutMediaCenter.ipa
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LocalBooru-iOS
-          path: LocalBooru.ipa
+          name: DonutMediaCenter-iOS
+          path: DonutMediaCenter.ipa
           if-no-files-found: error

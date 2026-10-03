@@ -15,7 +15,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$TEMP_DIR/bin" "$TEMP_DIR/home" "$TEMP_DIR/state/localbooru"
+mkdir -p "$TEMP_DIR/bin" "$TEMP_DIR/home" "$TEMP_DIR/state/localbooru" "$TEMP_DIR/state/host-heavy-build"
 
 cat >"$TEMP_DIR/bin/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -59,7 +59,7 @@ printf '%s\n' \
   'source=held-source' \
   'started=2026-07-20T08:00:00Z' \
   >"$TEMP_DIR/state/localbooru/build-cache.owner"
-exec 9>>"$TEMP_DIR/state/localbooru/build-cache.lock"
+exec 9>>"$TEMP_DIR/state/host-heavy-build/heavy-build.lock"
 flock -n 9
 locked_output="$TEMP_DIR/locked.log"
 if LOCALBOORU_WINDOWS_BUILD_ROOT="$TEMP_DIR/windows-locked" \
@@ -94,7 +94,7 @@ if ! kill -0 "$inherited_child_pid" 2>/dev/null; then
   printf 'inherited lock test child exited unexpectedly\n' >&2
   exit 1
 fi
-exec 9>>"$inherited_state/build-cache.lock"
+exec 9>>"$TEMP_DIR/state/host-heavy-build/heavy-build.lock"
 if ! flock -n 9; then
   printf 'surviving child retained completed build ownership\n' >&2
   exit 1
@@ -161,7 +161,7 @@ mkdir -p \
   "$linux_build/webkitgtk-2.52.3" \
   "$linux_build/vapoursynth-stage"
 printf '%s\n' 'localbooru-build-cache-v1' >"$linux_build/.localbooru-build-cache"
-: >"$linux_build/webkit-build/.localbooru-config-ubuntu24-gtk3-v2"
+: >"$linux_build/webkit-build/.localbooru-config-ubuntu24-gtk3-ruby34-v3"
 touch "$linux_build/webkitgtk-2.52.3/.localbooru-patch-$patch_hash"
 touch "$linux_build/vapoursynth-stage/.localbooru-vapoursynth-c05906995662bacd5bddf853d8e68f19286987db"
 printf 'webkit runtime\n' >"$linux_build/webkit-build/lib/libwebkit2gtk-4.1.so.0"
