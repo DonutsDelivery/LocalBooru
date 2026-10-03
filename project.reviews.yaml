@@ -10959,6 +10959,13 @@ reviews:
           status: skipped
           name: full-shipping-platform-acceptance
         timestamp: 2026-10-03T06:00:13.254Z
+      - _ulid: 01M405JK3D4FN3GHC5G1X2HHRC
+        actor: DonutsDelivery
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M405JK18X75TV67SMYXY86VD
+        timestamp: 2026-10-03T06:00:14.701Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: open
@@ -10986,7 +10993,20 @@ reviews:
               desktop-addon-port-recovery preserve release gaps.
             created_at: 2026-10-03T04:58:13.097Z
         kind: nit
+      - _ulid: 01M405JK18X75TV67SMYXY86VD
+        entries:
+          - _ulid: 01M405JK191ZNFQG8D19XPC7WM
+            author: DonutsDelivery
+            body: Examined final headae36973, including Android native-preview gate and native rejection-string
+              normalization. Fresh final native compile16 tests, frontend6 tests, Python4 tests and
+              exact installed APK acceptance passed. Installed APK hash matches build artifact;
+              saved reachable remote cannot replace explicitly selected This Device on restart.
+              Existing kspec schema130 errors and verify skill missing-description persist outside
+              this change. No blocker found for the scoped foundations; full release-platform gaps
+              remain documented and tracked.
+            created_at: 2026-10-03T06:00:14.633Z
+        kind: nit
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T06:00:13.186Z
+    updated_at: 2026-10-03T06:00:14.633Z
     notes: []
