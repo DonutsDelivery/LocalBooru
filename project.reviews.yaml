@@ -10814,6 +10814,18 @@ reviews:
         required: true
         created_at: 2026-10-03T05:59:06.746Z
         completed_at: 2026-10-03T05:59:06.746Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: ae36973
+        evidence: Scoped path/Python foundations and Android MediaStore library acceptance passed. Full
+          shipping Mac/Windows generation and OEM Android acceptance remain separate; helper
+          packaging and non-Linux addon port recovery have explicit priority1 tasks.
+        name: full-shipping-platform-acceptance
+        required: false
+        created_at: 2026-10-03T06:00:13.186Z
+        completed_at: 2026-10-03T06:00:13.186Z
     events:
       - _ulid: 01M401ZZVYHZ2MF587YV1YN1BB
         actor: DonutsDelivery
@@ -10940,6 +10952,13 @@ reviews:
           status: skipped
           name: full-shipping-platform-acceptance
         timestamp: 2026-10-03T05:59:06.810Z
+      - _ulid: 01M405JHP64D6VCC86XE4JNVCR
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: full-shipping-platform-acceptance
+        timestamp: 2026-10-03T06:00:13.254Z
     examined_commit: 5ca1dae
     external_links: []
     lifecycle_state: open
@@ -10969,5 +10988,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T04:57:39.455Z
-    updated_at: 2026-10-03T05:59:06.746Z
+    updated_at: 2026-10-03T06:00:13.186Z
     notes: []
