@@ -39,3 +39,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T04:24:15.237Z
+  - _ulid: 01M401PM8M4YBZSG82P0FB32QK
+    content: "Post-reboot recovery: checkpoint5c4f598 in persistent worktree; recovered frontend
+      production build and five frontend tests pass, recovered Python four discovery/TLS tests pass.
+      Review confirms runtime addon/frontend source contains no developer-specific /home/user,
+      personal Mac user, or storage paths. Native re-verification queued via heavy gate; active
+      Arbit standalone compile plus two earlier requests own/wait token. kspec validation still has
+      the same130 pre-existing schema errors and verify skill missing-description; no trait coverage
+      warnings for linked specs."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T04:52:32.661Z
