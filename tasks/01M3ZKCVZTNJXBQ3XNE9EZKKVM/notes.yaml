@@ -26,3 +26,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T00:55:39.191Z
+  - _ulid: 01M3ZMTQ8W4DWSYS68MSRXBATR
+    content: Integrated b76091a174857f14524b1543056cbe064c7f3e06 into main as f4c601e and pushed
+      origin/main. Promoted guarded native runtime only after graceful tray Quit and old
+      app/WebProcess exit; reopened normal DMC and left alive (app PID 3427441, WebProcess 3427506).
+      Both mapped the new lib SHA a9007bc662505aeb185146938baec16b08759cf43e09566b671973d62828809f.
+      App8790/SVP18008/Create18009/Comfy8188 readiness all HTTP200; independent ComfyUI PID3890977
+      preserved. No actual media playback or formal tests run. SVP-off visual acceptance remains a
+      user retry; no claim of confirmed playback.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T01:07:35.324Z
