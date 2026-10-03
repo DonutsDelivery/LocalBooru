@@ -120,3 +120,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T19:48:48.121Z
+  - _ulid: 01M41N5644YB233QKC023W4134
+    content: "Linuxfinal5b6f1d120780 toolchain image builtsuccessfully, Ruby3.4.8 andYAML smoke passed;
+      exactsource756 printed; WebKitnow beyond priorgeneratorfailure (3916/5436 pending Ninja tasks
+      progressed). Sourcepreparation alreadymergedmain0abd2a8; frozen artifacts remain756source.
+      Inspectinginactive main/src-tauri/target build-onlycache forauthorized moveoffroot:
+      CACHEDIR.TAGpresent,noDB/library/thumbs paths,noopenfilehandles/writers; copying1.9GB
+      toexternalcache, checksum beforecutover."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T19:51:47.076Z
