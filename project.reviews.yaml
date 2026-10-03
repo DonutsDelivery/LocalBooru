@@ -11291,6 +11291,19 @@ reviews:
         required: true
         created_at: 2026-10-03T18:32:33.008Z
         completed_at: 2026-10-03T18:32:33.008Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 032191a
+          head_commit: 1e1a8c3
+        evidence: Identical WebKit generator/settings extractor passes Ruby3.4.8, failed3.2. Actual pinned
+          Ruby3.4.8 Docker image rebuild now running under final1e source. Last commit does not
+          change Dockerfile or Ruby pin. Full Linux artifact gate stays outside this source-only
+          review.
+        name: ruby-generator-reproduction
+        required: true
+        created_at: 2026-10-03T18:32:34.517Z
+        completed_at: 2026-10-03T18:32:34.517Z
     events:
       - _ulid: 01M41FM6HERFA1CD3EM1E63SSN
         actor: DonutsDelivery
@@ -11396,6 +11409,13 @@ reviews:
           status: pass
           name: frontend-suite
         timestamp: 2026-10-03T18:32:33.090Z
+      - _ulid: 01M41GM518J3JSKW7JAVB56SN1
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: ruby-generator-reproduction
+        timestamp: 2026-10-03T18:32:34.600Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11425,5 +11445,5 @@ reviews:
         kind: nit
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:32:33.008Z
+    updated_at: 2026-10-03T18:32:34.517Z
     notes: []
