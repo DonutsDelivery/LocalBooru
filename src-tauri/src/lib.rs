@@ -25,9 +25,9 @@ pub mod server;
 pub mod services;
 #[cfg(desktop)]
 mod svp_manager_bridge;
+mod svp_manager_snapshot;
 #[cfg(target_os = "linux")]
 mod svp_video_host;
-mod svp_manager_snapshot;
 
 use commands::{
     backend_get_local_ip, backend_get_network_settings, backend_get_port, backend_health_check,
@@ -77,17 +77,26 @@ pub(crate) fn get_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         PathBuf::from(portable)
     } else {
         #[cfg(mobile)]
-        { app.path().app_data_dir().map_err(|error| error.to_string())? }
+        {
+            app.path()
+                .app_data_dir()
+                .map_err(|error| error.to_string())?
+        }
         #[cfg(desktop)]
         {
             #[cfg(target_os = "windows")]
             let base = dirs::config_dir();
             #[cfg(not(target_os = "windows"))]
             let base = dirs::home_dir();
-            platform_paths::desktop_data_dir(std::env::consts::OS, base, app.path().app_data_dir().map_err(|error| error.to_string()))?
+            platform_paths::desktop_data_dir(
+                std::env::consts::OS,
+                base,
+                app.path().app_data_dir().map_err(|error| error.to_string()),
+            )?
         }
     };
-    std::fs::create_dir_all(&data_dir).map_err(|error| format!("Cannot create application storage: {error}"))?;
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|error| format!("Cannot create application storage: {error}"))?;
     Ok(data_dir)
 }
 
@@ -97,7 +106,9 @@ fn get_frontend_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     // Includes Contents/Resources on macOS, independently of Finder's cwd.
     if let Ok(resources) = app.path().resource_dir() {
         let dist = resources.join("frontend/dist");
-        if dist.join("index.html").is_file() { return Some(dist); }
+        if dist.join("index.html").is_file() {
+            return Some(dist);
+        }
     }
     // In dev mode, Tauri serves the frontend via devUrl.
     // In production, the frontend is bundled at a known relative path.
@@ -305,7 +316,9 @@ pub fn run() {
         .plugin(tauri_plugin_http::init());
 
     #[cfg(target_os = "android")]
-    { builder = builder.plugin(android_media::init()); }
+    {
+        builder = builder.plugin(android_media::init());
+    }
 
     // Desktop-only plugins
     #[cfg(desktop)]

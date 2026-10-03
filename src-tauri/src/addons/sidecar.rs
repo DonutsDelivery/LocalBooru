@@ -21,42 +21,67 @@ use tokio::process::Command as TokioCommand;
 ///
 /// Checks `python3` first, then falls back to `python`, verifying each
 /// is actually executable before returning it.
-pub fn find_python() -> Option<PathBuf> { find_python_version(10, 13) }
+pub fn find_python() -> Option<PathBuf> {
+    find_python_version(10, 13)
+}
 
 pub fn find_python_version(minimum: u8, maximum: u8) -> Option<PathBuf> {
     let mut candidates = vec![PathBuf::from("python3"), PathBuf::from("python")];
-    for version in [12, 13, 11, 10] { candidates.push(PathBuf::from(format!("python3.{version}"))); }
+    for version in [12, 13, 11, 10] {
+        candidates.push(PathBuf::from(format!("python3.{version}")));
+    }
     // Finder does not load shell startup files.
     #[cfg(target_os = "macos")]
     {
-        candidates.extend(["/opt/homebrew/bin/python3", "/usr/local/bin/python3"].map(PathBuf::from));
+        candidates
+            .extend(["/opt/homebrew/bin/python3", "/usr/local/bin/python3"].map(PathBuf::from));
         for version in ["3.12", "3.13", "3.11", "3.10"] {
             for prefix in ["/opt/homebrew/bin", "/usr/local/bin"] {
                 candidates.push(PathBuf::from(prefix).join(format!("python{version}")));
             }
-            candidates.push(PathBuf::from(format!("/Library/Frameworks/Python.framework/Versions/{version}/bin/python3")));
+            candidates.push(PathBuf::from(format!(
+                "/Library/Frameworks/Python.framework/Versions/{version}/bin/python3"
+            )));
         }
     }
     #[cfg(target_os = "windows")]
     {
-        let roots = dirs::data_local_dir().into_iter().map(|dir| dir.join("Programs/Python"))
+        let roots = dirs::data_local_dir()
+            .into_iter()
+            .map(|dir| dir.join("Programs/Python"))
             .chain(std::env::var_os("ProgramFiles").map(PathBuf::from));
         for base in roots {
-            for version in ["312", "313", "311", "310"] { candidates.push(base.join(format!("Python{version}")).join("python.exe")); }
+            for version in ["312", "313", "311", "310"] {
+                candidates.push(base.join(format!("Python{version}")).join("python.exe"));
+            }
         }
     }
     for name in candidates {
         #[cfg(target_os = "macos")]
-        if name == Path::new("python3") && resolve_executable("python3").as_deref() == Some(Path::new("/usr/bin/python3")) {
+        if name == Path::new("python3")
+            && resolve_executable("python3").as_deref() == Some(Path::new("/usr/bin/python3"))
+        {
             // Apple's developer-tool stub is too old and can prompt for Xcode.
             continue;
         }
-        let check = Command::new(&name).args(["--version"]).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).output();
+        let check = Command::new(&name)
+            .args(["--version"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output();
         if let Ok(output) = check {
             if output.status.success() {
-                let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-                if parse_python_minor(&combined).is_some_and(|minor| (minimum..=maximum).contains(&minor)) {
-                    if let Some(resolved) = resolve_executable(&name.to_string_lossy()) { return Some(resolved); }
+                let combined = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                if parse_python_minor(&combined)
+                    .is_some_and(|minor| (minimum..=maximum).contains(&minor))
+                {
+                    if let Some(resolved) = resolve_executable(&name.to_string_lossy()) {
+                        return Some(resolved);
+                    }
                     return Some(name);
                 }
             }
@@ -571,12 +596,26 @@ pub async fn spawn_sidecar(
 
     #[cfg(target_os = "macos")]
     {
-        let inherited = envs.iter().find(|(key, _)| key == "PATH").map(|(_, value)| std::ffi::OsString::from(value)).or_else(|| std::env::var_os("PATH"));
-        let mut paths = inherited.as_deref().map(std::env::split_paths).map(Iterator::collect::<Vec<_>>).unwrap_or_default();
-        for path in [PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin")] {
-            if !paths.contains(&path) { paths.push(path); }
+        let inherited = envs
+            .iter()
+            .find(|(key, _)| key == "PATH")
+            .map(|(_, value)| std::ffi::OsString::from(value))
+            .or_else(|| std::env::var_os("PATH"));
+        let mut paths = inherited
+            .as_deref()
+            .map(|value| std::env::split_paths(value).collect::<Vec<_>>())
+            .unwrap_or_default();
+        for path in [
+            PathBuf::from("/opt/homebrew/bin"),
+            PathBuf::from("/usr/local/bin"),
+        ] {
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
         }
-        if let Ok(path) = std::env::join_paths(paths) { cmd.env("PATH", path); }
+        if let Ok(path) = std::env::join_paths(paths) {
+            cmd.env("PATH", path);
+        }
     }
 
     let mut child = cmd

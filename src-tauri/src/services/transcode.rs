@@ -745,7 +745,12 @@ fn build_ffmpeg_command(
 
     let use_gpu_pipeline = hw.full_gpu() && !needs_minterpolate;
 
-    let mut cmd: Vec<String> = vec![crate::platform_paths::helper("ffmpeg").to_string_lossy().into_owned(), "-y".into()];
+    let mut cmd: Vec<String> = vec![
+        crate::platform_paths::helper("ffmpeg")
+            .to_string_lossy()
+            .into_owned(),
+        "-y".into(),
+    ];
 
     // Hybrid seeking: input seek (fast) + output seek (accurate)
     let mut effective_start = start_position;
@@ -927,7 +932,12 @@ fn build_packet_copy_remux_command(
     start_position: f64,
     video_info: &VideoInfo,
 ) -> Vec<String> {
-    let mut cmd = vec![crate::platform_paths::helper("ffmpeg").to_string_lossy().into_owned(), "-y".into()];
+    let mut cmd = vec![
+        crate::platform_paths::helper("ffmpeg")
+            .to_string_lossy()
+            .into_owned(),
+        "-y".into(),
+    ];
     let effective_start = if video_info.duration > 0.0 {
         start_position.clamp(0.0, (video_info.duration - 1.0).max(0.0))
     } else {

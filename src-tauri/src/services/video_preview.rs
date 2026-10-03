@@ -203,7 +203,11 @@ pub fn extract_preview_frames(
     let hwaccel = get_hwaccel_args();
 
     let mut cmd_args: Vec<String> = low_priority;
-    cmd_args.push(crate::platform_paths::helper("ffmpeg").to_string_lossy().into_owned());
+    cmd_args.push(
+        crate::platform_paths::helper("ffmpeg")
+            .to_string_lossy()
+            .into_owned(),
+    );
     cmd_args.push("-y".into());
 
     // Add skip_frame for keyframe-only decoding
@@ -381,7 +385,11 @@ pub fn generate_video_thumbnail(video_path: &str, output_path: &str, size: u32) 
     // hardware acceleration.
     for position in [seek_time, 0.0] {
         let mut cmd_args = get_low_priority_prefix();
-        cmd_args.push(crate::platform_paths::helper("ffmpeg").to_string_lossy().into_owned());
+        cmd_args.push(
+            crate::platform_paths::helper("ffmpeg")
+                .to_string_lossy()
+                .into_owned(),
+        );
         cmd_args.extend([
             "-hide_banner".into(),
             "-loglevel".into(),
@@ -519,7 +527,12 @@ pub fn get_video_metadata(file_path: &str) -> Option<(i32, i32, f64)> {
     crate::android_media::metadata(file_path)
 }
 #[cfg(target_os = "android")]
-pub fn extract_preview_frames(video_path: &str, output_dir: &Path, num_frames: usize, frame_width: u32) -> Vec<PathBuf> {
+pub fn extract_preview_frames(
+    video_path: &str,
+    output_dir: &Path,
+    num_frames: usize,
+    frame_width: u32,
+) -> Vec<PathBuf> {
     crate::android_media::previews(video_path, output_dir, num_frames, frame_width)
 }
 #[cfg(target_os = "android")]
