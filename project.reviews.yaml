@@ -11992,6 +11992,21 @@ reviews:
         runner: native-mac-wrapper
         created_at: 2026-10-03T21:59:43.592Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 0abd2a85029094fe509895e8774c04514eb27127
+          head_commit: 81cad89559b559c82ce8981825d0dcbfe40f6e08
+        evidence: "Reviewed exact81cad895 diff: only interface enumeration dependency added, old lock
+          versions preserved; QR nonce handshake remains required; alternate authenticated probes
+          never fall through on401; no discovery of unrelated nodes, no exposure-policy or user
+          credential changes. AppShell holds gallery unmounted until restoration probe succeeds.
+          Synthetic tests cover helpers/API; actual Mac UI acceptance remains separate."
+        name: source-review
+        required: true
+        runner: root
+        created_at: 2026-10-03T22:01:22.444Z
+        completed_at: 2026-10-03T22:01:22.444Z
     events:
       - _ulid: 01M41WECXC1KJQZTN299FXFJCA
         actor: DonutsDelivery
@@ -12013,6 +12028,13 @@ reviews:
           status: running
           name: native-mac
         timestamp: 2026-10-03T21:59:43.668Z
+      - _ulid: 01M41WJFAV4T14TS0ER8B8CK30
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-review
+        timestamp: 2026-10-03T22:01:22.524Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -12027,5 +12049,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T21:59:08.973Z
-    updated_at: 2026-10-03T21:59:43.592Z
+    updated_at: 2026-10-03T22:01:22.444Z
     notes: []
