@@ -250,7 +250,7 @@ function FamilyModeSettings() {
 }
 
 // Settings page with tabs
-function SettingsPage() {
+function SettingsPage({ onServerChange }) {
   const navigate = useNavigate()
   const location = useLocation()
   const section = location.pathname.split('/')[2] || 'directories'
@@ -356,7 +356,7 @@ function SettingsPage() {
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'servers' ? 'active' : ''}`}>
-              <ServerSettings />
+              <ServerSettings onServerChange={onServerChange} />
             </div>
 
             <div className={`settings-tab-content ${activeTab === 'mobile' ? 'active' : ''}`}>
@@ -2207,6 +2207,8 @@ function AppShell() {
   const [serverStatuses, setServerStatuses] = useState({})
   const [connectionError, setConnectionError] = useState(null)
   const [startupLogs, setStartupLogs] = useState([])
+  const [libraryVersion, setLibraryVersion] = useState(0)
+  const handleServerChange = useCallback(() => setLibraryVersion(version => version + 1), [])
 
   const addLog = useCallback((msg) => {
     console.log('[Startup]', msg)
@@ -2412,7 +2414,7 @@ function AppShell() {
       <ToastContainer />
       <BrowserRouter>
         <BackButtonHandler />
-        <MusicPlayerProvider>
+        <MusicPlayerProvider key={libraryVersion}>
           <Routes>
             <Route path="/" element={<Gallery key="image" mediaType="image" />} />
             <Route path="/videos" element={<Gallery key="video" mediaType="video" />} />
@@ -2423,8 +2425,8 @@ function AppShell() {
             <Route path="/collections" element={<CollectionsPage />} />
             <Route path="/collections/:id" element={<CollectionDetailPage />} />
             <Route path="/watch/:token" element={<WatchPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/settings/:section" element={<SettingsPage />} />
+            <Route path="/settings" element={<SettingsPage onServerChange={handleServerChange} />} />
+            <Route path="/settings/:section" element={<SettingsPage onServerChange={handleServerChange} />} />
           </Routes>
           <CreateStudioHost />
           <PersistentMusicPlayer placement="mobile" />
