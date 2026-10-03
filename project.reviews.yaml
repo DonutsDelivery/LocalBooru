@@ -10430,6 +10430,21 @@ reviews:
         runner: user
         created_at: 2026-10-03T02:17:11.057Z
         completed_at: 2026-10-03T02:17:11.057Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f59b4d0
+          head_commit: abde425
+        evidence: Candidate abde425 built successfully under the host gate. Public staging build receipt
+          verifies original source/cache metadata, generated headers, and recipes unchanged.
+          Installed renderer SHA256 68e9ebc48f779b59db207d71a7af433ff21e0ce9eff52a41dac659bd0d4db2c0
+          is mapped by DMC PID3639739 and WebProcess PID3639769. No global DMABuf override.
+          Operational health endpoints all200; visual combined playback acceptance pending.
+        name: Guarded renderer runtime build
+        required: true
+        runner: root
+        created_at: 2026-10-03T02:32:45.322Z
+        completed_at: 2026-10-03T02:32:45.322Z
     events:
       - _ulid: 01M3ZPKBBGJ663DB33NP4RVA3M
         actor: root
@@ -10480,6 +10495,13 @@ reviews:
           new_head: abde425
           previous_head: 600c9d0
         timestamp: 2026-10-03T02:20:10.509Z
+      - _ulid: 01M3ZSPNJPZN03ATQ01JCADYVT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: Guarded renderer runtime build
+        timestamp: 2026-10-03T02:32:45.398Z
     examined_commit: 600c9d0
     external_links: []
     lifecycle_state: draft
@@ -10494,7 +10516,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T01:38:30.897Z
-    updated_at: 2026-10-03T02:20:10.436Z
+    updated_at: 2026-10-03T02:32:45.322Z
     notes: []
   - _ulid: 01M3ZQK2GXP9GWA5WNQCWCAR0V
     slugs:
