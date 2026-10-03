@@ -60,3 +60,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T01:37:56.399Z
+  - _ulid: 01M3ZR47FTV7A1JPD89QFBHXDN
+    content: Installed frozen renderer candidate 600c9d0 runtime after successful guarded build and
+      graceful DMC exit. Loaded new lib
+      04ba2f1ea7822d4f2d84c1d043e63293ea469af8f5d5977cc680bdadc69e60b3; removed the temporary global
+      DMA-buffer environment override on normal relaunch. Candidate remains unmerged while required
+      visual acceptance is pending. Thumbnail app 03d3bb3/f59b4d0 installed independently. User must
+      confirm lower resolution with SVP off before renderer task completion.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T02:05:12.570Z
