@@ -10404,6 +10404,20 @@ reviews:
         required: true
         created_at: 2026-10-03T01:39:21.645Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: f4c601e
+          head_commit: 600c9d0
+        evidence: Candidate 600c9d0e45a0efc5ac9791b256027f4a754caae4 guarded isolated native build exit0. No
+          live compiler/Cargo/Ninja writers remain. Receipt preserves original source/cache
+          metadata, generated header bytes and recipes. New lib SHA256
+          04ba2f1ea7822d4f2d84c1d043e63293ea469af8f5d5977cc680bdadc69e60b3. This is build evidence,
+          not visual acceptance.
+        name: Guarded renderer runtime build
+        required: true
+        created_at: 2026-10-03T01:55:48.976Z
+        completed_at: 2026-10-03T01:55:48.976Z
     events:
       - _ulid: 01M3ZPKBBGJ663DB33NP4RVA3M
         actor: root
@@ -10432,6 +10446,13 @@ reviews:
           status: running
           name: User visual playback acceptance
         timestamp: 2026-10-03T01:39:21.718Z
+      - _ulid: 01M3ZQK15CJ7PP512WN8R526CK
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: Guarded renderer runtime build
+        timestamp: 2026-10-03T01:55:49.036Z
     examined_commit: 600c9d0
     external_links: []
     lifecycle_state: draft
@@ -10446,5 +10467,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T01:38:30.897Z
-    updated_at: 2026-10-03T01:39:21.645Z
+    updated_at: 2026-10-03T01:55:48.976Z
     notes: []
