@@ -1,0 +1,21 @@
+_ulid: 01M401Q5Y8PT91N17GAX1YTM0Y
+slugs:
+  - desktop-media-helper-packaging
+title: Package desktop media helpers for ordinary Mac and Windows installs
+type: infra
+description: Bundle or securely install pinned FFmpeg and ffprobe for Mac Apple Silicon/Intel and
+  Windows x64 without requiring user shell configuration. Include required licenses/provenance and
+  verify exact shipping package native import thumbnails metadata and encoded playback. Existing
+  Homebrew installations must continue to work.
+spec_ref: "@library-management"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-10-03T04:52:50.760Z
+todos: []

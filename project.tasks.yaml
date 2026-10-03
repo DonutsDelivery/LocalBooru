@@ -2075,3 +2075,17 @@ tasks:
     todos_count: 0
     created_at: 2026-10-03T03:06:35.902Z
     started_at: 2026-10-03T03:07:20.041Z
+  - _ulid: 01M401Q5Y8PT91N17GAX1YTM0Y
+    slugs:
+      - desktop-media-helper-packaging
+    title: Package desktop media helpers for ordinary Mac and Windows installs
+    type: infra
+    spec_ref: "@library-management"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-03T04:52:50.760Z
