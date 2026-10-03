@@ -19,3 +19,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T21:58:22.881Z
+  - _ulid: 01M41WRBQMS80Q4Z1RS5RVPMWQ
+    content: "Review recovery fix0dbd77b0: retain known server catalog on startup proxy failure; catch
+      setup failure in picker and clear Connecting state. Added2 actual ServerSelectScreen component
+      tests; focused totals9Node+10Vitest pass. First81cad895 native238Rust+344frontend pass and
+      packaging continues; exact latest-source rebuild queued only after previous wrapper/compiler
+      exit."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T22:04:35.445Z
