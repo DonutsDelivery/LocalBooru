@@ -50,3 +50,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T04:52:32.661Z
+  - _ulid: 01M402NAB0WWENQNHNMVBA4XDS
+    content: After reboot recovery, native compile completed and all 15 focused tests passed on
+      committed head 5ca1dae. Android package verification remains queued through shared host gate.
+      Persistent worktree retains both recovery commits.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T05:09:18.305Z
