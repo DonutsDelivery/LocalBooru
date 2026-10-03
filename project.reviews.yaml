@@ -11472,6 +11472,12 @@ reviews:
           status: pass
           name: android-upgrade-code
         timestamp: 2026-10-03T18:36:58.233Z
+      - _ulid: 01M41GWWT3Y9HBQXTDEFQW9MDX
+        actor: DonutsDelivery
+        event_type: thread_resolved
+        payload:
+          thread_ulid: 01M41GSSFJ1QE3FPVG51BYW23M
+        timestamp: 2026-10-03T18:37:21.091Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -11517,7 +11523,9 @@ reviews:
               and enforce it in release version/artifact checks.
             created_at: 2026-10-03T18:35:39.379Z
         kind: blocker
+        resolved_at: 2026-10-03T18:37:21.007Z
+        resolved_by: DonutsDelivery
     verdicts: []
     created_at: 2026-10-03T18:15:07.567Z
-    updated_at: 2026-10-03T18:36:58.139Z
+    updated_at: 2026-10-03T18:37:21.007Z
     notes: []
