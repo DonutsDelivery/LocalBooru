@@ -11,3 +11,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T21:51:56.214Z
+  - _ulid: 01M41WCZX1E6HFNXVPB4BZ5CA9
+    content: "Focused verification: 9 Node tests and 8 Vitest component tests pass. Native probes retain
+      Bearer/Basic credentials and classify auth vs transport failures; verified fallback becomes
+      proxy primary without a second LAN probe. Startup proxy configuration errors now propagate to
+      the picker. Native Mac wrapper verification/build is next; no hardware acceptance claim yet."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T21:58:22.881Z
