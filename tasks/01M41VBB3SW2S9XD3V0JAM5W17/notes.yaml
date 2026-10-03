@@ -28,3 +28,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T22:04:35.445Z
+  - _ulid: 01M41XFMC8CCRWHY7KGN0PDRHT
+    content: Actual Mac→PC /api also200 through100.64.170.92:8790 while192.168.0.253:8790 timed out.
+      Latest0dbd77b0 native wrapper tests:189Node+157component+238Rust, all pass; locked check pass.
+      Universal package compilation ongoing; earlier81cad895 package fully verified and exited0. No
+      source integrated or app replaced yet.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T22:17:17.961Z
