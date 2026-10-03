@@ -9,8 +9,13 @@ description: Support normal packaged Mac and Windows launches using portable res
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Merged into main as aed7b6f after approved review. Generic desktop
+  app-data/resource/helper and Python discovery paths, pinned app-private Python fallback and
+  verified TLS roots. Final native16/frontend6/Python4 tests passed; real Mac/Windows isolated
+  Python runtime checks preserved. Full shipping helper packaging/port recovery remain separate
+  priority1 tasks.
 depends_on: []
 context: []
 priority: 1
@@ -63,7 +68,24 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-03T04:57:39.775Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Merged into main as aed7b6f after approved review. Generic desktop app-data/resource/helper and
+          Python discovery paths, pinned app-private Python fallback and verified TLS roots. Final
+          native16/frontend6/Python4 tests passed; real Mac/Windows isolated Python runtime checks
+          preserved. Full shipping helper packaging/port recovery remain separate priority1 tasks.
+        previous: null
+      completed_at:
+        new: 2026-10-03T06:02:01.860Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-03T06:02:01.869Z
 created_at: 2026-10-03T03:06:34.469Z
 started_at: 2026-10-03T03:07:18.553Z
 submitted_at: 2026-10-03T04:57:36.851Z
+completed_at: 2026-10-03T06:02:01.860Z
 todos: []
