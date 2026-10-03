@@ -1147,8 +1147,9 @@ pub async fn get_preview_frames(
         })));
     }
 
-    // No frames exist yet -- trigger one content-validated background generation.
-    let generating = !original_paths.is_empty() && video_preview::check_ffmpeg_available();
+    // Android extracts frames natively; desktop preview generation needs FFmpeg.
+    let generating = !original_paths.is_empty()
+        && (cfg!(target_os = "android") || video_preview::check_ffmpeg_available());
     if generating {
         let hash = file_hash.clone();
         let dd = data_dir.clone();
