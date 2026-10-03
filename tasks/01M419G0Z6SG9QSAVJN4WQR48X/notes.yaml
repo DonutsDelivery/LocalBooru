@@ -57,3 +57,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T18:25:47.405Z
+  - _ulid: 01M41H6QY21ZC5KSRKQRRRB099
+    content: "Native real Apple Silicon9e build completed0: universal MachO
+      arm64+x86_64,2.1.0/com.localbooru.app/minmac11, validDMG, strict ad-hoc signature, ZIP
+      andSHAchecksums. Not DeveloperID/notarized or fullGUI acceptance. Linux Ruby3.4.8
+      fixedofflineasm and advanced1365steps, then YAMLgenerator failed because interpreter
+      lacksPsych. Durable libyaml-dev install and RubyYAML smoke added; priorcompletedobjects
+      retained. Review also caught legacyAndroidversioncode2010000 mismatch: corrected2001000,
+      addedpositive/negative version gate and APK code check inedf4c00; staleDMCdev-launcher fixture
+      corrected andpasses. Android1e signedcandidate sealed andemulator recheckpassed; finalsource
+      rebuildneeded aftertoolchain completion."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-03T18:42:43.778Z
