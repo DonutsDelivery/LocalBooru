@@ -2195,7 +2195,7 @@ tasks:
       - dmc-connected-address-discovery
     title: Automatically learn connected servers Tailscale fallback addresses
     type: bug
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 1
@@ -2203,3 +2203,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-03T23:39:38.280Z
+    started_at: 2026-10-03T23:40:26.657Z
