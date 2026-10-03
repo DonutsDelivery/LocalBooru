@@ -10489,6 +10489,18 @@ reviews:
         required: true
         created_at: 2026-10-03T01:56:32.154Z
         completed_at: 2026-10-03T01:56:32.154Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: f4c601e
+          head_commit: 03d3bb3
+        evidence: Frozen source 03d3bb3. Building through scripts/run-cargo.sh with reused external
+          dev-target cache after native renderer writer exited; frontend build included in Tauri
+          beforeBuildCommand. No tests invoked.
+        name: Desktop frontend and app build
+        required: true
+        created_at: 2026-10-03T01:57:54.161Z
+        completed_at: null
     events:
       - _ulid: 01M3ZQK2GW8E9N0VP3P7G9VEAA
         actor: root
@@ -10503,6 +10515,13 @@ reviews:
           status: pass
           name: Video thumbnail overlay source review
         timestamp: 2026-10-03T01:56:32.234Z
+      - _ulid: 01M3ZQPVDNMAP31C0BRSNNZ0CS
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: Desktop frontend and app build
+        timestamp: 2026-10-03T01:57:54.229Z
     examined_commit: 03d3bb3
     external_links: []
     lifecycle_state: draft
@@ -10517,5 +10536,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-03T01:55:50.429Z
-    updated_at: 2026-10-03T01:56:32.154Z
+    updated_at: 2026-10-03T01:57:54.161Z
     notes: []
