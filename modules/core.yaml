@@ -316,7 +316,8 @@ features:
     description: Multi-library support, mount/unmount, per-directory SQLite, watch directories with
       auto-import, parent directory watching, directory repair/verify/prune
     status:
-      implementation: implemented
+      maturity: draft
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
