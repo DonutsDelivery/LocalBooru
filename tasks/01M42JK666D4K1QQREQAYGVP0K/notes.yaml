@@ -8,3 +8,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T04:27:15.912Z
+  - _ulid: 01M42MHRZ5HXSDHCMVCHTYEN0G
+    content: Implemented auto trimming at20GiB per recognized Rust compiler target, smaller dev/test
+      debug profiles, one default job,12GiB RAM+2GiB swap+2 CPUs for artifact containers,50GiB root
+      and30GiB build-storage preflight. Scoped tests13 cases plus4 shell gate/launcher suites pass;
+      actual Cargo metadata preflight accepted configured external target. Removed85GiB allocated
+      obsolete compiler files; source/executables/bundles/native runtime/packages preserved. SDK and
+      offline macOS VM migration now running outside source repositories under the host gate,
+      original paths retained until checksums match. No build or KVM launch. Global kspec validate
+      still fails pre-existing malformed specs and missing verify skill description; external log
+      retained.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T05:00:25.445Z
