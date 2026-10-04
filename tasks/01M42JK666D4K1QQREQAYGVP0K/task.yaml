@@ -18,6 +18,7 @@ context: []
 priority: 1
 tags: []
 vcs_refs: []
+review_ref: "@dmc-build-hygiene-review"
 history:
   - author: DonutsDelivery
     changes:
@@ -29,6 +30,13 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-04T04:28:25.740Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@dmc-build-hygiene-review"
+        previous: null
+    command: review-link
+    timestamp: 2026-10-04T05:00:28.057Z
 created_at: 2026-10-04T04:26:14.598Z
 started_at: 2026-10-04T04:28:25.740Z
 todos: []

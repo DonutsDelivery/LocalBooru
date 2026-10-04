@@ -12508,3 +12508,32 @@ reviews:
     created_at: 2026-10-04T01:15:10.448Z
     updated_at: 2026-10-04T01:48:43.413Z
     notes: []
+  - _ulid: 01M42MHV8RSY7X3N7G6Q8ZC1R6
+    slugs:
+      - dmc-build-hygiene-review
+    title: Build resource limits and cache hygiene
+    author: root
+    checks: []
+    events:
+      - _ulid: 01M42MHV8QGKD1102MVJFV1ZX7
+        actor: root
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-04T05:00:27.800Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@dmc-build-resource-safety"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 1ab5f171302bc2180808de80d05c5e5e08ff4efd
+      head_branch: fix/build-resource-safety
+      head_commit: 015e849714a8c4cad70a0a417696ea0cc1a7b776
+    threads: []
+    verdicts: []
+    created_at: 2026-10-04T05:00:27.800Z
+    updated_at: null
+    notes: []
