@@ -12513,7 +12513,21 @@ reviews:
       - dmc-build-hygiene-review
     title: Build resource limits and cache hygiene
     author: root
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 1ab5f171302bc2180808de80d05c5e5e08ff4efd
+          head_commit: 015e849714a8c4cad70a0a417696ea0cc1a7b776
+        evidence: Head015e8497:13 Python tests and4 shell suites passed in build-hygiene-final-checks.log.
+          Fake containers/cargo only; native Linux/macOS lock flow, root/cache reserve failure,
+          caps, exit status, target pruning/preserved binaries and symlink refusal exercised. No
+          compilation or KVM guest.
+        name: focused-behavioral-checks
+        required: true
+        runner: root
+        created_at: 2026-10-04T05:03:42.431Z
+        completed_at: 2026-10-04T05:03:42.431Z
     events:
       - _ulid: 01M42MHV8QGKD1102MVJFV1ZX7
         actor: root
@@ -12528,6 +12542,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-04T05:03:39.755Z
+      - _ulid: 01M42MQTK4TGEJ6TG8FYYNNVX6
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-behavioral-checks
+        timestamp: 2026-10-04T05:03:43.716Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -12542,5 +12563,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-04T05:00:27.800Z
-    updated_at: 2026-10-04T05:03:39.671Z
+    updated_at: 2026-10-04T05:03:42.431Z
     notes: []
