@@ -10,3 +10,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T23:53:13.547Z
+  - _ulid: 01M426M3W7HBEGPYDB6TP541XX
+    content: Post-restart Linux focused native stale-connection guard test passed:1 test,301 filtered;
+      prior connected endpoint tests2passed. New standalone Linux1ab exact-tree rebuild is active
+      via canonical wrapper/dev-target on external storage. Current patched WebKit/mpv/SVP libraries
+      retained; Lightbox source byte parity versus abde425 confirmed. Mac1ab app remains open.
+      Installation waits for compiler exit.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T00:57:02.087Z
