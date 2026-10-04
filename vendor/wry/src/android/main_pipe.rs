@@ -52,6 +52,7 @@ impl<'a> MainPipe<'a> {
     if let Ok(message) = CHANNEL.1.recv() {
       match message {
         WebViewMessage::CreateWebView(attrs) => {
+          eprintln!("[DMC Android startup] creating WebView on main thread");
           let CreateWebViewAttributes {
             url,
             html,
@@ -280,6 +281,7 @@ impl<'a> MainPipe<'a> {
           }
         }
         WebViewMessage::GetWebViewVersion(tx) => {
+          eprintln!("[DMC Android startup] reading WebView provider on main thread");
           let version = self
             .env
             .call_method(activity, "getVersion", "()Ljava/lang/String;", &[])

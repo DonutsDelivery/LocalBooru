@@ -104,6 +104,7 @@ pub unsafe fn android_setup(
   looper: &ThreadLooper,
   activity: GlobalRef,
 ) {
+  eprintln!("[DMC Android startup] registering WebView main-thread bridge");
   PACKAGE.get_or_init(move || package.to_string());
 
   // we must create the WebChromeClient here because it calls `registerForActivityResult`,
@@ -136,14 +137,22 @@ pub unsafe fn android_setup(
       let mut wake = false;
       if libc::read(fd.as_raw_fd(), &mut wake as *mut _ as *mut _, size) == size as libc::ssize_t {
         let res = main_pipe.recv();
+        if let Err(error) = &res {
+          eprintln!("[DMC Android startup] WebView bridge failed: {error}");
+        }
         // unregister itself on errors or destroy event
         matches!(res, Ok(MainPipeState::Alive))
       } else {
+        eprintln!(
+          "[DMC Android startup] WebView bridge wake read failed: {}",
+          std::io::Error::last_os_error()
+        );
         // unregister itself
         false
       }
     })
     .unwrap();
+  eprintln!("[DMC Android startup] WebView main-thread bridge registered");
 }
 
 pub(crate) struct InnerWebView {
@@ -470,9 +479,16 @@ impl JniHandle {
 }
 
 pub fn platform_webview_version() -> Result<String> {
+  eprintln!("[DMC Android startup] requesting WebView provider version");
   let (tx, rx) = bounded(1);
   MainPipe::send(WebViewMessage::GetWebViewVersion(tx));
-  version_reply::receive_version(&rx, MAIN_PIPE_TIMEOUT, Duration::from_secs(50))
+  eprintln!("[DMC Android startup] WebView provider request queued");
+  let version = version_reply::receive_version(&rx, MAIN_PIPE_TIMEOUT, Duration::from_secs(50));
+  match &version {
+    Ok(_) => eprintln!("[DMC Android startup] WebView provider replied"),
+    Err(error) => eprintln!("[DMC Android startup] WebView provider probe failed: {error}"),
+  }
+  version
 }
 
 fn with_html_head<F: FnOnce(&NodeRef)>(document: &mut NodeRef, f: F) {
