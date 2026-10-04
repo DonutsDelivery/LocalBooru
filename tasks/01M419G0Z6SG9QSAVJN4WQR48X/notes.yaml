@@ -178,3 +178,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T00:50:27.630Z
+  - _ulid: 01M426SWAS1FEYWA94JZV9C5MB
+    content: Latest Linux standalone exact1ab build completed0 (4m46s), installed executableSHA
+      c2a31a453fd863ce86368c845a6864486146a46db2f8bb5414e6a2784119a4b6 and frontend, reopened
+      PID41641 and left running; original patched SVP/WebKit runtime retained. Authenticated Mac
+      proxy now reads real LAN+Tailscale address JSON from new producer. Discovery task
+      reviewed/integrated/completed with --no-sync due kspec0.14 daemon default sync flag
+      incompatibility; clean merged task worktree removed after all writers exited. Shipping package
+      provenance remains separate from standalone install. Android exacte263 diagnostic x86_64 build
+      queued behind another project host gate; first-release task still active.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T01:00:10.969Z
