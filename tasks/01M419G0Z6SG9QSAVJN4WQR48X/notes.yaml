@@ -203,3 +203,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T01:32:21.748Z
+  - _ulid: 01M429JVM6PD9DTXJYKNAX9RXT
+    content: Release resumed at cleanffc47311 Android candidate; unchanged helper5tests evidence and
+      vendored upstream diff inspected. Full signedAPK+AAB compiling final ABI; canonicalMac
+      compiler resumed after existing other-projectNinja exited. Linux/Windows remain prepared but
+      unstarted pending visibleAndroid source acceptance/integration. Main1ab5f171 and normal
+      installed Linux/Mac applications retained. No push/tag/publication.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T01:48:46.598Z
