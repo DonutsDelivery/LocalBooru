@@ -6,8 +6,12 @@ type: bug
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Reviewed and integrated main1ab5f171. Mac universal package and Linux native
+  checks/rebuild passed; both installed/reopened. Linux advertises real LAN/Tailscale addresses, Mac
+  authenticated proxy reads same discovery JSON. Existing patched video runtime preserved. No
+  publication.
 depends_on: []
 context: []
 priority: 1
@@ -60,7 +64,24 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-03T23:59:03.970Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Reviewed and integrated main1ab5f171. Mac universal package and Linux native checks/rebuild
+          passed; both installed/reopened. Linux advertises real LAN/Tailscale addresses, Mac
+          authenticated proxy reads same discovery JSON. Existing patched video runtime preserved.
+          No publication.
+        previous: null
+      completed_at:
+        new: 2026-10-04T00:59:50.936Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-04T00:59:50.945Z
 created_at: 2026-10-03T23:39:38.280Z
 started_at: 2026-10-03T23:40:26.657Z
 submitted_at: 2026-10-03T23:59:03.707Z
+completed_at: 2026-10-04T00:59:50.936Z
 todos: []
