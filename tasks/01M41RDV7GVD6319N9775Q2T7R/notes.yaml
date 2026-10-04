@@ -86,3 +86,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T00:56:09.245Z
+  - _ulid: 01M4274RNQWYJPN9DCYEBZWC75
+    content: "Cold-start root-cause evidence: Android config diff0x80000000 (CONFIG_ASSETS_PATHS) while
+      SystemUI dynamic-colour FRRO assets change at02:52:23.31, followed by MainActivity relaunch.
+      Native backtrace shows two Rust entry threads plus two stdout redirectors, both sharing global
+      pipes; setup never reaches gallery. SDK36 supports explicit assetsPaths configChanges. Plan:
+      handle only that extra configuration in existing Activity, delegate super configuration
+      callbacks and refresh insets, log creation/destruction without user data; repeat signed
+      visible cold startup and theme/density/rotation acceptance. Stopped our own waiting e263
+      diagnostic build before editing; other project gate owner remains untouched."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T01:06:07.671Z
