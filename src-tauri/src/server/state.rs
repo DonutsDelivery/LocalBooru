@@ -520,6 +520,21 @@ impl AppState {
         });
     }
 
+    /// Refresh only the fallback for the connection that initiated discovery.
+    pub async fn refresh_remote_proxy_fallback(
+        &self,
+        expected_url: &str,
+        fallback_url: Option<String>,
+        token: Option<String>,
+    ) {
+        let mut proxy = self.inner.remote_proxy.write().await;
+        if let Some(current) = proxy.as_mut() {
+            if current.primary_url == expected_url && current.token == token {
+                current.fallback_url = fallback_url;
+            }
+        }
+    }
+
     /// Get the remote proxy target, if set.
     pub async fn get_remote_proxy(&self) -> Option<RemoteProxyConfig> {
         self.inner.remote_proxy.read().await.clone()
@@ -555,6 +570,62 @@ mod tests {
 
     fn temp_test_dir(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("localbooru-{}-{}", name, uuid::Uuid::new_v4()))
+    }
+
+    #[tokio::test]
+    async fn discovered_fallback_cannot_replace_a_newer_connection() {
+        let dir = temp_test_dir("proxy-discovery");
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = AppState::new(&dir, 0).unwrap();
+        state
+            .set_remote_proxy(
+                Some("http://192.168.1.10:8790".into()),
+                None,
+                Some("fixture-token".into()),
+            )
+            .await;
+        state
+            .refresh_remote_proxy_fallback(
+                "http://192.168.1.10:8790",
+                Some("http://100.64.1.10:8790".into()),
+                Some("fixture-token".into()),
+            )
+            .await;
+        assert_eq!(
+            state
+                .get_remote_proxy()
+                .await
+                .unwrap()
+                .fallback_url
+                .as_deref(),
+            Some("http://100.64.1.10:8790")
+        );
+        state
+            .set_remote_proxy(
+                Some("http://192.168.1.20:8790".into()),
+                None,
+                Some("new-token".into()),
+            )
+            .await;
+        state
+            .refresh_remote_proxy_fallback(
+                "http://192.168.1.10:8790",
+                Some("http://100.64.1.10:8790".into()),
+                Some("fixture-token".into()),
+            )
+            .await;
+        state
+            .refresh_remote_proxy_fallback(
+                "http://192.168.1.20:8790",
+                Some("http://100.64.1.10:8790".into()),
+                Some("fixture-token".into()),
+            )
+            .await;
+        let proxy = state.get_remote_proxy().await.unwrap();
+        assert_eq!(proxy.primary_url, "http://192.168.1.20:8790");
+        assert!(proxy.fallback_url.is_none());
+        drop(state);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

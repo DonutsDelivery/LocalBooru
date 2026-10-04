@@ -114,6 +114,7 @@ pub type SharedHandshakeManager = Arc<HandshakeManager>;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(get_network_config).post(update_network_config))
+        .route("/addresses", get(get_connection_addresses))
         .route("/test-port", post(test_port))
         .route("/qr-data", get(get_qr_data))
         // UPnP stubs
@@ -263,6 +264,31 @@ struct HandshakeVerifyRequest {
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
+
+// Safe connection metadata for paired clients; contains no settings or pairing offers.
+async fn get_connection_addresses(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    let port = state.port();
+    let server_id = state.library_manager().primary().uuid.clone();
+    let data_dir = state.data_dir().to_path_buf();
+    let result = tokio::task::spawn_blocking(move || {
+        let all_ips = get_all_local_ips();
+        let local_url =
+            if get_network_settings_from_file(&data_dir)["local_network_enabled"] == true {
+                get_local_ip().map(|ip| format!("http://{}:{}", ip, port))
+            } else {
+                None
+            };
+        json!({
+            "server_id": server_id,
+            "server_port": port,
+            "tailscale_url": tailscale_url(&all_ips, port),
+            "local_url": local_url,
+        })
+    })
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))?;
+    Ok(Json(result))
+}
 
 /// GET /api/network — Get current network configuration and status.
 async fn get_network_config(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
@@ -642,7 +668,34 @@ async fn verify_handshake(
 
 #[cfg(test)]
 mod address_tests {
-    use super::tailscale_url;
+    use super::*;
+
+    #[tokio::test]
+    async fn connected_metadata_reports_stable_identity_and_actual_port() {
+        let dir = std::env::temp_dir().join(format!("dmc-address-advert-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"network":{"local_network_enabled":true,"local_port":1234}}"#,
+        )
+        .unwrap();
+        let state = AppState::new(&dir, 8934).unwrap();
+        let identity = state.library_manager().primary().uuid.clone();
+        let Json(data) = get_connection_addresses(State(state.clone()))
+            .await
+            .unwrap();
+        assert_eq!(data["server_id"], identity);
+        assert_eq!(data["server_port"], 8934);
+        assert!(data.get("settings").is_none());
+        assert!(data.get("all_local_ips").is_none());
+        let ips = get_all_local_ips();
+        assert_eq!(data["tailscale_url"], json!(tailscale_url(&ips, 8934)));
+        if let Some(url) = data["local_url"].as_str() {
+            assert!(url.ends_with(":8934"));
+        }
+        drop(state);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn advertises_owned_tailscale_address_with_actual_listener_port() {

@@ -47,6 +47,10 @@ function createServer(data) {
     id: data.id || crypto.randomUUID(),
     name: data.name || 'DonutMediaCenter Server',
     url: data.url,
+    tailscaleUrl: data.tailscaleUrl || null,
+    lanUrl: data.lanUrl || null,
+    advertisedServerId: data.advertisedServerId || null,
+    learnedFallbackUrl: data.learnedFallbackUrl || null,
     fallbackUrl: data.fallbackUrl || null,  // Optional secondary URL (e.g. Tailscale) used when primary fails
     username: data.username || null,
     password: data.password || null,
@@ -71,6 +75,7 @@ export function serverFromQrHandshake(qrData, workingUrl, handshake) {
   }
   return {
     id: handshake.serverId,
+    advertisedServerId: handshake.serverId,
     name: handshake.serverName || qrData.name || 'DonutMediaCenter Server',
     url: workingUrl,
     fallbackUrl: pairingUrls(qrData).find(url => url !== workingUrl.replace(/\/+$/, '')) || null,
@@ -320,24 +325,89 @@ export async function testServerConnection(url, username = null, password = null
   }
 }
 
-// Probe a server's primary URL, then fall back to its secondary URL on network failure.
-// Returns the working URL on success, plus the underlying probe result.
+function normalizedServerUrl(value) {
+  if (!value || typeof value !== 'string') return null
+  try {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) && !/^https?:\/\//i.test(value)) return null
+    const url = new URL(/^https?:\/\//i.test(value) ? value : `http://${value}`)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password
+      || url.search || url.hash) return null
+    return url.origin + url.pathname.replace(/\/+$/, '')
+  } catch { return null }
+}
+
+function ipv4Octets(host) {
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(host)) return null
+  const values = host.split('.').map(Number)
+  return values.every(value => value >= 0 && value <= 255) ? values : null
+}
+
+function isTailscaleHost(host) {
+  const ip = ipv4Octets(host)
+  return ip && ip[0] === 100 && ip[1] >= 64 && ip[1] <= 127
+}
+
+function isLanHost(host) {
+  const ip = ipv4Octets(host)
+  return ip && (ip[0] === 10 || (ip[0] === 172 && ip[1] >= 16 && ip[1] <= 31)
+    || (ip[0] === 192 && ip[1] === 168))
+}
+
+export function serverConnectionUrls(server) {
+  return [...new Set([server?.url, server?.fallbackUrl, server?.tailscaleUrl, server?.lanUrl]
+    .map(normalizedServerUrl).filter(Boolean))]
+}
+
+// Metadata comes from the already connected, authenticated peer, never a tailnet scan.
+export function discoveredAddressUpdates(server, data, workingUrl) {
+  if (!data || typeof data !== 'object') return null
+  const identity = data.server_id || null
+  if (identity && (typeof identity !== 'string' || !identity.trim())) return null
+  if (identity && server.advertisedServerId && identity !== server.advertisedServerId) return null
+  const connectedUrl = normalizedServerUrl(workingUrl)
+  if (!connectedUrl) return null
+  const connected = new URL(connectedUrl)
+  const port = data.server_port ?? Number(connected.port || (connected.protocol === 'https:' ? 443 : 80))
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null
+  const tailIp = Array.isArray(data.all_local_ips) && data.all_local_ips.find(ip => typeof ip === 'string' && isTailscaleHost(ip))
+  const tail = normalizedServerUrl(data.tailscale_url || (tailIp ? `${connected.protocol}//${tailIp}:${port}` : null))
+  if (!tail || new URL(tail).pathname !== '/' || !isTailscaleHost(new URL(tail).hostname)) return null
+  const lan = normalizedServerUrl(data.local_url)
+  const updates = { tailscaleUrl: tail }
+  if (lan && isLanHost(new URL(lan).hostname)) updates.lanUrl = lan
+  if (identity) updates.advertisedServerId = identity
+  const fallback = tail === normalizedServerUrl(server.url) ? updates.lanUrl : tail
+  if (fallback && (!server.fallbackUrl || server.fallbackUrl === server.learnedFallbackUrl)) {
+    updates.fallbackUrl = fallback
+    updates.learnedFallbackUrl = fallback
+  }
+  return Object.entries(updates).some(([key, value]) => server[key] !== value) ? updates : null
+}
+
+export async function learnServerAddresses(id, data, workingUrl, stillCurrent = () => true) {
+  return serializeServerMutation(async () => {
+    const servers = await getServers()
+    const index = servers.findIndex(server => server.id === id)
+    if (index < 0 || !stillCurrent()) return null
+    const updates = discoveredAddressUpdates(servers[index], data, workingUrl)
+    if (!updates) return null
+    servers[index] = { ...servers[index], ...updates }
+    await saveServers(servers)
+    return servers[index]
+  })
+}
+
+// Try saved and learned addresses only on network failure. Authentication errors stop.
 export async function probeServer(server) {
-  if (!server || !server.url) return { success: false, error: 'No URL configured' }
-  const primary = await testServerConnection(server.url, server.username, server.password, server.token)
-  if (primary.success) {
-    return { success: true, url: server.url, usedFallback: false }
+  const urls = serverConnectionUrls(server)
+  if (!urls.length) return { success: false, error: 'No URL configured' }
+  let result
+  for (const [index, url] of urls.entries()) {
+    result = await testServerConnection(url, server.username, server.password, server.token)
+    if (result.success) return { success: true, url, usedFallback: index > 0 }
+    if (!result.networkFailure) return result
   }
-  // Only fall back on network-level failure; HTTP error means server is reachable.
-  if (server.fallbackUrl && primary.networkFailure) {
-    const fb = await testServerConnection(server.fallbackUrl, server.username, server.password, server.token)
-    if (fb.success) {
-      return { success: true, url: server.fallbackUrl, usedFallback: true }
-    }
-    // Both failed — return the fallback's error (most recent attempt)
-    return { success: false, error: fb.error, networkFailure: fb.networkFailure }
-  }
-  return primary
+  return result
 }
 
 // Get the API base URL

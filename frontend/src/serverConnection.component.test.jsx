@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { probeServer, testServerConnection } from './serverManager'
+import { probeServer, testServerConnection, saveServers, getServers, learnServerAddresses } from './serverManager'
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
@@ -36,4 +36,22 @@ describe('native paired connection probes', () => {
       .toMatchObject({ success: false, networkFailure: false })
     expect(invoke).toHaveBeenCalledTimes(1)
   })
+})
+
+it('persists learned metadata while keeping native credentials out of public storage', async () => {
+  localStorage.clear()
+  let credentials = {}
+  invoke.mockImplementation(async (command, args) => {
+    if (command === 'load_paired_server_credentials') return credentials
+    if (command === 'store_paired_server_credentials') credentials = args.credentials
+  })
+  const server = { id: 'discovery-fixture', url: 'http://192.168.1.10:8790', token: 'synthetic-token', password: 'synthetic-password' }
+  await saveServers([server])
+  await learnServerAddresses(server.id, { server_id: 'discovery-fixture', server_port: 8790, tailscale_url: 'http://100.64.1.10:8790' }, server.url)
+  const metadata = JSON.parse(localStorage.getItem('localbooru_servers'))[0]
+  expect(metadata.fallbackUrl).toBe('http://100.64.1.10:8790')
+  expect(metadata.token).toBeUndefined()
+  expect(metadata.password).toBeUndefined()
+  expect((await getServers())[0]).toMatchObject({ token: server.token, password: server.password, tailscaleUrl: metadata.fallbackUrl })
+  expect(credentials[server.id]).toEqual({ token: server.token, password: server.password })
 })

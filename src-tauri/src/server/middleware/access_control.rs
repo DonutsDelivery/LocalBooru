@@ -55,6 +55,7 @@ const EXEMPT_EXACT: &[&str] = &["/api"];
 /// Endpoints under localhost-only prefixes that should still be accessible from network.
 const LOCALHOST_EXEMPTIONS: &[&str] = &[
     "/api/network/verify-handshake",
+    "/api/network/addresses",
     "/api/settings/saved-searches",
     "/api/settings/family-mode",
     "/api/settings/video-playback",
@@ -377,7 +378,8 @@ where
             // No valid JWT and not localhost → block with 401.
             // Localhost-exempted paths (e.g. verify-handshake, login) pass through so a
             // client can obtain a token in the first place.
-            if !is_exempt_path {
+            // Address discovery is reachable remotely, but still requires a device credential.
+            if !is_exempt_path || path == "/api/network/addresses" {
                 let response = (
                     StatusCode::UNAUTHORIZED,
                     axum::Json(serde_json::json!({
@@ -476,6 +478,51 @@ mod tests {
         let response = service.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn connected_addresses_are_readable_without_unlocking_network_settings() {
+        let dir = std::env::temp_dir().join(format!("dmc-address-access-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = crate::db::pool::create_main_pool(&dir).unwrap();
+        crate::db::schema::init_main_db(&db.get().unwrap()).unwrap();
+        let secret = "synthetic-address-discovery-secret";
+        db.get().unwrap().execute(
+            "INSERT INTO paired_devices (device_id, display_name, public_key_spki, public_key_fingerprint, last_seen_at) VALUES ('fixture-device', 'Fixture device', 'synthetic-spki', 'synthetic-fingerprint', datetime('now'))",
+            [],
+        ).unwrap();
+        let token = crate::server::middleware::auth::create_device_jwt(
+            "fixture-device",
+            "Fixture device",
+            secret,
+        )
+        .unwrap();
+        for (path, authenticated, expected) in [
+            ("/api/network/addresses", true, StatusCode::OK),
+            ("/api/network/addresses", false, StatusCode::UNAUTHORIZED),
+            ("/api/network", true, StatusCode::FORBIDDEN),
+            ("/api/network/qr-data", true, StatusCode::FORBIDDEN),
+        ] {
+            let inner = service_fn(|_request: Request<Body>| async move {
+                Ok::<_, std::convert::Infallible>(Response::new(Body::empty()))
+            });
+            let service = AccessControlLayer {
+                jwt_secret: secret.into(),
+                data_dir: dir.clone(),
+                db: db.clone(),
+            }
+            .layer(inner);
+            let mut builder = Request::builder().method("GET").uri(path);
+            if authenticated {
+                builder = builder.header("authorization", format!("Bearer {token}"));
+            }
+            let mut request = builder.body(Body::empty()).unwrap();
+            request
+                .extensions_mut()
+                .insert(ConnectInfo(SocketAddr::from(([100, 64, 1, 20], 50000))));
+            assert_eq!(service.oneshot(request).await.unwrap().status(), expected);
+        }
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
