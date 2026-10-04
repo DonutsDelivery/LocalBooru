@@ -168,3 +168,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T20:57:37.638Z
+  - _ulid: 01M42682NEKNGAESGSCP3DW1V8
+    content: Resumed after host restart2026-10-04. Source/main1ab5f171 and committed Android
+      branch7243aa61 survived; queued Linux native check and emulator cold-start supervisor did not
+      complete before restart. Verified no live Cargo/Rust/container compiler writers, restarted
+      focused native check through canonical host gate with existing external cache. Mac
+      installed1ab app PID52038 remains open; Linux normal app was stopped by reboot and reopened
+      via its installed launcher. No artifacts relabeled, no publication.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T00:50:27.630Z
