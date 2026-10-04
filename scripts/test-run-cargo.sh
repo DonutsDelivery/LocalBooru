@@ -13,8 +13,13 @@ mkdir -p "$TEMP_DIR/bin" "$TEMP_DIR/home" "$TEMP_DIR/state/localbooru"
 cat >"$TEMP_DIR/bin/cargo" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == metadata ]]; then
+  printf '{"target_directory":"%s"}\n' "$FAKE_CARGO_TARGET"
+  exit 0
+fi
 printf '%s\n' "${CARGO_BUILD_JOBS:-unset}" >>"$FAKE_CARGO_JOBS"
 printf '%s\n' "$@" >"$FAKE_CARGO_ARGS"
+exit "${FAKE_CARGO_EXIT:-0}"
 EOF
 chmod +x "$TEMP_DIR/bin/cargo"
 
@@ -22,17 +27,35 @@ export HOME="$TEMP_DIR/home"
 export XDG_STATE_HOME="$TEMP_DIR/state"
 export PATH="$TEMP_DIR/bin:$PATH"
 export FAKE_CARGO_JOBS="$TEMP_DIR/jobs"
+export FAKE_CARGO_TARGET="$TEMP_DIR/target"
 export FAKE_CARGO_ARGS="$TEMP_DIR/args"
 export LOCALBOORU_BUILD_LOCK_TIMEOUT=0
 
 "$ROOT/scripts/run-cargo.sh" test --workspace
-[[ "$(<"$FAKE_CARGO_JOBS")" == "2" ]]
+[[ "$(<"$FAKE_CARGO_JOBS")" == "1" ]]
 printf '%s\n' test --workspace >"$TEMP_DIR/expected-args"
 cmp "$TEMP_DIR/expected-args" "$FAKE_CARGO_ARGS"
 
 : >"$FAKE_CARGO_JOBS"
-LOCALBOORU_BUILD_JOBS=1 "$ROOT/scripts/run-cargo.sh" check
-[[ "$(<"$FAKE_CARGO_JOBS")" == "1" ]]
+LOCALBOORU_BUILD_JOBS=2 "$ROOT/scripts/run-cargo.sh" check
+[[ "$(<"$FAKE_CARGO_JOBS")" == "2" ]]
+
+# Preserve command failures after running the post-build cache checkpoint.
+result=0
+FAKE_CARGO_EXIT=23 "$ROOT/scripts/run-cargo.sh" check || result=$?
+[[ "$result" == 23 ]]
+
+# Exercise the native macOS lock/control flow with disposable fake Cargo.
+cat >"$TEMP_DIR/bin/uname" <<'EOF'
+#!/usr/bin/env bash
+printf 'Darwin\n'
+EOF
+chmod +x "$TEMP_DIR/bin/uname"
+"$ROOT/scripts/run-cargo.sh" check
+result=0
+FAKE_CARGO_EXIT=23 "$ROOT/scripts/run-cargo.sh" check || result=$?
+[[ "$result" == 23 ]]
+rm "$TEMP_DIR/bin/uname"
 
 exec 9>>"$XDG_STATE_HOME/host-heavy-build/heavy-build.lock"
 flock -n 9

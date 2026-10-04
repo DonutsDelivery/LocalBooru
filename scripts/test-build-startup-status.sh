@@ -51,6 +51,9 @@ export XDG_STATE_HOME="$TEMP_DIR/state"
 export PATH="$TEMP_DIR/bin:$PATH"
 export BUILD_STATUS_TEST_DOCKER_LOG="$TEMP_DIR/docker.log"
 export LOCALBOORU_BUILD_LOCK_TIMEOUT=0
+# The fake container consumes no disk; allow its tiny disposable fixture.
+export LOCALBOORU_BUILD_MIN_FREE_GB=1
+export LOCALBOORU_BUILD_ROOT_MIN_FREE_GB=1
 
 # AC: @truthful-container-build-startup ac-locked
 printf '%s\n' \

@@ -26,6 +26,10 @@ EOF
 cat >"$TEMP_DIR/bin/cargo" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == metadata ]]; then
+  printf '{"target_directory":"%s"}\n' "$FAKE_CARGO_TARGET"
+  exit 0
+fi
 printf '%s\n' "${CARGO_BUILD_JOBS:-unset}" >"$FAKE_CARGO_JOBS"
 printf '%s\n' "${RUSTC_WRAPPER:-unset}" >"$FAKE_CARGO_WRAPPER"
 printf '%s\n' "$@" >"$FAKE_CARGO_ARGS"
@@ -36,6 +40,7 @@ export FAKE_GATE_ARGS="$TEMP_DIR/gate-args"
 export FAKE_RUSTC_ARGS="$TEMP_DIR/rustc-args"
 export FAKE_CARGO_JOBS="$TEMP_DIR/cargo-jobs"
 export FAKE_CARGO_WRAPPER="$TEMP_DIR/cargo-wrapper"
+export FAKE_CARGO_TARGET="$TEMP_DIR/target"
 export FAKE_CARGO_ARGS="$TEMP_DIR/cargo-args"
 
 HOST_HEAVY_BUILD_GATE="$TEMP_DIR/bin/fake-host-gate" \

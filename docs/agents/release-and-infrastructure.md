@@ -183,7 +183,7 @@ Equivalent direct commands:
 ```bash
 ./scripts/build-windows-local.sh
 ./scripts/build-windows-local.sh --rebuild-image
-LOCALBOORU_BUILD_JOBS=4 ./scripts/build-windows-local.sh
+LOCALBOORU_BUILD_JOBS=1 ./scripts/build-windows-local.sh
 ```
 
 `scripts/build-windows-local.sh` is the host entry point;
@@ -274,8 +274,29 @@ LOCALBOORU_DIST_LINUX_DIR=/path/to/artifacts \
 ./scripts/build-linux-local.sh
 ```
 
-`LOCALBOORU_BUILD_JOBS` or `--jobs` limits compilation parallelism. WebKitGTK is
-the dominant build cost; do not delete the persistent build root between
+`LOCALBOORU_BUILD_JOBS` or `--jobs` limits compilation parallelism. Release and one-shot Cargo builds default to one compiler job. Development/test
+profiles use line-table debug information and disable incremental compilation
+to reduce retained target files; rebuilds may take longer. Linux/Windows
+artifact containers are also capped at 12 GiB RAM, 2 GiB swap, and two CPUs.
+`LOCALBOORU_BUILD_MEMORY_GB`, `LOCALBOORU_BUILD_SWAP_GB`, and
+`LOCALBOORU_BUILD_CPUS` override those positive integer limits (swap may be zero).
+A build that exceeds its memory cap may fail inside the container rather than
+consuming all host RAM. Native Cargo builds use the job limit but do not have a
+hard memory cap; toolchain image builds are not covered by the artifact container
+caps either. The shared host build gate still applies to every compiler/image
+build.
+
+Before starting a container/image build, the wrappers require 50 GiB free on the
+root filesystem and 30 GiB on each build/cache/output filesystem. Override the
+root threshold with `LOCALBOORU_BUILD_ROOT_MIN_FREE_GB` and the build threshold
+with `LOCALBOORU_BUILD_MIN_FREE_GB` after assessing the expected build size. This
+is a preflight check, not a disk quota; ongoing unrelated disk writes can still
+exhaust space. Cache-size limits also reject an oversized existing cache; they
+do not automatically delete it or limit growth during a build. Use `npm run
+clean:builds` to inspect deliberate cleanup options, preserving final packages
+and the expensive native runtime cache when only Rust outputs are obsolete.
+
+WebKitGTK is the dominant build cost; do not delete the persistent build root between
 releases.
 
 ## Linux build contents
@@ -359,3 +380,22 @@ an Actions artifact without publishing it.
 Creating tags, pushing commits, signing packages, and publishing a GitHub
 release are explicit operator actions after local artifact verification. Never
 publish merely because a tag was pushed.
+
+## Compiler cache hygiene
+
+`scripts/run-cargo.sh` trims oversized Rust compiler caches before and after
+one-shot commands while holding the host build gate. The dev launcher performs
+the same gated check before starting hot compilation, and Linux/Windows release
+wrappers check their container target after the container exits (including a
+failed build). The compiler-file budget is 20 GiB per target, configurable with
+`LOCALBOORU_CARGO_CACHE_LIMIT_GB`. Cargo metadata resolves the native target path
+from project/global configuration and environment; use the same target across
+worktrees instead of creating a separate full cache for each branch.
+
+When over budget, only Rust `deps`, `build`, `.fingerprint`, `incremental`, and
+`examples` directories in recognized target profiles are removed. Final
+executables, bundles, package archives, SDKs, WebKit/VapourSynth and user data
+are preserved. Targets must have Cargo fingerprint directories and a
+`.rustc_info.json` marker; symlink compiler directories are never deleted. This
+is checkpoint cleanup, not a hard filesystem quota: a single running build can
+exceed the budget temporarily. Clearing compiler files may force a rebuild.

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
 LOCK_TIMEOUT="${LOCALBOORU_BUILD_LOCK_TIMEOUT:-1800}"
-JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
+JOBS="${LOCALBOORU_BUILD_JOBS:-1}"
 
 [[ "$LOCK_TIMEOUT" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
   echo "ERROR: LOCALBOORU_BUILD_LOCK_TIMEOUT must be a nonnegative number" >&2
@@ -24,8 +25,8 @@ export CARGO_BUILD_JOBS="$JOBS"
 
 # macOS has flock(2), but no flock command in its standard tools.
 if [[ "$(uname -s)" == Darwin ]]; then
-  exec python3 - "$LOCK_DIR/heavy-build.lock" "$LOCK_TIMEOUT" "$@" <<'PY'
-import fcntl, os, sys, time
+  exec python3 - "$LOCK_DIR/heavy-build.lock" "$LOCK_TIMEOUT" "$ROOT/scripts/cargo-cache-hygiene.py" "$@" <<'PY'
+import fcntl, os, subprocess, sys, time
 lock = open(sys.argv[1], 'a')
 deadline = time.monotonic() + float(sys.argv[2])
 while True:
@@ -37,7 +38,10 @@ while True:
             sys.exit('ERROR: timed out waiting for the host heavy-build gate')
         time.sleep(0.1)
 os.set_inheritable(lock.fileno(), True)
-os.execvp('cargo', ['cargo', *sys.argv[3:]])
+subprocess.run(['python3', sys.argv[3], *sys.argv[4:]], check=True)
+result = subprocess.run(['cargo', *sys.argv[4:]])
+hygiene = subprocess.run(['python3', sys.argv[3], *sys.argv[4:]])
+sys.exit(result.returncode or hygiene.returncode)
 PY
 fi
 
@@ -47,4 +51,10 @@ if ! flock -w "$LOCK_TIMEOUT" 8; then
   exit 75
 fi
 
-exec cargo "$@"
+python3 "$ROOT/scripts/cargo-cache-hygiene.py" "$@"
+result=0
+cargo "$@" || result=$?
+hygiene_result=0
+python3 "$ROOT/scripts/cargo-cache-hygiene.py" "$@" || hygiene_result=$?
+(( result != 0 )) || result=$hygiene_result
+exit "$result"
