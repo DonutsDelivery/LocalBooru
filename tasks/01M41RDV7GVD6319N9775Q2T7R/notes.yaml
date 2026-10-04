@@ -98,3 +98,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T01:06:07.671Z
+  - _ulid: 01M427CKSEYG613WEHBMBPC8X0
+    content: "Behavioral baseline reproduced without reboot on existing signed687: warm Activity
+      initializes WebView, enabling existing synthetic SystemUI neutral overlay via cmd overlay
+      immediately destroys Activity and the native process exits0, returning to launcher.
+      android-overlay-baseline.log retains assets-added and process-death timeline. This
+      independently confirms assetsPaths handling is required even after ordinary startup; new
+      candidate ffc47311 queued for actual comparison."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T01:10:24.814Z
