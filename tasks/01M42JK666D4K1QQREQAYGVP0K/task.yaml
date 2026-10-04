@@ -1,0 +1,22 @@
+_ulid: 01M42JK666D4K1QQREQAYGVP0K
+slugs:
+  - dmc-build-resource-safety
+title: Bound release build resources and reject low disk headroom
+type: infra
+description: After repeated host crashes, default one compiler job; cap Linux/Windows artifact
+  containers at12GiB RAM,2GiB swap and2 CPUs; reject invalid caps and less than30GiB free on root or
+  any build/cache/output filesystem before compilation. Preserve shared host build lock. Test
+  behavior with fake container/build commands, no compilation. Document toolchain-image limit scope
+  and separate KVM kernel blocker.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-10-04T04:26:14.598Z
+todos: []

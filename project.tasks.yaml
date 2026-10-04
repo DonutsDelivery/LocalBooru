@@ -2207,3 +2207,16 @@ tasks:
     started_at: 2026-10-03T23:40:26.657Z
     submitted_at: 2026-10-03T23:59:03.707Z
     completed_at: 2026-10-04T00:59:50.936Z
+  - _ulid: 01M42JK666D4K1QQREQAYGVP0K
+    slugs:
+      - dmc-build-resource-safety
+    title: Bound release build resources and reject low disk headroom
+    type: infra
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-04T04:26:14.598Z
