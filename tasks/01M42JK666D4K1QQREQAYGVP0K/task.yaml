@@ -11,8 +11,12 @@ description: After repeated host crashes, default one compiler job; cap Linux/Wi
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Merged into main as a433698a. Thirteen focused Python checks and four shell suites
+  passed; automatic 20 GiB compiler pruning, one-job defaults, artifact container caps and release
+  disk reserves installed. Storage migration continues under the host gate; release builds remain
+  held.
 depends_on: []
 context: []
 priority: 1
@@ -65,7 +69,24 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-04T05:03:37.354Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Merged into main as a433698a. Thirteen focused Python checks and four shell suites passed;
+          automatic 20 GiB compiler pruning, one-job defaults, artifact container caps and release
+          disk reserves installed. Storage migration continues under the host gate; release builds
+          remain held.
+        previous: null
+      completed_at:
+        new: 2026-10-04T05:08:40.891Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-04T05:08:40.898Z
 created_at: 2026-10-04T04:26:14.598Z
 started_at: 2026-10-04T04:28:25.740Z
 submitted_at: 2026-10-04T05:03:37.354Z
+completed_at: 2026-10-04T05:08:40.891Z
 todos: []
