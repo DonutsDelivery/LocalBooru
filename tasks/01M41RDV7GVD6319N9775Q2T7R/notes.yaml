@@ -108,3 +108,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T01:10:24.814Z
+  - _ulid: 01M427YHFW23SE4Q6ZX0KYX9SQ
+    content: ffc47311 emulator-only optimized x86_64 diagnostic APK built0; no live Cargo/Rust writers
+      remained when signing started. Pinned permanent signature, ZIP/ELF16KB, package metadata,
+      non-debuggable status and compiled assetsPaths flag verified. Ordinary launch now visibly
+      renders the synthetic upgraded gallery with native health200. Overlay/cold repetitions
+      running; exact source777a5e19 tree staged for canonical Mac tests/universal build behind Mac
+      host gate. No diagnostic artifact is offered as the four-ABI release/store candidate.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T01:20:12.284Z
