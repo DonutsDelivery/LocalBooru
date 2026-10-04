@@ -65,3 +65,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-03T22:10:20.228Z
+  - _ulid: 01M425CS0NC3CT3FVVT65VTZ6G
+    content: Resumed release investigation; preserved earlier failed evidence and signing artifacts.
+      Clean Android repair branch rebased onto integrated main1ab5f171; new commits
+      a66d3321/7243aa61 retain existing narrow patch. Warm force-stop/relaunch of exact687 signed
+      APK visually renders synthetic gallery, proving visible UI rather than backend alone.
+      Repeating full Android reboot with complete logs and timed screenshots to distinguish provider
+      timeout, JNI failure and emulator graphics crash before further code changes.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T00:35:33.013Z
