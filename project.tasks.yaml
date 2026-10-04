@@ -2212,7 +2212,7 @@ tasks:
       - dmc-build-resource-safety
     title: Bound release build resources and reject low disk headroom
     type: infra
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
@@ -2222,3 +2222,4 @@ tasks:
     todos_count: 0
     created_at: 2026-10-04T04:26:14.598Z
     started_at: 2026-10-04T04:28:25.740Z
+    submitted_at: 2026-10-04T05:03:37.354Z
