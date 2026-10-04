@@ -1,6 +1,7 @@
 package com.localbooru.app
 
 import android.graphics.Color
+import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
 import android.webkit.JavascriptInterface
@@ -18,6 +19,7 @@ class MainActivity : TauriActivity() {
   private var appWebView: WebView? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    Log.i("DonutMediaCenter", "Activity created: restored=${savedInstanceState != null}")
     enableEdgeToEdge(
       statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
       navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
@@ -85,6 +87,19 @@ class MainActivity : TauriActivity() {
   override fun onResume() {
     super.onResume()
     appWebView?.post { appWebView?.requestApplyInsets() }
+  }
+
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    // Dynamic-colour overlays can arrive during boot. Keep the native runtime
+    // and WebView alive while Android and Tauri update their resources/plugins.
+    super.onConfigurationChanged(newConfig)
+    appWebView?.post { appWebView?.requestApplyInsets() }
+    Log.i("DonutMediaCenter", "Activity configuration updated")
+  }
+
+  override fun onDestroy() {
+    Log.i("DonutMediaCenter", "Activity destroyed: changingConfiguration=$isChangingConfigurations")
+    super.onDestroy()
   }
 
   override fun onWindowFocusChanged(hasFocus: Boolean) {
