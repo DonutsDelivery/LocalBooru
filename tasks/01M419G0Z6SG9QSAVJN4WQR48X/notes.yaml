@@ -190,3 +190,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T01:00:10.969Z
+  - _ulid: 01M428MSVMA8PE1DZ8AAW6TM3K
+    content: Android candidateffc47311 fixes confirmed CONFIG_ASSETS_PATHS recreation (normal/overlay
+      tests and one full cold pass). Separate2GB emulator WebView OOM failure retained;4GB cold
+      repetitions running. Canonical full permanently signed4ABI APK+AAB queued behind existing host
+      compiler, stores diagnostic artifact separately. Mac exact tree777a5e19 staged; frontend
+      tests/build pass, our Rust compiler paused after detecting existing Mac Ninja owner uses a
+      different gate; explicit resume watcher waits for all other compiler processes. Normal
+      Linux41641 and Mac52038 remain running. Cached Linux image restored from SHA-verified
+      external4GB archive and exact imageID verified; no toolchain rebuild. Prepared serialized
+      Linux/Windows jobs require source review integration marker before starting.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T01:32:21.748Z
