@@ -487,7 +487,16 @@ mod tests {
         let db = crate::db::pool::create_main_pool(&dir).unwrap();
         crate::db::schema::init_main_db(&db.get().unwrap()).unwrap();
         let secret = "synthetic-address-discovery-secret";
-        let token = create_jwt(0, "paired-device", "local_network", false, secret).unwrap();
+        db.get().unwrap().execute(
+            "INSERT INTO paired_devices (device_id, display_name, public_key_spki, public_key_fingerprint, last_seen_at) VALUES ('fixture-device', 'Fixture device', 'synthetic-spki', 'synthetic-fingerprint', datetime('now'))",
+            [],
+        ).unwrap();
+        let token = crate::server::middleware::auth::create_device_jwt(
+            "fixture-device",
+            "Fixture device",
+            secret,
+        )
+        .unwrap();
         for (path, authenticated, expected) in [
             ("/api/network/addresses", true, StatusCode::OK),
             ("/api/network/addresses", false, StatusCode::UNAUTHORIZED),
