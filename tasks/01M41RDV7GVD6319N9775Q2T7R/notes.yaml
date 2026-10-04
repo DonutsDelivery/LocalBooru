@@ -118,3 +118,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T01:20:12.284Z
+  - _ulid: 01M428ACXNM0RQBP65097EE08A
+    content: ffc47311 ordinary and actual overlay enable/disable pass with same native process and
+      visible gallery; first full cold boot pass (oneActivity, gallery/health200 by60s). Second cold
+      boot failed for a different evidenced reason:2GB emulator lowmemorykiller kills dozens of
+      Android system processes and WebView renderer2157; Chromium intentionally SIGKILLs app1966, no
+      FORTIFY/native abort or Activity recreation. Retain failed2GB logs/receipt; repeat same exact
+      diagnostic APK with explicit4GB emulator capacity, do not relabel failure or claim memory
+      recovery fixed. Full four-ABI/store wrapper queued at unchanged clean candidate.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T01:26:40.821Z
