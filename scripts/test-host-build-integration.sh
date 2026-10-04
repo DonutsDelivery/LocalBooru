@@ -36,6 +36,9 @@ printf '%s\n' "$@" >"$FAKE_CARGO_ARGS"
 EOF
 chmod +x "$TEMP_DIR/bin/"*
 
+# Fixture commands must never queue behind the real host build/migration token.
+export XDG_STATE_HOME="$TEMP_DIR/state"
+export LOCALBOORU_BUILD_LOCK_TIMEOUT=0
 export FAKE_GATE_ARGS="$TEMP_DIR/gate-args"
 export FAKE_RUSTC_ARGS="$TEMP_DIR/rustc-args"
 export FAKE_CARGO_JOBS="$TEMP_DIR/cargo-jobs"
