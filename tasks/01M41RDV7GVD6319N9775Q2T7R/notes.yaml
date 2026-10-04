@@ -75,3 +75,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T00:35:33.013Z
+  - _ulid: 01M426JG8XJK8CREZYK6VCH7JV
+    content: Resumed after host reboot. Exact687 APK full cold emulator launch stalls with PID1806 alive
+      at90s, no backend listener or onWebViewCreate; warm relaunch and Android reboot visually
+      render synthetic gallery. Captured native thread stack and unchanged prior app log. Rebased
+      clean Android branch onto main1ab and committed e263a936 Android-only startup phase/error
+      logging to locate bridge/provider failure without changing renderer, adding timeouts, or
+      recording user URLs/data. Next signed candidate must pass visible cold startup before
+      review/integration.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T00:56:09.245Z
