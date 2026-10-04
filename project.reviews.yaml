@@ -12449,6 +12449,21 @@ reviews:
         required: true
         created_at: 2026-10-04T01:22:46.128Z
         completed_at: 2026-10-04T01:22:46.128Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: 1ab5f171302bc2180808de80d05c5e5e08ff4efd
+          head_commit: ffc473119e94ec1c9e307bdf4b7ca57e0eac7d7b
+        evidence: "Exact333cb74f APK: ordinary and actual overlay enable/disable passed; first4GB cold
+          passed. Second4GB missed60s visible deadline, recovered without app restart; freshIPC
+          returnshealth=true. Prior2GB rendererOOM retained separately. Extended repeated cold
+          timing rerun uses a separate synthetic AVD after emulator instance-lock failure; no
+          acceptance yet."
+        name: android-cold-startup
+        required: true
+        runner: synthetic-android16-16kb
+        created_at: 2026-10-04T01:48:43.413Z
+        completed_at: null
     events:
       - _ulid: 01M427NAQGF8NZBREPQPJHXNGC
         actor: DonutsDelivery
@@ -12470,6 +12485,13 @@ reviews:
           status: pass
           name: unchanged-timeout-helper-tests
         timestamp: 2026-10-04T01:22:46.221Z
+      - _ulid: 01M429JRM4GFY6QFWZ1YXMKJXR
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: android-cold-startup
+        timestamp: 2026-10-04T01:48:43.524Z
     examined_commit: ffc473119e94ec1c9e307bdf4b7ca57e0eac7d7b
     external_links: []
     lifecycle_state: draft
@@ -12484,5 +12506,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-04T01:15:10.448Z
-    updated_at: 2026-10-04T01:22:46.128Z
+    updated_at: 2026-10-04T01:48:43.413Z
     notes: []
