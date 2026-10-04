@@ -150,3 +150,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T01:51:04.364Z
+  - _ulid: 01M42H6MWT80615S9W0KR3QDGC
+    content: Freshhost boot2b5f3772 confirmed, no activecompiler writers. Exactffc47311 signed fourABI
+      APKd7a669e4/AAB6b9611a3 canonical build exited0; artifacts copied and verified under
+      externalstorage/android-ffc47311. Mac same tree777a5e19 canonical universal build0,608tests
+      pass, archived/hashes checked. ActualshippingAPK startup checks resumed on synthetic4GB
+      Android16.1/16KB fixture, guestbootIDs record full system reboots while leavingQEMU alive to
+      avoid prior hostshutdown clock/RCU lockup. No sourceapproval or integration yet.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T04:01:55.098Z
