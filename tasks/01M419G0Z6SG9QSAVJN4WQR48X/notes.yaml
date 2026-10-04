@@ -212,3 +212,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-04T01:48:46.598Z
+  - _ulid: 01M42JK3XR1SDWXZFF10G93XPT
+    content: "Host crash steering: repeated QEMU/KVM CPU10 soft lockup in kvm_get_walltime_and_clockread
+      occurred with no compiler running. No recorded OOM. Both filesystems 99%,
+      root26GiB/storage75GiB free; 67GiB swap unused. External resource hold blocks queued builds;
+      future queues one compiler job. Do not restart KVM on this kernel. Android/Mac exact ffc47311
+      packages archived, runtime acceptance pending."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-04T04:26:12.280Z
