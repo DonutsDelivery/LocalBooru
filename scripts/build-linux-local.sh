@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/build-startup-status.sh"
+source "$ROOT/scripts/build-resource-limits.sh"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
 SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
 DOCKERFILE_HASH="$(sha256sum "$ROOT/Dockerfile.linux-release" | cut -c1-12)"
@@ -12,7 +13,7 @@ IMAGE="localbooru-linux-release:ubuntu24.04-webkit2.52.3-v1-$DOCKERFILE_HASH"
 REBUILD=0
 BOOTSTRAP_NATIVE_RUNTIME=0
 BUNDLES="appimage,deb,rpm"
-JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
+JOBS="${LOCALBOORU_BUILD_JOBS:-1}"
 
 usage() {
   cat <<'EOF'
@@ -26,7 +27,7 @@ Options:
   --bootstrap-native-runtime
                     Explicitly compile a missing native runtime cache. Normal
                     release runs never start this long-running bootstrap.
-  --jobs N         Limit parallel compilation (default: 2)
+  --jobs N         Limit parallel compilation (default: 1)
   -h, --help       Show this help
 
 Environment:
@@ -199,6 +200,9 @@ localbooru_build_acquire_lock "$STATE_DIR" linux "$SOURCE_REVISION"
 python3 "$ROOT/scripts/check-release-version.py"
 localbooru_build_write_owner "$SOURCE_COMMIT"
 
+localbooru_build_resource_limits
+localbooru_build_check_disk / "$BUILD_ROOT" "$DIST_ROOT" "$CCACHE_ROOT"
+
 if [[ "$REBUILD" == 1 ]] || ! "$CONTAINER" image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "==> Building release toolchain image $IMAGE"
   localbooru_build_started "$SOURCE_COMMIT" container-image
@@ -213,7 +217,9 @@ echo "    build:   $BUILD_ROOT"
 echo "    output:  $DIST_ROOT"
 
 localbooru_build_started "$SOURCE_COMMIT" artifacts
+container_result=0
 "$CONTAINER" run --rm \
+  "${LOCALBOORU_CONTAINER_LIMITS[@]}" \
   -u "$(id -u):$(id -g)" \
   -e HOME=/tmp \
   -e CARGO_HOME=/cargo-home \
@@ -240,7 +246,12 @@ localbooru_build_started "$SOURCE_COMMIT" artifacts
   -v "$CCACHE_ROOT:/ccache" \
   -w /build \
   "$IMAGE" \
-  bash /source/scripts/build-linux-docker.sh
+  bash /source/scripts/build-linux-docker.sh || container_result=$?
+
+hygiene_result=0
+python3 "$ROOT/scripts/cargo-cache-hygiene.py" --target-directory "$BUILD_ROOT/target" || hygiene_result=$?
+(( container_result == 0 )) || exit "$container_result"
+(( hygiene_result == 0 )) || exit "$hygiene_result"
 
 echo
 printf '==> Linux persistent build cache after build: %s\n' "$(du -sh "$BUILD_ROOT" | cut -f1)"

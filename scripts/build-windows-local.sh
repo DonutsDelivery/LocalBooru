@@ -4,13 +4,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/build-startup-status.sh"
+source "$ROOT/scripts/build-resource-limits.sh"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/localbooru"
 SOURCE_REVISION="${LOCALBOORU_SOURCE_REVISION:-HEAD}"
 localbooru_build_acquire_lock "$STATE_DIR" windows "$SOURCE_REVISION"
 python3 "$ROOT/scripts/check-release-version.py"
 DOCKERFILE="$ROOT/Dockerfile.windows-release"
 REBUILD=0
-JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
+JOBS="${LOCALBOORU_BUILD_JOBS:-1}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -106,6 +107,9 @@ fi
 printf '==> Windows persistent build cache before build: %s (limit: %sG)\n' \
   "$(du -sh "$BUILD_ROOT" | cut -f1)" "$BUILD_LIMIT_GB"
 
+localbooru_build_resource_limits
+localbooru_build_check_disk / "$BUILD_ROOT" "$DIST_PATH"
+
 if [[ "$REBUILD" == 1 ]] || ! "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "==> Building Windows MSVC/Wine image $IMAGE"
   localbooru_build_started "$SOURCE_COMMIT" container-image
@@ -115,7 +119,9 @@ fi
 printf '==> Building Windows x64 artifacts with %s jobs\n' "$JOBS"
 printf '    source: %s\n' "$SOURCE_COMMIT"
 localbooru_build_started "$SOURCE_COMMIT" artifacts
+container_result=0
 "$DOCKER" run --rm --init \
+  "${LOCALBOORU_CONTAINER_LIMITS[@]}" \
   -e HOST_UID="$(id -u)" \
   -e HOST_GID="$(id -g)" \
   -e LOCALBOORU_BUILD_JOBS="$JOBS" \
@@ -130,7 +136,12 @@ localbooru_build_started "$SOURCE_COMMIT" artifacts
   -v "$DIST_PATH:/dist" \
   -w /build/worktree \
   "$IMAGE" \
-  bash /source/scripts/build-windows-docker.sh
+  bash /source/scripts/build-windows-docker.sh || container_result=$?
+
+hygiene_result=0
+python3 "$ROOT/scripts/cargo-cache-hygiene.py" --target-directory "$BUILD_ROOT/target" || hygiene_result=$?
+(( container_result == 0 )) || exit "$container_result"
+(( hygiene_result == 0 )) || exit "$hygiene_result"
 
 (
   cd "$DIST_PATH"

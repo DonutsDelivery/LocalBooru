@@ -1,4 +1,13 @@
 [build]
 # Bound ad-hoc Cargo commands so a missed wrapper cannot exhaust the workstation.
 # Project release wrappers may override this with CARGO_BUILD_JOBS/--jobs.
-jobs = 2
+jobs = 1
+
+# Keep development/test caches smaller on developer machines.
+[profile.dev]
+debug = 1
+incremental = false
+
+[profile.test]
+debug = 1
+incremental = false
