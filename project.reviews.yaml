@@ -12689,7 +12689,20 @@ reviews:
     slugs: []
     title: Source-only review of DMC hub relay and matching node gateway
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 310006a1
+          head_commit: 72a245ca
+        evidence: Babel parsed12 changed frontend files; PythonAST parsed5 changed modules; JSON/TOML/locks
+          parsed; rustfmt parsed/checks passed for transport/gateway/backend and lib.rs; git diff
+          --check clean in both candidates.
+        name: source-syntax-and-format
+        required: true
+        runner: source-parser
+        created_at: 2026-10-05T22:52:29.193Z
+        completed_at: 2026-10-05T22:52:29.193Z
     events:
       - _ulid: 01M47493W0N1QZZXY15YQ87H1K
         actor: DonutsDelivery
@@ -12697,6 +12710,13 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-05T22:52:16.640Z
+      - _ulid: 01M4749G6QWAXHXXVEJEHD7TAW
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-syntax-and-format
+        timestamp: 2026-10-05T22:52:29.271Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -12711,5 +12731,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-05T22:52:16.641Z
-    updated_at: null
+    updated_at: 2026-10-05T22:52:29.193Z
     notes: []
