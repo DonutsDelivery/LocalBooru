@@ -12613,3 +12613,32 @@ reviews:
     created_at: 2026-10-04T05:00:27.800Z
     updated_at: 2026-10-04T05:03:49.324Z
     notes: []
+  - _ulid: 01M472XRN336ZAFCCWVZSTQV61
+    slugs:
+      - collections-navigation-source-review
+    title: Collections navigation source review
+    author: Booru Node Maintainers
+    checks: []
+    events:
+      - _ulid: 01M472XRN3KPW4F1VK3XDHMV8S
+        actor: Booru Node Maintainers
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-05T22:28:36.131Z
+    examined_commit: 310006a1
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@collections-gallery-back"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: dddcd6b5
+      head_branch: main
+      head_commit: 310006a1
+    threads: []
+    verdicts: []
+    created_at: 2026-10-05T22:28:36.131Z
+    updated_at: null
+    notes: []

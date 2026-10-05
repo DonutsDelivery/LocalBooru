@@ -18,6 +18,7 @@ context: []
 priority: 2
 tags: []
 vcs_refs: []
+review_ref: "@collections-navigation-source-review"
 history:
   - author: DonutsDelivery
     changes:
@@ -29,6 +30,13 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-05T22:15:32.969Z
+  - author: Booru Node Maintainers
+    changes:
+      review_ref:
+        new: "@collections-navigation-source-review"
+        previous: null
+    command: review-link
+    timestamp: 2026-10-05T22:28:36.441Z
 created_at: 2026-10-05T22:14:37.217Z
 started_at: 2026-10-05T22:15:32.969Z
 todos: []
