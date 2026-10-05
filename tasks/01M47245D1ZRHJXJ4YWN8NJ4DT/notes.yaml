@@ -1,1 +1,9 @@
-notes: []
+notes:
+  - _ulid: 01M472YP9BK4NJYCKFXW3T6239
+    content: "Completed with --force from in_progress state. Reason: Implemented and source-reviewed in
+      @collections-navigation-source-review; merged into main at 310006a1. Back navigation, tailored
+      sidebar and Music state restoration implemented. Syntax/source checks only; no tests, builds
+      or runtime verification."
+    supersedes: null
+    author: Booru Node Maintainers
+    created_at: 2026-10-05T22:29:06.475Z
