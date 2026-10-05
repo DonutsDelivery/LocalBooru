@@ -17,6 +17,14 @@ import {
 } from '../api'
 import './OnlinePage.css'
 
+const SOURCE_DEFAULTS = {
+  donutbooru: { display_name: 'DonutBooru', base_url: 'https://donutbooru.com' },
+}
+
+function sourceDefaults(provider) {
+  return SOURCE_DEFAULTS[provider] || { display_name: '', base_url: '' }
+}
+
 const assetUrl = (item, kind = 'sample') =>
   getMediaUrl(`/api/online/sources/${encodeURIComponent(item.source_id)}/items/${encodeURIComponent(item.remote_post_id)}/asset/${kind}`)
 
@@ -37,10 +45,25 @@ export default function OnlinePage() {
   const [connections, setConnections] = useState([])
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
-  const [form, setForm] = useState({ display_name: '', provider_family: 'donutbooru', base_url: '', policy_profile: 'unrestricted', allow_local_network: false })
+  const [form, setForm] = useState({ ...sourceDefaults('donutbooru'), provider_family: 'donutbooru', policy_profile: 'unrestricted', allow_local_network: false })
   const [connectionForm, setConnectionForm] = useState({ account_display_name: '', auth_kind: 'bearer', secret: '' })
 
   const selectedSource = useMemo(() => sources.find(source => source.source_id === sourceId), [sources, sourceId])
+
+  const selectProvider = provider => {
+    setForm(current => {
+      const previousDefaults = sourceDefaults(current.provider_family)
+      const nextDefaults = sourceDefaults(provider)
+      return {
+        ...current,
+        provider_family: provider,
+        display_name: !current.display_name.trim() || current.display_name === previousDefaults.display_name
+          ? nextDefaults.display_name : current.display_name,
+        base_url: !current.base_url.trim() || current.base_url.trim().replace(/\/+$/, '') === previousDefaults.base_url
+          ? nextDefaults.base_url : current.base_url,
+      }
+    })
+  }
 
   const loadSources = useCallback(async () => {
     const result = await getRemoteSources()
@@ -97,7 +120,7 @@ export default function OnlinePage() {
       const source = await createRemoteSource(form)
       await loadSources()
       setSourceId(source.source_id)
-      setForm({ ...form, display_name: '', base_url: '' })
+      setForm({ ...form, ...sourceDefaults(form.provider_family) })
       setNotice('Source saved. Probe it before relying on its capabilities.')
     } catch (error) {
       setNotice(errorMessage(error))
@@ -200,7 +223,7 @@ export default function OnlinePage() {
     {tab === 'sources' && <section className="online-main online-two-column">
       <form className="online-panel" onSubmit={addSource}><h2>Add source</h2>
         <label>Name<input required value={form.display_name} onChange={event => setForm({ ...form, display_name: event.target.value })} /></label>
-        <label>Provider<select value={form.provider_family} onChange={event => setForm({ ...form, provider_family: event.target.value })}><option value="danbooru">Danbooru-compatible</option><option value="donutbooru">DonutBooru</option></select></label>
+        <label>Provider<select value={form.provider_family} onChange={event => selectProvider(event.target.value)}><option value="danbooru">Danbooru-compatible</option><option value="donutbooru">DonutBooru</option></select></label>
         <label>HTTPS base URL<input required type="url" placeholder="https://example.test" value={form.base_url} onChange={event => setForm({ ...form, base_url: event.target.value })} /></label>
         <label>Content policy<select value={form.policy_profile} onChange={event => setForm({ ...form, policy_profile: event.target.value })}><option value="unrestricted">Unrestricted</option><option value="safe">Safe only</option><option value="adult-hidden">Adult content hidden</option></select></label>
         <label className="online-checkbox"><input type="checkbox" checked={form.allow_local_network} onChange={event => setForm({ ...form, allow_local_network: event.target.checked })} />Allow a node on my local network</label>
