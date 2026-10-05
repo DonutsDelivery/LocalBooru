@@ -1,18 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { fetchCollection, updateCollection, removeFromCollection } from '../api'
 import Sidebar from '../components/Sidebar'
 import MasonryGrid from '../components/MasonryGrid'
 import Lightbox from '../components/Lightbox'
 import { adjustmentLocator, imageMatchesLocator, updateImagesByLocator } from '../utils/imageAdjustments.js'
-import { loadCollectionPages, restoreCollectionScroll, savedCollectionPage } from '../utils/collectionState.js'
+import { collectionGalleryTarget, loadCollectionPages, restoreCollectionScroll, savedCollectionPage } from '../utils/collectionState.js'
 import { useMobileDrawer } from '../hooks/useMobileDrawer'
 
 export default function CollectionDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const mediaType = searchParams.get('media_type') === 'video' ? 'video' : 'image'
+  const galleryReturnTo = collectionGalleryTarget(location, mediaType)
   const [collection, setCollection] = useState(null)
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -157,7 +159,7 @@ export default function CollectionDetailPage() {
     <div className="app">
       <div className="main-container">
         {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
-        <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={drawer.close} />
+        <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={drawer.close} currentCollection={collection} onRenameCollection={collection ? () => { setEditing(true); setEditName(collection.name) } : undefined} />
         <main className="content with-sidebar collection-detail-page" onScrollCapture={(event) => {
           if (event.target.classList?.contains('masonry-container')) {
             sessionStorage.setItem(`${collectionStateKey}_scroll`, String(event.target.scrollTop))
@@ -172,10 +174,10 @@ export default function CollectionDetailPage() {
             </button>
             <button
               className="collections-create-btn collection-back-btn"
-              onClick={() => navigate(`/collections?media_type=${mediaType}`)}
+              onClick={() => navigate(`/collections?media_type=${mediaType}`, { state: { galleryReturnTo } })}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-              Back
+              Back to Collections
             </button>
             {editing ? (
               <div className="collection-name-editor">

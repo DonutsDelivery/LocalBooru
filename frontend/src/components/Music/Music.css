@@ -30,7 +30,6 @@
 }
 .music-side-section > button:hover, .music-side-section > button.active { background: var(--bg-tertiary); color: var(--accent); }
 .music-side-section small { opacity: .7; }
-.music-collections-title { margin: 18px 10px 6px; font-size: .8rem; color: var(--text-muted); }
 .music-new-collection { display: flex; gap: 5px; margin-top: 10px; }
 .music-new-collection input, .music-filters select, .music-browse-search, .music-add-to-collection select {
   min-width: 0; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; padding: 8px;
@@ -49,7 +48,7 @@
 .music-filter-options button { display: block; width: 100%; padding: 7px 8px; border: 0; border-radius: 5px; background: none; color: var(--text-primary); text-align: left; overflow-wrap: anywhere; }
 .music-filter-options button:hover, .music-filter-options button[aria-selected="true"] { background: var(--bg-tertiary); color: var(--accent); }
 .music-filters input[type=checkbox], .music-shuffle-switch input { accent-color: var(--accent); }
-.music-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.music-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .music-mode-switch { display: flex; gap: 3px; background: var(--bg-tertiary); border-radius: 10px; padding: 3px; }
 .music-mode-switch button { flex: 1; border: 0; border-radius: 8px; background: none; color: var(--text-muted); padding: 9px 15px; }
 .music-mode-switch button.active { background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 1px 4px #0003; }
@@ -225,3 +224,26 @@
   .music-large-art { width: min(50vw, 210px); }
   .music-list-panel { border-left: 0; }
 }
+
+.music-collection-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.music-collection-header h2 { margin: 0; min-width: 0; font-size: 1.2rem; overflow-wrap: anywhere; }
+.music-collection-header button {
+  flex-shrink: 0;
+  min-height: var(--touch-target, 44px);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+.music-side-section > .music-collections-entry { border: 1px solid var(--border); }
+.music-collection-grid { padding-top: 16px; }
+.music-collection-grid .music-card-details { padding-bottom: 13px; }

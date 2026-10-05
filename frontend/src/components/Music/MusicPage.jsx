@@ -14,6 +14,10 @@ const defaultFacets = { artists: [], albums: [], genres: [], years: [], folders:
 const labelFor = (value, fallback) => value || fallback
 const itemKey = item => `${item.library_id || ''}:${item.id}`
 const musicItemTitle = (item, mode) => mode === 'albums' ? item.display_title || item.title : item.title
+const collectionFilters = (filters, library, collection = '') => ({
+  ...filters, query: '', artist: '', album: '', genre: '', year: '', favorites: false,
+  folder: '', library, collection, scroll: 0, page: 1,
+})
 function matchesCollectionFilters(item, filters) {
   const query = filters.query.trim().toLocaleLowerCase()
   if (query && ![item.display_title, item.title, item.artist, item.album].some(value => value?.toLocaleLowerCase().includes(query))) return false
@@ -91,6 +95,8 @@ export default function MusicPage() {
   const { browse, setBrowse, updateBrowse, startAlbum, startSong, openAlbum, queueTrack, session, playing, setPlaying } = useMusicBrowser()
   const mode = browse.mode
   const filters = browse.byMode[mode]
+  const showCollectionIndex = browse.collectionGallery?.view === 'index'
+  const inCollectionView = Boolean(browse.collectionGallery || filters.collection)
   const scrollRef = useRef(null)
   const loadMoreRef = useRef(null)
   const loadedQueryRef = useRef(null)
@@ -107,6 +113,7 @@ export default function MusicPage() {
   const [error, setError] = useState('')
   const [facets, setFacets] = useState(defaultFacets)
   const [collections, setCollections] = useState([])
+  const [collectionsLoading, setCollectionsLoading] = useState(true)
   const [libraries, setLibraries] = useState([])
   const [newCollection, setNewCollection] = useState('')
   const [addingCollection, setAddingCollection] = useState(false)
@@ -134,10 +141,15 @@ export default function MusicPage() {
 
   useEffect(() => {
     let alive = true
+    setCollectionsLoading(true)
     Promise.allSettled([fetchMusicFacets({ library_id: filters.library || undefined }), fetchMusicCollections(filters.library || undefined)]).then(results => {
       if (!alive) return
       if (results[0].status === 'fulfilled') setFacets({ ...defaultFacets, ...results[0].value })
-      if (results[1].status === 'fulfilled') setCollections(results[1].value.collections || [])
+      if (results[1].status === 'fulfilled') {
+        setCollections(results[1].value.collections || [])
+        setError('')
+      } else setError('Could not load music collections.')
+      setCollectionsLoading(false)
     })
     return () => { alive = false }
   }, [filters.library, refresh])
@@ -145,6 +157,10 @@ export default function MusicPage() {
   useEffect(() => {
     let alive = true
     loadedQueryRef.current = null
+    if (showCollectionIndex) {
+      setLoading(false)
+      return
+    }
     const load = async () => {
       setLoading(true)
       setError('')
@@ -226,25 +242,35 @@ export default function MusicPage() {
     return () => { alive = false }
   // queryKey captures changes to all filters, page, mode, and refresh.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey])
+  }, [queryKey, showCollectionIndex])
 
   useEffect(() => {
-    if (loading || !activeItems.length || loadedQueryRef.current !== queryKey) return
+    if (showCollectionIndex || loading || !activeItems.length || loadedQueryRef.current !== queryKey) return
     if (restoredRef.current === baseQueryKey) return
     restoredRef.current = baseQueryKey
     scrollPositionRef.current = savedScroll || 0
     requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = savedScroll || 0 })
-  }, [baseQueryKey, queryKey, activeItems.length, loading, savedScroll])
+  }, [baseQueryKey, queryKey, activeItems.length, loading, savedScroll, showCollectionIndex])
+
+  useEffect(() => {
+    if (!showCollectionIndex || collectionsLoading) return
+    if (scrollRef.current) scrollRef.current.scrollTop = browse.collectionGallery?.scroll || 0
+  // Restore the collection index after its cards have loaded, not on each scroll.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCollectionIndex, collectionsLoading])
 
   useEffect(() => () => {
     clearTimeout(scrollSaveTimerRef.current)
-    updateBrowse(mode, { scroll: scrollPositionRef.current })
-  }, [mode, updateBrowse])
+    // Mode switches save their own scroll before changing views.
+    setBrowse(previous => previous.mode !== mode ? previous : {
+      ...previous, byMode: { ...previous.byMode, [mode]: { ...previous.byMode[mode], scroll: scrollPositionRef.current } },
+    })
+  }, [mode, setBrowse])
 
   useEffect(() => {
     const root = scrollRef.current
     const marker = loadMoreRef.current
-    if (!root || !marker || loading || error || filters.collection
+    if (!root || !marker || showCollectionIndex || loading || error || filters.collection
         || !activeItems.length || activeItems.length >= total
         || loadedQueryRef.current !== queryKey) return
     const observer = new IntersectionObserver(([entry]) => {
@@ -254,13 +280,54 @@ export default function MusicPage() {
     }, { root, rootMargin: '600px 0px' })
     observer.observe(marker)
     return () => observer.disconnect()
-  }, [activeItems.length, error, filters.collection, loading, mode, page, queryKey, total, updateBrowse])
+  }, [activeItems.length, error, filters.collection, loading, mode, page, queryKey, total, updateBrowse, showCollectionIndex])
 
   const updateFilter = (key, value) => {
     clearTimeout(scrollSaveTimerRef.current)
     scrollPositionRef.current = 0
     updateBrowse(mode, { [key]: value, scroll: 0, page: 1 })
     if (scrollRef.current) scrollRef.current.scrollTop = 0
+  }
+
+  const openCollections = () => {
+    clearTimeout(scrollSaveTimerRef.current)
+    setOpenFilter(null)
+    restoredRef.current = ''
+    setBrowse(previous => {
+      if (inCollectionView) return { ...previous, collectionGallery: { ...previous.collectionGallery, view: 'index' } }
+      const parent = { mode, byMode: { ...previous.byMode, [mode]: { ...filters, scroll: scrollPositionRef.current } } }
+      return {
+        ...previous,
+        collectionGallery: { view: 'index', parent, scroll: 0 },
+        byMode: Object.fromEntries(Object.entries(previous.byMode).map(([key, value]) => [key, collectionFilters(value, filters.library)])),
+      }
+    })
+  }
+
+  const openCollection = collection => {
+    const indexScroll = showCollectionIndex ? scrollRef.current?.scrollTop || 0 : browse.collectionGallery?.scroll || 0
+    clearTimeout(scrollSaveTimerRef.current)
+    restoredRef.current = ''
+    scrollPositionRef.current = 0
+    setBrowse(previous => ({
+      ...previous,
+      collectionGallery: { ...previous.collectionGallery, view: 'detail', scroll: indexScroll },
+      byMode: Object.fromEntries(Object.entries(previous.byMode).map(([key, value]) => [key, collectionFilters(value, filters.library, String(collection.id))])),
+    }))
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
+  }
+
+  const returnToMusic = () => {
+    clearTimeout(scrollSaveTimerRef.current)
+    setOpenFilter(null)
+    restoredRef.current = ''
+    const parent = browse.collectionGallery?.parent
+    setBrowse(previous => ({
+      ...previous,
+      mode: parent?.mode || previous.mode,
+      byMode: parent?.byMode || Object.fromEntries(Object.entries(previous.byMode).map(([key, value]) => [key, { ...value, collection: '', scroll: 0, page: 1 }])),
+      collectionGallery: null,
+    }))
   }
 
   const switchMode = nextMode => {
@@ -334,28 +401,29 @@ export default function MusicPage() {
     <aside className="music-sidebar">
       <div className="music-sidebar-content">
       <SidebarNavigation />
-      <h1>Music</h1>
-      <p>Your local albums and songs</p>
-      <div className="music-browse-controls">
+      <h1>{inCollectionView ? 'Music Collections' : 'Music'}</h1>
+      <p>{inCollectionView ? 'Your album and song collections' : 'Your local albums and songs'}</p>
+      {!showCollectionIndex && <div className="music-browse-controls">
         <div className="music-mode-switch" role="group" aria-label="Music view">
           <button className={mode === 'albums' ? 'active' : ''} onClick={() => switchMode('albums')}>Albums</button>
           <button className={mode === 'songs' ? 'active' : ''} onClick={() => switchMode('songs')}>Songs</button>
         </div>
         <input className="music-browse-search" type="search" value={filters.query} onChange={event => updateFilter('query', event.target.value)} placeholder={`Search ${mode}`} aria-label={`Search ${mode}`} />
         <span className="music-result-count">{total.toLocaleString()} {mode}</span>
-      </div>
+      </div>}
       <div className="music-side-section">
-        <h2>Browse</h2>
-        <button className={!filters.collection ? 'active' : ''} onClick={() => updateFilter('collection', '')}>All music</button>
-        <div className="music-collections-title">Collections</div>
-        {collections.map(collection => <button key={collection.id} className={String(filters.collection) === String(collection.id) ? 'active' : ''}
-          onClick={() => updateFilter('collection', String(collection.id))}>{collection.name} <small>{collection.item_count ?? ''}</small></button>)}
-        <form className="music-new-collection" onSubmit={createCollection}>
+        {inCollectionView ? <>
+          <button onClick={returnToMusic}>← Back to Music</button>
+          <button className={showCollectionIndex ? 'active' : ''} onClick={openCollections}>All Collections</button>
+          {collections.map(collection => <button key={collection.id} className={!showCollectionIndex && String(filters.collection) === String(collection.id) ? 'active' : ''}
+            onClick={() => openCollection(collection)}>{collection.name} <small>{collection.item_count ?? ''}</small></button>)}
+        </> : <button className="music-collections-entry" onClick={openCollections}>Collections <span aria-hidden="true">→</span></button>}
+        {inCollectionView && <form className="music-new-collection" onSubmit={createCollection}>
           <input value={newCollection} onChange={event => setNewCollection(event.target.value)} placeholder="New collection" aria-label="New music collection" />
           <button disabled={addingCollection || !newCollection.trim()} aria-label="Create music collection">＋</button>
-        </form>
+        </form>}
       </div>
-      <div className="music-side-section music-filters">
+      {!inCollectionView && <div className="music-side-section music-filters">
         <h2>Filters</h2>
         {libraries.length > 1 && <MusicFilterDropdown name="library" label="Library" value={filters.library} options={[{ value: '', label: 'Primary library' }, ...libraries.map(library => ({ value: library.uuid || library.id, label: library.name }))]} openFilter={openFilter} setOpenFilter={setOpenFilter} onChange={value => updateFilter('library', value)} />}
         <MusicFilterDropdown name="artist" label="Artist" value={filters.artist} options={[{ value: '', label: 'All artists' }, ...facets.artists.map(value => ({ value, label: value }))]} openFilter={openFilter} setOpenFilter={setOpenFilter} onChange={value => updateFilter('artist', value)} />
@@ -364,19 +432,39 @@ export default function MusicPage() {
         <MusicFilterDropdown name="year" label="Year" value={filters.year} options={[{ value: '', label: 'All years' }, ...facets.years.map(value => ({ value, label: String(value) }))]} openFilter={openFilter} setOpenFilter={setOpenFilter} onChange={value => updateFilter('year', value)} />
         <MusicFilterDropdown name="folder" label="Folder" value={filters.folder} options={[{ value: '', label: 'All folders' }, ...facets.folders.map(folder => ({ value: folder.id, label: folder.name }))]} openFilter={openFilter} setOpenFilter={setOpenFilter} onChange={value => updateFilter('folder', value)} />
         <label className="music-check"><input type="checkbox" checked={filters.favorites} onChange={event => updateFilter('favorites', event.target.checked)} /> Favorites</label>
-      </div>
+      </div>}
       </div>
       <PersistentMusicPlayer />
     </aside>
     <main className="music-main">
+      {inCollectionView && <div className="music-collection-header">
+        <button onClick={showCollectionIndex ? returnToMusic : openCollections}>← Back to {showCollectionIndex ? 'Music' : 'Collections'}</button>
+        <h2>{showCollectionIndex ? 'Music Collections' : collections.find(collection => String(collection.id) === String(filters.collection))?.name || 'Collection'}</h2>
+      </div>}
       {error && <div className="music-error" role="alert">{error} <button onClick={() => setRefresh(value => value + 1)}>Retry</button></div>}
       <div className="music-scroll" ref={scrollRef} onScroll={event => {
+        if (showCollectionIndex ? collectionsLoading : loading || loadedQueryRef.current !== queryKey) return
         const top = event.currentTarget.scrollTop
-        scrollPositionRef.current = top
+        if (!showCollectionIndex) scrollPositionRef.current = top
         // Save after scrolling settles so the masonry grid does not rerender on every movement.
         clearTimeout(scrollSaveTimerRef.current)
-        scrollSaveTimerRef.current = setTimeout(() => updateBrowse(mode, { scroll: top }), 250)
+        scrollSaveTimerRef.current = setTimeout(() => {
+          if (showCollectionIndex) setBrowse(previous => ({ ...previous, collectionGallery: { ...previous.collectionGallery, scroll: top } }))
+          else updateBrowse(mode, { scroll: top })
+        }, 250)
       }}>
+        {showCollectionIndex ? <>
+          {collectionsLoading ? <div className="music-loading">Loading collections…</div> : collections.length === 0 ? <div className="music-empty"><h2>No collections yet</h2><p>Create a collection to organize your albums and songs.</p></div> : (
+            <div className="music-masonry music-collection-grid">
+              {collections.map(collection => <article className="music-card" key={collection.id}>
+                <button className="music-card-open" onClick={() => openCollection(collection)} aria-label={`Open ${collection.name}`}>
+                  <div className="music-card-fallback" aria-hidden="true">♫</div>
+                  <span className="music-card-details"><strong>{collection.name}</strong><small>{collection.item_count || 0} items</small></span>
+                </button>
+              </article>)}
+            </div>
+          )}
+        </> : <>
         {!loading && !activeItems.length && <div className="music-empty"><span>♫</span><h2>No {mode} found</h2><p>Try another search or add a music folder in Directories.</p></div>}
         <div className="music-masonry">
           {activeItems.map(item => {
@@ -405,6 +493,7 @@ export default function MusicPage() {
         </div>
         {!filters.collection && activeItems.length < total && <div ref={loadMoreRef} className="music-load-sentinel" aria-live="polite">{loading && activeItems.length ? 'Loading more music…' : ''}</div>}
         {loading && !activeItems.length && <div className="music-loading">Loading music…</div>}
+        </>}
       </div>
     </main>
   </div>
