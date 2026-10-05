@@ -360,6 +360,17 @@ features:
     relates_to: []
     tests: []
     traits: []
+    acceptance_criteria:
+      - given: A user is browsing Images, Videos, or Music with filters applied
+        id: ac-gallery-back
+        then: The original gallery and its filter context are restored, including a safe gallery fallback
+          for direct collection links.
+        when: They open Collections and use its Back button
+      - given: A user is inside a media-specific Collections view
+        id: ac-collection-sidebar
+        then: Collection navigation and relevant actions are shown with an explicit way back to the owning
+          gallery.
+        when: They use its sidebar
     tags: []
     requirements:
       - _ulid: 01KKEB20C3COLL0COUNT0FRESH0
