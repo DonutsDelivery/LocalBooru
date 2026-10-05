@@ -542,6 +542,7 @@ export default function SimpleCreateControls({
           {feature('postUpscale', 'Final upscale', <>{selectField('postUpscaleModel')}{selectField('postUpscaleVae')}{numberField('postUpscaleScale')}
             <div className="create-control-pair">{numberField('postUpscaleSteps')}{numberField('postUpscaleDenoise')}</div>{selectField('postUpscaleColorCorrection')}</>)}
         </section>}
+        {feature('faceDetail', 'Face detail', <>{numberField('faceDenoise')}{numberField('maxFaces')}</>)}
         {inputError && <p className="create-message error" role="alert">{inputError}</p>}
       </div>
       <footer className="create-generate-footer">
@@ -572,10 +573,9 @@ export default function SimpleCreateControls({
         <div className="create-effects-workspace" hidden={!panels.desktop && mobilePane !== 'effects'}>
           {(available('compatibilityPreset') || available('tapStrength')) && <EffectSection key="compatibility" title="Compatibility" defaultOpen>{selectField('compatibilityPreset')}{value('compatibilityPreset') !== 'Off' && numberField('tapStrength')}</EffectSection>}
           {feature('decensor', 'Decensor', numberField('decensorWeight'))}
-          {feature('faceDetail', 'Face detail', <>{numberField('faceDenoise')}{numberField('maxFaces')}</>)}
           {strengthFeature('nagStrength', 'NAG', null, 'Scale 0 turns NAG off.')}{strengthFeature('sdaStrength', 'SDA')}
           {strengthFeature('toneStrength', 'ToneLab', <>{selectField('toneModel')}{switchField('toneApplyToEdits', 'Apply to edits')}</>)}
-          {!['compatibilityPreset', 'tapStrength', 'decensor', 'faceDetail', 'nagStrength', 'sdaStrength', 'toneStrength'].some(available)
+          {!['compatibilityPreset', 'tapStrength', 'decensor', 'nagStrength', 'sdaStrength', 'toneStrength'].some(available)
             && <p className="create-control-note">Effects appear when the loaded workflow exposes them.</p>}
         </div>
       </div>
