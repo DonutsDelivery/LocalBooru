@@ -9,7 +9,7 @@ description: Resume native DMC enrollment, scoped authorization, community catal
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
@@ -18,6 +18,14 @@ tags:
   - networking
   - hub
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: main
+  captured_at: 2026-10-05T22:52:15.350Z
+  commit: 310006a1c05e6767e9c56a811185f7066add5f3f
+  remote: origin
+  remote_url: https://github.com/DonutsDelivery/LocalBooru.git
+  upstream_ref: refs/heads/main
 history:
   - author: DonutsDelivery
     changes:
@@ -29,6 +37,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-05T22:41:03.344Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: main
+          captured_at: 2026-10-05T22:52:15.350Z
+          commit: 310006a1c05e6767e9c56a811185f7066add5f3f
+          remote: origin
+          remote_url: https://github.com/DonutsDelivery/LocalBooru.git
+          upstream_ref: refs/heads/main
+        previous: null
+      submitted_at:
+        new: 2026-10-05T22:52:15.357Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-05T22:52:15.357Z
 created_at: 2026-10-05T22:41:01.944Z
 started_at: 2026-10-05T22:41:03.343Z
+submitted_at: 2026-10-05T22:52:15.357Z
 todos: []
