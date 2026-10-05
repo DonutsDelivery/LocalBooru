@@ -41,7 +41,7 @@ def quoted_exec(path):
 def refresh(data_dir):
     for command in (
         ["update-desktop-database", str(data_dir / "applications")],
-        ["gtk-update-icon-cache", "-f", "-t", str(data_dir / "icons/hicolor")],
+        ["gtk-update-icon-cache", "-f", "-t", "-i", str(data_dir / "icons/hicolor")],
     ):
         if shutil.which(command[0]):
             subprocess.run(command, check=False, stdout=subprocess.DEVNULL)
@@ -74,9 +74,11 @@ def main():
     applications = data_dir / "applications"
     text = (ROOT / "src-tauri/linux/com.localbooru.app.desktop").read_text()
     text = text.replace("Exec=donutmediacenter", "Exec=" + quoted_exec(args.launcher))
-    atomic_write(applications / (APP_ID + ".desktop"), text.encode())
     icon = data_dir / "icons/hicolor/512x512/apps" / (APP_ID + ".png")
     atomic_write(icon, (ROOT / "assets/icon.png").read_bytes())
+    if not staged:
+        text = text.replace("Icon=" + APP_ID, "Icon=" + str(icon))
+    atomic_write(applications / (APP_ID + ".desktop"), text.encode())
     for name in LEGACY_IDS:
         legacy = applications / name
         if legacy.is_file() and "Name=DonutMediaCenter\n" in legacy.read_text():
