@@ -41,7 +41,6 @@ def quoted_exec(path):
 def refresh(data_dir):
     for command in (
         ["update-desktop-database", str(data_dir / "applications")],
-        ["gtk-update-icon-cache", "-f", "-t", "-i", str(data_dir / "icons/hicolor")],
     ):
         if shutil.which(command[0]):
             subprocess.run(command, check=False, stdout=subprocess.DEVNULL)
