@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { fetchCollections, createCollection, deleteCollection, getMediaUrl } from '../api'
 import Sidebar from '../components/Sidebar'
+import SharedCollectionsPanel from '../components/SharedCollectionsPanel'
 import { collectionGalleryTarget } from '../utils/collectionState'
 import { useMobileDrawer } from '../hooks/useMobileDrawer'
 import './CollectionsPage.css'
@@ -97,6 +98,7 @@ export default function CollectionsPage() {
           </button>
         </div>
 
+        <SharedCollectionsPanel mediaType={mediaType} galleryReturnTo={galleryReturnTo} />
         {showCreate && (
           <div className="collections-create-form">
             <input

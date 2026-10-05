@@ -7,6 +7,8 @@
   ],
   "permissions": [
     "core:default",
+    "deep-link:allow-get-current",
+    "shell:allow-open",
     "core:window:default",
     "core:window:allow-minimize",
     "core:window:allow-maximize",

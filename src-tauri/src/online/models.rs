@@ -53,12 +53,25 @@ pub struct RemoteMediaVariant {
     pub height: Option<u32>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RemoteCreator {
+    pub id: String,
+    pub name: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RemoteItem {
     pub source_id: String,
     pub remote_post_id: String,
     pub canonical_url: String,
     pub remote_revision: Option<String>,
     pub title: Option<String>,
+    #[serde(default)]
+    pub caption: Option<String>,
+    #[serde(default)]
+    pub alt_text: Option<String>,
+    #[serde(default)]
+    pub content_warning: Option<String>,
+    #[serde(default)]
+    pub creator: Option<RemoteCreator>,
     pub tags: Vec<String>,
     pub rating: Option<String>,
     pub source_url: Option<String>,

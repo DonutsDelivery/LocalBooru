@@ -20,15 +20,29 @@ use uuid::Uuid;
 use crate::online::models::{
     PublicationSnapshot, RemoteItem, RemotePage, RemoteSource, PUBLICATION_STATES,
 };
-use crate::online::{provider, security};
+use crate::online::{hub, provider, security, transport};
 use crate::server::error::AppError;
 use crate::server::state::AppState;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use rand::{rngs::OsRng, RngCore};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 const MAX_JSON_BYTES: usize = 8 * 1024 * 1024;
 const MAX_MEDIA_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/hubs/preview", post(preview_hub))
+        .route("/hubs", get(list_hubs).post(create_hub))
+        .route("/hubs/callback", post(complete_hub_callback))
+        .route("/sources/{source_id}/hub", get(get_hub))
+        .route("/sources/{source_id}/authorize", post(authorize_hub))
+        .route("/sources/{source_id}/hub/authorize", post(authorize_hub))
+        .route(
+            "/publications/{publication_id}/refresh",
+            post(refresh_publication),
+        )
         .route("/sources", get(list_sources).post(create_source))
         .route(
             "/sources/{source_id}",
@@ -100,7 +114,11 @@ fn open_db(data_dir: &Path) -> Result<Connection, AppError> {
            target_id TEXT PRIMARY KEY, publication_id TEXT NOT NULL REFERENCES publication_intents(publication_id) ON DELETE CASCADE,
            connection_id TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE, state TEXT NOT NULL,
            attempt_count INTEGER NOT NULL DEFAULT 0, remote_post_id TEXT, remote_url TEXT,
-           receipt_json TEXT, error_json TEXT, updated_at TEXT NOT NULL);"
+           receipt_json TEXT, error_json TEXT, updated_at TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS remote_hub_transport(
+           source_id TEXT PRIMARY KEY REFERENCES remote_sources(source_id) ON DELETE CASCADE,
+           instance_id TEXT NOT NULL, peer_id TEXT NOT NULL, relay_url TEXT NOT NULL,
+           transport_mode TEXT NOT NULL DEFAULT 'relayed', descriptor_json TEXT NOT NULL);"
     )?;
     Ok(conn)
 }
@@ -132,6 +150,8 @@ fn load_source(data_dir: &Path, source_id: &str) -> Result<RemoteSource, AppErro
 struct StoredCredential {
     auth_kind: String,
     secret: String,
+    #[serde(default)]
+    expires_at: Option<i64>,
 }
 
 fn credential_dir(data_dir: &Path) -> std::path::PathBuf {
@@ -177,8 +197,17 @@ fn load_credential(data_dir: &Path, source_id: &str) -> Result<Option<StoredCred
                 data_dir,
                 &credential_ref,
             )?)?;
-            serde_json::from_slice(&bytes)
-                .map_err(|_| AppError::Internal("Stored remote credential is corrupt".into()))
+            let credential: StoredCredential = serde_json::from_slice(&bytes)
+                .map_err(|_| AppError::Internal("Stored remote credential is corrupt".into()))?;
+            if credential
+                .expires_at
+                .is_some_and(|expiry| expiry <= Utc::now().timestamp())
+            {
+                return Err(AppError::Unauthorized(
+                    "Hub credential expired; sign in again".into(),
+                ));
+            }
+            Ok(credential)
         })
         .transpose()
 }
@@ -218,18 +247,33 @@ async fn list_connections(
 ) -> Result<Json<Value>, AppError> {
     load_source(state.data_dir(), &source_id)?;
     let conn = open_db(state.data_dir())?;
-    let mut stmt = conn.prepare("SELECT connection_id,account_display_name,trust_state,last_probe_at FROM remote_connections WHERE source_id=?1 ORDER BY account_display_name,connection_id")?;
-    let connections = stmt
+    let mut stmt = conn.prepare("SELECT connection_id,account_display_name,trust_state,last_probe_at,credential_ref FROM remote_connections WHERE source_id=?1 ORDER BY account_display_name,connection_id")?;
+    let stored = stmt
         .query_map(params![source_id], |row| {
-            Ok(json!({
-                "connection_id": row.get::<_, String>(0)?,
-                "account_display_name": row.get::<_, Option<String>>(1)?,
-                "trust_state": row.get::<_, String>(2)?,
-                "last_probe_at": row.get::<_, Option<String>>(3)?,
-                "has_credential": true,
-            }))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    let connections: Vec<_> = stored.into_iter().map(|(id, name, trust, probe, reference)| {
+        // Return lifecycle metadata only. A missing/corrupt/expired secret must
+        // not be presented as a connected account or enable submission controls.
+        let credential = reference.and_then(|reference| {
+            let path = credential_path(state.data_dir(), &reference).ok()?;
+            let bytes = crate::server::credentials::load_application_secret(&path).ok()?;
+            serde_json::from_slice::<StoredCredential>(&bytes).ok()
+        });
+        let expiry = credential.as_ref().and_then(|credential| credential.expires_at);
+        let expired = expiry.is_some_and(|expiry| expiry <= Utc::now().timestamp());
+        let available = credential.as_ref().is_some_and(|credential| !credential.secret.is_empty()) && !expired;
+        json!({"connection_id":id,"account_display_name":name,
+            "trust_state":if expired {"expired"} else if !available {"unavailable"} else {trust.as_str()},
+            "last_probe_at":probe,"has_credential":available,"expires_at":expiry})
+    }).collect();
     Ok(Json(json!({"connections": connections})))
 }
 
@@ -238,7 +282,12 @@ async fn create_connection(
     AxumPath(source_id): AxumPath<String>,
     Json(body): Json<ConnectionRequest>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
-    load_source(state.data_dir(), &source_id)?;
+    require_enabled(&load_source(state.data_dir(), &source_id)?)?;
+    if load_hub(state.data_dir(), &source_id)?.is_some() && body.auth_kind != "bearer" {
+        return Err(AppError::BadRequest(
+            "Native hubs require bearer credentials".into(),
+        ));
+    }
     if !matches!(body.auth_kind.as_str(), "bearer" | "api_key_header") {
         return Err(AppError::BadRequest(
             "Authentication kind must be bearer or api_key_header".into(),
@@ -249,6 +298,8 @@ async fn create_connection(
             "Credential is empty or too large".into(),
         ));
     }
+    HeaderValue::from_str(&body.secret)
+        .map_err(|_| AppError::BadRequest("Invalid credential header bytes".into()))?;
     let connection_id = Uuid::new_v4().to_string();
     let credential_ref = format!("{}.json", Uuid::new_v4());
     write_credential(
@@ -257,6 +308,7 @@ async fn create_connection(
         &StoredCredential {
             auth_kind: body.auth_kind,
             secret: body.secret,
+            expires_at: None,
         },
     )?;
     let insert = open_db(state.data_dir())?.execute(
@@ -267,6 +319,7 @@ async fn create_connection(
         let _ = std::fs::remove_file(credential_path(state.data_dir(), &credential_ref)?);
         return Err(error.into());
     }
+    purge_source_cache(&open_db(state.data_dir())?, &source_id)?;
     Ok((
         StatusCode::CREATED,
         Json(json!({
@@ -299,6 +352,8 @@ async fn delete_connection(
         params![source_id, connection_id],
     )?;
     let _ = std::fs::remove_file(credential_path(state.data_dir(), &credential_ref)?);
+    purge_source_cache(&conn, &source_id)?;
+    remove_pending_authorizations(&source_id);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -395,24 +450,36 @@ async fn update_source(
         "UPDATE remote_sources SET display_name=?2,enabled=?3,policy_profile=?4 WHERE source_id=?1",
         params![id, s.display_name, s.enabled as i64, s.policy_profile],
     )?;
+    if !s.enabled {
+        purge_source_cache(&open_db(state.data_dir())?, &id)?;
+        remove_pending_authorizations(&id);
+    }
     Ok(Json(s))
 }
 async fn delete_source(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode, AppError> {
-    let conn = open_db(state.data_dir())?;
+    let mut conn = open_db(state.data_dir())?;
+    let tx = conn.transaction()?;
     let credential_refs = {
-        let mut stmt = conn.prepare(
+        let mut stmt = tx.prepare(
             "SELECT credential_ref FROM remote_connections WHERE source_id=?1 AND credential_ref IS NOT NULL",
         )?;
         let rows = stmt.query_map(params![id], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>()?
     };
-    let changed = conn.execute("DELETE FROM remote_sources WHERE source_id=?1", params![id])?;
+    tx.execute(
+        "DELETE FROM publication_targets WHERE connection_id=?1",
+        params![id],
+    )?;
+    purge_source_cache(&tx, &id)?;
+    remove_pending_authorizations(&id);
+    let changed = tx.execute("DELETE FROM remote_sources WHERE source_id=?1", params![id])?;
     if changed == 0 {
         return Err(AppError::NotFound("Remote source not found".into()));
     }
+    tx.commit()?;
     for credential_ref in credential_refs {
         let _ = std::fs::remove_file(credential_path(state.data_dir(), &credential_ref)?);
     }
@@ -440,19 +507,33 @@ async fn checked_json(
     source: &RemoteSource,
     url: reqwest::Url,
 ) -> Result<(Value, Option<String>), AppError> {
+    require_enabled(source)?;
+    if let Some(config) = load_hub(data_dir, &source.source_id)? {
+        let path = hub::path(&source.normalized_base_url, url.as_str())?;
+        let response = hub_request(data_dir, source, &config, "GET", &path, vec![], vec![]).await?;
+        let etag = response
+            .headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case("etag"))
+            .map(|(_, value)| value.clone());
+        return Ok((hub_response_json(response).await?, etag));
+    }
     security::validate_resolved_url(&url, source.allow_local_network).await?;
     let credential = load_credential(data_dir, &source.source_id)?;
     let source_origin = reqwest::Url::parse(&source.normalized_base_url)
         .map_err(|_| AppError::BadRequest("Invalid source URL".into()))?;
     let mut current = url;
     for _ in 0..=3 {
-        let applicable_credential = credential.as_ref().filter(|_| same_origin(&current, &source_origin));
-        let response = authenticated_request(client()?.get(current.clone()), applicable_credential)?
-            .send()
-            .await
-            .map_err(|e| {
-                AppError::ServiceUnavailable(format!("Remote source request failed: {e}"))
-            })?;
+        let applicable_credential = credential
+            .as_ref()
+            .filter(|_| same_origin(&current, &source_origin));
+        let response =
+            authenticated_request(client()?.get(current.clone()), applicable_credential)?
+                .send()
+                .await
+                .map_err(|e| {
+                    AppError::ServiceUnavailable(format!("Remote source request failed: {e}"))
+                })?;
         if response.status().is_redirection() {
             let location = response
                 .headers()
@@ -506,30 +587,68 @@ async fn probe_source(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Value>, AppError> {
     let mut source = load_source(state.data_dir(), &id)?;
-    let path = provider::list_path(&source.provider_family, "", 1, 1)?;
+    require_enabled(&source)?;
+    let hub_config = load_hub(state.data_dir(), &id)?;
+    let path = if hub_config.is_some() {
+        hub::catalog_path("", 1, 1)?
+    } else {
+        provider::list_path(&source.provider_family, "", 1, 1)?
+    };
     let url = reqwest::Url::parse(&(source.normalized_base_url.clone() + &path))
         .map_err(|_| AppError::BadRequest("Invalid source URL".into()))?;
     let (value, _) = checked_json(state.data_dir(), &source, url).await?;
-    provider::normalize_page(
-        &source.provider_family,
-        &id,
-        &source.normalized_base_url,
-        value,
-        1,
-        1,
-    )?;
+    if hub_config.is_some() {
+        hub::catalog_page(&id, &source.normalized_base_url, value, 1, 1)?;
+    } else {
+        provider::normalize_page(
+            &source.provider_family,
+            &id,
+            &source.normalized_base_url,
+            value,
+            1,
+            1,
+        )?;
+    }
     if source.provider_family == "donutbooru" {
-        let capability_url = reqwest::Url::parse(&format!("{}/api/client/v1/capabilities", source.normalized_base_url))
-            .map_err(|_| AppError::BadRequest("Invalid source URL".into()))?;
-        source.capabilities.upload = checked_json(state.data_dir(), &source, capability_url).await
-            .ok()
-            .and_then(|(body, _)| body.pointer("/capabilities/publish").and_then(Value::as_bool))
-            .unwrap_or(false);
+        let capability_url = reqwest::Url::parse(&format!(
+            "{}/api/client/v1/capabilities",
+            source.normalized_base_url
+        ))
+        .map_err(|_| AppError::BadRequest("Invalid source URL".into()))?;
+        if let Some(config) = hub_config.as_ref() {
+            let (descriptor, _) = checked_json(state.data_dir(), &source, capability_url).await?;
+            if hub::validate_descriptor(&source.normalized_base_url, &descriptor)?
+                != config.instance_id
+            {
+                return Err(AppError::Forbidden(
+                    "Hub identity changed; reconnect and confirm it".into(),
+                ));
+            }
+            validate_advertised_bootstrap(&descriptor, &config.bootstrap)?;
+            source.capabilities = hub::capabilities(&descriptor);
+            open_db(state.data_dir())?.execute(
+                "UPDATE remote_hub_transport SET descriptor_json=?2 WHERE source_id=?1",
+                params![id, descriptor.to_string()],
+            )?;
+        } else {
+            source.capabilities.upload = checked_json(state.data_dir(), &source, capability_url)
+                .await
+                .ok()
+                .and_then(|(body, _)| {
+                    body.pointer("/capabilities/publish")
+                        .and_then(Value::as_bool)
+                })
+                .unwrap_or(false);
+        }
     }
     let now = Utc::now().to_rfc3339();
     open_db(state.data_dir())?.execute(
         "UPDATE remote_sources SET last_probe_at=?2,capabilities_json=?3 WHERE source_id=?1",
-        params![id, now, serde_json::to_string(&source.capabilities).unwrap()],
+        params![
+            id,
+            now,
+            serde_json::to_string(&source.capabilities).unwrap()
+        ],
     )?;
     open_db(state.data_dir())?.execute(
         "UPDATE remote_connections SET trust_state='verified',last_probe_at=?2 WHERE source_id=?1",
@@ -545,6 +664,7 @@ struct BrowseQuery {
     q: Option<String>,
     page: Option<u32>,
     per_page: Option<u32>,
+    media_type: Option<String>,
 }
 async fn browse(
     State(state): State<AppState>,
@@ -555,23 +675,59 @@ async fn browse(
     if !source.enabled {
         return Err(AppError::Forbidden("Remote source is disabled".into()));
     }
-    let page = query.page.unwrap_or(1).max(1);
+    let hub_config = load_hub(state.data_dir(), &id)?;
+    let media_type = query.media_type.filter(|kind| kind != "all");
+    if media_type
+        .as_deref()
+        .is_some_and(|kind| !matches!(kind, "image" | "video"))
+    {
+        return Err(AppError::BadRequest(
+            "Media filter must be image or video".into(),
+        ));
+    }
+    let page = query.page.unwrap_or(1).clamp(1, 10000);
     let per_page = query.per_page.unwrap_or(40).clamp(1, 100);
     let q = query.q.unwrap_or_default();
-    let key = format!("{}:{}:{}:{}", id, page, per_page, q);
-    let path = provider::list_path(&source.provider_family, &q, page, per_page)?;
+    let key = format!(
+        "{}:{}:{}:{}:{}",
+        id,
+        page,
+        per_page,
+        q,
+        media_type.as_deref().unwrap_or("all")
+    );
+    let path = if hub_config.is_some() {
+        hub::catalog_path(&q, page, per_page)?
+    } else {
+        provider::list_path(&source.provider_family, &q, page, per_page)?
+    };
     let url = reqwest::Url::parse(&(source.normalized_base_url.clone() + &path))
         .map_err(|_| AppError::BadRequest("Invalid source request URL".into()))?;
     match checked_json(state.data_dir(), &source, url).await {
         Ok((value, etag)) => {
-            let mut remote_page = provider::normalize_page(
-                &source.provider_family,
-                &id,
-                &source.normalized_base_url,
-                value,
-                page,
-                per_page,
-            )?;
+            let mut remote_page = if hub_config.is_some() {
+                hub::catalog_page(&id, &source.normalized_base_url, value, page, per_page)?
+            } else {
+                provider::normalize_page(
+                    &source.provider_family,
+                    &id,
+                    &source.normalized_base_url,
+                    value,
+                    page,
+                    per_page,
+                )?
+            };
+            if let Some(kind) = media_type.as_deref() {
+                remote_page.items.retain(|item| {
+                    item.media.iter().any(|variant| {
+                        variant.kind == "original"
+                            && variant
+                                .mime_type
+                                .as_deref()
+                                .is_some_and(|mime| mime.starts_with(&format!("{kind}/")))
+                    })
+                });
+            }
             enforce_content_policy(
                 &mut remote_page,
                 &source.policy_profile,
@@ -604,7 +760,19 @@ async fn browse(
             Ok(Json(remote_page))
         }
         Err(error) => {
+            // Protected hub data never falls back to a previously authorized page.
+            if hub_config.is_some() {
+                return Err(error);
+            }
             let conn = open_db(state.data_dir())?;
+            let has_account: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM remote_connections WHERE source_id=?1)",
+                params![id],
+                |row| row.get(0),
+            )?;
+            if has_account {
+                return Err(error);
+            }
             let cached: Option<String> = conn
                 .query_row(
                     "SELECT payload_json FROM remote_cache WHERE cache_key=?1",
@@ -634,9 +802,15 @@ fn enforce_content_policy(page: &mut RemotePage, profile: &str, family_locked: b
     page.items.retain(|item| {
         let rating = item.rating.as_deref().unwrap_or("").to_ascii_lowercase();
         if safe_only {
-            matches!(rating.as_str(), "" | "g" | "general" | "s" | "safe" | "pg" | "pg13")
+            matches!(
+                rating.as_str(),
+                "" | "g" | "general" | "s" | "safe" | "pg" | "pg13"
+            )
         } else if hide_adult {
-            !matches!(rating.as_str(), "e" | "explicit" | "adult" | "r" | "x" | "xxx")
+            !matches!(
+                rating.as_str(),
+                "e" | "explicit" | "adult" | "r" | "x" | "xxx"
+            )
         } else {
             true
         }
@@ -668,7 +842,26 @@ async fn fetch_media(
     source: &RemoteSource,
     url: &str,
     range: Option<&HeaderValue>,
-) -> Result<reqwest::Response, AppError> {
+) -> Result<MediaResponse, AppError> {
+    require_enabled(source)?;
+    if let Some(config) = load_hub(data_dir, &source.source_id)? {
+        let path = hub::path(&source.normalized_base_url, url)?;
+        if !path.starts_with("/api/client/v1/media/") {
+            return Err(AppError::Forbidden(
+                "Hub assets must use protected media routes".into(),
+            ));
+        }
+        let mut headers = vec![];
+        if let Some(value) = range
+            .and_then(|v| v.to_str().ok())
+            .filter(|v| v.starts_with("bytes="))
+        {
+            headers.push(("Range".into(), value.into()));
+        }
+        let response =
+            hub_request(data_dir, source, &config, "GET", &path, headers, vec![]).await?;
+        return MediaResponse::from_hub(response);
+    }
     let mut current = reqwest::Url::parse(url)
         .map_err(|_| AppError::BadRequest("Invalid remote asset URL".into()))?;
     let source_origin = reqwest::Url::parse(&source.normalized_base_url)
@@ -682,26 +875,45 @@ async fn fetch_media(
                 request = request.header(reqwest::header::RANGE, value);
             }
         }
-        let applicable_credential = credential.as_ref().filter(|_| same_origin(&current, &source_origin));
+        let applicable_credential = credential
+            .as_ref()
+            .filter(|_| same_origin(&current, &source_origin));
         let response = authenticated_request(request, applicable_credential)?
             .send()
             .await
             .map_err(|e| AppError::ServiceUnavailable(e.to_string()))?;
         if response.status().is_redirection() {
-            let location = response.headers().get(header::LOCATION).and_then(|value| value.to_str().ok())
-                .ok_or_else(|| AppError::ServiceUnavailable("Remote redirect omitted Location".into()))?;
-            current = current.join(location).map_err(|_| AppError::ServiceUnavailable("Remote redirect was invalid".into()))?;
+            let location = response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .ok_or_else(|| {
+                    AppError::ServiceUnavailable("Remote redirect omitted Location".into())
+                })?;
+            current = current
+                .join(location)
+                .map_err(|_| AppError::ServiceUnavailable("Remote redirect was invalid".into()))?;
             continue;
         }
         if !response.status().is_success() {
-            return Err(AppError::ServiceUnavailable(format!("Remote media returned {}", response.status())));
+            return Err(AppError::ServiceUnavailable(format!(
+                "Remote media returned {}",
+                response.status()
+            )));
         }
-        if response.content_length().is_some_and(|size| size > MAX_MEDIA_BYTES) {
-            return Err(AppError::ServiceUnavailable("Remote media exceeds size limit".into()));
+        if response
+            .content_length()
+            .is_some_and(|size| size > MAX_MEDIA_BYTES)
+        {
+            return Err(AppError::ServiceUnavailable(
+                "Remote media exceeds size limit".into(),
+            ));
         }
-        return Ok(response);
+        return Ok(MediaResponse::from_http(response));
     }
-    Err(AppError::ServiceUnavailable("Remote media exceeded redirect limit".into()))
+    Err(AppError::ServiceUnavailable(
+        "Remote media exceeded redirect limit".into(),
+    ))
 }
 async fn asset(
     State(state): State<AppState>,
@@ -709,7 +921,9 @@ async fn asset(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let source = load_source(state.data_dir(), &sid)?;
-    let item = cached_item(state.data_dir(), &sid, &pid)?;
+    require_enabled(&source)?;
+    let item = load_current_item(state.data_dir(), &source, &pid).await?;
+    enforce_item_policy(&item, &source.policy_profile, state.is_family_mode_locked())?;
     let response = fetch_media(
         state.data_dir(),
         &source,
@@ -733,6 +947,10 @@ async fn asset(
         }
     }
     out.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    out.insert(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_static("inline"),
     );
@@ -752,7 +970,9 @@ async fn import_item(
     Json(body): Json<ImportRequest>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
     let source = load_source(state.data_dir(), &sid)?;
-    let item = cached_item(state.data_dir(), &sid, &pid)?;
+    require_enabled(&source)?;
+    let item = load_current_item(state.data_dir(), &source, &pid).await?;
+    enforce_item_policy(&item, &source.policy_profile, state.is_family_mode_locked())?;
     let existing: Option<(i64, String)> = open_db(state.data_dir())?
         .query_row(
             "SELECT image_id,content_sha256 FROM import_provenance WHERE source_id=?1 AND remote_post_id=?2 AND directory_id=?3 ORDER BY imported_at DESC LIMIT 1",
@@ -826,7 +1046,14 @@ async fn import_item(
     let mut hash = Sha256::new();
     let mut size = 0u64;
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| AppError::ServiceUnavailable(e.to_string()))?;
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(error) => {
+                drop(file);
+                let _ = tokio::fs::remove_file(&temp).await;
+                return Err(AppError::ServiceUnavailable(error.to_string()));
+            }
+        };
         size += chunk.len() as u64;
         if size > MAX_MEDIA_BYTES {
             let _ = tokio::fs::remove_file(&temp).await;
@@ -892,9 +1119,15 @@ async fn import_item(
     };
     if result.status == crate::services::importer::ImportStatus::Error {
         let _ = tokio::fs::remove_file(&destination).await;
-        return Err(AppError::BadRequest(result.message.unwrap_or_else(|| "Could not import remote media".into())));
+        return Err(AppError::BadRequest(
+            result
+                .message
+                .unwrap_or_else(|| "Could not import remote media".into()),
+        ));
     }
-    let image_id = result.image_id.ok_or_else(|| AppError::Internal("Importer returned no image ID".into()))?;
+    let image_id = result
+        .image_id
+        .ok_or_else(|| AppError::Internal("Importer returned no image ID".into()))?;
     open_db(state.data_dir())?.execute(
         "INSERT OR IGNORE INTO import_provenance VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
         params![
@@ -946,7 +1179,9 @@ async fn create_publication(
         ));
     }
     let mut snapshot = body.snapshot;
-    let directory_pool = state.directory_db().get_pool(snapshot.directory_id)
+    let directory_pool = state
+        .directory_db()
+        .get_pool(snapshot.directory_id)
         .map_err(|_| AppError::BadRequest("Publication directory is unavailable".into()))?;
     let directory = directory_pool.get()?;
     let (file_path, rating, prompt): (String, String, Option<String>) = directory.query_row(
@@ -955,26 +1190,46 @@ async fn create_publication(
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     ).optional()?.ok_or_else(|| AppError::BadRequest("Publication media is unavailable".into()))?;
     if snapshot.tags.is_empty() {
-        let mut stmt = directory.prepare("SELECT tag_id FROM image_tags WHERE image_id=?1 ORDER BY tag_id")?;
-        let tag_ids = stmt.query_map(params![snapshot.image_id], |row| row.get::<_, i64>(0))?
+        let mut stmt =
+            directory.prepare("SELECT tag_id FROM image_tags WHERE image_id=?1 ORDER BY tag_id")?;
+        let tag_ids = stmt
+            .query_map(params![snapshot.image_id], |row| row.get::<_, i64>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         let main_db = state.main_db().get()?;
         for tag_id in tag_ids {
-            if let Some(tag) = main_db.query_row("SELECT name FROM tags WHERE id=?1", params![tag_id], |row| row.get::<_, String>(0)).optional()? {
+            if let Some(tag) = main_db
+                .query_row(
+                    "SELECT name FROM tags WHERE id=?1",
+                    params![tag_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+            {
                 snapshot.tags.push(tag);
             }
         }
     }
     drop(directory);
-    let content = tokio::fs::read(&file_path).await.map_err(|_| AppError::BadRequest("Publication media is unavailable".into()))?;
+    if tokio::fs::metadata(&file_path).await?.len() > 60 * 1024 * 1024 {
+        return Err(AppError::BadRequest(
+            "Publication media exceeds native upload limit".into(),
+        ));
+    }
+    let content = read_publication_media(&file_path).await?;
     let checksum = format!("{:x}", Sha256::digest(&content));
-    if snapshot.content_sha256.as_deref().is_some_and(|value| value != checksum) {
+    if snapshot
+        .content_sha256
+        .as_deref()
+        .is_some_and(|value| value != checksum)
+    {
         return Err(AppError::BadRequest("Publication media changed".into()));
     }
     snapshot.content_sha256 = Some(checksum);
     snapshot.library_id = state.library_manager().primary().uuid.clone();
     snapshot.rating = Some(rating);
-    if snapshot.caption.is_none() { snapshot.caption = prompt; }
+    if snapshot.caption.is_none() {
+        snapshot.caption = prompt;
+    }
     let mut conn = open_db(state.data_dir())?;
     let tx = conn.transaction()?;
     let publication_id = Uuid::new_v4().to_string();
@@ -1096,9 +1351,12 @@ async fn deliver_publication(
             "No queued DonutBooru deliveries were available".into(),
         ));
     }
-    let content = tokio::fs::read(&file_path)
-        .await
-        .map_err(|_| AppError::BadRequest("Publication media is unavailable".into()))?;
+    if tokio::fs::metadata(&file_path).await?.len() > 60 * 1024 * 1024 {
+        return Err(AppError::BadRequest(
+            "Publication media exceeds native upload limit".into(),
+        ));
+    }
+    let content = read_publication_media(&file_path).await?;
     let checksum = format!("{:x}", Sha256::digest(&content));
     if snapshot.content_sha256.as_deref() != Some(checksum.as_str()) {
         return Err(AppError::BadRequest(
@@ -1107,6 +1365,11 @@ async fn deliver_publication(
     }
     let snapshot_json =
         serde_json::to_string(&snapshot).map_err(|error| AppError::Internal(error.to_string()))?;
+    if snapshot_json.len() > 128 * 1024 {
+        return Err(AppError::BadRequest(
+            "Publication metadata exceeds upload limit".into(),
+        ));
+    }
     let mut outcomes = Vec::new();
     for (target_id, source_id, idempotency_key, base_url, allow_local_network) in targets {
         let endpoint = format!(
@@ -1114,6 +1377,33 @@ async fn deliver_publication(
             base_url.trim_end_matches('/')
         );
         let result = async {
+            let source = load_source(state.data_dir(), &source_id)?;
+            require_enabled(&source)?;
+            if load_credential(state.data_dir(), &source_id)?.is_none() {
+                return Err(AppError::BadRequest(
+                    "Publication target has no credential".into(),
+                ));
+            }
+            if let Some(config) = load_hub(state.data_dir(), &source_id)? {
+                let (content_type, body) =
+                    publication_multipart(&snapshot_json, &file_path, &content)?;
+                let response = hub_request(
+                    state.data_dir(),
+                    &source,
+                    &config,
+                    "POST",
+                    "/api/client/v1/publications",
+                    vec![
+                        ("Content-Type".into(), content_type),
+                        ("Idempotency-Key".into(), idempotency_key.clone()),
+                    ],
+                    body,
+                )
+                .await?;
+                let receipt = hub_response_json(response).await?;
+                validate_hub_receipt(&source, &receipt)?;
+                return Ok(receipt);
+            }
             let parsed_endpoint = reqwest::Url::parse(&endpoint)
                 .map_err(|_| AppError::BadRequest("Publication endpoint is invalid".into()))?;
             security::validate_resolved_url(&parsed_endpoint, allow_local_network).await?;
@@ -1153,10 +1443,7 @@ async fn deliver_publication(
         let now = Utc::now().to_rfc3339();
         match result {
             Ok(receipt) => {
-                let state_value = receipt
-                    .get("state")
-                    .and_then(Value::as_str)
-                    .unwrap_or("submitted");
+                let state_value = receipt_local_state(&receipt);
                 let remote_post_id = receipt.get("remote_post_id").and_then(Value::as_str);
                 let remote_url = receipt
                     .pointer("/receipt/canonical_url")
@@ -1200,4 +1487,881 @@ async fn update_publication_target(
         return Err(AppError::NotFound("Publication target not found".into()));
     }
     Ok(Json(json!({"target_id":target_id,"state":body.state})))
+}
+
+// Hub configuration is additive: legacy RemoteSource records keep their shape.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HubConfig {
+    instance_id: String,
+    bootstrap: transport::HubBootstrap,
+    transport_mode: transport::TransportMode,
+    descriptor: Value,
+}
+fn load_hub(data_dir: &Path, source_id: &str) -> Result<Option<HubConfig>, AppError> {
+    open_db(data_dir)?.query_row(
+        "SELECT instance_id,peer_id,relay_url,transport_mode,descriptor_json FROM remote_hub_transport WHERE source_id=?1",
+        params![source_id], |row| {
+            let mode: String = row.get(3)?;
+            let descriptor: String = row.get(4)?;
+            Ok((row.get::<_,String>(0)?, row.get::<_,String>(1)?, row.get::<_,String>(2)?, mode, descriptor))
+        },
+    ).optional()?.map(|(instance_id, peer_id, relay_url, mode, descriptor)| {
+        Ok(HubConfig { instance_id, bootstrap: transport::HubBootstrap { peer_id, relay_url },
+            transport_mode: serde_json::from_value(Value::String(mode)).map_err(|_| AppError::Internal("Stored hub transport is invalid".into()))?,
+            descriptor: serde_json::from_str(&descriptor).map_err(|_| AppError::Internal("Stored hub descriptor is invalid".into()))? })
+    }).transpose()
+}
+fn require_enabled(source: &RemoteSource) -> Result<(), AppError> {
+    if !source.enabled {
+        return Err(AppError::Forbidden("Remote source is disabled".into()));
+    }
+    Ok(())
+}
+fn purge_source_cache(conn: &Connection, source_id: &str) -> Result<(), AppError> {
+    conn.execute(
+        "DELETE FROM remote_cache WHERE source_id=?1",
+        params![source_id],
+    )?;
+    conn.execute(
+        "DELETE FROM remote_item_cache WHERE source_id=?1",
+        params![source_id],
+    )?;
+    Ok(())
+}
+fn default_transport_mode() -> transport::TransportMode {
+    transport::TransportMode::Relayed
+}
+#[derive(Deserialize)]
+struct HubRequestBody {
+    base_url: String,
+    peer_id: String,
+    relay_url: String,
+    #[serde(default = "default_transport_mode")]
+    transport_mode: transport::TransportMode,
+    #[serde(default)]
+    allow_local_network: bool,
+    expected_instance_id: Option<String>,
+    display_name: Option<String>,
+    policy_profile: Option<String>,
+}
+async fn fetch_hub_preview(body: &HubRequestBody) -> Result<(String, HubConfig), AppError> {
+    if matches!(body.transport_mode, transport::TransportMode::Anonymous) {
+        return Err(AppError::BadRequest(
+            "Anonymous hub routing is unsupported; choose Relayed or Standard explicitly".into(),
+        ));
+    }
+    let base = hub::origin(&body.base_url, body.allow_local_network)?;
+    let bootstrap = transport::HubBootstrap {
+        peer_id: body.peer_id.clone(),
+        relay_url: body.relay_url.clone(),
+    };
+    transport::validate_bootstrap(&bootstrap).map_err(AppError::BadRequest)?;
+    validate_relay(&bootstrap, body.allow_local_network).await?;
+    let response = transport::request(
+        &bootstrap,
+        body.transport_mode,
+        transport::HubRequest {
+            method: "GET".into(),
+            path: "/api/client/v1/capabilities".into(),
+            headers: vec![("Accept".into(), "application/json".into())],
+            body: vec![],
+        },
+    )
+    .await
+    .map_err(AppError::ServiceUnavailable)?;
+    let descriptor = hub_response_json(response).await?;
+    let instance_id = hub::validate_descriptor(&base, &descriptor)?;
+    validate_advertised_bootstrap(&descriptor, &bootstrap)?;
+    Ok((
+        base,
+        HubConfig {
+            instance_id,
+            bootstrap,
+            transport_mode: body.transport_mode,
+            descriptor,
+        },
+    ))
+}
+async fn preview_hub(Json(body): Json<HubRequestBody>) -> Result<Json<Value>, AppError> {
+    let (base, config) = fetch_hub_preview(&body).await?;
+    Ok(Json(
+        json!({"normalized_base_url":base,"descriptor":config.descriptor,"bootstrap":config.bootstrap,"transport_mode":config.transport_mode}),
+    ))
+}
+async fn create_hub(
+    State(state): State<AppState>,
+    Json(body): Json<HubRequestBody>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let expected = body.expected_instance_id.as_deref().ok_or_else(|| {
+        AppError::BadRequest("Confirm the previewed hub identity before adding it".into())
+    })?;
+    let (base, config) = fetch_hub_preview(&body).await?;
+    if expected != config.instance_id {
+        return Err(AppError::Forbidden(
+            "Hub identity changed after preview; review it again".into(),
+        ));
+    }
+    let display_name = body
+        .display_name
+        .as_deref()
+        .or_else(|| {
+            config
+                .descriptor
+                .pointer("/instance/name")
+                .and_then(Value::as_str)
+        })
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if display_name.is_empty() || display_name.len() > 256 {
+        return Err(AppError::BadRequest(
+            "Hub display name is required and must be at most 256 bytes".into(),
+        ));
+    }
+    let source = RemoteSource {
+        source_id: Uuid::new_v4().to_string(),
+        provider_family: "donutbooru".into(),
+        display_name,
+        normalized_base_url: base,
+        policy_profile: body.policy_profile.unwrap_or_else(|| "unrestricted".into()),
+        enabled: true,
+        allow_local_network: body.allow_local_network,
+        capabilities: hub::capabilities(&config.descriptor),
+        last_probe_at: Some(Utc::now().to_rfc3339()),
+    };
+    let mut conn = open_db(state.data_dir())?;
+    let tx = conn.transaction()?;
+    tx.execute(
+        "INSERT INTO remote_sources VALUES(?1,?2,?3,?4,?5,1,?6,?7,?8,?8)",
+        params![
+            source.source_id,
+            source.provider_family,
+            source.display_name,
+            source.normalized_base_url,
+            source.policy_profile,
+            source.allow_local_network as i64,
+            serde_json::to_string(&source.capabilities).unwrap(),
+            source.last_probe_at
+        ],
+    )
+    .map_err(|error| {
+        if error.to_string().contains("UNIQUE") {
+            AppError::BadRequest("A source with this origin already exists".into())
+        } else {
+            error.into()
+        }
+    })?;
+    tx.execute(
+        "INSERT INTO remote_hub_transport VALUES(?1,?2,?3,?4,?5,?6)",
+        params![
+            source.source_id,
+            config.instance_id,
+            config.bootstrap.peer_id,
+            config.bootstrap.relay_url,
+            serde_json::to_value(config.transport_mode)
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            config.descriptor.to_string()
+        ],
+    )?;
+    tx.commit()?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({"source":source,"hub":config})),
+    ))
+}
+async fn get_hub(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<HubConfig>, AppError> {
+    load_source(state.data_dir(), &id)?;
+    Ok(Json(load_hub(state.data_dir(), &id)?.ok_or_else(|| {
+        AppError::NotFound("Source is not an enrolled hub".into())
+    })?))
+}
+async fn list_hubs(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    let ids = {
+        let conn = open_db(state.data_dir())?;
+        let mut stmt =
+            conn.prepare("SELECT source_id FROM remote_hub_transport ORDER BY source_id")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    let mut hubs = vec![];
+    for id in ids {
+        let source = load_source(state.data_dir(), &id)?;
+        if let Some(config) = load_hub(state.data_dir(), &id)? {
+            hubs.push(json!({"source_id":id,"display_name":source.display_name,"enabled":source.enabled,
+                "instance_id":config.instance_id,"bootstrap":config.bootstrap,"transport_mode":config.transport_mode,"descriptor":config.descriptor}));
+        }
+    }
+    Ok(Json(json!({"hubs":hubs})))
+}
+async fn hub_request(
+    data_dir: &Path,
+    source: &RemoteSource,
+    config: &HubConfig,
+    method: &str,
+    path: &str,
+    mut headers: Vec<(String, String)>,
+    body: Vec<u8>,
+) -> Result<transport::HubResponse, AppError> {
+    // Reload immediately before every request, including credential exchange.
+    require_enabled(&load_source(data_dir, &source.source_id)?)?;
+    let path = hub::path(&source.normalized_base_url, path)?;
+    validate_relay(&config.bootstrap, source.allow_local_network).await?;
+    if let Some(credential) = if path == "/api/client/v1/capabilities" {
+        None
+    } else {
+        load_credential(data_dir, &source.source_id)?
+    } {
+        if credential.auth_kind != "bearer" {
+            return Err(AppError::BadRequest(
+                "Native hubs require a source-scoped bearer credential".into(),
+            ));
+        }
+        HeaderValue::from_str(&credential.secret)
+            .map_err(|_| AppError::BadRequest("Invalid credential header".into()))?;
+        headers.push((
+            "Authorization".into(),
+            format!("Bearer {}", credential.secret),
+        ));
+    }
+    transport::request(
+        &config.bootstrap,
+        config.transport_mode,
+        transport::HubRequest {
+            method: method.into(),
+            path,
+            headers,
+            body,
+        },
+    )
+    .await
+    .map_err(AppError::ServiceUnavailable)
+}
+async fn hub_response_json(response: transport::HubResponse) -> Result<Value, AppError> {
+    let status = response.status;
+    if !(200..300).contains(&status) {
+        return Err(AppError::Upstream(
+            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+            format!("Hub returned HTTP {status}"),
+        ));
+    }
+    let bytes = response
+        .into_bytes(MAX_JSON_BYTES)
+        .await
+        .map_err(AppError::ServiceUnavailable)?;
+    serde_json::from_slice(&bytes)
+        .map_err(|_| AppError::ServiceUnavailable("Hub returned invalid JSON".into()))
+}
+async fn load_current_item(
+    data_dir: &Path,
+    source: &RemoteSource,
+    post_id: &str,
+) -> Result<RemoteItem, AppError> {
+    require_enabled(source)?;
+    if let Some(config) = load_hub(data_dir, &source.source_id)? {
+        // Never authorize media access using a stale browse item.
+        if post_id.is_empty()
+            || post_id.len() > 20
+            || !post_id.bytes().all(|ch| ch.is_ascii_digit())
+        {
+            return Err(AppError::BadRequest("Invalid hub catalog item ID".into()));
+        }
+        let response = hub_request(
+            data_dir,
+            source,
+            &config,
+            "GET",
+            &format!("/api/client/v1/catalog/{post_id}"),
+            vec![],
+            vec![],
+        )
+        .await?;
+        hub::catalog_item(
+            &source.source_id,
+            &source.normalized_base_url,
+            &hub_response_json(response).await?,
+        )
+    } else {
+        cached_item(data_dir, &source.source_id, post_id)
+    }
+}
+
+struct MediaResponse {
+    status: StatusCode,
+    headers: HeaderMap,
+    stream:
+        std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send>>,
+}
+impl MediaResponse {
+    fn from_http(response: reqwest::Response) -> Self {
+        let status = response.status();
+        let headers = response.headers().clone();
+        Self {
+            status,
+            headers,
+            stream: Box::pin(
+                response
+                    .bytes_stream()
+                    .map(|r| r.map(|bytes| bytes.to_vec()).map_err(std::io::Error::other)),
+            ),
+        }
+    }
+    fn from_hub(response: transport::HubResponse) -> Result<Self, AppError> {
+        let status = StatusCode::from_u16(response.status)
+            .map_err(|_| AppError::ServiceUnavailable("Invalid hub media status".into()))?;
+        if !status.is_success() {
+            return Err(AppError::Upstream(
+                status,
+                "Hub media request was denied".into(),
+            ));
+        }
+        let mut headers = HeaderMap::new();
+        for (name, value) in response.headers {
+            if let (Ok(name), Ok(value)) = (
+                axum::http::HeaderName::try_from(name),
+                HeaderValue::try_from(value),
+            ) {
+                headers.insert(name, value);
+            }
+        }
+        if headers
+            .get(header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+            .is_some_and(|n| n > MAX_MEDIA_BYTES)
+        {
+            return Err(AppError::ServiceUnavailable(
+                "Hub media exceeds size limit".into(),
+            ));
+        }
+        let mut size = 0u64;
+        let stream = response.body.map(move |chunk| match chunk {
+            Ok(bytes) => {
+                size = size.saturating_add(bytes.len() as u64);
+                if size > MAX_MEDIA_BYTES {
+                    Err(std::io::Error::other("Hub media exceeds size limit"))
+                } else {
+                    Ok(bytes)
+                }
+            }
+            Err(error) => Err(std::io::Error::other(error)),
+        });
+        Ok(Self {
+            status,
+            headers,
+            stream: Box::pin(stream),
+        })
+    }
+    fn status(&self) -> StatusCode {
+        self.status
+    }
+    fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
+    fn bytes_stream(self) -> impl futures_util::Stream<Item = Result<Vec<u8>, std::io::Error>> {
+        self.stream
+    }
+}
+
+struct PendingAuthorization {
+    data_dir: std::path::PathBuf,
+    source_id: String,
+    instance_id: String,
+    verifier: String,
+    expires_at: std::time::Instant,
+}
+static PENDING_AUTHORIZATIONS: OnceLock<Mutex<HashMap<String, PendingAuthorization>>> =
+    OnceLock::new();
+fn pending_authorizations() -> &'static Mutex<HashMap<String, PendingAuthorization>> {
+    PENDING_AUTHORIZATIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+fn remove_pending_authorizations(source_id: &str) {
+    if let Ok(mut pending) = pending_authorizations().lock() {
+        pending.retain(|_, auth| auth.source_id != source_id);
+    }
+}
+fn random_secret() -> Result<String, AppError> {
+    let mut bytes = [0u8; 32];
+    OsRng
+        .try_fill_bytes(&mut bytes)
+        .map_err(|_| AppError::Internal("Secure randomness unavailable".into()))?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
+}
+#[derive(Deserialize)]
+struct AuthorizeHubRequest {
+    #[serde(default)]
+    allow_browser_direct: bool,
+}
+async fn authorize_hub(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Json(body): Json<AuthorizeHubRequest>,
+) -> Result<Json<Value>, AppError> {
+    let source = load_source(state.data_dir(), &id)?;
+    require_enabled(&source)?;
+    let config = load_hub(state.data_dir(), &id)?
+        .ok_or_else(|| AppError::BadRequest("Source is not an enrolled hub".into()))?;
+    if !body.allow_browser_direct {
+        return Err(AppError::Forbidden("Browser sign-in connects directly to the hub and identity provider outside Iroh. Explicit browser consent is required; use a manual bearer credential to keep all hub requests on the selected route".into()));
+    }
+    if matches!(config.transport_mode, transport::TransportMode::Anonymous) {
+        return Err(AppError::BadRequest(
+            "Anonymous authorization is unsupported".into(),
+        ));
+    }
+    // Revalidate public identity using the saved peer, rather than trusting stale auth capability metadata.
+    let response = hub_request(
+        state.data_dir(),
+        &source,
+        &config,
+        "GET",
+        "/api/client/v1/capabilities",
+        vec![],
+        vec![],
+    )
+    .await?;
+    let descriptor = hub_response_json(response).await?;
+    validate_advertised_bootstrap(&descriptor, &config.bootstrap)?;
+    if hub::validate_descriptor(&source.normalized_base_url, &descriptor)? != config.instance_id {
+        return Err(AppError::Forbidden(
+            "Hub identity changed; reconnect and confirm it".into(),
+        ));
+    }
+    let supports_s256 = descriptor
+        .pointer("/authentication/pkce_methods")
+        .and_then(Value::as_array)
+        .is_some_and(|methods| methods.iter().any(|m| m.as_str() == Some("S256")));
+    if !hub::capabilities(&descriptor).authenticate || !supports_s256 {
+        return Err(AppError::BadRequest(
+            "Hub browser authorization is unavailable".into(),
+        ));
+    }
+    let oauth_state = random_secret()?;
+    let verifier = random_secret()?;
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let mut url = reqwest::Url::parse(&format!(
+        "{}/api/client/v1/authorize",
+        source.normalized_base_url
+    ))
+    .map_err(|_| AppError::BadRequest("Invalid hub authorization origin".into()))?;
+    url.query_pairs_mut().extend_pairs([
+        ("response_type", "code"),
+        ("client_id", "donutmediacenter"),
+        ("redirect_uri", "donutmediacenter://auth/callback"),
+        ("state", &oauth_state),
+        ("code_challenge", &challenge),
+        ("code_challenge_method", "S256"),
+        ("scope", "catalog:read publish:create publish:read"),
+    ]);
+    {
+        let mut pending = pending_authorizations()
+            .lock()
+            .map_err(|_| AppError::Internal("Authorization state unavailable".into()))?;
+        pending
+            .retain(|_, auth| auth.expires_at > std::time::Instant::now() && auth.source_id != id);
+        if pending.len() >= 64 {
+            return Err(AppError::TooManyRequests(
+                "Too many pending hub authorizations".into(),
+            ));
+        }
+        pending.insert(
+            oauth_state,
+            PendingAuthorization {
+                data_dir: state.data_dir().to_path_buf(),
+                source_id: id,
+                instance_id: config.instance_id,
+                verifier,
+                expires_at: std::time::Instant::now() + Duration::from_secs(300),
+            },
+        );
+    }
+    Ok(Json(json!({"authorization_url":url.to_string()})))
+}
+#[derive(Deserialize)]
+struct HubCallbackRequest {
+    callback_url: String,
+}
+async fn complete_hub_callback(
+    State(state): State<AppState>,
+    Json(body): Json<HubCallbackRequest>,
+) -> Result<Json<Value>, AppError> {
+    if body.callback_url.len() > 16 * 1024 {
+        return Err(AppError::BadRequest(
+            "Authorization callback exceeds size limit".into(),
+        ));
+    }
+    let url = reqwest::Url::parse(&body.callback_url)
+        .map_err(|_| AppError::BadRequest("Invalid authorization callback".into()))?;
+    if url.scheme() != "donutmediacenter"
+        || url.host_str() != Some("auth")
+        || url.path() != "/callback"
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(AppError::BadRequest(
+            "Authorization callback must exactly match donutmediacenter://auth/callback".into(),
+        ));
+    }
+    let mut values = HashMap::new();
+    for (key, value) in url.query_pairs() {
+        if !matches!(
+            key.as_ref(),
+            "state" | "code" | "error" | "error_description"
+        ) || values
+            .insert(key.into_owned(), value.into_owned())
+            .is_some()
+        {
+            return Err(AppError::BadRequest(
+                "Invalid or repeated callback parameter".into(),
+            ));
+        }
+    }
+    let oauth_state = values
+        .get("state")
+        .ok_or_else(|| AppError::BadRequest("Authorization callback has no state".into()))?;
+    // Remove atomically before any network request: replay and concurrent callbacks fail closed.
+    let pending = pending_authorizations()
+        .lock()
+        .map_err(|_| AppError::Internal("Authorization state unavailable".into()))?
+        .remove(oauth_state)
+        .ok_or_else(|| {
+            AppError::BadRequest("Authorization state is unknown or already consumed".into())
+        })?;
+    if pending.data_dir != state.data_dir() || pending.expires_at <= std::time::Instant::now() {
+        return Err(AppError::BadRequest(
+            "Authorization state expired or belongs to another client".into(),
+        ));
+    }
+    if values.contains_key("error") {
+        return Err(AppError::BadRequest(
+            "Hub authorization was denied; no account was connected".into(),
+        ));
+    }
+    let code = values
+        .get("code")
+        .filter(|code| !code.is_empty() && code.len() <= 4096)
+        .ok_or_else(|| AppError::BadRequest("Authorization callback has no valid code".into()))?;
+    let source = load_source(state.data_dir(), &pending.source_id)?;
+    require_enabled(&source)?;
+    let config = load_hub(state.data_dir(), &pending.source_id)?
+        .ok_or_else(|| AppError::BadRequest("Hub was disconnected during authorization".into()))?;
+    if config.instance_id != pending.instance_id {
+        return Err(AppError::Forbidden(
+            "Authorization hub identity changed".into(),
+        ));
+    }
+    let form = reqwest::Url::parse_with_params(
+        "https://form.invalid/",
+        &[
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("client_id", "donutmediacenter"),
+            ("redirect_uri", "donutmediacenter://auth/callback"),
+            ("code_verifier", &pending.verifier),
+        ],
+    )
+    .map_err(|_| AppError::BadRequest("Invalid authorization exchange".into()))?
+    .query()
+    .unwrap_or_default()
+    .as_bytes()
+    .to_vec();
+    // A token exchange never uses or replaces the selected Iroh routing policy.
+    validate_relay(&config.bootstrap, source.allow_local_network).await?;
+    let response = transport::request(
+        &config.bootstrap,
+        config.transport_mode,
+        transport::HubRequest {
+            method: "POST".into(),
+            path: "/api/client/v1/token".into(),
+            headers: vec![(
+                "Content-Type".into(),
+                "application/x-www-form-urlencoded".into(),
+            )],
+            body: form,
+        },
+    )
+    .await
+    .map_err(AppError::ServiceUnavailable)?;
+    let token = hub_response_json(response).await?;
+    if token.get("token_type").and_then(Value::as_str) != Some("Bearer") {
+        return Err(AppError::ServiceUnavailable(
+            "Hub returned an unsupported credential type".into(),
+        ));
+    }
+    let secret = token
+        .get("access_token")
+        .and_then(Value::as_str)
+        .filter(|token| !token.is_empty() && token.len() <= 16 * 1024)
+        .ok_or_else(|| {
+            AppError::ServiceUnavailable("Hub token response has no valid credential".into())
+        })?;
+    HeaderValue::from_str(secret)
+        .map_err(|_| AppError::ServiceUnavailable("Hub returned an invalid credential".into()))?;
+    require_enabled(&load_source(state.data_dir(), &pending.source_id)?)?;
+    let account = token
+        .pointer("/account/name")
+        .or_else(|| token.pointer("/account/display_name"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let connection_id = Uuid::new_v4().to_string();
+    let credential_ref = format!("{}.json", Uuid::new_v4());
+    let lifetime = token
+        .get("expires_in")
+        .and_then(Value::as_i64)
+        .filter(|seconds| *seconds > 0 && *seconds <= 366 * 24 * 3600)
+        .ok_or_else(|| {
+            AppError::ServiceUnavailable("Hub credential must have a finite lifetime".into())
+        })?;
+    write_credential(
+        state.data_dir(),
+        &credential_ref,
+        &StoredCredential {
+            auth_kind: "bearer".into(),
+            secret: secret.into(),
+            expires_at: Some(Utc::now().timestamp() + lifetime),
+        },
+    )?;
+    let insert = open_db(state.data_dir())?.execute(
+        "INSERT INTO remote_connections VALUES(?1,?2,?3,?4,'verified',?5)",
+        params![
+            connection_id,
+            pending.source_id,
+            account,
+            credential_ref,
+            Utc::now().to_rfc3339()
+        ],
+    );
+    if let Err(error) = insert {
+        let _ = std::fs::remove_file(credential_path(state.data_dir(), &credential_ref)?);
+        return Err(error.into());
+    }
+    purge_source_cache(&open_db(state.data_dir())?, &pending.source_id)?;
+    Ok(Json(
+        json!({"connection_id":connection_id,"source_id":pending.source_id,"account_display_name":account,"trust_state":"verified","has_credential":true}),
+    ))
+}
+
+async fn validate_relay(
+    bootstrap: &transport::HubBootstrap,
+    allow_local_network: bool,
+) -> Result<(), AppError> {
+    let relay = reqwest::Url::parse(&bootstrap.relay_url)
+        .map_err(|_| AppError::BadRequest("Invalid hub relay URL".into()))?;
+    // Resolving the relay is allowed in Relayed mode; the hub origin is never resolved.
+    security::validate_resolved_url(&relay, allow_local_network).await
+}
+fn publication_multipart(
+    snapshot_json: &str,
+    file_path: &str,
+    content: &[u8],
+) -> Result<(String, Vec<u8>), AppError> {
+    let boundary = format!("dmc-{}", Uuid::new_v4());
+    let filename: String = Path::new(file_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("publication.bin")
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || "._-".contains(ch) {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let mut body = format!("--{boundary}\r\nContent-Disposition: form-data; name=\"snapshot_json\"\r\n\r\n{snapshot_json}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n").into_bytes();
+    body.extend_from_slice(content);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    if body.len() > 64 * 1024 * 1024 {
+        return Err(AppError::BadRequest(
+            "Publication exceeds native request limit".into(),
+        ));
+    }
+    Ok((format!("multipart/form-data; boundary={boundary}"), body))
+}
+fn receipt_local_state(receipt: &Value) -> &str {
+    match receipt
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or("submitted")
+    {
+        "accepted" => "published",
+        "tombstoned" => "retracted",
+        "processing" => "submitted",
+        "pending_moderation" => "pending_moderation",
+        "rejected" => "rejected",
+        _ => "submitted",
+    }
+}
+async fn refresh_publication(
+    State(state): State<AppState>,
+    AxumPath(publication_id): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    let targets = {
+        let conn = open_db(state.data_dir())?;
+        let mut stmt = conn.prepare("SELECT target_id,connection_id,receipt_json FROM publication_targets WHERE publication_id=?1 AND receipt_json IS NOT NULL")?;
+        let rows = stmt.query_map(params![publication_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    let mut outcomes = vec![];
+    for (target_id, source_id, stored) in targets {
+        let source = load_source(state.data_dir(), &source_id)?;
+        require_enabled(&source)?;
+        let config = load_hub(state.data_dir(), &source_id)?.ok_or_else(|| {
+            AppError::BadRequest("Receipt refresh requires an enrolled native hub".into())
+        })?;
+        let stored: Value = serde_json::from_str(&stored)
+            .map_err(|_| AppError::Internal("Stored publication receipt is invalid".into()))?;
+        let remote_id = stored
+            .get("publication_id")
+            .and_then(Value::as_str)
+            .filter(|id| Uuid::parse_str(id).is_ok())
+            .ok_or_else(|| {
+                AppError::BadRequest("Receipt has no native publication identity".into())
+            })?;
+        let response = hub_request(
+            state.data_dir(),
+            &source,
+            &config,
+            "GET",
+            &format!("/api/client/v1/publications/{remote_id}"),
+            vec![],
+            vec![],
+        )
+        .await?;
+        let receipt = hub_response_json(response).await?;
+        validate_hub_receipt(&source, &receipt)?;
+        let local_state = receipt_local_state(&receipt);
+        let remote_url = receipt
+            .pointer("/receipt/canonical_url")
+            .and_then(Value::as_str);
+        if let Some(url) = remote_url {
+            let base = reqwest::Url::parse(&source.normalized_base_url)
+                .map_err(|_| AppError::BadRequest("Invalid hub origin".into()))?;
+            let url = reqwest::Url::parse(url)
+                .map_err(|_| AppError::ServiceUnavailable("Invalid receipt URL".into()))?;
+            if base.origin() != url.origin() {
+                return Err(AppError::Forbidden(
+                    "Receipt URL differs from enrolled hub origin".into(),
+                ));
+            }
+        }
+        open_db(state.data_dir())?.execute("UPDATE publication_targets SET state=?3,remote_post_id=?4,remote_url=?5,receipt_json=?6,error_json=NULL,updated_at=?7 WHERE publication_id=?1 AND target_id=?2",
+            params![publication_id,target_id,local_state,receipt.get("remote_post_id").and_then(Value::as_str),remote_url,receipt.to_string(),Utc::now().to_rfc3339()])?;
+        outcomes.push(json!({"target_id":target_id,"source_id":source_id,"state":local_state,"receipt":receipt}));
+    }
+    Ok(Json(
+        json!({"publication_id":publication_id,"targets":outcomes}),
+    ))
+}
+
+fn validate_advertised_bootstrap(
+    descriptor: &Value,
+    bootstrap: &transport::HubBootstrap,
+) -> Result<(), AppError> {
+    if let Some(advertised) = descriptor.pointer("/transports/iroh") {
+        if advertised.get("peer_id").and_then(Value::as_str) != Some(bootstrap.peer_id.as_str())
+            || advertised
+                .get("relay_url")
+                .and_then(Value::as_str)
+                .map(|s| s.trim_end_matches('/'))
+                != Some(bootstrap.relay_url.trim_end_matches('/'))
+        {
+            return Err(AppError::Forbidden(
+                "Hub descriptor bootstrap differs from the pinned enrollment peer and relay".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+fn enforce_item_policy(
+    item: &RemoteItem,
+    profile: &str,
+    family_locked: bool,
+) -> Result<(), AppError> {
+    let mut page = RemotePage {
+        items: vec![item.clone()],
+        page: 1,
+        per_page: 1,
+        total: None,
+        stale: false,
+        next_cursor: None,
+    };
+    enforce_content_policy(&mut page, profile, family_locked);
+    if page.items.is_empty() {
+        return Err(AppError::Forbidden(
+            "Remote item is hidden by the current content policy".into(),
+        ));
+    }
+    Ok(())
+}
+async fn read_publication_media(file_path: &str) -> Result<Vec<u8>, AppError> {
+    use tokio::io::AsyncReadExt;
+    let file = tokio::fs::File::open(file_path)
+        .await
+        .map_err(|_| AppError::BadRequest("Publication media is unavailable".into()))?;
+    let mut bytes = Vec::new();
+    file.take(60 * 1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .await?;
+    if bytes.len() > 60 * 1024 * 1024 {
+        return Err(AppError::BadRequest(
+            "Publication media exceeds native upload limit".into(),
+        ));
+    }
+    Ok(bytes)
+}
+
+fn validate_hub_receipt(source: &RemoteSource, receipt: &Value) -> Result<(), AppError> {
+    if !receipt
+        .get("publication_id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| Uuid::parse_str(id).is_ok())
+        || !matches!(
+            receipt.get("state").and_then(Value::as_str),
+            Some("processing" | "pending_moderation" | "accepted" | "rejected" | "tombstoned")
+        )
+    {
+        return Err(AppError::ServiceUnavailable(
+            "Hub returned an invalid authoritative publication receipt".into(),
+        ));
+    }
+    if let Some(status_url) = receipt
+        .pointer("/receipt/status_url")
+        .and_then(Value::as_str)
+    {
+        hub::path(&source.normalized_base_url, status_url)?;
+    }
+    if let Some(raw_url) = receipt
+        .pointer("/receipt/canonical_url")
+        .and_then(Value::as_str)
+    {
+        let origin = reqwest::Url::parse(&source.normalized_base_url)
+            .map_err(|_| AppError::BadRequest("Invalid hub origin".into()))?;
+        let url = reqwest::Url::parse(raw_url).map_err(|_| {
+            AppError::ServiceUnavailable("Invalid hub receipt canonical URL".into())
+        })?;
+        if receipt.get("state").and_then(Value::as_str) != Some("accepted")
+            || origin.origin() != url.origin()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return Err(AppError::Forbidden(
+                "Hub receipt must expose a same-origin canonical URL only after acceptance".into(),
+            ));
+        }
+    }
+    Ok(())
 }
