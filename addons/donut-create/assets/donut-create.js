@@ -908,6 +908,7 @@
     tapStrength: ['tap_strength', [1014], 'number'],
     decensor: ['uncensorfix_controls', [1014, 1118], 'boolean'],
     decensorWeight: ['uncensorfix_strength', [1014, 1118], 'number'],
+    turboMode: ['turbo_mode', [1014], 'boolean'],
     nagStrength: ['alpha', [1014], 'number'],
     sdaStrength: ['sda_strength', [1014, 993], 'number'],
     toneStrength: ['strength', [1014, 1181], 'number'],

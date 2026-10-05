@@ -140,8 +140,8 @@ function SparkIcon() {
   </svg>
 }
 
-function EffectSection({ title, defaultOpen = false, toggle, children }) {
-  const [expanded, setExpanded] = useState(defaultOpen)
+function EffectSection({ title, toggle, children }) {
+  const [expanded, setExpanded] = useState(false)
   const id = useId()
   return <section className="create-effect-group">
     <div className="create-effect-heading">
@@ -192,6 +192,8 @@ export default function SimpleCreateControls({
     ? followsCrop ? value('resolutionMode') !== 'Reference A · crop only' : value('resolutionMode') !== 'Custom'
     : presetSize || value('resolutionMode') === 'Reference A · megapixels'
   const usesShape = !followsCrop && (independentEditing ? !customSize : presetSize)
+  const showNegativePrompt = available('negativePrompt')
+    && !(value('turboMode') === true && !(Number(value('nagStrength')) > 0))
   const fixedSeed = /fixed|custom|manual|keep/i.test(String(value('seedMode')))
   const hasReference = key => /^donutref:[a-f0-9]{64}$/.test(String(value(key)))
   const notifyDrafts = useCallback(next => {
@@ -375,7 +377,7 @@ export default function SimpleCreateControls({
 
   function feature(key, title, contents, note) {
     if (!available(key)) return null
-    return <EffectSection key={key} title={title} defaultOpen={value(key) === true}
+    return <EffectSection key={key} title={title}
       toggle={<input type="checkbox" role="switch" aria-label={title} checked={value(key) === true} disabled={locked}
         onChange={event => choose(key, event.target.checked)} />}>
       {contents}{note && <p className="create-control-note">{note}</p>}
@@ -385,7 +387,7 @@ export default function SimpleCreateControls({
   function strengthFeature(key, title, contents, note) {
     if (!available(key)) return null
     const active = Number(value(key)) !== 0
-    return <EffectSection key={key} title={title} defaultOpen={active}
+    return <EffectSection key={key} title={title}
       toggle={<><small className="create-effect-value">{active ? displayNumber(value(key)) : 'Off'}</small>
         <input type="checkbox" role="switch" aria-label={title} checked={active} disabled={locked} onChange={event => {
           if (!event.target.checked) rememberedStrength.current[key] = value(key)
@@ -499,8 +501,8 @@ export default function SimpleCreateControls({
         {activeTab !== 'finalize' && <>
           {textField(activeTab === 'edit' ? 'editPrompt' : 'prompt', 'Describe your image', activeTab === 'edit' ? 'The finished image: keep the subject, change the background to a sunny beach…' : 'A cozy cabin beside a lake, morning mist, warm sunlight…', 6)}
           {value('faceDetail') === true && textField('facePrompt', 'Describe only the face', 'Expression, facial features, makeup…', 3)}
-          {(available('stylePrompt') || available('negativePrompt')) && <details className="create-prompt-options"><summary>Style & exclusions <span>Optional</span></summary>
-            {textField('stylePrompt', 'Style prompt', 'Lighting, colors, artistic style…')}{textField('negativePrompt', 'Avoid in the image', 'Things you want to leave out…')}
+          {(available('stylePrompt') || showNegativePrompt) && <details className="create-prompt-options"><summary>Style & exclusions <span>Optional</span></summary>
+            {textField('stylePrompt', 'Style prompt', 'Lighting, colors, artistic style…')}{showNegativePrompt && textField('negativePrompt', 'Avoid in the image', 'Things you want to leave out…')}
           </details>}
           {activeTab === 'create' && <>
             {available('referenceGuidance') && <section className="create-reference-section">{switchField('referenceGuidance', 'Reference guidance')}
@@ -571,7 +573,7 @@ export default function SimpleCreateControls({
           </section>}
         </div>
         <div className="create-effects-workspace" hidden={!panels.desktop && mobilePane !== 'effects'}>
-          {(available('compatibilityPreset') || available('tapStrength')) && <EffectSection key="compatibility" title="Compatibility" defaultOpen>{selectField('compatibilityPreset')}{value('compatibilityPreset') !== 'Off' && numberField('tapStrength')}</EffectSection>}
+          {(available('compatibilityPreset') || available('tapStrength')) && <EffectSection key="compatibility" title="Compatibility">{selectField('compatibilityPreset')}{value('compatibilityPreset') !== 'Off' && numberField('tapStrength')}</EffectSection>}
           {feature('decensor', 'Decensor', numberField('decensorWeight'))}
           {strengthFeature('nagStrength', 'NAG', null, 'Scale 0 turns NAG off.')}{strengthFeature('sdaStrength', 'SDA')}
           {strengthFeature('toneStrength', 'ToneLab', <>{selectField('toneModel')}{switchField('toneApplyToEdits', 'Apply to edits')}</>)}
