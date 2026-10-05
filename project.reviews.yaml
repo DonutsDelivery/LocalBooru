@@ -12703,6 +12703,19 @@ reviews:
         runner: source-parser
         created_at: 2026-10-05T22:52:29.193Z
         completed_at: 2026-10-05T22:52:29.193Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 310006a1
+          head_commit: 72a245ca
+        evidence: "Independent native review plus rereview: no remaining source-level blockers. Matching
+          nodecandidate faee068 based96f3afe reviewed with DMC72a245ca. Corrected PKCE parent state,
+          thumbnail concurrency, HEAD and expiry metadata."
+        name: independent-source-review
+        required: true
+        runner: hub_source_review
+        created_at: 2026-10-05T22:52:30.694Z
+        completed_at: 2026-10-05T22:52:30.694Z
     events:
       - _ulid: 01M47493W0N1QZZXY15YQ87H1K
         actor: DonutsDelivery
@@ -12717,6 +12730,13 @@ reviews:
           status: pass
           name: source-syntax-and-format
         timestamp: 2026-10-05T22:52:29.271Z
+      - _ulid: 01M4749HNKS1Y3KW2SF7MF2KSM
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-review
+        timestamp: 2026-10-05T22:52:30.772Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -12731,5 +12751,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-05T22:52:16.641Z
-    updated_at: 2026-10-05T22:52:29.193Z
+    updated_at: 2026-10-05T22:52:30.694Z
     notes: []
