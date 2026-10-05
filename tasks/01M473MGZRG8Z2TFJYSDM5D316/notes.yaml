@@ -16,3 +16,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-05T22:47:14.522Z
+  - _ulid: 01M474918C14AZD48PHS0Y7GYF
+    content: "Independent source review passed after fixes: native sign-in refreshes parent publishing
+      account state; FIFO bounded thumbnail concurrency; descriptor shape/key/relay checks; exact
+      native callback PKCE; private authorization rechecks before media; explicit GET/HEAD policy;
+      expired/missing credentials reflected in UI. DMC candidate72a245ca and node candidatefaee068
+      committed, worktrees clean. Source parsers/format/whitespace and dependency metadata passed.
+      No tests/builds/runtime actions. Remaining acceptance gates: compile/native callbacks/mobile,
+      observed relay-only network, public/private grants/revocation, uploads/moderation refresh and
+      ranged playback. Existing multi-account selection caveat inherited."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-05T22:52:13.964Z
