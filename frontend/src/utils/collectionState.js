@@ -23,3 +23,18 @@ export function restoreCollectionScroll(storage, key, container) {
   const value = Number(storage.getItem(`${key}_scroll`))
   container.scrollTop = Number.isFinite(value) ? Math.max(0, value) : 0
 }
+
+// Keep each collection visit attached to the gallery that opened it.
+export function collectionGalleryTarget(location, mediaType) {
+  const fallback = mediaType === 'video' ? '/videos' : '/'
+  if (location.pathname === fallback) return `${location.pathname}${location.search}${location.hash || ''}`
+  const candidates = [location.state?.galleryReturnTo, sessionStorage.getItem(`donutMediaCenter_gallery_url_${mediaType}`)]
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || !candidate.startsWith('/')) continue
+    try {
+      const url = new URL(candidate, window.location.origin)
+      if (url.origin === window.location.origin && url.pathname === fallback) return `${url.pathname}${url.search}${url.hash}`
+    } catch { /* fall back to the media gallery */ }
+  }
+  return fallback
+}

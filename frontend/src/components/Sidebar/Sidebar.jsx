@@ -5,6 +5,7 @@ import PromptSection from './PromptSection'
 import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_OPTIONS, ORIENTATION_OPTIONS, DURATION_OPTIONS, SORT_OPTIONS } from './FilterControls'
 import TagSearch from './TagSearch'
 import SidebarNavigation from '../SidebarNavigation'
+import { collectionGalleryTarget } from '../../utils/collectionState'
 import FamilyModeLock from '../FamilyModeLock'
 import PersistentMusicPlayer from '../Music/PersistentMusicPlayer'
 import '../Sidebar.css'
@@ -42,11 +43,18 @@ function Sidebar({
   onMouseLeave,
   settingsTab,
   onSettingsTabChange,
-  onFamilyModeChange
+  onFamilyModeChange,
+  collectionItems,
+  currentCollection,
+  onCreateCollection,
+  onRenameCollection
 }) {
   const location = useLocation()
   const isGalleryPage = location.pathname === '/' || location.pathname === '/videos'
   const isCollectionPage = location.pathname === '/collections' || location.pathname.startsWith('/collections/')
+  const galleryReturnTo = collectionGalleryTarget(location, mediaType)
+  const collectionNavigationState = { galleryReturnTo }
+  const galleryLabel = mediaType === 'video' ? 'Videos' : 'Images'
   const isSettingsPage = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
   const [hovering, setHovering] = useState(false)
   const [directories, setDirectories] = useState([])
@@ -119,9 +127,13 @@ function Sidebar({
   }, [mediaType, refreshDirectories])
 
   useEffect(() => {
-    if (!isGalleryPage && !isCollectionPage) return
-    fetchCollections(mediaType).then(data => setCollections(data.collections || [])).catch(console.error)
-  }, [isGalleryPage, isCollectionPage, mediaType])
+    if (!isCollectionPage || collectionItems) return
+    let active = true
+    fetchCollections(mediaType).then(data => {
+      if (active) setCollections(data.collections || [])
+    }).catch(console.error)
+    return () => { active = false }
+  }, [isCollectionPage, collectionItems, mediaType])
 
   // Load saved searches
   useEffect(() => {
@@ -441,24 +453,35 @@ function Sidebar({
           </div>
         )}
 
-        {(isGalleryPage || isCollectionPage) && (
+        {isGalleryPage && (
           <div className="sidebar-section media-collections-section">
-            <div className="media-collections-heading">
-              <h3>{mediaType === 'video' ? 'Video' : 'Image'} Collections</h3>
-              <NavLink to={`/collections?media_type=${mediaType}`}>View all</NavLink>
-            </div>
-            {collections.length === 0 ? (
-              <p className="media-collections-empty">No collections yet</p>
-            ) : collections.map(collection => (
-              <NavLink
+            <NavLink to={`/collections?media_type=${mediaType}`} state={collectionNavigationState} className="sidebar-create-button collections-entry-button" onClick={onClose}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="7" y="7" width="14" height="14" rx="2"/><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>
+              Collections
+            </NavLink>
+          </div>
+        )}
+
+        {isCollectionPage && (
+          <div className="sidebar-section media-collections-section">
+            <NavLink to={galleryReturnTo} className="media-collection-link" onClick={onClose}>← Back to {galleryLabel}</NavLink>
+            <h3>{mediaType === 'video' ? 'Video' : 'Image'} Collections</h3>
+            <NavLink end to={`/collections?media_type=${mediaType}`} state={collectionNavigationState} className="media-collection-link" onClick={onClose}>All Collections</NavLink>
+            {onCreateCollection && <button type="button" className="media-collection-link collection-sidebar-action" onClick={() => { onCreateCollection(); onClose?.() }}>＋ New Collection</button>}
+            {onRenameCollection && <button type="button" className="media-collection-link collection-sidebar-action" onClick={() => { onRenameCollection(); onClose?.() }}>Rename Collection</button>}
+            {(collectionItems || collections).map(item => {
+              const collection = currentCollection?.id === item.id ? currentCollection : item
+              return <NavLink
                 key={collection.id}
                 to={`/collections/${collection.id}?media_type=${mediaType}`}
+                state={collectionNavigationState}
                 className="media-collection-link"
+                onClick={onClose}
               >
                 <span>{collection.name}</span>
                 <span>{collection.item_count}</span>
               </NavLink>
-            ))}
+            })}
           </div>
         )}
 
