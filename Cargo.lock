@@ -570,12 +570,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
 
 [[package]]
-name = "base16ct"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd307490d624467aa6f74b0eabb77633d1f758a7b25f12bceb0b22e08d9726f6"
-
-[[package]]
 name = "base32"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1842,12 +1836,12 @@ dependencies = [
 
 [[package]]
 name = "ed25519"
-version = "3.0.0"
+version = "3.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29fcf32e6c73d1079f83ab4d782de2d81620346a5f38c6237a86a22f8368980a"
+checksum = "c6e914c7c52decb085cea910552e24c63ac019e3ab8bf001ff736da9a9d9d890"
 dependencies = [
- "pkcs8 0.11.0",
- "serdect",
+ "pkcs8 0.11.0-rc.11",
+ "serde",
  "signature 3.0.0",
 ]
 
@@ -1879,7 +1873,7 @@ version = "0.13.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e6043086bf7973472e0c7dff2142ea0b680d30e18d9cc40f267efbf222bd47"
 dependencies = [
- "base16ct 0.2.0",
+ "base16ct",
  "crypto-bigint",
  "digest 0.10.7",
  "ff",
@@ -3512,7 +3506,7 @@ dependencies = [
  "papaya",
  "pin-project",
  "pkarr",
- "pkcs8 0.11.0",
+ "pkcs8 0.11.0-rc.11",
  "portable-atomic",
  "rand 0.9.2",
  "reqwest 0.12.28",
@@ -5449,12 +5443,12 @@ dependencies = [
 
 [[package]]
 name = "pkcs8"
-version = "0.11.0"
+version = "0.11.0-rc.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "451913da69c775a56034ea8d9003d27ee8948e12443eae7c038ba100a4f21cb7"
+checksum = "12922b6296c06eb741b02d7b5161e3aaa22864af38dfa025a1a3ba3f68c84577"
 dependencies = [
  "der 0.8.2",
- "spki 0.8.1",
+ "spki 0.8.0-rc.4",
 ]
 
 [[package]]
@@ -6577,7 +6571,7 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3e97a565f76233a6003f9f5c54be1d9c5bdfa3eccfb189469f11ec4901c47dc"
 dependencies = [
- "base16ct 0.2.0",
+ "base16ct",
  "der 0.7.10",
  "generic-array",
  "pkcs8 0.10.2",
@@ -6843,16 +6837,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
-]
-
-[[package]]
-name = "serdect"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66cf8fedced2fcf12406bcb34223dffb92eaf34908ede12fed414c82b7f00b3e"
-dependencies = [
- "base16ct 1.0.0",
- "serde",
 ]
 
 [[package]]
@@ -7161,9 +7145,9 @@ dependencies = [
 
 [[package]]
 name = "spki"
-version = "0.8.1"
+version = "0.8.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ef958a98b9d5da290cfc78946e9f3e61e1e62a18db0d92cac0b83cc161491a9"
+checksum = "8baeff88f34ed0691978ec34440140e1572b68c7dd4a495fd14a3dc1944daa80"
 dependencies = [
  "base64ct",
  "der 0.8.2",
