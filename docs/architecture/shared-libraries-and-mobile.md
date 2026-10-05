@@ -1,11 +1,14 @@
 # Shared libraries, publishing, and mobile playback
 
 Date: 2026-09-29
+Updated: 2026-10-05
 
 Status: architecture proposal based on repository and device inventory, revised
 with the user's distinction between QR-paired private libraries and creator
-collections. The navigation requirements below come from the user. Protocol
-selection and the delivery sequence are recommendations. This document records planned acceptance;
+collections. The navigation requirements and initial Iroh direct/relayed scope
+below are user decisions. Authentication requirements are recorded with proposed
+mechanisms still to be designed; the delivery sequence is a recommendation.
+This document records planned acceptance;
 it does not claim mobile playback or the sharing architecture has passed it.
 
 ## Product direction
@@ -20,14 +23,22 @@ DonutMediaCenter is a personal media library, player, and optional publisher.
 People browse Images, Videos, and Music, connect to creators' shared libraries,
 and explicitly choose what they publish from their own library.
 
-DonutBooru is the proposed optional public website and always-on hosting role. Its
-existing profiles, storage, and explicitly permitted peer copies provide foundations
-for this role; DMC catalogs, audio, and mirror failover need integration and fresh
-verification. Both products should expose the same catalog contract.
+DonutBooru is an optional community hub: a website, collection discovery/catalog
+service, and relay or browser gateway. Retaining originals is a separate optional
+hosting role; discovery and forwarding do not require permanent storage of all
+media. Its existing profiles, storage, and explicitly permitted peer copies provide
+foundations, but DMC catalogs, audio, and mirror failover need integration and fresh
+verification. Both products should expose the same catalog contract. Other hubs
+and known peers must remain usable without one mandatory DonutBooru directory.
 A creator should be able to share directly from the desktop app without installing
 a separate node. Internet connections may still require discovery or relay
 infrastructure, and staying available while the creator is offline requires a
 host that retains the authorized media.
+
+The goal is creator-controlled distribution from home networks without requiring
+each creator to rent a VPS. Community replicas retain permitted files and catalogs
+while creators are offline. Storage and relay bandwidth still come from willing
+participants or optional services; a relay cannot replace a retained copy.
 
 Hosting starts disabled. Adding a local directory does not publish it. Publication
 exports only selected media and approved metadata, excluding local filesystem paths
@@ -308,16 +319,85 @@ delivers media bytes, so stream-only is an application permission, not copy prot
 
 ## Connectivity and alternate hosts
 
-Start with an authenticated catalog and HTTP range delivery that both app hosts and
-web hosts can implement. Add a transport interface so reachability can evolve
-without changing publication IDs or library behavior.
+Use one policy-enforcing collection protocol with stable publication identities
+across transports. Initial app-to-app networking uses Iroh, supporting direct and
+relayed connections. Preserve HTTPS and byte-range interoperability for web hosts
+and browser gateways; these adapters must enforce the selected privacy policy.
+
+### Agreed initial scope: Iroh direct and relayed
+
+The user selected this initial scope on 2026-10-05. Anonymous routing is reserved
+for a future implementation, not a dependency of the initial integration.
+The [deferred anonymous networking design](anonymous-networking.md) describes its
+full intended integration, compatibility rules, authentication boundaries, and
+acceptance gates. Deferral applies to implementation, not to documenting the design.
+
+| Mode | Initial behavior |
+| --- | --- |
+| Standard | Permit direct encrypted Iroh connections, with relay fallback. Connected peers can learn each other's IP addresses. |
+| Relayed | Disable direct peer connections and address disclosure to peers. Carry discovery/catalog requests and media through approved relays or gateways; operators can still see connection metadata. |
+| Anonymous (future) | Reserve the transport/policy interface and unsupported-capability result. Do not advertise or enable this mode until an implementation covers discovery and delivery. |
+
+All initial desktop and Android nodes should implement both Standard and Relayed.
+The setting controls permitted routes, not which networking library is installed.
+A Standard node must accept a relayed connection from a Relayed node. Either
+endpoint requiring Relayed rules out a direct connection; connection failure must
+never silently weaken that requirement. Transport capability is separate from
+volunteering to operate a relay or retain other people's files.
+
+Put discovery, metadata, covers, provider lookup, transfer/range requests, and
+redirect handling behind the route policy. Configuring an Iroh media endpoint
+alone is insufficient if an HTTP catalog request exposes the same user's address.
+Do not advertise a protected publisher's direct addresses in public records.
+Authentication must report any external-provider/privacy boundary explicitly.
+This protects the current connection path; it cannot undo historical IP disclosure.
+
+Future anonymous support should fit the same provider resolver and collection
+protocol. Stubs must return unsupported/unavailable without issuing direct network
+requests; they must not pretend Iroh relaying is anonymity. Arti/Tor is a candidate
+for later evaluation, not a selected or shipped dependency. Avoid binding the
+collection protocol to the experimental Iroh Tor adapter or requiring a separately
+installed anonymity client as part of the initial release.
+
+The gallery/player resolves creator, collection revision, and representation
+identity rather than storing a serving URL as the item's identity. Select an
+available authorized provider and a route permitted by both endpoints. Preserve
+the item, attribution, rendition, and playhead through provider changes; latency
+or temporary unavailability may remain visible. Iroh does not supply DMC's catalog,
+replication policy, or media-provider discovery automatically.
+
+Use `iroh-blobs` verified ranges where suitable, binding its BLAKE3 identity to the
+signed publication manifest. A future transport must preserve equivalent content
+verification rather than assuming this protocol runs unchanged on every stream.
+Community retention is an explicit opt-in with quotas, bandwidth limits, and
+permitted-publication checks. Retain catalogs as well as bytes, and distinguish
+recently confirmed replicas from unverified/stale availability announcements.
+
+DonutBooru's directory locates eligible holders; an Iroh relay forwards encrypted
+app-to-app traffic, while a browser gateway terminates connections and can access
+the media it serves over HTTPS. The gateway may fetch from a permitted replica
+when the creator is offline. If all eligible holders are offline, report the media
+unavailable even when its retained catalog remains browsable. Relay/gateway
+bandwidth remains an operational cost even without permanent original storage.
+
+Initial acceptance must cover direct/direct, direct/relayed, and relayed/relayed
+participants; cross-network reachability; no protected direct-address discovery
+or request bypass; verified range failover with the creator offline; and mobile
+lifecycle behavior. An anonymous-only peer must receive a clear unsupported result
+until that transport is implemented. These are future gates, not completed tests.
+
+References: [Iroh route configuration](https://docs.iroh.computer/configuring-networks),
+[verified blob transfers](https://docs.iroh.computer/protocols/blobs),
+[privacy boundaries](https://docs.iroh.computer/concepts/security-privacy), and
+[current experimental Tor adapter](https://docs.iroh.computer/transports/tor).
 
 | Technology | Proposed role |
 | --- | --- |
 | HTTPS and byte ranges | Initial catalog, stream, download, and authorized mirror interoperability |
-| zrok / OpenZiti | Optional internet ingress or private service transport for a scoped publication endpoint, using a hosted or self-hosted service deployment |
-| Iroh | Candidate for direct app-to-app connectivity with NAT traversal and relay fallback; evaluate on desktop, Android, and iOS before committing |
-| libp2p | Candidate networking stack when decentralized peer discovery, DHT provider lookup, and gossip are central requirements |
+| zrok / OpenZiti | Previously considered optional ingress; outside the selected initial Iroh integration |
+| Iroh | Selected initial app-to-app transport: direct and enforced relayed modes; platform behavior still requires implementation and evidence |
+| Arti / Tor | Future anonymous discovery/delivery candidate behind an unsupported transport stub; outside initial integration |
+| libp2p | Alternative considered for discovery/DHT/gossip; not an additional initial networking dependency |
 | IPFS | Optional public distribution through its existing content/provider ecosystem |
 | ActivityPub | Later interoperability for creator profiles, follows, and publication announcements |
 
@@ -348,7 +428,7 @@ share tokens and requires clients on the same service instance. It is
 [OpenZiti](https://netfoundry.io/docs/openziti/intro/) supplies controllers, a router
 fabric, and authenticated endpoints underneath it.
 
-Evaluate zrok as an optional way to reach the DMC publication API through NAT.
+If revisited later, evaluate zrok as an optional way to reach the DMC publication API through NAT.
 Expose only the policy-enforcing publication service, excluding raw directories
 and unrestricted management endpoints. Check ranges, seeking, large transfers,
 reconnect, deployment overhead, and mobile integration with a disposable prototype.
@@ -386,7 +466,7 @@ and media discovery still needs our protocol. Freenet's
 illustrates an overlay approach. Adopting its application/storage runtime would
 require a separate suitability evaluation.
 
-Compare Iroh and libp2p against the same prototype criteria: bootstrap loss, address
+Evaluate the selected Iroh integration against these criteria: bootstrap loss, address
 changes, NAT/relay paths, Android/iOS lifecycle, playback startup/seeking, stale or
 hostile advertisements, bandwidth, and operation without one mandatory directory.
 Use verification, expiration, resource limits, and user block lists for discovery.
@@ -411,6 +491,86 @@ Start with selected friends' nodes and explicit retention/quota agreements. Add
 broader provider discovery after the identity, permissions, and mirror behavior
 work. Signed tombstones/revisions and bounded policy freshness are necessary for
 compliant mirrors; withdrawal cannot recall independent downloaded copies.
+
+## Hub enrollment and authentication direction
+
+Recorded 2026-10-05 from the user's next design discussion. Hub-controlled access,
+optional external identity providers, independent signups, DMC submissions, and
+click-to-add enrollment are product requirements. The mechanisms below are design
+proposals, not implemented endpoints or a finalized authentication protocol.
+
+Adding DonutBooru should expose its authorized community collection/catalog in
+DMC's Shared collections, alongside other added hubs and creators. Hub aggregation
+must preserve original creator/publication identities. Browse collections in the
+normal galleries; keep source/account configuration in Settings.
+
+### Website links that open DMC
+
+Provide an **Open in DMC / Add community** link, with the convenient experience of
+a magnet link. Prefer an HTTPS app link with a website/install fallback and a
+registered DMC deep link where needed; the exact URI format remains undecided.
+Literal BitTorrent `magnet:` compatibility is not required or claimed.
+
+The link identifies a hub/collection, its identity anchor, and permitted bootstrap
+locators. Fetch and validate its descriptor under the user's current route policy,
+then show its name and requested access for confirmation. Names from links are
+untrusted display hints. Clicking a link must not upload, publish, share personal
+directories, enable local-network access, or grant device administration. Keep
+private invitations scoped, expiring/revocable, and separate from public links;
+never place reusable account/admin credentials in them.
+
+### Accounts belong to the hub
+
+Each hub chooses whether browsing is public or requires membership, whether signup
+is open/invited/approved, and which login methods it offers. Browsing, uploading,
+publishing, moderation, and replication are separate grants. Public catalog access
+does not imply upload permission; authentication does not bypass approval policy.
+For private hubs, keep collection names, counts, covers, and provider records behind
+authorization; expose only the minimal enrollment/authentication descriptor.
+
+DonutBooru should accept authenticated DMC submissions without requiring the
+Discord-upload/bot-sync pipeline. Discord may remain an optional login/import
+integration. Distinguish submitting bytes for hub retention from submitting an
+existing publication for discovery: the chosen hub policy must specify retention
+and moderation, rather than imply every submission is permanently stored there.
+
+Source inspection on 2026-10-05 found that the local DonutBooru node checkout's
+`api/models.py` already has a hub-owned numeric `User.id`, uploads, roles, and
+moderation records, but requires a unique non-null `discord_id`. Its
+`api/routers/auth.py` creates/updates that account after Discord OAuth and requires
+a configured Discord Level 2 role. Avatar construction and privilege synchronization
+also assume Discord. This is code evidence, not a live deployment verification.
+
+Proposed migration: retain existing user IDs and ownership; move external identities
+to account-linked records keyed by provider/issuer and subject. Support independent
+credentials without manufacturing a Discord ID. Preserve existing access until an
+operator deliberately changes its policy, and explicitly choose which privileges
+remain externally synchronized. Account linking requires proof of control; matching
+names or email addresses alone must not merge accounts.
+
+Candidate login methods are hub-local signup (passwords and/or passkeys), optional
+Discord/Google/Facebook/X integrations, and invitation/key-based pseudonymous
+membership. Provider availability and setup remain hub-specific; OAuth providers
+are not interchangeable and not all implement OpenID Connect. DMC should consume
+the hub's advertised login methods and obtain hub-scoped sessions/grants, rather
+than ship an OAuth secret for every provider or send one hub's credentials to another.
+
+For native browser-based authorization, use the system browser and a short-lived
+authorization code with PKCE, request-bound state, and validated callbacks. The
+hub handles external provider credentials and exchanges; DMC receives scoped hub
+credentials. Provider login must not silently open an ordinary browser and claim
+it stayed within a future anonymous routing mode. See
+[OAuth for native apps](https://www.rfc-editor.org/rfc/rfc8252) and
+[OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html).
+
+For privacy-oriented communities, consider a distinct local key identity per hub:
+the client proves control by signing a challenge and the hub issues scoped grants
+after invitation/approval as required. This is pseudonymous authorization, not
+untraceable activity: a hub can link actions under that account, and initial Iroh
+relaying does not hide the user's IP from relay operators. Keep account keys distinct
+from public creator-signing and transport keys. Recovery, device enrollment,
+revocation, abuse limits, and an optional stronger unlinkable-credential design
+remain open decisions; do not invent a new cryptographic protocol for the first slice.
 
 ## Mobile baseline
 
@@ -456,14 +616,14 @@ acceptance. Simulators alone do not establish all hardware behavior.
 | 1a. Navigation and directories | Four primary destinations; Directories opens inside Settings; grouped directory details and correct Back behavior | Desktop plus a newly built APK from the exact milestone commit on a dedicated Android emulator; return to each gallery without losing state; all existing directory operations and legacy routes reachable |
 | 1b. Attached private sources | My libraries appends directories from QR-paired personal servers; per-source requests/media; no whole-backend switch | Two servers with colliding numeric/library IDs remain distinct; browsing another source leaves playback attached to its origin; offline sources do not blank healthy ones; credentials, pagination, filters, scroll state, and startup migration remain scoped correctly |
 | 2. Mobile music | Phone storage/import, playback from an existing paired personal server, native background player, persistent queue, and suitable formats | Android and iOS album/song playback matrix, screen-off and interruptions, exact artifact identity; physical-device limitations recorded |
-| 3. Direct collection sharing | DMC publishes Public or Invite-only collections; a scoped invitation connects another client; Shared collections pane unifies added creators; explicit save/import | On a reachable LAN or HTTPS setup, first gate on one image collection with invitation, private favorites, withdrawal, and verified offline copy. Follow-on gates cover ordered albums and seekable video, creator filters, exact membership, cover/count policy, and ranges. QR creator invites never grant device-admin access |
-| 4. Public creator hosting and friends | Reuse DonutBooru profiles/storage/publication history; add audio catalogs and authorized mirrors | Creator shuts down DMC while another permitted host keeps the album/video available; hash mismatch rejected; source attribution, revisions, and permissions preserved |
-| 5. Wider connectivity | Proven P2P transport, optional provider discovery, and ActivityPub adapter | Cross-network NAT/relay and mobile lifecycle evidence; discovery respects publication scope; actual interoperability before compatibility claims |
+| 3. Direct collection sharing | DMC publishes Public or Invite-only collections over Iroh direct/relayed routes; a scoped invitation connects another client; Shared collections pane unifies added creators; explicit save/import | First gate on one image collection with invitation, both initial privacy modes, private favorites, withdrawal, and verified offline copy. Follow-on gates cover ordered albums and seekable video, creator filters, exact membership, cover/count policy, and ranges. QR creator invites never grant device-admin access |
+| 4. Community hubs and authorized replicas | DonutBooru as optional discovery/gateway; click-to-add enrollment, hub-controlled accounts and DMC submission; audio catalogs and permitted retention | Creator shuts down DMC while another permitted host keeps the catalog and album/video available; hash mismatch rejected; source attribution, revisions, privacy routes, and permissions preserved. Public/private hub access and independent account migration require their own evidence |
+| 5. Wider discovery and future transports | Broader provider discovery, optional ActivityPub adapter, and separately scoped anonymous transport implementation | No mandatory central directory; discovery respects publication scope; anonymous discovery and delivery require desktop/mobile evidence before enabling the reserved capability |
 
 Milestones 1a, 1b, and 2 can progress while the catalog contract is designed. Avoid
 coupling the immediate navigation fixes to selection of a decentralized network.
-For direct sharing over the internet in milestone 3, either an explicitly reachable
-HTTP endpoint or an earlier successful P2P transport slice is necessary.
+Milestone 3 includes the initial Iroh connectivity slice; a LAN-only or HTTP-only
+demo does not establish completion of the selected direct/relayed networking scope.
 
 ### First implementation boundary
 
