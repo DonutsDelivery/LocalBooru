@@ -9,7 +9,6 @@ INSTALLED_APP="$INSTALL_DIR/donutmediacenter"
 INSTALLED_FRONTEND="$INSTALL_DIR/frontend/dist/index.html"
 LOCK_DIR="$STATE_HOME/localbooru"
 LOCK_FILE="$LOCK_DIR/install.lock"
-BUILD_LOCK_FILE="$LOCK_DIR/build-cache.lock"
 LOCK_TIMEOUT="${LOCALBOORU_BUILD_LOCK_TIMEOUT:-1800}"
 [[ "$LOCK_TIMEOUT" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
   echo "ERROR: LOCALBOORU_BUILD_LOCK_TIMEOUT must be a nonnegative number" >&2
@@ -57,18 +56,12 @@ if [[ -L "$INSTALL_DIR/frontend" || -L "$INSTALL_DIR/frontend/dist" ]]; then
   exit 1
 fi
 
-exec 8>"$BUILD_LOCK_FILE"
-flock -w "$LOCK_TIMEOUT" 8 || {
-  echo "ERROR: timed out waiting for another DonutMediaCenter build or cleanup" >&2
-  exit 1
-}
-
 source "$HOME/.cargo/env" 2>/dev/null || true
-export CARGO_BUILD_JOBS="${LOCALBOORU_BUILD_JOBS:-2}"
+export CARGO_BUILD_JOBS="${LOCALBOORU_BUILD_JOBS:-1}"
 cd "$ROOT"
 
 echo "[install-local-app] Building standalone release…"
-cargo tauri build --ci --no-bundle
+"$ROOT/scripts/run-cargo.sh" tauri build --ci --no-bundle
 
 TARGET_DIR="${CARGO_TARGET_DIR:-}"
 if [[ -z "$TARGET_DIR" ]]; then
