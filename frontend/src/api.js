@@ -940,6 +940,36 @@ export async function detectAgesRetrospective() {
 }
 
 // Online sources, remote imports, and publication ledger
+export async function previewHub(options) {
+  const response = await api.post('/online/hubs/preview', options)
+  return response.data
+}
+
+export async function getConnectedHubs() {
+  const response = await api.get('/online/hubs')
+  return response.data
+}
+
+export async function createHub(options) {
+  const response = await api.post('/online/hubs', options)
+  return response.data
+}
+
+export async function getHubConnection(sourceId) {
+  const response = await api.get(`/online/sources/${encodeURIComponent(sourceId)}/hub`)
+  return response.data
+}
+
+export async function authorizeHub(sourceId, options) {
+  const response = await api.post(`/online/sources/${encodeURIComponent(sourceId)}/authorize`, options)
+  return response.data
+}
+
+export async function completeHubAuthorization(callbackUrl) {
+  const response = await api.post('/online/hubs/callback', { callback_url: callbackUrl })
+  return response.data
+}
+
 export async function getRemoteSources() {
   const response = await api.get('/online/sources')
   return response.data
@@ -995,6 +1025,11 @@ export async function createPublication(publication) {
 
 export async function getPublications() {
   const response = await api.get('/online/publications')
+  return response.data
+}
+
+export async function refreshPublication(publicationId) {
+  const response = await api.post(`/online/publications/${encodeURIComponent(publicationId)}/refresh`)
   return response.data
 }
 

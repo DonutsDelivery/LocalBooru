@@ -6,7 +6,7 @@ authors = ["DonutsDelivery <donutsdelivery@users.noreply.github.com>"]
 license = "GPL-3.0-only"
 repository = "https://github.com/DonutsDelivery/LocalBooru"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.89"
 default-run = "donutmediacenter"
 
 # Keep the package and library identifiers stable for existing mobile bindings.
@@ -29,6 +29,7 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2.6.0"
+tauri-plugin-deep-link = "=2.4.7"
 tauri-plugin-clipboard-manager = "2.3.2"
 
 # Async runtime (full features for axum server)
@@ -65,6 +66,9 @@ zstd = "0.13"
 # File watching
 notify = "7"
 notify-debouncer-mini = "0.5"
+
+# Iroh hub transport is included in the normal binary; address lookup/port mapping disabled.
+iroh = { version = "=0.97.0", default-features = false }
 
 # HTTP client (for addon proxy, updates)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "multipart"] }
@@ -113,7 +117,7 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Securit
 # Desktop-only plugins (excluded on Android/iOS automatically)
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-window-state = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies.tauri]

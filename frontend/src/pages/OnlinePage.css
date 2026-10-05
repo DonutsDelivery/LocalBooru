@@ -7,3 +7,4 @@
 .online-connection-options { margin: 14px 0; }
 .online-connection-options summary { cursor: pointer; color: var(--text-secondary, #aab1bd); }
 .online-connection-options p { color: var(--text-secondary, #aab1bd); font-size: .875rem; line-height: 1.5; margin: 0 0 14px; }
+.online-advanced{grid-column:1/-1}.online-advanced>summary{cursor:pointer;margin:14px 0;color:var(--text-secondary)}.remote-pagination{display:flex;justify-content:center;align-items:center;gap:18px;padding:24px}.remote-pagination button{padding:10px 15px;border-radius:10px;border:1px solid var(--border-color,rgba(255,255,255,.14));background:var(--bg-secondary,#171c24);color:inherit;cursor:pointer}.remote-pagination button:disabled{opacity:.45;cursor:not-allowed}.online-main a{color:var(--accent)}.online-toolbar:has(>input:first-child){grid-template-columns:1fr auto}

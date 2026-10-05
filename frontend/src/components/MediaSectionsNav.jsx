@@ -17,7 +17,7 @@ function galleryTarget(key, path) {
 export default function MediaSectionsNav() {
   const location = useLocation()
   const collectionType = new URLSearchParams(location.search).get('media_type') === 'video' ? 'video' : 'image'
-  const currentType = location.pathname.startsWith('/collections') ? collectionType
+  const currentType = location.pathname.startsWith('/collections') || location.pathname.startsWith('/shared/') ? collectionType
     : location.pathname === '/videos' ? 'video'
     : location.pathname === '/music' ? 'music'
     : location.pathname === '/' ? 'image' : null

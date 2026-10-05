@@ -51,7 +51,7 @@ function Sidebar({
 }) {
   const location = useLocation()
   const isGalleryPage = location.pathname === '/' || location.pathname === '/videos'
-  const isCollectionPage = location.pathname === '/collections' || location.pathname.startsWith('/collections/')
+  const isCollectionPage = location.pathname === '/collections' || location.pathname.startsWith('/collections/') || location.pathname.startsWith('/shared/')
   const galleryReturnTo = collectionGalleryTarget(location, mediaType)
   const collectionNavigationState = { galleryReturnTo }
   const galleryLabel = mediaType === 'video' ? 'Videos' : 'Images'

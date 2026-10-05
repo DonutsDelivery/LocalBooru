@@ -3,6 +3,12 @@
   "productName": "DonutMediaCenter",
   "version": "2.1.0",
   "identifier": "com.localbooru.app",
+  "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["donutmediacenter"] },
+      "mobile": [{ "scheme": ["donutmediacenter"], "appLink": false }]
+    }
+  },
   "build": {
     "frontendDist": "../frontend/dist",
     "devUrl": "http://localhost:5210",

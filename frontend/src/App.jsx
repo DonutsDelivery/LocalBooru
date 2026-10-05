@@ -31,6 +31,8 @@ import DirectoriesPage from './pages/DirectoriesPage'
 import CollectionsPage from './pages/CollectionsPage'
 import CollectionDetailPage from './pages/CollectionDetailPage'
 import OnlinePage from './pages/OnlinePage'
+import SharedCollectionPage from './pages/SharedCollectionPage'
+import HubLinkHandler from './components/HubLinkHandler'
 import WatchPage from './pages/WatchPage'
 import { getColumnCount, tileWidths } from './utils/gridLayout'
 import { completeAuthoritativeRefresh, createViewRequestOwner, galleryScopePreservesFolder, isUnexpectedEmptyPage, libraryRefreshMode, mergeAuthoritativePages, mergeFirstPage, reconcileAuthoritativeGallery, refreshGroupedFolderCatalog } from './utils/galleryState'
@@ -259,7 +261,7 @@ function SettingsPage({ onServerChange }) {
     ? section : 'directories'
   const changeTab = (tab) => navigate(tab === 'directories' ? '/settings' : `/settings/${tab}`, { state: location.state })
   const returnTo = location.state?.returnTo
-  const galleryReturnTo = typeof returnTo === 'string' && (returnTo === '/' || returnTo.startsWith('/?') || returnTo.startsWith('/videos') || returnTo.startsWith('/music') || returnTo.startsWith('/collections'))
+  const galleryReturnTo = typeof returnTo === 'string' && (returnTo === '/' || returnTo.startsWith('/?') || returnTo.startsWith('/videos') || returnTo.startsWith('/music') || returnTo.startsWith('/collections') || returnTo.startsWith('/shared/'))
     ? returnTo : '/'
   const [showContinueWatching, setShowContinueWatching] = useState(() => {
     return localStorage.getItem('localbooru_continueWatching') !== 'false'
@@ -342,7 +344,7 @@ function SettingsPage({ onServerChange }) {
 
             {/* Tab Contents - all rendered, visibility controlled by CSS for instant switching */}
             {activeTab === 'directories' && <div className="settings-tab-content active wide"><DirectoriesPage /></div>}
-            {activeTab === 'fediverse' && <div className="settings-tab-content active wide"><OnlinePage /></div>}
+            {activeTab === 'fediverse' && <div className="settings-tab-content active wide"><OnlinePage initialTab="sources" /></div>}
             <div className={`settings-tab-content ${activeTab === 'video' ? 'active' : ''}`}>
               <VideoPlaybackSettings />
 
@@ -2416,6 +2418,7 @@ function AppShell() {
       <ToastContainer />
       <BrowserRouter>
         <BackButtonHandler />
+        <HubLinkHandler />
         <MusicPlayerProvider key={libraryVersion}>
           <Routes>
             <Route path="/" element={<Gallery key="image" mediaType="image" />} />
@@ -2426,6 +2429,7 @@ function AppShell() {
             <Route path="/directories" element={<Navigate to="/settings" replace />} />
             <Route path="/collections" element={<CollectionsPage />} />
             <Route path="/collections/:id" element={<CollectionDetailPage />} />
+            <Route path="/shared/:sourceId" element={<SharedCollectionPage />} />
             <Route path="/watch/:token" element={<WatchPage />} />
             <Route path="/settings" element={<SettingsPage onServerChange={handleServerChange} />} />
             <Route path="/settings/:section" element={<SettingsPage onServerChange={handleServerChange} />} />

@@ -32,7 +32,9 @@ pub fn list_path(
         "donutbooru" => Ok(format!(
             "/images?page={page}&per_page={per_page}&sort_by=date&sort_order=desc&{encoded}"
         )),
-        "danbooru" => Ok(format!("/posts.json?page={page}&limit={per_page}&{encoded}")),
+        "danbooru" => Ok(format!(
+            "/posts.json?page={page}&limit={per_page}&{encoded}"
+        )),
         _ => Err(AppError::BadRequest("Unsupported provider family".into())),
     }
 }
@@ -82,7 +84,11 @@ fn tags(v: Option<&Value>) -> Vec<String> {
         Some(Value::String(s)) => s.split_whitespace().map(str::to_string).collect(),
         Some(Value::Array(a)) => a
             .iter()
-            .filter_map(|v| v.as_str().or_else(|| v.get("name").and_then(Value::as_str)).map(str::to_string))
+            .filter_map(|v| {
+                v.as_str()
+                    .or_else(|| v.get("name").and_then(Value::as_str))
+                    .map(str::to_string)
+            })
             .collect(),
         _ => vec![],
     }
@@ -164,6 +170,10 @@ fn normalize_item(provider: &str, source_id: &str, base: &str, r: &Value) -> Opt
         canonical_url: canonical,
         remote_revision: None,
         title: None,
+        caption: None,
+        alt_text: None,
+        content_warning: None,
+        creator: None,
         tags: item_tags,
         rating,
         source_url,
