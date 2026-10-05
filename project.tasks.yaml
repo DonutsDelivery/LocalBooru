@@ -2242,3 +2242,18 @@ tasks:
     started_at: 2026-10-05T22:15:32.969Z
     completed_at: 2026-10-05T22:29:06.467Z
     automation: manual_only
+  - _ulid: 01M473MGZRG8Z2TFJYSDM5D316
+    slugs:
+      - dmc-hub-relay
+    title: Connect DMC to community hubs over Iroh relay
+    type: task
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags:
+      - networking
+      - hub
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-05T22:41:01.944Z

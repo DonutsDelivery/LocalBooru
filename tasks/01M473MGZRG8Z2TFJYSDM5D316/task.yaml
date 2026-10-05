@@ -1,0 +1,22 @@
+_ulid: 01M473MGZRG8Z2TFJYSDM5D316
+slugs:
+  - dmc-hub-relay
+title: Connect DMC to community hubs over Iroh relay
+type: task
+description: Resume native DMC enrollment, scoped authorization, community catalog and Iroh relay
+  gateway. Fail closed without direct fallback, Anonymous unsupported. Preserve unrelated work. No
+  tests builds deployment or app restarts; source review only.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags:
+  - networking
+  - hub
+vcs_refs: []
+created_at: 2026-10-05T22:41:01.944Z
+todos: []
