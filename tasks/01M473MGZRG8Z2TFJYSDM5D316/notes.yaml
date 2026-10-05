@@ -6,3 +6,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-05T22:41:04.660Z
+  - _ulid: 01M473ZWTT9YJ06AW4X4FB0TZR
+    content: "Implemented worker slices: embedded Iroh0.97 transport and fixed-origin Rust gateway,
+      native source enrollment and PKCE callback backend, community settings and Shared collections
+      browsing. Source review fixed Standard mistakenly using HTTPS, media sample variant
+      compatibility, mode casing for browser disclosure, descriptor structure/bootstrap validation.
+      No runtime tests/builds per retained user constraint. Dependency locks are being updated
+      without compilation. Independent source review pending."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-05T22:47:14.522Z
