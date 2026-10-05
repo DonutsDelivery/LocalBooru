@@ -31,7 +31,7 @@ async function changeBackend(path, body, signal) {
 
 export async function saveCreateConfig(config, signal) {
   const status = await changeBackend('config', config, signal)
-  window.dispatchEvent(new CustomEvent('donut-create-backend-changed'))
+  window.dispatchEvent(new CustomEvent('donut-create-backend-changed', { detail: { backendUrl: status.backend_url, adopted: !!config.manage_local } }))
   return status
 }
 

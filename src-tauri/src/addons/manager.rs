@@ -1207,6 +1207,51 @@ impl AddonManager {
             return Err("Virtual environment python binary not found".into());
         }
 
+        if id == "donut-create" {
+            // Upgrade older add-on environments without touching the user's ComfyUI Python.
+            // Binary wheels only: process discovery must never start a compiler at app launch.
+            let dependency = manifest
+                .python_deps
+                .iter()
+                .find(|dep| dep.starts_with("psutil=="))
+                .copied()
+                .expect("Donut Create declares its process discovery dependency");
+            let version = dependency.trim_start_matches("psutil==");
+            let mut probe = tokio::process::Command::new(&python);
+            probe
+                .args([
+                    "-c",
+                    "import psutil, sys; sys.exit(psutil.__version__ != sys.argv[1])",
+                    version,
+                ])
+                .kill_on_drop(true);
+            #[cfg(target_os = "windows")]
+            probe.creation_flags(0x08000000);
+            let available = matches!(tokio::time::timeout(Duration::from_secs(10), probe.output()).await,
+                Ok(Ok(output)) if output.status.success());
+            if !available {
+                let mut install = tokio::process::Command::new(&python);
+                install
+                    .args([
+                        "-m",
+                        "pip",
+                        "install",
+                        "--only-binary=:all:",
+                        "--disable-pip-version-check",
+                        dependency,
+                    ])
+                    .kill_on_drop(true);
+                #[cfg(target_os = "windows")]
+                install.creation_flags(0x08000000);
+                let installed = matches!(tokio::time::timeout(Duration::from_secs(120), install.output()).await,
+                    Ok(Ok(output)) if output.status.success());
+                if !installed {
+                    // URL-only connections remain usable offline; discovery reports how to repair it.
+                    log::warn!("[AddonManager] Donut Create local process discovery dependency unavailable; repair the add-on to retry");
+                }
+            }
+        }
+
         if id == "auto-tagger" {
             if let Err(error) = sidecar::validate_python_minor(&python, 10, 13) {
                 self.set_status(id, AddonStatus::Error(error.clone()));

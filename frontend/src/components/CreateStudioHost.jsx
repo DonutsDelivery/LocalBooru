@@ -293,7 +293,11 @@ export default function CreateStudioHost() {
   }, [invalidateSession])
 
   useEffect(() => {
-    const changed = () => invalidateSession('The backend changed. Open a new studio session to continue.')
+    const changed = event => {
+      // Adopting the connected process changes ownership, not the active graph or queue.
+      if (event.detail?.adopted && event.detail.backendUrl === sessionRef.current?.backend_url) return
+      invalidateSession('The backend changed. Open a new studio session to continue.')
+    }
     const changingServer = () => {
       const hadStudio = !!sessionRef.current || openingLock.current || initialLaunch.current
       serverChanging.current = true
