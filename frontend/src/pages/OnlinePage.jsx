@@ -25,6 +25,14 @@ function sourceDefaults(provider) {
   return SOURCE_DEFAULTS[provider] || { display_name: '', base_url: '' }
 }
 
+function isPublicDonutBooru(baseUrl) {
+  try {
+    return new URL(baseUrl.trim()).origin === SOURCE_DEFAULTS.donutbooru.base_url
+  } catch {
+    return false
+  }
+}
+
 const assetUrl = (item, kind = 'sample') =>
   getMediaUrl(`/api/online/sources/${encodeURIComponent(item.source_id)}/items/${encodeURIComponent(item.remote_post_id)}/asset/${kind}`)
 
@@ -49,6 +57,7 @@ export default function OnlinePage() {
   const [connectionForm, setConnectionForm] = useState({ account_display_name: '', auth_kind: 'bearer', secret: '' })
 
   const selectedSource = useMemo(() => sources.find(source => source.source_id === sourceId), [sources, sourceId])
+  const publicDonutBooru = isPublicDonutBooru(form.base_url)
 
   const selectProvider = provider => {
     setForm(current => {
@@ -117,7 +126,7 @@ export default function OnlinePage() {
     event.preventDefault()
     setBusy(true)
     try {
-      const source = await createRemoteSource(form)
+      const source = await createRemoteSource({ ...form, allow_local_network: publicDonutBooru ? false : form.allow_local_network })
       await loadSources()
       setSourceId(source.source_id)
       setForm({ ...form, ...sourceDefaults(form.provider_family) })
@@ -226,7 +235,11 @@ export default function OnlinePage() {
         <label>Provider<select value={form.provider_family} onChange={event => selectProvider(event.target.value)}><option value="danbooru">Danbooru-compatible</option><option value="donutbooru">DonutBooru</option></select></label>
         <label>HTTPS base URL<input required type="url" placeholder="https://example.test" value={form.base_url} onChange={event => setForm({ ...form, base_url: event.target.value })} /></label>
         <label>Content policy<select value={form.policy_profile} onChange={event => setForm({ ...form, policy_profile: event.target.value })}><option value="unrestricted">Unrestricted</option><option value="safe">Safe only</option><option value="adult-hidden">Adult content hidden</option></select></label>
-        <label className="online-checkbox"><input type="checkbox" checked={form.allow_local_network} onChange={event => setForm({ ...form, allow_local_network: event.target.checked })} />Allow a node on my local network</label>
+        {!publicDonutBooru && <details className="online-connection-options" key={form.provider_family}>
+          <summary>Advanced connection settings</summary>
+          <label className="online-checkbox"><input type="checkbox" checked={form.allow_local_network} aria-describedby="source-local-network-help" onChange={event => setForm({ ...form, allow_local_network: event.target.checked })} />Allow connections to private network addresses</label>
+          <p id="source-local-network-help">Enable only for a source hosted on this computer or a private network, such as localhost or 192.168.1.10. DMC can then connect to private addresses and use HTTP for that source. This does not share your library or allow incoming connections.</p>
+        </details>}
         <button disabled={busy}>Save source</button>
       </form>
       <section className="online-panel"><h2>Connected sources</h2>{sources.length === 0 && <p>No sources configured.</p>}{sources.map(source => <article className="source-row" key={source.source_id}><div><strong>{source.display_name}</strong><small>{source.normalized_base_url}</small><small>{source.capabilities.upload ? 'Browse + publish' : 'Browse only'} · {source.last_probe_at ? 'probed' : 'not probed'}</small></div><div><button onClick={async () => { setSourceId(source.source_id); try { await probeRemoteSource(source.source_id); await loadSources(); const result = await getRemoteConnections(source.source_id); setConnections(result.connections || []); setNotice('Probe succeeded.') } catch (error) { setNotice(errorMessage(error)) } }}>Probe</button><button className="danger" onClick={async () => { if (window.confirm(`Remove ${source.display_name}?`)) { await deleteRemoteSource(source.source_id); await loadSources() } }}>Remove</button></div></article>)}</section>
