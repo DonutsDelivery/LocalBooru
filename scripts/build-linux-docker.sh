@@ -264,6 +264,8 @@ install_runtime_tree() {
     "$destination/usr/share/doc/localbooru/THIRD_PARTY_NOTICES.md"
   cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/TRADEMARKS.md" "$destination/usr/share/doc/localbooru/"
   cp -a "$ROOT/LICENSES" "$destination/usr/share/doc/localbooru/"
+  python3 "$ROOT/scripts/install-linux-desktop.py" \
+    --data-dir "$destination/usr/share" --launcher donutmediacenter
 }
 
 package_deb() {
@@ -338,6 +340,11 @@ package_appimage() {
   (cd "$BUILD" && chmod +x "$base" && "$base" --appimage-extract >/dev/null)
   mv "$BUILD/squashfs-root" "$stage"
   install_runtime_tree "$stage"
+  # AppImage tools also consume a desktop entry and icon at the AppDir root.
+  rm -f "$stage/DonutMediaCenter.desktop" "$stage/donutmediacenter.desktop" "$stage/localbooru.desktop"
+  cp "$stage/usr/share/applications/com.localbooru.app.desktop" "$stage/"
+  cp "$ROOT/assets/icon.png" "$stage/com.localbooru.app.png"
+  ln -sfn com.localbooru.app.png "$stage/.DirIcon"
   mv "$stage/AppRun" "$stage/AppRun.tauri"
   install -m 0755 "$ROOT/release/linux/AppRun" "$stage/AppRun"
 

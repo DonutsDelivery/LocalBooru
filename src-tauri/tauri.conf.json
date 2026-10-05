@@ -16,6 +16,7 @@
     }
   },
   "app": {
+    "enableGTKAppId": true,
     "windows": [
       {
         "title": "DonutMediaCenter",

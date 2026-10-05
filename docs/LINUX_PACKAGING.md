@@ -28,3 +28,22 @@ SVP runtime ownership, verification gates, and GitHub fallback policy—is:
 
 Do not add host package-install instructions here. The Dockerfile is the Linux
 toolchain source of truth.
+## GNOME and Wayland icon identity
+
+The GTK application ID is `com.localbooru.app`, matching the installed
+`com.localbooru.app.desktop` and hicolor icon. `StartupWMClass=donutmediacenter`
+also matches older binaries and X11 windows. The historical data/package ID is
+preserved; this does not create a new library.
+
+The local installer registers this identity automatically, including when an
+existing binary skips compilation. To repair an existing local desktop entry
+without rebuilding or closing DMC:
+
+```bash
+python3 scripts/install-linux-desktop.py --launcher "$PWD/run.sh"
+```
+
+Linux packages use the same registrar against their staging directory. It never
+updates host caches or favorites when `--data-dir` is supplied. Local repairs
+retain old launchers as hidden aliases and migrate an existing GNOME pin to the
+canonical desktop entry.

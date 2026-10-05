@@ -44,6 +44,7 @@ flock -w "$LOCK_TIMEOUT" 9 || {
 }
 
 if [[ $IF_MISSING -eq 1 && -x "$INSTALLED_APP" && -s "$INSTALLED_FRONTEND" ]]; then
+  python3 "$ROOT/scripts/install-linux-desktop.py" --launcher "$ROOT/run.sh"
   exit 0
 fi
 
@@ -137,5 +138,7 @@ mv -Tf "$STAGED_APP" "$INSTALL_DIR/localbooru"
 rm -rf "$BACKUP_DIST"
 BACKUP_DIST=""
 trap - EXIT
+
+python3 "$ROOT/scripts/install-linux-desktop.py" --launcher "$ROOT/run.sh"
 
 printf '[install-local-app] Installed %s with browser frontend\n' "$INSTALLED_APP"
