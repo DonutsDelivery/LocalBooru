@@ -19,6 +19,15 @@ use their own supported controls; do not send them OpenAI reasoning parameters.
 - Preserve unrelated changes. Stage explicit paths only.
 - Do not push, publish, or rewrite history unless the user explicitly asks.
 
+## Licensing and branding
+
+- First-party DMC code uses GPL-3.0-only. Preserve `NOTICE`, the historical MIT
+  notice in `LICENSES/MIT-legacy.txt`, and all separately licensed component notices.
+- Follow `CONTRIBUTING.md` for new code and `TRADEMARKS.md` for name/logo use.
+- Future packages must include the application license and complete corresponding
+  source for each exact shipping revision; see `docs/LICENSING.md`. Never
+  retroactively change the license of already published MIT releases.
+
 ## Build and runtime locks
 
 - Every compiler and Docker build participates in the host-wide heavy-build gate shared with DonutStudio and Jak X. The LocalBooru project lock is a compatibility alias to that host token.

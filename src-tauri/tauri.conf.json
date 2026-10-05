@@ -42,7 +42,11 @@
   "bundle": {
     "active": true,
     "resources": {
-      "../frontend/dist/": "frontend/dist/"
+      "../frontend/dist/": "frontend/dist/",
+      "../LICENSE": "licenses/LICENSE",
+      "../NOTICE": "licenses/NOTICE",
+      "../TRADEMARKS.md": "licenses/TRADEMARKS.md",
+      "../LICENSES/": "licenses/LICENSES/"
     },
     "targets": [
       "deb",
@@ -60,7 +64,7 @@
     "shortDescription": "Local image, video, and music library",
     "longDescription": "DonutMediaCenter organizes local images, videos, and music with optional AI-powered image tagging.",
     "homepage": "https://github.com/DonutsDelivery/LocalBooru",
-    "license": "MIT",
+    "license": "GPL-3.0-only",
     "licenseFile": "../LICENSE",
     "publisher": "DonutsDelivery",
     "linux": {

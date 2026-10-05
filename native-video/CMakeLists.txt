@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-only
 cmake_minimum_required(VERSION 3.20)
 project(localbooru_native_video LANGUAGES CXX)
 

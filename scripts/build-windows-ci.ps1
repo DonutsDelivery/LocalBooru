@@ -58,7 +58,9 @@ $PortableDir = Join-Path $env:RUNNER_TEMP 'DonutMediaCenter-Windows'
 Remove-Item -Recurse -Force $PortableDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $PortableDir | Out-Null
 Copy-Item $Binary (Join-Path $PortableDir 'DonutMediaCenter.exe')
-Copy-Item (Join-Path $Root 'LICENSE') $PortableDir
+foreach ($Notice in @('LICENSE', 'NOTICE', 'TRADEMARKS.md', 'LICENSES')) {
+  Copy-Item -Recurse (Join-Path $Root $Notice) $PortableDir
+}
 
 $Zip = Join-Path $DistDir 'DonutMediaCenter-Windows.zip'
 Compress-Archive -Path (Join-Path $PortableDir '*') -DestinationPath $Zip -CompressionLevel Optimal

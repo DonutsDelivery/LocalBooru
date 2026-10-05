@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <vapoursynth/VSScript4.h>
@@ -765,6 +766,6 @@ GST_PLUGIN_DEFINE(
     "LocalBooru buffered VapourSynth bridge",
     plugin_init,
     "0.1.0",
-    "LGPL",
+    "GPL",
     "LocalBooru",
     "https://github.com/DonutsDelivery/LocalBooru")

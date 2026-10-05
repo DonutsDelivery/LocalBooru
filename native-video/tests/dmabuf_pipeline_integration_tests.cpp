@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-only
 #include "dmabuf_frame_decoder.h"
 #include "dmabuf_surface_producer.h"
 #include "surface_channel.h"

@@ -18,6 +18,7 @@ import NetworkSettings from './components/NetworkSettings'
 import ServerSettings from './components/ServerSettings'
 import ServerSelectScreen from './components/ServerSelectScreen'
 import MigrationSettings from './components/MigrationSettings'
+import LicenseNotices from './components/LicenseNotices'
 
 import AddonManager from './components/AddonManager'
 import AddonSettings from './components/AddonSettings'
@@ -465,6 +466,7 @@ function SettingsPage({ onServerChange }) {
                 </button>
               </section>
             )}
+            <LicenseNotices />
             </div>
           </div>
         </main>

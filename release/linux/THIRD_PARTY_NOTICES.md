@@ -1,6 +1,9 @@
 # LocalBooru Linux Native Runtime Notices
 
-LocalBooru itself is distributed under the MIT license in `LICENSE`.
+DonutMediaCenter itself is distributed under GPL-3.0-only in `LICENSE`.
+Retain `NOTICE` and `LICENSES/MIT-legacy.txt` for code previously distributed
+under MIT. Branding is addressed separately in `TRADEMARKS.md`.
+Third-party runtime components retain the licenses described below.
 
 The Linux release bundles modified WebKitGTK libraries solely to expose the
 application-selected GStreamer video-filter hook and WebProcess path override.
@@ -34,7 +37,7 @@ and license notices are included alongside this file in the runtime `licenses`
 directory.
 
 The `libgstlocalboorupass.so` and `libgstlocalbooruvs.so` bridge plugins are
-LocalBooru components covered by the repository MIT license.
+DonutMediaCenter components covered by the repository GPL-3.0-only license.
 
 SVP Manager and SVPflow are **not bundled**. They are detected only from a
 legitimate user installation and remain governed by their upstream terms.

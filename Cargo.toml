@@ -8,7 +8,7 @@ resolver = "2"
 [workspace.package]
 version = "2.1.0"
 authors = ["DonutsDelivery <donutsdelivery@users.noreply.github.com>"]
-license = "MIT"
+license = "GPL-3.0-only"
 repository = "https://github.com/DonutsDelivery/LocalBooru"
 edition = "2021"
 

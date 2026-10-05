@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-only
 #include "audio_playback_session.h"
 
 #include <algorithm>

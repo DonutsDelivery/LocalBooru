@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-only
 #include "playback_session.h"
 
 #include "svp_frame_source.h"

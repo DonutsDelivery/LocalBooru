@@ -221,6 +221,8 @@ stage_native_runtime() {
   cp "$BUILD/vapoursynth-r75/COPYING.LESSER" "$runtime/licenses/VapourSynth-COPYING.LESSER"
   cp "$ROOT/release/linux/THIRD_PARTY_NOTICES.md" "$runtime/licenses/"
   cp "$ROOT/LICENSE" "$runtime/licenses/DonutMediaCenter-LICENSE"
+  cp "$ROOT/NOTICE" "$ROOT/TRADEMARKS.md" "$runtime/licenses/"
+  cp -a "$ROOT/LICENSES" "$runtime/licenses/"
   if [[ -f /usr/share/doc/python3.12/copyright ]]; then
     cp /usr/share/doc/python3.12/copyright "$runtime/licenses/Python-copyright"
   fi
@@ -260,7 +262,8 @@ install_runtime_tree() {
   mkdir -p "$destination/usr/share/doc/localbooru"
   cp "$ROOT/release/linux/THIRD_PARTY_NOTICES.md" \
     "$destination/usr/share/doc/localbooru/THIRD_PARTY_NOTICES.md"
-  cp "$ROOT/LICENSE" "$destination/usr/share/doc/localbooru/LICENSE"
+  cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/TRADEMARKS.md" "$destination/usr/share/doc/localbooru/"
+  cp -a "$ROOT/LICENSES" "$destination/usr/share/doc/localbooru/"
 }
 
 package_deb() {
@@ -316,7 +319,7 @@ package_rpm() {
 
   fpm -s dir -t rpm -C "$stage" \
     -n localbooru -v "$version" --iteration 1 \
-    --license MIT --category Graphics \
+    --license GPL-3.0-only --category Graphics \
     --description 'Local image, video, and music library' \
     --url 'https://github.com/DonutsDelivery/LocalBooru' \
     --depends gtk3 --depends webkit2gtk4.1 \

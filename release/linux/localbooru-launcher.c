@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-only
 // Installed as /usr/bin/donutmediacenter by the Linux package builder. The real Tauri
 // executable lives under /usr/lib/localbooru so this launcher can select the
 // bundled patched WebKit runtime before the dynamic loader starts the app.

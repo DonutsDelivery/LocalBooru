@@ -1,6 +1,6 @@
 # LocalBooru LADA sidecar
 
-This directory is a separately licensed **AGPL-3.0-only** add-on. It is not part of LocalBooru's MIT base application artifact.
+This directory is a separately licensed **AGPL-3.0-only** add-on. It is not part of DonutMediaCenter's GPL-3.0-only base application artifact.
 
 The sidecar adapts pinned [LADA](https://github.com/ladaapp/lada) `FrameRestorer` output into LocalBooru's versioned, bounded local protocol. It opens only canonical local paths supplied by LocalBooru, preserves source timestamps, and exposes restored BGR frames through three leased shared-memory buffers.
 

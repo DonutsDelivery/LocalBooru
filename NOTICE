@@ -1,0 +1,36 @@
+DonutMediaCenter
+Copyright (c) 2024-2026 DonutsDelivery and contributors.
+
+SPDX-License-Identifier: GPL-3.0-only
+
+DonutMediaCenter is free software: you can redistribute it and/or modify it
+under the terms of version 3 of the GNU General Public License, as published
+by the Free Software Foundation. This grant is version 3 only.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See LICENSE for the full GNU GPL version 3.
+
+Licensing transition: 2026-10-05, after the published 2.1.0 release.
+The preceding main revision is a433698a220daec60e25e3f29e8c4675b46200c2.
+Previously distributed MIT versions and contributions remain available under
+their original permissions. Their copyright and permission notice is retained
+verbatim in LICENSES/MIT-legacy.txt; include it when redistributing those
+portions. The GPL grant for this distribution does not revoke that MIT grant or any
+component licenses previously granted for earlier versions.
+
+Unless a file or component specifies different terms, the root GPL license
+applies to first-party application code, native helpers, bridge plugins and
+add-ons. Third-party components retain their own licenses and notices.
+In particular, vendor/wayland-scanner remains MIT, Gradle wrapper files remain
+Apache-2.0, and addons/lada remains AGPL-3.0-only. Runtime dependencies,
+ComfyUI, custom nodes, downloaded models and user-supplied SVP components
+are governed separately; the application license does not license them or
+any media in the user's library. See docs/LICENSING.md.
+
+No trademark rights are granted by the code license. See TRADEMARKS.md for
+permitted use of the DonutMediaCenter name and logo. This does not impose an
+additional restriction on copying or modifying the software under the GPL.
+
+Project and source: https://github.com/DonutsDelivery/LocalBooru
+Official releases: https://github.com/DonutsDelivery/LocalBooru/releases

@@ -174,7 +174,15 @@ retired Electron workflow must not be used for current releases.
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+DonutMediaCenter is licensed under **GNU GPL version 3 only (GPL-3.0-only)**.
+See [LICENSE](LICENSE) and [NOTICE](NOTICE). You may charge for copies;
+distributed covered derivatives must provide corresponding source under GPLv3.
+
+The DonutMediaCenter name and logo are governed separately by the
+[trademark policy](TRADEMARKS.md). Modified apps must use their own branding.
+Earlier MIT releases retain their original permissions; the historical notice
+is preserved in [LICENSES/MIT-legacy.txt](LICENSES/MIT-legacy.txt).
+See [the licensing guide](docs/LICENSING.md) for component exceptions and release obligations.
 
 ## Credits
 

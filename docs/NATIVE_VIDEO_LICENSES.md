@@ -4,12 +4,12 @@ This is an engineering inventory, not legal advice. Reuse decisions must be upda
 
 | Component | Evidence | LocalBooru decision |
 |---|---|---|
-| LocalBooru application | Root `LICENSE`: MIT | Keep Rust/React/Tauri integration MIT. |
-| Newly authored LocalBooru native protocol/coordinator/helper skeleton | Created in this repository without copying Pure Harmony source | Rust protocol/coordinator remain MIT. The separately built helper's final license must match the exact linked FFmpeg configuration; a GPL-enabled FFmpeg build requires GPL-compatible helper distribution and corresponding source. |
-| Pure Harmony `video-helper` | `video-helper/CMakeLists.txt:1-8` explicitly calls the helper GPL-2.0-or-later and says its source is published | May be distributed as a separate GPL sidecar if its corresponding source, license and notices are provided. Do not link it into the MIT Tauri binary. Keep IPC/process separation. |
+| LocalBooru application | Root `LICENSE`: GPL-3.0-only; historical MIT notice in `LICENSES/MIT-legacy.txt` | Distribute Rust/React/Tauri integration under GPLv3 and retain historical notices. |
+| Newly authored LocalBooru native protocol/coordinator/helper skeleton | Created in this repository without copying Pure Harmony source | New first-party native integration is GPL-3.0-only; preserve the historical MIT notice. The separately built helper's final license must match the exact linked FFmpeg configuration; a GPL-enabled FFmpeg build requires GPL-compatible helper distribution and corresponding source. |
+| Pure Harmony `video-helper` | `video-helper/CMakeLists.txt:1-8` explicitly calls the helper GPL-2.0-or-later and says its source is published | May be distributed as a separate GPL sidecar if its corresponding source, license and notices are provided. Retain IPC/process separation and the helper's upstream GPL notices. |
 | Pure Harmony plugin/standalone and `plugin/Source/SharedGpuSurface*` | `LICENSE-COMMERCIAL.md` applies to Arbit software; SharedGpuSurface headers have no inspected standalone SPDX grant | **Blocked for direct copying.** Clean-room implement a LocalBooru consumer from documented wire behavior, or obtain an explicit MIT/GPL-compatible relicensing grant from the owner. |
 | `SharedGpuSurfaceProtocol.h` | Stored under commercial `plugin/Source`, but included by the GPL helper through `video-helper/CMakeLists.txt:339-342`; no standalone license header found | Licensing is ambiguous. Do not copy until explicitly dual-licensed. Define a fresh LocalBooru protocol and adapt a GPL helper implementation to it. |
-| FFmpeg/libav | Current system libraries; Pure Harmony helper declares GPL sidecar specifically because it links FFmpeg | Keep FFmpeg in a separately distributed helper. Record the exact configured FFmpeg license/features in release artifacts and provide required source/notices. Do not link libav into LocalBooru’s MIT Rust binary. |
+| FFmpeg/libav | Current system libraries; Pure Harmony helper declares GPL sidecar specifically because it links FFmpeg | Keep FFmpeg in a separately distributed helper. Record the exact configured FFmpeg license/features in release artifacts and provide required source/notices. The GPLv3 application license does not replace FFmpeg's component notices or source obligations. |
 | `rife_net` | `video-helper/src/rife_net/LICENSE.nihui`; Pure Harmony comments identify MIT upstream | Reuse only after preserving the upstream license and verifying every vendored file’s provenance. Keep optional model licenses separate. |
 | ncnn | Pure Harmony build comments identify BSD-3-Clause | Preserve BSD notice and source attribution if enabled. |
 | nlohmann/json | MIT | Compatible; include notice in helper third-party manifest. |
@@ -45,7 +45,7 @@ Consequently, release builds must treat the whole SVPflow installation as user-s
 
 ## Required release actions
 
-1. Keep explicit `SPDX-License-Identifier: MIT` headers on every independently authored native-helper source/header/test and its CMake manifest. The linked helper artifact's distribution obligations still follow the exact FFmpeg configuration.
+1. Keep explicit `SPDX-License-Identifier: GPL-3.0-only` headers on every independently authored native-helper source/header/test and its CMake manifest. The linked helper artifact's distribution obligations still follow the exact FFmpeg configuration.
 2. If the Pure Harmony GPL helper is reused, ship it as a separate process with complete corresponding source and GPL notices.
 3. Obtain an explicit license for `SharedGpuSurfaceProtocol.h` before copying it; otherwise retain the independently designed LocalBooru protocol.
 4. Detect, but do not redistribute, SVP unless a written redistributable grant is obtained.

@@ -7,6 +7,13 @@ this repository. Never back up, copy, or commit a user's library, thumbnails,
 media, databases, settings, logs, caches, or other private files into a
 worktree. See `docs/agents/repository-safety.md`.
 
+## Licensing after the rebrand release
+
+Future DMC releases use GPL-3.0-only. Follow [the licensing guide](../LICENSING.md)
+for required notices and the complete corresponding source of every shipping
+platform revision. Preserve the licenses of published 2.1.0 and earlier
+artifacts; do not replace them with relicensed packages.
+
 ## Platform ownership
 
 | Platform | Normal build owner | Fallback |

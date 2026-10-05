@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 #include <gst/gst.h>
 #include <gst/video/gstvideofilter.h>
 
@@ -58,6 +59,6 @@ GST_PLUGIN_DEFINE(
     "LocalBooru WebKit video-filter attachment probe",
     plugin_init,
     "0.1.0",
-    "LGPL",
+    "GPL",
     "LocalBooru",
     "https://github.com/DonutsDelivery/LocalBooru")

@@ -107,11 +107,12 @@ INSTALLER_PAYLOAD="$BUILD_ROOT/nsis-payload"
 rm -rf "$STAGE" "$INSTALLER_PAYLOAD"
 mkdir -p "$STAGE" "$INSTALLER_PAYLOAD"
 cp "$BINARY" "$STAGE/DonutMediaCenter.exe"
-cp LICENSE "$STAGE/LICENSE"
+cp LICENSE NOTICE TRADEMARKS.md "$STAGE/"
+cp -a LICENSES "$STAGE/"
 
 (
   cd "$STAGE"
-  zip -9 -q "$DIST_DIR/DonutMediaCenter-Windows.zip" DonutMediaCenter.exe LICENSE
+  zip -9 -q -r "$DIST_DIR/DonutMediaCenter-Windows.zip" DonutMediaCenter.exe LICENSE NOTICE TRADEMARKS.md LICENSES
 )
 cp "$INSTALLER" "$DIST_DIR/DonutMediaCenter-Windows-Setup.exe"
 
