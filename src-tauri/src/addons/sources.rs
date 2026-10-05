@@ -18,6 +18,10 @@ pub fn get_addon_sources(id: &str) -> Option<&'static [AddonSource]> {
     match id {
         "donut-create" => Some(&[
             (
+                "local_backend.py",
+                include_str!("../../../addons/donut-create/local_backend.py"),
+            ),
+            (
                 "app.py",
                 include_str!("../../../addons/donut-create/app.py"),
             ),

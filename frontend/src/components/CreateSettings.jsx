@@ -14,6 +14,13 @@ import {
 import { toast } from './Toast'
 import './CreateStudio.css'
 
+function isLocalBackend(value) {
+  try {
+    const host = new URL(value).hostname.toLowerCase()
+    return host === 'localhost' || host === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(host)
+  } catch { return false }
+}
+
 export default function CreateSettings({ onStatusChange, backendOnly = false, hideBackendControls = false }) {
   const [addon, setAddon] = useState(null)
   const [status, setStatus] = useState(null)
@@ -22,6 +29,7 @@ export default function CreateSettings({ onStatusChange, backendOnly = false, hi
   const [error, setError] = useState('')
   const [mode, setMode] = useState('managed')
   const [backendUrl, setBackendUrl] = useState('http://127.0.0.1:8188')
+  const [manageLocal, setManageLocal] = useState(true)
   const [comfyDirectory, setComfyDirectory] = useState('')
   const [pythonExecutable, setPythonExecutable] = useState('')
   const [runtime, setRuntime] = useState('cuda')
@@ -59,7 +67,7 @@ export default function CreateSettings({ onStatusChange, backendOnly = false, hi
         if (!initialized.current) {
           initialized.current = true
           setMode(nextStatus.mode || 'managed')
-          setBackendUrl(nextStatus.mode === 'existing' ? nextStatus.backend_url || 'http://127.0.0.1:8188' : 'http://127.0.0.1:8188')
+          setBackendUrl(nextStatus.backend_url || 'http://127.0.0.1:8188')
           setComfyDirectory(nextStatus.comfy_directory || '')
           setPythonExecutable(nextStatus.python_executable || '')
           setRuntime(nextStatus.setup?.default_runtime || 'cuda')
@@ -183,18 +191,31 @@ export default function CreateSettings({ onStatusChange, backendOnly = false, hi
     })
   }
 
+  function applyConfiguration(nextStatus) {
+    setMode(nextStatus.mode)
+    setBackendUrl(nextStatus.backend_url)
+    setComfyDirectory(nextStatus.comfy_directory || '')
+    setPythonExecutable(nextStatus.python_executable || '')
+    return nextStatus
+  }
+
+  function manageConnectedBackend() {
+    runAction('Detecting installation', async (signal, ensureCurrent) => {
+      const nextStatus = await saveCreateConfig({ mode: 'existing', backend_url: status.backend_url, manage_local: true }, signal)
+      ensureCurrent()
+      return applyConfiguration(nextStatus)
+    })
+  }
+
   function configureBackend() {
     runAction('Connecting', async (signal, ensureCurrent) => {
       const nextStatus = await saveCreateConfig({ mode,
-        ...(mode === 'existing' ? { backend_url: backendUrl.trim() }
+        ...(mode === 'existing' ? { backend_url: backendUrl.trim(), manage_local: manageLocal && isLocalBackend(backendUrl.trim()) }
           : mode === 'local' ? { comfy_directory: comfyDirectory.trim(),
             ...(pythonExecutable.trim() ? { python_executable: pythonExecutable.trim() } : {}) } : {}),
       }, signal)
       ensureCurrent()
-      setComfyDirectory(nextStatus.comfy_directory || '')
-      setPythonExecutable(nextStatus.python_executable || '')
-      setStatus(nextStatus)
-      statusCallback.current?.(nextStatus)
+      return applyConfiguration(nextStatus)
     })
   }
 
@@ -204,7 +225,8 @@ export default function CreateSettings({ onStatusChange, backendOnly = false, hi
   const installing = setup.running === true
   const busy = loading || action !== null || switchingServer
   const active = addon?.installed && addon.status === 'running'
-  const configured = status?.mode === mode && (mode !== 'existing' || status.backend_url === backendUrl.trim())
+  const wantsManagement = mode === 'existing' && manageLocal && isLocalBackend(backendUrl.trim())
+  const configured = !wantsManagement && status?.mode === mode && (mode !== 'existing' || status.backend_url === backendUrl.trim())
     && (mode !== 'local' || (status.comfy_directory === comfyDirectory.trim() && (status.python_executable || '') === pythonExecutable.trim()))
   const controllable = ['managed', 'local'].includes(status?.mode)
   const catalog = status?.catalog || setup.catalog || {}
@@ -230,7 +252,10 @@ export default function CreateSettings({ onStatusChange, backendOnly = false, hi
       {status?.backend?.error && <p className="create-message error" role="alert">{status.backend.error}</p>}
       {status?.backend?.missing_nodes?.length > 0 && <p>Missing node packs or nodes: {status.backend.missing_nodes.join(', ')}</p>}
       {status?.backend?.missing_models?.length > 0 && <p>Missing models: {status.backend.missing_models.join(', ')}</p>}
-      {!controllable && <p>To start, stop and restart from DMC, select Manage existing local installation on the computer hosting ComfyUI.</p>}
+      {!controllable && (isLocalBackend(status?.backend_url) ? <>
+        <p>Detect this running installation to enable Start, Stop and Restart. ComfyUI keeps running during discovery.</p>
+        <button type="button" disabled={busy || installing || !status?.backend?.running} onClick={manageConnectedBackend}>{action === 'Detecting installation' ? 'Detecting installation…' : 'Manage this ComfyUI'}</button>
+      </> : <p>To control ComfyUI, register its local installation on the computer hosting the DMC add-on.</p>)}
       <div className="create-actions">
         <button type="button" disabled={!controllable || busy || installing || status?.backend?.running || status?.backend?.owned} onClick={() => runAction('Starting backend', startCreateBackend)}>{action === 'Starting backend' ? 'Starting backend…' : 'Start ComfyUI'}</button>
         <button type="button" disabled={!controllable || loading || switchingServer || installing || !status?.backend?.owned || (action !== null && action !== 'Starting backend')} onClick={() => runAction('Stopping backend', stopCreateBackend, true)}>{action === 'Stopping backend' ? 'Stopping backend…' : 'Stop ComfyUI'}</button>
@@ -266,15 +291,17 @@ export default function CreateSettings({ onStatusChange, backendOnly = false, hi
         <label className="create-radio"><input type="radio" name="create-backend" value="managed" checked={mode === 'managed'} onChange={() => setMode('managed')} />Managed ComfyUI</label>
         <label className="create-radio"><input type="radio" name="create-backend" value="local" checked={mode === 'local'} onChange={() => setMode('local')} />Manage existing local installation</label>
         <label className="create-radio"><input type="radio" name="create-backend" value="existing" checked={mode === 'existing'} onChange={() => setMode('existing')} />Connect existing ComfyUI</label>
-        {mode === 'existing' && (
+        {mode === 'existing' && <>
           <label className="create-field">Backend URL
             <input type="url" value={backendUrl} placeholder="http://127.0.0.1:8188" onChange={event => setBackendUrl(event.target.value)} />
           </label>
-        )}
+          {isLocalBackend(backendUrl.trim()) && <label className="create-radio"><input type="checkbox" checked={manageLocal} onChange={event => setManageLocal(event.target.checked)} />Detect and manage this local installation</label>}
+          <p className="create-download-note">Local discovery reuses the running backend’s Python, folder, port and launch options on the computer hosting this add-on.</p>
+        </>}
         {mode === 'local' && <>
           <label className="create-field">ComfyUI folder on this server<input value={comfyDirectory} placeholder="Folder containing main.py" onChange={event => setComfyDirectory(event.target.value)} /></label>
           <label className="create-field">Python executable<input value={pythonExecutable} placeholder="Auto-detect the installation’s venv" onChange={event => setPythonExecutable(event.target.value)} /></label>
-          <p className="create-download-note">Uses your installed ComfyUI, models and node packs. DMC starts it on port 18010 and manages the process it launches.</p>
+          <p className="create-download-note">{status?.detected_local && configured ? `Detected installation at ${status.backend_url}. Restart keeps its original launch options and Python environment.` : 'Uses your installed ComfyUI, models and node packs. Manual setup starts it on port 18010.'}</p>
         </>}
         <button type="button" disabled={configured || status?.backend?.owned || (mode === 'local' && !comfyDirectory.trim()) || (mode === 'existing' && !/^https?:\/\//i.test(backendUrl.trim()))} onClick={configureBackend}>
           {action === 'Connecting' ? 'Connecting…' : mode === 'existing' ? 'Connect backend' : mode === 'local' ? 'Use this installation' : 'Use managed backend'}

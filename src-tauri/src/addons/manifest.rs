@@ -114,7 +114,7 @@ static ADDON_REGISTRY: LazyLock<Vec<AddonManifest>> = LazyLock::new(|| {
             installation: AddonInstallation::PythonVenv,
             port: Some(18009),
             // The ComfyUI runtime and models have their own managed environment.
-            python_deps: &["httpx==0.28.1", "websockets==15.0.1"],
+            python_deps: &["httpx==0.28.1", "websockets==15.0.1", "psutil==7.2.2"],
         },
         AddonManifest {
             id: "curation-game",

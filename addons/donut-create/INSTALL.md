@@ -12,16 +12,37 @@ managed port is reported as a conflict; the add-on does not adopt that process
 or fall back to 8188. Connecting to another ComfyUI installation requires
 explicitly choosing Existing backend and entering its origin.
 
-To manage an existing installation, choose **Manage existing local installation**
-and enter its ComfyUI folder on the hosting server. The controller detects a
-`venv` or `.venv` Python in that folder or its parent; a Python executable can
-also be selected explicitly. This mode uses the installation's existing models
-and node packs without installing or downloading anything. Start, Stop and
-Restart control only the child DMC launches on port 18010. They are available
-through the same authorized routes to paired clients. URL-only connections
-remain controlled by their host application. Stop the owned child before
-changing backend configuration; restarting it preserves the studio's workflow
-and draft.
+To manage a running local installation, choose **Connect existing ComfyUI**, enter
+its localhost URL and leave **Detect and manage this local installation** enabled.
+For an existing URL-only connection, the **ComfyUI** status menu offers **Manage
+this ComfyUI**. Discovery does not stop or restart the backend. It identifies the
+same-user Python process listening on that port, verifies its `main.py` and
+`comfy` folder, and privately saves its Python executable, working directory,
+launch arguments and relevant Python/GPU environment. Nothing is copied and no
+packages or models are installed into that ComfyUI environment. Start and Restart
+reuse the original port and launch options. Stop and Restart target only the
+verified process identity; an unrelated port owner is never terminated.
+
+Discovery runs on the computer hosting the add-on, including when requested by
+a paired phone. It accepts loopback addresses, not a remote ComfyUI URL. Linux
+and Windows use the socket table; macOS uses `lsof`. Restricted permissions,
+containers and shell/module launch wrappers can prevent discovery. Uncheck the
+detection option for a URL-only connection, or use manual installation setup.
+Older add-on environments install the small pinned `psutil` binary wheel at
+controller startup; if offline, URL connections still work and repairing the
+add-on retries this dependency. No administrator access is requested.
+
+For manual setup, choose **Manage existing local installation** and enter its
+ComfyUI folder on the hosting server. The controller detects `venv` or `.venv`
+Python in that folder or its parent; an executable can also be selected explicitly.
+Manual setup launches on port 18010 using the existing models and node packs.
+Start, Stop and Restart are available through authorized routes to paired clients.
+Stop a managed backend before changing configuration. Adopting the connected
+backend preserves the active studio and saved draft. Adopted external processes
+stay running when the controller closes. If the host reboots, the controller can
+reattach a newly running process only when its installation, Python, working
+directory and launch command still match the saved profile. Children launched
+by DMC retain the existing shutdown behavior.
 
 Drop a workflow JSON, or a PNG/WebP containing embedded workflow metadata, into
 the studio to restore its settings. A plain image becomes an editing reference.
