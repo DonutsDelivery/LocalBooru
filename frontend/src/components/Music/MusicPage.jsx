@@ -114,6 +114,7 @@ export default function MusicPage() {
   const [facets, setFacets] = useState(defaultFacets)
   const [collections, setCollections] = useState([])
   const [collectionsLoading, setCollectionsLoading] = useState(true)
+  const [collectionsError, setCollectionsError] = useState('')
   const [libraries, setLibraries] = useState([])
   const [newCollection, setNewCollection] = useState('')
   const [addingCollection, setAddingCollection] = useState(false)
@@ -147,8 +148,8 @@ export default function MusicPage() {
       if (results[0].status === 'fulfilled') setFacets({ ...defaultFacets, ...results[0].value })
       if (results[1].status === 'fulfilled') {
         setCollections(results[1].value.collections || [])
-        setError('')
-      } else setError('Could not load music collections.')
+        setCollectionsError('')
+      } else setCollectionsError('Could not load music collections.')
       setCollectionsLoading(false)
     })
     return () => { alive = false }
@@ -157,6 +158,12 @@ export default function MusicPage() {
   useEffect(() => {
     let alive = true
     loadedQueryRef.current = null
+    if (showCollectionIndex || filters.collection) {
+      // Collection results replace the gallery arrays, so returning must reload
+      // every saved gallery page rather than append to collection members.
+      loadedPagesRef.current = null
+      paginationPendingRef.current = false
+    }
     if (showCollectionIndex) {
       setLoading(false)
       return
@@ -372,7 +379,8 @@ export default function MusicPage() {
       const created = await createMusicCollection(name, filters.library || undefined)
       setCollections(previous => [...previous, created.collection || created])
       setNewCollection('')
-    } catch { setError('Could not create the collection.') }
+      setCollectionsError('')
+    } catch { setCollectionsError('Could not create the collection.') }
     finally { setAddingCollection(false) }
   }
 
@@ -441,7 +449,8 @@ export default function MusicPage() {
         <button onClick={showCollectionIndex ? returnToMusic : openCollections}>← Back to {showCollectionIndex ? 'Music' : 'Collections'}</button>
         <h2>{showCollectionIndex ? 'Music Collections' : collections.find(collection => String(collection.id) === String(filters.collection))?.name || 'Collection'}</h2>
       </div>}
-      {error && <div className="music-error" role="alert">{error} <button onClick={() => setRefresh(value => value + 1)}>Retry</button></div>}
+      {inCollectionView && collectionsError && <div className="music-error" role="alert">{collectionsError} <button onClick={() => setRefresh(value => value + 1)}>Retry</button></div>}
+      {!showCollectionIndex && error && <div className="music-error" role="alert">{error} <button onClick={() => setRefresh(value => value + 1)}>Retry</button></div>}
       <div className="music-scroll" ref={scrollRef} onScroll={event => {
         if (showCollectionIndex ? collectionsLoading : loading || loadedQueryRef.current !== queryKey) return
         const top = event.currentTarget.scrollTop
