@@ -9,8 +9,12 @@ description: Resume native DMC enrollment, scoped authorization, community catal
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Source implementation reviewed and integrated into local DMC main and node main. DMC
+  product commit72a245ca; node product commitfaee068. Parser/format/diff and dependency metadata
+  checks passed. No builds/tests/deployment/runtime changes under retained user scope; no live
+  connection acceptance claimed.
 depends_on: []
 context: []
 priority: 1
@@ -65,7 +69,24 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-05T22:52:16.916Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Source implementation reviewed and integrated into local DMC main and node main. DMC product
+          commit72a245ca; node product commitfaee068. Parser/format/diff and dependency metadata
+          checks passed. No builds/tests/deployment/runtime changes under retained user scope; no
+          live connection acceptance claimed.
+        previous: null
+      completed_at:
+        new: 2026-10-05T22:52:58.466Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-05T22:52:58.473Z
 created_at: 2026-10-05T22:41:01.944Z
 started_at: 2026-10-05T22:41:03.343Z
 submitted_at: 2026-10-05T22:52:15.357Z
+completed_at: 2026-10-05T22:52:58.466Z
 todos: []
