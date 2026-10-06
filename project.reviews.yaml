@@ -13347,7 +13347,19 @@ reviews:
       - sidebar-rollout-result-review
     title: Verified live sidebar rollout record
     author: hub_source_review
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: edd72c4
+          head_commit: 1c9b3ab
+        evidence: Reviewer matched each resultclaim to root actual live20tests, six prepublish andtwo
+          postpublish externalrelay checks, HTTPSagreement, service/status/permissions/hash checks.
+          Documentation diff clean; no runtimechanges.
+        name: evidence-and-diff
+        required: true
+        created_at: 2026-10-06T02:07:31.413Z
+        completed_at: 2026-10-06T02:07:31.413Z
     events:
       - _ulid: 01M47FEH2J87WRKJQVF7RT56PH
         actor: hub_source_review
@@ -13362,6 +13374,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-06T02:07:30.028Z
+      - _ulid: 01M47FEM5D5PQ9D0FNSMM9FD6R
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: evidence-and-diff
+        timestamp: 2026-10-06T02:07:31.501Z
     examined_commit: 1c9b3ab
     external_links: []
     lifecycle_state: open
@@ -13376,5 +13395,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T02:07:28.338Z
-    updated_at: 2026-10-06T02:07:29.946Z
+    updated_at: 2026-10-06T02:07:31.413Z
     notes: []
