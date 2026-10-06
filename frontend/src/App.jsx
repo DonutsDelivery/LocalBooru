@@ -5,6 +5,7 @@ import GalleryTileSizeControl from './components/GalleryTileSizeControl'
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+import { getIsolatedInstanceId } from './utils/isolatedBackend.js'
 
 import { isMobileApp, LOCAL_SERVER } from './serverManager'
 import MasonryGrid from './components/MasonryGrid'
@@ -2187,7 +2188,8 @@ function Gallery({ mediaType = 'image' }) {
 
 function AppShell() {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
-  const [backendReady, setBackendReady] = useState(!isTauri)
+  const requiresBackendProof = isTauri || Boolean(getIsolatedInstanceId())
+  const [backendReady, setBackendReady] = useState(!requiresBackendProof)
   const [mobileReady, setMobileReady] = useState(false)
   const [showServerSetup, setShowServerSetup] = useState(false)
   const [servers, setServers] = useState([])
@@ -2204,7 +2206,7 @@ function AppShell() {
 
   // Poll backend health until ready (Tauri only — backend starts async)
   useEffect(() => {
-    if (!isTauri || backendReady) return
+    if (!requiresBackendProof || backendReady) return
     let cancelled = false
     let attempts = 0
     addLog('Waiting for backend...')
@@ -2225,7 +2227,7 @@ function AppShell() {
     }
     poll()
     return () => { cancelled = true }
-  }, [isTauri, backendReady, addLog])
+  }, [requiresBackendProof, backendReady, addLog])
 
   // Re-validate backend health when window regains focus (Tauri only)
   // Catches backend crashes that happened while window was hidden in tray
@@ -2249,6 +2251,7 @@ function AppShell() {
 
   // Initialize server configuration for mobile app
   useEffect(() => {
+    if (!backendReady) return
     async function initMobile() {
       const { isMobileApp, isWindowsOrMacDesktopApp, getServers, getActiveServer, setActiveServerId, pingAllServers, probeServer, LOCAL_SERVER } = await import('./serverManager')
       const { updateServerConfig, healthCheck: apiHealthCheck } = await import('./api')
@@ -2330,7 +2333,7 @@ function AppShell() {
       setShowServerSetup(true)
       setMobileReady(true)
     })
-  }, [addLog])
+  }, [addLog, backendReady])
 
   // Show loading while backend starts (Tauri)
   if (!backendReady) {

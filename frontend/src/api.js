@@ -2,6 +2,7 @@
  * DonutMediaCenter API client - supports both local and multi-server mode
  */
 import { getLocalServerPort } from './utils/localServerPort.js'
+import { getIsolatedInstanceId, verifyIsolatedHealth } from './utils/isolatedBackend.js'
 import axios from 'axios'
 import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, getActiveServerId, setActiveServerId, LOCAL_SERVER, probeServer, serverConnectionUrls, learnServerAddresses } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
@@ -30,6 +31,31 @@ let addressRefreshAbort = null
 let addressRefreshListener = null
 
 const LOCAL_SERVER_PORT = getLocalServerPort()
+const ISOLATED_INSTANCE_ID = getIsolatedInstanceId()
+let isolatedBackendVerified = false
+
+function requireVerifiedIsolatedBackend() {
+  if (ISOLATED_INSTANCE_ID && !isolatedBackendVerified) {
+    throw new Error('Isolated backend identity has not been verified; refusing access')
+  }
+}
+
+function createEventSource(url) {
+  requireVerifiedIsolatedBackend()
+  return new EventSource(url)
+}
+
+async function verifyIsolatedBackend() {
+  try {
+    const response = await axios.get(`${getLocalServerBase()}/health`, { timeout: 2000 })
+    const data = verifyIsolatedHealth(response.data, ISOLATED_INSTANCE_ID)
+    isolatedBackendVerified = true
+    return data
+  } catch (error) {
+    isolatedBackendVerified = false
+    throw error
+  }
+}
 
 // Detect if running in Tauri
 function isTauriApp() {
@@ -251,6 +277,7 @@ export const apiClient = api
 
 // Add paired native-client auth and certificate validation
 api.interceptors.request.use(async (config) => {
+  if (ISOLATED_INSTANCE_ID) await verifyIsolatedBackend()
   if (isTauriClient() && currentServerUrl) {
     // Add auth header for paired desktop and mobile libraries
     if (currentServerAuth) {
@@ -1241,6 +1268,7 @@ async function fetchMediaToken() {
 
 // Utility functions
 export function getMediaUrl(path) {
+  requireVerifiedIsolatedBackend()
   if (!path) return ''
   if (path.startsWith('http')) return path
 
@@ -1303,7 +1331,7 @@ export function isAnimated(filename) {
 export function subscribeToLibraryEvents(onEvent, onError) {
   const apiUrl = getApiUrl()
   // apiUrl already includes /api, so just append the path
-  const eventSource = new EventSource(`${apiUrl}/library/events`)
+  const eventSource = createEventSource(`${apiUrl}/library/events`)
 
   eventSource.onmessage = (event) => {
     try {
@@ -1394,7 +1422,7 @@ export async function startImport(mode, directoryIds) {
 // Subscribe to migration events via Server-Sent Events
 export function subscribeToMigrationEvents(onEvent) {
   const apiUrl = getApiUrl()
-  const eventSource = new EventSource(`${apiUrl}/settings/migration/events`)
+  const eventSource = createEventSource(`${apiUrl}/settings/migration/events`)
 
   eventSource.onmessage = (event) => {
     try {
@@ -1733,7 +1761,7 @@ export async function stopSubtitles() {
 
 export function subscribeToSubtitleEvents(streamId, onEvent) {
   const apiUrl = getApiUrl()
-  const eventSource = new EventSource(`${apiUrl}/settings/whisper/events/${streamId}`)
+  const eventSource = createEventSource(`${apiUrl}/settings/whisper/events/${streamId}`)
 
   eventSource.onmessage = (event) => {
     try {
@@ -1781,7 +1809,7 @@ export async function getShareNetworkInfo() {
 
 export function subscribeToShareEvents(token, onEvent) {
   // Use page origin for absolute URL (viewer may be on different machine)
-  const eventSource = new EventSource(`${window.location.origin}/api/share/${token}/events`)
+  const eventSource = createEventSource(`${window.location.origin}/api/share/${token}/events`)
 
   eventSource.onmessage = (event) => {
     try {
@@ -1854,7 +1882,7 @@ export async function castStop() {
 
 export function subscribeToCastEvents(onEvent) {
   const apiUrl = getApiUrl()
-  const eventSource = new EventSource(`${apiUrl}/cast/status`)
+  const eventSource = createEventSource(`${apiUrl}/cast/status`)
 
   eventSource.onmessage = (event) => {
     try {
@@ -1975,6 +2003,7 @@ export async function downloadModel(modelName) {
 
 // Health check (used for Tauri startup readiness polling)
 export async function healthCheck() {
+  if (ISOLATED_INSTANCE_ID) return verifyIsolatedBackend()
   // Remote server — use /api/directories (requires auth) to validate JWT is still valid.
   // /health and /api are exempt from auth so they can't detect expired tokens.
   // Timeout is generous enough for the proxy's primary→fallback retry to complete

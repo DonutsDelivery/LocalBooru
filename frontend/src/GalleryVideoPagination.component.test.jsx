@@ -56,7 +56,32 @@ beforeEach(() => {
   api.getLibraryStats.mockResolvedValue({ total_images: 263 })
   api.getContinueWatching.mockResolvedValue({ items: [] })
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => {
+  cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers()
+  delete window.__TAURI_INTERNALS__
+  delete window.__LOCALBOORU_PORT__
+  delete window.__LOCALBOORU_ISOLATED_INSTANCE_ID__
+})
+
+test.each(['native', 'browser'])('isolated %s startup mounts no gallery or event streams before backend identity is verified', async mode => {
+  vi.useFakeTimers()
+  if (mode === 'native') {
+    window.__TAURI_INTERNALS__ = {}
+    window.__LOCALBOORU_PORT__ = 18793
+    window.__LOCALBOORU_ISOLATED_INSTANCE_ID__ = 'a'.repeat(64)
+  } else {
+    vi.stubEnv('VITE_LOCALBOORU_ISOLATED_INSTANCE_ID', 'a'.repeat(64))
+  }
+  api.healthCheck.mockRejectedValue(new Error('Foreign backend identity'))
+  render(<App />)
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+  expect(screen.getByText('Starting backend...')).toBeTruthy()
+  expect(api.healthCheck).toHaveBeenCalled()
+  expect(api.fetchImages).not.toHaveBeenCalled()
+  expect(api.fetchTags).not.toHaveBeenCalled()
+  expect(api.getLibraryStats).not.toHaveBeenCalled()
+  expect(api.subscribeToLibraryEvents).not.toHaveBeenCalled()
+})
 
 // AC: @local-gallery-completeness ac-all-pages
 test('local Videos pages all 263 synthetic records inside its own scroller while thumbnails are still loading', async () => {
