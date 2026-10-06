@@ -40,3 +40,10 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T08:34:05.803Z
+  - _ulid: 01M486DS2CKW3YP8KKVXYSGAGT
+    content: Combined main db118f74 contains approved sidebar48b plus reviewed endpointreuse cdbff8d5.
+      Canonical desktop installer running session45869, /tmp/dmc-sidebar-download-install.log; task
+      completion awaits install hash and fresh nonce-isolated startup.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T08:49:01.004Z

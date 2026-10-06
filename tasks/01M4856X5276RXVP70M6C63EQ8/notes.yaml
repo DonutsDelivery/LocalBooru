@@ -70,3 +70,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T08:47:25.422Z
+  - _ulid: 01M486DRWF2B2G6QBE7YG2X5GK
+    content: Independent exact-head review closed approved/passing0blockers; merged cdbff8d5 into main
+      db118f74bbbdfc92884eb202845648b8acfa8948 without conflict. Existing sidebar approved48b also
+      ancestor; unrelated untracked MediaNavigation test preserved. Combined canonical installer
+      running session45869 /tmp/dmc-sidebar-download-install.log; source frozen.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T08:49:00.815Z
