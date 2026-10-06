@@ -15279,6 +15279,50 @@ reviews:
         runner: creator-review
         created_at: 2026-10-06T08:30:24.407Z
         completed_at: 2026-10-06T08:30:24.407Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9d666f2
+          head_commit: 48b567f2
+        evidence: "Exact head 48b567f2e21a712ff5b7f381031784129e12adfe: independent six-file synthetic
+          Vitest rerun passed all 31 cases, including no-local/nonempty-shared empty-state wording
+          and sidebar visibility. Cleared-env disposable HOME/TMPDIR; API mocks only. Log
+          /tmp/creator-review-shared-sidebar-final-ui.log."
+        name: independent-sidebar-ui
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T08:31:27.390Z
+        completed_at: 2026-10-06T08:31:27.390Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9d666f2
+          head_commit: 48b567f2
+        evidence: At final 48b567f2, independent cleared-env Node collectionState tests passed 3/3. Log
+          /tmp/creator-review-shared-sidebar-final-helper.log.
+        name: independent-collection-state
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T08:31:27.730Z
+        completed_at: 2026-10-06T08:31:27.730Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9d666f2
+          head_commit: 48b567f2
+        evidence: Reviewed all eight changed files plus surrounding index/local-detail/shared routes,
+          gallery-return sanitization and sidebar CSS. Sidebar correctly contains one shared list,
+          source NavLink active highlighting, mobile onClose, media type and explicit disabled
+          offline links; index strip removed. Both @collections ACs have matching behavioral
+          annotations, no inherited traits. No source-scanning tests; no product slider changes;
+          clean candidate and diff --check pass. Global kspec validate still exits 4 for existing
+          unrelated schema/ref/skill errors; /tmp/creator-review-shared-sidebar-validation.json. No
+          normal app/profile/private data, runtime or compiler accessed.
+        name: independent-source-ac
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T08:31:28.061Z
+        completed_at: 2026-10-06T08:31:28.061Z
     events:
       - _ulid: 01M4854DJVCK7QHPGMFH8M8MMQ
         actor: DonutsDelivery
@@ -15321,9 +15365,47 @@ reviews:
           new_head: 48b567f2
           previous_head: fix/shared-collections-sidebar
         timestamp: 2026-10-06T08:30:41.156Z
+      - _ulid: 01M485DM7K93QDSMYFDKJ5MC7E
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-sidebar-ui
+        timestamp: 2026-10-06T08:31:27.475Z
+      - _ulid: 01M485DMJ6VPGHG3YQ67B1JSEV
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-collection-state
+        timestamp: 2026-10-06T08:31:27.814Z
+      - _ulid: 01M485DMWGDEQY5HM8BPHFKDMT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-ac
+        timestamp: 2026-10-06T08:31:28.144Z
+      - _ulid: 01M485DN76F6ECKWPREMW78H2A
+        actor: creator-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: a9d666f2
+            head_commit: 48b567f2
+          decision: approve
+        timestamp: 2026-10-06T08:31:28.486Z
+      - _ulid: 01M485DN76H358PMECNT9NFEYZ
+        actor: creator-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T08:31:28.486Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@shared-collections-sidebar"
     subject:
@@ -15333,7 +15415,15 @@ reviews:
       head_branch: fix/shared-collections-sidebar
       head_commit: 48b567f2
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: a9d666f2
+          head_commit: 48b567f2
+        decision: approve
+        reviewer: creator-review
+        role: reviewer
+        created_at: 2026-10-06T08:31:28.486Z
     created_at: 2026-10-06T08:26:25.755Z
-    updated_at: 2026-10-06T08:30:41.032Z
+    updated_at: 2026-10-06T08:31:28.486Z
     notes: []
