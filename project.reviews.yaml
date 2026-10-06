@@ -14311,7 +14311,39 @@ reviews:
       - shared-account-dmc-review
     title: Shared native account aliases and collection disconnects
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: d5eff9edd6d8802995186a2ca66ea16c246d4807
+        evidence: Reviewed exact clean d5eff9ed vs428cf648. Fresh unauthenticated reciprocal descriptors
+          require pinned5-field identities before bounded target bearer acceptance. Existing
+          selected account preserved; generation/fingerprint checks reject stale async
+          attach/callback; alias identity/mode checked; immediate transaction secret-reference
+          cleanup preserves surviving sibling. Legacy migration blocks automatic reuse; newly
+          confirmed source allows it; deletion tombstone remains across reopen. Source
+          policy/personal copies separate. All6 AC mapped to relevant client/Node tests; native10
+          pending. Independent Vitest9 tests/2 files pass including account selection/expired
+          target/403 denial/late source switches. Log /tmp/creator-review-shared-frontend.log.
+          Synthetic data only; no app/profile/keyring/8790/build.
+        name: independent-source-and-frontend
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T06:19:45.881Z
+        completed_at: 2026-10-06T06:19:45.881Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: d5eff9edd6d8802995186a2ca66ea16c246d4807
+        evidence: Focused online::shared_accounts::tests10 pending root host-gated execution.
+          Source/frontend pass only; no native result claimed.
+        name: native-shared-account
+        required: true
+        runner: root-gated-cargo
+        created_at: 2026-10-06T06:19:46.188Z
+        completed_at: null
     events:
       - _ulid: 01M47WYCRW308KZYFQT7NGXJPD
         actor: DonutsDelivery
@@ -14319,9 +14351,37 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-06T06:03:19.708Z
+      - _ulid: 01M47XWFA7RPX2VZ7D8AQTMSDW
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: d5eff9edd6d8802995186a2ca66ea16c246d4807
+          previous_head: feat/verified-shared-account
+        timestamp: 2026-10-06T06:19:45.351Z
+      - _ulid: 01M47XWFKWGT4VNE7HM9WBSV7K
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-06T06:19:45.660Z
+      - _ulid: 01M47XWFXDQ2Z3Z9QFDCAHJ889
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-and-frontend
+        timestamp: 2026-10-06T06:19:45.965Z
+      - _ulid: 01M47XWG6WV6CH7MCXJX97RBQV
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: native-shared-account
+        timestamp: 2026-10-06T06:19:46.268Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@shared-realm-account"
     subject:
@@ -14329,9 +14389,92 @@ reviews:
       base_branch: feat/creator-offline-collections
       base_commit: 428cf648
       head_branch: feat/verified-shared-account
-      head_commit: feat/verified-shared-account
+      head_commit: d5eff9edd6d8802995186a2ca66ea16c246d4807
     threads: []
     verdicts: []
     created_at: 2026-10-06T06:03:19.708Z
-    updated_at: null
+    updated_at: 2026-10-06T06:19:46.188Z
+    notes: []
+  - _ulid: 01M47XWDPZN5VTP4Y0PENR5ZHR
+    slugs:
+      - local-video-gallery-review
+    title: Complete local video galleries and restored tile size slider
+    author: DonutsDelivery
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: bf9804528664220e19c079bb4a9865b7d21fa6a6
+        evidence: "Reviewed exact clean bf980452 vs428cf648, all5 paths and query/decoder/paging context.
+          COALESCE(view_count,0) prevents legacy NULL row-conversion drops and preserves stored
+          data/nonzero counts. Synthetic native regression asserts6 pages/263 unique records,
+          agreeing folder count and241 NULLs unchanged; native pending. Compact slider restored; App
+          saved five-level preference unchanged. Independent Vitest8 tests/3 files pass:
+          App/Masonry/MediaItem263 paged metadata while thumbnails pending, exact
+          library/directory/folder scope, terminal page,1..5 slider; existing
+          continue-watching/create-gallery cases pass. External temporary worktree-only fs allow
+          config addresses linked-node_modules LICENSE restriction. Log
+          /tmp/creator-review-local-video-frontend.log. Synthetic data only; no
+          app/profile/keyring/8790/build."
+        name: independent-source-and-frontend
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T06:19:44.656Z
+        completed_at: 2026-10-06T06:19:44.656Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: bf9804528664220e19c079bb4a9865b7d21fa6a6
+        evidence: Native legacy_nullable_view_counts_keep_all_video_gallery_pages pending root host-gated
+          test execution; no native pass claimed.
+        name: native-local-video
+        required: true
+        runner: root-gated-cargo
+        created_at: 2026-10-06T06:19:44.954Z
+        completed_at: null
+    events:
+      - _ulid: 01M47XWDPZCC0QTBWAES5EW81F
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-06T06:19:43.711Z
+      - _ulid: 01M47XWECKHS134Z1HTJQSV9YS
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-06T06:19:44.403Z
+      - _ulid: 01M47XWEQ0XYCCM5XQ1ZJ667G9
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-and-frontend
+        timestamp: 2026-10-06T06:19:44.736Z
+      - _ulid: 01M47XWF0AAZD989C0HRB3HB4M
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: native-local-video
+        timestamp: 2026-10-06T06:19:45.034Z
+    examined_commit: bf9804528664220e19c079bb4a9865b7d21fa6a6
+    external_links: []
+    lifecycle_state: open
+    related_refs:
+      - "@local-video-gallery-recovery"
+    subject:
+      type: code
+      base_branch: feat/creator-offline-collections
+      base_commit: 428cf648
+      head_branch: fix/local-video-gallery
+      head_commit: bf9804528664220e19c079bb4a9865b7d21fa6a6
+    threads: []
+    verdicts: []
+    created_at: 2026-10-06T06:19:43.711Z
+    updated_at: 2026-10-06T06:19:44.954Z
     notes: []
