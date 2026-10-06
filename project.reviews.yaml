@@ -14153,6 +14153,20 @@ reviews:
         runner: unittest
         created_at: 2026-10-06T06:04:34.839Z
         completed_at: 2026-10-06T06:04:34.839Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: 5f23549
+          head_commit: 2fe46856597f9dd64a188f44e42ffd53bfea5723
+        evidence: "Correction: root exact live overlay ran44tests, prior38pass but all6new fixture cases
+          fail because test Settings passes internal_api_key unavailable in production baseline.
+          Earlier pass record entered before inspecting completed poll; superseded by this failure.
+          Worker fixing test portability, no production config expansion."
+        name: shared-account-python
+        required: true
+        runner: unittest
+        created_at: 2026-10-06T06:04:53.827Z
+        completed_at: 2026-10-06T06:04:53.827Z
     events:
       - _ulid: 01M47WYC8BB1REW4AYKAFWA108
         actor: DonutsDelivery
@@ -14174,6 +14188,13 @@ reviews:
           status: pass
           name: shared-account-python
         timestamp: 2026-10-06T06:04:34.929Z
+      - _ulid: 01M47X18SFESZQWJ0R3FC78G3E
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: shared-account-python
+        timestamp: 2026-10-06T06:04:53.935Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -14188,7 +14209,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T06:03:19.180Z
-    updated_at: 2026-10-06T06:04:34.839Z
+    updated_at: 2026-10-06T06:04:53.827Z
     notes: []
   - _ulid: 01M47WYCRWXRNC34KV4DCSW13S
     slugs:
