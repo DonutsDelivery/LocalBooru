@@ -52,3 +52,19 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T04:04:44.650Z
+  - _ulid: 01M47Q6BMC39KTMR2VJDHVY9KJ
+    content: "Checkpoint: finalDMC49fad3ac, node78669be, operatorcaea083. Source reviews
+      approve;56component+16Nodehelpertests, bothsyntheticlauncher
+      suites,38neutral/liveoverlaySQLHTTPtests(includingVPSPython3.10 env-i
+      syntheticconfiguration),7rolloutguards pass. Nativeonline::66881/gateway35687/frontend33644
+      remain queued behind activeunrelatedC++hosttoken >38minutes, no compileroursstarted.
+      ResumeJSON /tmp/dmc-creator-resume.json retainsIDs/logpaths. Syntheticfixture
+      /tmp/dmc-creator-fixture.cby49ehs hasactualcatalog/creators/media/peerHTTP+sixgeneratedimages;
+      isolatednative/relayacceptancependingnewbuiltbinary.
+      Shippingmanifestmustfinalizefromsuccessfulshippinggatewaybeforefixtureoverlaytargetreuse. No
+      mainmerge, deployment, installedbinarychange or normalprofiletesting.
+      Rootmustcontinuegates→syntheticruntime→formalapproval→allthree
+      mainmerges→guardedVPSapply→maininstaller. Do notlaunchnormalapp; userreopensafterinstall."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T04:22:49.228Z
