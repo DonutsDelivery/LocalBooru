@@ -31,3 +31,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T08:34:05.983Z
+  - _ulid: 01M485WV3VZ42CG9B8477P3PDC
+    content: "Compatibility finding: currentdeployedbooru-node gateway handlesonebi main.rs226
+      thenclosesconn main.rs378. FullQUICconnectionpool wouldcausecloseraces. Narrow
+      implementationto pooledendpoint/relayclient only withfreshQUICrequestconnection; preserves
+      deployed/thirdpartyprotocol, no hubupdate. Root+workeridentified independently;
+      revieweragrees. Testfixture mustcloseeachrequestconnection andprove
+      bindcount1,connectioncountN; throughput improvementnotyetmeasured. Original/media
+      variantsremainunchanged."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T08:39:46.043Z

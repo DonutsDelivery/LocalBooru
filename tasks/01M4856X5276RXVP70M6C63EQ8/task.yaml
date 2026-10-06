@@ -3,14 +3,14 @@ slugs:
   - offline-relay-download-speed
 title: Reduce repeated relay setup during offline downloads
 type: bug
-description: User reports slow downloads and asks if thumbnails retained. Confirm all advertised
-  original/thumbnail/preview variants retained. Current per-source item serialization plus transport
-  creates/closes Iroh endpoint/QUIC connection for every request. Reduce repeated relay setup with
-  bounded reusable sessions keyed by exact peer/relay/transport mode while retaining streaming
-  limits, fresh auth headers, pin validation, profile boundaries, failures/cancellation and
-  denied-cache behavior. Measure with synthetic behavioral transport tests; no user
-  library/credentials/media or production protected requests. Independent review/main/install; keep
-  thumbnails included.
+description: Reduce repeated relay WebSocket/client setup for slow downloads. Keep all advertised
+  original/thumbnail/preview variants. Current gateway is single-use per QUIC connection; pool only
+  bounded exact peer/relay/transport-mode Iroh endpoints, open a fresh request connection and
+  preserve current protocol. Retain fresh auth headers, pin validation, streaming permits/limits,
+  cancellation/resource cleanup and idle eviction. Synthetic tests must emulate current gateway
+  closing after every request, count reused endpoint bindings and fresh connections, verify header
+  isolation and dropped-body behavior. No user files/accounts/production protected queries;
+  review/main/install.
 spec_ref: "@creator-community-replication"
 meta_ref: null
 plan_ref: null
@@ -32,6 +32,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-06T08:27:47.412Z
+  - author: DonutsDelivery
+    changes:
+      description:
+        new: Reduce repeated relay WebSocket/client setup for slow downloads. Keep all advertised
+          original/thumbnail/preview variants. Current gateway is single-use per QUIC connection;
+          pool only bounded exact peer/relay/transport-mode Iroh endpoints, open a fresh request
+          connection and preserve current protocol. Retain fresh auth headers, pin validation,
+          streaming permits/limits, cancellation/resource cleanup and idle eviction. Synthetic tests
+          must emulate current gateway closing after every request, count reused endpoint bindings
+          and fresh connections, verify header isolation and dropped-body behavior. No user
+          files/accounts/production protected queries; review/main/install.
+        previous: User reports slow downloads and asks if thumbnails retained. Confirm all advertised
+          original/thumbnail/preview variants retained. Current per-source item serialization plus
+          transport creates/closes Iroh endpoint/QUIC connection for every request. Reduce repeated
+          relay setup with bounded reusable sessions keyed by exact peer/relay/transport mode while
+          retaining streaming limits, fresh auth headers, pin validation, profile boundaries,
+          failures/cancellation and denied-cache behavior. Measure with synthetic behavioral
+          transport tests; no user library/credentials/media or production protected requests.
+          Independent review/main/install; keep thumbnails included.
+    command: task-set
+    timestamp: 2026-10-06T08:39:45.906Z
 created_at: 2026-10-06T08:27:47.233Z
 started_at: 2026-10-06T08:27:47.412Z
 todos: []
