@@ -13,12 +13,24 @@ description: "Approved product direction: hub is creator discovery catalog. Side
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 2
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-06T02:41:07.015Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-06T02:41:07.015Z
 created_at: 2026-10-06T02:41:05.446Z
+started_at: 2026-10-06T02:41:07.015Z
 todos: []

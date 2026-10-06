@@ -2300,7 +2300,7 @@ tasks:
       - creator-offline-collections
     title: Creator discovery sidebar and selective offline community replication
     type: task
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 2
@@ -2308,3 +2308,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-06T02:41:05.446Z
+    started_at: 2026-10-06T02:41:07.015Z
