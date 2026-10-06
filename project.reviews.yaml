@@ -12813,6 +12813,18 @@ reviews:
         runner: vitest-node
         created_at: 2026-10-06T01:09:01.025Z
         completed_at: 2026-10-06T01:09:01.025Z
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: Independent reviewer approved remote details, original-only video opening, explicit
+          import, local identity isolation and actual masonry scroll persistence after both fix
+          rounds.
+        name: independent-source-review
+        required: true
+        runner: hub_source_review
+        created_at: 2026-10-06T01:09:07.496Z
+        completed_at: 2026-10-06T01:09:07.496Z
     events:
       - _ulid: 01M47C2YN673FDXD8KCFXT5N3J
         actor: hub_source_review
@@ -12834,6 +12846,13 @@ reviews:
           status: pass
           name: focused-frontend
         timestamp: 2026-10-06T01:09:01.098Z
+      - _ulid: 01M47C3PBMYWMPJ1C6AWYJXERX
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-review
+        timestamp: 2026-10-06T01:09:07.572Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -12846,5 +12865,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T01:08:43.303Z
-    updated_at: 2026-10-06T01:09:01.025Z
+    updated_at: 2026-10-06T01:09:07.496Z
     notes: []
