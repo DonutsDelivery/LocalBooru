@@ -1,1 +1,9 @@
-notes: []
+notes:
+  - _ulid: 01M47C28ZZSH1DZ32V7T0JM6E9
+    content: Browser inspection found the shared masonry owns scrolling inside main, matching local
+      galleries. Scoped scroll persistence and viewer restoration now target that actual scroll
+      container; added capture assertion. Focused components and adapter checks pass; final
+      follow-up verification underway.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T01:08:21.119Z
