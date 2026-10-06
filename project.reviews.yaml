@@ -13451,6 +13451,18 @@ reviews:
         required: true
         created_at: 2026-10-06T03:13:30.634Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 1de7cfb5
+        evidence: Root final45componenttests+11helpertests pass:creator
+          sidebar/filters/offlineURL/retainednavigation/removeconfirmation/hostingchoice/partialcoverage.
+          Samecandidatehead1de7cfb5, productionfrontendbuildqueuedbehindsharedgate.
+        name: frontend-focused
+        required: true
+        created_at: 2026-10-06T03:19:49.313Z
+        completed_at: 2026-10-06T03:19:49.313Z
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13486,6 +13498,13 @@ reviews:
           new_head: 1de7cfb5
           previous_head: feat/creator-offline-collections
         timestamp: 2026-10-06T03:19:47.843Z
+      - _ulid: 01M47KK0CVFTC43VZTB49TZX61
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-focused
+        timestamp: 2026-10-06T03:19:49.403Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13500,7 +13519,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T03:19:47.757Z
+    updated_at: 2026-10-06T03:19:49.313Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
