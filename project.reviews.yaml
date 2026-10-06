@@ -14667,6 +14667,52 @@ reviews:
         runner: root-isolated-fixture
         created_at: 2026-10-06T06:20:37.045Z
         completed_at: 2026-10-06T06:20:37.045Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: 3fc6a00d220fd6101498a7c19162f2cfbf3869b6
+        evidence: "Reviewed exact3fc6a00d vsbf980452 delta: only synthetic IO test. Models asynchronous
+          initial visible entries on re-observe; holds first metadata request to exercise sentinel
+          visible during load. Existing production App/Masonry observer already re-observes after
+          settled load, unchanged. No production paging changes. Independent changed2 tests pass
+          /tmp/creator-review-video-observer-final.log. Prior all5 path source/AC audit remains
+          clear; Rust product and regression unchanged. Root combined59c3f0a1 five-file30 pass log
+          independently read and video5 paths independently diff identical between3fc and59c. Old
+          mock50->100 deterministic failure log read; corrected tests parallel/serial21 pass logs.
+          Earlier8 independent relevant cases passed. Native legacyNULL regression still pending; no
+          final approval."
+        name: independent-source-and-frontend
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T06:28:50.597Z
+        completed_at: 2026-10-06T06:28:50.597Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: 3fc6a00d220fd6101498a7c19162f2cfbf3869b6
+        evidence: Root frozen combined59c3f0a1 five focused frontend files30 cases ALLPASS
+          /tmp/dmc-final-focused-ui-tests.log independently inspected; five video changed paths
+          identical to exact3fc6a00d. Includes shared-account and video interactions. Native check
+          remains pending.
+        name: combined-focused-frontend
+        required: true
+        runner: root-vitest
+        created_at: 2026-10-06T06:28:50.918Z
+        completed_at: 2026-10-06T06:28:50.918Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: 3fc6a00d220fd6101498a7c19162f2cfbf3869b6
+        evidence: Root56606 compiling combined59c3f0a1, identical video Rust product/test to3fc6a00d;
+          focused legacy video1 execution pending actual evidence.
+        name: native-local-video
+        required: true
+        runner: root-gated-cargo
+        created_at: 2026-10-06T06:28:51.233Z
+        completed_at: null
     events:
       - _ulid: 01M47XWDPZCC0QTBWAES5EW81F
         actor: DonutsDelivery
@@ -14702,6 +14748,34 @@ reviews:
           status: pass
           name: isolated-baseline-causal-proof
         timestamp: 2026-10-06T06:20:37.131Z
+      - _ulid: 01M47YD3HD87A8GERWMKGEN3XK
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 3fc6a00d220fd6101498a7c19162f2cfbf3869b6
+          previous_head: bf9804528664220e19c079bb4a9865b7d21fa6a6
+        timestamp: 2026-10-06T06:28:50.350Z
+      - _ulid: 01M47YD3VNPD14C8FE62FJRT4F
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-and-frontend
+        timestamp: 2026-10-06T06:28:50.677Z
+      - _ulid: 01M47YD45SQPAV2ASPV33FPYXN
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: combined-focused-frontend
+        timestamp: 2026-10-06T06:28:51.001Z
+      - _ulid: 01M47YD4G8NWZ0N6Q6J4EETBF3
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: native-local-video
+        timestamp: 2026-10-06T06:28:51.336Z
     examined_commit: bf9804528664220e19c079bb4a9865b7d21fa6a6
     external_links: []
     lifecycle_state: open
@@ -14712,9 +14786,9 @@ reviews:
       base_branch: feat/creator-offline-collections
       base_commit: 428cf648
       head_branch: fix/local-video-gallery
-      head_commit: bf9804528664220e19c079bb4a9865b7d21fa6a6
+      head_commit: 3fc6a00d220fd6101498a7c19162f2cfbf3869b6
     threads: []
     verdicts: []
     created_at: 2026-10-06T06:19:43.711Z
-    updated_at: 2026-10-06T06:20:37.045Z
+    updated_at: 2026-10-06T06:28:51.233Z
     notes: []
