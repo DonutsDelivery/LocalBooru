@@ -1655,6 +1655,10 @@ features:
           source-scoped creators; selecting one preserves media filters and uses the familiar
           masonry gallery and lightbox.
         when: the user browses its sidebar
+      - given: A user follows a creator without enabling offline copies
+        id: ac-2
+        then: The followed creator remains visible, and following alone does not start media downloads.
+        when: the creator becomes unavailable
     tags: []
     created: 2026-10-06T02:43:41.997Z
     notes: []
