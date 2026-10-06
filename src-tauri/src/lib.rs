@@ -276,7 +276,12 @@ pub fn run() {
         bridge
     };
 
-    let mut builder = tauri::Builder::default();
+    // The native process resolves this before any frontend module loads; a
+    // prebuilt acceptance window must never use a baked-in user-instance port.
+    let mut builder = tauri::Builder::default().append_invoke_initialization_script(format!(
+        "Object.defineProperty(window, '__LOCALBOORU_PORT__', {{ value: {}, writable: false, configurable: false }});",
+        get_server_port()
+    ));
 
     // Single instance: focus existing window if already running (desktop only).
     // Isolated acceptance launches opt out explicitly so they cannot forward

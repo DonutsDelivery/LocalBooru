@@ -2,10 +2,11 @@
  * Server Manager - handles multi-server support for mobile app
  * Stores public server metadata locally and credentials in native protected storage when available.
  */
+import { getLocalServerPort } from './utils/localServerPort.js'
 
 const SERVERS_KEY = 'localbooru_servers'
 const ACTIVE_SERVER_KEY = 'localbooru_active_server'
-const LOCAL_SERVER_PORT = import.meta.env?.VITE_LOCALBOORU_PORT || '8790'
+const LOCAL_SERVER_PORT = getLocalServerPort()
 let serverMutationQueue = Promise.resolve()
 
 function serializeServerMutation(operation) {
@@ -421,8 +422,8 @@ export async function getApiBaseUrl() {
   // Mobile: check if using local or remote server
   const server = await getActiveServer()
   if (!server || server.id === LOCAL_SERVER.id) {
-    // Local embedded server — use relative URL like desktop
-    return '/api'
+    // A packaged native window uses the port of its own embedded process.
+    return `http://127.0.0.1:${LOCAL_SERVER_PORT}/api`
   }
 
   return `${server.url}/api`

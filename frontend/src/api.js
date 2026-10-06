@@ -1,6 +1,7 @@
 /**
  * DonutMediaCenter API client - supports both local and multi-server mode
  */
+import { getLocalServerPort } from './utils/localServerPort.js'
 import axios from 'axios'
 import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, getActiveServerId, setActiveServerId, LOCAL_SERVER, probeServer, serverConnectionUrls, learnServerAddresses } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
@@ -28,7 +29,7 @@ let addressRefreshTimer = null
 let addressRefreshAbort = null
 let addressRefreshListener = null
 
-const LOCAL_SERVER_PORT = import.meta.env?.VITE_LOCALBOORU_PORT || '8790'
+const LOCAL_SERVER_PORT = getLocalServerPort()
 
 // Detect if running in Tauri
 function isTauriApp() {
