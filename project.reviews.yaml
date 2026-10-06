@@ -13531,6 +13531,13 @@ reviews:
           status: running
           name: frontend-production-build
         timestamp: 2026-10-06T03:27:23.213Z
+      - _ulid: 01M47MAJ9FCKJJAVDGJ83EMGV4
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 0323698fb38a3c5d0cae3b8861ee27d65ef51aa7
+          previous_head: 72fda94331aec2c2b1cd978471daf26465d0d553
+        timestamp: 2026-10-06T03:32:41.392Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13541,11 +13548,11 @@ reviews:
       base_branch: main
       base_commit: a9ef7551
       head_branch: feat/creator-offline-collections
-      head_commit: 72fda94331aec2c2b1cd978471daf26465d0d553
+      head_commit: 0323698fb38a3c5d0cae3b8861ee27d65ef51aa7
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T03:27:23.128Z
+    updated_at: 2026-10-06T03:32:41.305Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
