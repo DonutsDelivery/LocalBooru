@@ -14133,3 +14133,61 @@ reviews:
     created_at: 2026-10-06T04:16:08.477Z
     updated_at: 2026-10-06T04:16:19.306Z
     notes: []
+  - _ulid: 01M47WYC8CN7J445WGFQAA3EX1
+    slugs:
+      - shared-account-node-review
+    title: Verified main and R18 shared account contract
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M47WYC8BB1REW4AYKAFWA108
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-06T06:03:19.180Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@shared-realm-account"
+    subject:
+      type: code
+      base_branch: feat/creator-peer-catalog
+      base_commit: 5f23549
+      head_branch: feat/verified-shared-account
+      head_commit: feat/verified-shared-account
+    threads: []
+    verdicts: []
+    created_at: 2026-10-06T06:03:19.180Z
+    updated_at: null
+    notes: []
+  - _ulid: 01M47WYCRWXRNC34KV4DCSW13S
+    slugs:
+      - shared-account-dmc-review
+    title: Shared native account aliases and collection disconnects
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M47WYCRW308KZYFQT7NGXJPD
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-06T06:03:19.708Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@shared-realm-account"
+    subject:
+      type: code
+      base_branch: feat/creator-offline-collections
+      base_commit: 428cf648
+      head_branch: feat/verified-shared-account
+      head_commit: feat/verified-shared-account
+    threads: []
+    verdicts: []
+    created_at: 2026-10-06T06:03:19.708Z
+    updated_at: null
+    notes: []

@@ -18,6 +18,7 @@ context: []
 priority: 2
 tags: []
 vcs_refs: []
+review_ref: "@shared-account-dmc-review"
 history:
   - author: DonutsDelivery
     changes:
@@ -29,6 +30,20 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-06T05:57:13.598Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@shared-account-node-review"
+        previous: null
+    command: review-link
+    timestamp: 2026-10-06T06:03:19.486Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@shared-account-dmc-review"
+        previous: "@shared-account-node-review"
+    command: review-link
+    timestamp: 2026-10-06T06:03:19.950Z
 created_at: 2026-10-06T05:51:33.687Z
 started_at: 2026-10-06T05:57:13.598Z
 todos: []
