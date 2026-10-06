@@ -1,0 +1,24 @@
+_ulid: 01M47HC2X6XE8KYBTWEGS2FKZ6
+slugs:
+  - creator-offline-collections
+title: Creator discovery sidebar and selective offline community replication
+type: task
+description: "Approved product direction: hub is creator discovery catalog. Sidebar searchable
+  creator list, available/following/offline/all views, same masonry/lightbox, stable creator
+  selection. Users explicitly sync individual creator collections or all creators with bounded
+  storage, progress, offline local media browsing and verified peer serving. Publisher ownership
+  remains Discord-linked internal account; withdrawals stop community delivery. Preserve current
+  Bunny fallback during migration; do not retire bridge or storage until functional replacement
+  verified. Integrate main, deploy protocol support, rebuild installed app and verify."
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+created_at: 2026-10-06T02:41:05.446Z
+todos: []

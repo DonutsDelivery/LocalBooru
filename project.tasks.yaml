@@ -2295,3 +2295,16 @@ tasks:
     started_at: 2026-10-06T01:36:48.536Z
     submitted_at: 2026-10-06T02:15:52.951Z
     completed_at: 2026-10-06T02:15:54.293Z
+  - _ulid: 01M47HC2X6XE8KYBTWEGS2FKZ6
+    slugs:
+      - creator-offline-collections
+    title: Creator discovery sidebar and selective offline community replication
+    type: task
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 2
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-06T02:41:05.446Z
