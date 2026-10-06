@@ -13451,3 +13451,32 @@ reviews:
     created_at: 2026-10-06T03:12:05.839Z
     updated_at: null
     notes: []
+  - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
+    slugs:
+      - creator-peer-node-review
+    title: Scoped creator catalog and authenticated replica protocol
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M47K4X6SYCESDVR7C4PB8BG6
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-06T03:12:07.385Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@creator-offline-collections"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 546859d
+      head_branch: feat/creator-peer-catalog
+      head_commit: feat/creator-peer-catalog
+    threads: []
+    verdicts: []
+    created_at: 2026-10-06T03:12:07.385Z
+    updated_at: null
+    notes: []

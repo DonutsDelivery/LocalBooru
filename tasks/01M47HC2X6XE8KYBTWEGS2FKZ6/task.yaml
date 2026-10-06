@@ -20,7 +20,7 @@ context: []
 priority: 2
 tags: []
 vcs_refs: []
-review_ref: "@creator-offline-review"
+review_ref: "@creator-peer-node-review"
 history:
   - author: DonutsDelivery
     changes:
@@ -46,6 +46,13 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-06T03:12:06.113Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@creator-peer-node-review"
+        previous: "@creator-offline-review"
+    command: review-link
+    timestamp: 2026-10-06T03:12:07.660Z
 created_at: 2026-10-06T02:41:05.446Z
 started_at: 2026-10-06T02:41:07.015Z
 todos: []
