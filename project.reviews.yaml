@@ -13888,6 +13888,28 @@ reviews:
         runner: cargo
         created_at: 2026-10-06T05:58:39.294Z
         completed_at: 2026-10-06T05:58:39.294Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 546859d
+          head_commit: 5f23549
+        evidence: "Independent reviewer verified clean exact Node head
+          5f23549d38fec854500075363a0b1e769d0fb4ef against 546859d, reviewed all changed source and
+          probe modes, and reran 38 focused Python fixtures successfully with cleared environment,
+          disposable HOME/TMP/uploads and closed loopback database fallback. Inspected actual
+          gateway log: 4 policy tests and optimized build passed; immutable artifact SHA256
+          independently matches 66e399ee8828bd70e2bbe74d57a21690df151c42da2e265eee933d1242fe5136.
+          Current required production-python-fixtures and gateway-policy-build checks both match
+          5f23549, no blocker threads. Creator AC coverage checked across Node/DMC implementation
+          and behavioral tests; spec has no inherited traits. Global kspec validate ran but reports
+          existing unrelated invalid legacy schema/reference/skill metadata; not represented as a
+          validation pass. Approval applies only to Node candidate, not DMC, rollout or live
+          deployment."
+        name: independent-node-review
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T06:00:44.013Z
+        completed_at: 2026-10-06T06:00:44.013Z
     events:
       - _ulid: 01M47K4X6SYCESDVR7C4PB8BG6
         actor: DonutsDelivery
@@ -13951,9 +13973,40 @@ reviews:
           status: pass
           name: gateway-policy-build
         timestamp: 2026-10-06T05:58:39.378Z
+      - _ulid: 01M47WSMFKGQFZQ7X6CQDYR32W
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-06T06:00:43.763Z
+      - _ulid: 01M47WSMT8YAH3ZSGASDYF34NQ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-node-review
+        timestamp: 2026-10-06T06:00:44.104Z
+      - _ulid: 01M47WSN56NAED85AXPWM9M645
+        actor: creator-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 546859d
+            head_commit: 5f23549
+          decision: approve
+        timestamp: 2026-10-06T06:00:44.454Z
+      - _ulid: 01M47WSN56GX645T0QT3MKQ9XD
+        actor: creator-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T06:00:44.455Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@creator-offline-collections"
     subject:
@@ -13963,9 +14016,17 @@ reviews:
       head_branch: feat/creator-peer-catalog
       head_commit: 5f23549
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 546859d
+          head_commit: 5f23549
+        decision: approve
+        reviewer: creator-review
+        role: reviewer
+        created_at: 2026-10-06T06:00:44.454Z
     created_at: 2026-10-06T03:12:07.385Z
-    updated_at: 2026-10-06T05:58:39.294Z
+    updated_at: 2026-10-06T06:00:44.454Z
     notes: []
   - _ulid: 01M47PT48X5DM9CCXEZHDRPG0T
     slugs:
