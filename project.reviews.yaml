@@ -13427,7 +13427,19 @@ reviews:
       - creator-offline-review
     title: Creator discovery and retained offline galleries with verified peer delivery
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 038f4eb2
+        evidence: Root independent 41 initial sidebar/gallery tests; after explicit removal/navigation
+          edits36focusedtests and11helpertests pass. Reviewer independent44UI priorcandidate plus
+          currentsource reviewed. Final candidateproductionbuildqueued.
+        name: frontend-focused
+        required: true
+        created_at: 2026-10-06T03:13:29.141Z
+        completed_at: 2026-10-06T03:13:29.141Z
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13435,6 +13447,13 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-06T03:12:05.839Z
+      - _ulid: 01M47K7D49V0QQPVBFGXQDSXQX
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-focused
+        timestamp: 2026-10-06T03:13:29.225Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13449,7 +13468,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: null
+    updated_at: 2026-10-06T03:13:29.141Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
