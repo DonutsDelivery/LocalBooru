@@ -13536,6 +13536,18 @@ reviews:
         runner: bash
         created_at: 2026-10-06T04:06:48.578Z
         completed_at: 2026-10-06T04:06:48.578Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 49fad3ac
+        evidence: Final49fad3ac:56componenttests across7files plus16Nodehelpers; fixture-only network
+          adapters. Newnativeprocessport prevents isolatedcandidate requestingnormalprofilebackend.
+        name: frontend-focused
+        required: true
+        runner: vitest
+        created_at: 2026-10-06T04:08:12.769Z
+        completed_at: 2026-10-06T04:08:12.769Z
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13648,6 +13660,13 @@ reviews:
           status: pass
           name: isolation-launcher
         timestamp: 2026-10-06T04:06:48.662Z
+      - _ulid: 01M47PBKSMTCXDB8C3VQKPJM8G
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-focused
+        timestamp: 2026-10-06T04:08:12.852Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13662,7 +13681,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T04:06:48.578Z
+    updated_at: 2026-10-06T04:08:12.769Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
