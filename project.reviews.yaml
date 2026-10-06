@@ -15427,3 +15427,32 @@ reviews:
     created_at: 2026-10-06T08:26:25.755Z
     updated_at: 2026-10-06T08:31:28.486Z
     notes: []
+  - _ulid: 01M4862ZYKVJSR5QT7Q07P8TQV
+    slugs:
+      - offline-relay-download-speed-review
+    title: Review bounded relay endpoint reuse
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4862ZYKB9AWA1B6PY5N6ZEG
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-06T08:43:07.603Z
+    examined_commit: cdbff8d55bb75d26dc658979ba396fbf7448a213
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@offline-relay-download-speed"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: a9d666f2
+      head_branch: fix/offline-relay-download-speed
+      head_commit: cdbff8d55bb75d26dc658979ba396fbf7448a213
+    threads: []
+    verdicts: []
+    created_at: 2026-10-06T08:43:07.603Z
+    updated_at: null
+    notes: []

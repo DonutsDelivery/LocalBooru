@@ -54,3 +54,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T08:42:26.453Z
+  - _ulid: 01M48630G5ZASZ4K85DH0H0HCK
+    content: "Frozen cdbff8d55bb75d26dc658979ba396fbf7448a213: endpoint-only bounded pool compatible
+      with current single-use gateway. Eight real ephemeral Iroh behavioral tests; root canonical
+      gated native release test running session35219, log /tmp/dmc-download-transport-tests.log. No
+      measured production throughput or protected user-profile access."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T08:43:08.165Z
