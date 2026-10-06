@@ -14124,6 +14124,14 @@ reviews:
           new_head: feat/creator-peer-rollout
           previous_head: caea083
         timestamp: 2026-10-06T06:18:36.763Z
+      - _ulid: 01M47Y14G6E9FF9XVY1TAW7P99
+        actor: codex-peer-finish
+        event_type: subject_refreshed
+        payload:
+          new_base: 221026d4c039f87aaee4891f9ce31a54ca69f5d4
+          new_head: da329bcdc9ffdef538d6134174d61517ef79e871
+          previous_head: feat/creator-peer-rollout
+        timestamp: 2026-10-06T06:22:18.119Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -14132,13 +14140,13 @@ reviews:
     subject:
       type: code
       base_branch: main
-      base_commit: 221026d
+      base_commit: 221026d4c039f87aaee4891f9ce31a54ca69f5d4
       head_branch: feat/creator-peer-rollout
-      head_commit: feat/creator-peer-rollout
+      head_commit: da329bcdc9ffdef538d6134174d61517ef79e871
     threads: []
     verdicts: []
     created_at: 2026-10-06T04:16:08.477Z
-    updated_at: 2026-10-06T06:18:36.656Z
+    updated_at: 2026-10-06T06:22:18.013Z
     notes: []
   - _ulid: 01M47WYC8CN7J445WGFQAA3EX1
     slugs:
