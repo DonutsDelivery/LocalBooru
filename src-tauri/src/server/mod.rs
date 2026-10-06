@@ -209,9 +209,43 @@ async fn api_root() -> Json<serde_json::Value> {
 }
 
 async fn health() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
+    let instance_id = std::env::var("LOCALBOORU_ISOLATED_INSTANCE_ID").ok();
+    Json(health_response(instance_id.as_deref()))
+}
+
+fn health_response(isolated_instance_id: Option<&str>) -> serde_json::Value {
+    let mut response = serde_json::json!({
         "status": "healthy"
-    }))
+    });
+    if let Some(instance_id) = isolated_instance_id {
+        response["isolated_instance_id"] = serde_json::Value::String(instance_id.into());
+    }
+    response
+}
+
+#[cfg(test)]
+mod isolated_health_tests {
+    use super::health_response;
+
+    #[test]
+    fn normal_health_keeps_its_existing_public_shape() {
+        assert_eq!(
+            health_response(None),
+            serde_json::json!({"status": "healthy"})
+        );
+    }
+
+    #[test]
+    fn isolated_health_identifies_only_its_exact_launch() {
+        let response = health_response(Some("synthetic-own-instance"));
+        assert_eq!(
+            response,
+            serde_json::json!({
+                "status": "healthy", "isolated_instance_id": "synthetic-own-instance"
+            })
+        );
+        assert_ne!(response, health_response(Some("synthetic-foreign-instance")));
+    }
 }
 
 /// Reverse proxy handler: forwards requests to the configured remote server.
