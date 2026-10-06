@@ -1,0 +1,22 @@
+_ulid: 01M47DPB3H4W0R7VR29AZA72YT
+slugs:
+  - collection-sidebar-parity
+title: Give collection galleries the regular sidebar and tile controls
+type: bug
+description: Remove community top search/title/settings panel and put browsing controls in the
+  shared collection sidebar. Reuse local gallery rating/sort/timeframe/tag/filter and XS/S/M/L/XL
+  tile controls, with genuine server filtering and source/query-scoped state. Local collection
+  detail galleries should expose the same controls. Verify separate R18 enrollment remains scoped.
+  Review, merge to main, rebuild/install/restart app and deploy any required catalog query support.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-10-06T01:36:47.217Z
+todos: []
