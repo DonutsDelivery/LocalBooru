@@ -14161,6 +14161,21 @@ reviews:
         runner: patch-unittest
         created_at: 2026-10-06T06:22:44.633Z
         completed_at: 2026-10-06T06:22:44.633Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 221026d4c039f87aaee4891f9ce31a54ca69f5d4
+          head_commit: da329bcdc9ffdef538d6134174d61517ef79e871
+        evidence: "Independent exact da329bcdc9ffdef538d6134174d61517ef79e871: all11 payload hashes match;
+          gateway verified from immutable /tmp/dmc-creator-shipping-gateway
+          SHA25666e399ee8828bd70e2bbe74d57a21690df151c42da2e265eee933d1242fe5136. Never accessed
+          active build target. Nine public API before/after checks and six payload test copies match
+          manifest; worktree clean. Log /tmp/dmc-rollout-independent-reconstruction.log."
+        name: shipping-manifest
+        required: true
+        runner: sha256
+        created_at: 2026-10-06T06:22:46.140Z
+        completed_at: 2026-10-06T06:22:46.140Z
     events:
       - _ulid: 01M47PT48XHTBP5K7ND9FAGBDG
         actor: DonutsDelivery
@@ -14225,6 +14240,13 @@ reviews:
           status: pass
           name: overlay-reconstruction
         timestamp: 2026-10-06T06:22:44.741Z
+      - _ulid: 01M47Y1ZZ51M958PWYB4KPEA9N
+        actor: codex-peer-finish
+        event_type: check_added
+        payload:
+          status: pass
+          name: shipping-manifest
+        timestamp: 2026-10-06T06:22:46.245Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -14239,7 +14261,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T04:16:08.477Z
-    updated_at: 2026-10-06T06:22:44.633Z
+    updated_at: 2026-10-06T06:22:46.140Z
     notes: []
   - _ulid: 01M47WYC8CN7J445WGFQAA3EX1
     slugs:
