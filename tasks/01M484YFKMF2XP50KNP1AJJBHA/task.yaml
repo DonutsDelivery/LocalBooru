@@ -1,0 +1,35 @@
+_ulid: 01M484YFKMF2XP50KNP1AJJBHA
+slugs:
+  - shared-collections-sidebar
+title: List connected shared collections in the Collections sidebar
+type: bug
+description: User screenshot shows DonutBooru and R18 only as main-pane cards, absent from sidebar.
+  Reuse connected hubs listing as sidebar navigation alongside local collections across collection
+  index/detail/shared routes, preserving media type, active source, gallery-return context,
+  disabled-source offline links and mobile close behavior. Remove main-pane shared strip. Use
+  synthetic focused tests, independent review, main integration and installed rebuild. Never normal
+  user app/library.
+spec_ref: "@collections"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-06T08:23:11.411Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-06T08:23:11.411Z
+created_at: 2026-10-06T08:23:11.220Z
+started_at: 2026-10-06T08:23:11.411Z
+todos: []

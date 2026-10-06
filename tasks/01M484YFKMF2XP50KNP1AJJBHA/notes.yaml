@@ -1,0 +1,11 @@
+notes:
+  - _ulid: 01M484YFZPVCTZZ65TDGJ1JQJZ
+    content: "Approach: reuse SharedCollectionsPanel source listing inside shared Sidebar, switch rows
+      to regular media-collection links and remove CollectionsPage duplicate cards. Existing
+      @collections ac-collection-sidebar and ac-gallery-back cover navigation/context. Tests first:
+      sidebar placement, source selection/media scope/return context/mobile close and disabled
+      offline links; preserve local collections and creator controls. Isolated branch from
+      maina9d666f2; no private app/server access."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T08:23:11.606Z

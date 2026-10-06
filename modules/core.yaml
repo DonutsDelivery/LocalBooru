@@ -387,7 +387,7 @@ features:
     description: Named collections with cover images, add/remove/reorder items, create from lightbox
     status:
       maturity: draft
-      implementation: implemented
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
