@@ -11,12 +11,24 @@ description: Remove community top search/title/settings panel and put browsing c
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 3
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-06T01:36:48.536Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-06T01:36:48.537Z
 created_at: 2026-10-06T01:36:47.217Z
+started_at: 2026-10-06T01:36:48.536Z
 todos: []

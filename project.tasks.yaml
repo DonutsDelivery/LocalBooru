@@ -2283,7 +2283,7 @@ tasks:
       - collection-sidebar-parity
     title: Give collection galleries the regular sidebar and tile controls
     type: bug
-    status: pending
+    status: in_progress
     blocked_by: []
     depends_on: []
     priority: 3
@@ -2291,3 +2291,4 @@ tasks:
     notes_count: 0
     todos_count: 0
     created_at: 2026-10-06T01:36:47.217Z
+    started_at: 2026-10-06T01:36:48.536Z
