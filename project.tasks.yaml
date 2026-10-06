@@ -2288,7 +2288,7 @@ tasks:
     depends_on: []
     priority: 3
     tags: []
-    review_ref: "@relay-tags-probe-review"
+    review_ref: "@sidebar-rollout-result-review"
     notes_count: 2
     todos_count: 0
     created_at: 2026-10-06T01:36:47.217Z

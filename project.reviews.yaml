@@ -13342,3 +13342,32 @@ reviews:
     created_at: 2026-10-06T02:05:00.896Z
     updated_at: 2026-10-06T02:05:05.618Z
     notes: []
+  - _ulid: 01M47FEH2JBYP1Z7ET53YF1JHN
+    slugs:
+      - sidebar-rollout-result-review
+    title: Verified live sidebar rollout record
+    author: hub_source_review
+    checks: []
+    events:
+      - _ulid: 01M47FEH2J87WRKJQVF7RT56PH
+        actor: hub_source_review
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-06T02:07:28.338Z
+    examined_commit: 1c9b3ab
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@collection-sidebar-parity"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: edd72c4
+      head_branch: fix/collection-sidebar-server
+      head_commit: 1c9b3ab
+    threads: []
+    verdicts: []
+    created_at: 2026-10-06T02:07:28.338Z
+    updated_at: null
+    notes: []

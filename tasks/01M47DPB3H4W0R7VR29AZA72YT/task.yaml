@@ -18,7 +18,7 @@ context: []
 priority: 3
 tags: []
 vcs_refs: []
-review_ref: "@relay-tags-probe-review"
+review_ref: "@sidebar-rollout-result-review"
 history:
   - author: DonutsDelivery
     changes:
@@ -58,6 +58,13 @@ history:
         previous: "@operator-sidebar-rollout-review"
     command: review-link
     timestamp: 2026-10-06T02:05:01.163Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@sidebar-rollout-result-review"
+        previous: "@relay-tags-probe-review"
+    command: review-link
+    timestamp: 2026-10-06T02:07:28.628Z
 created_at: 2026-10-06T01:36:47.217Z
 started_at: 2026-10-06T01:36:48.536Z
 todos: []
