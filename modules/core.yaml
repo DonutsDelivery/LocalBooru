@@ -1635,6 +1635,22 @@ features:
         notes: []
     created: 2026-07-16T16:38:14.885Z
     notes: []
+  - _ulid: 01M47HGVSD62Z3J5EFZEH7P9T5
+    slugs:
+      - creator-community-replication
+    title: Creator discovery and selective offline community collections
+    type: feature
+    description: Discover publisher-owned creator collections through a hub; follow and explicitly
+      retain chosen or all creators with bounded storage, personal offline access and authorized
+      voluntary peer hosting.
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    tags: []
+    created: 2026-10-06T02:43:41.997Z
+    notes: []
 requirements:
   - _ulid: 01M3XADCT7CYGXH2KHMDNQYDTW
     slugs:
