@@ -1011,13 +1011,35 @@ async fn asset(
         AppError::NotFound("Personal offline representation is unavailable".into())
     })?;
     enforce_item_policy(&item, &source.policy_profile, state.is_family_mode_locked())?;
-    let response = fetch_media(
+    let central = fetch_media(
         state.data_dir(),
         &source,
         &variant_url(&item, &kind)?,
         headers.get(header::RANGE),
     )
-    .await?;
+    .await;
+    asset_delivery(central, || {
+        peer_view_asset(&state, &source, &item, &kind, &headers)
+    })
+    .await
+}
+
+async fn asset_delivery<F, Fut>(
+    central: Result<MediaResponse, AppError>,
+    peers: F,
+) -> Result<Response, AppError>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<Option<Response>, AppError>>,
+{
+    let response = match central {
+        Ok(response) => response,
+        Err(error) if authorization_error(&error) => return Err(error),
+        Err(error) => match peers().await? {
+            Some(response) => return Ok(response),
+            None => return Err(error),
+        },
+    };
     let status =
         StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let mut out = HeaderMap::new();
@@ -1042,6 +1064,198 @@ async fn asset(
         HeaderValue::from_static("inline"),
     );
     Ok((status, out, Body::from_stream(response.bytes_stream())).into_response())
+}
+
+const PEER_VIEW_LIMIT: u64 = 256 * 1024 * 1024;
+static PEER_VIEW_TRANSFERS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+static PEER_VIEW_BYTES: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+
+/// Body owns the verified temporary file and both capacity reservations. Drop
+/// the file stream first so Windows can remove its enclosing private directory.
+struct PeerViewBody {
+    stream: Option<
+        std::pin::Pin<
+            Box<dyn futures_util::Stream<Item = Result<axum::body::Bytes, axum::Error>> + Send>,
+        >,
+    >,
+    directory: Option<tempfile::TempDir>,
+    _transfer: tokio::sync::OwnedSemaphorePermit,
+    _bytes: tokio::sync::OwnedSemaphorePermit,
+}
+impl futures_util::Stream for PeerViewBody {
+    type Item = Result<axum::body::Bytes, axum::Error>;
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.stream
+            .as_mut()
+            .expect("peer response body exists until drop")
+            .as_mut()
+            .poll_next(cx)
+    }
+}
+impl Drop for PeerViewBody {
+    fn drop(&mut self) {
+        drop(self.stream.take());
+        drop(self.directory.take());
+    }
+}
+
+async fn peer_view_asset(
+    state: &AppState,
+    source: &RemoteSource,
+    item: &RemoteItem,
+    kind: &str,
+    headers: &HeaderMap,
+) -> Result<Option<Response>, AppError> {
+    let Some(config) = load_hub(state.data_dir(), &source.source_id)? else {
+        return Ok(None);
+    };
+    let Some(variant) = item.media.iter().find(|variant| variant.kind == kind) else {
+        return Ok(None);
+    };
+    peer_view_asset_with(
+        state,
+        source,
+        item,
+        variant,
+        headers,
+        |destination| async move {
+            try_peer_download(state, source, &config, item, variant, &destination, None).await
+        },
+    )
+    .await
+}
+
+// Private seam permits real protocol tests with an ephemeral broker/provider.
+// Production obtains grants and identities exclusively from the pinned hub.
+async fn peer_view_asset_with<F, Fut>(
+    state: &AppState,
+    source: &RemoteSource,
+    item: &RemoteItem,
+    variant: &crate::online::models::RemoteMediaVariant,
+    headers: &HeaderMap,
+    download: F,
+) -> Result<Option<Response>, AppError>
+where
+    F: FnOnce(std::path::PathBuf) -> Fut,
+    Fut: std::future::Future<Output = Result<bool, AppError>>,
+{
+    let (Some(digest), Some(size)) = (&variant.sha256, variant.byte_size) else {
+        return Ok(None);
+    };
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        || size == 0
+        || item.remote_revision.is_none()
+    {
+        return Ok(None);
+    }
+    if size > PEER_VIEW_LIMIT {
+        return Err(AppError::ServiceUnavailable("Community viewing requires full checksum verification and currently supports renditions up to 256 MiB".into()));
+    }
+    let current_source = load_source(state.data_dir(), &source.source_id)?;
+    require_enabled(&current_source)?;
+    enforce_item_policy(
+        item,
+        &current_source.policy_profile,
+        state.is_family_mode_locked(),
+    )?;
+    let transfer = tokio::time::timeout(
+        Duration::from_secs(30),
+        PEER_VIEW_TRANSFERS
+            .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2)))
+            .clone()
+            .acquire_owned(),
+    )
+    .await
+    .map_err(|_| AppError::ServiceUnavailable("Community viewing queue is busy".into()))?
+    .map_err(|_| AppError::ServiceUnavailable("Community viewing stopped".into()))?;
+    let units = size.div_ceil(1024 * 1024) as u32;
+    let bytes = tokio::time::timeout(
+        Duration::from_secs(30),
+        PEER_VIEW_BYTES
+            .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(256)))
+            .clone()
+            .acquire_many_owned(units),
+    )
+    .await
+    .map_err(|_| {
+        AppError::ServiceUnavailable("Community viewing temporary storage is busy".into())
+    })?
+    .map_err(|_| AppError::ServiceUnavailable("Community viewing stopped".into()))?;
+    let directory = tempfile::Builder::new()
+        .prefix("dmc-peer-view-")
+        .tempdir()?;
+    let destination = directory.path().join("verified-media");
+    if !download(destination.clone()).await? {
+        return Ok(None);
+    }
+    // Validate independently of the chooser before exposing even Range bytes.
+    let checked = offline::RetainedVariant {
+        source_id: source.source_id.clone(),
+        remote_post_id: item.remote_post_id.clone(),
+        kind: variant.kind.clone(),
+        revision: item.remote_revision.clone().unwrap(),
+        path: destination.clone(),
+        sha256: digest.clone(),
+        bytes: size,
+        mime_type: variant.mime_type.clone(),
+        community_hosting: false,
+        authoritative_digest: true,
+        canonical_origin: source.normalized_base_url.clone(),
+        instance_id: String::new(),
+    };
+    tokio::task::spawn_blocking(move || offline::verify_file(&checked))
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .map_err(AppError::ServiceUnavailable)?;
+    let current_source = load_source(state.data_dir(), &source.source_id)?;
+    require_enabled(&current_source)?;
+    enforce_item_policy(
+        item,
+        &current_source.policy_profile,
+        state.is_family_mode_locked(),
+    )?;
+    let request = axum::http::Request::builder()
+        .uri("/")
+        .body(Body::empty())
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let (mut parts, body) = request.into_parts();
+    parts.headers = headers.clone();
+    let response = tower_http::services::ServeFile::new(&destination)
+        .oneshot(axum::http::Request::from_parts(parts, body))
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .into_response();
+    let (mut parts, body) = response.into_parts();
+    parts.headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    parts.headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("inline"),
+    );
+    if let Some(mime) = variant
+        .mime_type
+        .as_deref()
+        .and_then(|v| HeaderValue::from_str(v).ok())
+    {
+        parts.headers.insert(header::CONTENT_TYPE, mime);
+    }
+    Ok(Some(Response::from_parts(
+        parts,
+        Body::from_stream(PeerViewBody {
+            stream: Some(Box::pin(body.into_data_stream())),
+            directory: Some(directory),
+            _transfer: transfer,
+            _bytes: bytes,
+        }),
+    )))
 }
 
 #[derive(Deserialize)]
@@ -2910,7 +3124,7 @@ async fn source_creators(
     )?;
     rows.retain(|r| ids.iter().any(|id| r["id"].as_str() == Some(id)));
     if view == "available" {
-        rows.retain(|r| matches!(r["availability"].as_str(), Some("available" | "partial")));
+        rows.retain(offline::creator_potentially_available);
     }
     rows.sort_by_key(|r| {
         ids.iter()
@@ -3425,6 +3639,87 @@ async fn try_peer_offline_variant(
     let (Some(digest), Some(size)) = (&variant.sha256, variant.byte_size) else {
         return Ok(false);
     };
+    let root = offline::cache_root(state.data_dir(), &source.source_id);
+    tokio::fs::create_dir_all(&root).await?;
+    offline::reserve(
+        state.data_dir(),
+        &source.source_id,
+        &queued.item.remote_post_id,
+        &queued.revision,
+        &variant.kind,
+        size,
+    )?;
+    let destination = root.join(format!("{}-{}", digest, Uuid::new_v4()));
+    let result = try_peer_download(
+        state,
+        source,
+        config,
+        &queued.item,
+        variant,
+        &destination,
+        Some(cancel),
+    )
+    .await;
+    let result = match result {
+        Ok(true) => sync_continues(state, &source.source_id, cancel),
+        other => other,
+    };
+    if matches!(&result, Ok(true)) {
+        if let Err(error) = offline::finish(
+            state.data_dir(),
+            &source.source_id,
+            queued,
+            &variant.kind,
+            digest,
+            size,
+            &destination,
+            true,
+            variant.mime_type.as_deref(),
+        ) {
+            let _ = tokio::fs::remove_file(&destination).await;
+            offline::release(
+                state.data_dir(),
+                &source.source_id,
+                &queued.item.remote_post_id,
+                &queued.revision,
+                &variant.kind,
+            )?;
+            return Err(error);
+        }
+        return Ok(true);
+    }
+    let _ = tokio::fs::remove_file(&destination).await;
+    offline::release(
+        state.data_dir(),
+        &source.source_id,
+        &queued.item.remote_post_id,
+        &queued.revision,
+        &variant.kind,
+    )?;
+    result.map(|_| false)
+}
+
+async fn try_peer_download(
+    state: &AppState,
+    source: &RemoteSource,
+    config: &HubConfig,
+    item: &RemoteItem,
+    variant: &crate::online::models::RemoteMediaVariant,
+    destination: &Path,
+    cancel: Option<&AtomicBool>,
+) -> Result<bool, AppError> {
+    let (Some(digest), Some(size)) = (&variant.sha256, variant.byte_size) else {
+        return Ok(false);
+    };
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        || size == 0
+        || item.remote_revision.is_none()
+    {
+        return Ok(false);
+    }
     if config.transport_mode == transport::TransportMode::Anonymous {
         return Ok(false);
     }
@@ -3441,7 +3736,7 @@ async fn try_peer_offline_variant(
     }
     let mut url = reqwest::Url::parse(&format!(
         "{}/api/client/v1/catalog/{}/providers",
-        source.normalized_base_url, queued.item.remote_post_id
+        source.normalized_base_url, item.remote_post_id
     ))
     .map_err(|e| AppError::Internal(e.to_string()))?;
     url.query_pairs_mut().append_pair("variant", &variant.kind);
@@ -3484,7 +3779,7 @@ async fn try_peer_offline_variant(
     .await
     .map_err(AppError::ServiceUnavailable)?;
     for provider in providers.iter().take(8) {
-        if !sync_continues(state, &source.source_id, cancel)? {
+        if !peer_download_continues(state, source, item, cancel)? {
             return Ok(false);
         }
         let (Some(endpoint), Some(relay)) = (
@@ -3498,7 +3793,7 @@ async fn try_peer_offline_variant(
         {
             continue;
         }
-        let body=serde_json::to_vec(&json!({"remote_post_id":queued.item.remote_post_id,"variant":variant.kind,"provider_id":endpoint,"requester_id":identity.endpoint_id})).map_err(|e|AppError::Internal(e.to_string()))?;
+        let body=serde_json::to_vec(&json!({"remote_post_id":item.remote_post_id,"variant":variant.kind,"provider_id":endpoint,"requester_id":identity.endpoint_id})).map_err(|e|AppError::Internal(e.to_string()))?;
         let grant = match hub_response_json(
             hub_request(
                 state.data_dir(),
@@ -3519,17 +3814,6 @@ async fn try_peer_offline_variant(
         };
         let grant: crate::online::peer::Grant = serde_json::from_value(grant)
             .map_err(|_| AppError::ServiceUnavailable("Invalid peer grant".into()))?;
-        offline::reserve(
-            state.data_dir(),
-            &source.source_id,
-            &queued.item.remote_post_id,
-            &queued.revision,
-            &variant.kind,
-            size,
-        )?;
-        let root = offline::cache_root(state.data_dir(), &source.source_id);
-        tokio::fs::create_dir_all(&root).await?;
-        let destination = root.join(format!("{}-{}", digest, Uuid::new_v4()));
         let result = crate::online::peer::download(
             state.data_dir(),
             &source.source_id,
@@ -3538,46 +3822,39 @@ async fn try_peer_offline_variant(
             endpoint,
             relay,
             &grant,
-            &destination,
+            destination,
             digest,
             size,
-            &queued.revision,
+            item.remote_revision.as_deref().ok_or_else(|| {
+                AppError::ServiceUnavailable("Peer viewing requires a canonical revision".into())
+            })?,
         )
         .await;
-        if result.is_ok() && sync_continues(state, &source.source_id, cancel)? {
-            if let Err(error) = offline::finish(
-                state.data_dir(),
-                &source.source_id,
-                queued,
-                &variant.kind,
-                digest,
-                size,
-                &destination,
-                true,
-                variant.mime_type.as_deref(),
-            ) {
-                let _ = tokio::fs::remove_file(&destination).await;
-                offline::release(
-                    state.data_dir(),
-                    &source.source_id,
-                    &queued.item.remote_post_id,
-                    &queued.revision,
-                    &variant.kind,
-                )?;
-                return Err(error);
-            }
+        if result.is_ok() && peer_download_continues(state, source, item, cancel)? {
             return Ok(true);
         }
-        let _ = tokio::fs::remove_file(&destination).await;
-        offline::release(
-            state.data_dir(),
-            &source.source_id,
-            &queued.item.remote_post_id,
-            &queued.revision,
-            &variant.kind,
-        )?;
+        let _ = tokio::fs::remove_file(destination).await;
     }
     Ok(false)
+}
+
+fn peer_download_continues(
+    state: &AppState,
+    source: &RemoteSource,
+    item: &RemoteItem,
+    cancel: Option<&AtomicBool>,
+) -> Result<bool, AppError> {
+    if let Some(cancel) = cancel {
+        return sync_continues(state, &source.source_id, cancel);
+    }
+    let current_source = load_source(state.data_dir(), &source.source_id)?;
+    require_enabled(&current_source)?;
+    enforce_item_policy(
+        item,
+        &current_source.policy_profile,
+        state.is_family_mode_locked(),
+    )?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -3970,6 +4247,33 @@ mod creator_offline_tests {
                 ["availability"],
             "unknown"
         );
+    }
+
+    #[test]
+    fn available_discovery_includes_recent_peer_claim_without_asserting_reachability() {
+        let (dir, _, source, _) = setup(64);
+        offline::remember_creator_directory(dir.path(),&source.source_id,&json!({"id":"creator-1","name":"Creator","post_count":2,"availability":{"state":"unknown","hosted_posts":0,"peer_reported_posts":1,"reachability":"unknown","peer_status":"recently_reported"}}),Some("image"),false).unwrap();
+        let rows =
+            offline::creator_rows(dir.path(), &source.source_id, Some("image"), false).unwrap();
+        assert!(offline::creator_potentially_available(&rows[0]));
+        assert_eq!(rows[0]["availability"], "unknown");
+        assert_eq!(rows[0]["central_readiness"], "unavailable");
+        assert_eq!(rows[0]["peer_availability"], "recently_reported");
+        conn_expire_creator_snapshot(dir.path(), "image:all");
+        let rows =
+            offline::creator_rows(dir.path(), &source.source_id, Some("image"), false).unwrap();
+        assert!(!offline::creator_potentially_available(&rows[0]));
+        assert_eq!(rows[0]["peer_availability"], "unknown");
+        assert!(rows[0]["provider_availability"].is_null());
+    }
+    fn conn_expire_creator_snapshot(data_dir: &Path, key: &str) {
+        offline::open(data_dir)
+            .unwrap()
+            .execute(
+                "UPDATE offline_creators SET directory_json=json_set(directory_json,?1,0)",
+                params![format!("$.snapshots.\"{key}\".directory_verified_at")],
+            )
+            .unwrap();
     }
 
     #[test]
@@ -4438,5 +4742,220 @@ mod descriptor_refresh_tests {
             .unwrap();
         assert_eq!(stored.transport_mode, transport::TransportMode::Standard);
         assert_eq!(stored.descriptor, config.descriptor);
+    }
+}
+
+#[cfg(test)]
+mod peer_view_tests {
+    use super::*;
+
+    fn setup() -> (tempfile::TempDir, AppState, RemoteSource, RemoteItem) {
+        let directory = tempfile::tempdir().unwrap();
+        let state = AppState::new(directory.path(), 0).unwrap();
+        initialize_offline_database(directory.path()).unwrap();
+        let source = RemoteSource {
+            source_id: "viewer".into(),
+            provider_family: "donutbooru".into(),
+            display_name: "Community".into(),
+            normalized_base_url: "https://hub.example".into(),
+            policy_profile: "unrestricted".into(),
+            enabled: true,
+            allow_local_network: false,
+            capabilities: crate::online::models::SourceCapabilities::read_only(),
+            last_probe_at: None,
+        };
+        open_db(directory.path()).unwrap().execute("INSERT INTO remote_sources(source_id,provider_family,display_name,normalized_base_url,capabilities_json,created_at) VALUES(?1,?2,?3,?4,?5,'now')",params![source.source_id,source.provider_family,source.display_name,source.normalized_base_url,serde_json::to_string(&source.capabilities).unwrap()]).unwrap();
+        let digest = format!("{:x}", Sha256::digest(vec![79u8; 180_000]));
+        let item = hub::catalog_item("viewer", "https://hub.example", &json!({"remote_post_id":"12","canonical_url":"https://hub.example/image/12","remote_revision":"revision-1","tags":[],"rating":"pg","variants":[{"kind":"original","asset_url":"https://hub.example/api/client/v1/media/12/original","mime_type":"video/mp4","sha256":digest,"byte_size":180_000}]})).unwrap();
+        (directory, state, source, item)
+    }
+
+    // AC: @creator-community-replication ac-5
+    #[tokio::test]
+    async fn normal_peer_view_after_central_loss_verifies_then_ranges_and_cleans_without_subscription(
+    ) {
+        let (directory, state, source, item) = setup();
+        for ranged in [false, true] {
+            let mut headers = HeaderMap::new();
+            if ranged {
+                headers.insert(header::RANGE, HeaderValue::from_static("bytes=100-199"));
+            }
+            let staged = Arc::new(Mutex::new(None::<std::path::PathBuf>));
+            let observed = staged.clone();
+            let response = asset_delivery(
+                Err(AppError::Upstream(
+                    StatusCode::NOT_FOUND,
+                    "Central rendition is unavailable".into(),
+                )),
+                || {
+                    peer_view_asset_with(
+                        &state,
+                        &source,
+                        &item,
+                        &item.media[0],
+                        &headers,
+                        |destination| async move {
+                            *observed.lock().unwrap() = Some(destination.clone());
+                            // A fake broker supplies the trusted grant/provider. Actual
+                            // authenticated Iroh serving and verified receiving run here.
+                            crate::online::peer::test_view_download(&destination).await;
+                            Ok(true)
+                        },
+                    )
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                response.status(),
+                if ranged {
+                    StatusCode::PARTIAL_CONTENT
+                } else {
+                    StatusCode::OK
+                }
+            );
+            assert_eq!(response.headers()[header::CONTENT_TYPE], "video/mp4");
+            assert_eq!(
+                response.headers()[header::CACHE_CONTROL],
+                "private, no-store"
+            );
+            if ranged {
+                assert_eq!(
+                    response.headers()[header::CONTENT_RANGE],
+                    "bytes 100-199/180000"
+                );
+            }
+            let path = staged.lock().unwrap().clone().unwrap();
+            assert!(path.exists());
+            let bytes = axum::body::to_bytes(response.into_body(), 200_000)
+                .await
+                .unwrap();
+            assert_eq!(
+                bytes.as_ref(),
+                vec![79u8; if ranged { 100 } else { 180_000 }]
+            );
+            assert!(
+                !path.parent().unwrap().exists(),
+                "the temporary directory disappears with its response body"
+            );
+        }
+        let conn = open_db(directory.path()).unwrap();
+        for table in [
+            "offline_sources",
+            "offline_items",
+            "offline_variants",
+            "offline_selections",
+        ] {
+            assert_eq!(
+                conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r
+                    .get::<_, i64>(0))
+                    .unwrap(),
+                0,
+                "viewing must not subscribe or retain personal media: {table}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn peer_view_body_drop_and_bad_digest_remove_ephemeral_files() {
+        let (_directory, state, source, item) = setup();
+        let staged = Arc::new(Mutex::new(None::<std::path::PathBuf>));
+        let observed = staged.clone();
+        let response = peer_view_asset_with(
+            &state,
+            &source,
+            &item,
+            &item.media[0],
+            &HeaderMap::new(),
+            |destination| async move {
+                *observed.lock().unwrap() = Some(destination.clone());
+                tokio::fs::write(&destination, vec![79u8; 180_000]).await?;
+                Ok(true)
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let path = staged.lock().unwrap().clone().unwrap();
+        assert!(path.exists());
+        drop(response);
+        assert!(!path.parent().unwrap().exists());
+        let observed = staged.clone();
+        let error = peer_view_asset_with(
+            &state,
+            &source,
+            &item,
+            &item.media[0],
+            &HeaderMap::new(),
+            |destination| async move {
+                *observed.lock().unwrap() = Some(destination.clone());
+                tokio::fs::write(&destination, vec![80u8; 180_000]).await?;
+                Ok(true)
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("digest"));
+        assert!(!staged
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .exists());
+    }
+
+    #[tokio::test]
+    async fn peer_view_never_bypasses_hub_denial_or_unknown_digest_or_size_limit() {
+        let (_directory, state, source, mut item) = setup();
+        let called = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+            let called = called.clone();
+            let result = asset_delivery(
+                Err(AppError::Upstream(status, "Denied".into())),
+                || async move {
+                    called.fetch_add(1, Ordering::SeqCst);
+                    Ok(None)
+                },
+            )
+            .await;
+            assert!(matches!(result,Err(AppError::Upstream(code,_)) if code==status));
+        }
+        assert_eq!(called.load(Ordering::SeqCst), 0);
+        item.media[0].sha256 = None;
+        assert!(peer_view_asset_with(
+            &state,
+            &source,
+            &item,
+            &item.media[0],
+            &HeaderMap::new(),
+            |_| async {
+                panic!("unknown digests must remain central-only");
+                #[allow(unreachable_code)]
+                Ok(false)
+            }
+        )
+        .await
+        .unwrap()
+        .is_none());
+        item.media[0].sha256 = Some("ab".repeat(32));
+        item.media[0].byte_size = Some(PEER_VIEW_LIMIT + 1);
+        assert!(peer_view_asset_with(
+            &state,
+            &source,
+            &item,
+            &item.media[0],
+            &HeaderMap::new(),
+            |_| async {
+                panic!("oversized views must not reserve/download");
+                #[allow(unreachable_code)]
+                Ok(false)
+            }
+        )
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("256 MiB"));
     }
 }

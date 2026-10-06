@@ -13,7 +13,7 @@ use std::{
     collections::HashMap,
     fs::OpenOptions,
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{Arc, Mutex as StdMutex, OnceLock, Weak},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -431,7 +431,7 @@ async fn frame<T: Serialize>(send: &mut iroh::endpoint::SendStream, head: &T) ->
     })
     .await
     .map_err(|_| "Peer write timed out")?
-    .map_err(|_| "Unable to write peer frame")
+    .map_err(|_| "Unable to write peer frame".to_string())
 }
 async fn read_frame<T: for<'a> Deserialize<'a>>(
     recv: &mut iroh::endpoint::RecvStream,
@@ -1259,6 +1259,9 @@ mod tests {
     }
 
     async fn actual_serve_case(case: &str) {
+        actual_serve_case_into(case, None).await;
+    }
+    pub(super) async fn actual_serve_case_into(case: &str, copy_to: Option<&Path>) {
         use std::sync::atomic::{AtomicUsize, Ordering};
         let directory = tempfile::tempdir().unwrap();
         let state = AppState::new(directory.path(), 0).unwrap();
@@ -1368,7 +1371,9 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let destination = directory.path().join("received.png");
+        let destination = copy_to
+            .map(|path| path.to_path_buf())
+            .unwrap_or_else(|| directory.path().join("received.png"));
         let received = receive(
             &connection,
             &grant,
@@ -1428,4 +1433,11 @@ mod tests {
             .join("online-peer-authorities.json")
             .exists());
     }
+}
+
+/// Test-only broker bridge: the viewer regression obtains real authenticated,
+/// recipient-bound bytes through the common production serving/receiving path.
+#[cfg(test)]
+pub(crate) async fn test_view_download(destination: &Path) {
+    tests::actual_serve_case_into("valid", Some(destination)).await;
 }

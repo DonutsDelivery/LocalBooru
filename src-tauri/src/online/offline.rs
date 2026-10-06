@@ -1416,3 +1416,16 @@ pub fn hosting_reported(data_dir: &Path, sid: &str, count: usize) -> Result<(), 
     )?;
     Ok(())
 }
+
+/// Available discovery includes recent provider reports without promising that
+/// an unprobed peer is reachable. Expired snapshots expose neither nested claims
+/// nor a recent peer status, so they naturally leave the default view.
+pub fn creator_potentially_available(row: &Value) -> bool {
+    matches!(row["availability"].as_str(), Some("available" | "partial"))
+        || (row["peer_availability"].as_str() == Some("recently_reported")
+            && row
+                .pointer("/provider_availability/peer_reported_posts")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                > 0)
+}
