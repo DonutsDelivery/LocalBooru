@@ -7,3 +7,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T01:08:21.119Z
+  - _ulid: 01M47DFV5HY7R0ZE1HG49JF6TW
+    content: Merged to main as bb8d85f5 (product commit 06c42420). Release installer succeeded after
+      shared host build gate; Cargo finished in 5m05s and exited. Installed executable SHA256
+      matches release. Previous app quit cleanly through its tray action; new PID1320142 uses
+      installed binary and deep link opens new native DonutBooru gallery. Final installed-frontend
+      relay smoke check underway.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T01:33:14.290Z
