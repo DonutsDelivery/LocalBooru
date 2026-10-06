@@ -26,3 +26,12 @@ test('collection index puts shared navigation in the sidebar without a separate 
   expect((await within(document.querySelector('main')).findByText('Local images')).closest('[role=button]')).not.toBeNull()
   expect(api.getConnectedHubs).toHaveBeenCalledOnce()
 })
+
+// AC: @collections ac-collection-sidebar
+test('shared collections remain visible when there are no local collections', async () => {
+  api.fetchCollections.mockResolvedValue({ collections: [] })
+  render(<MemoryRouter initialEntries={['/collections?media_type=image']}><CollectionsPage /></MemoryRouter>)
+  expect(await screen.findByRole('heading', { name: 'No local collections yet' })).toBeTruthy()
+  expect((await screen.findByRole('link', { name: 'DonutBooru', exact: true })).closest('aside')).not.toBeNull()
+  expect(screen.queryByRole('heading', { name: 'No collections yet', exact: true })).toBeNull()
+})

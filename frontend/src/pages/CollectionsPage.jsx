@@ -118,7 +118,7 @@ export default function CollectionsPage() {
           <div className="collections-loading">Loading collections...</div>
         ) : collections.length === 0 ? (
           <div className="collections-empty">
-            <h2>No collections yet</h2>
+            <h2>No local collections yet</h2>
             <p>Create a collection to organize your {mediaType === 'video' ? 'videos' : 'images'}.</p>
           </div>
         ) : (
