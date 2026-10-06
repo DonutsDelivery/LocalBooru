@@ -221,6 +221,107 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    // AC: @local-gallery-completeness ac-legacy-rows
+    // AC: @local-gallery-completeness ac-all-pages
+    #[tokio::test]
+    async fn legacy_nullable_view_counts_keep_all_video_gallery_pages() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::new(root.path(), 0).unwrap();
+        let library = state.library_manager().primary().clone();
+        // Python-created directory databases allow NULL for this optional
+        // statistic. Initialization preserves their existing table schema.
+        let legacy = rusqlite::Connection::open(library.directory_db.db_path(11)).unwrap();
+        crate::db::schema::init_directory_db(&legacy).unwrap();
+        let schema: String = legacy
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='images'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        legacy.execute_batch("DROP TABLE images").unwrap();
+        legacy
+            .execute_batch(&schema.replace(
+                "view_count INTEGER NOT NULL DEFAULT 0",
+                "view_count INTEGER DEFAULT 0",
+            ))
+            .unwrap();
+        drop(legacy);
+        let pool = library.directory_db.get_pool(11).unwrap();
+        for id in 1..=263 {
+            insert_image(
+                &library,
+                11,
+                id,
+                &format!("legacy-video-{id}"),
+                "/synthetic-videos",
+                "2026-10-01 12:00:00",
+                &[&format!("/synthetic-videos/{id}.mp4")],
+            );
+            pool.get()
+                .unwrap()
+                .execute(
+                    "UPDATE images SET filename=?2,view_count=?3 WHERE id=?1",
+                    params![
+                        id,
+                        format!("video-{id}.mp4"),
+                        if id <= 22 { Some(7) } else { None }
+                    ],
+                )
+                .unwrap();
+            pool.get()
+                .unwrap()
+                .execute(
+                    "UPDATE image_files SET file_extension='mp4' WHERE image_id=?1",
+                    params![id],
+                )
+                .unwrap();
+        }
+        let app = Router::new()
+            .route("/api/images", get(list_images))
+            .route("/api/images/folders", get(list_folders))
+            .with_state(state);
+        let mut ids = HashSet::new();
+        for page in 1..=6 {
+            let response = app.clone().oneshot(request(&format!(
+                "/api/images?directory_id=11&media_type=video&import_source=%2Fsynthetic-videos&page={page}&per_page=50",
+            ))).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(result["total"], 263);
+            let images = result["images"].as_array().unwrap();
+            assert_eq!(images.len(), if page < 6 { 50 } else { 13 });
+            for image in images {
+                let id = image["id"].as_i64().unwrap();
+                assert!(ids.insert(id), "Repeated video across pages: {id}");
+                assert_eq!(image["view_count"], if id <= 22 { 7 } else { 0 });
+            }
+        }
+        assert_eq!(ids.len(), 263);
+        let response = app
+            .oneshot(request(
+                "/api/images/folders?directory_id=11&media_type=video",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let folders: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(folders["folders"][0]["count"], 263);
+        // Reading the gallery must not rewrite the user's optional statistics.
+        let absent: i64 = pool
+            .get()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE view_count IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(absent, 241);
+    }
+
     // AC: @grouped-folder-catalog-scale ac-many-folders-many-images
     // A single directory with hundreds of thousands of images across
     // thousands of folders must serve a paginated catalog quickly, in
