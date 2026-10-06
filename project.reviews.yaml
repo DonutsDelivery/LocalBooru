@@ -12895,7 +12895,18 @@ reviews:
       - collection-sidebar-review
     title: Collection gallery sidebar, catalog scope and separate R18 enrollment
     author: hub_source_review
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bb8d85f5
+          head_commit: e50bc45c
+        evidence: Root ran 24 component tests across four sidebar/collection files and 8 collection/filter
+          helper tests; all pass.
+        name: frontend-focused
+        required: true
+        created_at: 2026-10-06T01:55:34.292Z
+        completed_at: 2026-10-06T01:55:34.292Z
     events:
       - _ulid: 01M47ER11PMJ8BWWW3CA96XEDP
         actor: hub_source_review
@@ -12910,6 +12921,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-06T01:55:12.768Z
+      - _ulid: 01M47ERQV3BC535E88SHS5F5MX
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-focused
+        timestamp: 2026-10-06T01:55:34.371Z
     examined_commit: e50bc45c
     external_links: []
     lifecycle_state: open
@@ -12924,5 +12942,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T01:55:11.030Z
-    updated_at: 2026-10-06T01:55:12.689Z
+    updated_at: 2026-10-06T01:55:34.292Z
     notes: []
