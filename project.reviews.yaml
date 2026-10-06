@@ -12903,9 +12903,16 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-06T01:55:11.030Z
+      - _ulid: 01M47ER2R0N5Q4PH8TCG5V1VAK
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-06T01:55:12.768Z
     examined_commit: e50bc45c
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@collection-sidebar-parity"
     subject:
@@ -12917,5 +12924,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T01:55:11.030Z
-    updated_at: null
+    updated_at: 2026-10-06T01:55:12.689Z
     notes: []
