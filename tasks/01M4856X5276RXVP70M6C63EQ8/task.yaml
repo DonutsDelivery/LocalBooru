@@ -1,0 +1,37 @@
+_ulid: 01M4856X5276RXVP70M6C63EQ8
+slugs:
+  - offline-relay-download-speed
+title: Reduce repeated relay setup during offline downloads
+type: bug
+description: User reports slow downloads and asks if thumbnails retained. Confirm all advertised
+  original/thumbnail/preview variants retained. Current per-source item serialization plus transport
+  creates/closes Iroh endpoint/QUIC connection for every request. Reduce repeated relay setup with
+  bounded reusable sessions keyed by exact peer/relay/transport mode while retaining streaming
+  limits, fresh auth headers, pin validation, profile boundaries, failures/cancellation and
+  denied-cache behavior. Measure with synthetic behavioral transport tests; no user
+  library/credentials/media or production protected requests. Independent review/main/install; keep
+  thumbnails included.
+spec_ref: "@creator-community-replication"
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-06T08:27:47.412Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-06T08:27:47.412Z
+created_at: 2026-10-06T08:27:47.233Z
+started_at: 2026-10-06T08:27:47.412Z
+todos: []
