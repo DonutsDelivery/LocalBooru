@@ -1670,6 +1670,11 @@ features:
           rating policies; an online authorization failure is not silently replaced with protected
           cached results.
         when: the hub or login is unavailable and the user chooses offline browsing
+      - given: A user has opted into helping host verified downloaded copies
+        id: ac-5
+        then: The member receives the exact verified content from an eligible peer without disclosing their
+          normal hub credential; denied, withdrawn, altered or wrong-realm content is not served.
+        when: an authorized community member requests an available file
     tags: []
     created: 2026-10-06T02:43:41.997Z
     notes: []
