@@ -13777,6 +13777,13 @@ reviews:
           status: pass
           name: production-python-fixtures
         timestamp: 2026-10-06T04:08:14.362Z
+      - _ulid: 01M47RSY878ERZ3ZJMKD2EVKYQ
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 5f23549
+          previous_head: 78669be
+        timestamp: 2026-10-06T04:50:59.464Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13787,11 +13794,11 @@ reviews:
       base_branch: main
       base_commit: 546859d
       head_branch: feat/creator-peer-catalog
-      head_commit: 78669be
+      head_commit: 5f23549
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:07.385Z
-    updated_at: 2026-10-06T04:08:14.281Z
+    updated_at: 2026-10-06T04:50:59.345Z
     notes: []
   - _ulid: 01M47PT48X5DM9CCXEZHDRPG0T
     slugs:
