@@ -14130,6 +14130,20 @@ reviews:
         runner: sha256
         created_at: 2026-10-06T04:16:19.306Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 221026d4c039f87aaee4891f9ce31a54ca69f5d4
+          head_commit: da329bcdc9ffdef538d6134174d61517ef79e871
+        evidence: "Independent exact da329bcdc9ffdef538d6134174d61517ef79e871: 8/8 disposable deployment
+          guards PASS. Runtime/environment/key/source drift refuses restore; current symlink and
+          database writes are preserved; reciprocal realm health exactness and symlink payload
+          refusal verified. Log /tmp/dmc-rollout-independent-guards.log."
+        name: rollout-guards
+        required: true
+        runner: unittest
+        created_at: 2026-10-06T06:22:43.089Z
+        completed_at: 2026-10-06T06:22:43.089Z
     events:
       - _ulid: 01M47PT48XHTBP5K7ND9FAGBDG
         actor: DonutsDelivery
@@ -14180,6 +14194,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-06T06:22:19.659Z
+      - _ulid: 01M47Y1WZWFA02ZWMFH8KFXXKH
+        actor: codex-peer-finish
+        event_type: check_added
+        payload:
+          status: pass
+          name: rollout-guards
+        timestamp: 2026-10-06T06:22:43.196Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -14194,7 +14215,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T04:16:08.477Z
-    updated_at: 2026-10-06T06:22:19.550Z
+    updated_at: 2026-10-06T06:22:43.089Z
     notes: []
   - _ulid: 01M47WYC8CN7J445WGFQAA3EX1
     slugs:
