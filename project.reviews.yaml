@@ -15154,3 +15154,32 @@ reviews:
     created_at: 2026-10-06T07:35:20.310Z
     updated_at: 2026-10-06T07:41:40.838Z
     notes: []
+  - _ulid: 01M482ZJTKR1196GJDS0AAF1P6
+    slugs:
+      - isolated-health-proxy-review
+    title: Review isolated development health proxy
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M482ZJTK9CF5FVFN7S183VVD
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-06T07:48:50.131Z
+    examined_commit: 54ec5676
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@isolated-preview-routing"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: b37d61db
+      head_branch: fix/isolated-preview-routing
+      head_commit: 54ec5676
+    threads: []
+    verdicts: []
+    created_at: 2026-10-06T07:48:50.131Z
+    updated_at: null
+    notes: []

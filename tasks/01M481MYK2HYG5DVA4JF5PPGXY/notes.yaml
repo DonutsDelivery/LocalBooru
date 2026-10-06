@@ -10,3 +10,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T07:35:20.010Z
+  - _ulid: 01M482ZKBHDK9VG1WYPFP3WAXM
+    content: Follow-up development-only fix 54ec5676 adds /health to the explicit Vite backend proxy.
+      Synthetic HTTP/Vite transport verifies identity JSON rather than SPA fallback (10 Node tests
+      pass, /tmp/dmc-isolation-health-proxy-tests.log). New review @isolated-health-proxy-review,
+      prior approved a8fd113c remains closed. Installer at main b37d61db remains frozen during its
+      build; follow-up changes only Vite dev config/test, no production JS/native source.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T07:48:50.673Z
