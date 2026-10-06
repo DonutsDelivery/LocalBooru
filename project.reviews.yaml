@@ -13625,6 +13625,19 @@ reviews:
         required: true
         created_at: 2026-10-06T05:58:39.612Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 428cf648
+        evidence: "Root exact428cf648 release test exited0: all3 mock-keyring tests pass. Portable/isolated
+          maps neveraccess sharedkeyring; missingportableisolatedflag failsbeforecredential access;
+          normaldesktopfallback preserved. No normalprofile/keyring invoked."
+        name: credentials-isolation
+        required: true
+        runner: cargo
+        created_at: 2026-10-06T06:01:50.459Z
+        completed_at: 2026-10-06T06:01:50.459Z
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13793,6 +13806,13 @@ reviews:
           status: running
           name: creator-runtime-acceptance
         timestamp: 2026-10-06T05:58:39.694Z
+      - _ulid: 01M47WVNPDYNZNT6ZXSR74QA0N
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: credentials-isolation
+        timestamp: 2026-10-06T06:01:50.541Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13807,7 +13827,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T05:58:39.612Z
+    updated_at: 2026-10-06T06:01:50.459Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
