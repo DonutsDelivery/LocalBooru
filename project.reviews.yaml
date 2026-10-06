@@ -14344,6 +14344,21 @@ reviews:
         runner: root-gated-cargo
         created_at: 2026-10-06T06:19:46.188Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: d5eff9edd6d8802995186a2ca66ea16c246d4807
+        evidence: Independently extracted actual open_db/schema SQL from exactd5eff9ed into SQLite :memory:.
+          Verified historical source backfills automatic_blocked=1; new source insert defaults0;
+          delete connection blocks automatic reuse across schema reopen; alias cascades on deletion;
+          sibling credential reference remains until sibling source deleted. No files, app, normal
+          profiles, keys or compiler used. Native10 still pending.
+        name: independent-synthetic-sql
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T06:20:36.701Z
+        completed_at: 2026-10-06T06:20:36.701Z
     events:
       - _ulid: 01M47WYCRW308KZYFQT7NGXJPD
         actor: DonutsDelivery
@@ -14379,6 +14394,13 @@ reviews:
           status: running
           name: native-shared-account
         timestamp: 2026-10-06T06:19:46.268Z
+      - _ulid: 01M47XY1HHBN9T3QSM8SBS7EG1
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-synthetic-sql
+        timestamp: 2026-10-06T06:20:36.785Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -14393,7 +14415,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T06:03:19.708Z
-    updated_at: 2026-10-06T06:19:46.188Z
+    updated_at: 2026-10-06T06:20:36.701Z
     notes: []
   - _ulid: 01M47XWDPZN5VTP4Y0PENR5ZHR
     slugs:
@@ -14434,6 +14456,21 @@ reviews:
         runner: root-gated-cargo
         created_at: 2026-10-06T06:19:44.954Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: bf9804528664220e19c079bb4a9865b7d21fa6a6
+        evidence: "Independently read root synthetic receipt /tmp/dmc-legacy-video-reproduction.json:
+          immutable baseline428cf648, owned isolated temp profile/private DBus, HTTP18792,263
+          synthetic rows with241 NULLviewcounts; catalog total263 but22 returned rows and folder
+          count263. This establishes pre-fix row-loss reproduction only, not post-fix native/runtime
+          acceptance. Current bf980452 native test remains running."
+        name: isolated-baseline-causal-proof
+        required: true
+        runner: root-isolated-fixture
+        created_at: 2026-10-06T06:20:37.045Z
+        completed_at: 2026-10-06T06:20:37.045Z
     events:
       - _ulid: 01M47XWDPZCC0QTBWAES5EW81F
         actor: DonutsDelivery
@@ -14462,6 +14499,13 @@ reviews:
           status: running
           name: native-local-video
         timestamp: 2026-10-06T06:19:45.034Z
+      - _ulid: 01M47XY1WBEE2G2AE8BE5JW6B8
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: isolated-baseline-causal-proof
+        timestamp: 2026-10-06T06:20:37.131Z
     examined_commit: bf9804528664220e19c079bb4a9865b7d21fa6a6
     external_links: []
     lifecycle_state: open
@@ -14476,5 +14520,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T06:19:43.711Z
-    updated_at: 2026-10-06T06:19:44.954Z
+    updated_at: 2026-10-06T06:20:37.045Z
     notes: []
