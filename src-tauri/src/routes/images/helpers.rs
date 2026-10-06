@@ -347,7 +347,7 @@ pub fn query_directory_images_scoped(
                 i.file_size, i.duration, i.rating, i.is_favorite, i.prompt, i.negative_prompt,
                 i.model_name, i.sampler, i.seed, i.steps, i.cfg_scale, i.num_faces,
                 i.min_detected_age, i.max_detected_age, i.created_at, i.import_source,
-                i.file_modified_at, i.view_count
+                i.file_modified_at, COALESCE(i.view_count, 0)
          FROM images i {} {} LIMIT ?{} OFFSET ?{}",
         where_sql,
         order_by,
