@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M47WK7CV75E062EFWBBY28GF
+    content: "Secure design: reciprocal exact realm declarations through both fresh pinned gateways; one
+      protected credential reference with recipient validation and persisted identity binding.
+      Existing accounts remain unchanged. Legacy records require explicit use-existing-account to
+      honor unknown prior disconnection. Disconnect generations prevent reattachment races; secret
+      removal requires no remaining references. Stacked worktrees /tmp/dmc-shared-account from
+      428cf648 and /tmp/booru-shared-account from 5f23549 preserve creator candidate and build
+      pipeline. Assigned existing offline_finish and peer_finish agents; root owns compiler,
+      isolated acceptance, rollout and integration."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T05:57:13.756Z

@@ -17,6 +17,9 @@ features:
     description: A verified community account can serve its linked collections after one sign-in.
       Linking requires established operator trust, preserves collection-specific browsing and
       transport choices, and respects explicit account selection and disconnection.
+    status:
+      maturity: draft
+      implementation: in_progress
     depends_on: []
     implements: []
     relates_to: []
@@ -30,9 +33,11 @@ features:
         when: the user opens that linked collection
       - given: An already enrolled linked collection has no saved account connection
         id: ac-2
-        then: The existing account is reused and the selected collection retains its browsing and transport
-          settings.
-        when: the user opens it after signing in to a verified sibling collection
+        then: The existing account provides access without another browser approval, retaining
+          collection-specific settings; an ambiguous legacy disconnection requires this explicit
+          choice.
+        when: the user opens an eligible collection or chooses to use the existing account for a previously
+          enrolled collection
       - given: An unrelated hub claims a matching name or identity
         id: ac-3
         then: No credential is disclosed and its own sign-in remains required.
