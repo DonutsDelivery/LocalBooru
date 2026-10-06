@@ -1675,6 +1675,11 @@ features:
         then: The member receives the exact verified content from an eligible peer without disclosing their
           normal hub credential; denied, withdrawn, altered or wrong-realm content is not served.
         when: an authorized community member requests an available file
+      - given: Creator content has different reachable copies
+        id: ac-6
+        then: Availability distinguishes complete, partial, offline and unknown coverage; the
+          all-collections view preserves unavailable entries, and following does not hide them.
+        when: the user views the creator directory
     tags: []
     created: 2026-10-06T02:43:41.997Z
     notes: []
