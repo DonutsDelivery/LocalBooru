@@ -13612,6 +13612,19 @@ reviews:
         runner: vite
         created_at: 2026-10-06T05:31:05.415Z
         completed_at: 2026-10-06T05:31:05.415Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 428cf648
+        evidence: Canonical isolated immutable 428cf648 candidate running fresh private-bus profile
+          /tmp/localbooru-isolated.sKuz1x on18790, empty sources and disposable paths independently
+          verified. Synthetic six-image hub18801 ready; fixture gateway compile queued. No normal
+          profile or keyring.
+        name: creator-runtime-acceptance
+        required: true
+        created_at: 2026-10-06T05:58:39.612Z
+        completed_at: null
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13773,6 +13786,13 @@ reviews:
           status: pass
           name: frontend-production-build
         timestamp: 2026-10-06T05:31:05.527Z
+      - _ulid: 01M47WNVAE39NWVG1K7PC5P8Q3
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: creator-runtime-acceptance
+        timestamp: 2026-10-06T05:58:39.694Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13787,7 +13807,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T05:31:05.415Z
+    updated_at: 2026-10-06T05:58:39.612Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
@@ -13853,6 +13873,21 @@ reviews:
         runner: unittest
         created_at: 2026-10-06T04:51:01.007Z
         completed_at: 2026-10-06T04:51:01.007Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 546859d
+          head_commit: 5f23549
+        evidence: "Root gateway test/build sequence exited 0 at exact 5f23549: 4 policy tests pass and
+          optimized release build complete. Immutable shipping SHA256
+          66e399ee8828bd70e2bbe74d57a21690df151c42da2e265eee933d1242fe5136, captured
+          /tmp/dmc-creator-shipping-gateway; probe includes anonymous catalog/tag/creator/peer
+          checks."
+        name: gateway-policy-build
+        required: true
+        runner: cargo
+        created_at: 2026-10-06T05:58:39.294Z
+        completed_at: 2026-10-06T05:58:39.294Z
     events:
       - _ulid: 01M47K4X6SYCESDVR7C4PB8BG6
         actor: DonutsDelivery
@@ -13909,6 +13944,13 @@ reviews:
           status: pass
           name: production-python-fixtures
         timestamp: 2026-10-06T04:51:01.129Z
+      - _ulid: 01M47WNV0JWWCWBP4H1JJ9C1Q7
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: gateway-policy-build
+        timestamp: 2026-10-06T05:58:39.378Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13923,7 +13965,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:07.385Z
-    updated_at: 2026-10-06T04:51:01.007Z
+    updated_at: 2026-10-06T05:58:39.294Z
     notes: []
   - _ulid: 01M47PT48X5DM9CCXEZHDRPG0T
     slugs:
