@@ -1659,6 +1659,11 @@ features:
         id: ac-2
         then: The followed creator remains visible, and following alone does not start media downloads.
         when: the creator becomes unavailable
+      - given: A user selects one creator or all current and future creators for offline use
+        id: ac-3
+        then: The app retains local media and browsing metadata, shows actual progress, resumes interrupted
+          work and reports paused, failed or budget-limited downloads without claiming completeness.
+        when: the user starts syncing within a reviewed storage budget
     tags: []
     created: 2026-10-06T02:43:41.997Z
     notes: []
