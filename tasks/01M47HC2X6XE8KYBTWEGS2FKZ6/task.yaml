@@ -10,7 +10,7 @@ description: "Approved product direction: hub is creator discovery catalog. Side
   remains Discord-linked internal account; withdrawals stop community delivery. Preserve current
   Bunny fallback during migration; do not retire bridge or storage until functional replacement
   verified. Integrate main, deploy protocol support, rebuild installed app and verify."
-spec_ref: null
+spec_ref: "@creator-community-replication"
 meta_ref: null
 plan_ref: null
 status: in_progress
@@ -31,6 +31,13 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-06T02:41:07.015Z
+  - author: DonutsDelivery
+    changes:
+      spec_ref:
+        new: "@creator-community-replication"
+        previous: null
+    command: task-set
+    timestamp: 2026-10-06T02:43:43.345Z
 created_at: 2026-10-06T02:41:05.446Z
 started_at: 2026-10-06T02:41:07.015Z
 todos: []

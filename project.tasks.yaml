@@ -2300,6 +2300,7 @@ tasks:
       - creator-offline-collections
     title: Creator discovery sidebar and selective offline community replication
     type: task
+    spec_ref: "@creator-community-replication"
     status: in_progress
     blocked_by: []
     depends_on: []
