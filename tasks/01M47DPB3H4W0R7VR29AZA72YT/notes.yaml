@@ -1,1 +1,11 @@
-notes: []
+notes:
+  - _ulid: 01M47EMEEKF6FK5YAZ1BE97CN9
+    content: "Implemented shared Sidebar controls for local and remote collection details, removed top
+      gallery header, shared tile control. Root independently verified 22 UI and 8 helper tests, 13
+      catalog and 7 realm tests, 4 gateway policy tests and rebuilt gateway. Review fixes in
+      progress: deterministic random paging and media/filter-scoped facet DTOs. Full Rust focused
+      tests compiling under host gate; live compatibility overlay is being prepared without secret
+      copies."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T01:53:13.683Z
