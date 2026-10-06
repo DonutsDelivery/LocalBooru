@@ -20,3 +20,17 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T02:04:41.348Z
+  - _ulid: 01M47FXFNXFHM8R77HC8T3ADSW
+    content: Installed and restarted main a9ef7551 standalone app (PID1379224), binary SHA256
+      dcbee62d909325bd48ca28da3dd7971d3fb9a17ee55df6e78b0b7642fb534d02. Native accessibility
+      confirms collection sidebar; authenticated installed backend returns 1042 images, 384 PG and
+      385 landscape with matching source/filter scoped facets. Installed frontend verified no top
+      header, tile size M five columns to XL one column and back with persisted preference, original
+      decoded1152x2016, lightbox1/60 to2/60 via ArrowRight and Escape returns to gallery. Production
+      publication verified distinct main/R18 origins and peers, all four services active; local app
+      remains running. All three clean task worktrees removed only after ancestor checks; unrelated
+      main edits preserved. Focused verification
+      passed:24UI,8helper,11Rust,20node,4gateway,5deployment guard tests. No public pushes.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T02:15:38.429Z

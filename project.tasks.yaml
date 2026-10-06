@@ -2289,7 +2289,7 @@ tasks:
     priority: 3
     tags: []
     review_ref: "@sidebar-rollout-result-review"
-    notes_count: 2
+    notes_count: 3
     todos_count: 0
     created_at: 2026-10-06T01:36:47.217Z
     started_at: 2026-10-06T01:36:48.536Z
