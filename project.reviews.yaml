@@ -13638,6 +13638,33 @@ reviews:
         runner: cargo
         created_at: 2026-10-06T06:01:50.459Z
         completed_at: 2026-10-06T06:01:50.459Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 428cf648
+        evidence: "Completed independent incremental review across all36 changed paths a9ef7551..428cf648
+          and creator-community-replication6 AC: searchable/paged Available Following Offline All
+          sidebar preserves URL filters/masonry; follow does not download; explicit positive bounded
+          budget queue/atomic reservation resume; retained offline paths require explicit
+          offline_only and family/source policy, central401/403 terminal; exact hash/size/revision
+          scoped grants and fresh provider authorization deny withdrawal/ban/realm mismatch;
+          truthful partial/unknown/provider availability. Descriptor refresh and normal temporary
+          verified peer fallback remain source pinned, bounded, cleanup owned, no subscription
+          needed. Hosting optional and independent download pause; removal explicit/preserves
+          following. Isolation native process port injected before appJS, portable credential
+          closures bypass keyring, private DBus/process group prevents shared GTK identity;
+          synthetic shells independently passed. AGENTS pointer is explicit user direction. Later
+          source additions reviewed through428cf648; diffcheck pass. Independently re-read native29,
+          mockcredential3 and optimized candidate build logs. Existing frontend56+16 and
+          actual310module candidate evidence match current unchanged frontend. No unresolved source
+          blockers. Required creator-runtime-acceptance remains running; this is source/test
+          evidence, not final approval."
+        name: independent-source-spec-audit
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T06:22:24.050Z
+        completed_at: 2026-10-06T06:22:24.050Z
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13813,9 +13840,23 @@ reviews:
           status: pass
           name: credentials-isolation
         timestamp: 2026-10-06T06:01:50.541Z
+      - _ulid: 01M47Y1A22K2NXSH5MK363QGTZ
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-06T06:22:23.811Z
+      - _ulid: 01M47Y1AC515A1WEXH69DXFYFD
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-spec-audit
+        timestamp: 2026-10-06T06:22:24.133Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@creator-offline-collections"
     subject:
@@ -13827,7 +13868,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T06:01:50.459Z
+    updated_at: 2026-10-06T06:22:24.050Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
