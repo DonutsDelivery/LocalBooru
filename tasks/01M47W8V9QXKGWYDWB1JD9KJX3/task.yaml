@@ -11,7 +11,7 @@ description: User confirmed second R18 sign-in works and requested one Discord-l
 spec_ref: "@verified-shared-hub-account"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
@@ -19,6 +19,14 @@ priority: 2
 tags: []
 vcs_refs: []
 review_ref: "@shared-account-dmc-review"
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-10-06T07:05:54.796Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -44,6 +52,27 @@ history:
         previous: "@shared-account-node-review"
     command: review-link
     timestamp: 2026-10-06T06:03:19.950Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-10-06T07:05:54.796Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-06T07:05:54.800Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-06T07:05:54.800Z
 created_at: 2026-10-06T05:51:33.687Z
 started_at: 2026-10-06T05:57:13.598Z
+submitted_at: 2026-10-06T07:05:54.800Z
 todos: []

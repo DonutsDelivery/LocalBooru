@@ -13,7 +13,7 @@ description: "Approved product direction: hub is creator discovery catalog. Side
 spec_ref: "@creator-community-replication"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
@@ -21,6 +21,14 @@ priority: 2
 tags: []
 vcs_refs: []
 review_ref: "@creator-peer-rollout-review"
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-10-06T07:05:54.451Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -95,7 +103,28 @@ history:
         previous: in_progress
     command: task-unblock
     timestamp: 2026-10-06T04:46:46.495Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-10-06T07:05:54.451Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-06T07:05:54.457Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-06T07:05:54.457Z
 prior_status: null
 created_at: 2026-10-06T02:41:05.446Z
 started_at: 2026-10-06T02:41:07.015Z
+submitted_at: 2026-10-06T07:05:54.457Z
 todos: []

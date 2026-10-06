@@ -2301,45 +2301,48 @@ tasks:
     title: Creator discovery sidebar and selective offline community replication
     type: task
     spec_ref: "@creator-community-replication"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 2
     tags: []
     review_ref: "@creator-peer-rollout-review"
-    notes_count: 13
+    notes_count: 14
     todos_count: 0
     created_at: 2026-10-06T02:41:05.446Z
     started_at: 2026-10-06T02:41:07.015Z
+    submitted_at: 2026-10-06T07:05:54.457Z
   - _ulid: 01M47W8V9QXKGWYDWB1JD9KJX3
     slugs:
       - shared-realm-account
     title: Share DonutBooru sign-in across verified main and R18 collections
     type: task
     spec_ref: "@verified-shared-hub-account"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 2
     tags: []
     review_ref: "@shared-account-dmc-review"
-    notes_count: 3
+    notes_count: 4
     todos_count: 0
     created_at: 2026-10-06T05:51:33.687Z
     started_at: 2026-10-06T05:57:13.598Z
+    submitted_at: 2026-10-06T07:05:54.800Z
   - _ulid: 01M47XBGPMQKBR47309DFRF6Z1
     slugs:
       - local-video-gallery-recovery
     title: Fix local video gallery missing rows and restore compact size control
     type: bug
     spec_ref: "@local-gallery-completeness"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 1
     tags: []
     review_ref: "@local-video-gallery-review"
-    notes_count: 2
+    notes_count: 3
     todos_count: 0
     created_at: 2026-10-06T06:10:29.716Z
     started_at: 2026-10-06T06:10:29.892Z
+    submitted_at: 2026-10-06T07:05:55.133Z
