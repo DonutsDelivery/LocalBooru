@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 
 use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
@@ -76,11 +76,164 @@ impl CollectionMember {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct PaginationParams {
     page: Option<i64>,
     per_page: Option<i64>,
     media_type: Option<String>,
+    tags: Option<String>,
+    exclude_tags: Option<String>,
+    rating: Option<String>,
+    sort: Option<String>,
+    timeframe: Option<String>,
+    #[serde(default)]
+    favorites_only: bool,
+    #[serde(default)]
+    exclude_favorites: bool,
+    min_age: Option<i32>,
+    max_age: Option<i32>,
+    has_faces: Option<bool>,
+    min_width: Option<i32>,
+    min_height: Option<i32>,
+    orientation: Option<String>,
+    min_duration: Option<i32>,
+    max_duration: Option<i32>,
+    filename: Option<String>,
+    import_source: Option<String>,
+    watched_status: Option<String>,
+    directory_id: Option<i64>,
+    library_id: Option<String>,
+}
+impl PaginationParams {
+    fn image_params(&self) -> Result<crate::routes::images::helpers::ImageQueryParams, AppError> {
+        if self.favorites_only && self.exclude_favorites {
+            return Err(AppError::BadRequest(
+                "favorites_only and exclude_favorites cannot both be true".into(),
+            ));
+        }
+        if self.rating.as_deref().is_some_and(|ratings| {
+            ratings
+                .split(',')
+                .any(|rating| !["pg", "pg13", "r", "x", "xxx"].contains(&rating.trim()))
+        }) {
+            return Err(AppError::BadRequest("Invalid rating filter".into()));
+        }
+        if self.sort.as_deref().is_some_and(|sort| {
+            ![
+                "collection",
+                "newest",
+                "oldest",
+                "filename_asc",
+                "filename_desc",
+                "filesize_largest",
+                "filesize_smallest",
+                "resolution_high",
+                "resolution_low",
+                "duration_longest",
+                "duration_shortest",
+                "folder_asc",
+                "folder_desc",
+                "random",
+            ]
+            .contains(&sort)
+        }) {
+            return Err(AppError::BadRequest("Unsupported collection sort".into()));
+        }
+        if self
+            .timeframe
+            .as_deref()
+            .is_some_and(|value| !["all", "today", "week", "month", "year"].contains(&value))
+        {
+            return Err(AppError::BadRequest("Unsupported timeframe".into()));
+        }
+        if self
+            .orientation
+            .as_deref()
+            .is_some_and(|value| !["landscape", "portrait", "square"].contains(&value))
+        {
+            return Err(AppError::BadRequest("Invalid orientation".into()));
+        }
+        if self
+            .watched_status
+            .as_deref()
+            .is_some_and(|value| !["watched", "unwatched", "in_progress"].contains(&value))
+        {
+            return Err(AppError::BadRequest("Invalid watch filter".into()));
+        }
+        if self.min_age.is_some_and(|n| n < 0)
+            || self.max_age.is_some_and(|n| n < 0)
+            || self.min_width.is_some_and(|n| n < 1)
+            || self.min_height.is_some_and(|n| n < 1)
+            || self.min_duration.is_some_and(|n| n < 0)
+            || self.max_duration.is_some_and(|n| n < 0)
+            || self
+                .min_age
+                .zip(self.max_age)
+                .is_some_and(|(min, max)| min > max)
+            || self
+                .min_duration
+                .zip(self.max_duration)
+                .is_some_and(|(min, max)| min > max)
+        {
+            return Err(AppError::BadRequest("Invalid filter range".into()));
+        }
+        let names = |value: Option<&str>| {
+            value
+                .unwrap_or("")
+                .split(',')
+                .map(|name| name.trim().to_lowercase().replace(' ', "_"))
+                .filter(|name| !name.is_empty())
+                .collect()
+        };
+        Ok(crate::routes::images::helpers::ImageQueryParams {
+            tags: names(self.tags.as_deref()),
+            exclude_tags: names(self.exclude_tags.as_deref()),
+            rating: names(self.rating.as_deref()),
+            favorites_only: self.favorites_only,
+            exclude_favorites: self.exclude_favorites,
+            min_age: self.min_age,
+            max_age: self.max_age,
+            has_faces: self.has_faces,
+            timeframe: self.timeframe.clone(),
+            min_width: self.min_width,
+            min_height: self.min_height,
+            orientation: self.orientation.clone(),
+            min_duration: self.min_duration,
+            max_duration: self.max_duration,
+            filename: self.filename.clone(),
+            import_source: self.import_source.clone(),
+            watched_status: self.watched_status.clone(),
+            directory_id: self.directory_id,
+            library_id: self.library_id.clone(),
+            sort: self.sort.clone().unwrap_or_else(|| "collection".into()),
+            limit: i64::MAX,
+            offset: 0,
+            show_images: self.media_type.as_deref() != Some("video"),
+            show_videos: self.media_type.as_deref() != Some("image"),
+        })
+    }
+    fn has_filters(&self) -> bool {
+        self.tags.is_some()
+            || self.exclude_tags.is_some()
+            || self.rating.is_some()
+            || self.media_type.is_some()
+            || self.favorites_only
+            || self.exclude_favorites
+            || self.min_age.is_some()
+            || self.max_age.is_some()
+            || self.has_faces.is_some()
+            || self.timeframe.as_deref().is_some_and(|time| time != "all")
+            || self.min_width.is_some()
+            || self.min_height.is_some()
+            || self.orientation.is_some()
+            || self.min_duration.is_some()
+            || self.max_duration.is_some()
+            || self.filename.is_some()
+            || self.import_source.is_some()
+            || self.watched_status.is_some()
+            || self.directory_id.is_some()
+            || self.library_id.is_some()
+    }
 }
 
 #[derive(Deserialize)]
@@ -179,6 +332,100 @@ fn collection_members(
     Ok(members)
 }
 
+fn resolve_legacy_members(
+    state: &AppState,
+    members: &[CollectionMember],
+) -> HashMap<i64, CollectionItemLocator> {
+    let library = state.library_manager().primary();
+    let mut unresolved = members
+        .iter()
+        .filter(|member| member.locator().is_none())
+        .map(|member| member.image_id)
+        .collect::<HashSet<_>>();
+    let mut resolved = HashMap::new();
+    let mut directories = library.directory_db.get_all_directory_ids();
+    directories.sort_unstable();
+    for directory_id in directories {
+        if unresolved.is_empty() {
+            break;
+        }
+        if !library.directory_db.db_exists(directory_id) {
+            continue;
+        }
+        let Ok(pool) = library.directory_db.get_pool(directory_id) else {
+            continue;
+        };
+        let Ok(conn) = pool.get() else {
+            continue;
+        };
+        let ids = unresolved.iter().copied().collect::<Vec<_>>();
+        for chunk in ids.chunks(500) {
+            let sql = format!(
+                "SELECT id FROM images WHERE id IN ({})",
+                chunk
+                    .iter()
+                    .map(i64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            let Ok(mut stmt) = conn.prepare(&sql) else {
+                continue;
+            };
+            let Ok(rows) = stmt.query_map([], |row| row.get::<_, i64>(0)) else {
+                continue;
+            };
+            for id in rows.filter_map(Result::ok) {
+                resolved.insert(
+                    id,
+                    CollectionItemLocator {
+                        image_id: id,
+                        directory_id,
+                        library_id: library.uuid.clone(),
+                    },
+                );
+                unresolved.remove(&id);
+            }
+        }
+    }
+    resolved
+}
+
+fn sort_collection_images(images: &mut Vec<Value>, sort: &str, collection_id: i64) {
+    if sort == "collection" {
+        return;
+    }
+    if sort == "random" {
+        use sha2::{Digest, Sha256};
+        // Include the complete locator, not just a database-local numeric ID.
+        // A stable hash keeps separate page and restoration requests aligned.
+        images.sort_by_cached_key(|image| {
+            let mut hash = Sha256::new();
+            hash.update(b"dmc-collection-order-v1");
+            hash.update(collection_id.to_be_bytes());
+            hash.update(image["library_id"].as_str().unwrap_or_default().as_bytes());
+            hash.update(
+                image["directory_id"]
+                    .as_i64()
+                    .unwrap_or_default()
+                    .to_be_bytes(),
+            );
+            hash.update(image["id"].as_i64().unwrap_or_default().to_be_bytes());
+            hash.update([u8::from(
+                image["collection_legacy_member"].as_bool().unwrap_or(false),
+            )]);
+            <[u8; 32]>::from(hash.finalize())
+        });
+    } else {
+        images.sort_by(|a, b| {
+            a["library_id"]
+                .as_str()
+                .cmp(&b["library_id"].as_str())
+                .then_with(|| a["directory_id"].as_i64().cmp(&b["directory_id"].as_i64()))
+        });
+        crate::routes::images::list::sort_merged_images(images, sort);
+    }
+}
+
 fn member_thumbnail_url(member: &CollectionMember) -> String {
     if let Some(locator) = member.locator() {
         let library =
@@ -208,6 +455,178 @@ mod tests {
             .extensions_mut()
             .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 50000))));
         request
+    }
+
+    async fn detail(app: &Router, query: &str) -> Value {
+        let response = app.clone().oneshot(request(query)).await.unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{}",
+            String::from_utf8_lossy(&bytes)
+        );
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn collection_filters_sort_all_scoped_members_before_pagination() {
+        let root = std::env::temp_dir().join(format!(
+            "dmc-collection-sidebar-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let state = AppState::new(&root, 0).unwrap();
+        let primary_id = state.library_manager().primary().uuid.clone();
+        let directory = state.directory_db().get_pool(11).unwrap();
+        {
+            let conn = directory.get().unwrap();
+            for (id, name, favorite, width, height, age, duration, extension) in [
+                (1, "z.png", false, 400, 400, 10, 0, "png"),
+                (2, "b.png", true, 600, 600, 20, 30, "png"),
+                (3, "a.png", true, 1200, 800, 25, 60, "png"),
+                (4, "discarded.png", false, 800, 800, 20, 0, "png"),
+                (5, "v.mp4", true, 1600, 900, 30, 120, "mp4"),
+            ] {
+                conn.execute("INSERT INTO images (id,filename,original_filename,file_hash,is_favorite,width,height,min_detected_age,max_detected_age,num_faces,duration) VALUES (?1,?2,?2,?3,?4,?5,?6,?7,?7,1,?8)",params![id,name,format!("primary-{id}"),favorite,width,height,age,duration]).unwrap();
+                conn.execute("INSERT INTO image_files (image_id,original_path,file_extension) VALUES (?1,?2,?3)",params![id,format!("/media/{name}"),extension]).unwrap();
+            }
+            conn.execute(
+                "UPDATE images SET original_filename=NULL,view_count=7 WHERE id=3",
+                [],
+            )
+            .unwrap();
+            conn.execute("INSERT INTO image_files (image_id,original_path,file_extension,curation_discarded_at) VALUES (4,'/media/discarded.mp4','mp4',datetime('now'))",[]).unwrap();
+            conn.execute(
+                "INSERT INTO image_tags (image_id,tag_id) VALUES (2,1),(2,2),(3,1)",
+                [],
+            )
+            .unwrap();
+        }
+        {
+            let other = state.directory_db().get_pool(12).unwrap();
+            let conn = other.get().unwrap();
+            conn.execute("INSERT INTO images (id,filename,original_filename,file_hash,rating,is_favorite) VALUES (3,'other.mp4','other.mp4','other-dir','x',1)",[]).unwrap();
+            conn.execute("INSERT INTO image_files (image_id,original_path,file_extension) VALUES (3,'/other/3.mp4','mp4')",[]).unwrap();
+        }
+        let secondary_root = root.join("secondary");
+        std::fs::create_dir_all(&secondary_root).unwrap();
+        let secondary =
+            crate::db::library::LibraryContext::open(&secondary_root, "Secondary").unwrap();
+        let secondary_id = secondary.uuid.clone();
+        {
+            let other = secondary.directory_db.get_pool(11).unwrap();
+            let conn = other.get().unwrap();
+            conn.execute("INSERT INTO images (id,filename,original_filename,file_hash,rating,is_favorite) VALUES (3,'secondary.mp4','secondary.mp4','other-library','pg',1)",[]).unwrap();
+            conn.execute("INSERT INTO image_files (image_id,original_path,file_extension) VALUES (3,'/secondary/3.mp4','mp4')",[]).unwrap();
+        }
+        state.library_manager().mount(secondary);
+        {
+            let conn = state.main_db().get().unwrap();
+            conn.execute(
+                "INSERT INTO tags (id,name) VALUES (1,'sunrise'),(2,'indoor')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO collections (id,name,item_count) VALUES (1,'Scoped',7),(2,'Legacy',1)",
+                [],
+            )
+            .unwrap();
+            for id in 1..=5 {
+                conn.execute("INSERT INTO collection_items (collection_id,image_id,directory_id,library_id,sort_order) VALUES (1,?1,11,?2,?1)",params![id,primary_id]).unwrap();
+            }
+            conn.execute("INSERT INTO collection_items (collection_id,image_id,directory_id,library_id,sort_order) VALUES (1,3,12,?1,6),(1,3,11,?2,7)",params![primary_id,secondary_id]).unwrap();
+            conn.execute(
+                "INSERT INTO collection_items (collection_id,image_id,sort_order) VALUES (2,3,1)",
+                [],
+            )
+            .unwrap();
+            conn.execute("INSERT INTO watch_history (image_id,directory_id,library_id,completed) VALUES (3,12,?1,1)",params![primary_id]).unwrap();
+        }
+        let app = Router::new()
+            .nest("/api/collections", router())
+            .with_state(state);
+        for (page, expected_id, has_more) in [(1, 3, true), (2, 2, false)] {
+            let data = detail(&app,&format!("/api/collections/1?media_type=image&favorites_only=true&rating=pg&sort=filename_asc&page={page}&per_page=1")).await;
+            assert_eq!(data["item_count"], 2);
+            assert_eq!(data["images"][0]["id"], expected_id);
+            assert_eq!(data["has_more"], has_more);
+            assert_eq!(data["images"][0]["directory_id"], 11);
+            assert_eq!(data["images"][0]["library_id"], primary_id);
+        }
+        let data = detail(&app, "/api/collections/1?per_page=2").await;
+        assert_eq!(data["item_count"], 7);
+        assert_eq!(data["images"][0]["id"], 1);
+        assert_eq!(data["images"][1]["id"], 2);
+        let data = detail(&app,"/api/collections/1?tags=sunrise&exclude_tags=indoor&min_age=21&max_age=27&has_faces=true&min_width=1000&min_height=700&orientation=landscape&min_duration=40&max_duration=90").await;
+        assert_eq!(data["item_count"], 1);
+        assert_eq!(data["images"][0]["file_hash"], "primary-3");
+        assert_eq!(data["images"][0]["original_filename"], "a.png");
+        assert_eq!(data["images"][0]["view_count"], 7);
+        let data = detail(
+            &app,
+            "/api/collections/1?media_type=video&watched_status=watched",
+        )
+        .await;
+        assert_eq!(data["item_count"], 1);
+        assert_eq!(data["images"][0]["file_hash"], "other-dir");
+        assert_eq!(data["images"][0]["library_id"], primary_id);
+        let data = detail(
+            &app,
+            &format!("/api/collections/1?directory_id=11&library_id={secondary_id}"),
+        )
+        .await;
+        assert_eq!(data["item_count"], 1);
+        assert_eq!(data["images"][0]["file_hash"], "other-library");
+        assert_eq!(data["images"][0]["library_id"], secondary_id);
+        let data = detail(&app, "/api/collections/2?media_type=video").await;
+        assert_eq!(
+            data["item_count"], 0,
+            "legacy primary image must not retarget a colliding video ID"
+        );
+        let data = detail(&app,"/api/collections/1?media_type=video&directory_id=11&library_id=primary&filename=discarded").await;
+        assert_eq!(
+            data["item_count"], 0,
+            "discarded video files cannot classify a surviving image as video"
+        );
+        let full_random = detail(&app, "/api/collections/1?sort=random&per_page=200").await;
+        let expected = full_random["images"].as_array().unwrap();
+        let mut paginated = Vec::new();
+        for page in 1..=4 {
+            let data = detail(
+                &app,
+                &format!("/api/collections/1?sort=random&per_page=2&page={page}"),
+            )
+            .await;
+            assert_eq!(data["item_count"], 7);
+            paginated.extend(data["images"].as_array().unwrap().iter().cloned());
+        }
+        assert_eq!(
+            &paginated, expected,
+            "Random collection pages must use the same full-locator order"
+        );
+        let restored = detail(&app, "/api/collections/1?sort=random&per_page=2").await;
+        assert_eq!(
+            restored["images"].as_array().unwrap().as_slice(),
+            &expected[..2]
+        );
+        let locators = paginated
+            .iter()
+            .map(|image| {
+                (
+                    image["library_id"].as_str().unwrap(),
+                    image["directory_id"].as_i64().unwrap(),
+                    image["id"].as_i64().unwrap(),
+                )
+            })
+            .collect::<HashSet<_>>();
+        assert_eq!(locators.len(), 7);
+        drop(app);
+        drop(directory);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[tokio::test]
@@ -457,7 +876,8 @@ async fn get_collection(
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<Value>, AppError> {
     validate_media_type(params.media_type.as_deref())?;
-    let page = params.page.unwrap_or(1).max(1);
+    let image_params = params.image_params()?;
+    let page = params.page.unwrap_or(1).clamp(1, 10000);
     let per_page = params.per_page.unwrap_or(50).clamp(1, 200);
     let offset = (page - 1) * per_page;
 
@@ -492,90 +912,77 @@ async fn get_collection(
             }
         }
 
-        // Filter exact memberships by their full locator. Old rows have no
-        // locator, so their numeric ID can only be resolved best-effort.
-        let matches = params.media_type.as_deref().map(|kind| matching_media_ids(&state_clone, kind)).transpose()?;
-        let visible_members = collection_members(&conn, collection_id)?.into_iter()
-            .filter(|member| matches.as_ref().is_none_or(|matches| matches.includes(member)))
-            .collect::<Vec<_>>();
-        let scoped_count = visible_members.len();
-        let page_members = visible_members.into_iter().skip(offset as usize).take(per_page as usize).collect::<Vec<_>>();
-
-        let extension_clause = match params.media_type.as_deref() {
-            Some("video") => Some(crate::routes::images::helpers::VIDEO_EXTENSIONS),
-            Some("image") => Some(crate::routes::images::helpers::IMAGE_EXTENSIONS),
-            _ => None,
-        }.map(|extensions| extensions.iter().map(|ext| format!("'{}'", ext.trim_start_matches('.'))).collect::<Vec<_>>().join(","));
-        let media_file_clause = extension_clause.as_ref().map(|extensions| format!("AND file_extension IN ({})", extensions)).unwrap_or_default();
-        let image_sql = format!(
-            "SELECT id, filename, file_hash, width, height, file_size, duration, rating, is_favorite, view_count, \
-             (SELECT original_path FROM image_files WHERE image_id = images.id AND file_status != 'missing' {} LIMIT 1) \
-             FROM images WHERE id = ?1 AND EXISTS (SELECT 1 FROM image_files WHERE image_id = images.id AND file_status != 'missing' {})",
-            media_file_clause, media_file_clause
-        );
-        let mut images: Vec<Value> = Vec::new();
-        for member in &page_members {
-            let locator = member.locator();
-            let libraries = if let Some(ref locator) = locator {
-                vec![state_clone.resolve_library(Some(&locator.library_id))?]
-            } else {
-                vec![state_clone.library_manager().primary().clone()]
+        // Resolve each membership before querying filters. A legacy numeric ID
+        // keeps its primary-library best-effort identity even when a duplicate
+        // in another directory would satisfy the selected filter.
+        let members = collection_members(&conn, collection_id)?;
+        let legacy_locators = resolve_legacy_members(&state_clone,&members);
+        let requested_library = params.library_id.as_deref().map(|id| state_clone.resolve_library(Some(id))).transpose()?;
+        let mut visibility: HashMap<String,Option<HashSet<i64>>> = HashMap::new();
+        let mut resolved = Vec::new();
+        let mut grouped: HashMap<(String,i64), Vec<i64>> = HashMap::new();
+        for member in members {
+            let is_legacy = member.locator().is_none();
+            let locator = member.locator().or_else(|| legacy_locators.get(&member.image_id).cloned());
+            let Some(locator) = locator else {
+                if is_legacy && !params.has_filters() { resolved.push((member,None)); }
+                continue;
             };
-            let mut found = false;
-            for library in libraries {
+            if params.directory_id.is_some_and(|id| id != locator.directory_id) { continue; }
+            let library = match state_clone.resolve_library(Some(&locator.library_id)) { Ok(library) => library, Err(_) => continue };
+            if requested_library.as_ref().is_some_and(|requested| requested.uuid != library.uuid) { continue; }
+            if !visibility.contains_key(&library.uuid) {
                 let lib_main = library.main_pool.get()?;
-                let visible_dir_ids = get_visible_directory_ids(&lib_main, tier, family_locked)?;
-                let directory_ids = locator.as_ref().map(|locator| vec![locator.directory_id])
-                    .unwrap_or_else(|| library.directory_db.get_all_directory_ids());
-                for dir_id in directory_ids {
-                    if visible_dir_ids.as_ref().is_some_and(|visible| !visible.contains(&dir_id)) { continue; }
-                    if !library.directory_db.db_exists(dir_id) { continue; }
-                    let dir_pool = match library.directory_db.get_pool(dir_id) { Ok(pool) => pool, Err(_) => continue };
-                    let dir_conn = match dir_pool.get() { Ok(conn) => conn, Err(_) => continue };
-                    let library_id = library.uuid.clone();
-                    let encoded_library_id = crate::routes::images::adjustments::encode_query_component(&library_id);
-                    if let Ok(img) = dir_conn.query_row(&image_sql, params![member.image_id], |row| {
-                        let hash: String = row.get(2)?;
-                        let file_path: Option<String> = row.get(10)?;
-                        let original_filename = file_path.as_deref().and_then(|path| std::path::Path::new(path).file_name()).and_then(|name| name.to_str());
-                        Ok(json!({
-                            "id": row.get::<_, i64>(0)?,
-                            "filename": row.get::<_, String>(1)?,
-                            "original_filename": original_filename,
-                            "file_path": file_path,
-                            "file_hash": hash.clone(),
-                            "width": row.get::<_, Option<i32>>(3)?,
-                            "height": row.get::<_, Option<i32>>(4)?,
-                            "file_size": row.get::<_, Option<i64>>(5)?,
-                            "duration": row.get::<_, Option<f64>>(6)?,
-                            "rating": row.get::<_, String>(7)?,
-                            "is_favorite": row.get::<_, bool>(8)?,
-                            "view_count": row.get::<_, i32>(9)?,
-                            "library_id": library_id,
-                            "directory_id": dir_id,
-                            "collection_legacy_member": locator.is_none(),
-                            "thumbnail_url": format!("/api/images/{}/thumbnail?directory_id={}&library_id={}&file_hash={}", member.image_id, dir_id, encoded_library_id, hash),
-                            "url": format!("/api/images/{}/file?directory_id={}&library_id={}&file_hash={}", member.image_id, dir_id, encoded_library_id, hash),
-                        }))
-                    }) {
-                        images.push(img);
-                        found = true;
-                        break;
-                    }
-                }
-                if found { break; }
+                visibility.insert(library.uuid.clone(),get_visible_directory_ids(&lib_main,tier,family_locked)?);
             }
-            if !found && params.media_type.is_none() && locator.is_none() {
-                images.push(json!({"id": member.image_id, "collection_legacy_member": true}));
+            if visibility.get(&library.uuid).and_then(Option::as_ref).is_some_and(|ids| !ids.contains(&locator.directory_id)) { continue; }
+            if !library.directory_db.db_exists(locator.directory_id) { continue; }
+            grouped.entry((library.uuid.clone(),locator.directory_id)).or_default().push(locator.image_id);
+            resolved.push((member,Some(locator)));
+        }
+        let mut eligible: HashMap<(String,i64,i64),Value> = HashMap::new();
+        for ((library_id,directory_id), ids) in grouped {
+            let library = state_clone.resolve_library(Some(&library_id))?;
+            let pool = library.directory_db.get_pool(directory_id)?;
+            let mut directory_params = image_params.clone();
+            let lib_main = library.main_pool.get()?;
+            let (show_images,show_videos,dir_name) = lib_main.query_row("SELECT show_images,show_videos,name FROM watch_directories WHERE id=?1",params![directory_id],|row| Ok((row.get::<_,bool>(0)?,row.get::<_,bool>(1)?,row.get::<_,Option<String>>(2)?))).unwrap_or((true,true,None));
+            directory_params.show_images &= show_images;
+            directory_params.show_videos &= show_videos;
+            for chunk in ids.chunks(500) {
+                let (rows,_) = crate::routes::images::helpers::query_directory_images_scoped(&pool,directory_id,&library.main_pool,dir_name.as_deref(),&directory_params,Some(&library.uuid),Some(chunk))?;
+                for mut image in rows {
+                    // Legacy imported rows may have no original_filename; keep
+                    // the collection's previous visible filename and sort key.
+                    if image["original_filename"].is_null() {
+                        let name = image["file_path"].as_str().and_then(|path| std::path::Path::new(path).file_name()).and_then(|name| name.to_str()).or_else(|| image["filename"].as_str()).map(str::to_string);
+                        image["original_filename"] = json!(name);
+                    }
+                    if let Some(image_id) = image["id"].as_i64() { eligible.insert((library.uuid.clone(),directory_id,image_id),image); }
+                }
             }
         }
+        let mut images = Vec::new();
+        for (member,locator) in resolved {
+            if let Some(locator) = locator {
+                if let Some(image) = eligible.get(&(locator.library_id,locator.directory_id,locator.image_id)) {
+                    let mut image = image.clone();
+                    image["collection_legacy_member"] = json!(member.locator().is_none());
+                    images.push(image);
+                }
+            } else { images.push(json!({"id":member.image_id,"collection_legacy_member":true})); }
+        }
+        sort_collection_images(&mut images,&image_params.sort,collection_id);
+        let scoped_count = images.len();
+        let images = images.into_iter().skip(offset as usize).take(per_page as usize).collect::<Vec<_>>();
+        let has_more = (offset as usize).saturating_add(images.len()) < scoped_count;
 
         let mut result = collection;
         result["images"] = json!(images);
         result["item_count"] = json!(scoped_count);
         result["page"] = json!(page);
         result["per_page"] = json!(per_page);
-        result["has_more"] = json!((offset as usize + page_members.len()) < scoped_count);
+        result["has_more"] = json!(has_more);
 
         Ok::<_, AppError>(Json(result))
     })

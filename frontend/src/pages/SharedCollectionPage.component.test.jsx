@@ -2,9 +2,12 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
-const api = vi.hoisted(() => ({ browseRemoteSource: vi.fn(), getRemoteSources: vi.fn(), fetchDirectories: vi.fn(), importRemoteItem: vi.fn() }))
+const api = vi.hoisted(() => ({ browseRemoteSource: vi.fn(), getRemoteSources: vi.fn(), fetchDirectories: vi.fn(), fetchRemoteSourceTags: vi.fn(), importRemoteItem: vi.fn() }))
 vi.mock('../api', () => api)
-vi.mock('../components/Sidebar', () => ({ default: () => null }))
+vi.mock('../components/Sidebar', () => ({ default: ({ currentTags, initialRating, initialSort, initialFavoritesOnly, onSearch, sidebarActions, searchSuggestions, tags }) => <aside>
+  {sidebarActions}{tags.map(tag => <span key={tag.name}>{tag.name}</span>)}<button onClick={() => searchSuggestions('cat', 10)}>Get source suggestions</button><form onSubmit={event => { event.preventDefault(); onSearch(event.currentTarget.elements.tags.value, initialRating, initialSort, initialFavoritesOnly) }}><input name="tags" aria-label="Search community tags" defaultValue={currentTags} /><button>Search</button></form>
+  <select aria-label="Sort by" value={initialSort} onChange={event => onSearch(currentTags, initialRating, event.target.value, initialFavoritesOnly)}><option value="newest">Date (Newest)</option><option value="oldest">Date (Oldest)</option></select>
+</aside> }))
 vi.mock('../components/MasonryGrid', () => ({ default: ({ images, onImageClick, onLoadMore, loading }) => <div className="masonry-container" aria-label="Regular masonry grid">
   {images.map(image => <button key={image.id} onClick={() => onImageClick(image)}>{image.remote_source_id}:{image.remote_post_id}</button>)}
   <button disabled={loading} onClick={onLoadMore}>Load next page</button>
@@ -27,6 +30,7 @@ beforeEach(() => {
   api.getRemoteSources.mockResolvedValue({ sources: [{ source_id: 'one', display_name: 'Community One' }, { source_id: 'two', display_name: 'Community Two' }] })
   api.fetchDirectories.mockResolvedValue({ directories: [{ id: 9, name: 'Local pictures', enabled: true }] })
   api.importRemoteItem.mockResolvedValue({ image_id: 99 })
+  api.fetchRemoteSourceTags.mockResolvedValue({ tags: [], available_ratings: ['pg', 'pg13'] })
 })
 afterEach(cleanup)
 test('appends overlapping pages and opens the shared lightbox with normal navigation', async () => {
@@ -167,4 +171,55 @@ test('a late import receipt cannot appear on the next remote item', async () => 
   await act(async () => importing.resolve({ image_id: 99 }))
   expect(screen.queryByText('Saved a local copy as image #99.')).toBeNull()
   expect(screen.getByRole('dialog').textContent).toContain('43')
+})
+
+test('filters live in the sidebar and the full remote query persists across pagination', async () => {
+  api.browseRemoteSource.mockResolvedValueOnce(page([item(1)], 1, 61)).mockResolvedValueOnce(page([item(2)], 2, 61))
+  mount('/shared/one?media_type=image&q=landscape&rating=pg&sort=oldest&timeframe=week&favorites=true&resolution=1920x1080&orientation=landscape')
+  await screen.findByRole('button', { name: 'one:1' })
+  expect(document.querySelector('.shared-gallery-heading')).toBeNull()
+  expect(screen.getByRole('link', { name: 'Community settings' }).closest('aside')).not.toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Load next page' }))
+  await screen.findByRole('button', { name: 'one:2' })
+  expect(api.browseRemoteSource).toHaveBeenLastCalledWith('one', expect.objectContaining({ q: 'landscape', rating: 'pg', sort: 'oldest', timeframe: 'week', favorites_only: true, min_width: 1920, min_height: 1080, orientation: 'landscape', page: 2 }))
+})
+
+test('a late old-filter page cannot replace the updated sort result', async () => {
+  const old = deferred()
+  api.browseRemoteSource.mockReturnValueOnce(old.promise).mockResolvedValueOnce(page([item('oldest')]))
+  mount()
+  fireEvent.change(screen.getByRole('combobox', { name: 'Sort by' }), { target: { value: 'oldest' } })
+  await screen.findByRole('button', { name: 'one:oldest' })
+  await act(async () => old.resolve(page([item('newest')])))
+  expect(screen.queryByRole('button', { name: 'one:newest' })).toBeNull()
+  expect(api.browseRemoteSource).toHaveBeenLastCalledWith('one', expect.objectContaining({ sort: 'oldest', page: 1 }))
+})
+
+
+test('initial tags and autocomplete use the active media, rating and tag filter context', async () => {
+  api.browseRemoteSource.mockResolvedValue(page([item(1)]))
+  mount('/shared/one?media_type=image&q=cat,-dog&rating=pg&timeframe=week')
+  await screen.findByRole('button', { name: 'one:1' })
+  const imageFilters = { q: 'cat -dog', rating: 'pg', timeframe: 'week', media_type: 'image' }
+  expect(api.fetchRemoteSourceTags).toHaveBeenCalledWith('one', '', 100, imageFilters)
+  fireEvent.click(screen.getByRole('button', { name: 'Get source suggestions' }))
+  expect(api.fetchRemoteSourceTags).toHaveBeenLastCalledWith('one', 'cat', 10, imageFilters)
+  await act(async () => navigate('/shared/one?media_type=video&q=sky&rating=pg13&duration=0-60'))
+  const videoFilters = { q: 'sky', rating: 'pg13', min_duration: 0, max_duration: 60, media_type: 'video' }
+  await waitFor(() => expect(api.fetchRemoteSourceTags).toHaveBeenCalledWith('one', '', 100, videoFilters))
+  fireEvent.click(screen.getByRole('button', { name: 'Get source suggestions' }))
+  expect(api.fetchRemoteSourceTags).toHaveBeenLastCalledWith('one', 'cat', 10, videoFilters)
+})
+
+test('changing gallery filters refreshes facets and discards late old facet results', async () => {
+  const old = deferred()
+  api.fetchRemoteSourceTags.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ tags: [{ name: 'fresh_facet', category: 'general', count: 3 }], available_ratings: ['pg', 'pg13'] })
+  api.browseRemoteSource.mockResolvedValue(page([item(1)]))
+  mount('/shared/one?media_type=image&rating=pg')
+  await act(async () => navigate('/shared/one?media_type=image&rating=pg13'))
+  await screen.findByText('fresh_facet')
+  await act(async () => old.resolve({ tags: [{ name: 'old_facet', category: 'general', count: 8 }], available_ratings: ['pg', 'pg13'] }))
+  expect(screen.queryByText('old_facet')).toBeNull()
+  expect(api.fetchRemoteSourceTags).toHaveBeenLastCalledWith('one', '', 100, { media_type: 'image', rating: 'pg13' })
+  expect(api.getRemoteSources).toHaveBeenCalledTimes(1)
 })

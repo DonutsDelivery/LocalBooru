@@ -2,9 +2,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
+import GalleryTileSizeControl from '../components/GalleryTileSizeControl'
+import { useGalleryTileSize } from '../hooks/useGalleryTileSize'
+import { collectionRequestFilters, collectionSidebarProps, readCollectionFilters, REMOTE_SORT_VALUES, sidebarFilterParams, toggleCollectionTag } from '../utils/galleryCollectionFilters'
 import MasonryGrid from '../components/MasonryGrid'
 import Lightbox from '../components/Lightbox'
-import { browseRemoteSource, fetchDirectories, getRemoteSources, importRemoteItem } from '../api'
+import { browseRemoteSource, fetchDirectories, fetchRemoteSourceTags, getRemoteSources, importRemoteItem } from '../api'
 import { useMobileDrawer } from '../hooks/useMobileDrawer'
 import { collectionGalleryTarget } from '../utils/collectionState'
 import { appendRemoteGalleryItems, remoteGalleryItem, remotePageHasMore } from '../utils/remoteGallery'
@@ -17,18 +20,22 @@ export default function SharedCollectionPage() {
   const { sourceId } = useParams()
   const [params, setParams] = useSearchParams()
   const mediaType = params.get('media_type') === 'video' ? 'video' : 'image'
-  const query = params.get('q') || ''
+  const filters = useMemo(() => readCollectionFilters(params, true), [params])
+  const requestFilters = useMemo(() => collectionRequestFilters(filters, true), [filters])
+  const query = filters.tags
   const navigate = useNavigate()
   const location = useLocation()
   const galleryReturnTo = collectionGalleryTarget(location, mediaType)
-  return <SharedCommunityGallery key={`${sourceId}:${mediaType}`} sourceId={sourceId} mediaType={mediaType} query={query}
-    onSearch={value => { const next = new URLSearchParams(params); if (value) next.set('q', value); else next.delete('q'); setParams(next) }}
+  return <SharedCommunityGallery key={`${sourceId}:${mediaType}`} sourceId={sourceId} mediaType={mediaType} query={query} filters={filters} requestFilters={requestFilters}
+    onFilters={(...args) => setParams(sidebarFilterParams(params, true, ...args))}
+    onTag={tag => setParams(toggleCollectionTag(params, tag, true))}
     onBack={() => navigate(`/collections?media_type=${mediaType}`, { state: { galleryReturnTo } })}
     settingsReturnTo={`${location.pathname}${location.search}`} />
 }
 
-function SharedCommunityGallery({ sourceId, mediaType, query, onSearch, onBack, settingsReturnTo }) {
-  const scope = JSON.stringify([sourceId, mediaType, query])
+function SharedCommunityGallery({ sourceId, mediaType, query, filters, requestFilters, onFilters, onTag, onBack, settingsReturnTo }) {
+  const extraFilters = { ...requestFilters }; delete extraFilters.q
+  const scope = JSON.stringify([sourceId, mediaType, query, ...(Object.keys(extraFilters).length ? [extraFilters] : [])])
   const sessionKey = `donutMediaCenter_shared_${encodeURIComponent(scope)}`
   const [result, setResult] = useState(() => emptyResult(scope))
   const resultRef = useRef(result)
@@ -39,15 +46,13 @@ function SharedCommunityGallery({ sourceId, mediaType, query, onSearch, onBack, 
   const restoringRef = useRef(true)
   const [restoring, setRestoring] = useState(true)
   const [sourceName, setSourceName] = useState('')
-  const [search, setSearch] = useState(query)
+  const [facets, setFacets] = useState({ tags: [], available_ratings: [] })
+  const tagContext = useMemo(() => ({ ...requestFilters, media_type: mediaType }), [requestFilters, mediaType])
   const [selectedId, setSelectedId] = useState(null)
   const selectedRef = useRef(selectedId)
   selectedRef.current = selectedId
   const [sidebarHover, setSidebarHover] = useState(false)
-  const [tileSize, setTileSize] = useState(() => {
-    const saved = Number(localStorage.getItem('localbooru_tileSize'))
-    return saved >= 1 && saved <= 5 ? saved : 3
-  })
+  const [tileSize, setTileSize] = useGalleryTileSize()
   const [directories, setDirectories] = useState([])
   const [directoryId, setDirectoryId] = useState('')
   const [importBusy, setImportBusy] = useState(false)
@@ -62,8 +67,6 @@ function SharedCommunityGallery({ sourceId, mediaType, query, onSearch, onBack, 
   const selectedIndex = images.findIndex(image => image.id === selectedId)
   const selected = images[selectedIndex]
 
-  useEffect(() => { localStorage.setItem('localbooru_tileSize', String(tileSize)) }, [tileSize])
-
   useEffect(() => {
     let active = true
     getRemoteSources().then(data => {
@@ -72,6 +75,13 @@ function SharedCommunityGallery({ sourceId, mediaType, query, onSearch, onBack, 
     return () => { active = false }
   }, [sourceId])
 
+  useEffect(() => {
+    let active = true
+    setFacets(previous => ({ ...previous, tags: [] }))
+    fetchRemoteSourceTags(sourceId, '', 100, tagContext).then(data => { if (active) setFacets(data) }).catch(() => {})
+    return () => { active = false }
+  }, [sourceId, tagContext])
+
   const loadPage = useCallback(async (page, append = false) => {
     if (busyRef.current) return null
     busyRef.current = true
@@ -79,8 +89,9 @@ function SharedCommunityGallery({ sourceId, mediaType, query, onSearch, onBack, 
     const previous = resultRef.current.scope === scope ? resultRef.current : emptyResult(scope)
     setResult({ ...previous, loading: true, error: '' })
     try {
-      const data = await browseRemoteSource(sourceId, { q: query, media_type: mediaType, page, per_page: 60, ...(append && previous.nextCursor ? { cursor: previous.nextCursor } : {}) })
+      const data = await browseRemoteSource(sourceId, { ...requestFilters, q: requestFilters.q || '', media_type: mediaType, page, per_page: 60, ...(append && previous.nextCursor ? { cursor: previous.nextCursor } : {}) })
       if (request !== generation.current || activeScope.current !== scope) return null
+      if (Array.isArray(data.available_ratings)) setFacets(previous => ({ ...previous, available_ratings: data.available_ratings }))
       const incoming = (data.items || []).map(item => remoteGalleryItem(item, { sourceId }))
       const next = { scope, images: append ? appendRemoteGalleryItems(previous.images, incoming) : incoming,
         page, hasMore: remotePageHasMore({ ...data, page, per_page: data.per_page || 60 }),
@@ -98,7 +109,7 @@ function SharedCommunityGallery({ sourceId, mediaType, query, onSearch, onBack, 
     } finally {
       if (request === generation.current) busyRef.current = false
     }
-  }, [sourceId, mediaType, query, scope, sessionKey])
+  }, [sourceId, mediaType, query, scope, sessionKey, requestFilters])
 
   // A new source, media category or submitted search owns a fresh result list.
   useEffect(() => {
@@ -108,7 +119,6 @@ function SharedCommunityGallery({ sourceId, mediaType, query, onSearch, onBack, 
     resultRef.current = next
     setResult(next)
     setSelectedId(null)
-    setSearch(query)
     setImportNotice('')
     setImportBusy(false)
     const savedPage = Number(sessionStorage.getItem(`${sessionKey}_page`))
@@ -201,15 +211,20 @@ function SharedCommunityGallery({ sourceId, mediaType, query, onSearch, onBack, 
     } finally { if (importGeneration.current === importRequest && activeScope.current === importingScope) setImportBusy(false) }
   }
 
-  const searchCommunity = value => {
-    const text = typeof value === 'string' ? value.trim() : value.name
-    if (text === query) {
+  const searchRemoteTags = useCallback(async (query, limit) => {
+    const data = await fetchRemoteSourceTags(sourceId, query, limit, tagContext)
+    return data.tags || []
+  }, [sourceId, tagContext])
+  const searchCommunity = (...args) => {
+    const next = sidebarFilterParams(new URLSearchParams(settingsReturnTo.split('?')[1] || ''), true, ...args)
+    const nextFilters = collectionRequestFilters(readCollectionFilters(next, true), true)
+    if (JSON.stringify(nextFilters) === JSON.stringify(requestFilters)) {
       generation.current += 1
       busyRef.current = false
       setSelectedId(null)
       if (scrollContainer()) scrollContainer().scrollTop = 0
       loadPage(1)
-    } else onSearch(text)
+    } else onFilters(...args)
   }
 
   const remoteActions = <div className="shared-import-controls">
@@ -222,25 +237,21 @@ function SharedCommunityGallery({ sourceId, mediaType, query, onSearch, onBack, 
     {sidebarHover && <div className="sidebar-backdrop lightbox-backdrop" onClick={() => setSidebarHover(false)} />}
     <div className="main-container">
     {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
-    <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={() => { drawer.close(); setSidebarHover(false) }}
-      onTagClick={searchCommunity} selectedImage={selected} lightboxMode={Boolean(selected)} lightboxHover={sidebarHover} onMouseLeave={() => setSidebarHover(false)} />
+    <Sidebar {...collectionSidebarProps(filters)} filterScope="remote" supportedSortValues={REMOTE_SORT_VALUES} availableRatings={facets.available_ratings || []}
+      tags={facets.tags || []} searchSuggestions={searchRemoteTags} onSearch={searchCommunity}
+      sidebarActions={<><h3>{sourceName || 'Shared community'}</h3><button className="media-collection-link collection-sidebar-action" onClick={onBack}>← Back to Collections</button><Link className="media-collection-link" to="/settings/fediverse" state={{ returnTo: settingsReturnTo }}>Community settings</Link></>}
+      mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={() => { drawer.close(); setSidebarHover(false) }}
+      onTagClick={onTag} selectedImage={selected} lightboxMode={Boolean(selected)} lightboxHover={sidebarHover} onMouseLeave={() => setSidebarHover(false)} />
     <main ref={contentRef} className="content with-sidebar shared-gallery-page" onScrollCapture={event => { if (result.scope === scope && event.target.classList?.contains('masonry-container')) sessionStorage.setItem(`${sessionKey}_scroll`, String(event.target.scrollTop)) }}>
-      <header className="shared-gallery-heading">
-        <div className="shared-gallery-heading-links"><button className="mobile-only" onClick={drawer.open}>Menu</button><button onClick={onBack}>← Collections</button><Link to="/settings/fediverse" state={{ returnTo: settingsReturnTo }}>Community settings</Link></div>
-        <div className="shared-gallery-title"><h2>{sourceName || 'Shared community'}</h2><span>{images.length} {mediaType === 'video' ? 'videos' : 'images'}</span></div>
-        <form className="shared-gallery-toolbar" onSubmit={event => { event.preventDefault(); searchCommunity(search) }}>
-          <input aria-label="Search community tags" placeholder="Search tags…" value={search} onChange={event => setSearch(event.target.value)} />
-          <button>Search</button>
-          <label className="shared-gallery-tiles">Tile size<input aria-label="Tile size" type="range" min="1" max="5" value={tileSize} onChange={event => setTileSize(Number(event.target.value))} /></label>
-        </form>
-      </header>
+      <button className="menu-btn mobile-only collection-mobile-menu" onClick={drawer.open} aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18" /></svg></button>
       {current.stale && <p className="shared-gallery-notice" role="status">Offline · showing saved results.</p>}
       {current.error && <div className="shared-gallery-notice" role="alert">{current.error} <button onClick={() => loadPage(current.page ? current.page + 1 : 1, current.page > 0)}>Retry</button></div>}
+      <div className="floating-controls"><GalleryTileSizeControl tileSize={tileSize} onChange={setTileSize} /></div>
       <MasonryGrid images={images} onImageClick={openImage} onLoadMore={loadMore} loading={current.loading || restoring} hasMore={current.hasMore && !current.error} tileSize={tileSize} />
     </main>
   </div>
     {selectedIndex >= 0 && <Lightbox images={images} currentIndex={selectedIndex} total={images.length} onClose={closeImage} onNav={navigateImage}
-      onTagClick={tag => { closeImage(); searchCommunity(tag) }} onImageUpdate={() => {}}
+      onTagClick={tag => { closeImage(); onTag(tag) }} onImageUpdate={() => {}}
       onSidebarHover={setSidebarHover} sidebarOpen={drawer.isOpen || sidebarHover} remoteActions={remoteActions} />}
   </div>
 }

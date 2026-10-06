@@ -8,7 +8,8 @@ import useDebounce from './hooks/useDebounce'
 function TagSearch({
   tags,
   activeTags,
-  onTagClick
+  onTagClick,
+  searchSuggestions = searchTags
 }) {
   const [tagInput, setTagInput] = useState('')
   const [suggestionIndex, setSuggestionIndex] = useState(-1)
@@ -36,7 +37,8 @@ function TagSearch({
     }
 
     let cancelled = false
-    searchTags(query, 10).then(results => {
+    if (!searchSuggestions) { setSuggestions([]); return }
+    searchSuggestions(query, 10).then(results => {
       if (!cancelled) {
         // Filter out already active tags
         const prefix = input.startsWith('-') ? '-' : ''
@@ -49,7 +51,7 @@ function TagSearch({
     })
 
     return () => { cancelled = true }
-  }, [debouncedTagInput, activeTags])
+  }, [debouncedTagInput, activeTags, searchSuggestions])
 
   // Group tags by category (memoized)
   const groupedTags = useMemo(() => (tags || []).reduce((acc, tag) => {
@@ -116,7 +118,7 @@ function TagSearch({
                 onClick={() => chooseTag(tag.name)}
               >
                 <span className="suggestion-name">{excluding ? '-' : ''}{tag.name.replace(/_/g, ' ')}</span>
-                <span className="suggestion-count">({tag.post_count})</span>
+                <span className="suggestion-count">({tag.post_count ?? tag.count ?? 0})</span>
               </button>
             ))}
           </div>
@@ -164,7 +166,7 @@ function TagSearch({
                   onClick={() => onTagClick(tag.name)}
                 >
                   <span className="tag-name">{tag.name.replace(/_/g, ' ')}</span>
-                  <span className="tag-count">({tag.post_count})</span>
+                  <span className="tag-count">({tag.post_count ?? tag.count ?? 0})</span>
                 </button>
               ))}
             </div>

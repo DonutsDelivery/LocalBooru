@@ -1003,6 +1003,11 @@ export async function deleteRemoteConnection(sourceId, connectionId) {
   await api.delete(`/online/sources/${encodeURIComponent(sourceId)}/connections/${encodeURIComponent(connectionId)}`)
 }
 
+export async function fetchRemoteSourceTags(sourceId, query = '', limit = 20, filters = {}) {
+  const response = await api.get(`/online/sources/${encodeURIComponent(sourceId)}/tags`, { params: { ...filters, query, limit } })
+  return response.data
+}
+
 export async function browseRemoteSource(sourceId, params) {
   const response = await api.get(`/online/sources/${encodeURIComponent(sourceId)}/browse`, { params })
   return response.data
@@ -1382,9 +1387,10 @@ export async function createCollection(name, description = null, mediaType = nul
   return response.data
 }
 
-export async function fetchCollection(id, page = 1, perPage = 50, mediaType = null) {
+export async function fetchCollection(id, page = 1, perPage = 50, mediaType = null, filters = {}) {
   const params = new URLSearchParams({ page: String(page), per_page: String(perPage) })
   if (mediaType) params.set('media_type', mediaType)
+  for (const [key, value] of Object.entries(filters)) { if (value !== null && value !== undefined && value !== '' && value !== false) params.set(key, String(value)) }
   const response = await api.get(`/collections/${id}?${params}`)
   return response.data
 }

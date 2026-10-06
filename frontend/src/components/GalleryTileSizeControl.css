@@ -1,0 +1,2 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.tile-size-range{display:flex;flex-direction:column;gap:4px}.tile-size-scale{display:flex;justify-content:space-between;font-size:9px;line-height:1;color:var(--text-secondary)}.tile-size-scale .active{color:var(--accent);font-weight:700}

@@ -58,6 +58,7 @@ pub fn router() -> Router<AppState> {
             axum::routing::delete(delete_connection),
         )
         .route("/sources/{source_id}/browse", get(browse))
+        .route("/sources/{source_id}/tags", get(source_tags))
         .route(
             "/sources/{source_id}/items/{post_id}/asset/{kind}",
             get(asset),
@@ -659,13 +660,7 @@ async fn probe_source(
     ))
 }
 
-#[derive(Deserialize)]
-struct BrowseQuery {
-    q: Option<String>,
-    page: Option<u32>,
-    per_page: Option<u32>,
-    media_type: Option<String>,
-}
+type BrowseQuery = hub::CatalogQuery;
 async fn browse(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
@@ -676,31 +671,29 @@ async fn browse(
         return Err(AppError::Forbidden("Remote source is disabled".into()));
     }
     let hub_config = load_hub(state.data_dir(), &id)?;
-    let media_type = query.media_type.filter(|kind| kind != "all");
-    if media_type
-        .as_deref()
-        .is_some_and(|kind| !matches!(kind, "image" | "video"))
-    {
-        return Err(AppError::BadRequest(
-            "Media filter must be image or video".into(),
-        ));
+    let mut query = query.normalized()?;
+    let requested_query =
+        serde_json::to_string(&query).map_err(|error| AppError::Internal(error.to_string()))?;
+    let empty_policy_intersection = hub_config.is_some()
+        && apply_catalog_policy(
+            &mut query,
+            &source.policy_profile,
+            state.is_family_mode_locked(),
+        );
+    let page = query.page.unwrap_or(1);
+    let per_page = query.per_page.unwrap_or(40);
+    let q = query.q.as_deref().unwrap_or_default();
+    if hub_config.is_none() && query.uses_hub_filters() {
+        return Err(AppError::BadRequest("This legacy provider cannot execute collection sidebar filters before pagination; use an enrolled native hub".into()));
     }
-    let page = query.page.unwrap_or(1).clamp(1, 10000);
-    let per_page = query.per_page.unwrap_or(40).clamp(1, 100);
-    let q = query.q.unwrap_or_default();
-    let key = format!(
-        "{}:{}:{}:{}:{}",
-        id,
-        page,
-        per_page,
-        q,
-        media_type.as_deref().unwrap_or("all")
-    );
     let path = if hub_config.is_some() {
-        hub::catalog_path(&q, page, per_page)?
+        hub::catalog_path_for(&query)?
     } else {
-        provider::list_path(&source.provider_family, &q, page, per_page)?
+        provider::list_path(&source.provider_family, q, page, per_page)?
     };
+    // Canonical route contains every normalized filter; cached pages must never
+    // be reused for a different media/rating/favorite/dimension/sort context.
+    let key = format!("{id}:{path}:{requested_query}");
     let url = reqwest::Url::parse(&(source.normalized_base_url.clone() + &path))
         .map_err(|_| AppError::BadRequest("Invalid source request URL".into()))?;
     match checked_json(state.data_dir(), &source, url).await {
@@ -717,22 +710,24 @@ async fn browse(
                     per_page,
                 )?
             };
-            if let Some(kind) = media_type.as_deref() {
-                remote_page.items.retain(|item| {
-                    item.media.iter().any(|variant| {
-                        variant.kind == "original"
-                            && variant
-                                .mime_type
-                                .as_deref()
-                                .is_some_and(|mime| mime.starts_with(&format!("{kind}/")))
-                    })
-                });
+            if empty_policy_intersection {
+                remote_page.items.clear();
+                remote_page.total = Some(0);
+                remote_page.next_cursor = None;
             }
             enforce_content_policy(
                 &mut remote_page,
                 &source.policy_profile,
                 state.is_family_mode_locked(),
             );
+            if source.policy_profile == "safe"
+                || source.policy_profile == "adult-hidden"
+                || state.is_family_mode_locked()
+            {
+                remote_page
+                    .available_ratings
+                    .retain(|rating| matches!(rating.as_str(), "pg" | "pg13"));
+            }
             let now = Utc::now();
             let conn = open_db(state.data_dir())?;
             conn.execute(
@@ -2296,6 +2291,7 @@ fn enforce_item_policy(
         page: 1,
         per_page: 1,
         total: None,
+        available_ratings: vec![],
         stale: false,
         next_cursor: None,
     };
@@ -2364,4 +2360,224 @@ fn validate_hub_receipt(source: &RemoteSource, receipt: &Value) -> Result<(), Ap
         }
     }
     Ok(())
+}
+
+#[derive(Deserialize)]
+struct SourceTagsQuery {
+    query: Option<String>,
+    limit: Option<u32>,
+}
+async fn source_tags(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Query(query): Query<SourceTagsQuery>,
+    // Independent extractors keep the URL contract flat while sharing the
+    // browse parser (serde flatten cannot parse URL-encoded numeric fields).
+    Query(filters): Query<hub::CatalogQuery>,
+) -> Result<Json<Value>, AppError> {
+    let source = load_source(state.data_dir(), &id)?;
+    require_enabled(&source)?;
+    let config = load_hub(state.data_dir(), &id)?.ok_or_else(|| {
+        AppError::BadRequest("Visibility-safe tag facets require an enrolled native hub".into())
+    })?;
+    let mut filters = filters.normalized()?;
+    let empty_policy_intersection = apply_catalog_policy(
+        &mut filters,
+        &source.policy_profile,
+        state.is_family_mode_locked(),
+    );
+    let path = hub::catalog_tags_path(
+        &filters,
+        &query.query.unwrap_or_default(),
+        query.limit.unwrap_or(20),
+    )?;
+    let response = hub_request(
+        state.data_dir(),
+        &source,
+        &config,
+        "GET",
+        &path,
+        vec![],
+        vec![],
+    )
+    .await?;
+    let mut body = hub_response_json(response).await?;
+    if !body.get("tags").is_some_and(Value::is_array)
+        || !body.get("available_ratings").is_some_and(Value::is_array)
+    {
+        return Err(AppError::ServiceUnavailable(
+            "Hub returned invalid tag facets".into(),
+        ));
+    }
+    if empty_policy_intersection {
+        // Preserve the protected read and its errors before hiding a disjoint
+        // user/policy context, exactly as the catalog page does.
+        body["tags"] = json!([]);
+    }
+    if source.policy_profile == "safe"
+        || source.policy_profile == "adult-hidden"
+        || state.is_family_mode_locked()
+    {
+        if let Some(ratings) = body
+            .get_mut("available_ratings")
+            .and_then(Value::as_array_mut)
+        {
+            ratings.retain(|rating| matches!(rating.as_str(), Some("pg" | "pg13")));
+        }
+    }
+    Ok(Json(body))
+}
+
+// Send the effective policy to the hub as part of its query so counts and
+// pagination use the same constraints as the displayed media.
+fn apply_catalog_policy(query: &mut hub::CatalogQuery, profile: &str, family_locked: bool) -> bool {
+    if !family_locked && !matches!(profile, "safe" | "adult-hidden") {
+        return false;
+    }
+    let allowed = ["pg", "pg13"];
+    let requested = query
+        .rating
+        .as_deref()
+        .unwrap_or("pg,pg13,r,x,xxx")
+        .split(',')
+        .collect::<Vec<_>>();
+    let effective = allowed
+        .into_iter()
+        .filter(|rating| requested.contains(rating))
+        .collect::<Vec<_>>();
+    let empty = effective.is_empty();
+    // A disjoint user filter still makes an authorized read before returning
+    // its constant empty result; it never exposes private cached counts.
+    query.rating = Some(if empty {
+        "pg,pg13".into()
+    } else {
+        effective.join(",")
+    });
+    empty
+}
+
+#[cfg(test)]
+mod catalog_policy_tests {
+    use super::*;
+
+    #[test]
+    fn facet_request_shares_flat_catalog_controls_and_prefix_parsing() {
+        let uri: axum::http::Uri = "/online/sources/hub/tags?query=cat&limit=12&q=sunrise+-indoor&media_type=image&rating=pg13,xxx&favorites_only=true&min_width=1000&min_height=700&orientation=landscape&min_duration=0.5&max_duration=60&timeframe=today".parse().unwrap();
+        let Query(prefix) = Query::<SourceTagsQuery>::try_from_uri(&uri).unwrap();
+        let Query(filters) = Query::<hub::CatalogQuery>::try_from_uri(&uri).unwrap();
+        let mut filters = filters.normalized().unwrap();
+        assert!(!apply_catalog_policy(&mut filters, "safe", false));
+        let path = hub::catalog_tags_path(
+            &filters,
+            prefix.query.as_deref().unwrap(),
+            prefix.limit.unwrap(),
+        )
+        .unwrap();
+        let url = reqwest::Url::parse(&format!("https://hub.invalid{path}")).unwrap();
+        assert_eq!(url.path(), "/api/client/v1/catalog/tags");
+        let pairs = url
+            .query_pairs()
+            .into_owned()
+            .collect::<std::collections::HashMap<_, _>>();
+        for (name, value) in [
+            ("query", "cat"),
+            ("limit", "12"),
+            ("tags", "sunrise -indoor"),
+            ("media_type", "image"),
+            ("rating", "pg13"),
+            ("favorites_only", "true"),
+            ("min_width", "1000"),
+            ("min_height", "700"),
+            ("orientation", "landscape"),
+            ("min_duration", "0.5"),
+            ("max_duration", "60"),
+            ("timeframe", "day"),
+        ] {
+            assert_eq!(pairs.get(name).map(String::as_str), Some(value), "{name}");
+        }
+        for field in ["page", "per_page", "collection", "sort"] {
+            assert!(!pairs.contains_key(field));
+        }
+    }
+
+    #[test]
+    fn facets_validate_age_and_ranges_before_request_and_signal_disjoint_policy() {
+        let uri: axum::http::Uri = "/online/sources/hub/tags?query=cat&min_age=0"
+            .parse()
+            .unwrap();
+        let Query(filters) = Query::<hub::CatalogQuery>::try_from_uri(&uri).unwrap();
+        assert!(matches!(filters.normalized(), Err(AppError::Forbidden(_))));
+        let mut filters = hub::CatalogQuery {
+            rating: Some("xxx".into()),
+            media_type: Some("video".into()),
+            ..Default::default()
+        }
+        .normalized()
+        .unwrap();
+        assert!(apply_catalog_policy(&mut filters, "safe", false));
+        assert!(hub::catalog_tags_path(&filters, "", 100)
+            .unwrap()
+            .contains("limit=50"));
+        assert!(matches!(
+            hub::catalog_tags_path(&filters, &"x".repeat(101), 20),
+            Err(AppError::BadRequest(_))
+        ));
+        assert!(matches!(
+            hub::CatalogQuery {
+                min_width: Some(0),
+                ..Default::default()
+            }
+            .normalized(),
+            Err(AppError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn safe_catalog_policy_reaches_upstream_before_counting() {
+        let mut query = hub::CatalogQuery {
+            rating: Some("pg13,r,xxx".into()),
+            ..Default::default()
+        }
+        .normalized()
+        .unwrap();
+        assert!(!apply_catalog_policy(&mut query, "safe", false));
+        assert_eq!(query.rating.as_deref(), Some("pg13"));
+        assert!(hub::catalog_path_for(&query)
+            .unwrap()
+            .contains("rating=pg13"));
+
+        let mut disjoint = hub::CatalogQuery {
+            rating: Some("xxx".into()),
+            ..Default::default()
+        }
+        .normalized()
+        .unwrap();
+        assert!(apply_catalog_policy(&mut disjoint, "adult-hidden", false));
+        assert_eq!(disjoint.rating.as_deref(), Some("pg,pg13"));
+    }
+
+    #[test]
+    fn family_policy_overrides_unrestricted_source_without_changing_query_context() {
+        let mut query = hub::CatalogQuery {
+            q: Some("cat -dog".into()),
+            media_type: Some("video".into()),
+            favorites_only: true,
+            ..Default::default()
+        }
+        .normalized()
+        .unwrap();
+        assert!(!apply_catalog_policy(&mut query, "unrestricted", true));
+        assert_eq!(query.rating.as_deref(), Some("pg,pg13"));
+        assert_eq!(query.q.as_deref(), Some("cat -dog"));
+        assert_eq!(query.media_type.as_deref(), Some("video"));
+        assert!(query.favorites_only);
+
+        let mut unrestricted = hub::CatalogQuery::default().normalized().unwrap();
+        assert!(!apply_catalog_policy(
+            &mut unrestricted,
+            "unrestricted",
+            false
+        ));
+        assert_eq!(unrestricted.rating, None);
+    }
 }

@@ -75,6 +75,7 @@ pub fn normalize_page(
         page,
         per_page,
         total,
+        available_ratings: vec![],
         stale: false,
         next_cursor: None,
     })

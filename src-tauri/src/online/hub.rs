@@ -7,6 +7,7 @@ use super::{
 };
 use crate::server::error::AppError;
 use reqwest::Url;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub fn origin(raw: &str, allow_local: bool) -> Result<String, AppError> {
@@ -191,17 +192,222 @@ pub fn capabilities(value: &Value) -> SourceCapabilities {
     caps.byte_ranges = flag("byte_ranges");
     caps
 }
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct CatalogQuery {
+    pub q: Option<String>,
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+    pub media_type: Option<String>,
+    pub rating: Option<String>,
+    pub sort: Option<String>,
+    pub timeframe: Option<String>,
+    #[serde(default)]
+    pub favorites_only: bool,
+    pub min_age: Option<i32>,
+    pub max_age: Option<i32>,
+    pub min_width: Option<i32>,
+    pub min_height: Option<i32>,
+    pub orientation: Option<String>,
+    pub min_duration: Option<f64>,
+    pub max_duration: Option<f64>,
+}
+impl CatalogQuery {
+    pub fn normalized(mut self) -> Result<Self, AppError> {
+        self.q = Some(
+            self.q
+                .unwrap_or_default()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        if self
+            .q
+            .as_ref()
+            .is_some_and(|q| q.len() > 1000 || q.split_whitespace().count() > 32)
+        {
+            return Err(AppError::BadRequest(
+                "Use at most 32 remote tag terms and 1000 bytes".into(),
+            ));
+        }
+        self.page = Some(self.page.unwrap_or(1).clamp(1, 10000));
+        self.per_page = Some(self.per_page.unwrap_or(40).clamp(1, 100));
+        if self.media_type.as_deref() == Some("all") {
+            self.media_type = None;
+        }
+        if self
+            .media_type
+            .as_deref()
+            .is_some_and(|value| !["image", "video"].contains(&value))
+        {
+            return Err(AppError::BadRequest(
+                "media_type must be image or video".into(),
+            ));
+        }
+        if let Some(ratings) = self.rating.take() {
+            let values = ratings
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .collect::<std::collections::BTreeSet<_>>();
+            if values
+                .iter()
+                .any(|value| !["pg", "pg13", "r", "x", "xxx"].contains(value))
+            {
+                return Err(AppError::BadRequest("Invalid remote rating filter".into()));
+            }
+            if !values.is_empty() {
+                self.rating = Some(values.into_iter().collect::<Vec<_>>().join(","));
+            }
+        }
+        self.sort = Some(self.sort.unwrap_or_else(|| "newest".into()));
+        if self.sort.as_deref().is_some_and(|value| {
+            ![
+                "newest",
+                "oldest",
+                "filename_asc",
+                "filename_desc",
+                "filesize_largest",
+                "filesize_smallest",
+                "resolution_high",
+                "resolution_low",
+                "duration_longest",
+                "duration_shortest",
+                "random",
+                "popular",
+                "views",
+            ]
+            .contains(&value)
+        }) {
+            return Err(AppError::BadRequest(
+                "Unsupported remote catalog sort".into(),
+            ));
+        }
+        self.timeframe = match self.timeframe.as_deref() {
+            Some("all") | None => None,
+            Some("today") => Some("day".into()),
+            _ => self.timeframe,
+        };
+        if self
+            .timeframe
+            .as_deref()
+            .is_some_and(|value| !["day", "week", "month", "year"].contains(&value))
+        {
+            return Err(AppError::BadRequest("Unsupported remote timeframe".into()));
+        }
+        if self.min_age.is_some() || self.max_age.is_some() {
+            return Err(AppError::Forbidden("Remote detected subject ages are moderation-only and cannot be filtered by a catalog grant".into()));
+        }
+        if self.min_width.is_some_and(|n| n < 1)
+            || self.min_height.is_some_and(|n| n < 1)
+            || self.min_duration.is_some_and(|n| !n.is_finite() || n < 0.0)
+            || self.max_duration.is_some_and(|n| !n.is_finite() || n < 0.0)
+            || self
+                .min_duration
+                .zip(self.max_duration)
+                .is_some_and(|(min, max)| min > max)
+        {
+            return Err(AppError::BadRequest("Invalid remote filter range".into()));
+        }
+        if self
+            .orientation
+            .as_deref()
+            .is_some_and(|value| !["landscape", "portrait", "square"].contains(&value))
+        {
+            return Err(AppError::BadRequest("Invalid remote orientation".into()));
+        }
+        Ok(self)
+    }
+    pub fn uses_hub_filters(&self) -> bool {
+        self.media_type.is_some()
+            || self.rating.is_some()
+            || self.sort.as_deref().is_some_and(|sort| sort != "newest")
+            || self.timeframe.is_some()
+            || self.favorites_only
+            || self.min_width.is_some()
+            || self.min_height.is_some()
+            || self.orientation.is_some()
+            || self.min_duration.is_some()
+            || self.max_duration.is_some()
+    }
+}
 pub fn catalog_path(query: &str, page: u32, per_page: u32) -> Result<String, AppError> {
-    let url = Url::parse_with_params(
-        "https://hub.invalid/api/client/v1/catalog",
-        &[
-            ("collection", "community".to_string()),
-            ("tags", query.to_string()),
-            ("page", page.to_string()),
-            ("per_page", per_page.to_string()),
-        ],
+    catalog_path_for(
+        &CatalogQuery {
+            q: Some(query.into()),
+            page: Some(page),
+            per_page: Some(per_page),
+            ..Default::default()
+        }
+        .normalized()?,
     )
-    .map_err(|_| AppError::BadRequest("Invalid catalog search".into()))?;
+}
+pub fn catalog_path_for(query: &CatalogQuery) -> Result<String, AppError> {
+    let mut pairs = vec![
+        ("collection", "community".to_string()),
+        ("tags", query.q.clone().unwrap_or_default()),
+        ("page", query.page.unwrap_or(1).to_string()),
+        ("per_page", query.per_page.unwrap_or(40).to_string()),
+        (
+            "sort",
+            query.sort.clone().unwrap_or_else(|| "newest".into()),
+        ),
+    ];
+    for (name, value) in [
+        ("media_type", &query.media_type),
+        ("rating", &query.rating),
+        ("timeframe", &query.timeframe),
+        ("orientation", &query.orientation),
+    ] {
+        if let Some(value) = value {
+            pairs.push((name, value.clone()));
+        }
+    }
+    if query.favorites_only {
+        pairs.push(("favorites_only", "true".into()));
+    }
+    for (name, value) in [
+        ("min_width", query.min_width),
+        ("min_height", query.min_height),
+    ] {
+        if let Some(value) = value {
+            pairs.push((name, value.to_string()));
+        }
+    }
+    for (name, value) in [
+        ("min_duration", query.min_duration),
+        ("max_duration", query.max_duration),
+    ] {
+        if let Some(value) = value {
+            pairs.push((name, value.to_string()));
+        }
+    }
+    let url = Url::parse_with_params("https://hub.invalid/api/client/v1/catalog", pairs)
+        .map_err(|_| AppError::BadRequest("Invalid catalog search".into()))?;
+    Ok(format!(
+        "{}?{}",
+        url.path(),
+        url.query().unwrap_or_default()
+    ))
+}
+pub fn catalog_tags_path(
+    query: &CatalogQuery,
+    prefix: &str,
+    limit: u32,
+) -> Result<String, AppError> {
+    if prefix.len() > 100 {
+        return Err(AppError::BadRequest("Tag prefix exceeds 100 bytes".into()));
+    }
+    let catalog = Url::parse(&format!("https://hub.invalid{}", catalog_path_for(query)?))
+        .map_err(|_| AppError::BadRequest("Invalid catalog facet filters".into()))?;
+    let mut pairs = catalog
+        .query_pairs()
+        .into_owned()
+        .filter(|(name, _)| !matches!(name.as_str(), "collection" | "page" | "per_page" | "sort"))
+        .collect::<Vec<_>>();
+    pairs.push(("query".into(), prefix.into()));
+    pairs.push(("limit".into(), limit.clamp(1, 50).to_string()));
+    let url = Url::parse_with_params("https://hub.invalid/api/client/v1/catalog/tags", pairs)
+        .map_err(|_| AppError::BadRequest("Invalid catalog facet request".into()))?;
     Ok(format!(
         "{}?{}",
         url.path(),
@@ -297,7 +503,10 @@ pub fn catalog_item(source_id: &str, base: &str, row: &Value) -> Result<RemoteIt
         source_url: None,
         width: media.iter().find_map(|m| m.width),
         height: media.iter().find_map(|m| m.height),
-        duration: None,
+        duration: row
+            .get("duration")
+            .and_then(Value::as_f64)
+            .filter(|duration| duration.is_finite() && *duration >= 0.0),
         media,
     })
 }
@@ -320,6 +529,17 @@ pub fn catalog_page(
         page,
         per_page,
         total: value.get("total").and_then(Value::as_u64),
+        available_ratings: value
+            .get("available_ratings")
+            .and_then(Value::as_array)
+            .map(|ratings| {
+                ratings
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default(),
         stale: false,
         next_cursor: value
             .get("has_more")
@@ -327,4 +547,188 @@ pub fn catalog_page(
             .filter(|v| *v)
             .map(|_| (page + 1).to_string()),
     })
+}
+
+#[cfg(test)]
+mod catalog_filter_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn catalog_filters_are_forwarded_in_the_server_query() {
+        let query = CatalogQuery {
+            q: Some("  cat   -dog ".into()),
+            page: Some(3),
+            per_page: Some(60),
+            media_type: Some("video".into()),
+            rating: Some("pg13,pg,pg13".into()),
+            sort: Some("filename_asc".into()),
+            timeframe: Some("today".into()),
+            favorites_only: true,
+            min_width: Some(1920),
+            min_height: Some(1080),
+            orientation: Some("landscape".into()),
+            min_duration: Some(0.5),
+            max_duration: Some(120.0),
+            ..Default::default()
+        }
+        .normalized()
+        .unwrap();
+        let path = catalog_path_for(&query).unwrap();
+        let url = Url::parse(&format!("https://hub.invalid{path}")).unwrap();
+        let pairs = url
+            .query_pairs()
+            .into_owned()
+            .collect::<std::collections::HashMap<_, _>>();
+        for (name, value) in [
+            ("tags", "cat -dog"),
+            ("page", "3"),
+            ("per_page", "60"),
+            ("media_type", "video"),
+            ("rating", "pg,pg13"),
+            ("sort", "filename_asc"),
+            ("timeframe", "day"),
+            ("favorites_only", "true"),
+            ("min_width", "1920"),
+            ("min_height", "1080"),
+            ("orientation", "landscape"),
+            ("min_duration", "0.5"),
+            ("max_duration", "120"),
+        ] {
+            assert_eq!(pairs.get(name).map(String::as_str), Some(value), "{name}");
+        }
+        assert!(!pairs.contains_key("min_age"));
+    }
+
+    #[test]
+    fn equivalent_queries_share_normalization_and_distinct_filters_do_not() {
+        let left = CatalogQuery {
+            q: Some("cat  -dog".into()),
+            rating: Some("pg13,pg,pg13".into()),
+            timeframe: Some("today".into()),
+            ..Default::default()
+        }
+        .normalized()
+        .unwrap();
+        let right = CatalogQuery {
+            q: Some("cat -dog".into()),
+            rating: Some("pg,pg13".into()),
+            timeframe: Some("day".into()),
+            page: Some(1),
+            per_page: Some(40),
+            sort: Some("newest".into()),
+            ..Default::default()
+        }
+        .normalized()
+        .unwrap();
+        assert_eq!(
+            serde_json::to_string(&left).unwrap(),
+            serde_json::to_string(&right).unwrap()
+        );
+        assert_eq!(
+            catalog_path_for(&left).unwrap(),
+            catalog_path_for(&right).unwrap()
+        );
+        for changed in [
+            CatalogQuery {
+                media_type: Some("image".into()),
+                ..left.clone()
+            },
+            CatalogQuery {
+                favorites_only: true,
+                ..left.clone()
+            },
+            CatalogQuery {
+                min_width: Some(100),
+                ..left.clone()
+            },
+            CatalogQuery {
+                min_height: Some(100),
+                ..left.clone()
+            },
+            CatalogQuery {
+                orientation: Some("portrait".into()),
+                ..left.clone()
+            },
+            CatalogQuery {
+                min_duration: Some(10.0),
+                ..left.clone()
+            },
+            CatalogQuery {
+                max_duration: Some(60.0),
+                ..left.clone()
+            },
+            CatalogQuery {
+                sort: Some("oldest".into()),
+                ..left.clone()
+            },
+        ] {
+            assert_ne!(
+                catalog_path_for(&left).unwrap(),
+                catalog_path_for(&changed).unwrap()
+            );
+            assert_ne!(
+                serde_json::to_string(&left).unwrap(),
+                serde_json::to_string(&changed).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn catalog_grant_cannot_filter_private_detected_subject_ages() {
+        for query in [
+            CatalogQuery {
+                min_age: Some(0),
+                ..Default::default()
+            },
+            CatalogQuery {
+                max_age: Some(90),
+                ..Default::default()
+            },
+        ] {
+            assert!(matches!(query.normalized(), Err(AppError::Forbidden(_))));
+        }
+        for query in [
+            CatalogQuery {
+                min_width: Some(0),
+                ..Default::default()
+            },
+            CatalogQuery {
+                min_duration: Some(f64::NAN),
+                ..Default::default()
+            },
+            CatalogQuery {
+                min_duration: Some(10.0),
+                max_duration: Some(1.0),
+                ..Default::default()
+            },
+            CatalogQuery {
+                sort: Some("folder_asc".into()),
+                ..Default::default()
+            },
+            CatalogQuery {
+                rating: Some("invalid".into()),
+                ..Default::default()
+            },
+        ] {
+            assert!(matches!(query.normalized(), Err(AppError::BadRequest(_))));
+        }
+    }
+
+    #[test]
+    fn filtered_server_page_preserves_authoritative_total_and_rating_facets() {
+        let page = catalog_page("source","https://hub.example",json!({
+            "items":[{"remote_post_id":"7","canonical_url":"/post/7","rating":"pg","duration":90.5,"variants":[{"kind":"original","asset_url":"/api/client/v1/media/7/original","mime_type":"video/mp4"}]}],
+            "total":61,"has_more":true,"available_ratings":["pg","pg13"]
+        }),1,60).unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.total, Some(61));
+        assert_eq!(page.items[0].duration, Some(90.5));
+        assert_eq!(page.next_cursor.as_deref(), Some("2"));
+        assert_eq!(page.available_ratings, vec!["pg", "pg13"]);
+        assert_eq!(
+            page.items[0].media[0].mime_type.as_deref(),
+            Some("video/mp4")
+        );
+    }
 }

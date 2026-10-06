@@ -65,6 +65,12 @@ export const DURATION_OPTIONS = [
 
 function FilterControls({
   mediaType = 'image',
+  availableRatings = ALL_RATINGS,
+  showDirectories = true,
+  showFilename = true,
+  showFolders = true,
+  showAge = true,
+  showWatched = true,
   // Directory filter
   directories,
   selectedDirectory,
@@ -112,18 +118,18 @@ function FilterControls({
 
   // Count active advanced filters
   const activeAdvancedCount = [
-    mediaType === 'image' && (minAge !== null || maxAge !== null),
+    showAge && mediaType === 'image' && (minAge !== null || maxAge !== null),
     timeframe !== null,                  // Timeframe set
     resolution !== null,                 // Resolution set
     mediaType === 'image' && orientation !== null,
     mediaType === 'video' && duration !== null,
-    mediaType === 'video' && watchedStatus !== null,
+    showWatched && mediaType === 'video' && watchedStatus !== null,
   ].filter(Boolean).length
 
   return (
     <>
       {/* Directory Filter */}
-      <div className="directory-filter">
+      {showDirectories && <div className="directory-filter">
         <div className="directory-filter-list">
           <button
             type="button"
@@ -154,8 +160,10 @@ function FilterControls({
         </div>
       </div>
 
+      }
+
       {/* Filename Search */}
-      <div className="filename-search">
+      {showFilename && <div className="filename-search">
         <div className="search-input-wrapper">
           <svg className="search-icon" viewBox="0 0 24 24" fill="currentColor">
             <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>
@@ -187,6 +195,8 @@ function FilterControls({
         </div>
       </div>
 
+      }
+
       {/* Favorites Toggle */}
       <label className="toggle-row">
         <span className="toggle-label">
@@ -201,7 +211,7 @@ function FilterControls({
       </label>
 
       {/* Group by Folders Toggle */}
-      <label className="toggle-row">
+      {showFolders && <label className="toggle-row">
         <span className="toggle-label">
           <svg viewBox="0 0 24 24" fill="currentColor" className="toggle-icon">
             <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
@@ -213,9 +223,11 @@ function FilterControls({
         </div>
       </label>
 
+      }
+
       {/* Rating Buttons */}
       <div className="rating-buttons">
-        {ALL_RATINGS.filter(r => !familyLocked || !NSFW_RATINGS.includes(r)).map(rating => (
+        {availableRatings.filter(r => !familyLocked || !NSFW_RATINGS.includes(r)).map(rating => (
           <button
             key={rating}
             type="button"
@@ -249,7 +261,7 @@ function FilterControls({
       <div className={`advanced-filters-content ${advancedExpanded ? 'expanded' : ''}`}>
         <div className="advanced-filters-inner">
           {/* Age Range Slider */}
-          {mediaType === 'image' && <div className="age-filter">
+          {showAge && mediaType === 'image' && <div className="age-filter">
             <div className="age-filter-header">
               <span className="age-filter-label">Age Range:</span>
               <span className="age-filter-value">
@@ -371,7 +383,7 @@ function FilterControls({
             </div>
           </div>}
 
-          {mediaType === 'video' && <div className="watched-filter">
+          {showWatched && mediaType === 'video' && <div className="watched-filter">
             <span className="filter-label">Watched Status</span>
             <div className="duration-buttons">
               {[
