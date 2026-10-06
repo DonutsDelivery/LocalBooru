@@ -11,13 +11,22 @@ description: User reported private ComfyUI image in old browserpreview5175. Audi
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 1
 tags: []
 vcs_refs: []
+review_ref: "@isolated-preview-routing-review"
+submission_linkage:
+  review_url: null
+  branch: splice/mac-pairing
+  captured_at: 2026-10-06T07:35:20.192Z
+  commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -29,6 +38,34 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-06T07:25:33.326Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: splice/mac-pairing
+          captured_at: 2026-10-06T07:35:20.192Z
+          commit: 4235aeb6fbbf10e722af782c77f3380f5eb44347
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-06T07:35:20.195Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-06T07:35:20.195Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@isolated-preview-routing-review"
+        previous: null
+    command: review-link
+    timestamp: 2026-10-06T07:35:20.556Z
 created_at: 2026-10-06T07:25:33.153Z
 started_at: 2026-10-06T07:25:33.326Z
+submitted_at: 2026-10-06T07:35:20.195Z
 todos: []
