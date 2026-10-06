@@ -42,3 +42,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T08:39:46.043Z
+  - _ulid: 01M4861QRNJQVMYC09289JAD3J
+    content: "Frozen source cdbff8d55bb75d26dc658979ba396fbf7448a213 on
+      fix/offline-relay-download-speed. Production gateway inspected: single accept_bi per
+      connection then FIN/stopped acknowledgement and close. Scope narrowed to exact peer/relay/mode
+      endpoint+relay-client reuse with fresh request QUIC; no replay or cached credentials. Added
+      eight synthetic ephemeral QUIC tests using single-use gateway semantics, malformed response
+      and cancellation isolation, bounded idle eviction and weak reaper. rustfmt syntax parse and
+      git diff --check passed. No compiler/runtime or private data used by child; root owns gated
+      native tests and integration. No speed measurement claimed."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T08:42:26.453Z
