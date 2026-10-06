@@ -53,6 +53,7 @@ function Sidebar({
   supportedSortValues,
   defaultSort = 'newest',
   sidebarActions,
+  sidebarCollections,
   searchSuggestions
 }) {
   const location = useLocation()
@@ -840,6 +841,8 @@ function Sidebar({
             )}
           </div>
         )}
+
+        {sidebarCollections && <div className="sidebar-section sidebar-collections">{sidebarCollections}</div>}
 
         {/* Tag Browser */}
         {isSearchPage && (mediaType === 'image' || isCollectionPage) && !selectedImage && (

@@ -1,0 +1,199 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.creator-collections {
+  margin-top: 8px;
+}
+.creator-help,
+.creator-availability,
+.creator-offline-progress,
+.creator-sync-settings p {
+  font-size: .78rem;
+  color: var(--text-secondary);
+  margin: 6px 0;
+}
+.creator-search-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: .8rem;
+}
+.creator-search-label input,
+.creator-review-dialog input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+.creator-collections button {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px;
+  cursor: pointer;
+  font-size: .78rem;
+}
+.creator-collections button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+.creator-collections button[aria-pressed=true] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.creator-views {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 10px 0;
+}
+.creator-select-all,
+.creator-select {
+  width: 100%;
+  text-align: left;
+}
+.creator-select {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+.creator-select span:first-child {
+  overflow-wrap: anywhere;
+}
+.creator-select span:last-child {
+  font-size: .72rem;
+  white-space: nowrap;
+}
+.creator-list {
+  list-style: none;
+  padding: 0 4px 0 0;
+  margin: 10px 0;
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding: 8px;
+}
+.creator-list li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.creator-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.creator-error {
+  font-size: .78rem;
+  color: var(--text-secondary);
+}
+.creator-sync-settings {
+  margin-top: 18px;
+}
+.creator-sync-settings summary {
+  cursor: pointer;
+  font-size: .85rem;
+  padding: 8px 0;
+}
+.creator-sync-settings h4 {
+  margin: 12px 0 2px;
+}
+.creator-sync-settings button {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+}
+.creator-local-status {
+  font-size: .8rem;
+  color: var(--accent);
+}
+.creator-review-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 12000;
+  padding: 20px;
+}
+.creator-review-dialog {
+  max-width: 460px;
+  max-height: 90vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 24px;
+  box-sizing: border-box;
+}
+.creator-review-dialog h2 {
+  font-size: 1.25rem;
+  margin-top: 0;
+}
+.creator-review-dialog p {
+  color: var(--text-secondary);
+  font-size: .9rem;
+  line-height: 1.5;
+}
+.creator-review-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.creator-review-dialog .creator-host-choice {
+  flex-direction: row;
+  align-items: flex-start;
+  font-size: .9rem;
+}
+.creator-review-dialog .creator-host-choice input {
+  width: auto;
+  margin-top: 3px;
+}
+.creator-review-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+.creator-review-actions button {
+  padding: 9px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.creator-review-actions button:disabled {
+  opacity: .5;
+}
+.creator-review-actions button[type=submit] {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+.creator-collections .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 700px) {
+  .creator-row-actions button,
+  .creator-views button,
+  .creator-select,
+  .creator-select-all,
+  .creator-sync-settings button {
+    min-height: 44px;
+  }
+  .creator-review-dialog {
+    width: 100%;
+  }
+}

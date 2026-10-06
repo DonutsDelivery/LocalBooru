@@ -14,7 +14,7 @@ export function remoteAssetPath(sourceId, postId, kind) {
   return `/api/online/sources/${encodeURIComponent(sourceId)}/items/${encodeURIComponent(postId)}/asset/${encodeURIComponent(kind)}`
 }
 
-export function remoteGalleryItem(item, { sourceId = item.source_id, sourceName = '' } = {}) {
+export function remoteGalleryItem(item, { sourceId = item.source_id, sourceName = '', offlineOnly = false } = {}) {
   if (!sourceId || item.source_id !== sourceId || item.remote_post_id == null) {
     throw new Error('The community returned an item belonging to another source.')
   }
@@ -26,7 +26,7 @@ export function remoteGalleryItem(item, { sourceId = item.source_id, sourceName 
   const thumbnail = media.find(variant => variant.kind === 'thumbnail' && !variant.mime_type?.startsWith('video/'))
     || media.find(variant => variant.kind === 'sample' && !variant.mime_type?.startsWith('video/'))
     || (!video ? original : null)
-  const path = variant => variant ? remoteAssetPath(sourceId, item.remote_post_id, variant.kind) : ''
+  const path = variant => variant ? remoteAssetPath(sourceId, item.remote_post_id, variant.kind) + (offlineOnly ? '?offline_only=true' : '') : ''
   const extension = MIME_EXTENSIONS[original?.mime_type] || (video ? 'mp4' : 'jpg')
   const dimensions = [original, sample, thumbnail].find(variant => variant?.width > 0 && variant?.height > 0)
   const filename = `remote-${encodeURIComponent(item.remote_post_id)}.${extension}`

@@ -14,7 +14,7 @@ if ! flock -n 7; then
 fi
 
 if command -v ss >/dev/null 2>&1; then
-    for port in 5210 8790; do
+    for port in 5210 "${LOCALBOORU_PORT:-8790}"; do
         if ss -H -ltn "sport = :$port" 2>/dev/null | grep -q .; then
             echo "Cannot start DonutMediaCenter dev: port $port is already in use." >&2
             echo "Stop the existing DonutMediaCenter/Vite process and try again." >&2

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
+import RemoteCreatorCollections from '../components/RemoteCreatorCollections'
 import GalleryTileSizeControl from '../components/GalleryTileSizeControl'
 import { useGalleryTileSize } from '../hooks/useGalleryTileSize'
 import { collectionRequestFilters, collectionSidebarProps, readCollectionFilters, REMOTE_SORT_VALUES, sidebarFilterParams, toggleCollectionTag } from '../utils/galleryCollectionFilters'
@@ -14,26 +15,31 @@ import { appendRemoteGalleryItems, remoteGalleryItem, remotePageHasMore } from '
 import './SharedCollectionPage.css'
 
 const message = error => error?.response?.data?.detail || error?.response?.data?.error || error?.message || 'Could not load this community.'
-const emptyResult = scope => ({ scope, images: [], page: 0, hasMore: true, stale: false, loading: true, error: '', nextCursor: null })
+const emptyResult = scope => ({ scope, images: [], page: 0, hasMore: true, stale: false, offline: false, partial: false, loading: true, error: '', nextCursor: null })
 
 export default function SharedCollectionPage() {
   const { sourceId } = useParams()
   const [params, setParams] = useSearchParams()
   const mediaType = params.get('media_type') === 'video' ? 'video' : 'image'
   const filters = useMemo(() => readCollectionFilters(params, true), [params])
-  const requestFilters = useMemo(() => collectionRequestFilters(filters, true), [filters])
+  const requestFilterKey = JSON.stringify(collectionRequestFilters(filters, true))
+  const requestFilters = useMemo(() => JSON.parse(requestFilterKey), [requestFilterKey])
+  const creatorView = ['available', 'following', 'offline', 'all'].includes(params.get('creator_view')) ? params.get('creator_view') : 'available'
+  const creatorQuery = params.get('creator_query') || ''
   const query = filters.tags
   const navigate = useNavigate()
   const location = useLocation()
   const galleryReturnTo = collectionGalleryTarget(location, mediaType)
-  return <SharedCommunityGallery key={`${sourceId}:${mediaType}`} sourceId={sourceId} mediaType={mediaType} query={query} filters={filters} requestFilters={requestFilters}
+  return <SharedCommunityGallery key={`${sourceId}:${mediaType}`} sourceId={sourceId} mediaType={mediaType} query={query} filters={filters} requestFilters={requestFilters} creatorView={creatorView} creatorQuery={creatorQuery}
+    onCreatorDirectoryChange={(view, query) => { const next = new URLSearchParams(params); if (view === 'available') next.delete('creator_view'); else next.set('creator_view', view); if (query) next.set('creator_query', query); else next.delete('creator_query'); setParams(next, { replace: true }) }}
+    onCreatorSelect={(id, offline) => { const next = new URLSearchParams(params); if (id != null) next.set('creator_id', id); else next.delete('creator_id'); if (offline) next.set('offline_only', 'true'); else next.delete('offline_only'); setParams(next) }}
     onFilters={(...args) => setParams(sidebarFilterParams(params, true, ...args))}
     onTag={tag => setParams(toggleCollectionTag(params, tag, true))}
     onBack={() => navigate(`/collections?media_type=${mediaType}`, { state: { galleryReturnTo } })}
     settingsReturnTo={`${location.pathname}${location.search}`} />
 }
 
-function SharedCommunityGallery({ sourceId, mediaType, query, filters, requestFilters, onFilters, onTag, onBack, settingsReturnTo }) {
+function SharedCommunityGallery({ sourceId, mediaType, query, filters, requestFilters, creatorView, creatorQuery, onCreatorDirectoryChange, onCreatorSelect, onFilters, onTag, onBack, settingsReturnTo }) {
   const extraFilters = { ...requestFilters }; delete extraFilters.q
   const scope = JSON.stringify([sourceId, mediaType, query, ...(Object.keys(extraFilters).length ? [extraFilters] : [])])
   const sessionKey = `donutMediaCenter_shared_${encodeURIComponent(scope)}`
@@ -92,10 +98,10 @@ function SharedCommunityGallery({ sourceId, mediaType, query, filters, requestFi
       const data = await browseRemoteSource(sourceId, { ...requestFilters, q: requestFilters.q || '', media_type: mediaType, page, per_page: 60, ...(append && previous.nextCursor ? { cursor: previous.nextCursor } : {}) })
       if (request !== generation.current || activeScope.current !== scope) return null
       if (Array.isArray(data.available_ratings)) setFacets(previous => ({ ...previous, available_ratings: data.available_ratings }))
-      const incoming = (data.items || []).map(item => remoteGalleryItem(item, { sourceId }))
+      const incoming = (data.items || []).map(item => remoteGalleryItem(item, { sourceId, offlineOnly: Boolean(requestFilters.offline_only || data.offline) }))
       const next = { scope, images: append ? appendRemoteGalleryItems(previous.images, incoming) : incoming,
         page, hasMore: remotePageHasMore({ ...data, page, per_page: data.per_page || 60 }),
-        stale: Boolean(data.stale), loading: false, error: '', nextCursor: data.next_cursor }
+        stale: Boolean(data.stale), offline: Boolean(data.offline), partial: Boolean(data.partial || (append && previous.partial)), loading: false, error: '', nextCursor: data.next_cursor }
       resultRef.current = next
       setResult(next)
       sessionStorage.setItem(`${sessionKey}_page`, String(page))
@@ -240,11 +246,12 @@ function SharedCommunityGallery({ sourceId, mediaType, query, filters, requestFi
     <Sidebar {...collectionSidebarProps(filters)} filterScope="remote" supportedSortValues={REMOTE_SORT_VALUES} availableRatings={facets.available_ratings || []}
       tags={facets.tags || []} searchSuggestions={searchRemoteTags} onSearch={searchCommunity}
       sidebarActions={<><h3>{sourceName || 'Shared community'}</h3><button className="media-collection-link collection-sidebar-action" onClick={onBack}>← Back to Collections</button><Link className="media-collection-link" to="/settings/fediverse" state={{ returnTo: settingsReturnTo }}>Community settings</Link></>}
+      sidebarCollections={<RemoteCreatorCollections sourceId={sourceId} mediaType={mediaType} selectedCreatorId={filters.creatorId} localCopies={filters.offlineOnly} view={creatorView} query={creatorQuery} onDirectoryChange={onCreatorDirectoryChange} onSelectCreator={(id, offline) => { closeImage(); drawer.close(); onCreatorSelect(id, offline) }} />}
       mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={() => { drawer.close(); setSidebarHover(false) }}
       onTagClick={onTag} selectedImage={selected} lightboxMode={Boolean(selected)} lightboxHover={sidebarHover} onMouseLeave={() => setSidebarHover(false)} />
     <main ref={contentRef} className="content with-sidebar shared-gallery-page" onScrollCapture={event => { if (result.scope === scope && event.target.classList?.contains('masonry-container')) sessionStorage.setItem(`${sessionKey}_scroll`, String(event.target.scrollTop)) }}>
       <button className="menu-btn mobile-only collection-mobile-menu" onClick={drawer.open} aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18" /></svg></button>
-      {current.stale && <p className="shared-gallery-notice" role="status">Offline · showing saved results.</p>}
+      {current.offline ? <p className="shared-gallery-notice" role="status">{current.partial ? 'Offline copies · Some content is not available on this device.' : 'Offline copies · Showing downloaded content.'}</p> : current.stale && <p className="shared-gallery-notice" role="status">Offline · showing saved results.</p>}
       {current.error && <div className="shared-gallery-notice" role="alert">{current.error} <button onClick={() => loadPage(current.page ? current.page + 1 : 1, current.page > 0)}>Retry</button></div>}
       <div className="floating-controls"><GalleryTileSizeControl tileSize={tileSize} onChange={setTileSize} /></div>
       <MasonryGrid images={images} onImageClick={openImage} onLoadMore={loadMore} loading={current.loading || restoring} hasMore={current.hasMore && !current.error} tileSize={tileSize} />

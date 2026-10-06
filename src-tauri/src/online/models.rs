@@ -51,6 +51,10 @@ pub struct RemoteMediaVariant {
     pub mime_type: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    #[serde(default)]
+    pub sha256: Option<String>,
+    #[serde(default)]
+    pub byte_size: Option<u64>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RemoteCreator {
@@ -89,6 +93,10 @@ pub struct RemotePage {
     #[serde(default)]
     pub available_ratings: Vec<String>,
     pub stale: bool,
+    #[serde(default)]
+    pub offline: bool,
+    #[serde(default)]
+    pub partial: bool,
     pub next_cursor: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -46,3 +46,37 @@ It also disables only that test process's single-instance forwarding, so it
 cannot hand its launch or files to the user's normal LocalBooru instance. The
 temporary root is removed when the launcher exits. Set
 `LOCALBOORU_TEST_PORT` when the default test port is occupied.
+
+For acceptance of an already-built candidate, keep the canonical isolated
+launcher and set an absolute executable path:
+
+```bash
+LOCALBOORU_TEST_BINARY=/absolute/path/to/candidate npm run app:test-isolated
+```
+
+This runs the candidate directly without invoking the development launcher or
+starting a build. It applies the same disposable home, XDG config/data/cache/state,
+temporary files, portable library, target directory, port, and disabled
+single-instance forwarding. The candidate receives no application file arguments.
+Its output stays in the temporary test log, and the launcher removes the profile
+and stops its child if readiness fails. Without this option the launcher retains
+its normal development behavior and host build-gate requirement. Never point the
+portable data override at a user profile, use the normal installed launcher, or
+fall back to the user's running instance for acceptance.
+
+Synthetic launcher checks can be run without a build:
+
+```bash
+bash scripts/test-run-dev.sh
+bash scripts/test-run-isolated-test.sh
+```
+
+On Linux, the launcher requires `dbus-run-session` and `setsid`. It starts both
+candidate and development acceptance under a private D-Bus session while
+preserving display connection variables. This prevents GTK's application identity
+from registering in the user's desktop session. Cleanup targets only the launcher's
+owned process group, including the candidate and private bus; missing session tools
+fail closed. Portable and isolated credential storage also bypasses shared OS
+keyring reads and writes, using only the owned profile's protected credential file.
+An isolated process without an explicit portable data directory refuses credential
+access before resolving any normal profile path.

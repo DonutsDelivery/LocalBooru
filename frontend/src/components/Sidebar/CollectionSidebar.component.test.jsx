@@ -75,3 +75,12 @@ test('remote tag search never falls back to the local library when source sugges
   await act(async () => { await vi.advanceTimersByTimeAsync(200) })
   expect(api.searchTags).not.toHaveBeenCalled()
 })
+
+test('creator collections follow regular media filters and remain before tag browsing', () => {
+  render(<MemoryRouter initialEntries={['/shared/main']}><Sidebar filterScope="remote" availableRatings={['pg', 'pg13']} onSearch={search} onTagClick={vi.fn()} searchSuggestions={vi.fn()} tags={[]} sidebarActions={<h3>Community title</h3>} sidebarCollections={<section aria-label="Creator collection controls">Creator controls</section>} /></MemoryRouter>)
+  const filterSection = screen.getByRole('combobox', { name: 'Sort by' }).closest('.search-section')
+  const creatorSection = screen.getByRole('region', { name: 'Creator collection controls' })
+  const tagSection = screen.getByPlaceholderText('Search tag or -tag...')
+  expect(filterSection.compareDocumentPosition(creatorSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(creatorSection.compareDocumentPosition(tagSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})

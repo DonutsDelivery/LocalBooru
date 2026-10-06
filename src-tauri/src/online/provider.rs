@@ -77,6 +77,8 @@ pub fn normalize_page(
         total,
         available_ratings: vec![],
         stale: false,
+        offline: false,
+        partial: false,
         next_cursor: None,
     })
 }
@@ -157,6 +159,8 @@ fn normalize_item(provider: &str, source_id: &str, base: &str, r: &Value) -> Opt
     .into_iter()
     .filter_map(|(kind, url)| {
         url.map(|asset_url| RemoteMediaVariant {
+            sha256: None,
+            byte_size: None,
             kind: kind.into(),
             asset_url,
             mime_type: None,

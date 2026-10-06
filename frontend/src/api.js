@@ -1,6 +1,7 @@
 /**
  * DonutMediaCenter API client - supports both local and multi-server mode
  */
+import { getLocalServerPort } from './utils/localServerPort.js'
 import axios from 'axios'
 import { isMobileApp, isTauriApp as isTauriClient, getActiveServer, getActiveServerId, setActiveServerId, LOCAL_SERVER, probeServer, serverConnectionUrls, learnServerAddresses } from './serverManager'
 import { validateServerCertificate, isHttps } from './sslPinning'
@@ -28,7 +29,7 @@ let addressRefreshTimer = null
 let addressRefreshAbort = null
 let addressRefreshListener = null
 
-const LOCAL_SERVER_PORT = import.meta.env?.VITE_LOCALBOORU_PORT || '8790'
+const LOCAL_SERVER_PORT = getLocalServerPort()
 
 // Detect if running in Tauri
 function isTauriApp() {
@@ -1001,6 +1002,31 @@ export async function createRemoteConnection(sourceId, connection) {
 
 export async function deleteRemoteConnection(sourceId, connectionId) {
   await api.delete(`/online/sources/${encodeURIComponent(sourceId)}/connections/${encodeURIComponent(connectionId)}`)
+}
+
+export async function getRemoteCreators(sourceId, params = {}) {
+  const response = await api.get(`/online/sources/${encodeURIComponent(sourceId)}/creators`, { params })
+  return response.data
+}
+
+export async function getRemoteOffline(sourceId) {
+  const response = await api.get(`/online/sources/${encodeURIComponent(sourceId)}/offline`)
+  return response.data
+}
+
+export async function updateRemoteCreatorPreferences(sourceId, creatorId, preferences) {
+  const response = await api.patch(`/online/sources/${encodeURIComponent(sourceId)}/creators/${encodeURIComponent(creatorId)}/preferences`, preferences)
+  return response.data
+}
+
+export async function updateRemoteOffline(sourceId, settings) {
+  const response = await api.patch(`/online/sources/${encodeURIComponent(sourceId)}/offline`, settings)
+  return response.data
+}
+
+export async function removeRemoteOffline(sourceId) {
+  const response = await api.post(`/online/sources/${encodeURIComponent(sourceId)}/offline/remove`, { confirmed_remove: true })
+  return response.data
 }
 
 export async function fetchRemoteSourceTags(sourceId, query = '', limit = 20, filters = {}) {

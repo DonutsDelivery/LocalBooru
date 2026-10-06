@@ -276,7 +276,12 @@ pub fn run() {
         bridge
     };
 
-    let mut builder = tauri::Builder::default();
+    // The native process resolves this before any frontend module loads; a
+    // prebuilt acceptance window must never use a baked-in user-instance port.
+    let mut builder = tauri::Builder::default().append_invoke_initialization_script(format!(
+        "Object.defineProperty(window, '__LOCALBOORU_PORT__', {{ value: {}, writable: false, configurable: false }});",
+        get_server_port()
+    ));
 
     // Single instance: focus existing window if already running (desktop only).
     // Isolated acceptance launches opt out explicitly so they cannot forward
@@ -397,6 +402,13 @@ pub fn run() {
         let native_safe_mode = true;
         // Store AppState for both Tauri commands and axum server
         app.manage(app_state.clone());
+        app.manage(online::peer::start(app_state.clone()));
+        // Both guards are owned by the app; supervisors retain only Weak refs.
+        // A startup failure remains visible in offline settings and worker kicks.
+        match online::offline::start(app_state.clone()) {
+            Ok(runtime) => { app.manage(runtime); }
+            Err(error) => log::error!("[Offline] Startup failed: {error}"),
+        }
         #[cfg(desktop)]
         {
             svp_bridge.start(app.handle().clone());

@@ -48,11 +48,28 @@ fn paired_credential_cache() -> &'static Mutex<Option<serde_json::Value>> {
     CACHE.get_or_init(|| Mutex::new(None))
 }
 
+/// Portable/isolated profiles must never touch the desktop session's shared
+/// keyring. An isolated launch without portable storage fails before resolving
+/// any normal profile path.
+fn paired_credential_keyring_allowed(portable: bool, isolated: bool) -> Result<bool, String> {
+    if isolated && !portable {
+        return Err("Isolated credentials require an explicit portable data directory".into());
+    }
+    Ok(!portable && !isolated)
+}
+fn paired_credential_storage_policy() -> Result<bool, String> {
+    paired_credential_keyring_allowed(
+        std::env::var_os("LOCALBOORU_PORTABLE_DATA").is_some(),
+        std::env::var("LOCALBOORU_DISABLE_SINGLE_INSTANCE").as_deref() == Ok("1"),
+    )
+}
+
 /// Path of the file-backed credential store. Mirrors `get_data_dir` in lib.rs
 /// so credentials live in the same app-private directory on every platform —
 /// including Android, where the OS keyring is unavailable and credentials were
 /// previously lost on every app restart (the "pairing invalid the next day" bug).
 fn paired_credential_file_path(#[allow(unused)] app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    paired_credential_storage_policy()?;
     let data_dir = crate::get_data_dir(app)?;
     Ok(data_dir.join(CREDENTIAL_DIR).join(PAIRED_CREDENTIAL_FILE))
 }
@@ -118,43 +135,72 @@ fn store_desktop_keyring_credentials(bytes: &[u8]) -> Result<(), String> {
     .map_err(|error| format!("Could not store OS-protected credentials: {error}"))
 }
 
-/// Load remote server tokens from the app's protected credential store.
-///
-/// Primary source: the durable file-backed store in the app data directory
-/// (the only store available on Android). On desktop the OS keyring is also
-/// kept in sync and preferred when it holds newer data, so tokens survive
-/// restarts everywhere while desktop keeps keyring-grade protection.
-#[tauri::command]
-pub fn load_paired_server_credentials(app: AppHandle) -> Result<serde_json::Value, String> {
-    if let Ok(cache) = paired_credential_cache().lock() {
-        if let Some(value) = cache.as_ref() {
-            return Ok(value.clone());
-        }
-    }
-    let file_path = paired_credential_file_path(&app)?;
-    let file_value = match read_credential_file(&file_path)? {
+fn load_paired_credential_map(
+    file_path: &Path,
+    allow_keyring: bool,
+    load_keyring: impl FnOnce() -> Result<Option<Vec<u8>>, String>,
+) -> Result<serde_json::Value, String> {
+    let file_value = match read_credential_file(file_path)? {
         Some(bytes) if !bytes.is_empty() => Some(
             serde_json::from_slice::<serde_json::Value>(&bytes)
                 .map_err(|_| "Stored paired-server credentials are corrupt".to_string())?,
         ),
         _ => None,
     };
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let keyring_value = match load_desktop_keyring_credentials()? {
-        Some(bytes) => Some(
-            serde_json::from_slice::<serde_json::Value>(&bytes)
-                .map_err(|_| "OS keyring credentials are corrupt".to_string())?,
-        ),
-        None => None,
+    let keyring_value = if allow_keyring {
+        load_keyring()?
+            .map(|bytes| {
+                serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .map_err(|_| "OS keyring credentials are corrupt".to_string())
+            })
+            .transpose()?
+    } else {
+        None
     };
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    let keyring_value: Option<serde_json::Value> = None;
-    // Prefer whichever store actually has credentials; if both do and they
-    // disagree, the file wins because it is written on every platform while
-    // the keyring is desktop-only. They are kept in sync on every store.
-    let loaded = file_value
+    Ok(file_value
         .or(keyring_value)
-        .unwrap_or(serde_json::json!({}));
+        .unwrap_or(serde_json::json!({})))
+}
+fn store_paired_credential_map(
+    file_path: &Path,
+    bytes: &[u8],
+    allow_keyring: bool,
+    store_keyring: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    write_credential_file(file_path, bytes)?;
+    // File storage remains durable even if the normal desktop mirror fails.
+    if allow_keyring {
+        let _ = store_keyring();
+    }
+    Ok(())
+}
+
+/// Load remote server tokens from the app's protected credential store.
+///
+/// Primary source: the durable file-backed store in the app data directory
+/// (the only store available on Android). On desktop the OS keyring is also
+/// kept in sync and preferred when it holds newer data, so tokens survive
+/// restarts everywhere while desktop keeps keyring-grade protection. Portable
+/// and isolated profiles use only their own file-backed store.
+#[tauri::command]
+pub fn load_paired_server_credentials(app: AppHandle) -> Result<serde_json::Value, String> {
+    let allow_keyring = paired_credential_storage_policy()?;
+    if let Ok(cache) = paired_credential_cache().lock() {
+        if let Some(value) = cache.as_ref() {
+            return Ok(value.clone());
+        }
+    }
+    let file_path = paired_credential_file_path(&app)?;
+    let loaded = load_paired_credential_map(&file_path, allow_keyring, || {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            load_desktop_keyring_credentials()
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            Ok(None)
+        }
+    })?;
     if let Ok(mut cache) = paired_credential_cache().lock() {
         *cache = Some(loaded.clone());
     }
@@ -165,12 +211,14 @@ pub fn load_paired_server_credentials(app: AppHandle) -> Result<serde_json::Valu
 ///
 /// Writes the durable file-backed store on every platform and additionally
 /// mirrors into the OS keyring where one exists (desktop). The file is the
-/// source of truth so Android keeps pairings across restarts.
+/// source of truth so Android keeps pairings across restarts. Portable and
+/// isolated profiles never mirror into the desktop session keyring.
 #[tauri::command]
 pub fn store_paired_server_credentials(
     app: AppHandle,
     credentials: serde_json::Value,
 ) -> Result<(), String> {
+    let allow_keyring = paired_credential_storage_policy()?;
     let object = credentials
         .as_object()
         .ok_or_else(|| "Paired-server credentials must be an object".to_string())?;
@@ -187,14 +235,16 @@ pub fn store_paired_server_credentials(
         }
     }
     let file_path = paired_credential_file_path(&app)?;
-    write_credential_file(&file_path, &bytes)?;
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    {
-        // Best effort: the file above is the durable source of truth, the
-        // keyring is a desktop convenience mirror. A keyring failure must not
-        // lose the credentials the file already saved.
-        let _ = store_desktop_keyring_credentials(&bytes);
-    }
+    store_paired_credential_map(&file_path, &bytes, allow_keyring, || {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            store_desktop_keyring_credentials(&bytes)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            Ok(())
+        }
+    })?;
     if let Ok(mut cache) = paired_credential_cache().lock() {
         *cache = Some(credentials);
     }
@@ -813,5 +863,106 @@ mod tests {
         assert!(result.success);
         assert!(!result.network_failure);
         worker.abort();
+    }
+}
+
+#[cfg(test)]
+mod paired_credentials_isolation_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn portable_and_isolated_maps_never_read_or_write_shared_keyring() {
+        for isolated in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let path = root
+                .path()
+                .join(CREDENTIAL_DIR)
+                .join(PAIRED_CREDENTIAL_FILE);
+            let allowed = paired_credential_keyring_allowed(true, isolated).unwrap();
+            let reads = Cell::new(0);
+            let writes = Cell::new(0);
+            let loaded = load_paired_credential_map(&path, allowed, || {
+                reads.set(reads.get() + 1);
+                Err("Shared keyring must not be read".into())
+            })
+            .unwrap();
+            assert_eq!(loaded, serde_json::json!({}));
+            assert_eq!(reads.get(), 0);
+            let synthetic =
+                serde_json::json!({"synthetic-peer":{"token":"synthetic-temporary-token"}});
+            let bytes = serde_json::to_vec(&synthetic).unwrap();
+            store_paired_credential_map(&path, &bytes, allowed, || {
+                writes.set(writes.get() + 1);
+                Err("Shared keyring must not be written".into())
+            })
+            .unwrap();
+            assert_eq!(writes.get(), 0);
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+            assert_eq!(
+                load_paired_credential_map(&path, allowed, || {
+                    reads.set(reads.get() + 1);
+                    Err("Shared keyring must not be read".into())
+                })
+                .unwrap(),
+                synthetic
+            );
+            assert_eq!(reads.get(), 0);
+        }
+    }
+    #[test]
+    fn normal_desktop_keeps_keyring_fallback_file_precedence_and_best_effort_mirror() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join(CREDENTIAL_DIR)
+            .join(PAIRED_CREDENTIAL_FILE);
+        let allowed = paired_credential_keyring_allowed(false, false).unwrap();
+        let reads = Cell::new(0);
+        let writes = Cell::new(0);
+        let synthetic = serde_json::json!({"synthetic-peer":{"token":"synthetic-keyring-token"}});
+        assert_eq!(
+            load_paired_credential_map(&path, allowed, || {
+                reads.set(reads.get() + 1);
+                Ok(Some(serde_json::to_vec(&synthetic).unwrap()))
+            })
+            .unwrap(),
+            synthetic
+        );
+        assert_eq!(reads.get(), 1);
+        let newer = serde_json::json!({"synthetic-peer":{"token":"synthetic-file-token"}});
+        let bytes = serde_json::to_vec(&newer).unwrap();
+        store_paired_credential_map(&path, &bytes, allowed, || {
+            writes.set(writes.get() + 1);
+            Err("Synthetic mirror failure".into())
+        })
+        .unwrap();
+        assert_eq!(writes.get(), 1);
+        assert_eq!(
+            load_paired_credential_map(&path, allowed, || {
+                reads.set(reads.get() + 1);
+                Ok(Some(serde_json::to_vec(&synthetic).unwrap()))
+            })
+            .unwrap(),
+            newer
+        );
+        assert_eq!(reads.get(), 2);
+    }
+    #[test]
+    fn isolated_flag_without_portable_storage_fails_before_any_credential_access() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("never-created");
+        let reads = Cell::new(0);
+        let result = paired_credential_keyring_allowed(false, true).and_then(|allowed| {
+            load_paired_credential_map(&path, allowed, || {
+                reads.set(reads.get() + 1);
+                Ok(None)
+            })
+        });
+        assert!(result
+            .unwrap_err()
+            .contains("explicit portable data directory"));
+        assert_eq!(reads.get(), 0);
+        assert!(!path.exists());
     }
 }

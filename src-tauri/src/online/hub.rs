@@ -195,6 +195,9 @@ pub fn capabilities(value: &Value) -> SourceCapabilities {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct CatalogQuery {
     pub q: Option<String>,
+    pub creator_id: Option<String>,
+    #[serde(default)]
+    pub offline_only: bool,
     pub page: Option<u32>,
     pub per_page: Option<u32>,
     pub media_type: Option<String>,
@@ -227,6 +230,17 @@ impl CatalogQuery {
         {
             return Err(AppError::BadRequest(
                 "Use at most 32 remote tag terms and 1000 bytes".into(),
+            ));
+        }
+        if self.creator_id.as_deref().is_some_and(|id| {
+            id.is_empty()
+                || id.len() > 128
+                || !id
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        }) {
+            return Err(AppError::BadRequest(
+                "Invalid source creator identity".into(),
             ));
         }
         self.page = Some(self.page.unwrap_or(1).clamp(1, 10000));
@@ -318,7 +332,9 @@ impl CatalogQuery {
         Ok(self)
     }
     pub fn uses_hub_filters(&self) -> bool {
-        self.media_type.is_some()
+        self.creator_id.is_some()
+            || self.offline_only
+            || self.media_type.is_some()
             || self.rating.is_some()
             || self.sort.as_deref().is_some_and(|sort| sort != "newest")
             || self.timeframe.is_some()
@@ -353,6 +369,7 @@ pub fn catalog_path_for(query: &CatalogQuery) -> Result<String, AppError> {
         ),
     ];
     for (name, value) in [
+        ("creator_id", &query.creator_id),
         ("media_type", &query.media_type),
         ("rating", &query.rating),
         ("timeframe", &query.timeframe),
@@ -453,6 +470,18 @@ pub fn catalog_item(source_id: &str, base: &str, row: &Value) -> Result<RemoteIt
                 "Hub assets must use protected client media endpoints".into(),
             ));
         }
+        let sha256 = variant
+            .get("sha256")
+            .and_then(Value::as_str)
+            .map(str::to_ascii_lowercase);
+        if sha256.as_ref().is_some_and(|digest| {
+            digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }) {
+            return Err(AppError::ServiceUnavailable(
+                "Invalid authoritative variant digest".into(),
+            ));
+        }
+        let byte_size = variant.get("byte_size").and_then(Value::as_u64);
         media.push(RemoteMediaVariant {
             kind: variant
                 .get("kind")
@@ -460,6 +489,8 @@ pub fn catalog_item(source_id: &str, base: &str, row: &Value) -> Result<RemoteIt
                 .unwrap_or("original")
                 .to_string(),
             asset_url: format!("{base}{asset_path}"),
+            sha256,
+            byte_size,
             mime_type: variant
                 .get("mime_type")
                 .and_then(Value::as_str)
@@ -541,6 +572,8 @@ pub fn catalog_page(
             })
             .unwrap_or_default(),
         stale: false,
+        offline: false,
+        partial: false,
         next_cursor: value
             .get("has_more")
             .and_then(Value::as_bool)
