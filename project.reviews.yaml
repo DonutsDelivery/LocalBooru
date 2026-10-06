@@ -13440,6 +13440,17 @@ reviews:
         required: true
         created_at: 2026-10-06T03:13:29.141Z
         completed_at: 2026-10-06T03:13:29.141Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 038f4eb2
+        evidence: "Root scripts/run-cargo.sh releaseonline:: testsession61773 queued underhostheavygate;
+          anotherprojectcompiler currentlyownslock."
+        name: rust-focused
+        required: true
+        created_at: 2026-10-06T03:13:30.634Z
+        completed_at: null
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13454,6 +13465,13 @@ reviews:
           status: pass
           name: frontend-focused
         timestamp: 2026-10-06T03:13:29.225Z
+      - _ulid: 01M47K7EJZQVQH6TC9JCV8F1ZK
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: rust-focused
+        timestamp: 2026-10-06T03:13:30.719Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13468,7 +13486,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T03:13:29.141Z
+    updated_at: 2026-10-06T03:13:30.634Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
