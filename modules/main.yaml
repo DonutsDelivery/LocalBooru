@@ -1,12 +1,57 @@
 _ulid: 01KQY8QZ6GZHK04WVY2N78FBT1
 slugs:
   - main
-title: "LocalBooru - Main Module"
+title: LocalBooru - Main Module
 type: module
+description: |
+  Default module for LocalBooru. Add your spec items here.
 status:
   maturity: draft
   implementation: not_started
-description: |
-  Default module for LocalBooru. Add your spec items here.
-
+features:
+  - _ulid: 01M47W8JRJQ0WGNDPK3SSKEYTX
+    slugs:
+      - verified-shared-hub-account
+    title: One account across verified linked community collections
+    type: feature
+    description: A verified community account can serve its linked collections after one sign-in.
+      Linking requires established operator trust, preserves collection-specific browsing and
+      transport choices, and respects explicit account selection and disconnection.
+    depends_on: []
+    implements: []
+    relates_to: []
+    tests: []
+    traits: []
+    acceptance_criteria:
+      - given: A user is signed in to a community account and has confirmed another collection operated by
+          the same verified account system
+        id: ac-1
+        then: The existing account provides access without another browser approval.
+        when: the user opens that linked collection
+      - given: An already enrolled linked collection has no saved account connection
+        id: ac-2
+        then: The existing account is reused and the selected collection retains its browsing and transport
+          settings.
+        when: the user opens it after signing in to a verified sibling collection
+      - given: An unrelated hub claims a matching name or identity
+        id: ac-3
+        then: No credential is disclosed and its own sign-in remains required.
+        when: it requests reuse of a saved community account
+      - given: A shared account has expired or has been revoked
+        id: ac-4
+        then: Access is denied and sign-in is requested without replacing protected results with cached
+          content.
+        when: a linked collection requests protected content
+      - given: A user disconnects an account from one collection or removes that collection
+        id: ac-5
+        then: The disconnected collection remains disconnected while the sibling account and personal
+          offline copies are preserved.
+        when: the user continues using its sibling collection
+      - given: A collection already has an explicitly selected account
+        id: ac-6
+        then: The explicitly selected account is preserved.
+        when: a sibling collection signs in or becomes eligible to share its account
+    tags: []
+    created: 2026-10-06T05:51:24.946Z
+    notes: []
 items: []

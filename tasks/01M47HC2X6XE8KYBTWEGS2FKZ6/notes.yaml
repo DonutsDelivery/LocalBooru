@@ -101,3 +101,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T05:32:12.566Z
+  - _ulid: 01M47W8VVTX8GVE249XZ683NF6
+    content: "User steering: confirmed R18 works after separate OAuth; requests shared DonutBooru
+      account acrossmain/R18. Tracked separately @shared-realm-account /
+      @verified-shared-hub-account to preserve reviewed creator candidate428cf648. Design-only agent
+      peer_finish assessing secure linked-realm authority. Current queued creator artifacts/test
+      jobs retained; no product branches changed by sharedsignin work yet."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T05:51:34.266Z
