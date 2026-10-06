@@ -14167,6 +14167,21 @@ reviews:
         runner: unittest
         created_at: 2026-10-06T06:04:53.827Z
         completed_at: 2026-10-06T06:04:53.827Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 5f23549
+          head_commit: e7ffbda56ae58920e5cacfdf04b5bed16011bd35
+        evidence: "Corrected synthetic test compatibility at exacte7ffbda. Root nine-public-file overlay
+          with production baseline Config ran44tests: allpass. Supported token/secret leak
+          assertions remain; no extraConfig fields added. Log
+          /tmp/dmc-shared-public-overlay-tests.log. No actual credentials,DB,app lifespan or
+          productionenv."
+        name: shared-account-python
+        required: true
+        runner: unittest
+        created_at: 2026-10-06T06:06:11.710Z
+        completed_at: 2026-10-06T06:06:11.710Z
     events:
       - _ulid: 01M47WYC8BB1REW4AYKAFWA108
         actor: DonutsDelivery
@@ -14195,6 +14210,20 @@ reviews:
           status: fail
           name: shared-account-python
         timestamp: 2026-10-06T06:04:53.935Z
+      - _ulid: 01M47X3MG4JVCJADEWJCK2V5S7
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: e7ffbda56ae58920e5cacfdf04b5bed16011bd35
+          previous_head: 2fe46856597f9dd64a188f44e42ffd53bfea5723
+        timestamp: 2026-10-06T06:06:11.461Z
+      - _ulid: 01M47X3MTDGG9JHTRV4MXDJSGF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: shared-account-python
+        timestamp: 2026-10-06T06:06:11.789Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -14205,11 +14234,11 @@ reviews:
       base_branch: feat/creator-peer-catalog
       base_commit: 5f23549
       head_branch: feat/verified-shared-account
-      head_commit: 2fe46856597f9dd64a188f44e42ffd53bfea5723
+      head_commit: e7ffbda56ae58920e5cacfdf04b5bed16011bd35
     threads: []
     verdicts: []
     created_at: 2026-10-06T06:03:19.180Z
-    updated_at: 2026-10-06T06:04:53.827Z
+    updated_at: 2026-10-06T06:06:11.710Z
     notes: []
   - _ulid: 01M47WYCRWXRNC34KV4DCSW13S
     slugs:
