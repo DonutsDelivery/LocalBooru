@@ -87,3 +87,17 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T05:06:31.550Z
+  - _ulid: 01M47V5DCPMKFXXKW4XB6B59W3
+    content: Exact428cf648 standalone candidate build passed (310frontendmodules, optimized native).
+      Captured /tmp/dmc-creator-candidate.428cf648 receipt,
+      SHA81e3fc0ca2b80feae13c041fe39149bf62288a1b23a58b63ecda06c2386783b0. Canonical launcher actual
+      disposable app started18790; ownprocess environment verified portable HOME/XDG/temp and
+      privateDBus; API sources empty, browser showed empty synthetic library. Closed owned
+      preview+launcher; profile removed. This is startup isolation acceptance, not creator/offline
+      runtime acceptance (gatewayfixture stillqueued). Canceled redundant standalone frontend33644
+      beforechild started, because candidate build already produced exactproductionfrontend.
+      Gateway18521, credential17220, artifacthelper67844 stillqueued. No productiondeploy/install or
+      normalprofile access.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T05:32:12.566Z
