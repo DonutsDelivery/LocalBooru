@@ -18,7 +18,7 @@ context: []
 priority: 3
 tags: []
 vcs_refs: []
-review_ref: "@node-catalog-sidebar-review"
+review_ref: "@operator-sidebar-rollout-review"
 history:
   - author: DonutsDelivery
     changes:
@@ -44,6 +44,13 @@ history:
         previous: "@collection-sidebar-review"
     command: review-link
     timestamp: 2026-10-06T01:58:21.832Z
+  - author: DonutsDelivery
+    changes:
+      review_ref:
+        new: "@operator-sidebar-rollout-review"
+        previous: "@node-catalog-sidebar-review"
+    command: review-link
+    timestamp: 2026-10-06T02:02:41.881Z
 created_at: 2026-10-06T01:36:47.217Z
 started_at: 2026-10-06T01:36:48.536Z
 todos: []
