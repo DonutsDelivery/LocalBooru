@@ -168,6 +168,11 @@ function Sidebar({
 
   // Fetch dimensions for selected image when it changes
   useEffect(() => {
+    if (selectedImage?._remote) {
+      setFetchedDimensions(selectedImage.width > 0 && selectedImage.height > 0
+        ? { width: selectedImage.width, height: selectedImage.height } : null)
+      return
+    }
     if (!selectedImage || !selectedImage.file_path) {
       setFetchedDimensions(null)
       return
@@ -189,7 +194,7 @@ function Sidebar({
         console.error('Failed to fetch dimensions:', err)
         setFetchedDimensions(null)
       })
-  }, [selectedImage?.id, selectedImage?.file_path])
+  }, [selectedImage?.id, selectedImage?.file_path, selectedImage?._remote, selectedImage?.width, selectedImage?.height])
 
   const copyInfoValue = useCallback((label, value) => {
     navigator.clipboard.writeText(String(value)).then(() => {
@@ -631,14 +636,18 @@ function Sidebar({
         </div>}
 
         {/* Selected Image Info */}
-        {isGalleryPage && selectedImage && (
+        {(isGalleryPage || selectedImage?._remote) && selectedImage && (
           <div className="sidebar-section image-info">
             <h3>Media Info</h3>
             <div className="info-grid">
               <span className="info-label">ID</span>
-              <span className="info-value copyable" onClick={() => copyInfoValue('ID', selectedImage.id)} title="Click to copy">
-                {copiedField === 'ID' ? '✓ Copied' : `#${selectedImage.id}`}
+              <span className="info-value copyable" onClick={() => copyInfoValue('ID', selectedImage._remote ? selectedImage.remote_post_id : selectedImage.id)} title="Click to copy">
+                {copiedField === 'ID' ? '✓ Copied' : `#${selectedImage._remote ? selectedImage.remote_post_id : selectedImage.id}`}
               </span>
+
+              {selectedImage._remote && selectedImage.remote_source_name && (
+                <><span className="info-label">Community</span><span className="info-value">{selectedImage.remote_source_name}</span></>
+              )}
 
               {fetchedDimensions ? (
                 <>
@@ -746,6 +755,10 @@ function Sidebar({
                 </>
               )}
             </div>
+
+            {selectedImage._remote && selectedImage.title && (
+              <div className="image-caption"><h4>Title</h4><p>{selectedImage.title}</p></div>
+            )}
 
             {mediaType === 'image' && selectedImage.tags?.length > 0 && (
               <div className="image-tags">

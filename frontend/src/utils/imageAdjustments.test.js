@@ -10,6 +10,7 @@ import {
   createAdjustmentOperationOwner,
   createImageSourceOwner,
   imageMatchesLocator,
+  imageIdentityKey,
   reorderImagesForSort,
   updateImagesByLocator,
 } from './imageAdjustments.js'
@@ -179,4 +180,11 @@ test('legacy image payload derives an exact primary locator from media URL param
     directoryId: 4,
     imageId: 11,
   })
+})
+
+test('remote identities stay scoped to source and cannot become local adjustment locators', () => {
+  const remote = {_remote:true,id:'17',directory_id:1,remote_source_id:'source-A',remote_post_id:'17'}
+  assert.equal(imageIdentityKey(remote),'remote:source-A:17')
+  assert.notEqual(imageIdentityKey(remote),imageIdentityKey({...remote,remote_source_id:'source-B'}))
+  assert.throws(()=>adjustmentLocator(remote),/Remote media/)
 })

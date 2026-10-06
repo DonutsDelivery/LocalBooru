@@ -55,7 +55,7 @@ const svpMSEClient = {
  */
 export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus = {}) {
   const { svpInstalled = false, enabled = true } = addonStatus
-  const nativeSvpPlayback = localRawResizeAvailable(isLinuxDesktopApp(), isUsingLocalServer())
+  const nativeSvpPlayback = enabled && !image?._remote && localRawResizeAvailable(isLinuxDesktopApp(), isUsingLocalServer())
   const previousNativePlaybackRef = useRef(nativeSvpPlayback)
   const mseSvpPlayback = isWindowsOrMacDesktopApp() && typeof MediaSource !== 'undefined'
   const svpMseControllerRef = useRef(null)
@@ -1763,6 +1763,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
   // Check if browser can't decode the video codec (e.g. HEVC on Linux WebKitGTK/Chromium)
   // Called from Lightbox onCanPlay — if videoWidth is 0, the video track isn't decoding
   const checkCodecFallback = useCallback((video) => {
+    if (!enabled || image?._remote) return
     // Only check when playing direct (no stream active, original quality)
     if (svpStreamUrl || opticalFlowStreamUrl || transcodeStreamUrl) return
     // Use ref guard to prevent multiple starts (state update is async)
@@ -1806,7 +1807,7 @@ export function useVideoStreaming(mediaRef, image, currentQuality, addonStatus =
         finishPlaybackTransition(transition)
       })
     }
-  }, [image, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition])
+  }, [enabled, image, svpStreamUrl, opticalFlowStreamUrl, transcodeStreamUrl, capturePlaybackIntent, beginPlaybackTransition, isPlaybackTransitionCurrent, finishPlaybackTransition])
 
   return {
     // Optical flow state

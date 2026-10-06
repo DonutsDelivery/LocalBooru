@@ -60,7 +60,7 @@ function MediaItem({ image, useFullImage = false, onClick, isSelectable = false,
   const isVideoFile = isGridVideo(image)
   const videoFilename = image?.original_filename || image?.filename || ''
   const fileStatus = image?.file_status || 'available'
-  const workflow = useImageWorkflow(image, !!contextMenu && !isVideoFile && fileStatus === 'available')
+  const workflow = useImageWorkflow(image, !image?._remote && !!contextMenu && !isVideoFile && fileStatus === 'available')
 
   // Determine if we should use preview frames for hover animation
   const usePreviewFrames = isVideoFile && previewLoaded && previewFrames.length > 0
@@ -301,8 +301,10 @@ function MediaItem({ image, useFullImage = false, onClick, isSelectable = false,
   // Guard against missing image data - AFTER all hooks
   if (!image || !gridMediaUrl) {
     return (
-      <div className="media-item media-error">
-        <div className="error-placeholder">Image unavailable</div>
+      <div className="media-item media-error"
+        data-image-id={image?.id} data-image-key={image ? imageIdentityKey(image) : undefined}
+        onClick={image ? handleClick : undefined} onContextMenu={image ? handleContextMenu : undefined}>
+        <div className="error-placeholder">{isVideoFile ? 'Video · Open to play' : 'Image unavailable'}</div>
       </div>
     )
   }
@@ -408,11 +410,11 @@ function MediaItem({ image, useFullImage = false, onClick, isSelectable = false,
               label: 'Copy Image',
               onClick: handleCopyImage
             },
-            {
+            ...(!image._remote ? [{
               label: 'Paste Image',
               onClick: handlePasteImage,
               disabled: !image?.directory_id
-            }
+            }] : [])
           ]}
         />
       )}
