@@ -12853,9 +12853,25 @@ reviews:
           status: pass
           name: independent-source-review
         timestamp: 2026-10-06T01:09:07.572Z
+      - _ulid: 01M47C3SA38F9TS1VB2JH6ED7E
+        actor: hub_source_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: entity_version
+            content_hash: ""
+          decision: approve
+        timestamp: 2026-10-06T01:09:10.595Z
+      - _ulid: 01M47C3SA3VAY1C9GQ1292HH1S
+        actor: hub_source_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T01:09:10.595Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs: []
     subject:
       type: task
@@ -12863,7 +12879,14 @@ reviews:
       ref: "@community-gallery-parity"
       shadow_commit: ""
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: entity_version
+          content_hash: ""
+        decision: approve
+        reviewer: hub_source_review
+        role: reviewer
+        created_at: 2026-10-06T01:09:10.594Z
     created_at: 2026-10-06T01:08:43.303Z
-    updated_at: 2026-10-06T01:09:07.496Z
+    updated_at: 2026-10-06T01:09:10.595Z
     notes: []
