@@ -14132,9 +14132,16 @@ reviews:
           new_head: da329bcdc9ffdef538d6134174d61517ef79e871
           previous_head: feat/creator-peer-rollout
         timestamp: 2026-10-06T06:22:18.119Z
+      - _ulid: 01M47Y160BJKKCDKVSY8CQ4QSJ
+        actor: codex-peer-finish
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-06T06:22:19.659Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@creator-offline-collections"
     subject:
@@ -14146,7 +14153,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T04:16:08.477Z
-    updated_at: 2026-10-06T06:22:18.013Z
+    updated_at: 2026-10-06T06:22:19.550Z
     notes: []
   - _ulid: 01M47WYC8CN7J445WGFQAA3EX1
     slugs:
