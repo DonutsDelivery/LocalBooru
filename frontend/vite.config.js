@@ -11,6 +11,10 @@ export default defineConfig(({ command }) => ({
     port: 5210, // LocalBooru dev port (avoid OpenDAW on 5173-5199)
     strictPort: true,
     proxy: {
+      '/health': {
+        target: command === 'serve' ? getDevProxyTarget(process.env.VITE_LOCALBOORU_PORT) : undefined,
+        changeOrigin: true,
+      },
       '/api': {
         target: command === 'serve' ? getDevProxyTarget(process.env.VITE_LOCALBOORU_PORT) : undefined,
         changeOrigin: true,
