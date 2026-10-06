@@ -13665,6 +13665,31 @@ reviews:
         runner: creator-review
         created_at: 2026-10-06T06:22:24.050Z
         completed_at: 2026-10-06T06:22:24.050Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 428cf648
+        evidence: "Independently read /tmp/dmc-creator-runtime-receipt.json and
+          /tmp/dmc-creator-ui-isolation-runtime.json for actual immutable428cf648 candidate under
+          canonical isolated private DBus, owned portable/HOME/XDG/TMP roots, backend18790.
+          Synthetic Node/Iroh6-image fixture: browser follow leaves0bytes; reviewed5GiB budget plus
+          explicit hosting choice completes6 items/12 variants25596bytes, no pending/reservation,
+          observed12 hosted reports. Browser mixed-aspect masonry6 loaded, creator2 URL filter,
+          Following/Offline buttons, lightbox original6 and ArrowRight original5, Escape restores6
+          gallery. Fixture catalog/media401 yields live browse401, explicit offline_only browse200
+          with6 items and offlineoriginal2004303bytes; offline lightbox remains loaded while401. No
+          implicit protected cache fallback. Candidate port/isolation source and prior actual
+          native29/mockcredential3/frontend56+16/build310/synthetic launcher gates independently
+          audited. Complementary bounded resume/revision/policy/scoped-peer tests cover non-UI
+          invariants; no claims of live future-creator or cross-device stress acceptance. Current
+          review basea9ef7551/head428cf648 unchanged, no source blockers. No normal
+          app8790/profile/keyring/private data accessed by reviewer."
+        name: creator-runtime-acceptance
+        required: true
+        runner: root-canonical-isolated-candidate
+        created_at: 2026-10-06T07:04:43.198Z
+        completed_at: 2026-10-06T07:04:43.198Z
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13854,9 +13879,33 @@ reviews:
           status: pass
           name: independent-source-spec-audit
         timestamp: 2026-10-06T06:22:24.133Z
+      - _ulid: 01M480ET0KF8CB05GCSG8M252X
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: creator-runtime-acceptance
+        timestamp: 2026-10-06T07:04:43.283Z
+      - _ulid: 01M480ETBVHBJF69AGY9C4NBED
+        actor: creator-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: a9ef7551
+            head_commit: 428cf648
+          decision: approve
+        timestamp: 2026-10-06T07:04:43.643Z
+      - _ulid: 01M480ETBVDCTP5V3G103EQWW7
+        actor: creator-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T07:04:43.643Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@creator-offline-collections"
     subject:
@@ -13866,9 +13915,17 @@ reviews:
       head_branch: feat/creator-offline-collections
       head_commit: 428cf648
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 428cf648
+        decision: approve
+        reviewer: creator-review
+        role: reviewer
+        created_at: 2026-10-06T07:04:43.643Z
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T06:22:24.050Z
+    updated_at: 2026-10-06T07:04:43.643Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
