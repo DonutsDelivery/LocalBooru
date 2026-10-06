@@ -14189,6 +14189,27 @@ reviews:
         runner: kspec-validate
         created_at: 2026-10-06T06:22:47.659Z
         completed_at: 2026-10-06T06:22:47.659Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 221026d4c039f87aaee4891f9ce31a54ca69f5d4
+          head_commit: da329bcdc9ffdef538d6134174d61517ef79e871
+        evidence: Entire 8-file rollout diff and interacting public auth/CSRF context reviewed. Overlay
+          preserves production Response-aware cookie authentication, CSRF middleware, existing
+          Discord/Bunny behavior and realm ratings. Provider proof TTL/replay and authoritative
+          checksums; signed grants live-check withdrawal, provider/account/credential eligibility,
+          revision and realm. Deployment keeps gateway identities and signer across rollback,
+          rejects reviewed hash/unit/key/source drift, never restores DB. Creator feature ac1-ac6
+          annotations located in existing approved DMC behavioral tests; operator review does not
+          claim new desktop/network acceptance. Shared-realm Node ac1/ac3/ac4 annotated HTTP/SQL
+          tests independently pass. No source-scanning tests introduced; patch integrity checks
+          verify an operational artifact. git diff --check flags mandatory single-space
+          unified-patch blank context markers only, not product-source trailing whitespace.
+        name: policy-and-coverage
+        required: true
+        runner: manual-source-review
+        created_at: 2026-10-06T06:23:10.764Z
+        completed_at: 2026-10-06T06:23:10.764Z
     events:
       - _ulid: 01M47PT48XHTBP5K7ND9FAGBDG
         actor: DonutsDelivery
@@ -14267,6 +14288,13 @@ reviews:
           status: fail
           name: global-validation
         timestamp: 2026-10-06T06:22:47.768Z
+      - _ulid: 01M47Y2R0Q5R9WQ2RQDHNB475Z
+        actor: codex-peer-finish
+        event_type: check_added
+        payload:
+          status: pass
+          name: policy-and-coverage
+        timestamp: 2026-10-06T06:23:10.871Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -14281,7 +14309,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T04:16:08.477Z
-    updated_at: 2026-10-06T06:22:47.659Z
+    updated_at: 2026-10-06T06:23:10.764Z
     notes: []
   - _ulid: 01M47WYC8CN7J445WGFQAA3EX1
     slugs:
