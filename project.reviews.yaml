@@ -13381,9 +13381,26 @@ reviews:
           status: pass
           name: evidence-and-diff
         timestamp: 2026-10-06T02:07:31.501Z
+      - _ulid: 01M47FENMG8D20W2DMM4RRV832
+        actor: hub_source_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: edd72c4
+            head_commit: 1c9b3ab
+          decision: approve
+        timestamp: 2026-10-06T02:07:33.009Z
+      - _ulid: 01M47FENMH1FEFFZMMXMW6SPXM
+        actor: hub_source_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T02:07:33.009Z
     examined_commit: 1c9b3ab
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@collection-sidebar-parity"
     subject:
@@ -13393,7 +13410,15 @@ reviews:
       head_branch: fix/collection-sidebar-server
       head_commit: 1c9b3ab
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: edd72c4
+          head_commit: 1c9b3ab
+        decision: approve
+        reviewer: hub_source_review
+        role: reviewer
+        created_at: 2026-10-06T02:07:33.008Z
     created_at: 2026-10-06T02:07:28.338Z
-    updated_at: 2026-10-06T02:07:31.413Z
+    updated_at: 2026-10-06T02:07:33.009Z
     notes: []
