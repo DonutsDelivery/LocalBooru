@@ -2327,3 +2327,18 @@ tasks:
     todos_count: 0
     created_at: 2026-10-06T05:51:33.687Z
     started_at: 2026-10-06T05:57:13.598Z
+  - _ulid: 01M47XBGPMQKBR47309DFRF6Z1
+    slugs:
+      - local-video-gallery-recovery
+    title: Fix local video gallery missing rows and restore compact size control
+    type: bug
+    spec_ref: "@local-gallery-completeness"
+    status: in_progress
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-06T06:10:29.716Z
+    started_at: 2026-10-06T06:10:29.892Z

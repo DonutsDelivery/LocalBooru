@@ -161,6 +161,38 @@ features:
         tags: []
         created: 2026-07-21T07:45:28.348Z
         notes: []
+      - _ulid: 01M47XBFJVJC9S9SN8CCG2DH7M
+        slugs:
+          - local-gallery-completeness
+        title: Complete local galleries and familiar tile sizing
+        type: requirement
+        description: Existing local image and video libraries remain fully browsable after collection
+          changes, including older records with absent optional statistics. Tile sizing retains the
+          familiar control and layout behavior.
+        status:
+          maturity: draft
+          implementation: in_progress
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        acceptance_criteria:
+          - given: A local folder contains media records with no recorded view count
+            id: ac-legacy-rows
+            then: Every matching record remains available and the gallery count agrees with the returned media.
+            when: the user opens or pages through its gallery
+          - given: A local video folder contains 263 matching videos across multiple pages
+            id: ac-all-pages
+            then: All 263 distinct video tiles are accessible without missing pages.
+            when: the user browses to the end of the gallery
+          - given: The user browses a local gallery
+            id: ac-slider
+            then: The familiar compact size slider retains its five size levels and saved preference.
+            when: the user adjusts tile size
+        tags: []
+        created: 2026-10-06T06:10:28.572Z
+        notes: []
     created: 2026-03-08T08:28:23.993Z
     notes: []
   - _ulid: 01KK692XK9SMJRHRRD784A002E
