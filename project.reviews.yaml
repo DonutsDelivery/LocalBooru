@@ -13463,6 +13463,18 @@ reviews:
         required: true
         created_at: 2026-10-06T03:19:49.313Z
         completed_at: 2026-10-06T03:19:49.313Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 72fda94331aec2c2b1cd978471daf26465d0d553
+        evidence: Originalfrontendwaittimedoutbeforebuildstarted; retriedthroughsamegatewithlongerwait.
+          ExistinginstalledresourcefixturespreparedonlyforRustlibtests,
+          newproductionUIbuildstillrequired.
+        name: frontend-production-build
+        required: true
+        created_at: 2026-10-06T03:27:23.128Z
+        completed_at: null
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13512,6 +13524,13 @@ reviews:
           new_head: 72fda94331aec2c2b1cd978471daf26465d0d553
           previous_head: 1de7cfb5
         timestamp: 2026-10-06T03:23:53.322Z
+      - _ulid: 01M47M0VJD5034Y21P1VY0KBFR
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: frontend-production-build
+        timestamp: 2026-10-06T03:27:23.213Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13526,7 +13545,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T03:23:53.244Z
+    updated_at: 2026-10-06T03:27:23.128Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
