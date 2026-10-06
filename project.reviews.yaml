@@ -14117,6 +14117,13 @@ reviews:
           status: running
           name: shipping-manifest
         timestamp: 2026-10-06T04:16:19.411Z
+      - _ulid: 01M47XTCAVV25B8Q90GYCJNJEP
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: feat/creator-peer-rollout
+          previous_head: caea083
+        timestamp: 2026-10-06T06:18:36.763Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -14127,11 +14134,11 @@ reviews:
       base_branch: main
       base_commit: 221026d
       head_branch: feat/creator-peer-rollout
-      head_commit: caea083
+      head_commit: feat/creator-peer-rollout
     threads: []
     verdicts: []
     created_at: 2026-10-06T04:16:08.477Z
-    updated_at: 2026-10-06T04:16:19.306Z
+    updated_at: 2026-10-06T06:18:36.656Z
     notes: []
   - _ulid: 01M47WYC8CN7J445WGFQAA3EX1
     slugs:
