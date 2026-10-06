@@ -10,8 +10,11 @@ description: Remote community browsing currently renders OnlinePage administrati
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Approved change merged into main, standalone app rebuilt/installed/restarted, and
+  installed frontend verified against live authenticated Iroh relay using shared masonry and
+  lightbox.
 depends_on: []
 context: []
 priority: 3
@@ -64,7 +67,22 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-06T01:08:58.150Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Approved change merged into main, standalone app rebuilt/installed/restarted, and installed
+          frontend verified against live authenticated Iroh relay using shared masonry and lightbox.
+        previous: null
+      completed_at:
+        new: 2026-10-06T01:34:39.657Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-06T01:34:39.664Z
 created_at: 2026-10-06T00:54:18.284Z
 started_at: 2026-10-06T00:54:19.669Z
 submitted_at: 2026-10-06T01:08:58.150Z
+completed_at: 2026-10-06T01:34:39.657Z
 todos: []
