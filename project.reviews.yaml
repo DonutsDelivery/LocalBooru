@@ -14996,7 +14996,63 @@ reviews:
       - isolated-preview-routing-review
     title: Isolated preview and runtime ownership guards
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 7d81faf9
+          head_commit: a8fd113c
+        evidence: "Reviewed exact clean a8fd113c vs7d81faf9 all18 changed paths: Vite serve refuses
+          missing/invalid explicit backend; run-dev chosen port matches native; missing/invalid
+          native port fails module initialization including early tauri origin; browser backend
+          selection remains same origin. Fresh launcher64hex ID exported separately to browser
+          build/native sealed JSON property; health exact healthy+nonce required, native isolated
+          bind error exits. AppShell proves health before
+          gallery/music/sidebar/settings/raw-fetch/SSE components mount; initMobile waits proof
+          before account/probes. Every axios API request rechecks direct health without recursion;
+          foreign proof revokes verifiedflag; mediaURL and all5 EventSource constructors guarded.
+          Existing direct paired fetch happens below startup proof. No remaining definite source
+          blocker. Independent Vitest27 tests/5 files pass incl native/browser startup3 polls no
+          images/tags/stats/events, foreign adapter not invoked, SSE/media denied before proof, own
+          allowed and subsequent missing identity revokes. Log
+          /tmp/creator-review-isolation-final-ui-tests.log. No actual app/service
+          probes/privateprofile/8790/keyring/compiler."
+        name: independent-source-and-frontend
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T07:37:39.459Z
+        completed_at: 2026-10-06T07:37:39.459Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 7d81faf9
+          head_commit: a8fd113c
+        evidence: "Independent exacta8fd113c Node9 helper/devProxy tests pass
+          /tmp/creator-review-isolation-final-helper-tests.log. Synthetic test-run-dev and
+          test-run-isolated-test suites pass /tmp/creator-review-isolation-final-dev-tests.log and
+          /tmp/creator-review-isolation-final-launcher-tests.log:
+          foreign/missing/malformed/unhealthy launch IDs reject readiness, fresh IDs replace
+          inherited state, owned child/private-bus cleanup, missing tools failclosed; all synthetic
+          paths outside repo/no socket probes. Earlier narrow constituent suites independently
+          passed. Source/tests do not establish historical private image cause."
+        name: independent-helpers-and-launchers
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T07:37:39.852Z
+        completed_at: 2026-10-06T07:37:39.852Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: 7d81faf9
+          head_commit: a8fd113c
+        evidence: Root36752 compiling2 pure native health-response tests; actual completion pending
+          /tmp/dmc-isolation-native-tests.log. Reviewer started no compiler/app/private access.
+          Formal verdict withheld until native test proof.
+        name: native-isolated-health
+        required: true
+        runner: root-gated-cargo
+        created_at: 2026-10-06T07:37:40.249Z
+        completed_at: null
     events:
       - _ulid: 01M4826VZP02PCYP69HSVK872T
         actor: DonutsDelivery
@@ -15011,6 +15067,27 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-06T07:35:20.961Z
+      - _ulid: 01M482B3Z3917VV08T3GH8BBT4
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-and-frontend
+        timestamp: 2026-10-06T07:37:39.555Z
+      - _ulid: 01M482B4BMRNET2H6XCP33G8ZT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-helpers-and-launchers
+        timestamp: 2026-10-06T07:37:39.956Z
+      - _ulid: 01M482B4R7XP6HPGJX4CN8CX0K
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: native-isolated-health
+        timestamp: 2026-10-06T07:37:40.359Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -15025,5 +15102,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T07:35:20.310Z
-    updated_at: 2026-10-06T07:35:20.851Z
+    updated_at: 2026-10-06T07:37:40.249Z
     notes: []
