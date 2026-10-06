@@ -29,3 +29,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T03:25:09.713Z
+  - _ulid: 01M47MBPG0PDVTV2Q02W078P9Z
+    content: FinalDMCcandidate0323698f, node78669be; alltaskworktreesclean.
+      FinalJS39targetedcomponenttests+11helpers pass,
+      previoussidebar46coverageequivalentpendingcombinedfinal. Source-onlyNodeapprovalfromreviewer;
+      native/gatewaygatesunrunbecauseotherprojectstillhascompilerlock.
+      Frontendoriginal22894timedoutexit1beforebuild, Rust61773timedoutexit75beforeCargo.
+      Retriedlongergatedsessions frontend84422/native17820/gateway70151.
+      Ownpendinggateway97193stopped143beforeanywriter tofixconditionaltest→build sequencing.
+      Nootherprojectprocessesstopped,nogatebypass,noactiveproductdeployment.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T03:33:18.464Z
