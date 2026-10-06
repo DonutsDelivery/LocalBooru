@@ -13505,6 +13505,13 @@ reviews:
           status: pass
           name: frontend-focused
         timestamp: 2026-10-06T03:19:49.403Z
+      - _ulid: 01M47KTEKADP9GW8F6FRJ9SX8F
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 72fda94331aec2c2b1cd978471daf26465d0d553
+          previous_head: 1de7cfb5
+        timestamp: 2026-10-06T03:23:53.322Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13515,11 +13522,11 @@ reviews:
       base_branch: main
       base_commit: a9ef7551
       head_branch: feat/creator-offline-collections
-      head_commit: 1de7cfb5
+      head_commit: 72fda94331aec2c2b1cd978471daf26465d0d553
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T03:19:49.313Z
+    updated_at: 2026-10-06T03:23:53.244Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
