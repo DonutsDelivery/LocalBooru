@@ -76,3 +76,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T05:00:13.100Z
+  - _ulid: 01M47SPCFYS9FXY6NYKNNZSW29
+    content: Checkpoint:29native and4gateway tests passed. DMC428cf648 isolates paired credentials and
+      Linux session bus, independently reviewed/shelltested. Final nativecandidate96185,
+      credential3tests17220, frontend33644, gateway18521 queued behind anotherproject heavycompiler.
+      Helper67844 waits gatewaycompletion, captures immutable shipping manifest/binary/probe then
+      builds fixtureoverlay. No candidate launched, no production activation or installation yet.
+      Owned fixtureHTTPstopped; resume details /tmp/dmc-creator-resume.json. Strict
+      normalprofile8790/keyring boundary remains.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T05:06:31.550Z
