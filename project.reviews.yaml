@@ -13516,6 +13516,18 @@ reviews:
         required: true
         created_at: 2026-10-06T03:13:33.573Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 546859d
+          head_commit: 78669be
+        evidence: Finalgenericfixture isolationpatch at78669be:38tests passed inproductionPython3.10
+          againstnarrowpublicliveoverlay, including configuredDiscordgate environment.
+          Preflightonly,noactiveAPIreleasechange.
+        name: production-python-fixtures
+        required: true
+        created_at: 2026-10-06T03:17:56.844Z
+        completed_at: 2026-10-06T03:17:56.844Z
     events:
       - _ulid: 01M47K4X6SYCESDVR7C4PB8BG6
         actor: DonutsDelivery
@@ -13544,6 +13556,13 @@ reviews:
           new_head: 78669be
           previous_head: feat/creator-peer-catalog
         timestamp: 2026-10-06T03:17:55.400Z
+      - _ulid: 01M47KFJJ15V6W7H3JMDS3DYBS
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: production-python-fixtures
+        timestamp: 2026-10-06T03:17:56.929Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13558,5 +13577,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:07.385Z
-    updated_at: 2026-10-06T03:17:55.316Z
+    updated_at: 2026-10-06T03:17:56.844Z
     notes: []
