@@ -15457,6 +15457,20 @@ reviews:
         runner: creator_review
         created_at: 2026-10-06T08:45:33.240Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9d666f2
+          head_commit: cdbff8d55bb75d26dc658979ba396fbf7448a213
+        evidence: "Frozen cdbff8d55bb75d26dc658979ba396fbf7448a213 canonical scripts/run-cargo.sh test
+          --release --lib online::transport::tests -- --nocapture: session35219 exited0; eight
+          PASS,0fail in0.18sec; build4m23. /tmp/dmc-download-transport-tests.log. rustc2351480
+          gone."
+        name: focused-native-transport
+        required: true
+        runner: root-canonical-host-gate
+        created_at: 2026-10-06T08:47:25.124Z
+        completed_at: 2026-10-06T08:47:25.124Z
     events:
       - _ulid: 01M4862ZYKB9AWA1B6PY5N6ZEG
         actor: DonutsDelivery
@@ -15478,6 +15492,13 @@ reviews:
           status: running
           name: independent-source-protocol-review
         timestamp: 2026-10-06T08:45:33.330Z
+      - _ulid: 01M486AVGQVMKWKCMB1M47JW71
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-native-transport
+        timestamp: 2026-10-06T08:47:25.207Z
     examined_commit: cdbff8d55bb75d26dc658979ba396fbf7448a213
     external_links: []
     lifecycle_state: draft
@@ -15492,5 +15513,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T08:43:07.603Z
-    updated_at: 2026-10-06T08:45:33.240Z
+    updated_at: 2026-10-06T08:47:25.124Z
     notes: []

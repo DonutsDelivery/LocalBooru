@@ -2389,13 +2389,14 @@ tasks:
     title: Reduce repeated relay setup during offline downloads
     type: bug
     spec_ref: "@creator-community-replication"
-    status: in_progress
+    status: pending_review
     blocked_by: []
     depends_on: []
     priority: 2
     tags: []
     review_ref: "@offline-relay-download-speed-review"
-    notes_count: 6
+    notes_count: 7
     todos_count: 0
     created_at: 2026-10-06T08:27:47.233Z
     started_at: 2026-10-06T08:27:47.412Z
+    submitted_at: 2026-10-06T08:47:25.614Z

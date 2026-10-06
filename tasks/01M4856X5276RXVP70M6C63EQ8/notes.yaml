@@ -62,3 +62,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T08:43:08.165Z
+  - _ulid: 01M486AVQE5Y2DTXAY39P7S23B
+    content: "Focused native gate PASS: canonical session35219 exited0 and rustc2351480 gone; eight real
+      ephemeral single-use-gateway transport tests PASS,0fail.
+      /tmp/dmc-download-transport-tests.log. Native compiler only root; no live protected
+      hub/profile. Await independent exact-head formal verdict then main/install."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T08:47:25.422Z
