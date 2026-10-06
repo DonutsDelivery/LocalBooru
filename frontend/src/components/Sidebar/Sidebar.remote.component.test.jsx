@@ -3,7 +3,7 @@ import {afterEach, expect, test, vi} from 'vitest'
 import {cleanup, fireEvent, render, screen} from '@testing-library/react'
 import {MemoryRouter} from 'react-router-dom'
 const api = vi.hoisted(() => ({fetchDirectories:vi.fn().mockResolvedValue({directories:[]}),
-  fetchCollections:vi.fn().mockResolvedValue({collections:[]}), getSavedSearches:vi.fn().mockResolvedValue({searches:[]}),
+  getConnectedHubs:vi.fn().mockResolvedValue({hubs:[]}), fetchCollections:vi.fn().mockResolvedValue({collections:[]}), getSavedSearches:vi.fn().mockResolvedValue({searches:[]}),
   getFileDimensions:vi.fn(), createSavedSearch:vi.fn(), deleteSavedSearch:vi.fn()}))
 vi.mock('../../api', () => api)
 vi.mock('../FamilyModeLock', () => ({default:()=>null}))

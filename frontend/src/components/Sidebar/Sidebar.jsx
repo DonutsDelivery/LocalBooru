@@ -5,6 +5,7 @@ import PromptSection from './PromptSection'
 import FilterControls, { ALL_RATINGS, MIN_AGE_LIMIT, MAX_AGE_LIMIT, RESOLUTION_OPTIONS, ORIENTATION_OPTIONS, DURATION_OPTIONS, SORT_OPTIONS } from './FilterControls'
 import TagSearch from './TagSearch'
 import SidebarNavigation from '../SidebarNavigation'
+import SharedCollectionsPanel from '../SharedCollectionsPanel'
 import { collectionGalleryTarget } from '../../utils/collectionState'
 import FamilyModeLock from '../FamilyModeLock'
 import PersistentMusicPlayer from '../Music/PersistentMusicPlayer'
@@ -499,6 +500,8 @@ function Sidebar({
             })}
           </div>
         )}
+
+        {isCollectionPage && <SharedCollectionsPanel mediaType={mediaType} galleryReturnTo={galleryReturnTo} onClose={onClose} />}
 
         {sidebarActions && <div className="sidebar-section collection-sidebar-actions">{sidebarActions}</div>}
 

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-const api = vi.hoisted(() => ({ fetchCollection: vi.fn(), updateCollection: vi.fn(), removeFromCollection: vi.fn(), fetchCollections: vi.fn(), fetchDirectories: vi.fn(), getFileDimensions: vi.fn(), getSavedSearches: vi.fn(), createSavedSearch: vi.fn(), deleteSavedSearch: vi.fn(), searchTags: vi.fn() }))
+const api = vi.hoisted(() => ({ fetchCollection: vi.fn(), updateCollection: vi.fn(), removeFromCollection: vi.fn(), getConnectedHubs: vi.fn(), fetchCollections: vi.fn(), fetchDirectories: vi.fn(), getFileDimensions: vi.fn(), getSavedSearches: vi.fn(), createSavedSearch: vi.fn(), deleteSavedSearch: vi.fn(), searchTags: vi.fn() }))
 vi.mock('../api', () => api)
 vi.mock('../components/FamilyModeLock', () => ({ default: () => null }))
 vi.mock('../components/Music/PersistentMusicPlayer', () => ({ default: () => null }))
@@ -12,7 +12,7 @@ import CollectionDetailPage from './CollectionDetailPage'
 const response = (ids, hasMore = false) => ({ id: 7, name: 'Example collection', item_count: ids.length, images: ids.map(id => ({ id, directory_id: 1, library_id: 'primary', filename: 'example.jpg' })), has_more: hasMore })
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 const mount = (url = '/collections/7?media_type=image') => render(<MemoryRouter initialEntries={[url]}><Routes><Route path="/collections/:id" element={<CollectionDetailPage />} /></Routes></MemoryRouter>)
-beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); sessionStorage.clear(); api.fetchCollections.mockResolvedValue({ collections: [] }); api.fetchDirectories.mockResolvedValue({ directories: [] }); api.getSavedSearches.mockResolvedValue({ searches: [] }); api.searchTags.mockResolvedValue([]) })
+beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); sessionStorage.clear(); api.getConnectedHubs.mockResolvedValue({ hubs: [] }); api.fetchCollections.mockResolvedValue({ collections: [] }); api.fetchDirectories.mockResolvedValue({ directories: [] }); api.getSavedSearches.mockResolvedValue({ searches: [] }); api.searchTags.mockResolvedValue([]) })
 afterEach(cleanup)
 
 test('local collection uses sidebar filters and preserves them on the next server page', async () => {
