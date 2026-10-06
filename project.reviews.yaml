@@ -13281,9 +13281,26 @@ reviews:
           status: pass
           name: real-pinned-relay-smoke
         timestamp: 2026-10-06T02:05:04.184Z
+      - _ulid: 01M47FA5PJ3MC4MX1RWSHZ2MKY
+        actor: hub_source_review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 015fbe1
+            head_commit: fd3264f
+          decision: approve
+        timestamp: 2026-10-06T02:05:05.618Z
+      - _ulid: 01M47FA5PJMRMGYN3P3F7BNH30
+        actor: hub_source_review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T02:05:05.618Z
     examined_commit: fd3264f
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@collection-sidebar-parity"
     subject:
@@ -13293,7 +13310,15 @@ reviews:
       head_branch: feat/hub-catalog-controls
       head_commit: fd3264f
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 015fbe1
+          head_commit: fd3264f
+        decision: approve
+        reviewer: hub_source_review
+        role: reviewer
+        created_at: 2026-10-06T02:05:05.618Z
     created_at: 2026-10-06T02:05:00.896Z
-    updated_at: 2026-10-06T02:05:04.107Z
+    updated_at: 2026-10-06T02:05:05.618Z
     notes: []
