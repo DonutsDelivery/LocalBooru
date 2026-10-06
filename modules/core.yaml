@@ -387,7 +387,7 @@ features:
     description: Named collections with cover images, add/remove/reorder items, create from lightbox
     status:
       maturity: draft
-      implementation: in_progress
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []
@@ -1677,7 +1677,7 @@ features:
       voluntary peer hosting.
     status:
       maturity: draft
-      implementation: in_progress
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []

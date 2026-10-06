@@ -12,8 +12,14 @@ description: User screenshot shows DonutBooru and R18 only as main-pane cards, a
 spec_ref: "@collections"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Approved sidebar48b567f2 merged main db118f74 with
+  reviewedtransport;31component+3helpertests PASS, synthetic own18794browser
+  verified2communitysidebarlinks/no maincardstrip/activehighlight. Combined canonical installer45869
+  exited0; new installedbinary/14frontendfiles match. Fresh nonce-isolated installedstartup PASS and
+  cleaned; normal userapp not opened. No source/profile/privatefiles copied. Receipts
+  /tmp/dmc-sidebar-download-installed-receipt.json and /tmp/dmc-sidebar-runtime-receipt.json.
 depends_on: []
 context: []
 priority: 2
@@ -66,7 +72,27 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-06T08:26:25.999Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Approved sidebar48b567f2 merged main db118f74 with reviewedtransport;31component+3helpertests
+          PASS, synthetic own18794browser verified2communitysidebarlinks/no
+          maincardstrip/activehighlight. Combined canonical installer45869 exited0; new
+          installedbinary/14frontendfiles match. Fresh nonce-isolated installedstartup PASS and
+          cleaned; normal userapp not opened. No source/profile/privatefiles copied. Receipts
+          /tmp/dmc-sidebar-download-installed-receipt.json and
+          /tmp/dmc-sidebar-runtime-receipt.json.
+        previous: null
+      completed_at:
+        new: 2026-10-06T08:54:55.193Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-06T08:54:55.200Z
 created_at: 2026-10-06T08:23:11.220Z
 started_at: 2026-10-06T08:23:11.411Z
 submitted_at: 2026-10-06T08:26:25.637Z
+completed_at: 2026-10-06T08:54:55.193Z
 todos: []
