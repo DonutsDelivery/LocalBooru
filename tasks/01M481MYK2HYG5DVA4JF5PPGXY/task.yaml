@@ -1,0 +1,34 @@
+_ulid: 01M481MYK2HYG5DVA4JF5PPGXY
+slugs:
+  - isolated-preview-routing
+title: Fail closed when test preview backend ownership is missing
+type: infra
+description: User reported private ComfyUI image in old browserpreview5175. Audit currentprocesses
+  withoutprivategalleryrequests; stopownedruntimes. Removeimplicit Vite proxy8790 default
+  andnativeportfallback; verify per-launch runtime healthidentity and terminateisolatedserver
+  onbindfailure. Synthetic behavioraltests only untilownershipguardverified. Actual5175cause
+  notestablished.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: in_progress
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-06T07:25:33.326Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-06T07:25:33.326Z
+created_at: 2026-10-06T07:25:33.153Z
+started_at: 2026-10-06T07:25:33.326Z
+todos: []

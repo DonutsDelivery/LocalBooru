@@ -2346,3 +2346,17 @@ tasks:
     created_at: 2026-10-06T06:10:29.716Z
     started_at: 2026-10-06T06:10:29.892Z
     submitted_at: 2026-10-06T07:05:55.133Z
+  - _ulid: 01M481MYK2HYG5DVA4JF5PPGXY
+    slugs:
+      - isolated-preview-routing
+    title: Fail closed when test preview backend ownership is missing
+    type: infra
+    status: in_progress
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-06T07:25:33.153Z
+    started_at: 2026-10-06T07:25:33.326Z
