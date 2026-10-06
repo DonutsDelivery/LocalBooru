@@ -2,11 +2,11 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
-const api = vi.hoisted(() => ({ browseRemoteSource: vi.fn(), getRemoteSources: vi.fn(), fetchDirectories: vi.fn(), fetchRemoteSourceTags: vi.fn(), importRemoteItem: vi.fn() }))
+const api = vi.hoisted(() => ({ browseRemoteSource: vi.fn(), getRemoteSources: vi.fn(), fetchDirectories: vi.fn(), fetchRemoteSourceTags: vi.fn(), getRemoteCreators: vi.fn(), getRemoteOffline: vi.fn(), removeRemoteOffline: vi.fn(), updateRemoteCreatorPreferences: vi.fn(), updateRemoteOffline: vi.fn(), importRemoteItem: vi.fn() }))
 vi.mock('../api', () => api)
-vi.mock('../components/Sidebar', () => ({ default: ({ currentTags, initialRating, initialSort, initialFavoritesOnly, onSearch, sidebarActions, searchSuggestions, tags }) => <aside>
+vi.mock('../components/Sidebar', () => ({ default: ({ currentTags, initialRating, initialSort, initialFavoritesOnly, onSearch, sidebarActions, sidebarCollections, searchSuggestions, tags }) => <aside>
   {sidebarActions}{tags.map(tag => <span key={tag.name}>{tag.name}</span>)}<button onClick={() => searchSuggestions('cat', 10)}>Get source suggestions</button><form onSubmit={event => { event.preventDefault(); onSearch(event.currentTarget.elements.tags.value, initialRating, initialSort, initialFavoritesOnly) }}><input name="tags" aria-label="Search community tags" defaultValue={currentTags} /><button>Search</button></form>
-  <select aria-label="Sort by" value={initialSort} onChange={event => onSearch(currentTags, initialRating, event.target.value, initialFavoritesOnly)}><option value="newest">Date (Newest)</option><option value="oldest">Date (Oldest)</option></select>
+  <select aria-label="Sort by" value={initialSort} onChange={event => onSearch(currentTags, initialRating, event.target.value, initialFavoritesOnly)}><option value="newest">Date (Newest)</option><option value="oldest">Date (Oldest)</option></select>{sidebarCollections}
 </aside> }))
 vi.mock('../components/MasonryGrid', () => ({ default: ({ images, onImageClick, onLoadMore, loading }) => <div className="masonry-container" aria-label="Regular masonry grid">
   {images.map(image => <button key={image.id} onClick={() => onImageClick(image)}>{image.remote_source_id}:{image.remote_post_id}</button>)}
@@ -28,6 +28,8 @@ function mount(url = '/shared/one?media_type=image') {
 beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear(); sessionStorage.clear()
   api.getRemoteSources.mockResolvedValue({ sources: [{ source_id: 'one', display_name: 'Community One' }, { source_id: 'two', display_name: 'Community Two' }] })
+  api.getRemoteCreators.mockResolvedValue({ creators: [], page: 1, has_more: false })
+  api.getRemoteOffline.mockResolvedValue({ sync_all_creators: false, storage_limit_bytes: 0, downloaded_bytes: 0, state: 'disabled', peer_hosting_enabled: false, peer_hosting_state: 'disabled' })
   api.fetchDirectories.mockResolvedValue({ directories: [{ id: 9, name: 'Local pictures', enabled: true }] })
   api.importRemoteItem.mockResolvedValue({ image_id: 99 })
   api.fetchRemoteSourceTags.mockResolvedValue({ tags: [], available_ratings: ['pg', 'pg13'] })
@@ -222,4 +224,28 @@ test('changing gallery filters refreshes facets and discards late old facet resu
   expect(screen.queryByText('old_facet')).toBeNull()
   expect(api.fetchRemoteSourceTags).toHaveBeenLastCalledWith('one', '', 100, { media_type: 'image', rating: 'pg13' })
   expect(api.getRemoteSources).toHaveBeenCalledTimes(1)
+})
+
+
+// AC: @creator-community-replication ac-1
+// AC: @creator-community-replication ac-4
+test('creator selection preserves media filters and offline selection requests local copies', async () => {
+  api.getRemoteCreators.mockResolvedValue({ creators: [{ id: 'account-7', name: 'Account Seven', item_count: 2, availability: 'available', following: false, offline: { enabled: true, state: 'ready', downloaded_items: 2, total_items: 2 } }], page: 1, has_more: false })
+  api.browseRemoteSource.mockResolvedValue(page([item(1)]))
+  mount('/shared/one?media_type=image&q=cat&rating=pg&timeframe=week')
+  await screen.findByRole('button', { name: 'one:1' })
+  await screen.findByRole('button', { name: 'Account Seven 2 images' })
+  fireEvent.click(screen.getByRole('button', { name: 'Offline', exact: true }))
+  await waitFor(() => expect(api.getRemoteCreators).toHaveBeenLastCalledWith('one', expect.objectContaining({ view: 'offline', media_type: 'image' })))
+  expect(api.browseRemoteSource).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Account Seven 2 images' }))
+  await screen.findByText('Local copies')
+  await waitFor(() => expect(api.browseRemoteSource).toHaveBeenLastCalledWith('one', expect.objectContaining({ creator_id: 'account-7', offline_only: true, q: 'cat', rating: 'pg', timeframe: 'week', media_type: 'image' })))
+  expect(api.fetchRemoteSourceTags).toHaveBeenLastCalledWith('one', '', 100, expect.objectContaining({ creator_id: 'account-7', offline_only: true, rating: 'pg' }))
+  fireEvent.click(screen.getByRole('button', { name: 'All offline copies', exact: true }))
+  await waitFor(() => expect(api.browseRemoteSource).toHaveBeenLastCalledWith('one', expect.objectContaining({ offline_only: true, q: 'cat', rating: 'pg' })))
+  expect(api.browseRemoteSource.mock.calls.at(-1)[1].creator_id).toBeUndefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Available', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'All creators', exact: true }))
+  await waitFor(() => expect(api.browseRemoteSource).toHaveBeenLastCalledWith('one', { q: 'cat', rating: 'pg', timeframe: 'week', media_type: 'image', page: 1, per_page: 60 }))
 })

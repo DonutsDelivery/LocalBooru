@@ -12,12 +12,14 @@ export function readCollectionFilters(params, remote = false) {
     filename: remote ? '' : params.get('filename') || '', resolution: width && height ? { width, height } : null,
     orientation: params.get('orientation') || null, duration: params.get('duration') ? { min, max } : null,
     watchedStatus: remote ? null : params.get('watched') || null,
+    creatorId: remote ? params.get('creator_id') || null : null, offlineOnly: remote && params.get('offline_only') === 'true',
   }
 }
 export function collectionRequestFilters(filters, remote = false) {
   const result = {}
   const put = (key, value) => { if (value !== null && value !== undefined && value !== '' && value !== false) result[key] = value }
   put(remote ? 'q' : 'tags', remote ? filters.tags.split(',').map(tag => tag.trim()).filter(Boolean).join(' ') : filters.tags)
+  if (remote) { put('creator_id', filters.creatorId); put('offline_only', filters.offlineOnly) }
   put('rating', filters.rating)
   if (filters.sort !== (remote ? 'newest' : 'collection')) put('sort', filters.sort)
   put('favorites_only', filters.favoritesOnly)

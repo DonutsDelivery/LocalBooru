@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getConnectedHubs } from '../api'
@@ -21,7 +22,7 @@ export default function SharedCollectionsPanel({ mediaType, galleryReturnTo }) {
       ? <Link key={hub.source_id} to={`/shared/${encodeURIComponent(hub.source_id)}?media_type=${mediaType}`} state={{ galleryReturnTo }}>
           <strong>{hub.display_name}</strong><span>Community · {hub.transport_mode === 'relayed' ? 'Relayed' : 'Standard'}</span>
         </Link>
-      : <div key={hub.source_id}><strong>{hub.display_name}</strong><span>Disabled in Settings</span></div>
+      : <Link key={hub.source_id} to={`/shared/${encodeURIComponent(hub.source_id)}?media_type=${mediaType}&creator_view=offline&offline_only=true`} state={{ galleryReturnTo }}><strong>{hub.display_name}</strong><span>Connection disabled · Browse offline copies</span></Link>
     )}</div>
   </section>
 }

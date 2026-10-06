@@ -33,3 +33,15 @@ test('remote sidebar serialization cannot retain inferred subject ages', () => {
   assert.equal(next.has('min_age'), false)
   assert.equal(next.has('max_age'), false)
 })
+
+test('creator and explicit offline scope survive tag and sidebar changes only for remote galleries', () => {
+  const params = new URLSearchParams('media_type=video&creator_id=account-7&offline_only=true&q=cat&rating=pg&creator_view=offline')
+  assert.deepEqual(collectionRequestFilters(readCollectionFilters(params, true), true), { q: 'cat', creator_id: 'account-7', offline_only: true, rating: 'pg' })
+  const changed = sidebarFilterParams(params, true, 'cat,-dog', 'pg13', 'oldest', false, null, null, null, 'week')
+  assert.equal(changed.get('creator_id'), 'account-7')
+  assert.equal(changed.get('offline_only'), 'true')
+  assert.equal(changed.get('creator_view'), 'offline')
+  const local = collectionRequestFilters(readCollectionFilters(params))
+  assert.equal(local.creator_id, undefined)
+  assert.equal(local.offline_only, undefined)
+})

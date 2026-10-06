@@ -3,6 +3,17 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { appendRemoteGalleryItems, remoteGalleryItem, remotePageHasMore } from './remoteGallery.js'
 const fixture = overrides => ({ source_id: 'source/a', remote_post_id: 'post:4', tags: ['one'], title: 'Caption', media: [{ kind: 'original', asset_url: 'https://untrusted.invalid/file.jpg', mime_type: 'image/jpeg', width: 800, height: 1200 }], ...overrides })
+// AC: @creator-community-replication ac-4
+test('personal offline viewer URLs explicitly select retained media without changing online reads', () => {
+  const item = fixture({ media: [
+    { kind: 'original', mime_type: 'image/jpeg' },
+    { kind: 'thumbnail', mime_type: 'image/webp' },
+  ] })
+  const offline = remoteGalleryItem(item, { offlineOnly: true })
+  assert.match(offline.url, /\/asset\/original\?offline_only=true$/)
+  assert.match(offline.thumbnail_url, /\/asset\/thumbnail\?offline_only=true$/)
+  assert.doesNotMatch(remoteGalleryItem(item).url, /offline_only/)
+})
 test('preserves source identity, dimensions and protected proxy paths without local locators', () => {
   const image = remoteGalleryItem(fixture())
   assert.equal(image.id, 'remote:source%2Fa:post%3A4')

@@ -397,6 +397,13 @@ pub fn run() {
         let native_safe_mode = true;
         // Store AppState for both Tauri commands and axum server
         app.manage(app_state.clone());
+        app.manage(online::peer::start(app_state.clone()));
+        // Both guards are owned by the app; supervisors retain only Weak refs.
+        // A startup failure remains visible in offline settings and worker kicks.
+        match online::offline::start(app_state.clone()) {
+            Ok(runtime) => { app.manage(runtime); }
+            Err(error) => log::error!("[Offline] Startup failed: {error}"),
+        }
         #[cfg(desktop)]
         {
             svp_bridge.start(app.handle().clone());
