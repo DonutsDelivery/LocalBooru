@@ -12907,6 +12907,17 @@ reviews:
         required: true
         created_at: 2026-10-06T01:55:34.292Z
         completed_at: 2026-10-06T01:55:34.292Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bb8d85f5
+          head_commit: e50bc45c
+        evidence: Root 13 catalog SQL/HTTP tests and 7 realm tests pass; reviewer independent passes.
+          Reviewed neutral commit015fbe1.
+        name: node-catalog-realms
+        required: true
+        created_at: 2026-10-06T01:55:35.758Z
+        completed_at: 2026-10-06T01:55:35.758Z
     events:
       - _ulid: 01M47ER11PMJ8BWWW3CA96XEDP
         actor: hub_source_review
@@ -12928,6 +12939,13 @@ reviews:
           status: pass
           name: frontend-focused
         timestamp: 2026-10-06T01:55:34.371Z
+      - _ulid: 01M47ERS8SX3CNRFQP6S0MKJRM
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: node-catalog-realms
+        timestamp: 2026-10-06T01:55:35.833Z
     examined_commit: e50bc45c
     external_links: []
     lifecycle_state: open
@@ -12942,5 +12960,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T01:55:11.030Z
-    updated_at: 2026-10-06T01:55:34.292Z
+    updated_at: 2026-10-06T01:55:35.758Z
     notes: []
