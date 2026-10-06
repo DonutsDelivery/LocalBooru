@@ -1648,6 +1648,13 @@ features:
     relates_to: []
     tests: []
     traits: []
+    acceptance_criteria:
+      - given: A connected community contains many creators
+        id: ac-1
+        then: Search and Available, Following, Available offline and Show all collections views expose
+          source-scoped creators; selecting one preserves media filters and uses the familiar
+          masonry gallery and lightbox.
+        when: the user browses its sidebar
     tags: []
     created: 2026-10-06T02:43:41.997Z
     notes: []
