@@ -14138,7 +14138,21 @@ reviews:
       - shared-account-node-review
     title: Verified main and R18 shared account contract
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 5f23549
+          head_commit: 2fe46856597f9dd64a188f44e42ffd53bfea5723
+        evidence: "Root exact nine-public-file production overlay reconstructed with zero fuzz/hashes from
+          Node2fe4685. All44 synthetic Python tests pass under cleared environment, disposable
+          SQLite/root: new6sharedaccount plus prior38creator/checksum/catalog/realm. No application
+          lifespan/realaccounts/productionenv. Nodeworker31tests independentlypass."
+        name: shared-account-python
+        required: true
+        runner: unittest
+        created_at: 2026-10-06T06:04:34.839Z
+        completed_at: 2026-10-06T06:04:34.839Z
     events:
       - _ulid: 01M47WYC8BB1REW4AYKAFWA108
         actor: DonutsDelivery
@@ -14146,6 +14160,20 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-06T06:03:19.180Z
+      - _ulid: 01M47X0NX4WBZMKRCDWXXDEX7D
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 2fe46856597f9dd64a188f44e42ffd53bfea5723
+          previous_head: feat/verified-shared-account
+        timestamp: 2026-10-06T06:04:34.596Z
+      - _ulid: 01M47X0P7H8X8AXWRW7N5WPPWW
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: shared-account-python
+        timestamp: 2026-10-06T06:04:34.929Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -14156,11 +14184,11 @@ reviews:
       base_branch: feat/creator-peer-catalog
       base_commit: 5f23549
       head_branch: feat/verified-shared-account
-      head_commit: feat/verified-shared-account
+      head_commit: 2fe46856597f9dd64a188f44e42ffd53bfea5723
     threads: []
     verdicts: []
     created_at: 2026-10-06T06:03:19.180Z
-    updated_at: null
+    updated_at: 2026-10-06T06:04:34.839Z
     notes: []
   - _ulid: 01M47WYCRWXRNC34KV4DCSW13S
     slugs:
