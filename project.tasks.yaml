@@ -2301,8 +2301,11 @@ tasks:
     title: Creator discovery sidebar and selective offline community replication
     type: task
     spec_ref: "@creator-community-replication"
-    status: in_progress
-    blocked_by: []
+    status: blocked
+    blocked_by:
+      - External shared heavy-build token remains held by an unrelated active C++ build; native
+        verification, isolated acceptance and shipping-artifact finalization cannot run until it
+        releases. Gated commands remain queued; no lock bypass or unrelated build interruption.
     depends_on: []
     priority: 2
     tags: []

@@ -13,8 +13,11 @@ description: "Approved product direction: hub is creator discovery catalog. Side
 spec_ref: "@creator-community-replication"
 meta_ref: null
 plan_ref: null
-status: in_progress
-blocked_by: []
+status: blocked
+blocked_by:
+  - External shared heavy-build token remains held by an unrelated active C++ build; native
+    verification, isolated acceptance and shipping-artifact finalization cannot run until it
+    releases. Gated commands remain queued; no lock bypass or unrelated build interruption.
 depends_on: []
 context: []
 priority: 2
@@ -60,6 +63,23 @@ history:
         previous: "@creator-peer-node-review"
     command: review-link
     timestamp: 2026-10-06T04:16:08.756Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: blocked
+        previous: in_progress
+      blocked_by:
+        new:
+          - External shared heavy-build token remains held by an unrelated active C++ build; native
+            verification, isolated acceptance and shipping-artifact finalization cannot run until it
+            releases. Gated commands remain queued; no lock bypass or unrelated build interruption.
+        previous: []
+      prior_status:
+        new: in_progress
+        previous: null
+    command: task-block
+    timestamp: 2026-10-06T04:22:50.583Z
+prior_status: in_progress
 created_at: 2026-10-06T02:41:05.446Z
 started_at: 2026-10-06T02:41:07.015Z
 todos: []
