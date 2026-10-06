@@ -961,6 +961,18 @@ export async function getHubConnection(sourceId) {
   return response.data
 }
 
+export async function getSharedHubAccount(sourceId) {
+  const response = await api.get(`/online/sources/${encodeURIComponent(sourceId)}/shared-account`)
+  return response.data
+}
+
+export async function reuseSharedHubAccount(sourceId, donorConnectionId) {
+  const response = await api.post(`/online/sources/${encodeURIComponent(sourceId)}/shared-account`, {
+    donor_connection_id: donorConnectionId || null,
+  })
+  return response.data
+}
+
 export async function authorizeHub(sourceId, options) {
   const response = await api.post(`/online/sources/${encodeURIComponent(sourceId)}/authorize`, options)
   return response.data

@@ -6,3 +6,5 @@ pub mod transport;
 
 pub mod offline;
 pub mod peer;
+
+pub(crate) mod shared_accounts;

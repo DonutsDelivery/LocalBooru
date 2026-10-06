@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { authorizeHub, createHub, getHubConnection, getRemoteConnections, previewHub } from '../api'
+import { authorizeHub, createHub, getHubConnection, getRemoteConnections, getSharedHubAccount, reuseSharedHubAccount, previewHub } from '../api'
 import { openHubBrowser, parseHubEnrollmentLink, safeHubHttpsUrl, validateHubReview } from '../utils/hubConnection'
 import './HubConnection.css'
 
@@ -26,6 +26,8 @@ function HubDetails({ hub }) {
 function SavedHubConnection({ sourceId }) {
   const [hub, setHub] = useState(null)
   const [connections, setConnections] = useState([])
+  const [shared, setShared] = useState(null)
+  const [donor, setDonor] = useState('')
   const [consent, setConsent] = useState(false)
   const [authorizationUrl, setAuthorizationUrl] = useState('')
   const [busy, setBusy] = useState(false)
@@ -35,27 +37,41 @@ function SavedHubConnection({ sourceId }) {
   useEffect(() => {
     const current = ++generation.current
     let disposed = false
+    let loadRevision = 0
+    setShared(null)
+    setDonor('')
     const load = async () => {
+      const loading = ++loadRevision
       try {
         const [result, accounts] = await Promise.all([getHubConnection(sourceId), getRemoteConnections(sourceId)])
-        if (disposed || current !== generation.current) return
+        if (disposed || current !== generation.current || loading !== loadRevision) return
         setHub(validateHubReview(result))
         setConnections(accounts.connections || [])
         setConsent(false)
         setAuthorizationUrl('')
         setNotice('')
+        setShared(null)
+        setDonor('')
+        if (!accounts.connections?.length) {
+          try {
+            const available = await getSharedHubAccount(sourceId)
+            if (disposed || current !== generation.current || loading !== loadRevision) return
+            setShared(available)
+            if (available.candidates?.length === 1) setDonor(available.candidates[0].connection_id)
+          } catch {
+            // Shared sign-in is optional; existing browser/manual sign-in remains usable.
+          }
+        }
       } catch (error) {
-        if (disposed || current !== generation.current) return
+        if (disposed || current !== generation.current || loading !== loadRevision) return
         setHub(null)
         if (error?.response?.status !== 404) setNotice(message(error))
       }
     }
     load()
-    const authorized = event => {
-      if (!event.detail?.source_id || event.detail.source_id === sourceId) load()
-    }
+    const authorized = () => { load() }
     window.addEventListener('dmc-hub-authorized', authorized)
-    return () => { disposed = true; window.removeEventListener('dmc-hub-authorized', authorized) }
+    return () => { disposed = true; generation.current += 1; window.removeEventListener('dmc-hub-authorized', authorized) }
   }, [sourceId])
 
   const signIn = async () => {
@@ -77,11 +93,42 @@ function SavedHubConnection({ sourceId }) {
     }
   }
 
+  const useExisting = async () => {
+    if (!donor || busy) return
+    const current = generation.current
+    setBusy(true)
+    setNotice('')
+    try {
+      const result = await reuseSharedHubAccount(sourceId, donor)
+      if (current !== generation.current) return
+      if (result.state !== 'attached') throw new Error('The account was not attached. Refresh the community and select an eligible account again.')
+      const accounts = await getRemoteConnections(sourceId)
+      if (current !== generation.current) return
+      setConnections(accounts.connections || [])
+      setShared(null)
+      setNotice('Existing account connected. This community keeps its own content policy and offline settings.')
+      window.dispatchEvent(new CustomEvent('dmc-hub-authorized', { detail: { source_id: sourceId } }))
+    } catch (error) {
+      if (current === generation.current) setNotice(message(error))
+    } finally {
+      if (current === generation.current) setBusy(false)
+    }
+  }
+
   if (!hub) return notice ? <p role="status">{notice}</p> : null
   const signedIn = connections.some(connection => connection.has_credential && connection.trust_state === 'verified' && (!connection.expires_at || connection.expires_at * 1000 > Date.now()))
   return <section className="online-panel hub-account">
     <h2>{hub.descriptor.instance.name}</h2>
     <p>{signedIn ? 'Account connected' : hub.descriptor.access.catalog === 'public' ? 'Public browsing is available without an account.' : 'Sign in required to browse this community.'}</p>
+    {connections.some(connection => connection.shared_account && connection.has_credential) && <p>This community uses your existing connected account.</p>}
+    {connections.length === 0 && shared?.candidates?.length > 0 && <div className="hub-shared-account">
+      <p>These communities authorize a shared sign-in. Use an account you already connected; DMC verifies this community accepts it before connecting.</p>
+      {shared.candidates.length > 1 && <label>Existing account<select value={donor} disabled={busy} onChange={event => setDonor(event.target.value)}>
+        <option value="">Select an account</option>
+        {shared.candidates.map(candidate => <option key={candidate.connection_id} value={candidate.connection_id}>{candidate.account_display_name || 'Connected account'} · {candidate.community_name}</option>)}
+      </select></label>}
+      <button type="button" disabled={busy || !donor} onClick={useExisting}>Use existing account</button>
+    </div>}
     <details><summary>Saved community identity and access</summary><HubDetails hub={hub} /></details>
     <Link to={`/shared/${encodeURIComponent(sourceId)}?media_type=image`}>Browse community →</Link>
     {hub.descriptor.capabilities.native_authorization && <>
@@ -173,7 +220,7 @@ export default function HubConnection({ sourceId, onConnected }) {
       const result = await createHub({ ...form, expected_instance_id: review.descriptor.instance.id, display_name: name.trim(), policy_profile: policy })
       setReview(null)
       setConfirmed(false)
-      setNotice(result.hub?.descriptor?.access?.catalog === 'members' ? 'Community added. Sign in is required to browse its catalog.' : 'Community added. Public browsing does not require an account.')
+      setNotice(result.shared_account?.state === 'attached' ? 'Community added using your existing account. Content policy and offline settings remain separate.' : result.hub?.descriptor?.access?.catalog === 'members' ? 'Community added. Sign in is required to browse its catalog.' : 'Community added. Public browsing does not require an account.')
       await onConnected?.(result.source)
     } catch (error) { setNotice(message(error)) }
     finally { setBusy(false) }
