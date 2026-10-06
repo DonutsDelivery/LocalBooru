@@ -414,9 +414,7 @@ export async function probeServer(server) {
 // Get the API base URL
 export async function getApiBaseUrl() {
   if (!isTauriApp()) {
-    // Desktop: always use embedded server
-    const isDevServer = window.location.port === '5173' || window.location.port === '5174'
-    return isDevServer ? `http://127.0.0.1:${LOCAL_SERVER_PORT}/api` : '/api'
+    return '/api'
   }
 
   // Mobile: check if using local or remote server

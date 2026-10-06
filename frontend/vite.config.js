@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-const localServerPort = process.env.VITE_LOCALBOORU_PORT || '8790'
+import { getDevProxyTarget } from './devProxy.js'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
   base: './', // Use relative paths for Electron
   server: {
@@ -12,13 +12,13 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: `http://127.0.0.1:${localServerPort}`,
+        target: command === 'serve' ? getDevProxyTarget(process.env.VITE_LOCALBOORU_PORT) : undefined,
         changeOrigin: true,
       },
       '/thumbnails': {
-        target: `http://127.0.0.1:${localServerPort}`,
+        target: command === 'serve' ? getDevProxyTarget(process.env.VITE_LOCALBOORU_PORT) : undefined,
         changeOrigin: true,
       },
     },
   },
-})
+}))

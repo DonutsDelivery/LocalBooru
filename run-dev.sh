@@ -24,6 +24,7 @@ if command -v ss >/dev/null 2>&1; then
 fi
 
 cd "$ROOT"
+export VITE_LOCALBOORU_PORT="${LOCALBOORU_PORT:-8790}"
 # HW acceleration defaults are applied by the Tauri process when unset.
 # The optional patched WebKit runtime still has to be selected before launch.
 WEBKIT_ROOT="${LOCALBOORU_WEBKIT_ROOT:-/mnt/storage/Programs/localbooru-webkit2gtk-4.1-patched}"
