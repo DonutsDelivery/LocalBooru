@@ -23,6 +23,7 @@ trap 'exit 130' INT
 
 PORT="${LOCALBOORU_TEST_PORT:-18790}"
 READY_TIMEOUT_SECONDS="${LOCALBOORU_TEST_READY_TIMEOUT_SECONDS:-1800}"
+TEST_BINARY="${LOCALBOORU_TEST_BINARY:-}"
 if (( $# > 0 )); then
   printf 'the isolated launcher does not accept application file arguments; use synthetic test data through the test profile\n' >&2
   exit 2
@@ -35,7 +36,11 @@ if ! [[ "$READY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]{0,4}$ ]] || (( READY_TIMEOUT_SEC
   printf 'LOCALBOORU_TEST_READY_TIMEOUT_SECONDS must be a positive integer from 1 to 14400\n' >&2
   exit 2
 fi
-if [[ ! -f "$HOST_BUILD_GATE" || ! -x "$HOST_BUILD_GATE" ]]; then
+if [[ -n "$TEST_BINARY" ]] && [[ "$TEST_BINARY" != /* || ! -f "$TEST_BINARY" || ! -x "$TEST_BINARY" ]]; then
+  printf 'LOCALBOORU_TEST_BINARY must be an absolute path to an executable candidate binary\n' >&2
+  exit 2
+fi
+if [[ -z "$TEST_BINARY" ]] && [[ ! -f "$HOST_BUILD_GATE" || ! -x "$HOST_BUILD_GATE" ]]; then
   printf 'isolated LocalBooru compilation requires an executable host build gate: %s\n' "$HOST_BUILD_GATE" >&2
   printf 'Install the host build gate or set HOST_HEAVY_BUILD_GATE to its executable path before retrying\n' >&2
   exit 75
@@ -56,6 +61,7 @@ fi
 mkdir -p \
   "$TEST_ROOT/home" \
   "$TEST_ROOT/config" \
+  "$TEST_ROOT/cache" \
   "$TEST_ROOT/xdg-data" \
   "$TEST_ROOT/state" \
   "$TEST_ROOT/tmp" \
@@ -71,6 +77,7 @@ export HOST_HEAVY_BUILD_GATE="$HOST_BUILD_GATE"
 export HOST_HEAVY_BUILD_STATE_DIR="$HOST_BUILD_STATE_DIR"
 export PATH="$CARGO_HOME/bin:$PATH"
 export XDG_CONFIG_HOME="$TEST_ROOT/config"
+export XDG_CACHE_HOME="$TEST_ROOT/cache"
 export XDG_DATA_HOME="$TEST_ROOT/xdg-data"
 export XDG_STATE_HOME="$TEST_ROOT/state"
 export TMPDIR="$TEST_ROOT/tmp"
@@ -79,6 +86,7 @@ export LOCALBOORU_PORT="$PORT"
 export VITE_LOCALBOORU_PORT="$PORT"
 export LOCALBOORU_DISABLE_SINGLE_INSTANCE=1
 export LOCALBOORU_DEV_TARGET_DIR="$TEST_ROOT/target"
+export CARGO_TARGET_DIR="$TEST_ROOT/target"
 export LOCALBOORU_DEV_LOG="$TEST_ROOT/dev.log"
 export LOCALBOORU_ENABLE_NATIVE_SVP=0
 
@@ -88,7 +96,12 @@ printf '  state: %s\n' "$XDG_STATE_HOME"
 printf '  port: %s\n' "$LOCALBOORU_PORT"
 printf '  temporary root will be removed on exit\n'
 
-"$ROOT/run-dev.sh" "$@" &
+if [[ -n "$TEST_BINARY" ]]; then
+  printf '  candidate binary: %s\n' "$TEST_BINARY"
+  "$TEST_BINARY" >"$LOCALBOORU_DEV_LOG" 2>&1 &
+else
+  "$ROOT/run-dev.sh" &
+fi
 APP_PID=$!
 
 READY_DEADLINE=$((SECONDS + READY_TIMEOUT_SECONDS))

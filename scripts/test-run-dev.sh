@@ -39,6 +39,7 @@ cat >"$TEMP_DIR/bin/ss" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -n "${FAKE_SS_CALLS:-}" ]]; then printf '%s\n' "$*" >>"$FAKE_SS_CALLS"; fi
 if [[ -n "${FAKE_SS_BUSY_PORT:-}" && "$*" == *":$FAKE_SS_BUSY_PORT"* ]]; then
   printf 'LISTEN 0 511 127.0.0.1:%s 0.0.0.0:*\n' "$FAKE_SS_BUSY_PORT"
 fi
@@ -60,7 +61,7 @@ export FAKE_NPM_ARGUMENTS="$TEMP_DIR/arguments"
 export FAKE_NPM_ENTERED="$TEMP_DIR/entered"
 export FAKE_NPM_RELEASE="$TEMP_DIR/release"
 export PATH="$TEMP_DIR/bin:$PATH"
-unset LOCALBOORU_TASK_QUEUE_WORKERS
+unset LOCALBOORU_TASK_QUEUE_WORKERS LOCALBOORU_PORT
 
 # AC: @safe-development-startup ac-single-launch
 FAKE_NPM_BLOCK=1 "$ROOT/run-dev.sh" "/tmp/video with spaces.mp4" \
@@ -142,5 +143,24 @@ printf '%s\n' \
   -- \
   >"$TEMP_DIR/expected-arguments"
 cmp "$TEMP_DIR/expected-arguments" "$FAKE_NPM_ARGUMENTS"
+
+# A disposable backend port must not inspect or conflict with the normal port.
+export FAKE_SS_CALLS="$TEMP_DIR/ss-calls"
+LOCALBOORU_PORT=18790 FAKE_SS_BUSY_PORT=8790 "$ROOT/run-dev.sh" >/dev/null
+! grep -F 'sport = :8790' "$FAKE_SS_CALLS"
+grep -F 'sport = :18790' "$FAKE_SS_CALLS" >/dev/null
+if LOCALBOORU_PORT=18790 FAKE_SS_BUSY_PORT=18790 "$ROOT/run-dev.sh" >"$TEMP_DIR/override-port-output" 2>&1; then
+  printf 'development launch ignored a busy configured backend port\n' >&2
+  exit 1
+fi
+grep -F 'port 18790 is already in use' "$TEMP_DIR/override-port-output" >/dev/null
+if LOCALBOORU_PORT=18790 FAKE_SS_BUSY_PORT=5210 "$ROOT/run-dev.sh" >"$TEMP_DIR/override-vite-output" 2>&1; then
+  printf 'configured backend port bypassed the busy Vite port\n' >&2
+  exit 1
+fi
+if FAKE_SS_BUSY_PORT=8790 "$ROOT/run-dev.sh" >"$TEMP_DIR/default-port-output" 2>&1; then
+  printf 'default development launch ignored its busy backend port\n' >&2
+  exit 1
+fi
 
 printf 'Development launcher safety tests passed\n'
