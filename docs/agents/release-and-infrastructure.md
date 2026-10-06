@@ -124,11 +124,11 @@ Stage the exact locally built installer/ZIP by source SHA and artifact hash in a
 new disposable location under `t3remote` or `peter`; verify its SHA-256 on the
 laptop before extracting or installing. Use a separate portable data directory
 and never launch against or replace a user's existing library or app. For a
-packaged GUI candidate, first prove the embedded server's default port `8790`
-is free and use that port: the frozen frontend is built to contact `8790`, so a
-backend-only `LOCALBOORU_PORT` override makes the GUI show an empty gallery even
-when the alternate port's API contains images. Do not displace an existing
-listener. Set `LOCALBOORU_PORTABLE_DATA` and
+packaged GUI candidate, first prove the chosen embedded server port is free.
+Candidates with native runtime-port discovery use `LOCALBOORU_PORT` for both
+the backend and frontend. Older artifacts without that fix require their baked
+port `8790`; do not use them for isolated acceptance if that port is occupied.
+Do not displace an existing listener. Set `LOCALBOORU_PORTABLE_DATA` and
 `LOCALBOORU_DISABLE_SINGLE_INSTANCE=1` for a disposable run, but leave Windows
 known-folder variables (`USERPROFILE`, `APPDATA`, `LOCALAPPDATA`) intact: spoofing
 them can make Tauri plug-in initialization fail before the server starts.
