@@ -458,9 +458,16 @@ pub fn run() {
         // Bind the frontend-serving backend before any library mount, recursive
         // filesystem walk, queue drain, or addon health check can delay it.
         let server_state = app_state.clone();
+        let server_app = app.handle().clone();
+        let isolated_runtime = std::env::var_os("LOCALBOORU_ISOLATED_INSTANCE_ID").is_some();
         tauri::async_runtime::spawn(async move {
             if let Err(e) = server::start_server(server_state, frontend_dir).await {
                 log::error!("Axum server error: {}", e);
+                if isolated_runtime {
+                    // The isolated window must never continue against a
+                    // foreign listener that acquired its intended port.
+                    server_app.exit(1);
+                }
             }
         });
 

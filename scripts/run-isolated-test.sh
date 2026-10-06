@@ -108,6 +108,8 @@ export LOCALBOORU_DEV_TARGET_DIR="$TEST_ROOT/target"
 export CARGO_TARGET_DIR="$TEST_ROOT/target"
 export LOCALBOORU_DEV_LOG="$TEST_ROOT/dev.log"
 export LOCALBOORU_ENABLE_NATIVE_SVP=0
+LOCALBOORU_ISOLATED_INSTANCE_ID="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+export LOCALBOORU_ISOLATED_INSTANCE_ID
 
 printf 'Starting isolated LocalBooru test instance\n'
 printf '  data: %s\n' "$LOCALBOORU_PORTABLE_DATA"
@@ -129,10 +131,24 @@ while (( SECONDS < READY_DEADLINE )); do
   PROBE_TIMEOUT_SECONDS=$((READY_DEADLINE - SECONDS))
   (( PROBE_TIMEOUT_SECONDS > 0 )) || break
   (( PROBE_TIMEOUT_SECONDS > 2 )) && PROBE_TIMEOUT_SECONDS=2
-  if curl --fail --silent \
+  if HEALTH_RESPONSE="$(curl --fail --silent \
     --connect-timeout "$PROBE_TIMEOUT_SECONDS" \
     --max-time "$PROBE_TIMEOUT_SECONDS" \
-    "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+    --max-filesize 4096 \
+    "http://127.0.0.1:${PORT}/health" 2>/dev/null)"; then
+    if ! printf '%s' "$HEALTH_RESPONSE" | python3 -c '
+import json, os, sys
+try:
+    response = json.load(sys.stdin)
+    valid = (isinstance(response, dict) and response.get("status") == "healthy"
+             and response.get("isolated_instance_id") == os.environ["LOCALBOORU_ISOLATED_INSTANCE_ID"])
+except (ValueError, TypeError, KeyError):
+    valid = False
+sys.exit(0 if valid else 1)
+'; then
+      printf 'isolated readiness response does not belong to this launch; refusing foreign backend\n' >&2
+      exit 1
+    fi
     printf 'Isolated LocalBooru instance is ready on http://127.0.0.1:%s\n' "$PORT"
     wait "$APP_PID"
     exit $?
