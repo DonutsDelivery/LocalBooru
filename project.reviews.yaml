@@ -13506,6 +13506,16 @@ reviews:
         required: true
         created_at: 2026-10-06T03:13:32.081Z
         completed_at: 2026-10-06T03:13:32.081Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: 546859d
+          head_commit: feat/creator-peer-catalog
+        evidence: Gateway tests andoptimizedbinarybuild queued throughsamehostgate inroot session97193.
+        name: gateway-policy-build
+        required: true
+        created_at: 2026-10-06T03:13:33.573Z
+        completed_at: null
     events:
       - _ulid: 01M47K4X6SYCESDVR7C4PB8BG6
         actor: DonutsDelivery
@@ -13520,6 +13530,13 @@ reviews:
           status: pass
           name: production-python-fixtures
         timestamp: 2026-10-06T03:13:32.163Z
+      - _ulid: 01M47K7HEPFXN3JGTVS7GF647A
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: gateway-policy-build
+        timestamp: 2026-10-06T03:13:33.655Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13534,5 +13551,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:07.385Z
-    updated_at: 2026-10-06T03:13:32.081Z
+    updated_at: 2026-10-06T03:13:33.573Z
     notes: []
