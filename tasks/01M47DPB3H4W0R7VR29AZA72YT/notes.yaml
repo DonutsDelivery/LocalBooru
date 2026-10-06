@@ -9,3 +9,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T01:53:13.683Z
+  - _ulid: 01M47F9E04PYDNM3QXASDMD3H5
+    content: DMC merged to main a9ef7551; neutral controls merged25e7294; operator rollout
+      merged8eed1cc. Live immutable sidebar release activated after all20Python3.10 fixture tests
+      passed. Six actual external relay-only probes returned main/adult descriptors200 and
+      catalog/tags401, with distinct
+      adultpeer1de39b67016879db16fdaa8a3613e7fe6822d505ab32576522920f7ff72644dd. Public R18
+      enrollment now being published with matched evidence; mainidentity unchanged. Desktop
+      standalone installer building frommain.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T02:04:41.348Z
