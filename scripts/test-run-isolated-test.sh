@@ -27,10 +27,36 @@ printf '%s\n' "$*" >>"$SYNTHETIC_PROBES"
 [[ "$*" == *'http://127.0.0.1:18790/health'* ]]
 [[ "${SYNTHETIC_READY:-1}" == '1' ]]
 EOF
+cat >"$TEST_DIR/bin/dbus-run-session" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == '--' && $# == 2 ]]
+shift
+[[ "$1" == /* ]]
+printf '%s\n' "$1" >>"$SYNTHETIC_DBUS_CALLS"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/synthetic/private-session"
+export SYNTHETIC_PRIVATE_BUS=1
+# A synthetic daemon shares the owned session and must end during cleanup,
+# even if the application has already exited successfully.
+"$SYNTHETIC_DAEMON" &
+printf '%s\n' "$!" >"$SYNTHETIC_DAEMON_PID"
+exec "$@"
+EOF
+cat >"$TEST_DIR/bin/uname" <<'EOF'
+#!/usr/bin/env bash
+printf 'Linux\n'
+EOF
+cat >"$TEST_DIR/daemon" <<'EOF'
+#!/usr/bin/env bash
+trap 'touch "$SYNTHETIC_DAEMON_STOPPED"; exit 0' TERM
+while :; do sleep 0.05; done
+EOF
 cat >"$TEST_DIR/candidate" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ $# == 0 ]]
+[[ "$SYNTHETIC_PRIVATE_BUS" == 1 && "$DBUS_SESSION_BUS_ADDRESS" == 'unix:path=/synthetic/private-session' ]]
+[[ "$DISPLAY" == 'synthetic-display' && "$WAYLAND_DISPLAY" == 'synthetic-wayland' ]]
 root="${HOME%/home}"
 [[ "$root" == /tmp/localbooru-isolated.* ]]
 [[ "$HOME" == "$root/home" && "$XDG_CONFIG_HOME" == "$root/config" ]]
@@ -50,13 +76,23 @@ if [[ "${SYNTHETIC_HOLD:-0}" == '1' ]]; then
   while :; do sleep 0.05; done
 fi
 EOF
-chmod +x "$TEST_DIR/bin/"* "$TEST_DIR/candidate"
+chmod +x "$TEST_DIR/bin/"* "$TEST_DIR/candidate" "$TEST_DIR/daemon"
 export PATH="$TEST_DIR/bin:$PATH"
 export HOME="$TEST_DIR/caller/home" XDG_CACHE_HOME="$TEST_DIR/caller/cache"
 export LOCALBOORU_PORTABLE_DATA="$TEST_DIR/caller/private-unused"
 export LOCALBOORU_PORT=8790 LOCALBOORU_DISABLE_SINGLE_INSTANCE=0
 export SYNTHETIC_ROOTS="$TEST_DIR/roots" SYNTHETIC_REPORT="$TEST_DIR/report"
 export SYNTHETIC_PROBES="$TEST_DIR/probes" SYNTHETIC_PID="$TEST_DIR/pid"
+export SYNTHETIC_DBUS_CALLS="$TEST_DIR/dbus-calls" SYNTHETIC_DAEMON="$TEST_DIR/daemon"
+export SYNTHETIC_DAEMON_PID="$TEST_DIR/daemon-pid" SYNTHETIC_DAEMON_STOPPED="$TEST_DIR/daemon-stopped"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/synthetic/shared-unused"
+export DISPLAY="synthetic-display" WAYLAND_DISPLAY="synthetic-wayland"
+assert_daemon_stopped() {
+  for _ in $(seq 1 40); do [[ -f "$SYNTHETIC_DAEMON_STOPPED" ]] && break; sleep 0.05; done
+  [[ -f "$SYNTHETIC_DAEMON_STOPPED" ]]
+  [[ -z "$(ps -o stat= -p "$(cat "$SYNTHETIC_DAEMON_PID")" 2>/dev/null | sed '/^Z/d')" ]]
+  rm -f "$SYNTHETIC_DAEMON_STOPPED"
+}
 export LOCALBOORU_TEST_PORT=18790 LOCALBOORU_TEST_READY_TIMEOUT_SECONDS=2
 export LOCALBOORU_TEST_BINARY="$TEST_DIR/candidate"
 # A prebuilt candidate performs no compiler work and requires no build gate.
@@ -67,6 +103,8 @@ LAUNCHER="$ROOT/scripts/run-isolated-test.sh"
 [[ ! -e "$(tail -n 1 "$SYNTHETIC_REPORT")" ]]
 [[ ! -e "$TEST_DIR/caller/private-unused" ]]
 grep -F 'Isolated LocalBooru instance is ready' "$TEST_DIR/candidate-output" >/dev/null
+assert_daemon_stopped
+[[ "$(cat "$SYNTHETIC_DBUS_CALLS")" == "$LOCALBOORU_TEST_BINARY" ]]
 
 # No application file arguments or relative/non-executable candidate paths.
 if "$LAUNCHER" '/synthetic/file with spaces.mp4' >"$TEST_DIR/argument-output" 2>&1; then exit 1; fi
@@ -85,6 +123,7 @@ if SYNTHETIC_READY=0 SYNTHETIC_HOLD=1 LOCALBOORU_TEST_READY_TIMEOUT_SECONDS=1 "$
 ! kill -0 "$(cat "$SYNTHETIC_PID")" 2>/dev/null
 [[ ! -e "$(tail -n 1 "$SYNTHETIC_ROOTS")" ]]
 grep -F 'did not become ready within 1 seconds' "$TEST_DIR/timeout-output" >/dev/null
+assert_daemon_stopped
 
 # Verify the unchanged default dev branch using a synthetic launcher checkout.
 mkdir -p "$TEST_DIR/repo/scripts"
@@ -106,4 +145,14 @@ LOCALBOORU_TEST_BINARY='' HOST_HEAVY_BUILD_GATE="$TEST_DIR/gate" "$TEST_DIR/repo
 [[ -f "$SYNTHETIC_DEV_MARKER" ]]
 [[ "$(wc -l <"$SYNTHETIC_REPORT")" -eq 3 ]]
 [[ ! -e "$(tail -n 1 "$SYNTHETIC_REPORT")" ]]
+assert_daemon_stopped
+# Missing private-session tooling must fail before launching a child.
+mkdir -p "$TEST_DIR/no-dbus"
+for tool in bash dirname rm; do ln -s "$(command -v "$tool")" "$TEST_DIR/no-dbus/$tool"; done
+ln -s "$TEST_DIR/bin/mktemp" "$TEST_DIR/no-dbus/mktemp"
+ln -s "$TEST_DIR/bin/uname" "$TEST_DIR/no-dbus/uname"
+if PATH="$TEST_DIR/no-dbus" "$LAUNCHER" >"$TEST_DIR/no-dbus-output" 2>&1; then exit 1; fi
+grep -F 'requires dbus-run-session and setsid' "$TEST_DIR/no-dbus-output" >/dev/null
+[[ ! -e "$(tail -n 1 "$SYNTHETIC_ROOTS")" ]]
+[[ "$(wc -l <"$SYNTHETIC_DBUS_CALLS")" -eq 3 ]]
 printf 'Isolated launcher safety tests passed\n'

@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# The background setsid child must inherit this shell's group before creating
+# its own session, so its PID is the owned process group used by cleanup.
+set +m
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_ROOT="$(mktemp -d /tmp/localbooru-isolated.XXXXXX)"
 APP_PID=""
+APP_GROUP=""
 HOST_HOME="${HOME:-/tmp}"
 HOST_RUSTUP_HOME="${RUSTUP_HOME:-$HOST_HOME/.rustup}"
 HOST_CARGO_HOME="${CARGO_HOME:-$HOST_HOME/.cargo}"
@@ -11,10 +15,14 @@ HOST_BUILD_GATE="${HOST_HEAVY_BUILD_GATE:-$HOST_HOME/.local/bin/host-heavy-build
 HOST_BUILD_STATE_DIR="${HOST_HEAVY_BUILD_STATE_DIR:-${XDG_STATE_HOME:-$HOST_HOME/.local/state}/host-heavy-build}"
 
 cleanup() {
-  if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
+  if [[ -n "$APP_GROUP" ]]; then
+    # Linux acceptance owns this session/group, including the private bus and
+    # its application descendants. Never target another app or user session.
+    kill -TERM -- "-$APP_GROUP" 2>/dev/null || true
+  elif [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
     kill "$APP_PID" 2>/dev/null || true
-    wait "$APP_PID" 2>/dev/null || true
   fi
+  if [[ -n "$APP_PID" ]]; then wait "$APP_PID" 2>/dev/null || true; fi
   rm -rf "$TEST_ROOT"
 }
 trap cleanup EXIT
@@ -45,6 +53,17 @@ if [[ -z "$TEST_BINARY" ]] && [[ ! -f "$HOST_BUILD_GATE" || ! -x "$HOST_BUILD_GA
   printf 'Install the host build gate or set HOST_HEAVY_BUILD_GATE to its executable path before retrying\n' >&2
   exit 75
 fi
+SESSION_LAUNCH=()
+if [[ "$(uname -s)" == "Linux" ]]; then
+  DBUS_RUN_SESSION="$(command -v dbus-run-session || true)"
+  SETSID="$(command -v setsid || true)"
+  if [[ -z "$DBUS_RUN_SESSION" || ! -x "$DBUS_RUN_SESSION" || -z "$SETSID" || ! -x "$SETSID" ]]; then
+    printf 'isolated Linux acceptance requires dbus-run-session and setsid; shared desktop sessions are never used\n' >&2
+    exit 75
+  fi
+  SESSION_LAUNCH=("$SETSID" --wait "$DBUS_RUN_SESSION" --)
+fi
+
 if ! python3 - "$PORT" <<'PY'
 import socket
 import sys
@@ -98,11 +117,12 @@ printf '  temporary root will be removed on exit\n'
 
 if [[ -n "$TEST_BINARY" ]]; then
   printf '  candidate binary: %s\n' "$TEST_BINARY"
-  "$TEST_BINARY" >"$LOCALBOORU_DEV_LOG" 2>&1 &
+  "${SESSION_LAUNCH[@]}" "$TEST_BINARY" >"$LOCALBOORU_DEV_LOG" 2>&1 &
 else
-  "$ROOT/run-dev.sh" &
+  "${SESSION_LAUNCH[@]}" "$ROOT/run-dev.sh" &
 fi
 APP_PID=$!
+if (( ${#SESSION_LAUNCH[@]} > 0 )); then APP_GROUP="$APP_PID"; fi
 
 READY_DEADLINE=$((SECONDS + READY_TIMEOUT_SECONDS))
 while (( SECONDS < READY_DEADLINE )); do

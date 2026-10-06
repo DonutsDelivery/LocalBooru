@@ -70,3 +70,13 @@ Synthetic launcher checks can be run without a build:
 bash scripts/test-run-dev.sh
 bash scripts/test-run-isolated-test.sh
 ```
+
+On Linux, the launcher requires `dbus-run-session` and `setsid`. It starts both
+candidate and development acceptance under a private D-Bus session while
+preserving display connection variables. This prevents GTK's application identity
+from registering in the user's desktop session. Cleanup targets only the launcher's
+owned process group, including the candidate and private bus; missing session tools
+fail closed. Portable and isolated credential storage also bypasses shared OS
+keyring reads and writes, using only the owned profile's protected credential file.
+An isolated process without an explicit portable data directory refuses credential
+access before resolving any normal profile path.
