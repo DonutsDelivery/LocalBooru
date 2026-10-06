@@ -10,12 +10,24 @@ description: Remote community browsing currently renders OnlinePage administrati
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: pending
+status: in_progress
 blocked_by: []
 depends_on: []
 context: []
 priority: 3
 tags: []
 vcs_refs: []
+history:
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: in_progress
+        previous: pending
+      started_at:
+        new: 2026-10-06T00:54:19.669Z
+        previous: null
+    command: task-start
+    timestamp: 2026-10-06T00:54:19.670Z
 created_at: 2026-10-06T00:54:18.284Z
+started_at: 2026-10-06T00:54:19.669Z
 todos: []
