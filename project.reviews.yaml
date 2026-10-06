@@ -13040,7 +13040,19 @@ reviews:
       - node-catalog-sidebar-review
     title: Native catalog controls and separate realm bootstrap
     author: hub_source_review
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 11a1c1d
+          head_commit: 015fbe1
+        evidence: Root 13 catalog+7realm Python tests, four gateway release policytests, releasegateway
+          build allpass. Independent hub_source_review approved neutraldiffand narrowoverlay,
+          privacyand centralOAuth preserved.
+        name: catalog-realm-gateway
+        required: true
+        created_at: 2026-10-06T01:58:24.692Z
+        completed_at: 2026-10-06T01:58:24.692Z
     events:
       - _ulid: 01M47EXV3TYCT3CVJJS20F0RP0
         actor: hub_source_review
@@ -13055,6 +13067,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-06T01:58:23.315Z
+      - _ulid: 01M47EXY87STRGN90E46SS1YW6
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: catalog-realm-gateway
+        timestamp: 2026-10-06T01:58:24.775Z
     examined_commit: 015fbe1
     external_links: []
     lifecycle_state: open
@@ -13069,5 +13088,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T01:58:21.562Z
-    updated_at: 2026-10-06T01:58:23.237Z
+    updated_at: 2026-10-06T01:58:24.692Z
     notes: []
