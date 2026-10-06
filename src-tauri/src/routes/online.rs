@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::online::models::{
     PublicationSnapshot, RemoteItem, RemotePage, RemoteSource, PUBLICATION_STATES,
 };
-use crate::online::{hub, offline, provider, security, transport};
+use crate::online::{hub, offline, provider, security, shared_accounts, transport};
 use crate::server::error::AppError;
 use crate::server::state::AppState;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -42,6 +42,10 @@ pub fn router() -> Router<AppState> {
         .route("/hubs/callback", post(complete_hub_callback))
         .route("/sources/{source_id}/hub", get(get_hub))
         .route("/sources/{source_id}/authorize", post(authorize_hub))
+        .route(
+            "/sources/{source_id}/shared-account",
+            get(shared_account_status).post(reuse_shared_account),
+        )
         .route("/sources/{source_id}/hub/authorize", post(authorize_hub))
         .route(
             "/publications/{publication_id}/refresh",
@@ -103,7 +107,7 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-fn open_db(data_dir: &Path) -> Result<Connection, AppError> {
+pub(crate) fn open_db(data_dir: &Path) -> Result<Connection, AppError> {
     let conn = Connection::open(data_dir.join("online.db"))?;
     conn.execute_batch(
         "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
@@ -138,6 +142,7 @@ fn open_db(data_dir: &Path) -> Result<Connection, AppError> {
            instance_id TEXT NOT NULL, peer_id TEXT NOT NULL, relay_url TEXT NOT NULL,
            transport_mode TEXT NOT NULL DEFAULT 'relayed', descriptor_json TEXT NOT NULL);"
     )?;
+    shared_accounts::schema(&conn)?;
     Ok(conn)
 }
 
@@ -164,19 +169,22 @@ pub(crate) fn load_source(data_dir: &Path, source_id: &str) -> Result<RemoteSour
     ).optional()?.ok_or_else(|| AppError::NotFound("Remote source not found".into()))
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct StoredCredential {
-    auth_kind: String,
-    secret: String,
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) struct StoredCredential {
+    pub(crate) auth_kind: String,
+    pub(crate) secret: String,
     #[serde(default)]
-    expires_at: Option<i64>,
+    pub(crate) expires_at: Option<i64>,
 }
 
 fn credential_dir(data_dir: &Path) -> std::path::PathBuf {
     data_dir.join("online-credentials")
 }
 
-fn credential_path(data_dir: &Path, credential_ref: &str) -> Result<std::path::PathBuf, AppError> {
+pub(crate) fn credential_path(
+    data_dir: &Path,
+    credential_ref: &str,
+) -> Result<std::path::PathBuf, AppError> {
     if Path::new(credential_ref)
         .file_name()
         .and_then(|name| name.to_str())
@@ -201,22 +209,26 @@ fn write_credential(
     Ok(())
 }
 
+pub(crate) fn read_credential(
+    data_dir: &Path,
+    credential_ref: &str,
+) -> Result<StoredCredential, AppError> {
+    let bytes = crate::server::credentials::load_application_secret(&credential_path(
+        data_dir,
+        credential_ref,
+    )?)?;
+    serde_json::from_slice(&bytes)
+        .map_err(|_| AppError::Internal("Stored remote credential is corrupt".into()))
+}
 fn load_credential(data_dir: &Path, source_id: &str) -> Result<Option<StoredCredential>, AppError> {
-    let credential_ref: Option<String> = open_db(data_dir)?
-        .query_row(
-            "SELECT credential_ref FROM remote_connections WHERE source_id=?1 AND credential_ref IS NOT NULL ORDER BY last_probe_at DESC, connection_id LIMIT 1",
-            params![source_id],
-            |row| row.get(0),
-        )
-        .optional()?;
-    credential_ref
-        .map(|credential_ref| {
-            let bytes = crate::server::credentials::load_application_secret(&credential_path(
-                data_dir,
-                &credential_ref,
-            )?)?;
-            let credential: StoredCredential = serde_json::from_slice(&bytes)
-                .map_err(|_| AppError::Internal("Stored remote credential is corrupt".into()))?;
+    let stored: Option<(String,String)> = open_db(data_dir)?.query_row(
+        "SELECT connection_id,credential_ref FROM remote_connections WHERE source_id=?1 AND credential_ref IS NOT NULL ORDER BY last_probe_at DESC, connection_id LIMIT 1",
+        params![source_id], |row| Ok((row.get(0)?,row.get(1)?)),
+    ).optional()?;
+    stored
+        .map(|(connection_id, reference)| {
+            shared_accounts::validate_alias(data_dir, source_id, &connection_id, &reference)?;
+            let credential = read_credential(data_dir, &reference)?;
             if credential
                 .expires_at
                 .is_some_and(|expiry| expiry <= Utc::now().timestamp())
@@ -280,7 +292,9 @@ async fn list_connections(
     let connections: Vec<_> = stored.into_iter().map(|(id, name, trust, probe, reference)| {
         // Return lifecycle metadata only. A missing/corrupt/expired secret must
         // not be presented as a connected account or enable submission controls.
+        let is_shared = open_db(state.data_dir()).ok().and_then(|conn|conn.query_row("SELECT EXISTS(SELECT 1 FROM remote_credential_aliases WHERE connection_id=?1)",params![id],|r|r.get::<_,bool>(0)).ok()).unwrap_or(false);
         let credential = reference.and_then(|reference| {
+            shared_accounts::validate_alias(state.data_dir(), &source_id, &id, &reference).ok()?;
             let path = credential_path(state.data_dir(), &reference).ok()?;
             let bytes = crate::server::credentials::load_application_secret(&path).ok()?;
             serde_json::from_slice::<StoredCredential>(&bytes).ok()
@@ -290,7 +304,7 @@ async fn list_connections(
         let available = credential.as_ref().is_some_and(|credential| !credential.secret.is_empty()) && !expired;
         json!({"connection_id":id,"account_display_name":name,
             "trust_state":if expired {"expired"} else if !available {"unavailable"} else {trust.as_str()},
-            "last_probe_at":probe,"has_credential":available,"expires_at":expiry})
+            "last_probe_at":probe,"has_credential":available,"expires_at":expiry,"shared_account":is_shared})
     }).collect();
     Ok(Json(json!({"connections": connections})))
 }
@@ -369,7 +383,7 @@ async fn delete_connection(
         "DELETE FROM remote_connections WHERE source_id=?1 AND connection_id=?2",
         params![source_id, connection_id],
     )?;
-    let _ = std::fs::remove_file(credential_path(state.data_dir(), &credential_ref)?);
+    shared_accounts::remove_unused_secret(state.data_dir(), &credential_ref)?;
     purge_source_cache(&conn, &source_id)?;
     remove_pending_authorizations(&source_id);
     Ok(StatusCode::NO_CONTENT)
@@ -510,7 +524,7 @@ async fn delete_source(
     }
     tx.commit()?;
     for credential_ref in credential_refs {
-        let _ = std::fs::remove_file(credential_path(state.data_dir(), &credential_ref)?);
+        shared_accounts::remove_unused_secret(state.data_dir(), &credential_ref)?;
     }
     offline::cleanup_source(state.data_dir(), &id)?;
     Ok(StatusCode::NO_CONTENT)
@@ -684,6 +698,9 @@ async fn probe_source(
         "UPDATE remote_connections SET trust_state='verified',last_probe_at=?2 WHERE source_id=?1",
         params![id, now],
     )?;
+    if hub_config.is_some() {
+        shared_accounts::reuse_after_signin(state.data_dir(), &id).await;
+    }
     Ok(Json(
         json!({"ok":true,"capabilities":source.capabilities,"last_probe_at":now}),
     ))
@@ -2012,46 +2029,76 @@ async fn create_hub(
         capabilities: hub::capabilities(&config.descriptor),
         last_probe_at: Some(Utc::now().to_rfc3339()),
     };
-    let mut conn = open_db(state.data_dir())?;
-    let tx = conn.transaction()?;
-    tx.execute(
-        "INSERT INTO remote_sources VALUES(?1,?2,?3,?4,?5,1,?6,?7,?8,?8)",
-        params![
-            source.source_id,
-            source.provider_family,
-            source.display_name,
-            source.normalized_base_url,
-            source.policy_profile,
-            source.allow_local_network as i64,
-            serde_json::to_string(&source.capabilities).unwrap(),
-            source.last_probe_at
-        ],
-    )
-    .map_err(|error| {
-        if error.to_string().contains("UNIQUE") {
-            AppError::BadRequest("A source with this origin already exists".into())
-        } else {
-            error.into()
-        }
-    })?;
-    tx.execute(
-        "INSERT INTO remote_hub_transport VALUES(?1,?2,?3,?4,?5,?6)",
-        params![
-            source.source_id,
-            config.instance_id,
-            config.bootstrap.peer_id,
-            config.bootstrap.relay_url,
-            serde_json::to_value(config.transport_mode)
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            config.descriptor.to_string()
-        ],
-    )?;
-    tx.commit()?;
+    {
+        let mut conn = open_db(state.data_dir())?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO remote_sources VALUES(?1,?2,?3,?4,?5,1,?6,?7,?8,?8)",
+            params![
+                source.source_id,
+                source.provider_family,
+                source.display_name,
+                source.normalized_base_url,
+                source.policy_profile,
+                source.allow_local_network as i64,
+                serde_json::to_string(&source.capabilities).unwrap(),
+                source.last_probe_at
+            ],
+        )
+        .map_err(|error| {
+            if error.to_string().contains("UNIQUE") {
+                AppError::BadRequest("A source with this origin already exists".into())
+            } else {
+                error.into()
+            }
+        })?;
+        tx.execute(
+            "INSERT INTO remote_hub_transport VALUES(?1,?2,?3,?4,?5,?6)",
+            params![
+                source.source_id,
+                config.instance_id,
+                config.bootstrap.peer_id,
+                config.bootstrap.relay_url,
+                serde_json::to_value(config.transport_mode)
+                    .unwrap()
+                    .as_str()
+                    .unwrap(),
+                config.descriptor.to_string()
+            ],
+        )?;
+        tx.commit()?;
+    }
+    let shared_account = shared_accounts::reuse(state.data_dir(), &source.source_id, None, true)
+        .await
+        .unwrap_or_else(|_| json!({"state":"unavailable"}));
     Ok((
         StatusCode::CREATED,
-        Json(json!({"source":source,"hub":config})),
+        Json(json!({"source":source,"hub":config,"shared_account":shared_account})),
+    ))
+}
+async fn shared_account_status(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    Ok(Json(shared_accounts::status(state.data_dir(), &id).await?))
+}
+#[derive(Deserialize)]
+struct SharedAccountRequest {
+    donor_connection_id: Option<String>,
+}
+async fn reuse_shared_account(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Json(body): Json<SharedAccountRequest>,
+) -> Result<Json<Value>, AppError> {
+    Ok(Json(
+        shared_accounts::reuse(
+            state.data_dir(),
+            &id,
+            body.donor_connection_id.as_deref(),
+            false,
+        )
+        .await?,
     ))
 }
 async fn get_hub(
@@ -2254,6 +2301,8 @@ struct PendingAuthorization {
     data_dir: std::path::PathBuf,
     source_id: String,
     instance_id: String,
+    generation: i64,
+    config_fingerprint: String,
     verifier: String,
     expires_at: std::time::Instant,
 }
@@ -2288,6 +2337,8 @@ async fn authorize_hub(
     require_enabled(&source)?;
     let config = load_hub(state.data_dir(), &id)?
         .ok_or_else(|| AppError::BadRequest("Source is not an enrolled hub".into()))?;
+    let account_generation = shared_accounts::generation(&open_db(state.data_dir())?, &id)?;
+    let config_fingerprint = serde_json::to_string(&config).unwrap();
     if !body.allow_browser_direct {
         return Err(AppError::Forbidden("Browser sign-in connects directly to the hub and identity provider outside Iroh. Explicit browser consent is required; use a manual bearer credential to keep all hub requests on the selected route".into()));
     }
@@ -2321,6 +2372,18 @@ async fn authorize_hub(
     if !hub::capabilities(&descriptor).authenticate || !supports_s256 {
         return Err(AppError::BadRequest(
             "Hub browser authorization is unavailable".into(),
+        ));
+    }
+    if shared_accounts::generation(&open_db(state.data_dir())?, &id)? != account_generation
+        || load_hub(state.data_dir(), &id)?
+            .as_ref()
+            .map(|c| serde_json::to_string(c).unwrap())
+            .as_deref()
+            != Some(config_fingerprint.as_str())
+    {
+        return Err(AppError::Upstream(
+            StatusCode::CONFLICT,
+            "Community account changed while starting sign-in; try again".into(),
         ));
     }
     let oauth_state = random_secret()?;
@@ -2357,6 +2420,8 @@ async fn authorize_hub(
                 data_dir: state.data_dir().to_path_buf(),
                 source_id: id,
                 instance_id: config.instance_id,
+                generation: account_generation,
+                config_fingerprint,
                 verifier,
                 expires_at: std::time::Instant::now() + Duration::from_secs(300),
             },
@@ -2434,7 +2499,11 @@ async fn complete_hub_callback(
     require_enabled(&source)?;
     let config = load_hub(state.data_dir(), &pending.source_id)?
         .ok_or_else(|| AppError::BadRequest("Hub was disconnected during authorization".into()))?;
-    if config.instance_id != pending.instance_id {
+    if config.instance_id != pending.instance_id
+        || shared_accounts::generation(&open_db(state.data_dir())?, &pending.source_id)?
+            != pending.generation
+        || serde_json::to_string(&config).unwrap() != pending.config_fingerprint
+    {
         return Err(AppError::Forbidden(
             "Authorization hub identity changed".into(),
         ));
@@ -2510,27 +2579,45 @@ async fn complete_hub_callback(
             expires_at: Some(Utc::now().timestamp() + lifetime),
         },
     )?;
-    let insert = open_db(state.data_dir())?.execute(
-        "INSERT INTO remote_connections VALUES(?1,?2,?3,?4,'verified',?5)",
-        params![
-            connection_id,
-            pending.source_id,
-            account,
-            credential_ref,
-            Utc::now().to_rfc3339()
-        ],
-    );
+    let insert = (|| -> Result<(), AppError> {
+        let mut conn = open_db(state.data_dir())?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let enabled: bool = tx.query_row(
+            "SELECT enabled FROM remote_sources WHERE source_id=?1",
+            params![pending.source_id],
+            |r| r.get(0),
+        )?;
+        if !enabled || shared_accounts::generation(&tx, &pending.source_id)? != pending.generation {
+            return Err(AppError::Upstream(
+                StatusCode::CONFLICT,
+                "Community account changed during sign-in; start again".into(),
+            ));
+        }
+        tx.execute(
+            "INSERT INTO remote_connections VALUES(?1,?2,?3,?4,'verified',?5)",
+            params![
+                connection_id,
+                pending.source_id,
+                account,
+                credential_ref,
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    })();
     if let Err(error) = insert {
         let _ = std::fs::remove_file(credential_path(state.data_dir(), &credential_ref)?);
-        return Err(error.into());
+        return Err(error);
     }
     purge_source_cache(&open_db(state.data_dir())?, &pending.source_id)?;
+    shared_accounts::reuse_after_signin(state.data_dir(), &pending.source_id).await;
     Ok(Json(
         json!({"connection_id":connection_id,"source_id":pending.source_id,"account_display_name":account,"trust_state":"verified","has_credential":true}),
     ))
 }
 
-async fn validate_relay(
+pub(crate) async fn validate_relay(
     bootstrap: &transport::HubBootstrap,
     allow_local_network: bool,
 ) -> Result<(), AppError> {
