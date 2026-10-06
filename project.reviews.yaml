@@ -13723,6 +13723,18 @@ reviews:
         required: true
         created_at: 2026-10-06T03:17:56.844Z
         completed_at: 2026-10-06T03:17:56.844Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 546859d
+          head_commit: 78669be
+        evidence: 38tests onexactliveoverlay pass withVPSPython3.10 underenv-i syntheticconfig
+          anddisposableSQLite; productioncredentials/environmentnotloaded.38neutraltests also pass.
+        name: production-python-fixtures
+        required: true
+        runner: unittest
+        created_at: 2026-10-06T04:08:14.281Z
+        completed_at: 2026-10-06T04:08:14.281Z
     events:
       - _ulid: 01M47K4X6SYCESDVR7C4PB8BG6
         actor: DonutsDelivery
@@ -13758,6 +13770,13 @@ reviews:
           status: pass
           name: production-python-fixtures
         timestamp: 2026-10-06T03:17:56.929Z
+      - _ulid: 01M47PBN8TNH43538ABK5SJV0Z
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: production-python-fixtures
+        timestamp: 2026-10-06T04:08:14.362Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13772,5 +13791,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:07.385Z
-    updated_at: 2026-10-06T03:17:56.844Z
+    updated_at: 2026-10-06T04:08:14.281Z
     notes: []
