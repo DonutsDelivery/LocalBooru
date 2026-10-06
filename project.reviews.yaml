@@ -15258,6 +15258,13 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-06T08:26:25.755Z
+      - _ulid: 01M485BCNSDYTNKYJBSA7W4MK6
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: fix/shared-collections-sidebar
+          previous_head: 0f7519a6
+        timestamp: 2026-10-06T08:30:14.202Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -15268,9 +15275,9 @@ reviews:
       base_branch: main
       base_commit: a9d666f2
       head_branch: fix/shared-collections-sidebar
-      head_commit: 0f7519a6
+      head_commit: fix/shared-collections-sidebar
     threads: []
     verdicts: []
     created_at: 2026-10-06T08:26:25.755Z
-    updated_at: null
+    updated_at: 2026-10-06T08:30:14.102Z
     notes: []
