@@ -13597,6 +13597,21 @@ reviews:
         runner: bash
         created_at: 2026-10-06T05:01:17.351Z
         completed_at: 2026-10-06T05:01:17.351Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 428cf648
+        evidence: Exact428cf648 Tauri release command builds310frontendmodules and nativeapplication
+          successfully, exit0. Capturedcandidate
+          SHA81e3fc0ca2b80feae13c041fe39149bf62288a1b23a58b63ecda06c2386783b0 with
+          completeownedfrontendreceipt. Canonicalprivatebus/portable profile starts ownbackend18790;
+          empty sources confirmed. CreatorUI/offlineacceptance stillpendingfixturegateway.
+        name: frontend-production-build
+        required: true
+        runner: vite
+        created_at: 2026-10-06T05:31:05.415Z
+        completed_at: 2026-10-06T05:31:05.415Z
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13751,6 +13766,13 @@ reviews:
           status: pass
           name: isolation-launcher
         timestamp: 2026-10-06T05:01:17.460Z
+      - _ulid: 01M47V3BXQG2KJHSXZCESZZH4K
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-production-build
+        timestamp: 2026-10-06T05:31:05.527Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13765,7 +13787,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T05:01:17.351Z
+    updated_at: 2026-10-06T05:31:05.415Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
