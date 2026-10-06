@@ -1664,6 +1664,12 @@ features:
         then: The app retains local media and browsing metadata, shows actual progress, resumes interrupted
           work and reports paused, failed or budget-limited downloads without claiming completeness.
         when: the user starts syncing within a reviewed storage budget
+      - given: A user has explicitly downloaded personal copies
+        id: ac-4
+        then: The same collection remains browsable from local copies subject to the local family and source
+          rating policies; an online authorization failure is not silently replaced with protected
+          cached results.
+        when: the hub or login is unavailable and the user chooses offline browsing
     tags: []
     created: 2026-10-06T02:43:41.997Z
     notes: []
