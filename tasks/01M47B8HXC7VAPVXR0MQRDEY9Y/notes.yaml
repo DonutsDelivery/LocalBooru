@@ -16,3 +16,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T01:33:14.290Z
+  - _ulid: 01M47DJD6BNRAFSYPYVRXT81R4
+    content: "Installed production frontend smoke passed: five-column MasonryGrid with60 remote images
+      and40 loaded thumbnails; protected original decoded at2304px; shared Lightbox arrow navigation
+      and remote metadata worked; double-click zoom verified; Escape closed viewer; infinite
+      scrolling appended120 images. Native installed app opens DonutBooru via deep link. Focused45
+      component+14 Node checks passed; source review approved."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T01:34:38.284Z
