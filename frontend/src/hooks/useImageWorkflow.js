@@ -6,7 +6,7 @@ import { toast } from '../components/Toast'
 /** Sidecar reads belong to the displayed image and the selected DMC server. */
 export function useImageWorkflow(image, enabled) {
   const locator = useMemo(() => {
-    if (!image || image.is_local_direct_file) return null
+    if (!image || image._remote || image.is_local_direct_file) return null
     try {
       const value = adjustmentLocator(image)
       return Number.isSafeInteger(value.imageId) && value.imageId > 0

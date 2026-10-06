@@ -17,6 +17,7 @@ export function imageFileHash(image) {
 }
 
 export function adjustmentLocator(image) {
+  if (image?._remote) throw new Error('Remote media has no local library locator')
   const libraryId = image?.library_id ?? queryValue(image, 'library_id') ?? 'primary'
   const directoryId = image?.directory_id ?? queryValue(image, 'directory_id')
   if (directoryId == null || image?.id == null) {
@@ -75,6 +76,7 @@ export function imageMatchesLocator(image, locator) {
 }
 
 export function imageIdentityKey(imageOrLocator) {
+  if (imageOrLocator?._remote) return `remote:${encodeURIComponent(imageOrLocator.remote_source_id)}:${encodeURIComponent(imageOrLocator.remote_post_id)}`
   const locator = 'imageId' in (imageOrLocator || {})
     ? imageOrLocator
     : adjustmentLocator(imageOrLocator)

@@ -180,14 +180,6 @@ function MasonryGrid({
     observerRef.current.observe(loadMoreRef.current)
   }, [loading, hasMore, images.length])
 
-  if (!images.length && !loading) {
-    return (
-      <div className="masonry-empty">
-        <p>No images found</p>
-      </div>
-    )
-  }
-
   // Calculate max column width based on tile size
   const maxColumnWidth = useMemo(() => {
     const widths = {
@@ -199,6 +191,14 @@ function MasonryGrid({
     }
     return widths[tileSize] || 300
   }, [tileSize])
+
+  if (!images.length && !loading) {
+    return (
+      <div className="masonry-empty">
+        <p>No images found</p>
+      </div>
+    )
+  }
 
   return (
     <div className="masonry-container" style={{ '--max-column-width': `${maxColumnWidth}px` }}>

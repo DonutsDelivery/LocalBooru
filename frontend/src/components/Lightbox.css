@@ -3047,3 +3047,7 @@ video::cue {
     font-size: 0.7rem;
   }
 }
+
+/* Community media uses the same viewer; importing remains an explicit action. */
+.lightbox-remote-import { position: relative; }
+.lightbox-remote-import-panel { position: absolute; top: calc(100% + 12px); right: 0; width: min(300px, 85vw); padding: 16px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary, #202020); box-shadow: 0 8px 28px #0008; text-align: left; }

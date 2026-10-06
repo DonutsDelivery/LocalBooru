@@ -94,10 +94,11 @@ function FPSMonitor({ videoRef, visible, onToggleBare }) {
   }}>Loading...</pre>
 }
 
-function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete, onRemoveFromCollection, curationMode = null }) {
+function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onImageUpdate, onSidebarHover, sidebarOpen, onDelete, onRemoveFromCollection, curationMode = null, remoteActions = null }) {
   const [processing, setProcessing] = useState(false)
   const [isFavorited, setIsFavorited] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showRemoteImport, setShowRemoteImport] = useState(false)
   const [copyFeedback, setCopyFeedback] = useState(null) // 'success' | 'error' | null
   const deleteDialogFocusIndex = useRef(0) // 0 = Cancel, 1 = Delete
   const cancelBtnRef = useRef(null)
@@ -177,6 +178,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const [svpPipelineGeneration, setSvpPipelineGeneration] = useState(0)
 
   const image = images[currentIndex]
+  const isRemote = image?._remote === true
   const currentImageKey = image?.url ?? image?.file_path ?? image?.id
   const embeddedVideoBackend = isUsingLocalServer()
   const svpVideoHostId = useMemo(() => createSVPVideoHostId(), [currentImageKey, svpPipelineGeneration, embeddedVideoBackend])
@@ -197,7 +199,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     adjustmentRequestOwnerRef.current.invalidatePreview()
   }, [])
   const isVideoFile = isVideo(image?.original_filename)
-  const workflow = useImageWorkflow(image, !isVideoFile && (!image?.file_status || image.file_status === 'available'))
+  const workflow = useImageWorkflow(image, !isRemote && !isVideoFile && (!image?.file_status || image.file_status === 'available'))
   const detectedVRProjection = useMemo(
     () => detectVRProjection(image?.original_filename || image?.filename),
     [image?.original_filename, image?.filename]
@@ -224,22 +226,22 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const { installed: whisperInstalled } = useAddonStatus('whisper-subtitles')
   const { installed: castInstalled } = useAddonStatus('cast')
   const { installed: svpInstalled } = useAddonStatus('svp')
-  const casting = useCastSession(mediaRef, image)
+  const casting = useCastSession(mediaRef, isRemote ? null : image)
   const vrActive = vrEnabled && !casting.isCasting && !curationMode
   // Video streaming hook
   const streaming = useVideoStreaming(mediaRef, image, currentQuality, {
     svpInstalled,
-    enabled: !casting.isCasting && !image?.is_local_direct_file,
+    enabled: !isRemote && !casting.isCasting && !image?.is_local_direct_file,
   })
   const svpPathEnabled = Boolean(
-    streaming.nativeSvpPlayback
+    !isRemote && streaming.nativeSvpPlayback
     && streaming.svpConfig?.enabled
     && !casting.isCasting
     && !streaming.svpStreamUrl
     && !streaming.opticalFlowStreamUrl
     && !streaming.transcodeStreamUrl
   )
-  const localRawPlayback = Boolean(streaming.nativeSvpPlayback && !casting.isCasting
+  const localRawPlayback = Boolean(!isRemote && streaming.nativeSvpPlayback && !casting.isCasting
     && !streaming.codecFallbackActive && !streaming.transcodeStreamUrl
     && !streaming.svpStreamUrl && !streaming.opticalFlowStreamUrl)
   const resolutionRevision = useMemo(() => nextSVPVideoHostRevision(), [svpVideoHostId])
@@ -300,7 +302,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [localRawPlayback, currentImageKey, image?.file_path, image?.is_local_direct_file, streaming.setSourceResolution])
 
   useEffect(() => {
-    if (!streaming.nativeSvpPlayback) return
+    if (isRemote || !streaming.nativeSvpPlayback) return
     let cancelled = false
     getDesktopAPI()?.acquireSvpVideoHostEpoch?.().then(epoch => {
       if (!cancelled) setSvpHostEpoch(epoch)
@@ -327,7 +329,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   useEffect(() => {
     setSvpStartupReady(!svpPathEnabled)
   }, [svpInteractionKey, svpPathEnabled])
-  const libraryImageId = image?.is_local_direct_file ? null : image?.id
+  const libraryImageId = isRemote || image?.is_local_direct_file ? null : image?.id
   svpPathEnabledRef.current = svpPathEnabled
 
   useEffect(() => {
@@ -670,7 +672,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const timelinePreview = useTimelinePreview(image, playback.duration)
 
   // Whisper subtitle hook
-  const subtitles = useWhisperSubtitles(mediaRef, image)
+  const subtitles = useWhisperSubtitles(mediaRef, isRemote ? null : image)
 
   // Auto-advance hook
   const autoAdvance = useAutoAdvance(mediaRef, {
@@ -695,7 +697,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   const shareStream = useShareStream(mediaRef, {
     imageId: libraryImageId,
     directoryId: image?.directory_id,
-    isVideoFile: isVideo(image?.original_filename),
+    isVideoFile: !isRemote && isVideo(image?.original_filename),
   })
 
 
@@ -748,6 +750,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     adjustmentRequestOwnerRef.current.invalidatePreview()
     setAdjustments({ brightness: 0, contrast: 0, gamma: 0 })
     setShowAdjustments(false)
+    setShowRemoteImport(false)
     setPreviewUrl(null)
     setPreviewIdentity(null)
     setGeneratingPreview(false)
@@ -784,7 +787,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Auto-generate subtitles when opening a video (if enabled)
   useEffect(() => {
-    if (image && isVideo(image.filename)) {
+    if (!isRemote && image && isVideo(image.filename)) {
       subtitles.autoGenerate()
     }
   }, [image?.id, subtitles.whisperConfig?.auto_generate])
@@ -831,7 +834,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Toggle favorite
   const handleToggleFavorite = useCallback(async () => {
-    if (processing || !image) return
+    if (processing || !image || image._remote) return
     setProcessing(true)
 
     const wasActive = isFavorited
@@ -856,7 +859,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Delete image with filesystem deletion
   const handleDelete = useCallback(async () => {
-    if (processing || !image) return
+    if (processing || !image || image._remote) return
     setProcessing(true)
 
     try {
@@ -966,6 +969,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Collection picker handlers
   const handleOpenCollectionPicker = useCallback(async () => {
+    if (image?._remote) return
     if (showCollectionPicker) {
       setShowCollectionPicker(false)
       return
@@ -978,7 +982,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [showCollectionPicker, isVideoFile])
 
   const handleAddToCollection = useCallback(async (collectionId) => {
-    if (!image) return
+    if (!image || image._remote) return
     try {
       await addToCollection(collectionId, [image])
       setCollectionFeedback('Added!')
@@ -990,7 +994,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   }, [image])
 
   const handleQuickCreateCollection = useCallback(async () => {
-    if (!newCollectionName.trim() || !image) return
+    if (!newCollectionName.trim() || !image || image._remote) return
     try {
       const result = await createCollection(newCollectionName.trim(), null, isVideoFile ? 'video' : 'image')
       await addToCollection(result.id, [image])
@@ -1525,7 +1529,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           case 'c':
           case 'C':
             e.preventDefault()
-            subtitles.toggleSubtitles()
+            if (!isRemote) subtitles.toggleSubtitles()
             return
           case 'i':
           case 'I':
@@ -1561,6 +1565,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           }
           break
         case 'Delete':
+          if (image?._remote) break
           setShowDeleteConfirm(true)
           deleteDialogFocusIndex.current = 0 // Default focus to Cancel for safety
           break
@@ -1669,7 +1674,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
 
   // Determine if we should play the video directly (no streaming)
   const shouldPlayDirect = useMemo(() => {
-    if (image?.is_local_direct_file) return true
+    if (isRemote || image?.is_local_direct_file) return true
     return streaming.svpConfigLoaded
       && !streaming.svpStreamUrl
       && !streaming.opticalFlowStreamUrl
@@ -1684,7 +1689,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
     streaming.transcodeStreamUrl, streaming.svpLoading, streaming.codecFallbackActive,
     currentQuality, streaming.svpConfig?.enabled, streaming.nativeSvpPlayback, streaming.svpError,
     streaming.opticalFlowConfig?.enabled, streaming.opticalFlowError,
-    image?.is_local_direct_file
+    image?.is_local_direct_file, isRemote
   ])
 
   // On Tauri mobile with local server, use asset protocol to serve videos directly from disk.
@@ -1692,8 +1697,9 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
   // which causes video elements with http:// src to load endlessly for large files.
   // The asset protocol serves from the filesystem directly, bypassing this bottleneck.
   const directVideoSrc = useMemo(() => {
+    if (isRemote) return getMediaUrl(image?.url)
     if (!shouldPlayDirect || !image?.url) return undefined
-    if (streaming.nativeSvpPlayback && !streaming.svpConfigLoaded) return undefined
+    if (!isRemote && streaming.nativeSvpPlayback && !streaming.svpConfigLoaded) return undefined
     if (localRawPlayback && localResolutionReady !== localResolutionReadyKey) return undefined
     if (image?.is_local_direct_file) {
       return getMediaUrl(image.url)
@@ -1703,7 +1709,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       if (assetUrl) return assetUrl
     }
     return getMediaUrl(image.url)
-  }, [shouldPlayDirect, image?.url, image?.file_path, image?.is_local_direct_file, localRawPlayback, localResolutionReady, localResolutionReadyKey, streaming.nativeSvpPlayback, streaming.svpConfigLoaded])
+  }, [isRemote, shouldPlayDirect, image?.url, image?.file_path, image?.is_local_direct_file, localRawPlayback, localResolutionReady, localResolutionReadyKey, streaming.nativeSvpPlayback, streaming.svpConfigLoaded])
 
   const [videoFrameReadyKey, setVideoFrameReadyKey] = useState(null)
   const showVideoLoadingGrid = !playback.playbackError && (videoFrameReadyKey !== videoMediaKey
@@ -1841,6 +1847,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <line x1="3" y1="18" x2="21" y2="18"/>
           </svg>
         </button>
+        {!isRemote && <>
         <button
           className={`lightbox-btn lightbox-favorite ${isFavorited ? 'active' : ''}`}
           onClick={handleToggleFavorite}
@@ -1890,6 +1897,14 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
           )}
           {collectionFeedback && <div className="collection-feedback">{collectionFeedback}</div>}
         </div>
+        </>}
+        {isRemote && remoteActions && <div className="lightbox-remote-import">
+          <button className="lightbox-btn" title="Import a local copy" aria-label="Import a local copy"
+            onClick={() => setShowRemoteImport(value => !value)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" /></svg>
+          </button>
+          {showRemoteImport && <div className="lightbox-remote-import-panel" onClick={event => event.stopPropagation()}>{remoteActions}</div>}
+        </div>}
         {onRemoveFromCollection && (
           <button
             className="lightbox-btn lightbox-remove-collection"
@@ -1904,7 +1919,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             </svg>
           </button>
         )}
-        {castInstalled && isVideo(image?.original_filename) && casting.castConfig?.enabled && (
+        {!isRemote && castInstalled && isVideo(image?.original_filename) && casting.castConfig?.enabled && (
           <div className="lightbox-cast-container lightbox-secondary-action">
             <button
               className={`lightbox-btn lightbox-cast ${casting.isCasting ? 'active' : ''}`}
@@ -1988,7 +2003,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         )}
-        {isVideo(image?.original_filename) && (
+        {!isRemote && isVideo(image?.original_filename) && (
           <div className="lightbox-share-container lightbox-secondary-action">
             <button
               className={`lightbox-btn lightbox-share ${shareStream.isSharing ? 'active' : ''}`}
@@ -2064,7 +2079,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         )}
-        <button
+        {!isRemote && <button
           className="lightbox-btn lightbox-delete lightbox-secondary-action"
           onClick={() => setShowDeleteConfirm(true)}
           disabled={processing}
@@ -2075,12 +2090,12 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             <line x1="10" y1="11" x2="10" y2="17"/>
             <line x1="14" y1="11" x2="14" y2="17"/>
           </svg>
-        </button>
+        </button>}
         {!isVideoFile && workflow.available && <button type="button" className="lightbox-btn lightbox-secondary-action" title="Load workflow" aria-label="Load workflow"
           disabled={workflow.loading} onClick={async () => { if (await workflow.loadWorkflow()) onClose() }}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="3" width="6" height="6" rx="1" /><rect x="15" y="15" width="6" height="6" rx="1" /><path d="M9 6h6a3 3 0 0 1 3 3v6M6 9v9h9" /></svg>
         </button>}
-        {!isVideoFile && (
+        {!isRemote && !isVideoFile && (
           <div className="lightbox-adjust-container lightbox-secondary-action">
             <button
               className={`lightbox-btn lightbox-adjust ${showAdjustments ? 'active' : ''}`}
@@ -2183,7 +2198,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             )}
           </div>
         )}
-        {isVideoFile && svpInstalled && (
+        {!isRemote && isVideoFile && svpInstalled && (
           <button
             className="lightbox-btn lightbox-svp lightbox-secondary-action"
             onClick={() => setShowSVPMenu(true)}
@@ -2196,7 +2211,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
             </svg>
           </button>
         )}
-        {isVideoFile && !casting.isCasting && (
+        {!isRemote && isVideoFile && !casting.isCasting && (
           <button
             className={`lightbox-btn lightbox-mobile-quality lightbox-secondary-action ${currentQuality !== 'original' ? 'active' : ''}`}
             onClick={() => setShowQualitySelector(value => !value)}
@@ -2608,7 +2623,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 <span className="vr-toggle-label">VR</span>
               </button>
               )}
-              {!casting.isCasting && whisperInstalled && (
+              {!isRemote && !casting.isCasting && whisperInstalled && (
               <div className="subtitle-btn-container">
                 <button
                   className={`video-control-btn subtitle-btn ${subtitles.subtitlesEnabled ? 'active' : ''} ${subtitles.installing ? 'installing' : ''}`}
@@ -2647,7 +2662,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 </button>
               </div>
               )}
-              {!casting.isCasting && (svpInstalled || svpPathEnabled) && (
+              {!isRemote && !casting.isCasting && (svpInstalled || svpPathEnabled) && (
               <button
                 className={`video-control-btn svp-toggle-btn ${streaming.svpConfig?.enabled ? 'active' : ''} ${streaming.svpLoading ? 'loading' : ''}`}
                 disabled={svpStartupCancelPending}
@@ -2664,7 +2679,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
                 )}
               </button>
               )}
-              {!casting.isCasting && <button
+              {!isRemote && !casting.isCasting && <button
                 className={`video-control-btn quality-btn ${currentQuality !== 'original' ? 'active' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -3008,7 +3023,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       )}
 
       {/* SVP side menu */}
-      {isVideoFile && svpInstalled && (
+      {!isRemote && isVideoFile && svpInstalled && (
         <SVPSideMenu
           isOpen={showSVPMenu}
           onClose={async () => {
@@ -3061,7 +3076,7 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
       )}
 
       {/* Subtitle language/task menu */}
-      {whisperInstalled && showSubtitleMenu && (
+      {!isRemote && whisperInstalled && showSubtitleMenu && (
         <>
           <div className="subtitle-menu-popup" onClick={(e) => e.stopPropagation()}>
             <div className="subtitle-menu-header">
@@ -3158,11 +3173,11 @@ function Lightbox({ images, currentIndex, total, onClose, onNav, onTagClick, onI
               label: 'Copy Image',
               onClick: handleCopyImage
             },
-            {
+            ...(!isRemote ? [{
               label: 'Paste Image',
               onClick: handlePasteImage,
               disabled: !image?.directory_id
-            }
+            }] : [])
           ]}
         />
       )}

@@ -1,24 +1,246 @@
+// SPDX-License-Identifier: GPL-3.0-only
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
-import OnlinePage from './OnlinePage'
+import MasonryGrid from '../components/MasonryGrid'
+import Lightbox from '../components/Lightbox'
+import { browseRemoteSource, fetchDirectories, getRemoteSources, importRemoteItem } from '../api'
 import { useMobileDrawer } from '../hooks/useMobileDrawer'
 import { collectionGalleryTarget } from '../utils/collectionState'
-import '../components/SharedCollectionsPanel.css'
+import { appendRemoteGalleryItems, remoteGalleryItem, remotePageHasMore } from '../utils/remoteGallery'
+import './SharedCollectionPage.css'
+
+const message = error => error?.response?.data?.detail || error?.response?.data?.error || error?.message || 'Could not load this community.'
+const emptyResult = scope => ({ scope, images: [], page: 0, hasMore: true, stale: false, loading: true, error: '', nextCursor: null })
 
 export default function SharedCollectionPage() {
   const { sourceId } = useParams()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const mediaType = params.get('media_type') === 'video' ? 'video' : 'image'
+  const query = params.get('q') || ''
   const navigate = useNavigate()
   const location = useLocation()
   const galleryReturnTo = collectionGalleryTarget(location, mediaType)
+  return <SharedCommunityGallery key={`${sourceId}:${mediaType}`} sourceId={sourceId} mediaType={mediaType} query={query}
+    onSearch={value => { const next = new URLSearchParams(params); if (value) next.set('q', value); else next.delete('q'); setParams(next) }}
+    onBack={() => navigate(`/collections?media_type=${mediaType}`, { state: { galleryReturnTo } })}
+    settingsReturnTo={`${location.pathname}${location.search}`} />
+}
+
+function SharedCommunityGallery({ sourceId, mediaType, query, onSearch, onBack, settingsReturnTo }) {
+  const scope = JSON.stringify([sourceId, mediaType, query])
+  const sessionKey = `donutMediaCenter_shared_${encodeURIComponent(scope)}`
+  const [result, setResult] = useState(() => emptyResult(scope))
+  const resultRef = useRef(result)
+  const generation = useRef(0)
+  const activeScope = useRef(scope)
+  activeScope.current = scope
+  const busyRef = useRef(false)
+  const restoringRef = useRef(true)
+  const [restoring, setRestoring] = useState(true)
+  const [sourceName, setSourceName] = useState('')
+  const [search, setSearch] = useState(query)
+  const [selectedId, setSelectedId] = useState(null)
+  const selectedRef = useRef(selectedId)
+  selectedRef.current = selectedId
+  const [sidebarHover, setSidebarHover] = useState(false)
+  const [tileSize, setTileSize] = useState(() => {
+    const saved = Number(localStorage.getItem('localbooru_tileSize'))
+    return saved >= 1 && saved <= 5 ? saved : 3
+  })
+  const [directories, setDirectories] = useState([])
+  const [directoryId, setDirectoryId] = useState('')
+  const [importBusy, setImportBusy] = useState(false)
+  const importGeneration = useRef(0)
+  const [importNotice, setImportNotice] = useState('')
+  const contentRef = useRef(null)
+  const scrollContainer = () => contentRef.current?.querySelector('.masonry-container')
+  const lightboxScroll = useRef(0)
   const drawer = useMobileDrawer()
-  return <div className="app"><div className="main-container">
+  const current = result.scope === scope ? result : emptyResult(scope)
+  const images = useMemo(() => current.images.map(image => ({ ...image, remote_source_name: sourceName || image.remote_source_name })), [current.images, sourceName])
+  const selectedIndex = images.findIndex(image => image.id === selectedId)
+  const selected = images[selectedIndex]
+
+  useEffect(() => { localStorage.setItem('localbooru_tileSize', String(tileSize)) }, [tileSize])
+
+  useEffect(() => {
+    let active = true
+    getRemoteSources().then(data => {
+      if (active) setSourceName(data.sources?.find(source => source.source_id === sourceId)?.display_name || '')
+    }).catch(() => {})
+    return () => { active = false }
+  }, [sourceId])
+
+  const loadPage = useCallback(async (page, append = false) => {
+    if (busyRef.current) return null
+    busyRef.current = true
+    const request = ++generation.current
+    const previous = resultRef.current.scope === scope ? resultRef.current : emptyResult(scope)
+    setResult({ ...previous, loading: true, error: '' })
+    try {
+      const data = await browseRemoteSource(sourceId, { q: query, media_type: mediaType, page, per_page: 60, ...(append && previous.nextCursor ? { cursor: previous.nextCursor } : {}) })
+      if (request !== generation.current || activeScope.current !== scope) return null
+      const incoming = (data.items || []).map(item => remoteGalleryItem(item, { sourceId }))
+      const next = { scope, images: append ? appendRemoteGalleryItems(previous.images, incoming) : incoming,
+        page, hasMore: remotePageHasMore({ ...data, page, per_page: data.per_page || 60 }),
+        stale: Boolean(data.stale), loading: false, error: '', nextCursor: data.next_cursor }
+      resultRef.current = next
+      setResult(next)
+      sessionStorage.setItem(`${sessionKey}_page`, String(page))
+      return next
+    } catch (error) {
+      if (request !== generation.current || activeScope.current !== scope) return null
+      const next = { ...previous, loading: false, error: message(error) }
+      resultRef.current = next
+      setResult(next)
+      return null
+    } finally {
+      if (request === generation.current) busyRef.current = false
+    }
+  }, [sourceId, mediaType, query, scope, sessionKey])
+
+  // A new source, media category or submitted search owns a fresh result list.
+  useEffect(() => {
+    generation.current += 1
+    busyRef.current = false
+    const next = emptyResult(scope)
+    resultRef.current = next
+    setResult(next)
+    setSelectedId(null)
+    setSearch(query)
+    setImportNotice('')
+    setImportBusy(false)
+    const savedPage = Number(sessionStorage.getItem(`${sessionKey}_page`))
+    const savedScrollValue = sessionStorage.getItem(`${sessionKey}_scroll`)
+    const savedScroll = Number(savedScrollValue)
+    const lastPage = Number.isSafeInteger(savedPage) && savedPage > 0 ? Math.min(savedPage, 100) : 1
+    let active = true
+    restoringRef.current = true
+    setRestoring(true)
+    if (scrollContainer()) scrollContainer().scrollTop = 0
+    const restore = async () => {
+      try {
+        for (let page = 1; page <= lastPage; page += 1) {
+          const loaded = await loadPage(page, page > 1)
+          if (!active || !loaded) return
+          if (!loaded.hasMore) break
+        }
+        if (active && savedScrollValue !== null && Number.isFinite(savedScroll)) requestAnimationFrame(() => {
+          if (active && scrollContainer()) scrollContainer().scrollTop = Math.max(0, savedScroll)
+        })
+      } finally {
+        if (active) { restoringRef.current = false; setRestoring(false) }
+      }
+    }
+    restore()
+    return () => { active = false; generation.current += 1; busyRef.current = false }
+  }, [scope, query, sessionKey, loadPage])
+
+  const loadMore = useCallback(async () => {
+    const previous = resultRef.current
+    if (previous.scope !== scope || !previous.hasMore || previous.loading || previous.error || busyRef.current || restoringRef.current) return false
+    return Boolean(await loadPage(previous.page + 1, true))
+  }, [scope, loadPage])
+
+  // A filtered catalog page can be empty while later pages still contain media.
+  useEffect(() => {
+    if (!restoring && !current.loading && !current.error && current.hasMore && images.length === 0) loadMore()
+  }, [restoring, current.loading, current.error, current.hasMore, current.page, images.length, loadMore])
+
+  useEffect(() => {
+    importGeneration.current += 1
+    setImportBusy(false)
+    setImportNotice('')
+    if (!selectedId) return
+    let active = true
+    fetchDirectories(true).then(data => {
+      if (active) setDirectories((data.directories || []).filter(directory => directory.enabled !== false && directory.path_exists !== false))
+    }).catch(error => { if (active) setImportNotice(message(error)) })
+    return () => { active = false }
+  }, [selectedId])
+
+  const openImage = image => {
+    lightboxScroll.current = scrollContainer()?.scrollTop || 0
+    setSelectedId(image.id)
+    setImportNotice('')
+  }
+  const closeImage = () => {
+    setSelectedId(null)
+    setSidebarHover(false)
+    if (scrollContainer()) scrollContainer().scrollTop = lightboxScroll.current
+  }
+  const navigateImage = async direction => {
+    const initialId = selectedId
+    const requestScope = scope
+    let index = selectedIndex + direction
+    if (index >= images.length && current.hasMore) {
+      const next = await loadPage(current.page + 1, true)
+      if (!next || activeScope.current !== requestScope || selectedRef.current !== initialId) return
+      if (next.images[index]) setSelectedId(next.images[index].id)
+      return
+    }
+    if (images.length) { index = (index + images.length) % images.length; setSelectedId(images[index].id) }
+  }
+  const importImage = async () => {
+    if (!selected || !directoryId || importBusy) return
+    const importRequest = ++importGeneration.current
+    const importingId = selected.id
+    const importingScope = scope
+    setImportBusy(true)
+    setImportNotice('')
+    try {
+      const original = selected.remote_item
+      const result = await importRemoteItem(sourceId, selected.remote_post_id, {
+        kind: original.media.find(media => media.kind === 'original')?.kind || original.media[0]?.kind,
+        directory_id: Number(directoryId),
+      })
+      if (importGeneration.current === importRequest && activeScope.current === importingScope && selectedRef.current === importingId) setImportNotice(`Saved a local copy as image #${result.image_id}.`)
+    } catch (error) {
+      if (importGeneration.current === importRequest && activeScope.current === importingScope && selectedRef.current === importingId) setImportNotice(message(error))
+    } finally { if (importGeneration.current === importRequest && activeScope.current === importingScope) setImportBusy(false) }
+  }
+
+  const searchCommunity = value => {
+    const text = typeof value === 'string' ? value.trim() : value.name
+    if (text === query) {
+      generation.current += 1
+      busyRef.current = false
+      setSelectedId(null)
+      if (scrollContainer()) scrollContainer().scrollTop = 0
+      loadPage(1)
+    } else onSearch(text)
+  }
+
+  const remoteActions = <div className="shared-import-controls">
+    <label>Save to local directory<select aria-label="Import destination" value={directoryId} onChange={event => setDirectoryId(event.target.value)}><option value="">Choose a directory</option>{directories.map(directory => <option key={directory.id} value={directory.id}>{directory.name || directory.path}</option>)}</select></label>
+    <button onClick={importImage} disabled={!directoryId || importBusy}>{importBusy ? 'Importing…' : 'Import a local copy'}</button>
+    {importNotice && <p role="status">{importNotice}</p>}
+  </div>
+
+  return <div className="app">
+    {sidebarHover && <div className="sidebar-backdrop lightbox-backdrop" onClick={() => setSidebarHover(false)} />}
+    <div className="main-container">
     {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
-    <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={drawer.close} />
-    <main className="content with-sidebar shared-collection-page">
-      <header><div><button className="mobile-only" onClick={drawer.open}>Menu</button><button onClick={() => navigate(`/collections?media_type=${mediaType}`, { state: { galleryReturnTo } })}>← Back to Collections</button></div><Link to="/settings/fediverse" state={{ returnTo: `${location.pathname}${location.search}` }}>Community settings</Link></header>
-      <OnlinePage key={`${sourceId}:${mediaType}`} initialTab="browse" fixedSourceId={sourceId} mediaType={mediaType} />
+    <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={() => { drawer.close(); setSidebarHover(false) }}
+      onTagClick={searchCommunity} selectedImage={selected} lightboxMode={Boolean(selected)} lightboxHover={sidebarHover} onMouseLeave={() => setSidebarHover(false)} />
+    <main ref={contentRef} className="content with-sidebar shared-gallery-page" onScrollCapture={event => { if (result.scope === scope && event.target.classList?.contains('masonry-container')) sessionStorage.setItem(`${sessionKey}_scroll`, String(event.target.scrollTop)) }}>
+      <header className="shared-gallery-heading">
+        <div className="shared-gallery-heading-links"><button className="mobile-only" onClick={drawer.open}>Menu</button><button onClick={onBack}>← Collections</button><Link to="/settings/fediverse" state={{ returnTo: settingsReturnTo }}>Community settings</Link></div>
+        <div className="shared-gallery-title"><h2>{sourceName || 'Shared community'}</h2><span>{images.length} {mediaType === 'video' ? 'videos' : 'images'}</span></div>
+        <form className="shared-gallery-toolbar" onSubmit={event => { event.preventDefault(); searchCommunity(search) }}>
+          <input aria-label="Search community tags" placeholder="Search tags…" value={search} onChange={event => setSearch(event.target.value)} />
+          <button>Search</button>
+          <label className="shared-gallery-tiles">Tile size<input aria-label="Tile size" type="range" min="1" max="5" value={tileSize} onChange={event => setTileSize(Number(event.target.value))} /></label>
+        </form>
+      </header>
+      {current.stale && <p className="shared-gallery-notice" role="status">Offline · showing saved results.</p>}
+      {current.error && <div className="shared-gallery-notice" role="alert">{current.error} <button onClick={() => loadPage(current.page ? current.page + 1 : 1, current.page > 0)}>Retry</button></div>}
+      <MasonryGrid images={images} onImageClick={openImage} onLoadMore={loadMore} loading={current.loading || restoring} hasMore={current.hasMore && !current.error} tileSize={tileSize} />
     </main>
-  </div></div>
+  </div>
+    {selectedIndex >= 0 && <Lightbox images={images} currentIndex={selectedIndex} total={images.length} onClose={closeImage} onNav={navigateImage}
+      onTagClick={tag => { closeImage(); searchCommunity(tag) }} onImageUpdate={() => {}}
+      onSidebarHover={setSidebarHover} sidebarOpen={drawer.isOpen || sidebarHover} remoteActions={remoteActions} />}
+  </div>
 }

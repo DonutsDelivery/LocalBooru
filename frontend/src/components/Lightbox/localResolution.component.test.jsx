@@ -34,6 +34,7 @@ vi.mock('../../api', () => ({
   getPlaybackPosition: async () => ({}), fetchCollections: async () => ({ collections: [] }),
   getSVPConfig: async () => ({ enabled: mocks.initialSvp }),
   updateSVPConfig: async config => config,
+  toggleFavorite: vi.fn(), deleteImage: vi.fn(),
   addToCollection: mocks.noop, createCollection: mocks.noop, getShareNetworkInfo: mocks.noop, uploadImage: mocks.noop,
 }))
 vi.mock('../../tauriAPI', () => ({ getDesktopAPI: () => mocks.bridge }))
@@ -650,4 +651,49 @@ test('visible volume change during filtered handoff retains latest logical gain 
   expect(knob.value).toBe('0.65')
   expect(JSON.parse(localStorage.getItem('video_audio_preference')).volume).toBe(0.65)
   expect(replacement.volume).toBeCloseTo(0.325)
+})
+
+
+test('community image uses shared viewer and cannot issue local mutations', async () => {
+  const remote = { id: 'remote:community:17', _remote: true, remote_source_id: 'community',
+    remote_post_id: '17', filename: 'remote-17.webp', original_filename: 'remote-17.webp',
+    url: '/api/online/sources/community/items/17/asset/original', thumbnail_url: '/thumb.webp',
+    width: 800, height: 1200, tags: [{name: 'landscape'}] }
+  const navigate = vi.fn()
+  const close = vi.fn()
+  const {container} = render(<Lightbox images={[remote, {...remote, id:'remote:community:18', remote_post_id:'18'}]}
+    currentIndex={0} total={2} onClose={close} onNav={navigate}
+    remoteActions={<button>Import a local copy</button>} />)
+  expect(container.querySelector('img.lightbox-media').getAttribute('src')).toBe(remote.url)
+  fireEvent.click(screen.getByTitle('Import a local copy'))
+  expect(screen.getByText('Import a local copy')).toBeTruthy()
+  expect(screen.queryByTitle('Delete image')).toBeNull()
+  expect(screen.queryByTitle('Adjust image')).toBeNull()
+  expect(screen.queryByTitle('Add to collection')).toBeNull()
+  expect(screen.queryByLabelText('Add to favorites')).toBeNull()
+  fireEvent.keyDown(window, {key:'ArrowRight'})
+  expect(navigate).toHaveBeenCalledWith(1)
+  fireEvent.keyDown(window, {key:'f'})
+  fireEvent.keyDown(window, {key:'Delete'})
+  expect(container.querySelector('.lightbox-confirm-overlay')).toBeNull()
+  const api = await import('../../api')
+  expect(api.toggleFavorite).not.toHaveBeenCalled()
+  expect(api.deleteImage).not.toHaveBeenCalled()
+  expect(mocks.bridge.acquireSvpVideoHostEpoch).not.toHaveBeenCalled()
+  fireEvent.keyDown(window, {key:'Escape'})
+  expect(close).toHaveBeenCalledOnce()
+})
+
+
+test('community video plays protected original without local resolution or addon controls', async () => {
+  localStorage.setItem('video_quality_preference','720p')
+  const remote = {_remote:true,id:'remote:community:17',remote_source_id:'community',remote_post_id:'17',
+    filename:'remote-17.mp4', original_filename:'remote-17.mp4',url:'/api/online/sources/community/items/17/asset/original'}
+  const {container}=render(<Lightbox images={[remote]} currentIndex={0} onClose={mocks.noop} onNav={mocks.noop} />)
+  await waitFor(()=>expect(container.querySelector('video')?.getAttribute('src')).toBe(remote.url))
+  expect(screen.queryByTitle(/^Quality:/)).toBeNull()
+  expect(screen.queryByTitle('SVP Settings')).toBeNull()
+  expect(screen.queryByLabelText('Subtitle settings')).toBeNull()
+  expect(mocks.bridge.acquireSvpVideoHostEpoch).not.toHaveBeenCalled()
+  expect(mocks.bridge.configureLocalVideoResolution).not.toHaveBeenCalled()
 })
