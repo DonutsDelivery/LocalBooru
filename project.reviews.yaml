@@ -14555,6 +14555,39 @@ reviews:
         runner: creator-review
         created_at: 2026-10-06T06:20:36.701Z
         completed_at: 2026-10-06T06:20:36.701Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: d5eff9edd6d8802995186a2ca66ea16c246d4807
+        evidence: "Independently read actual optimized native /tmp/dmc-final-online-tests.log: compilation
+          finished7m54s; online::39 tests passed0failed, including all10 shared-account behavioral
+          cases plus29 creator/Iroh/offline/policy cases. Tests use synthetic/tempdata.
+          Independently diff-verified all6 shared candidate changed paths identical between reviewed
+          exactd5eff9edd6d8802995186a2ca66ea16c246d4807 and tested combined59c3f0a1.
+          Credential/descriptor reciprocity, missing contracts, exact fields, secret ownership,
+          tombstones, legacy migration, explicit existing accounts, in-flight mutations and bounded
+          status acceptance covered. No native test result inferred from pending logs."
+        name: native-shared-account
+        required: true
+        runner: root-gated-cargo
+        created_at: 2026-10-06T06:36:19.433Z
+        completed_at: 2026-10-06T06:36:19.433Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: d5eff9edd6d8802995186a2ca66ea16c246d4807
+        evidence: "Independently read /tmp/dmc-final-focused-ui-tests.log: combined59c3f0a1 five files30
+          tests pass. All6 shared changed paths independently diff identical to exact reviewed
+          d5eff9ed. Prior independent9 shared frontend cases and actual extracted :memory: schema
+          checks pass. No source blockers/unresolved threads. This approval only shared-account
+          delta; original creator runtime approval and local-video native1 remain separate."
+        name: combined-focused-frontend
+        required: true
+        runner: root-vitest
+        created_at: 2026-10-06T06:36:19.765Z
+        completed_at: 2026-10-06T06:36:19.765Z
     events:
       - _ulid: 01M47WYCRW308KZYFQT7NGXJPD
         actor: DonutsDelivery
@@ -14597,9 +14630,40 @@ reviews:
           status: pass
           name: independent-synthetic-sql
         timestamp: 2026-10-06T06:20:36.785Z
+      - _ulid: 01M47YTT5VEHF38BHCX4PK5PTM
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: native-shared-account
+        timestamp: 2026-10-06T06:36:19.516Z
+      - _ulid: 01M47YTTG9TKXK61KQ4Z8BDKCW
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: combined-focused-frontend
+        timestamp: 2026-10-06T06:36:19.849Z
+      - _ulid: 01M47YTTT7VZ5TMVHSBHHN2RYE
+        actor: creator-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 428cf648
+            head_commit: d5eff9edd6d8802995186a2ca66ea16c246d4807
+          decision: approve
+        timestamp: 2026-10-06T06:36:20.167Z
+      - _ulid: 01M47YTTT7DHJ52B6Y6W1XEHMV
+        actor: creator-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T06:36:20.167Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@shared-realm-account"
     subject:
@@ -14609,9 +14673,17 @@ reviews:
       head_branch: feat/verified-shared-account
       head_commit: d5eff9edd6d8802995186a2ca66ea16c246d4807
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: d5eff9edd6d8802995186a2ca66ea16c246d4807
+        decision: approve
+        reviewer: creator-review
+        role: reviewer
+        created_at: 2026-10-06T06:36:20.167Z
     created_at: 2026-10-06T06:03:19.708Z
-    updated_at: 2026-10-06T06:20:36.701Z
+    updated_at: 2026-10-06T06:36:20.167Z
     notes: []
   - _ulid: 01M47XWDPZN5VTP4Y0PENR5ZHR
     slugs:
