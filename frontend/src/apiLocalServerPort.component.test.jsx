@@ -7,6 +7,7 @@ afterEach(() => {
   delete window.__LOCALBOORU_PORT__
   localStorage.clear()
   vi.resetModules()
+  vi.unstubAllGlobals()
 })
 
 it('prebuilt native API, media, and local server selection use the isolated process port', async () => {
@@ -26,10 +27,20 @@ it('prebuilt native API, media, and local server selection use the isolated proc
 
 it('normal native initialization retains the existing default backend port', async () => {
   window.__TAURI_INTERNALS__ = {}
+  window.__LOCALBOORU_PORT__ = 8790
   vi.resetModules()
   const api = await import('./api.js')
   expect(api.getApiUrl()).toBe('http://127.0.0.1:8790/api')
   expect(api.getMediaUrl('/api/images/42/file')).toBe('http://127.0.0.1:8790/api/images/42/file')
+})
+
+it('missing native runtime port rejects API initialization before issuing requests', async () => {
+  window.__TAURI_INTERNALS__ = {}
+  const request = vi.fn()
+  vi.stubGlobal('fetch', request)
+  vi.resetModules()
+  await expect(import('./api.js')).rejects.toThrow('refusing to connect')
+  expect(request).not.toHaveBeenCalled()
 })
 
 it('browser pages ignore spoofed native port data and keep same-origin API connections', async () => {

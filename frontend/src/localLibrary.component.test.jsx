@@ -1,11 +1,14 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
+beforeEach(() => { window.__LOCALBOORU_PORT__ = 8790 })
+
 afterEach(() => {
   localStorage.clear()
   delete window.__TAURI_INTERNALS__
+  delete window.__LOCALBOORU_PORT__
   vi.unstubAllGlobals()
   vi.resetModules()
   invoke.mockReset()
