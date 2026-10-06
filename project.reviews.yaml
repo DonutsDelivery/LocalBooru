@@ -13472,6 +13472,13 @@ reviews:
           status: running
           name: rust-focused
         timestamp: 2026-10-06T03:13:30.719Z
+      - _ulid: 01M47KJ83K5KBM35FFH7WF10DH
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: feat/creator-offline-collections
+          previous_head: 038f4eb2
+        timestamp: 2026-10-06T03:19:24.532Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13482,11 +13489,11 @@ reviews:
       base_branch: main
       base_commit: a9ef7551
       head_branch: feat/creator-offline-collections
-      head_commit: 038f4eb2
+      head_commit: feat/creator-offline-collections
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T03:13:30.634Z
+    updated_at: 2026-10-06T03:19:24.437Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
