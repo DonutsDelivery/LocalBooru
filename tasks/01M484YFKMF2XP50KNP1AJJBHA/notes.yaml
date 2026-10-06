@@ -9,3 +9,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T08:23:11.606Z
+  - _ulid: 01M4854D96EK7STMNXAH4FH3W3
+    content: "Committed0f7519a6: shared source links now in regular Sidebar on
+      collectionindex/localdetail/sharedroutes; main-pane strip removed; same media/returncontext,
+      activeNavLink/mobileclose and disabledoffline paths. Behavioral red phase reproduced missing
+      sidebar links. Focused6files30PASS and3collectionState helpersPASS
+      logs/tmp/dmc-shared-sidebar-{ui,helper}.log. Updated existing stale slider test to
+      restoredcompactcontrol expectations (test was red beforeproductchange); no sliderproduct
+      changes. ExistinguntrackedMediaNavigationtest inmain preserved, notstaged."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T08:26:25.446Z

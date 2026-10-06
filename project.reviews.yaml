@@ -15245,3 +15245,32 @@ reviews:
     created_at: 2026-10-06T07:48:50.131Z
     updated_at: 2026-10-06T07:50:27.417Z
     notes: []
+  - _ulid: 01M4854DJVQSGVKE9YQ7V4ECKV
+    slugs:
+      - shared-collections-sidebar-review
+    title: Review shared collection sidebar navigation
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4854DJVCK7QHPGMFH8M8MMQ
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-06T08:26:25.755Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@shared-collections-sidebar"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: a9d666f2
+      head_branch: fix/shared-collections-sidebar
+      head_commit: 0f7519a6
+    threads: []
+    verdicts: []
+    created_at: 2026-10-06T08:26:25.755Z
+    updated_at: null
+    notes: []
