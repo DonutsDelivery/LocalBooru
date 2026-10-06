@@ -14785,6 +14785,37 @@ reviews:
         runner: root-gated-cargo
         created_at: 2026-10-06T06:28:51.233Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: 3fc6a00d220fd6101498a7c19162f2cfbf3869b6
+        evidence: "Independently read actual /tmp/dmc-final-video-tests.log: exact
+          legacy_nullable_view_counts_keep_all_video_gallery_pages1 PASS,0failed,345filtered,0.43s.
+          Executed already-compiled optimized unit binary built by root gated wrapper from59c3f0a1;
+          no compiler/gate bypass. Independently diff verified reviewed3fc6a00d native helpers/list
+          identical to tested59c3f. Native behavioral fixture asserts263 distinct records through6
+          pages, folder263, nonzero7 counts retained and241 stored NULLs untouched."
+        name: native-local-video
+        required: true
+        runner: root-native-test-binary
+        created_at: 2026-10-06T06:40:46.359Z
+        completed_at: 2026-10-06T06:40:46.359Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: 3fc6a00d220fd6101498a7c19162f2cfbf3869b6
+        evidence: "Current review base remains428cf648. Independently read immutable baseline synthetic HTTP
+          receipt /tmp/dmc-legacy-video-reproduction.json:263 rows/241NULL, total263
+          but22returned/folder263. Causal proof remains applicable after test-only3fc refresh:
+          read-time COALESCE fixes same decoder issue. Post-fix correctness separately proven by
+          native263-case pass; no actual current GUI acceptance implied."
+        name: isolated-baseline-causal-proof
+        required: true
+        runner: root-isolated-fixture
+        created_at: 2026-10-06T06:40:46.723Z
+        completed_at: 2026-10-06T06:40:46.723Z
     events:
       - _ulid: 01M47XWDPZCC0QTBWAES5EW81F
         actor: DonutsDelivery
@@ -14848,9 +14879,40 @@ reviews:
           status: running
           name: native-local-video
         timestamp: 2026-10-06T06:28:51.336Z
+      - _ulid: 01M47Z2YVMK63JHMQYC7D04FH3
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: native-local-video
+        timestamp: 2026-10-06T06:40:46.452Z
+      - _ulid: 01M47Z2Z70FD9J8YWHHGGMSSK8
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: isolated-baseline-causal-proof
+        timestamp: 2026-10-06T06:40:46.816Z
+      - _ulid: 01M47Z2ZHCEZ7C7B7ARB395WB6
+        actor: creator-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 428cf648
+            head_commit: 3fc6a00d220fd6101498a7c19162f2cfbf3869b6
+          decision: approve
+        timestamp: 2026-10-06T06:40:47.148Z
+      - _ulid: 01M47Z2ZHCT2DR65CDCJV05TK6
+        actor: creator-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T06:40:47.148Z
     examined_commit: bf9804528664220e19c079bb4a9865b7d21fa6a6
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@local-video-gallery-recovery"
     subject:
@@ -14860,7 +14922,15 @@ reviews:
       head_branch: fix/local-video-gallery
       head_commit: 3fc6a00d220fd6101498a7c19162f2cfbf3869b6
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 428cf648
+          head_commit: 3fc6a00d220fd6101498a7c19162f2cfbf3869b6
+        decision: approve
+        reviewer: creator-review
+        role: reviewer
+        created_at: 2026-10-06T06:40:47.148Z
     created_at: 2026-10-06T06:19:43.711Z
-    updated_at: 2026-10-06T06:28:51.233Z
+    updated_at: 2026-10-06T06:40:47.148Z
     notes: []
