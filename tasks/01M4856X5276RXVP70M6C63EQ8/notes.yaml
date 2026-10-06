@@ -10,3 +10,15 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T08:27:47.602Z
+  - _ulid: 01M485BHVJ7Q43Z6NHE70NTK32
+    content: "Plan: exact peer/relay/mode-keyed max8 reusable Iroh sessions, one connect per key, no
+      credential/body/authority caching; retain every per-request bootstrap/path/frame/header/auth
+      check and existing8 streaming permits/bounds/timeouts. Idle60s reaper and idle eviction;
+      cancellation guard closes unfinished endpoints, bodies keep active session leases and
+      dropping/resetting one stream leaves unrelated streams alive. Tests: real ephemeral loopback
+      QUIC repeated streams share connection, auth headers change perrequest, key/mode separation,
+      dropped/reset/truncated bodies isolate failures, stale reconnect and capacity/idle cleanup.
+      Root alone compiles native tests/builds; no app/profile/normal port access."
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T08:30:19.506Z
