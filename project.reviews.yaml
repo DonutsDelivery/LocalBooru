@@ -13548,6 +13548,42 @@ reviews:
         runner: vitest
         created_at: 2026-10-06T04:08:12.769Z
         completed_at: 2026-10-06T04:08:12.769Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 428cf648
+        evidence: "29 online:: tests pass in optimized native test binary. Actual Iroh send/receive,
+          verified ephemeral gallery reads, source withdrawal, storage budgets and descriptor pins.
+          Later428cf648 only changes isolated paired credential routing/launcher; online product and
+          tests unchanged."
+        name: rust-focused
+        required: true
+        runner: cargo
+        created_at: 2026-10-06T05:00:12.193Z
+        completed_at: 2026-10-06T05:00:12.193Z
+      - status: running
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 428cf648
+        evidence: Three mock-keyring behavioral tests queued17220 via gated Cargo; independent shell suite
+          checks private DBus and owned process group. Never access normal profile/session.
+        name: credentials-isolation
+        required: true
+        created_at: 2026-10-06T05:00:12.516Z
+        completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 428cf648
+        evidence: 56 component tests and16 Node helpers passed at49fad3ac. Frontend implementation identical
+          in428cf648.
+        name: frontend-focused
+        required: true
+        created_at: 2026-10-06T05:00:12.804Z
+        completed_at: 2026-10-06T05:00:12.804Z
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13667,6 +13703,34 @@ reviews:
           status: pass
           name: frontend-focused
         timestamp: 2026-10-06T04:08:12.852Z
+      - _ulid: 01M47SASSNNQ2KW24X57NV3K4T
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 428cf648
+          previous_head: 49fad3ac
+        timestamp: 2026-10-06T05:00:11.957Z
+      - _ulid: 01M47SAT3MJ3A259KJGW5EDRSW
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: rust-focused
+        timestamp: 2026-10-06T05:00:12.276Z
+      - _ulid: 01M47SATDEG2WYRX791HTK1T7X
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: running
+          name: credentials-isolation
+        timestamp: 2026-10-06T05:00:12.590Z
+      - _ulid: 01M47SATQAD6P18NSFF7X8709P
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-focused
+        timestamp: 2026-10-06T05:00:12.906Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13677,11 +13741,11 @@ reviews:
       base_branch: main
       base_commit: a9ef7551
       head_branch: feat/creator-offline-collections
-      head_commit: 49fad3ac
+      head_commit: 428cf648
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T04:08:12.769Z
+    updated_at: 2026-10-06T05:00:12.804Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:

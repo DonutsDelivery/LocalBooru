@@ -68,3 +68,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T04:22:49.228Z
+  - _ulid: 01M47SATXCEMTB0FMHXHRQJYQ5
+    content: Native29 online tests and4gatewaypolicy tests passed. Source review exposed shared OS
+      keyring and GTK DBus identity leaks in isolated launch; fixed428cf648, private bus/file-only
+      credentials with synthetic shell checks. Updated candidate and3mockkeyring tests queued. No
+      real app/profile/keyring/session accessed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T05:00:13.100Z
