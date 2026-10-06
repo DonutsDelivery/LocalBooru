@@ -1,0 +1,10 @@
+notes:
+  - _ulid: 01M49TBJPF96C98JAGK5PGDEN1
+    content: Using kspec task-work lifecycle for bounded feasibility spike. Main db118f74 has managed
+      Krea2 workflow and typed patch/snapshot UI. Installed Ollama0.17.7; RTX4070 12GiB,
+      initially9.8GiB free. Model card GGUF Q4_K_M approximately2.7GB. Use isolated
+      loopback18815/HOME/modelstore, thinkfalse/context4096 and synthetic diverse constraints; no
+      shared Ollama/userapp requests.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T23:56:34.895Z
