@@ -10,7 +10,7 @@ description: Remote community browsing currently renders OnlinePage administrati
 spec_ref: null
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
@@ -18,6 +18,14 @@ priority: 3
 tags: []
 vcs_refs: []
 review_ref: "@community-gallery-parity-review"
+submission_linkage:
+  review_url: null
+  branch: fix/community-gallery
+  captured_at: 2026-10-06T01:08:58.144Z
+  commit: 06c424203881241a8724a730627b58474dc4246e
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -36,6 +44,27 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-06T01:08:43.565Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: fix/community-gallery
+          captured_at: 2026-10-06T01:08:58.144Z
+          commit: 06c424203881241a8724a730627b58474dc4246e
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-06T01:08:58.150Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-06T01:08:58.150Z
 created_at: 2026-10-06T00:54:18.284Z
 started_at: 2026-10-06T00:54:19.669Z
+submitted_at: 2026-10-06T01:08:58.150Z
 todos: []
