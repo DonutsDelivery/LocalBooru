@@ -25,12 +25,19 @@ class ControlledIntersectionObserver {
     this.callback = callback
     this.options = options
     this.targets = new Set()
+    this.visibleTargets = new Set()
     ControlledIntersectionObserver.instances.push(this)
   }
-  observe(target) { this.targets.add(target) }
+  observe(target) {
+    this.targets.add(target)
+    // Browsers deliver an initial intersection entry after every observe(),
+    // including re-observation of a sentinel that stayed visible during a load.
+    if (this.visibleTargets.has(target)) setTimeout(() => this.intersect(target), 0)
+  }
   unobserve(target) { this.targets.delete(target) }
-  disconnect() { this.targets.clear() }
+  disconnect() { this.targets.clear(); this.visibleTargets.clear() }
   intersect(target) {
+    this.visibleTargets.add(target)
     if (this.targets.has(target)) this.callback([{ target, isIntersecting: true, intersectionRatio: 1 }])
   }
 }
@@ -57,22 +64,28 @@ test('local Videos pages all 263 synthetic records inside its own scroller while
     id: index + 1, directory_id: 1, library_id: 'synthetic-library', filename: `synthetic-${index + 1}.mp4`,
     thumbnail_url: `/synthetic/${index + 1}.webp`, url: `/synthetic/${index + 1}.mp4`, width: 1920, height: 1080,
   }))
-  api.fetchImages.mockImplementation(async ({ page, per_page }) => ({
+  let finishFirstPage
+  const firstPage = new Promise(resolve => { finishFirstPage = resolve })
+  api.fetchImages.mockImplementation(async ({ page, per_page }) => page === 1 ? firstPage : ({
     images: videos.slice((page - 1) * per_page, page * per_page), total: videos.length,
   }))
   const { container } = render(<App />)
-  await waitFor(() => expect(container.querySelectorAll('.media-item').length).toBe(50))
+  await waitFor(() => expect(api.fetchImages).toHaveBeenCalledTimes(1))
   const gallery = container.querySelector('.content > .masonry-container')
   expect(gallery).toBeTruthy()
   const sentinel = gallery.querySelector('.load-more-trigger')
   const observer = ControlledIntersectionObserver.instances.find(instance => instance.targets.has(sentinel))
   expect(observer).toBeTruthy()
+  // The sentinel can already be visible before the first metadata page settles.
+  // A real observer emits again when MasonryGrid re-observes after loading.
+  act(() => observer.intersect(sentinel))
+  await act(async () => finishFirstPage({ images: videos.slice(0, 50), total: videos.length }))
+  await waitFor(() => expect(container.querySelectorAll('.media-item').length).toBe(50))
   const query = window.location.search
   for (const expected of [100, 150, 200, 250, 263]) {
     // JSDOM has no layout engine. Simulate the nested scroller reaching the
     // observed sentinel; the real Gallery, MasonryGrid and MediaItem stay mounted.
     fireEvent.scroll(gallery, { target: { scrollTop: expected * 100 } })
-    act(() => observer.intersect(sentinel))
     await waitFor(() => expect(container.querySelectorAll('.media-item').length).toBe(expected))
   }
   expect(api.fetchImages.mock.calls.map(([query]) => query.page)).toEqual([1, 2, 3, 4, 5, 6])
