@@ -14295,9 +14295,26 @@ reviews:
           status: pass
           name: policy-and-coverage
         timestamp: 2026-10-06T06:23:10.871Z
+      - _ulid: 01M47Y2SG7E9NP1KKZTZH8V78B
+        actor: codex-peer-finish
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 221026d4c039f87aaee4891f9ce31a54ca69f5d4
+            head_commit: da329bcdc9ffdef538d6134174d61517ef79e871
+          decision: approve
+        timestamp: 2026-10-06T06:23:12.392Z
+      - _ulid: 01M47Y2SG87D07Q82V40YD1WEJ
+        actor: codex-peer-finish
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T06:23:12.392Z
     examined_commit: null
     external_links: []
-    lifecycle_state: open
+    lifecycle_state: closed
     related_refs:
       - "@creator-offline-collections"
     subject:
@@ -14307,9 +14324,17 @@ reviews:
       head_branch: feat/creator-peer-rollout
       head_commit: da329bcdc9ffdef538d6134174d61517ef79e871
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 221026d4c039f87aaee4891f9ce31a54ca69f5d4
+          head_commit: da329bcdc9ffdef538d6134174d61517ef79e871
+        decision: approve
+        reviewer: codex-peer-finish
+        role: reviewer
+        created_at: 2026-10-06T06:23:12.391Z
     created_at: 2026-10-06T04:16:08.477Z
-    updated_at: 2026-10-06T06:23:10.764Z
+    updated_at: 2026-10-06T06:23:12.392Z
     notes: []
   - _ulid: 01M47WYC8CN7J445WGFQAA3EX1
     slugs:
