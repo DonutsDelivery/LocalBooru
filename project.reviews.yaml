@@ -12801,7 +12801,18 @@ reviews:
       - community-gallery-parity-review
     title: Community gallery parity
     author: hub_source_review
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: entity_version
+          content_hash: ""
+        evidence: 45 component tests and 14 Node adapter/identity tests passed; shared scroll
+          capture/restore test passed after runtime follow-up.
+        name: focused-frontend
+        required: true
+        runner: vitest-node
+        created_at: 2026-10-06T01:09:01.025Z
+        completed_at: 2026-10-06T01:09:01.025Z
     events:
       - _ulid: 01M47C2YN673FDXD8KCFXT5N3J
         actor: hub_source_review
@@ -12816,6 +12827,13 @@ reviews:
           from: draft
           to: open
         timestamp: 2026-10-06T01:08:59.649Z
+      - _ulid: 01M47C3G19WCQNFY3X7HQMDSEG
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: focused-frontend
+        timestamp: 2026-10-06T01:09:01.098Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -12828,5 +12846,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T01:08:43.303Z
-    updated_at: 2026-10-06T01:08:59.571Z
+    updated_at: 2026-10-06T01:09:01.025Z
     notes: []
