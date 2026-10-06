@@ -15471,6 +15471,31 @@ reviews:
         runner: root-canonical-host-gate
         created_at: 2026-10-06T08:47:25.124Z
         completed_at: 2026-10-06T08:47:25.124Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9d666f2
+          head_commit: cdbff8d55bb75d26dc658979ba396fbf7448a213
+        evidence: "Exact clean cdbff8d55bb75d26dc658979ba396fbf7448a213 vs a9d666f2: reviewed both changed
+          files and all 8 synthetic test bodies. Inspected deployed gateway source
+          tools/dmc-hub-gateway/src/main.rs (one accept_bi; FIN/stopped; connection close),
+          installed Iroh 0.97.0 Endpoint/connect/close and Noq stream/ref drop APIs. Only bounded
+          raw peer+relay+mode Endpoint/relay state reused; fresh QUIC request connections,
+          frame/body/auth data each request; 8 request permits, 8 slots/16 total endpoint cleanup
+          permits, active body leases, weak 60s idle reaper, no POST replay. Native log
+          independently read: optimized build4m23 then8 passed0failed in0.18s, all named reviewed
+          tests; latest matching focused-native-transport PASS. Existing source-scoped credential
+          loading, protected-denial handling, fresh peer-grant checks and every advertised media
+          variant remain unchanged. AC3/5 new behavioral coverage; all six existing creator AC
+          annotations retained, no traits/source-scanning tests. Diff --check and clean HEAD
+          verified. Global validate remains blocked by existing unrelated130schema/47reference
+          errors; /tmp/creator-review-download-speed-validation.json. No
+          compiler/app/private-data/protected HTTP accessed; no production speed claim."
+        name: independent-source-protocol-review
+        required: true
+        runner: creator_review
+        created_at: 2026-10-06T08:48:23.531Z
+        completed_at: 2026-10-06T08:48:23.531Z
     events:
       - _ulid: 01M4862ZYKB9AWA1B6PY5N6ZEG
         actor: DonutsDelivery
@@ -15499,9 +15524,40 @@ reviews:
           status: pass
           name: focused-native-transport
         timestamp: 2026-10-06T08:47:25.207Z
+      - _ulid: 01M486CM7F2BBSB9DMY5MJ0B0T
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-06T08:48:23.279Z
+      - _ulid: 01M486CMJ2SN9C9QP2QEW6ZWZ3
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-source-protocol-review
+        timestamp: 2026-10-06T08:48:23.618Z
+      - _ulid: 01M486CMW8CHK8N1R3FK7XHABN
+        actor: creator-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: a9d666f2
+            head_commit: cdbff8d55bb75d26dc658979ba396fbf7448a213
+          decision: approve
+        timestamp: 2026-10-06T08:48:23.944Z
+      - _ulid: 01M486CMW99VJEPPXK924WM24C
+        actor: creator-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T08:48:23.945Z
     examined_commit: cdbff8d55bb75d26dc658979ba396fbf7448a213
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@offline-relay-download-speed"
     subject:
@@ -15511,7 +15567,15 @@ reviews:
       head_branch: fix/offline-relay-download-speed
       head_commit: cdbff8d55bb75d26dc658979ba396fbf7448a213
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: a9d666f2
+          head_commit: cdbff8d55bb75d26dc658979ba396fbf7448a213
+        decision: approve
+        reviewer: creator-review
+        role: reviewer
+        created_at: 2026-10-06T08:48:23.944Z
     created_at: 2026-10-06T08:43:07.603Z
-    updated_at: 2026-10-06T08:47:25.124Z
+    updated_at: 2026-10-06T08:48:23.945Z
     notes: []
