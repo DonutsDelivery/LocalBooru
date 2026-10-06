@@ -15159,7 +15159,30 @@ reviews:
       - isolated-health-proxy-review
     title: Review isolated development health proxy
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: b37d61db
+          head_commit: 54ec5676
+        evidence: Reviewed exact clean54ec567669ecea4fec8b0dec7074d341f122043f vsb37d61db both changed files
+          and surrounding identity guard flow. Development /health now proxies to same explicitly
+          validated loopback target as/api and/thumbnails; prevents SPA fallback from blocking
+          isolated relative-health verification. Production command remains independent of dev
+          backend env. Independently ran Node6 focused tests (4devProxy+2isolatedBackend) under
+          cleared env with disposable external HOME/TMP. Actual synthetic backend and Vite test
+          listen only on owned loopback ephemeral ports, return exact64hex identity JSON; backend
+          saw exactly/health. All6 pass, /tmp/creator-review-isolated-health-proxy-tests.log.
+          Existing API/App/native/launcher guards independently diff unchanged frombase. Taskinfra
+          has no spec_ref/inheritedAC. Diffcheck passes. Global kspec validate remains exit4 for
+          preexisting malformed Android/core metadata; not a validation pass and no unrelated edits.
+          No actual application/browser/privateprofile/library/credentials/normal ports/compiler.
+          Prior closed review untouched; historical5175 cause unproven.
+        name: independent-health-proxy-review
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T07:50:27.008Z
+        completed_at: 2026-10-06T07:50:27.008Z
     events:
       - _ulid: 01M482ZJTK9CF5FVFN7S183VVD
         actor: DonutsDelivery
@@ -15167,9 +15190,40 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-06T07:48:50.131Z
+      - _ulid: 01M4832H5Z7HM4WRFXHY99PXCA
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-06T07:50:26.751Z
+      - _ulid: 01M4832HGRFWDSZTNGD7X8BBEX
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-health-proxy-review
+        timestamp: 2026-10-06T07:50:27.096Z
+      - _ulid: 01M4832HTSS5SPD2XEDRWTN24T
+        actor: creator-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: b37d61db
+            head_commit: 54ec5676
+          decision: approve
+        timestamp: 2026-10-06T07:50:27.417Z
+      - _ulid: 01M4832HTSP7BQEE3783CYWSVJ
+        actor: creator-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T07:50:27.417Z
     examined_commit: 54ec5676
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@isolated-preview-routing"
     subject:
@@ -15179,7 +15233,15 @@ reviews:
       head_branch: fix/isolated-preview-routing
       head_commit: 54ec5676
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: b37d61db
+          head_commit: 54ec5676
+        decision: approve
+        reviewer: creator-review
+        role: reviewer
+        created_at: 2026-10-06T07:50:27.417Z
     created_at: 2026-10-06T07:48:50.131Z
-    updated_at: null
+    updated_at: 2026-10-06T07:50:27.417Z
     notes: []
