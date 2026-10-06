@@ -14182,6 +14182,26 @@ reviews:
         runner: unittest
         created_at: 2026-10-06T06:06:11.710Z
         completed_at: 2026-10-06T06:06:11.710Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 5f23549
+          head_commit: e7ffbda56ae58920e5cacfdf04b5bed16011bd35
+        evidence: Independently reviewed clean exact Node e7ffbda56ae58920e5cacfdf04b5bed16011bd35
+          against5f23549. Optional reciprocal contract names exact origin/instance/realm/peer/relay
+          tuples and publishes no secrets; malformed or missing configuration omits sharing.
+          Existing authorization and realm visibility remain authoritative. Independent44 synthetic
+          unittest cases pass with cleared environment, disposable external HOME/media,
+          closed-loopback DB1, no production app/lifespan/credentials. Root production-baseline
+          overlay44 pass log independently inspected. Tests annotate Node ac1/3/4; client ac2/5/6
+          remain separate DMC scope. Existing global kspec validate legacy malformed Android/core
+          records are unrelated and not a validation pass. Approval only Node, not
+          DMC/operator/runtime.
+        name: independent-node-review
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T06:07:00.691Z
+        completed_at: 2026-10-06T06:07:00.691Z
     events:
       - _ulid: 01M47WYC8BB1REW4AYKAFWA108
         actor: DonutsDelivery
@@ -14224,9 +14244,40 @@ reviews:
           status: pass
           name: shared-account-python
         timestamp: 2026-10-06T06:06:11.789Z
+      - _ulid: 01M47X54AY4BZVK1RQSRMAS93Q
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-06T06:07:00.446Z
+      - _ulid: 01M47X54N7X0P8DB2FZMK5AD2H
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-node-review
+        timestamp: 2026-10-06T06:07:00.775Z
+      - _ulid: 01M47X54YNR2BMRFSNXS01FJBT
+        actor: creator-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 5f23549
+            head_commit: e7ffbda56ae58920e5cacfdf04b5bed16011bd35
+          decision: approve
+        timestamp: 2026-10-06T06:07:01.078Z
+      - _ulid: 01M47X54YPXTN6MBGTRGKKNXZC
+        actor: creator-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-06T06:07:01.078Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@shared-realm-account"
     subject:
@@ -14236,9 +14287,17 @@ reviews:
       head_branch: feat/verified-shared-account
       head_commit: e7ffbda56ae58920e5cacfdf04b5bed16011bd35
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 5f23549
+          head_commit: e7ffbda56ae58920e5cacfdf04b5bed16011bd35
+        decision: approve
+        reviewer: creator-review
+        role: reviewer
+        created_at: 2026-10-06T06:07:01.077Z
     created_at: 2026-10-06T06:03:19.180Z
-    updated_at: 2026-10-06T06:06:11.710Z
+    updated_at: 2026-10-06T06:07:01.078Z
     notes: []
   - _ulid: 01M47WYCRWXRNC34KV4DCSW13S
     slugs:
