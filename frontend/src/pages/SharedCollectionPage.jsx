@@ -15,7 +15,7 @@ import { appendRemoteGalleryItems, remoteGalleryItem, remotePageHasMore } from '
 import './SharedCollectionPage.css'
 
 const message = error => error?.response?.data?.detail || error?.response?.data?.error || error?.message || 'Could not load this community.'
-const emptyResult = scope => ({ scope, images: [], page: 0, hasMore: true, stale: false, loading: true, error: '', nextCursor: null })
+const emptyResult = scope => ({ scope, images: [], page: 0, hasMore: true, stale: false, offline: false, partial: false, loading: true, error: '', nextCursor: null })
 
 export default function SharedCollectionPage() {
   const { sourceId } = useParams()
@@ -101,7 +101,7 @@ function SharedCommunityGallery({ sourceId, mediaType, query, filters, requestFi
       const incoming = (data.items || []).map(item => remoteGalleryItem(item, { sourceId, offlineOnly: Boolean(requestFilters.offline_only || data.offline) }))
       const next = { scope, images: append ? appendRemoteGalleryItems(previous.images, incoming) : incoming,
         page, hasMore: remotePageHasMore({ ...data, page, per_page: data.per_page || 60 }),
-        stale: Boolean(data.stale), loading: false, error: '', nextCursor: data.next_cursor }
+        stale: Boolean(data.stale), offline: Boolean(data.offline), partial: Boolean(data.partial || (append && previous.partial)), loading: false, error: '', nextCursor: data.next_cursor }
       resultRef.current = next
       setResult(next)
       sessionStorage.setItem(`${sessionKey}_page`, String(page))
@@ -251,7 +251,7 @@ function SharedCommunityGallery({ sourceId, mediaType, query, filters, requestFi
       onTagClick={onTag} selectedImage={selected} lightboxMode={Boolean(selected)} lightboxHover={sidebarHover} onMouseLeave={() => setSidebarHover(false)} />
     <main ref={contentRef} className="content with-sidebar shared-gallery-page" onScrollCapture={event => { if (result.scope === scope && event.target.classList?.contains('masonry-container')) sessionStorage.setItem(`${sessionKey}_scroll`, String(event.target.scrollTop)) }}>
       <button className="menu-btn mobile-only collection-mobile-menu" onClick={drawer.open} aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18" /></svg></button>
-      {current.stale && <p className="shared-gallery-notice" role="status">Offline · showing saved results.</p>}
+      {current.offline ? <p className="shared-gallery-notice" role="status">{current.partial ? 'Offline copies · Some content is not available on this device.' : 'Offline copies · Showing downloaded content.'}</p> : current.stale && <p className="shared-gallery-notice" role="status">Offline · showing saved results.</p>}
       {current.error && <div className="shared-gallery-notice" role="alert">{current.error} <button onClick={() => loadPage(current.page ? current.page + 1 : 1, current.page > 0)}>Retry</button></div>}
       <div className="floating-controls"><GalleryTileSizeControl tileSize={tileSize} onChange={setTileSize} /></div>
       <MasonryGrid images={images} onImageClick={openImage} onLoadMore={loadMore} loading={current.loading || restoring} hasMore={current.hasMore && !current.error} tileSize={tileSize} />

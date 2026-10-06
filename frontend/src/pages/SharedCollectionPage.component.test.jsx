@@ -21,6 +21,19 @@ let navigate
 function Driver() { navigate = useNavigate(); return null }
 const item = (id, source = 'one') => ({ source_id: source, remote_post_id: String(id), tags: [], media: [{ kind: 'original', mime_type: 'image/jpeg', width: 800, height: 600 }] })
 const page = (items, pageNumber = 1, total = items.length) => ({ items, page: pageNumber, per_page: 60, total, stale: false })
+
+// AC: @creator-community-replication ac-4
+// AC: @creator-community-replication ac-6
+test('offline gallery keeps incomplete coverage visible while appending further local pages', async () => {
+  api.browseRemoteSource.mockResolvedValueOnce({ ...page([item(1)], 1, 61), offline: true, partial: true })
+    .mockResolvedValueOnce({ ...page([item(2)], 2, 61), offline: true, partial: false })
+  mount('/shared/one?media_type=image&offline_only=true')
+  await screen.findByText('Offline copies · Some content is not available on this device.')
+  fireEvent.click(screen.getByRole('button', { name: 'Load next page' }))
+  await screen.findByRole('button', { name: 'one:2' })
+  expect(screen.getByText('Offline copies · Some content is not available on this device.')).toBeTruthy()
+  expect(screen.queryByText('Offline copies · Showing downloaded content.')).toBeNull()
+})
 const deferred = () => { let resolve; let reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 function mount(url = '/shared/one?media_type=image') {
   return render(<MemoryRouter initialEntries={[url]}><Driver /><Routes><Route path="/shared/:sourceId" element={<SharedCollectionPage />} /></Routes></MemoryRouter>)
