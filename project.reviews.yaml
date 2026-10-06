@@ -12929,6 +12929,18 @@ reviews:
         required: true
         created_at: 2026-10-06T01:55:37.186Z
         completed_at: 2026-10-06T01:55:37.186Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bb8d85f5
+          head_commit: e50bc45c
+        evidence: "Independent hub_source_review: all changed DMC, neutral server, narrow live overlaypatch
+          and adultservice unit read; MediaInfo/random paging/facet scope/count blockers fixed and
+          verified; no remaining source blockers."
+        name: source-review
+        required: true
+        created_at: 2026-10-06T01:55:38.647Z
+        completed_at: 2026-10-06T01:55:38.647Z
     events:
       - _ulid: 01M47ER11PMJ8BWWW3CA96XEDP
         actor: hub_source_review
@@ -12964,6 +12976,13 @@ reviews:
           status: pass
           name: gateway-policy
         timestamp: 2026-10-06T01:55:37.264Z
+      - _ulid: 01M47ERW31CT3GKAJ39WQ8GW88
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: source-review
+        timestamp: 2026-10-06T01:55:38.722Z
     examined_commit: e50bc45c
     external_links: []
     lifecycle_state: open
@@ -12978,5 +12997,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T01:55:11.030Z
-    updated_at: 2026-10-06T01:55:37.186Z
+    updated_at: 2026-10-06T01:55:38.647Z
     notes: []
