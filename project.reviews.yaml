@@ -15250,7 +15250,35 @@ reviews:
       - shared-collections-sidebar-review
     title: Review shared collection sidebar navigation
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9d666f2
+          head_commit: fix/shared-collections-sidebar
+        evidence: "Exact 0f7519a6: all 8 changed paths reviewed; six synthetic Vitest files passed 30 tests,
+          with mocked API and disposable cleared-env HOME/TMPDIR. Existing local/detail/shared
+          behaviors, source active selection, disabled offline link and mobile-close callback pass.
+          Log /tmp/creator-review-shared-sidebar-ui.log."
+        name: independent-sidebar-ui
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T08:30:24.016Z
+        completed_at: 2026-10-06T08:30:24.016Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9d666f2
+          head_commit: fix/shared-collections-sidebar
+        evidence: 3 collectionState Node tests passed in disposable cleared environment; source
+          galleryReturnTo is preserved and sanitized to owning gallery. Log
+          /tmp/creator-review-shared-sidebar-helper.log. Both @collections ACs have matching
+          behavioral annotations, no traits.
+        name: independent-collection-state
+        required: true
+        runner: creator-review
+        created_at: 2026-10-06T08:30:24.407Z
+        completed_at: 2026-10-06T08:30:24.407Z
     events:
       - _ulid: 01M4854DJVCK7QHPGMFH8M8MMQ
         actor: DonutsDelivery
@@ -15265,9 +15293,30 @@ reviews:
           new_head: fix/shared-collections-sidebar
           previous_head: 0f7519a6
         timestamp: 2026-10-06T08:30:14.202Z
+      - _ulid: 01M485BNZ537W7RZQ32M791PE8
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-06T08:30:23.717Z
+      - _ulid: 01M485BPC69S9WWD7V7XVZ0DM7
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-sidebar-ui
+        timestamp: 2026-10-06T08:30:24.135Z
+      - _ulid: 01M485BPRSB8E7Y2Q2CY4DM701
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: independent-collection-state
+        timestamp: 2026-10-06T08:30:24.537Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: open
     related_refs:
       - "@shared-collections-sidebar"
     subject:
@@ -15279,5 +15328,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T08:26:25.755Z
-    updated_at: 2026-10-06T08:30:14.102Z
+    updated_at: 2026-10-06T08:30:24.407Z
     notes: []
