@@ -12918,6 +12918,17 @@ reviews:
         required: true
         created_at: 2026-10-06T01:55:35.758Z
         completed_at: 2026-10-06T01:55:35.758Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: bb8d85f5
+          head_commit: e50bc45c
+        evidence: Root four release gateway policy tests pass and actual gatewayreleasebuilt with
+          SHA99eca236a9d7d6fd75401c7db14c25a91e17412188f8a05b97e53f67bf2421d4.
+        name: gateway-policy
+        required: true
+        created_at: 2026-10-06T01:55:37.186Z
+        completed_at: 2026-10-06T01:55:37.186Z
     events:
       - _ulid: 01M47ER11PMJ8BWWW3CA96XEDP
         actor: hub_source_review
@@ -12946,6 +12957,13 @@ reviews:
           status: pass
           name: node-catalog-realms
         timestamp: 2026-10-06T01:55:35.833Z
+      - _ulid: 01M47ERTNGVCM6MVDKKWR0BDSW
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: gateway-policy
+        timestamp: 2026-10-06T01:55:37.264Z
     examined_commit: e50bc45c
     external_links: []
     lifecycle_state: open
@@ -12960,5 +12978,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T01:55:11.030Z
-    updated_at: 2026-10-06T01:55:35.758Z
+    updated_at: 2026-10-06T01:55:37.186Z
     notes: []
