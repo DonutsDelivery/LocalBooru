@@ -1598,6 +1598,88 @@ pub(crate) fn load_hub(data_dir: &Path, source_id: &str) -> Result<Option<HubCon
             descriptor: serde_json::from_str(&descriptor).map_err(|_| AppError::Internal("Stored hub descriptor is invalid".into()))? })
     }).transpose()
 }
+
+/// Discover contract upgrades through the enrolled authenticated hub gateway.
+/// Signing keys supplied by another provider are never a source of authority.
+pub(crate) async fn refresh_hub_descriptor(
+    data_dir: &Path,
+    source: &RemoteSource,
+    config: &HubConfig,
+) -> Result<HubConfig, AppError> {
+    let response = hub_request(
+        data_dir,
+        source,
+        config,
+        "GET",
+        "/api/client/v1/capabilities",
+        vec![("Accept".into(), "application/json".into())],
+        vec![],
+    )
+    .await?;
+    let descriptor = hub_response_json(response).await?;
+    persist_refreshed_hub_descriptor(data_dir, source, config, descriptor)
+}
+
+fn persist_refreshed_hub_descriptor(
+    data_dir: &Path,
+    source: &RemoteSource,
+    config: &HubConfig,
+    descriptor: Value,
+) -> Result<HubConfig, AppError> {
+    if hub::validate_descriptor(&source.normalized_base_url, &descriptor)? != config.instance_id {
+        return Err(AppError::Forbidden(
+            "Hub identity changed; reconnect and confirm it".into(),
+        ));
+    }
+    if !descriptor
+        .pointer("/transports/iroh")
+        .is_some_and(Value::is_object)
+    {
+        return Err(AppError::Forbidden(
+            "Refreshed hub descriptor must retain its pinned bootstrap".into(),
+        ));
+    }
+    validate_advertised_bootstrap(&descriptor, &config.bootstrap)?;
+    if let Some(realm) = config
+        .descriptor
+        .pointer("/instance/realm")
+        .and_then(Value::as_str)
+    {
+        if descriptor
+            .pointer("/instance/realm")
+            .and_then(Value::as_str)
+            != Some(realm)
+        {
+            return Err(AppError::Forbidden(
+                "Hub realm changed during descriptor refresh".into(),
+            ));
+        }
+    }
+    let mode = serde_json::to_value(config.transport_mode)
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let mut conn = open_db(data_dir)?;
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    // Compare-and-update keeps an in-flight reply from overwriting an explicit
+    // source transport, pin or origin change made while the request was running.
+    let updated = tx.execute("UPDATE remote_hub_transport SET descriptor_json=?2 WHERE source_id=?1 AND instance_id=?3 AND peer_id=?4 AND relay_url=?5 AND transport_mode=?6", params![source.source_id, descriptor.to_string(), config.instance_id, config.bootstrap.peer_id, config.bootstrap.relay_url, mode.as_str()])?;
+    if updated != 1 {
+        return Err(AppError::Forbidden(
+            "Hub enrollment changed during descriptor refresh".into(),
+        ));
+    }
+    let updated = tx.execute("UPDATE remote_sources SET capabilities_json=?2,last_probe_at=?3 WHERE source_id=?1 AND normalized_base_url=?4 AND enabled=1", params![source.source_id, serde_json::to_string(&hub::capabilities(&descriptor)).map_err(|e| AppError::Internal(e.to_string()))?, Utc::now().to_rfc3339(), source.normalized_base_url])?;
+    if updated != 1 {
+        return Err(AppError::Forbidden(
+            "Source changed during descriptor refresh".into(),
+        ));
+    }
+    tx.commit()?;
+    Ok(HubConfig {
+        descriptor,
+        ..config.clone()
+    })
+}
+
 fn require_enabled(source: &RemoteSource) -> Result<(), AppError> {
     if !source.enabled {
         return Err(AppError::Forbidden("Remote source is disabled".into()));
@@ -3346,6 +3428,17 @@ async fn try_peer_offline_variant(
     if config.transport_mode == transport::TransportMode::Anonymous {
         return Ok(false);
     }
+    // Existing enrollments may predate peer_read; refresh through their existing
+    // pinned gateway before looking up providers or trusting a signing key.
+    let refreshed = refresh_hub_descriptor(state.data_dir(), source, config).await?;
+    let config = &refreshed;
+    if !config
+        .descriptor
+        .get("peer_read")
+        .is_some_and(Value::is_object)
+    {
+        return Ok(false);
+    }
     let mut url = reqwest::Url::parse(&format!(
         "{}/api/client/v1/catalog/{}/providers",
         source.normalized_base_url, queued.item.remote_post_id
@@ -4202,5 +4295,148 @@ mod creator_offline_tests {
             .unwrap()
             .is_none());
         server.abort();
+    }
+}
+
+#[cfg(test)]
+mod descriptor_refresh_tests {
+    use super::*;
+
+    fn setup() -> (tempfile::TempDir, RemoteSource, HubConfig) {
+        let directory = tempfile::tempdir().unwrap();
+        initialize_offline_database(directory.path()).unwrap();
+        let source = RemoteSource {
+            source_id: "old-hub".into(),
+            provider_family: "donutbooru".into(),
+            display_name: "Existing hub".into(),
+            normalized_base_url: "https://hub.example".into(),
+            policy_profile: "unrestricted".into(),
+            enabled: true,
+            allow_local_network: false,
+            capabilities: crate::online::models::SourceCapabilities::read_only(),
+            last_probe_at: None,
+        };
+        let bootstrap = transport::HubBootstrap {
+            peer_id: iroh::SecretKey::from_bytes(&[42; 32]).public().to_string(),
+            relay_url: "https://relay.example".into(),
+        };
+        let descriptor = json!({"protocol":"booru-node-client","version":"1.1","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"Existing hub","origin":"https://hub.example","realm":"main"},"access":{"catalog":"public","registration":"closed","submission":"members","moderation":"required","retention":"hosted"},"authentication":{"methods":[],"pkce_methods":[],"authorization_endpoint":"/api/client/v1/authorize","token_endpoint":"/api/client/v1/token"},"capabilities":{"catalog":true,"publish":false,"idempotency":true,"revisions":true,"tombstones":true,"byte_ranges":true,"native_authorization":false},"transports":{"iroh":{"peer_id":bootstrap.peer_id,"relay_url":bootstrap.relay_url}}});
+        let config = HubConfig {
+            instance_id: "00000000-0000-0000-0000-000000000001".into(),
+            bootstrap,
+            transport_mode: transport::TransportMode::Relayed,
+            descriptor,
+        };
+        let conn = open_db(directory.path()).unwrap();
+        conn.execute("INSERT INTO remote_sources(source_id,provider_family,display_name,normalized_base_url,capabilities_json,created_at) VALUES(?1,?2,?3,?4,?5,'now')",params![source.source_id,source.provider_family,source.display_name,source.normalized_base_url,serde_json::to_string(&source.capabilities).unwrap()]).unwrap();
+        conn.execute(
+            "INSERT INTO remote_hub_transport VALUES(?1,?2,?3,?4,'relayed',?5)",
+            params![
+                source.source_id,
+                config.instance_id,
+                config.bootstrap.peer_id,
+                config.bootstrap.relay_url,
+                config.descriptor.to_string()
+            ],
+        )
+        .unwrap();
+        (directory, source, config)
+    }
+    fn upgraded(config: &HubConfig) -> Value {
+        let mut descriptor = config.descriptor.clone();
+        descriptor["peer_read"] = json!({"version":1,"signing_key":iroh::SecretKey::from_bytes(&[43;32]).public().to_string(),"requires_live_grant_check":true,"grant_ttl_seconds":60,"provider_ttl_seconds":120});
+        descriptor["capabilities"]["publish"] = json!(true);
+        descriptor
+    }
+
+    // AC: @creator-community-replication ac-5
+    #[test]
+    fn existing_enrollment_upgrades_cached_descriptor_without_changing_pins() {
+        let (directory, source, config) = setup();
+        assert!(load_hub(directory.path(), &source.source_id)
+            .unwrap()
+            .unwrap()
+            .descriptor
+            .get("peer_read")
+            .is_none());
+        let refreshed =
+            persist_refreshed_hub_descriptor(directory.path(), &source, &config, upgraded(&config))
+                .unwrap();
+        crate::online::peer::enroll_authority(
+            directory.path(),
+            &source.source_id,
+            &source,
+            &refreshed,
+        )
+        .unwrap();
+        let stored = load_hub(directory.path(), &source.source_id)
+            .unwrap()
+            .unwrap();
+        assert!(stored.descriptor["peer_read"].is_object());
+        assert_eq!(stored.bootstrap.peer_id, config.bootstrap.peer_id);
+        assert_eq!(stored.bootstrap.relay_url, config.bootstrap.relay_url);
+        assert_eq!(stored.transport_mode, config.transport_mode);
+        assert!(
+            load_source(directory.path(), &source.source_id)
+                .unwrap()
+                .capabilities
+                .upload
+        );
+    }
+
+    #[test]
+    fn descriptor_upgrade_rejects_changed_origin_identity_bootstrap_or_inflight_mode() {
+        let (directory, source, config) = setup();
+        for (pointer, value) in [
+            (
+                "/instance/id",
+                json!("00000000-0000-0000-0000-000000000002"),
+            ),
+            ("/instance/origin", json!("https://other.example")),
+            ("/instance/realm", json!("adult")),
+            (
+                "/transports/iroh/peer_id",
+                json!(iroh::SecretKey::from_bytes(&[44; 32]).public().to_string()),
+            ),
+            (
+                "/transports/iroh/relay_url",
+                json!("https://other-relay.example"),
+            ),
+            ("/transports/iroh", Value::Null),
+        ] {
+            let mut descriptor = upgraded(&config);
+            *descriptor.pointer_mut(pointer).unwrap() = value;
+            assert!(
+                persist_refreshed_hub_descriptor(directory.path(), &source, &config, descriptor)
+                    .is_err(),
+                "{pointer}"
+            );
+            assert_eq!(
+                load_hub(directory.path(), &source.source_id)
+                    .unwrap()
+                    .unwrap()
+                    .descriptor,
+                config.descriptor
+            );
+        }
+        open_db(directory.path())
+            .unwrap()
+            .execute(
+                "UPDATE remote_hub_transport SET transport_mode='standard' WHERE source_id=?1",
+                params![source.source_id],
+            )
+            .unwrap();
+        assert!(persist_refreshed_hub_descriptor(
+            directory.path(),
+            &source,
+            &config,
+            upgraded(&config)
+        )
+        .is_err());
+        let stored = load_hub(directory.path(), &source.source_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.transport_mode, transport::TransportMode::Standard);
+        assert_eq!(stored.descriptor, config.descriptor);
     }
 }

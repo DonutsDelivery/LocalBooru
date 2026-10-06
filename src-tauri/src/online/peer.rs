@@ -894,6 +894,11 @@ async fn publish_retained_inner(state: &AppState, source_id: &str) -> Result<()>
     let config = load_hub(state.data_dir(), source_id)
         .map_err(|e| e.to_string())?
         .ok_or("Community hosting requires an enrolled hub")?;
+    // Refresh periodically over the existing pin, including enrollments whose
+    // cached descriptor predates secured community sharing.
+    let config = crate::routes::online::refresh_hub_descriptor(state.data_dir(), &source, &config)
+        .await
+        .map_err(|e| e.to_string())?;
     enroll_authority(state.data_dir(), source_id, &source, &config)?;
     let provider =
         ensure_provider(state.data_dir(), &config.bootstrap, config.transport_mode).await?;
