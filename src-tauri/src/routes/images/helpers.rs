@@ -21,12 +21,45 @@ pub fn query_directory_images(
     params: &ImageQueryParams,
     library_id: Option<&str>,
 ) -> Result<(Vec<serde_json::Value>, i64), AppError> {
+    query_directory_images_scoped(
+        dir_pool,
+        directory_id,
+        main_pool,
+        dir_name,
+        params,
+        library_id,
+        None,
+    )
+}
+
+/// The gallery predicates with optional exact image membership. Collection
+/// callers scope rows in SQL before filtering and never load unrelated media.
+pub fn query_directory_images_scoped(
+    dir_pool: &DbPool,
+    directory_id: i64,
+    main_pool: &DbPool,
+    dir_name: Option<&str>,
+    params: &ImageQueryParams,
+    library_id: Option<&str>,
+    image_ids: Option<&[i64]>,
+) -> Result<(Vec<serde_json::Value>, i64), AppError> {
     let conn = dir_pool.get()?;
     let main_conn = main_pool.get()?;
 
     // Build WHERE clauses and params
     let mut where_clauses: Vec<String> = Vec::new();
     let mut sql_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    if let Some(ids) = image_ids {
+        if ids.is_empty() {
+            return Ok((vec![], 0));
+        }
+        // These values are typed database IDs, never arbitrary user SQL.
+        where_clauses.push(format!(
+            "i.id IN ({})",
+            ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",")
+        ));
+    }
 
     // Exclude missing and intentionally discarded files
     where_clauses.push(
@@ -43,7 +76,7 @@ pub fn query_directory_images(
             .map(|ext| format!("'{}'", ext.trim_start_matches('.')))
             .collect();
         where_clauses.push(format!(
-            "i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}))",
+            "i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}) AND file_status != 'missing' AND curation_discarded_at IS NULL)",
             exts.join(",")
         ));
     } else if !params.show_videos {
@@ -53,7 +86,7 @@ pub fn query_directory_images(
             .map(|ext| format!("'{}'", ext.trim_start_matches('.')))
             .collect();
         where_clauses.push(format!(
-            "i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}))",
+            "i.id IN (SELECT image_id FROM image_files WHERE file_extension IN ({}) AND file_status != 'missing' AND curation_discarded_at IS NULL)",
             exts.join(",")
         ));
     }
@@ -231,6 +264,11 @@ pub fn query_directory_images(
         }
     }
 
+    if let Some(min_width) = params.min_width {
+        sql_params.push(Box::new(min_width));
+        where_clauses.push(format!("i.width >= ?{}", sql_params.len()));
+    }
+
     // Resolution filter (shorter dimension >= min_height)
     if let Some(min_height) = params.min_height {
         sql_params.push(Box::new(min_height));
@@ -309,7 +347,7 @@ pub fn query_directory_images(
                 i.file_size, i.duration, i.rating, i.is_favorite, i.prompt, i.negative_prompt,
                 i.model_name, i.sampler, i.seed, i.steps, i.cfg_scale, i.num_faces,
                 i.min_detected_age, i.max_detected_age, i.created_at, i.import_source,
-                i.file_modified_at
+                i.file_modified_at, i.view_count
          FROM images i {} {} LIMIT ?{} OFFSET ?{}",
         where_sql,
         order_by,
@@ -349,6 +387,7 @@ pub fn query_directory_images(
             created_at: row.get(20)?,
             import_source: row.get(21)?,
             file_modified_at: row.get(22)?,
+            view_count: row.get(23)?,
         })
     })?;
 
@@ -398,6 +437,7 @@ pub fn query_directory_images(
                 "max_age": img.max_detected_age,
                 "created_at": img.created_at,
                 "file_size": img.file_size,
+                "view_count": img.view_count,
                 "file_path": file_path,
                 "directory_name": dir_name,
                 "prompt": img.prompt,
@@ -431,7 +471,7 @@ fn get_file_info_batch(
 
     let placeholders: Vec<String> = (1..=image_ids.len()).map(|i| format!("?{}", i)).collect();
     let sql = format!(
-        "SELECT image_id, original_path, file_status FROM image_files WHERE image_id IN ({})",
+        "SELECT image_id, original_path, file_status FROM image_files WHERE image_id IN ({}) AND file_status != 'missing' AND curation_discarded_at IS NULL ORDER BY id",
         placeholders.join(",")
     );
     let params: Vec<&dyn rusqlite::types::ToSql> = image_ids
@@ -666,4 +706,5 @@ struct ImageRow {
     created_at: Option<String>,
     import_source: Option<String>,
     file_modified_at: Option<String>,
+    view_count: i64,
 }

@@ -1,3 +1,4 @@
+import GalleryTileSizeControl from './components/GalleryTileSizeControl'
 /**
  * DonutMediaCenter - Local media library
  * Simplified single-user version
@@ -1887,25 +1888,7 @@ function Gallery({ mediaType = 'image' }) {
 
           {/* Floating controls: tile size slider, navigation, and select button */}
           <div className="floating-controls">
-            <div className="tile-size-control" title="Adjust tile size">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="tile-size-icon">
-                <rect x="3" y="3" width="7" height="7" rx="1"/>
-                <rect x="14" y="3" width="7" height="7" rx="1"/>
-                <rect x="3" y="14" width="7" height="7" rx="1"/>
-                <rect x="14" y="14" width="7" height="7" rx="1"/>
-              </svg>
-              <input
-                type="range"
-                min="1"
-                max="5"
-                value={tileSize}
-                onChange={(e) => setTileSize(parseInt(e.target.value, 10))}
-                className="tile-size-slider"
-              />
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="tile-size-icon">
-                <rect x="4" y="4" width="16" height="16" rx="2"/>
-              </svg>
-            </div>
+            <GalleryTileSizeControl tileSize={tileSize} onChange={setTileSize} />
 
             {/* Navigation controls */}
             {total > 50 && (

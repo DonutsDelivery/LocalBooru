@@ -1825,7 +1825,7 @@ fn get_legacy_tags_batch(
 }
 
 /// Sort merged image results from multiple directories.
-fn sort_merged_images(images: &mut Vec<serde_json::Value>, sort: &str) {
+pub(crate) fn sort_merged_images(images: &mut Vec<serde_json::Value>, sort: &str) {
     match sort {
         "newest" => images.sort_by(|a, b| {
             let a_date = a["file_modified_at"]

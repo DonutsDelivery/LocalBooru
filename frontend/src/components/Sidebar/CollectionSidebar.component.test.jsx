@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: GPL-3.0-only
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+const api = vi.hoisted(() => ({ fetchCollections: vi.fn(), fetchDirectories: vi.fn(), getFileDimensions: vi.fn(), getSavedSearches: vi.fn(), createSavedSearch: vi.fn(), deleteSavedSearch: vi.fn(), searchTags: vi.fn() }))
+vi.mock('../../api', () => api)
+vi.mock('../FamilyModeLock', () => ({ default: () => null }))
+vi.mock('../Music/PersistentMusicPlayer', () => ({ default: () => null }))
+import Sidebar from './Sidebar'
+import { REMOTE_SORT_VALUES } from '../../utils/galleryCollectionFilters'
+import GalleryTileSizeControl from '../GalleryTileSizeControl'
+import { useGalleryTileSize } from '../../hooks/useGalleryTileSize'
+const search = vi.fn()
+beforeEach(() => {
+  vi.resetAllMocks(); localStorage.clear(); sessionStorage.clear(); localStorage.setItem('filtersExpanded', 'true')
+  api.fetchCollections.mockResolvedValue({ collections: [] }); api.fetchDirectories.mockResolvedValue({ directories: [] }); api.getSavedSearches.mockResolvedValue({ searches: [] }); api.searchTags.mockResolvedValue([])
+})
+afterEach(() => { cleanup(); vi.useRealTimers() })
+
+test('remote collection uses source tags and realm ratings without local or inferred-age controls', async () => {
+  const remoteTags = vi.fn().mockResolvedValue([{ name: 'cat_sky', category: 'general', count: 2 }])
+  render(<MemoryRouter initialEntries={['/shared/main']}><Sidebar filterScope="remote" availableRatings={['pg', 'pg13']} supportedSortValues={REMOTE_SORT_VALUES} onSearch={search} onTagClick={vi.fn()} searchSuggestions={remoteTags} tags={[{ name: 'popular_tag', category: 'general', count: 3 }]} /></MemoryRouter>)
+  expect(screen.getByRole('button', { name: 'PG', exact: true })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'PG13', exact: true })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'XXX', exact: true })).toBeNull()
+  expect(screen.queryByText('All Directories')).toBeNull()
+  expect(screen.queryByPlaceholderText('Search by filename...')).toBeNull()
+  expect(screen.queryByText('Group by Folders')).toBeNull()
+  expect(screen.queryByText('Age Range:')).toBeNull()
+  expect(screen.queryByText('Watched Status')).toBeNull()
+  expect(screen.queryByRole('option', { name: 'Folder (A-Z)' })).toBeNull()
+  expect(screen.queryByTitle('Save current filters')).toBeNull()
+  expect(screen.getByRole('button', { name: /popular tag\s*\(3\)/ })).toBeTruthy()
+  fireEvent.change(screen.getByPlaceholderText('Search tag or -tag...'), { target: { value: 'cat' } })
+  await waitFor(() => expect(remoteTags).toHaveBeenCalledWith('cat', 10))
+  await screen.findByRole('button', { name: /cat sky\s*\(2\)/ })
+  expect(api.searchTags).not.toHaveBeenCalled()
+  expect(api.fetchDirectories).not.toHaveBeenCalled()
+})
+
+test('local collection retains its saved order default and exposes normal local filters', () => {
+  render(<MemoryRouter initialEntries={['/collections/7']}><Sidebar defaultSort="collection" onSearch={search} onTagClick={vi.fn()} tags={[]} /></MemoryRouter>)
+  expect(screen.getByRole('combobox', { name: 'Sort by' }).value).toBe('collection')
+  expect(screen.getByRole('option', { name: 'Collection Order' })).toBeTruthy()
+  expect(screen.getByText('All Directories')).toBeTruthy()
+  expect(screen.getByPlaceholderText('Search by filename...')).toBeTruthy()
+  expect(screen.getByText('Age Range:')).toBeTruthy()
+  expect(screen.queryByText('Group by Folders')).toBeNull()
+  fireEvent.change(screen.getByRole('combobox', { name: 'Sort by' }), { target: { value: 'oldest' } })
+  expect(search).toHaveBeenLastCalledWith('', 'pg,pg13,r,x,xxx', 'oldest', false, null, null, null, null, '', null, null, null, null)
+})
+
+test('local saved searches exclude filters belonging to remote communities', async () => {
+  api.getSavedSearches.mockResolvedValue({ searches: [{ id: 1, name: 'Remote source filters', filters: { remote_source_id: 'main', media_type: 'image' } }, { id: 2, name: 'Local filters', filters: { media_type: 'image' } }] })
+  render(<MemoryRouter initialEntries={['/collections/7']}><Sidebar defaultSort="collection" onSearch={search} onTagClick={vi.fn()} tags={[]} /></MemoryRouter>)
+  await screen.findByRole('button', { name: 'Local filters' })
+  expect(screen.queryByRole('button', { name: 'Remote source filters' })).toBeNull()
+})
+
+function Tiles() { const [tileSize, setTileSize] = useGalleryTileSize(); return <GalleryTileSizeControl tileSize={tileSize} onChange={setTileSize} /> }
+test('the shared regular tile control uses XS/S/M/L/XL and the gallery setting', () => {
+  localStorage.setItem('localbooru_tileSize', '2')
+  render(<Tiles />)
+  expect(screen.getByRole('slider', { name: 'Tile size' }).getAttribute('aria-valuetext')).toBe('S')
+  for (const label of ['XS', 'S', 'M', 'L', 'XL']) expect(screen.getByText(label)).toBeTruthy()
+  fireEvent.change(screen.getByRole('slider', { name: 'Tile size' }), { target: { value: '5' } })
+  expect(localStorage.getItem('localbooru_tileSize')).toBe('5')
+  expect(screen.getByRole('slider').getAttribute('aria-valuetext')).toBe('XL')
+})
+
+test('remote tag search never falls back to the local library when source suggestions are unavailable', async () => {
+  vi.useFakeTimers()
+  render(<MemoryRouter initialEntries={['/shared/main']}><Sidebar filterScope="remote" availableRatings={['pg', 'pg13']} onSearch={search} onTagClick={vi.fn()} tags={[]} /></MemoryRouter>)
+  fireEvent.change(screen.getByPlaceholderText('Search tag or -tag...'), { target: { value: 'cat' } })
+  await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+  expect(api.searchTags).not.toHaveBeenCalled()
+})

@@ -47,11 +47,19 @@ function Sidebar({
   collectionItems,
   currentCollection,
   onCreateCollection,
-  onRenameCollection
+  onRenameCollection,
+  filterScope = 'local',
+  availableRatings = ALL_RATINGS,
+  supportedSortValues,
+  defaultSort = 'newest',
+  sidebarActions,
+  searchSuggestions
 }) {
   const location = useLocation()
   const isGalleryPage = location.pathname === '/' || location.pathname === '/videos'
   const isCollectionPage = location.pathname === '/collections' || location.pathname.startsWith('/collections/') || location.pathname.startsWith('/shared/')
+  const isSearchPage = isGalleryPage || (isCollectionPage && Boolean(onSearch))
+  const isRemote = filterScope === 'remote'
   const galleryReturnTo = collectionGalleryTarget(location, mediaType)
   const collectionNavigationState = { galleryReturnTo }
   const galleryLabel = mediaType === 'video' ? 'Videos' : 'Images'
@@ -63,12 +71,12 @@ function Sidebar({
   const [selectedLibrary, setSelectedLibrary] = useState(initialLibraryId || null)
   const [selectedRatings, setSelectedRatings] = useState(() => {
     if (initialRating) {
-      let ratings = initialRating.split(',').filter(r => ALL_RATINGS.includes(r))
+      let ratings = initialRating.split(',').filter(r => availableRatings.includes(r))
       if (ratings.length > 0) return ratings
     }
-    return [...ALL_RATINGS]
+    return [...availableRatings]
   })
-  const [sortBy, setSortBy] = useState(initialSort || 'newest')
+  const [sortBy, setSortBy] = useState(initialSort || defaultSort)
   const [favoritesOnly, setFavoritesOnly] = useState(initialFavoritesOnly || false)
   const [minAge, setMinAge] = useState(initialMinAge || null)
   const [maxAge, setMaxAge] = useState(initialMaxAge || null)
@@ -97,12 +105,13 @@ function Sidebar({
 
   // Load directories
   const refreshDirectories = useCallback(requestConfig => {
+    if (isRemote) return Promise.resolve()
     return fetchDirectories(false, null, mediaType, requestConfig).then(data => {
       if (requestConfig?.signal?.aborted) return
       setDirectories(data.directories || [])
       setDirectoriesMediaType(mediaType)
     }).catch(error => { if (!requestConfig?.signal?.aborted) console.error(error) })
-  }, [mediaType])
+  }, [mediaType, isRemote])
 
   useEffect(() => {
     refreshDirectories()
@@ -137,10 +146,11 @@ function Sidebar({
 
   // Load saved searches
   useEffect(() => {
+    if (isRemote) return
     getSavedSearches().then(data => {
-      setSavedSearches((data.searches || []).filter(search => (search.filters?.media_type || 'image') === mediaType))
+      setSavedSearches((data.searches || []).filter(search => !search.filters?.remote_source_id && (search.filters?.media_type || 'image') === mediaType))
     }).catch(console.error)
-  }, [mediaType])
+  }, [mediaType, isRemote])
 
   // Persist filters expanded state
   useEffect(() => {
@@ -148,10 +158,8 @@ function Sidebar({
   }, [filtersExpanded])
 
   useEffect(() => {
-    if (initialRating) {
-      let ratings = initialRating.split(',').filter(r => ALL_RATINGS.includes(r))
-      if (ratings.length > 0) setSelectedRatings(ratings)
-    }
+    const ratings = initialRating?.split(',').filter(r => availableRatings.includes(r)) || []
+    setSelectedRatings(ratings.length ? ratings : [...availableRatings])
     setFavoritesOnly(initialFavoritesOnly || false)
     setSelectedDirectory(initialDirectoryId || null)
     setSelectedLibrary(initialLibraryId || null)
@@ -163,8 +171,8 @@ function Sidebar({
     setOrientation(initialOrientation || null)
     setDuration(initialDuration || null)
     setWatchedStatus(initialWatchedStatus || null)
-    if (initialSort) setSortBy(initialSort)
-  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialLibraryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe, initialFilename, initialResolution, initialOrientation, initialDuration, initialWatchedStatus])
+    setSortBy(initialSort || defaultSort)
+  }, [initialRating, initialFavoritesOnly, initialDirectoryId, initialLibraryId, initialMinAge, initialMaxAge, initialSort, initialTimeframe, initialFilename, initialResolution, initialOrientation, initialDuration, initialWatchedStatus, availableRatings, defaultSort])
 
   // Fetch dimensions for selected image when it changes
   useEffect(() => {
@@ -211,18 +219,18 @@ function Sidebar({
     refreshDirectories()
     if (isLocked) {
       // Force SFW-only ratings and trigger search
-      setSelectedRatings(SFW_RATINGS)
+      setSelectedRatings(SFW_RATINGS.filter(rating => availableRatings.includes(rating)))
       if (onSearch) {
-        onSearch(currentTags || '', SFW_RATINGS.join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
+        onSearch(currentTags || '', SFW_RATINGS.filter(rating => availableRatings.includes(rating)).join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
       }
     } else {
       // Restore all ratings on unlock
-      setSelectedRatings([...ALL_RATINGS])
+      setSelectedRatings([...availableRatings])
       if (onSearch) {
-        onSearch(currentTags || '', ALL_RATINGS.join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
+        onSearch(currentTags || '', availableRatings.join(','), sortBy, favoritesOnly, selectedDirectory, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, selectedLibrary)
       }
     }
-  }, [refreshDirectories, onSearch, currentTags, sortBy, favoritesOnly, selectedDirectory, selectedLibrary, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration])
+  }, [refreshDirectories, onSearch, currentTags, sortBy, favoritesOnly, selectedDirectory, selectedLibrary, minAge, maxAge, timeframe, filenameSearch, resolution, orientation, duration, availableRatings])
 
   // Memoize activeTags to prevent unnecessary re-renders and useEffect triggers
   const activeTags = useMemo(() =>
@@ -231,10 +239,11 @@ function Sidebar({
 
   // Get effective ratings (filter out NSFW when family mode locked)
   const getEffectiveRatings = () => {
+    const allowed = selectedRatings.filter(rating => availableRatings.includes(rating))
     const ratings = familyLocked
-      ? selectedRatings.filter(r => !['r', 'x', 'xxx'].includes(r))
-      : selectedRatings
-    return ratings.length > 0 ? ratings : (familyLocked ? SFW_RATINGS : [...ALL_RATINGS])
+      ? allowed.filter(r => !['r', 'x', 'xxx'].includes(r))
+      : allowed
+    return ratings.length > 0 ? ratings : (familyLocked ? SFW_RATINGS.filter(rating => availableRatings.includes(rating)) : [...availableRatings])
   }
 
   const handleSearchSubmit = (e) => {
@@ -245,9 +254,9 @@ function Sidebar({
 
   const handleClear = () => {
     setFilenameSearch('')
-    const defaultRatings = familyLocked ? SFW_RATINGS : [...ALL_RATINGS]
+    const defaultRatings = familyLocked ? SFW_RATINGS.filter(rating => availableRatings.includes(rating)) : [...availableRatings]
     setSelectedRatings(defaultRatings)
-    setSortBy('newest')
+    setSortBy(defaultSort)
     setFavoritesOnly(false)
     setSelectedDirectory(null)
     setSelectedLibrary(null)
@@ -261,7 +270,7 @@ function Sidebar({
     if (initialGroupByFolders && onToggleGroupByFolders) {
       onToggleGroupByFolders()
     }
-    onSearch('', defaultRatings.join(','), 'newest', false, null, null, null, null, '', null, null, null, null, null)
+    onSearch('', defaultRatings.join(','), defaultSort, false, null, null, null, null, '', null, null, null, null, null)
   }
 
   // Save current filters as a named search
@@ -299,9 +308,9 @@ function Sidebar({
   // Apply a saved search
   const handleApplySavedSearch = (search) => {
     const f = search.filters || {}
-    const ratings = f.rating || ALL_RATINGS.join(',')
-    setSelectedRatings(ratings.split(',').filter(r => ALL_RATINGS.includes(r)))
-    setSortBy(f.sort || 'newest')
+    const ratings = f.rating || availableRatings.join(',')
+    setSelectedRatings(ratings.split(',').filter(r => availableRatings.includes(r)))
+    setSortBy(f.sort || defaultSort)
     setFavoritesOnly(f.favorites_only || false)
     setSelectedDirectory(f.directory_id || null)
     setSelectedLibrary(f.library_id || null)
@@ -316,7 +325,7 @@ function Sidebar({
     onSearch(
       f.tags || '',
       ratings,
-      f.sort || 'newest',
+      f.sort || defaultSort,
       f.favorites_only || false,
       f.directory_id || null,
       f.min_age || null,
@@ -401,7 +410,7 @@ function Sidebar({
       const isSelected = prev.includes(rating)
       if (isSelected) {
         const newRatings = prev.filter(r => r !== rating)
-        if (newRatings.length === 0) return familyLocked ? [...SFW_RATINGS] : [...ALL_RATINGS]
+        if (newRatings.length === 0) return familyLocked ? SFW_RATINGS.filter(rating => availableRatings.includes(rating)) : [...availableRatings]
         return newRatings
       }
       return [...prev, rating]
@@ -490,6 +499,8 @@ function Sidebar({
           </div>
         )}
 
+        {sidebarActions && <div className="sidebar-section collection-sidebar-actions">{sidebarActions}</div>}
+
         {/* Settings Navigation */}
         {isSettingsPage && onSettingsTabChange && (
           <div className="sidebar-section settings-nav">
@@ -505,7 +516,7 @@ function Sidebar({
         )}
 
         {/* Saved Searches */}
-        {isGalleryPage && savedSearches.length > 0 && (
+        {isSearchPage && !isRemote && savedSearches.length > 0 && (
           <div className="sidebar-section saved-searches-section">
             <div className="saved-searches-chips">
               {savedSearches.map(search => (
@@ -526,7 +537,7 @@ function Sidebar({
         )}
 
         {/* Search Section - only show on gallery page */}
-        {isGalleryPage && <div className="sidebar-section search-section">
+        {isSearchPage && <div className="sidebar-section search-section">
           <form onSubmit={handleSearchSubmit}>
             {/* Sort dropdown - always visible */}
             <div className="sort-controls">
@@ -535,8 +546,9 @@ function Sidebar({
                 value={sortBy}
                 onChange={(e) => handleSortChange(e.target.value)}
                 className="sort-select"
+                aria-label="Sort by"
               >
-                {SORT_OPTIONS.filter(option => mediaType === 'video' || option.group !== 'Duration').map(option => (
+                {[...(defaultSort === 'collection' ? [{ value: 'collection', label: 'Collection Order' }] : []), ...SORT_OPTIONS].filter(option => (mediaType === 'video' || option.group !== 'Duration') && (!supportedSortValues || supportedSortValues.includes(option.value))).map(option => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -565,6 +577,12 @@ function Sidebar({
               <div className="filters-inner">
                 <FilterControls
                   mediaType={mediaType}
+                  availableRatings={availableRatings}
+                  showDirectories={!isRemote}
+                  showFilename={!isRemote}
+                  showFolders={isGalleryPage && Boolean(onToggleGroupByFolders)}
+                  showAge={!isRemote}
+                  showWatched={!isRemote}
                   directories={directories}
                   selectedDirectory={selectedDirectory}
                   selectedLibrary={selectedLibrary}
@@ -613,13 +631,13 @@ function Sidebar({
               <button type="button" className="clear-button" onClick={handleClear}>
                 Clear
               </button>
-              <button type="button" className="save-search-button" onClick={() => setShowSaveInput(!showSaveInput)} title="Save current filters">
+              {!isRemote && <button type="button" className="save-search-button" onClick={() => setShowSaveInput(!showSaveInput)} title="Save current filters">
                 <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
                   <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
                 </svg>
-              </button>
+              </button>}
             </div>
-            {showSaveInput && (
+            {!isRemote && showSaveInput && (
               <div className="save-search-input">
                 <input
                   type="text"
@@ -636,7 +654,7 @@ function Sidebar({
         </div>}
 
         {/* Selected Image Info */}
-        {(isGalleryPage || selectedImage?._remote) && selectedImage && (
+        {(isSearchPage || selectedImage?._remote) && selectedImage && (
           <div className="sidebar-section image-info">
             <h3>Media Info</h3>
             <div className="info-grid">
@@ -824,10 +842,11 @@ function Sidebar({
         )}
 
         {/* Tag Browser */}
-        {isGalleryPage && mediaType === 'image' && !selectedImage && (
+        {isSearchPage && (mediaType === 'image' || isCollectionPage) && !selectedImage && (
           <TagSearch
             tags={tags}
             activeTags={activeTags}
+            searchSuggestions={isRemote ? searchSuggestions || null : undefined}
             onTagClick={onTagClick}
           />
         )}

@@ -86,6 +86,8 @@ pub struct RemotePage {
     pub page: u32,
     pub per_page: u32,
     pub total: Option<u64>,
+    #[serde(default)]
+    pub available_ratings: Vec<String>,
     pub stale: bool,
     pub next_cursor: Option<String>,
 }

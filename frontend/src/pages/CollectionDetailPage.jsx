@@ -1,7 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import './SharedCollectionPage.css'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { fetchCollection, updateCollection, removeFromCollection } from '../api'
 import Sidebar from '../components/Sidebar'
+import GalleryTileSizeControl from '../components/GalleryTileSizeControl'
+import { useGalleryTileSize } from '../hooks/useGalleryTileSize'
+import { collectionRequestFilters, collectionSidebarProps, readCollectionFilters, sidebarFilterParams, toggleCollectionTag } from '../utils/galleryCollectionFilters'
 import MasonryGrid from '../components/MasonryGrid'
 import Lightbox from '../components/Lightbox'
 import { adjustmentLocator, imageMatchesLocator, updateImagesByLocator } from '../utils/imageAdjustments.js'
@@ -12,7 +16,10 @@ export default function CollectionDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const filters = useMemo(() => readCollectionFilters(searchParams), [searchParams])
+  const requestFilters = useMemo(() => collectionRequestFilters(filters), [filters])
+  const [tileSize, setTileSize] = useGalleryTileSize()
   const mediaType = searchParams.get('media_type') === 'video' ? 'video' : 'image'
   const galleryReturnTo = collectionGalleryTarget(location, mediaType)
   const [collection, setCollection] = useState(null)
@@ -27,11 +34,20 @@ export default function CollectionDetailPage() {
   const removingRef = useRef(false)
   const restoredScrollKeyRef = useRef(null)
   const drawer = useMobileDrawer()
-  const collectionStateKey = `donutMediaCenter_collection_${mediaType}_${id}`
+  const [notice, setNotice] = useState('')
+  const [sidebarHover, setSidebarHover] = useState(false)
+  const requestGeneration = useRef(0)
+  const paginationBusy = useRef(false)
+  const filterKey = JSON.stringify(requestFilters)
+  const collectionStateKey = `donutMediaCenter_collection_${mediaType}_${id}${Object.keys(requestFilters).length ? `_${encodeURIComponent(filterKey)}` : ''}`
+  const activeKey = useRef(collectionStateKey)
+  activeKey.current = collectionStateKey
 
   const loadCollection = useCallback(async (pageNum = 1, append = false) => {
+    const generation = requestGeneration.current
     try {
-      const data = await fetchCollection(id, pageNum, 50, mediaType)
+      const data = await fetchCollection(id, pageNum, 50, mediaType, requestFilters)
+      if (generation !== requestGeneration.current || activeKey.current !== collectionStateKey) return false
       setCollection(data)
       if (append) {
         setImages(prev => [...prev, ...data.images])
@@ -44,45 +60,53 @@ export default function CollectionDetailPage() {
       setLoading(false)
       return true
     } catch (e) {
-      console.error('Failed to load collection:', e)
+      if (generation !== requestGeneration.current || activeKey.current !== collectionStateKey) return false
+      setNotice(e?.response?.data?.error || e.message || 'Could not load this collection.')
       setLoading(false)
       return false
     }
-  }, [id, mediaType, collectionStateKey])
+  }, [id, mediaType, collectionStateKey, requestFilters])
 
   useEffect(() => {
     let active = true
+    const generation = ++requestGeneration.current
+    paginationBusy.current = true
+    setLoading(true)
+    setLightboxIndex(null)
+    setEditing(false)
+    setNotice('')
     const restore = async () => {
       try {
         const restored = await loadCollectionPages(
-          nextPage => fetchCollection(id, nextPage, 50, mediaType),
+          nextPage => fetchCollection(id, nextPage, 50, mediaType, requestFilters),
           savedCollectionPage(sessionStorage, collectionStateKey),
-          () => active,
+          () => active && generation === requestGeneration.current && activeKey.current === collectionStateKey,
         )
-        if (!active || !restored) return
+        if (!active || generation !== requestGeneration.current || activeKey.current !== collectionStateKey || !restored) return
         setCollection(restored.collection)
         setImages(restored.images)
         setPage(restored.page)
         setHasMore(restored.hasMore)
         sessionStorage.setItem(`${collectionStateKey}_page`, String(restored.page))
       } catch (error) {
-        console.error('Failed to restore collection:', error)
-        if (active) {
+        if (active && generation === requestGeneration.current && activeKey.current === collectionStateKey) {
+          setNotice(error?.response?.data?.error || error.message || 'Could not load this collection.')
           setCollection(null)
           setImages([])
           setPage(1)
           setHasMore(false)
         }
       } finally {
-        if (active) {
+        if (active && generation === requestGeneration.current && activeKey.current === collectionStateKey) {
+          paginationBusy.current = false
           setLoadedCollectionKey(collectionStateKey)
           setLoading(false)
         }
       }
     }
     restore()
-    return () => { active = false }
-  }, [id, mediaType, collectionStateKey])
+    return () => { active = false; requestGeneration.current += 1; paginationBusy.current = false }
+  }, [id, mediaType, collectionStateKey, requestFilters])
 
   useEffect(() => {
     if (loading || loadedCollectionKey !== collectionStateKey || restoredScrollKeyRef.current === collectionStateKey) return
@@ -94,11 +118,13 @@ export default function CollectionDetailPage() {
   }, [loading, loadedCollectionKey, collectionStateKey])
 
   const handleLoadMore = useCallback(async () => {
-    if (!hasMore || loading) return false
+    if (!hasMore || loading || paginationBusy.current || loadedCollectionKey !== collectionStateKey) return false
+    paginationBusy.current = true
     const nextPage = page + 1
     setLoading(true)
-    return loadCollection(nextPage, true)
-  }, [hasMore, loading, page, loadCollection])
+    const generation = requestGeneration.current
+    try { return await loadCollection(nextPage, true) } finally { if (generation === requestGeneration.current) paginationBusy.current = false }
+  }, [hasMore, loading, page, loadCollection, loadedCollectionKey, collectionStateKey])
 
   const handleImageClick = (image) => {
     const locator = adjustmentLocator(image)
@@ -127,9 +153,12 @@ export default function CollectionDetailPage() {
 
   const handleSaveName = async () => {
     if (!editName.trim()) return
+    const generation = requestGeneration.current
+    const name = editName.trim()
     try {
-      await updateCollection(id, { name: editName.trim() })
-      setCollection(prev => ({ ...prev, name: editName.trim() }))
+      await updateCollection(id, { name })
+      if (generation !== requestGeneration.current || activeKey.current !== collectionStateKey) return
+      setCollection(prev => prev ? { ...prev, name } : prev)
       setEditing(false)
     } catch (e) {
       console.error('Failed to update name:', e)
@@ -139,8 +168,10 @@ export default function CollectionDetailPage() {
   const handleRemoveFromCollection = useCallback(async (image) => {
     if (removingRef.current) return
     removingRef.current = true
+    const generation = requestGeneration.current
     try {
       await removeFromCollection(id, [image.collection_legacy_member ? image.id : image])
+      if (generation !== requestGeneration.current || activeKey.current !== collectionStateKey) return
       handleLightboxClose()
       setImages(prev => prev.filter(img => !(imageMatchesLocator(img, adjustmentLocator(image)) && img.collection_legacy_member === image.collection_legacy_member)))
       setCollection(prev => prev ? { ...prev, item_count: Math.max(0, (prev.item_count || 1) - 1) } : prev)
@@ -149,63 +180,42 @@ export default function CollectionDetailPage() {
     } finally {
       removingRef.current = false
     }
-  }, [id, handleLightboxClose])
+  }, [id, handleLightboxClose, collectionStateKey])
 
+  const visibleCollection = loadedCollectionKey === collectionStateKey ? collection : null
   const lightboxImageIndex = lightboxIndex !== null
-    ? images.findIndex(image => imageMatchesLocator(image, lightboxIndex))
+    && loadedCollectionKey === collectionStateKey ? images.findIndex(image => imageMatchesLocator(image, lightboxIndex))
     : -1
 
   return (
     <div className="app">
+      {sidebarHover && <div className="sidebar-backdrop lightbox-backdrop" onClick={() => setSidebarHover(false)} />}
       <div className="main-container">
         {drawer.isOpen && <div className="sidebar-backdrop" onClick={drawer.close} />}
-        <Sidebar mediaType={mediaType} mobileOpen={drawer.isOpen} onClose={drawer.close} currentCollection={collection} onRenameCollection={collection ? () => { setEditing(true); setEditName(collection.name) } : undefined} />
+        <Sidebar {...collectionSidebarProps(filters)} defaultSort="collection" mediaType={mediaType} mobileOpen={drawer.isOpen}
+          onClose={() => { drawer.close(); setSidebarHover(false) }} currentCollection={visibleCollection}
+          selectedImage={images[lightboxImageIndex]} lightboxMode={lightboxImageIndex >= 0} lightboxHover={sidebarHover} onMouseLeave={() => setSidebarHover(false)}
+          onSearch={(...args) => setSearchParams(sidebarFilterParams(searchParams, false, ...args))}
+          onTagClick={tag => setSearchParams(toggleCollectionTag(searchParams, tag))}
+          onRenameCollection={visibleCollection ? () => { setEditing(true); setEditName(visibleCollection.name) } : undefined}
+          sidebarActions={<><button className="media-collection-link collection-sidebar-action" onClick={() => navigate(`/collections?media_type=${mediaType}`, { state: { galleryReturnTo } })}>← Back to Collections</button>
+            {editing ? <div className="collection-name-editor"><input aria-label="Collection name" value={editName} onChange={event => setEditName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSaveName() }} autoFocus className="collection-name-input" /><button onClick={handleSaveName} className="collection-save-btn">Save</button></div> : <h3>{visibleCollection?.name || 'Collection'}</h3>}
+          </>} />
         <main className="content with-sidebar collection-detail-page" onScrollCapture={(event) => {
-          if (event.target.classList?.contains('masonry-container')) {
+          if (loadedCollectionKey === collectionStateKey && event.target.classList?.contains('masonry-container')) {
             sessionStorage.setItem(`${collectionStateKey}_scroll`, String(event.target.scrollTop))
           }
         }}>
-        <div className="collections-header collection-detail-header">
-          <div className="collection-detail-title-row">
-            <button className="menu-btn mobile-only" onClick={drawer.open} aria-label="Open menu">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 12h18M3 6h18M3 18h18"/>
-              </svg>
-            </button>
-            <button
-              className="collections-create-btn collection-back-btn"
-              onClick={() => navigate(`/collections?media_type=${mediaType}`, { state: { galleryReturnTo } })}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-              Back to Collections
-            </button>
-            {editing ? (
-              <div className="collection-name-editor">
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveName() }}
-                  autoFocus
-                  className="collection-name-input"
-                />
-                <button onClick={handleSaveName} className="collection-save-btn">Save</button>
-              </div>
-            ) : (
-              <h1 className="collection-editable-name" onClick={() => { setEditing(true); setEditName(collection?.name || '') }}>
-                {collection?.name || 'Loading...'}
-                {collection && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: '8px' }}>({collection.item_count} items)</span>}
-              </h1>
-            )}
-          </div>
-        </div>
+        <button className="menu-btn mobile-only collection-mobile-menu" onClick={drawer.open} aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18" /></svg></button>
+        <div className="floating-controls"><GalleryTileSizeControl tileSize={tileSize} onChange={setTileSize} /></div>
+        {notice && <p className="collection-filter-notice" role="alert">{notice}</p>}
 
         {loadedCollectionKey !== collectionStateKey ? (
           <div className="collections-loading">Loading...</div>
         ) : images.length === 0 ? (
           <div className="collections-empty">
-            <h2>Empty collection</h2>
-            <p>Add {mediaType === 'video' ? 'videos' : 'images'} from the gallery lightbox.</p>
+            <h2>{Object.keys(requestFilters).length ? 'No matching items' : 'Empty collection'}</h2>
+            <p>{Object.keys(requestFilters).length ? 'Try changing the sidebar filters.' : <>Add {mediaType === 'video' ? 'videos' : 'images'} from the gallery lightbox.</>}</p>
           </div>
         ) : (
           <MasonryGrid
@@ -214,7 +224,7 @@ export default function CollectionDetailPage() {
             onLoadMore={handleLoadMore}
             loading={loading}
             hasMore={hasMore}
-            tileSize={3}
+            tileSize={tileSize}
           />
         )}
 
@@ -230,7 +240,9 @@ export default function CollectionDetailPage() {
                 setLightboxIndex(adjustmentLocator(images[newIdx]))
               }
             }}
-            onTagClick={() => {}}
+            onTagClick={tag => setSearchParams(toggleCollectionTag(searchParams, tag))}
+            onSidebarHover={setSidebarHover}
+            sidebarOpen={drawer.isOpen || sidebarHover}
             onImageUpdate={(locator, updates) => {
               setImages(previous => updateImagesByLocator(previous, locator, updates))
             }}
