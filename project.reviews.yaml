@@ -13500,6 +13500,18 @@ reviews:
         required: true
         created_at: 2026-10-06T03:32:44.304Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 0323698fb38a3c5d0cae3b8861ee27d65ef51aa7
+        evidence: GatedVitebuild session84422exit0,309modules,newindex-C93mKSDU.js/CSSindex-BPbxtGJA.css.
+          Actualsourcefrontendbuilt, temporarytestfixturesreplaced. NativePATHfixed retry17294
+          started aftergatecleared.
+        name: frontend-production-build
+        required: true
+        created_at: 2026-10-06T03:44:21.752Z
+        completed_at: 2026-10-06T03:44:21.752Z
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13577,6 +13589,13 @@ reviews:
           status: running
           name: rust-focused
         timestamp: 2026-10-06T03:32:44.389Z
+      - _ulid: 01M47MZYA75Y1YQW1CZVAJEWAA
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-production-build
+        timestamp: 2026-10-06T03:44:21.832Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13591,7 +13610,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T03:32:44.304Z
+    updated_at: 2026-10-06T03:44:21.752Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
