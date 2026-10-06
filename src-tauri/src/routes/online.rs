@@ -2884,7 +2884,9 @@ async fn creator_preferences(
     .into_iter()
     .find(|r| r["id"] == creator)
     .ok_or_else(|| AppError::NotFound("Creator not found".into()))?;
-    Ok(Json(row))
+    Ok(Json(
+        json!({"creator":row,"offline":offline::settings(state.data_dir(),&id)?}),
+    ))
 }
 
 static OFFLINE_PERMITS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
@@ -3684,6 +3686,84 @@ mod creator_offline_tests {
                 .item
                 .remote_post_id,
             "42"
+        );
+    }
+
+    #[tokio::test]
+    async fn creator_preferences_returns_creator_and_complete_source_settings() {
+        let (_dir, state, source, _) = setup(64);
+        let Json(result) = creator_preferences(
+            State(state),
+            AxumPath((source.source_id, "creator-1".into())),
+            Json(offline::CreatorPatch {
+                following: Some(true),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["creator"]["following"], true);
+        assert_eq!(result["offline"]["storage_limit_bytes"], 64);
+        assert_eq!(result["offline"]["sync_all_creators"], true);
+        assert_eq!(result["offline"]["paused"], false);
+        assert_eq!(result["offline"]["peer_hosting_enabled"], false);
+    }
+
+    #[test]
+    fn paused_downloads_keep_hosting_selected_copies_and_require_observed_report() {
+        let (dir, _, source, queued) = setup(64);
+        retain(dir.path(), &source, &queued, b"copy");
+        let mut canonical = queued.item.clone();
+        canonical.media[0].sha256 = Some(format!("{:x}", Sha256::digest(b"copy")));
+        canonical.media[0].byte_size = Some(4);
+        offline::refresh_metadata(dir.path(), &source.source_id, &canonical, &queued.metadata)
+            .unwrap();
+        offline::patch_settings(
+            dir.path(),
+            &source.source_id,
+            &offline::SettingsPatch {
+                paused: Some(true),
+                peer_hosting_enabled: Some(true),
+                confirmed_hosting: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(!offline::active(dir.path(), &source.source_id).unwrap());
+        assert!(
+            offline::retained_variant(dir.path(), &source.source_id, "42", "original", false)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            offline::settings(dir.path(), &source.source_id).unwrap()["peer_hosting_state"],
+            "idle"
+        );
+        offline::open(dir.path())
+            .unwrap()
+            .execute(
+                "UPDATE offline_sources SET peer_reported_at=?1,peer_reported_items=1",
+                params![Utc::now().timestamp()],
+            )
+            .unwrap();
+        assert_eq!(
+            offline::settings(dir.path(), &source.source_id).unwrap()["peer_hosting_state"],
+            "hosting"
+        );
+        offline::patch_creator(
+            dir.path(),
+            &source.source_id,
+            "creator-1",
+            &offline::CreatorPatch {
+                offline_enabled: Some(false),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            offline::retained_variant(dir.path(), &source.source_id, "42", "original", false)
+                .unwrap()
+                .is_none()
         );
     }
 

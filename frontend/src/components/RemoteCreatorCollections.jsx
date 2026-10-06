@@ -22,7 +22,8 @@ const states = { disabled: 'Not kept offline', queued: 'Queued', syncing: 'Downl
 const offlineLabel = offline => {
   if (!offline) return 'Offline status unavailable'
   const progress = Number(offline.total_items) > 0 ? ` · ${offline.downloaded_items || 0}/${offline.total_items} items` : ''
-  return `${states[offline.state] || offline.state || 'Status unavailable'}${progress}`
+  const label = offline.partial && offline.state === 'ready' ? 'Partially available offline' : states[offline.state] || offline.state || 'Status unavailable'
+  return `${label}${offline.partial && offline.state === 'paused' ? ' · partial offline copies' : ''}${progress}`
 }
 
 export default function RemoteCreatorCollections({ sourceId, mediaType, selectedCreatorId, localCopies = false, view = 'available', query = '', onDirectoryChange, onSelectCreator }) {
@@ -45,6 +46,7 @@ export default function RemoteCreatorCollections({ sourceId, mediaType, selected
   const mutationBusy = useRef(false)
   const [review, setReview] = useState(null)
   const [budget, setBudget] = useState('5')
+  const [helpHost, setHelpHost] = useState(true)
   const dialogRef = useRef(null)
   const triggerRef = useRef(null)
   const current = directory.scope === scope ? directory : { creators: [], page: 0, hasMore: false, loading: true, error: '' }
@@ -106,6 +108,7 @@ export default function RemoteCreatorCollections({ sourceId, mediaType, selected
   const openReview = action => {
     triggerRef.current = document.activeElement
     setBudget(String(settings?.storage_limit_bytes > 0 ? settings.storage_limit_bytes / GiB : 5))
+    setHelpHost(true)
     setNotice(''); setReview(action)
   }
   const mutate = async (action, preference = null) => {
@@ -142,8 +145,9 @@ export default function RemoteCreatorCollections({ sourceId, mediaType, selected
     if (review.kind === 'remove') { mutate({ remove_copies: true }); return }
     if (review.kind !== 'hosting' && !validCap) return
     const storage_limit_bytes = Math.round(cap)
-    if (review.kind === 'creator') mutate(review.creator, { offline_enabled: true, storage_limit_bytes, confirmed_download: true })
-    else if (review.kind === 'all') mutate({ sync_all_creators: true, storage_limit_bytes, confirmed_download: true })
+    const hosting = { peer_hosting_enabled: helpHost, confirmed_hosting: helpHost }
+    if (review.kind === 'creator') mutate(review.creator, { offline_enabled: true, storage_limit_bytes, confirmed_download: true, ...hosting })
+    else if (review.kind === 'all') mutate({ sync_all_creators: true, storage_limit_bytes, confirmed_download: true, ...hosting })
     else if (review.kind === 'hosting') mutate({ peer_hosting_enabled: true, confirmed_hosting: true })
     else mutate({ storage_limit_bytes })
   }
@@ -187,6 +191,8 @@ export default function RemoteCreatorCollections({ sourceId, mediaType, selected
       {review.kind === 'all' && <p>Download every creator collection in this community, including future creators, within the storage limit.</p>}
       {review.kind === 'creator' && <p>Download this creator’s published collection and keep it up to date within the community storage limit. Following is a separate choice.</p>}
       {review.kind === 'hosting' ? <p>Share verified community downloads with authorized peers while DonutMediaCenter runs. The community checks each recipient’s access. Hosting uses your network connection and can be stopped at any time. Credentials and personal library files stay private.</p> : review.kind === 'remove' ? <p>Remove {bytesLabel(settings?.downloaded_bytes)} of downloaded copies from this device and stop this community’s downloads and hosting. The community connection, following choices, and your personal library files remain. You will need an available host to download these copies again.</p> : <><label>Community storage limit (GiB)<input type="number" min="0.01" step="0.01" value={budget} onChange={event => setBudget(event.target.value)} required /></label><p>{bytesLabel(settings?.downloaded_bytes)} currently downloaded. Downloads pause when the limit is reached.</p></>}
+      {['creator', 'all'].includes(review.kind) && <label className="creator-host-choice"><input type="checkbox" checked={helpHost} onChange={event => setHelpHost(event.target.checked)} />Help host this community’s downloads while DMC is running</label>}
+      {['creator', 'all'].includes(review.kind) && <p>Hosting supplies verified copies to authorized community members using your network connection. You can stop it separately from downloads.</p>}
       {notice && <p role="alert">{notice}</p>}
       <div className="creator-review-actions"><button type="button" disabled={mutating} onClick={() => setReview(null)}>Cancel</button><button type="submit" disabled={mutating || (!['hosting', 'remove'].includes(review.kind) && !validCap)}>{mutating ? 'Saving…' : review.kind === 'hosting' ? 'Start hosting' : review.kind === 'remove' ? 'Remove copies' : review.kind === 'budget' ? 'Save limit' : 'Start downloads'}</button></div>
     </form></div>, document.body)}

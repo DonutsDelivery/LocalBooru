@@ -870,7 +870,26 @@ async fn receive(
 /// Heartbeat all ready retained renditions in bounded proofs, independently of
 /// downloads. Each proof refreshes its chunk for 120 seconds; empty withdraws.
 pub async fn publish_retained(state: &AppState, source_id: &str) -> Result<()> {
+    let result = publish_retained_inner(state, source_id).await;
+    if result.is_err() {
+        // A failed heartbeat never leaves a fresh optimistic hosting label.
+        let _ = super::offline::hosting_reported(state.data_dir(), source_id, 0);
+    }
+    result
+}
+
+async fn publish_retained_inner(state: &AppState, source_id: &str) -> Result<()> {
     use crate::routes::online::{load_hub, load_source};
+    let prefs = super::offline::settings(state.data_dir(), source_id).map_err(|e| e.to_string())?;
+    if !prefs["peer_hosting_enabled"].as_bool().unwrap_or(false)
+        && prefs["peer_reported_items"].as_u64().unwrap_or(0) == 0
+    {
+        // Ordinary personal sync does not bind an endpoint or require optional
+        // peer authority when the user never opted into hosting.
+        super::offline::hosting_reported(state.data_dir(), source_id, 0)
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     let source = load_source(state.data_dir(), source_id).map_err(|e| e.to_string())?;
     let config = load_hub(state.data_dir(), source_id)
         .map_err(|e| e.to_string())?
@@ -880,7 +899,7 @@ pub async fn publish_retained(state: &AppState, source_id: &str) -> Result<()> {
         ensure_provider(state.data_dir(), &config.bootstrap, config.transport_mode).await?;
     let mut cursor = (String::new(), String::new());
     let mut done = false;
-    let mut advertised = false;
+    let mut advertised = 0usize;
     while !done {
         // Bound memory and pending challenges. Four proofs can cover a large
         // collection within the report TTL without exceeding the hub's cap of
@@ -904,7 +923,7 @@ pub async fn publish_retained(state: &AppState, source_id: &str) -> Result<()> {
             .map_err(|_| "Peer manifest worker failed")??;
             let items: Vec<serde_json::Value> = records.into_iter().map(|r| serde_json::json!({"remote_post_id":r.remote_post_id,"variant":r.kind,"sha256":r.sha256,"byte_size":r.bytes})).collect();
             if !items.is_empty() {
-                advertised = true;
+                advertised = advertised.saturating_add(items.len());
                 batches.push(items);
             }
             match next {
@@ -926,9 +945,11 @@ pub async fn publish_retained(state: &AppState, source_id: &str) -> Result<()> {
             result?;
         }
     }
-    if !advertised {
+    if advertised == 0 {
         publish_chunk(state, &source, &config, &provider, vec![]).await?;
     }
+    super::offline::hosting_reported(state.data_dir(), source_id, advertised)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1273,6 +1294,10 @@ mod tests {
                 conn.execute("UPDATE offline_sources SET peer_hosting_enabled=0", [])
                     .unwrap();
             }
+            "paused" => {
+                conn.execute("UPDATE offline_sources SET paused=1", [])
+                    .unwrap();
+            }
             "withdrawn" => {
                 conn.execute("UPDATE offline_items SET withdrawn=1", [])
                     .unwrap();
@@ -1349,7 +1374,7 @@ mod tests {
         .await;
         connection.close(0u32.into(), b"receive test complete");
         let served = task.await.unwrap();
-        if case == "valid" {
+        if matches!(case, "valid" | "paused") {
             received.unwrap();
             served.unwrap();
             assert_eq!(std::fs::read(&destination).unwrap(), canonical);
@@ -1368,6 +1393,7 @@ mod tests {
     #[tokio::test]
     async fn ephemeral_iroh_actual_serve_checks_retention_hash_and_fresh_authorization() {
         actual_serve_case("valid").await;
+        actual_serve_case("paused").await;
         actual_serve_case("corrupt").await;
         actual_serve_case("disabled").await;
         actual_serve_case("withdrawn").await;
@@ -1375,5 +1401,26 @@ mod tests {
         actual_serve_case("wrong_realm").await;
         actual_serve_case("mode_changed").await;
         actual_serve_case("hub_denied").await;
+    }
+
+    #[tokio::test]
+    async fn personal_only_sync_skips_optional_authority_and_endpoint_binding() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = AppState::new(directory.path(), 0).unwrap();
+        crate::routes::online::initialize_offline_database(directory.path()).unwrap();
+        let conn = super::super::offline::open(directory.path()).unwrap();
+        conn.execute("INSERT INTO remote_sources(source_id,provider_family,display_name,normalized_base_url,capabilities_json,created_at) VALUES('personal','native-hub','Hub','https://hub.example','{}','now')", []).unwrap();
+        conn.execute("INSERT INTO offline_sources(source_id,enabled,sync_all_creators,peer_hosting_enabled,state,peer_reported_items) VALUES('personal',1,1,0,'ready',0)", []).unwrap();
+        drop(conn);
+        // No enrolled peer authority or runtime exists for this profile. An
+        // ordinary download preference must still have a successful heartbeat.
+        publish_retained(&state, "personal").await.unwrap();
+        let prefs = super::super::offline::settings(directory.path(), "personal").unwrap();
+        assert_eq!(prefs["peer_hosting_state"], "disabled");
+        assert_eq!(prefs["peer_reported_items"], 0);
+        assert!(!directory
+            .path()
+            .join("online-peer-authorities.json")
+            .exists());
     }
 }

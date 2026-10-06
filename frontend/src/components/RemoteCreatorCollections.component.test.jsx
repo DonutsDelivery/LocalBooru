@@ -51,6 +51,26 @@ test('following is a separate preference and starts no downloads', async () => {
 })
 
 // AC: @creator-community-replication ac-3
+// AC: @creator-community-replication ac-5
+test('download review offers hosting and honors a personal-only choice', async () => {
+  render(<RemoteCreatorCollections {...props()} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Keep available offline Alice' }))
+  const hosting = screen.getByRole('checkbox', { name: /Help host this community/ })
+  expect(hosting.checked).toBe(true)
+  fireEvent.click(hosting)
+  fireEvent.click(screen.getByRole('button', { name: 'Start downloads' }))
+  await waitFor(() => expect(updateRemoteCreatorPreferences).toHaveBeenCalledWith('one', 'alice', expect.objectContaining({ offline_enabled: true, peer_hosting_enabled: false, confirmed_hosting: false })))
+})
+
+// AC: @creator-community-replication ac-6
+test('partial retained coverage is not labeled complete when synchronization status is ready', async () => {
+  row = { ...creator(), offline: { enabled: true, state: 'ready', partial: true, downloaded_items: 1, total_items: 2 } }
+  render(<RemoteCreatorCollections {...props()} />)
+  await screen.findByText('Partially available offline · 1/2 items')
+  expect(screen.queryByText('Available offline · 1/2 items')).toBeNull()
+})
+
+// AC: @creator-community-replication ac-3
 test('individual offline sync starts only from reviewed storage controls and uses an atomic cap', async () => {
   render(<RemoteCreatorCollections {...props()} />)
   fireEvent.click(await screen.findByRole('button', { name: 'Keep available offline Alice' }))
@@ -59,7 +79,7 @@ test('individual offline sync starts only from reviewed storage controls and use
   fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '2.5' } })
   fireEvent.click(screen.getByRole('button', { name: 'Start downloads' }))
   await screen.findByRole('button', { name: 'Stop offline sync Alice' })
-  expect(updateRemoteCreatorPreferences).toHaveBeenCalledWith('one', 'alice', { offline_enabled: true, storage_limit_bytes: 2.5 * GiB, confirmed_download: true })
+  expect(updateRemoteCreatorPreferences).toHaveBeenCalledWith('one', 'alice', { offline_enabled: true, storage_limit_bytes: 2.5 * GiB, confirmed_download: true, peer_hosting_enabled: true, confirmed_hosting: true })
   expect(row.following).toBe(false)
 })
 
@@ -72,7 +92,7 @@ test('sync all includes future creators and requires the chosen budget on the ac
   expect(screen.getByText(/including future creators/)).toBeTruthy()
   expect(updateRemoteOffline).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: 'Start downloads' }))
-  await waitFor(() => expect(updateRemoteOffline).toHaveBeenCalledWith('one', { sync_all_creators: true, storage_limit_bytes: 5 * GiB, confirmed_download: true }))
+  await waitFor(() => expect(updateRemoteOffline).toHaveBeenCalledWith('one', { sync_all_creators: true, storage_limit_bytes: 5 * GiB, confirmed_download: true, peer_hosting_enabled: true, confirmed_hosting: true }))
   await screen.findByRole('button', { name: 'Stop syncing all creators' })
 })
 

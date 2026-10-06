@@ -144,6 +144,15 @@
   flex-direction: column;
   gap: 8px;
 }
+.creator-review-dialog .creator-host-choice {
+  flex-direction: row;
+  align-items: flex-start;
+  font-size: .9rem;
+}
+.creator-review-dialog .creator-host-choice input {
+  width: auto;
+  margin-top: 3px;
+}
 .creator-review-actions {
   display: flex;
   gap: 10px;

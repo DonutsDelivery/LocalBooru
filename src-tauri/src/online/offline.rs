@@ -31,7 +31,7 @@ pub fn open(data_dir: &Path) -> Result<Connection, AppError> {
         enabled INTEGER NOT NULL DEFAULT 0,sync_all_creators INTEGER NOT NULL DEFAULT 0,
         storage_limit_bytes INTEGER NOT NULL DEFAULT 0,paused INTEGER NOT NULL DEFAULT 0,
         peer_hosting_enabled INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'disabled',
-        error TEXT,last_sync_at TEXT,peer_error TEXT);
+        error TEXT,last_sync_at TEXT,peer_error TEXT,peer_reported_at INTEGER,peer_reported_items INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS offline_creators(
         source_id TEXT NOT NULL REFERENCES remote_sources(source_id) ON DELETE CASCADE,
         creator_id TEXT NOT NULL,name TEXT NOT NULL,directory_json TEXT NOT NULL DEFAULT '{}',
@@ -64,6 +64,22 @@ pub fn open(data_dir: &Path) -> Result<Connection, AppError> {
       CREATE INDEX IF NOT EXISTS offline_queue_state ON offline_queue(source_id,state);
       CREATE INDEX IF NOT EXISTS offline_items_creator ON offline_items(source_id,creator_id,media_type);
       CREATE INDEX IF NOT EXISTS offline_variants_path ON offline_variants(relative_path);")?;
+    for (column, definition) in [
+        ("peer_reported_at", "INTEGER"),
+        ("peer_reported_items", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('offline_sources') WHERE name=?1)",
+            params![column],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            conn.execute(
+                &format!("ALTER TABLE offline_sources ADD COLUMN {column} {definition}"),
+                [],
+            )?;
+        }
+    }
     Ok(conn)
 }
 
@@ -289,7 +305,7 @@ pub fn patch_creator(
 pub fn settings(data_dir: &Path, source_id: &str) -> Result<Value, AppError> {
     let conn = open(data_dir)?;
     ensure_settings(&conn, source_id)?;
-    let mut result=conn.query_row("SELECT enabled,sync_all_creators,storage_limit_bytes,paused,peer_hosting_enabled,state,error,last_sync_at,peer_error FROM offline_sources WHERE source_id=?1",params![source_id],|r|Ok(json!({"enabled":r.get::<_,bool>(0)?,"sync_all_creators":r.get::<_,bool>(1)?,"storage_limit_bytes":r.get::<_,i64>(2)?,"paused":r.get::<_,bool>(3)?,"peer_hosting_enabled":r.get::<_,bool>(4)?,"state":r.get::<_,String>(5)?,"error":r.get::<_,Option<String>>(6)?,"last_sync_at":r.get::<_,Option<String>>(7)?,"peer_hosting_error":r.get::<_,Option<String>>(8)?})))?;
+    let mut result=conn.query_row("SELECT enabled,sync_all_creators,storage_limit_bytes,paused,peer_hosting_enabled,state,error,last_sync_at,peer_error,peer_reported_at,peer_reported_items FROM offline_sources WHERE source_id=?1",params![source_id],|r|Ok(json!({"enabled":r.get::<_,bool>(0)?,"sync_all_creators":r.get::<_,bool>(1)?,"storage_limit_bytes":r.get::<_,i64>(2)?,"paused":r.get::<_,bool>(3)?,"peer_hosting_enabled":r.get::<_,bool>(4)?,"state":r.get::<_,String>(5)?,"error":r.get::<_,Option<String>>(6)?,"last_sync_at":r.get::<_,Option<String>>(7)?,"peer_hosting_error":r.get::<_,Option<String>>(8)?,"peer_reported_at":r.get::<_,Option<i64>>(9)?,"peer_reported_items":r.get::<_,i64>(10)?})))?;
     let (bytes,reserved,variants):(i64,i64,i64)=conn.query_row("SELECT COALESCE(SUM(CASE WHEN state='ready' THEN bytes ELSE 0 END),0),COALESCE(SUM(CASE WHEN state!='ready' THEN reserved_bytes ELSE 0 END),0),COALESCE(SUM(state='ready'),0) FROM offline_variants WHERE source_id=?1",params![source_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
     let items: i64 = conn.query_row(
         "SELECT COUNT(*) FROM offline_items i WHERE source_id=?1 AND json_array_length(item_json,'$.media')>0 AND NOT EXISTS(SELECT 1 FROM json_each(i.item_json,'$.media') m WHERE NOT EXISTS(SELECT 1 FROM offline_variants v WHERE v.source_id=i.source_id AND v.post_id=i.post_id AND v.revision=i.revision AND v.kind=json_extract(m.value,'$.kind') AND v.state='ready'))",
@@ -314,6 +330,14 @@ pub fn settings(data_dir: &Path, source_id: &str) -> Result<Value, AppError> {
     result["total_items"] = json!(expected.max(items + pending));
     result["downloaded_variants"] = json!(variants);
     result["total_variants"] = json!(total_variants.max(variants));
+    result["partial"] = json!(
+        result["state"] != "ready" || variants < total_variants || items < expected || pending > 0
+    );
+    let source_enabled: bool = conn.query_row(
+        "SELECT enabled FROM remote_sources WHERE source_id=?1",
+        params![source_id],
+        |r| r.get(0),
+    )?;
     result["peer_hosting_state"] = json!(if !result["peer_hosting_enabled"]
         .as_bool()
         .unwrap_or(false)
@@ -321,7 +345,13 @@ pub fn settings(data_dir: &Path, source_id: &str) -> Result<Value, AppError> {
         "disabled"
     } else if result["peer_hosting_error"].is_string() {
         "error"
-    } else if result["paused"] == true || result["enabled"] == false || items == 0 {
+    } else if !source_enabled
+        || result["enabled"] == false
+        || result["peer_reported_items"].as_u64().unwrap_or(0) == 0
+        || result["peer_reported_at"]
+            .as_i64()
+            .is_none_or(|timestamp| timestamp <= Utc::now().timestamp() - 120)
+    {
         "idle"
     } else {
         "hosting"
@@ -793,7 +823,7 @@ pub fn retained_variant(
 ) -> Result<Option<RetainedVariant>, String> {
     let result = (|| -> Result<Option<RetainedVariant>, AppError> {
         let conn = open(data_dir)?;
-        let eligible:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM offline_items i JOIN offline_sources o USING(source_id) JOIN remote_sources s USING(source_id) WHERE i.source_id=?1 AND i.post_id=?2 AND i.withdrawn=0 AND o.enabled=1 AND o.paused=0 AND o.peer_hosting_enabled=1 AND o.state NOT IN('auth_required','error') AND s.enabled=1 )",params![sid,pid],|r|r.get(0))?;
+        let eligible:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM offline_items i JOIN offline_sources o USING(source_id) JOIN remote_sources s USING(source_id) WHERE i.source_id=?1 AND i.post_id=?2 AND i.withdrawn=0 AND o.enabled=1 AND o.peer_hosting_enabled=1 AND o.state NOT IN('auth_required','error') AND s.enabled=1 )",params![sid,pid],|r|r.get(0))?;
         if !eligible {
             return Ok(None);
         };
@@ -1366,5 +1396,23 @@ fn recover_staging(data_dir: &Path) -> Result<(), AppError> {
             }
         }
     }
+    Ok(())
+}
+
+/// Record observed successful advertisement coverage, rather than inferring it
+/// from configuration or possession of personal bytes. Zero withdraws coverage.
+pub fn hosting_reported(data_dir: &Path, sid: &str, count: usize) -> Result<(), AppError> {
+    open(data_dir)?.execute(
+        "UPDATE offline_sources SET peer_reported_at=?2,peer_reported_items=?3 WHERE source_id=?1",
+        params![
+            sid,
+            if count == 0 {
+                None
+            } else {
+                Some(Utc::now().timestamp())
+            },
+            count as i64
+        ],
+    )?;
     Ok(())
 }
