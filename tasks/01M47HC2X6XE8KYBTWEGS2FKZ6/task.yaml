@@ -13,8 +13,17 @@ description: "Approved product direction: hub is creator discovery catalog. Side
 spec_ref: "@creator-community-replication"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Reviewed original commits merged into main7d81faf9 with tracked tree matching
+  tested59c3f0a1. Canonical installer57477 exited0; installed binary
+  SHA3b513d5ffe297e1ab33316c8caaf365f00d928c1709c3d64880804a06d140df1 and14production frontend
+  hashes match built artifacts, receipt /tmp/dmc-final-installed-receipt.json. No normal user
+  app/profile opened. Creator actual pinned-Iroh disposable runtime verified sidebar
+  creatorfilter,follow0bytes,6/6offlineoriginals,known401explicitoffline/lightbox;
+  receipt/tmp/dmc-creator-runtime-receipt.json. Node/operator
+  merged/deployed;44syntheticVPS+18anonymouspinnedrelay checks passed. Bunny/Discord retirement
+  remains separate authorized migration.
 depends_on: []
 context: []
 priority: 2
@@ -123,8 +132,30 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-06T07:05:54.457Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Reviewed original commits merged into main7d81faf9 with tracked tree matching tested59c3f0a1.
+          Canonical installer57477 exited0; installed binary
+          SHA3b513d5ffe297e1ab33316c8caaf365f00d928c1709c3d64880804a06d140df1 and14production
+          frontend hashes match built artifacts, receipt /tmp/dmc-final-installed-receipt.json. No
+          normal user app/profile opened. Creator actual pinned-Iroh disposable runtime verified
+          sidebar creatorfilter,follow0bytes,6/6offlineoriginals,known401explicitoffline/lightbox;
+          receipt/tmp/dmc-creator-runtime-receipt.json. Node/operator
+          merged/deployed;44syntheticVPS+18anonymouspinnedrelay checks passed. Bunny/Discord
+          retirement remains separate authorized migration.
+        previous: null
+      completed_at:
+        new: 2026-10-06T07:52:27.613Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-06T07:52:27.621Z
 prior_status: null
 created_at: 2026-10-06T02:41:05.446Z
 started_at: 2026-10-06T02:41:07.015Z
 submitted_at: 2026-10-06T07:05:54.457Z
+completed_at: 2026-10-06T07:52:27.613Z
 todos: []

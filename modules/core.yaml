@@ -171,7 +171,7 @@ features:
           familiar control and layout behavior.
         status:
           maturity: draft
-          implementation: in_progress
+          implementation: implemented
         depends_on: []
         implements: []
         relates_to: []
@@ -1675,6 +1675,9 @@ features:
     description: Discover publisher-owned creator collections through a hub; follow and explicitly
       retain chosen or all creators with bounded storage, personal offline access and authorized
       voluntary peer hosting.
+    status:
+      maturity: draft
+      implementation: implemented
     depends_on: []
     implements: []
     relates_to: []

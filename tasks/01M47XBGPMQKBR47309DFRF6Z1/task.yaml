@@ -10,8 +10,15 @@ description: User reports22 thumbnails from263-filefolder, gradual incomplete lo
 spec_ref: "@local-gallery-completeness"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Reviewed original commits merged into main7d81faf9 with tracked tree matching
+  tested59c3f0a1. Canonical installer57477 exited0; installed binary
+  SHA3b513d5ffe297e1ab33316c8caaf365f00d928c1709c3d64880804a06d140df1 and14production frontend
+  hashes match built artifacts, receipt /tmp/dmc-final-installed-receipt.json. No normal user
+  app/profile opened. Old isolated binary reproduced22/263 due legacyNULL view_count; focused
+  nativeHTTPtest now returns263uniquevideos in6pages without altering241NULLstoredrows. Original
+  compact five-level slider restored;focusedfrontend tests passed.
 depends_on: []
 context: []
 priority: 1
@@ -64,7 +71,28 @@ history:
         previous: null
     command: task-submit
     timestamp: 2026-10-06T07:05:55.133Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Reviewed original commits merged into main7d81faf9 with tracked tree matching tested59c3f0a1.
+          Canonical installer57477 exited0; installed binary
+          SHA3b513d5ffe297e1ab33316c8caaf365f00d928c1709c3d64880804a06d140df1 and14production
+          frontend hashes match built artifacts, receipt /tmp/dmc-final-installed-receipt.json. No
+          normal user app/profile opened. Old isolated binary reproduced22/263 due legacyNULL
+          view_count; focused nativeHTTPtest now returns263uniquevideos in6pages without
+          altering241NULLstoredrows. Original compact five-level slider restored;focusedfrontend
+          tests passed.
+        previous: null
+      completed_at:
+        new: 2026-10-06T07:52:27.982Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-06T07:52:27.987Z
 created_at: 2026-10-06T06:10:29.716Z
 started_at: 2026-10-06T06:10:29.892Z
 submitted_at: 2026-10-06T07:05:55.133Z
+completed_at: 2026-10-06T07:52:27.982Z
 todos: []
