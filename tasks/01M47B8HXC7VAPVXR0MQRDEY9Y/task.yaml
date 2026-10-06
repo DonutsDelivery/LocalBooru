@@ -1,0 +1,21 @@
+_ulid: 01M47B8HXC7VAPVXR0MQRDEY9Y
+slugs:
+  - community-gallery-parity
+title: Use shared masonry gallery and lightbox for community media
+type: bug
+description: Remote community browsing currently renders OnlinePage administrative square grid and
+  custom viewer. Reuse existing MasonryGrid/MediaItem and Lightbox with scoped remote media
+  adapters, infinite browsing, same navigation/zoom/details, explicit import, safe remote actions;
+  build install latest desktop for user.
+spec_ref: null
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 3
+tags: []
+vcs_refs: []
+created_at: 2026-10-06T00:54:18.284Z
+todos: []
