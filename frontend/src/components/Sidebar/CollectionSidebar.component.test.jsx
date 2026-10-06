@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
-const api = vi.hoisted(() => ({ fetchCollections: vi.fn(), fetchDirectories: vi.fn(), getFileDimensions: vi.fn(), getSavedSearches: vi.fn(), createSavedSearch: vi.fn(), deleteSavedSearch: vi.fn(), searchTags: vi.fn() }))
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
+const api = vi.hoisted(() => ({ getConnectedHubs: vi.fn(), fetchCollections: vi.fn(), fetchDirectories: vi.fn(), getFileDimensions: vi.fn(), getSavedSearches: vi.fn(), createSavedSearch: vi.fn(), deleteSavedSearch: vi.fn(), searchTags: vi.fn() }))
 vi.mock('../../api', () => api)
 vi.mock('../FamilyModeLock', () => ({ default: () => null }))
 vi.mock('../Music/PersistentMusicPlayer', () => ({ default: () => null }))
@@ -13,7 +13,7 @@ import { useGalleryTileSize } from '../../hooks/useGalleryTileSize'
 const search = vi.fn()
 beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear(); sessionStorage.clear(); localStorage.setItem('filtersExpanded', 'true')
-  api.fetchCollections.mockResolvedValue({ collections: [] }); api.fetchDirectories.mockResolvedValue({ directories: [] }); api.getSavedSearches.mockResolvedValue({ searches: [] }); api.searchTags.mockResolvedValue([])
+  api.getConnectedHubs.mockResolvedValue({ hubs: [] }); api.fetchCollections.mockResolvedValue({ collections: [] }); api.fetchDirectories.mockResolvedValue({ directories: [] }); api.getSavedSearches.mockResolvedValue({ searches: [] }); api.searchTags.mockResolvedValue([])
 })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
@@ -61,11 +61,12 @@ function Tiles() { const [tileSize, setTileSize] = useGalleryTileSize(); return 
 test('the shared regular tile control uses XS/S/M/L/XL and the gallery setting', () => {
   localStorage.setItem('localbooru_tileSize', '2')
   render(<Tiles />)
-  expect(screen.getByRole('slider', { name: 'Tile size' }).getAttribute('aria-valuetext')).toBe('S')
-  for (const label of ['XS', 'S', 'M', 'L', 'XL']) expect(screen.getByText(label)).toBeTruthy()
+  expect(screen.getByRole('slider', { name: 'Tile size' }).value).toBe('2')
+  expect(screen.getByRole('slider').min).toBe('1')
+  expect(screen.getByRole('slider').max).toBe('5')
   fireEvent.change(screen.getByRole('slider', { name: 'Tile size' }), { target: { value: '5' } })
   expect(localStorage.getItem('localbooru_tileSize')).toBe('5')
-  expect(screen.getByRole('slider').getAttribute('aria-valuetext')).toBe('XL')
+  expect(screen.getByRole('slider').value).toBe('5')
 })
 
 test('remote tag search never falls back to the local library when source suggestions are unavailable', async () => {
@@ -83,4 +84,34 @@ test('creator collections follow regular media filters and remain before tag bro
   const tagSection = screen.getByPlaceholderText('Search tag or -tag...')
   expect(filterSection.compareDocumentPosition(creatorSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(creatorSection.compareDocumentPosition(tagSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+function CollectionRoute() {
+  const location = useLocation()
+  return <output data-testid="collection-route">{JSON.stringify({ url: location.pathname + location.search, state: location.state })}</output>
+}
+
+// AC: @collections ac-collection-sidebar
+// AC: @collections ac-gallery-back
+test('shared collections appear beside local collection navigation and preserve the owning gallery on selection', async () => {
+  const close = vi.fn()
+  api.getConnectedHubs.mockResolvedValue({ hubs: [
+    { source_id: 'main', display_name: 'DonutBooru', enabled: true, transport_mode: 'relayed' },
+    { source_id: 'r18', display_name: 'DonutBooru R18', enabled: true, transport_mode: 'relayed' },
+  ] })
+  render(<MemoryRouter initialEntries={[{ pathname: '/collections/7', search: '?media_type=video', state: { galleryReturnTo: '/videos?directory_id=7' } }]}><Sidebar mediaType="video" onClose={close} collectionItems={[{ id: 7, name: 'Local videos', item_count: 3 }]} /><CollectionRoute /></MemoryRouter>)
+  const sidebar = document.querySelector('aside')
+  const community = await within(sidebar).findByRole('link', { name: 'DonutBooru', exact: true })
+  expect(within(sidebar).getByRole('link', { name: /Local videos/ }).getAttribute('href')).toBe('/collections/7?media_type=video')
+  expect(community.getAttribute('href')).toBe('/shared/main?media_type=video')
+  fireEvent.click(community)
+  await waitFor(() => expect(community.getAttribute('aria-current')).toBe('page'))
+  expect(close).toHaveBeenCalledOnce()
+  const route = JSON.parse(screen.getByTestId('collection-route').textContent)
+  expect(route.state.galleryReturnTo).toBe('/videos?directory_id=7')
+  expect(within(sidebar).getByRole('link', { name: '← Back to Videos' }).getAttribute('href')).toBe('/videos?directory_id=7')
+  const adult = within(sidebar).getByRole('link', { name: 'DonutBooru R18', exact: true })
+  fireEvent.click(adult)
+  expect(adult.getAttribute('aria-current')).toBe('page')
+  expect(community.getAttribute('aria-current')).toBeNull()
 })

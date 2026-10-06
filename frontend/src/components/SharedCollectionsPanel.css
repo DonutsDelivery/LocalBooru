@@ -1,9 +1,6 @@
-.shared-collections-panel { padding: 16px; border-bottom: 1px solid var(--border-color, #333); }
-.shared-collections-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.shared-collections-heading h2 { font-size: 1rem; margin: 0; }
-.shared-collections-panel p, .shared-collection-links span { color: var(--text-secondary, #aaa); font-size: .85rem; }
-.shared-collection-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
-.shared-collection-links > * { display: flex; flex-direction: column; gap: 6px; min-width: 180px; padding: 12px; background: var(--bg-secondary, #222); border-radius: 8px; color: var(--text-primary, #eee); text-decoration: none; }
+.shared-collections-panel p,
+.shared-collection-link small { color: var(--text-secondary, #aaa); font-size: .8rem; }
+.shared-collection-link { flex-direction: column; gap: 4px; }
 .shared-collection-page { overflow-y: auto; }
 .shared-collection-page > header { display: flex; justify-content: space-between; gap: 12px; padding: 16px; }
 .shared-collection-page > header button { padding: 8px 12px; }
