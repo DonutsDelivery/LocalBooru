@@ -9,3 +9,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T02:43:54.022Z
+  - _ulid: 01M47JK0PG1SVH5S161WRWKM6Q
+    content: Resumed after interruption; existing work preserved. Creator sidebar focused tests pass,
+      exact personal offline URL marker and explicit Remove offline copies action added. Independent
+      helper9SQL/ASGI and operator7guard tests pass; node7creator/peer HTTP/SQL pass. Review fixes
+      protect retention on disconnect and ensure complete-item counts. Cargo online test compile
+      queued behind host gate occupied by another project; frontend production resources queued
+      first. No production or installed binary changes yet.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T03:02:21.136Z
