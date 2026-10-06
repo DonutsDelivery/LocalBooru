@@ -121,3 +121,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T06:01:50.760Z
+  - _ulid: 01M47WW6PWE7YJJ9T8VAX57EYQ
+    content: Reviewed Node parent integrated into local main; exact5f23549 formal approval with passing
+      checks and zero blockers. Unrelated Node integration working-tree paths preserved. No push or
+      production activation. DMC creator runtime and shared sign-in stacked implementation remain in
+      progress.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T06:02:07.964Z
