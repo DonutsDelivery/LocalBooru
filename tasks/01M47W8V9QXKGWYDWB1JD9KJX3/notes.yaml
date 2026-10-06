@@ -11,3 +11,11 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-06T05:57:13.756Z
+  - _ulid: 01M47XTDP8JRZ17PPHCF0K2RDF
+    content: Approved Node e7ffbda merged into integration main76a3178 preserving unrelated changes.
+      Exact combined public overlay44synthetic tests pass locally and VPSPython3.10, no production
+      credentials/DB/lifespan. DMCd5eff9ed native checks queued in combined frozen230b74df
+      throughhostgate; legacyvideo NULLread fix andoriginalcompactslider included.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-06T06:18:38.152Z
