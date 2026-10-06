@@ -13475,6 +13475,18 @@ reviews:
         required: true
         created_at: 2026-10-06T03:27:23.128Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: a9ef7551
+          head_commit: 0323698fb38a3c5d0cae3b8861ee27d65ef51aa7
+        evidence: Finalretainedcoveragebanner regression+currentcreator/Collections components39tests
+          pass;11galleryfilter/remoteasset helpers pass; prior45fullfocused componentcases passed
+          beforebanner-onlydelta.
+        name: frontend-focused
+        required: true
+        created_at: 2026-10-06T03:32:42.818Z
+        completed_at: 2026-10-06T03:32:42.818Z
     events:
       - _ulid: 01M47K4VPFBBDCYTR2WXTQSADA
         actor: DonutsDelivery
@@ -13538,6 +13550,13 @@ reviews:
           new_head: 0323698fb38a3c5d0cae3b8861ee27d65ef51aa7
           previous_head: 72fda94331aec2c2b1cd978471daf26465d0d553
         timestamp: 2026-10-06T03:32:41.392Z
+      - _ulid: 01M47MAKRP1KQ5B748FV7DPYGM
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: frontend-focused
+        timestamp: 2026-10-06T03:32:42.902Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -13552,7 +13571,7 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-06T03:12:05.839Z
-    updated_at: 2026-10-06T03:32:41.305Z
+    updated_at: 2026-10-06T03:32:42.818Z
     notes: []
   - _ulid: 01M47K4X6SXVMSR5RRF5KSVCAM
     slugs:
