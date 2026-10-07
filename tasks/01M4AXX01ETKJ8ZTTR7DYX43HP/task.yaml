@@ -1,0 +1,20 @@
+_ulid: 01M4AXX01ETKJ8ZTTR7DYX43HP
+slugs:
+  - create-multi-face-routing
+title: Route character face prompts by detected position
+type: task
+description: Implement ordered per-character enhancer outputs, review display and detected-face
+  position mapping into separate text/positive conditioning, preserving single-face workflows and
+  reporting ambiguous matches.
+spec_ref: "@create-multiple-face-prompts"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 2
+tags: []
+vcs_refs: []
+created_at: 2026-10-07T10:17:45.774Z
+todos: []

@@ -1305,6 +1305,45 @@ features:
         tags: []
         created: 2026-10-07T01:09:52.281Z
         notes: []
+      - _ulid: 01M4AXWY2D9YMEPFAEPJT9GTTT
+        slugs:
+          - create-multiple-face-prompts
+        title: Per-character face prompts
+        type: requirement
+        description: Create retains distinct facial descriptions for several characters and applies them to
+          corresponding visible faces in left-to-right order. Enhancement preserves identity and
+          spatial associations instead of merging subjects.
+        depends_on: []
+        implements: []
+        relates_to: []
+        tests: []
+        traits: []
+        acceptance_criteria:
+          - given: The image brief describes several visible characters and their positions or supplies ordered
+              facial descriptions
+            id: ac-character-prompts
+            then: The run exposes a separate face-only description for each intended character, preserves
+              identity and facial facts, and orders descriptions from left to right without merging
+              subjects.
+            when: Per-run enhancement prepares the image and face descriptions
+          - given: A generated image has several detected faces and corresponding ordered facial descriptions
+            id: ac-spatial-matching
+            then: Detected faces are ordered by horizontal position with deterministic handling of equal
+              positions, and each face receives only its corresponding description and conditioning.
+            when: Face detail runs
+          - given: Face detections and intended descriptions cannot be matched unambiguously
+            id: ac-mismatch
+            then: The studio reports the mismatch and avoids applying another character's description to
+              unmatched faces.
+            when: Face detail is prepared
+          - given: An existing workflow uses a single face description or enhancement is disabled
+            id: ac-single-face-compatible
+            then: Single-face behavior and source descriptions remain available, and multi-face runs retain the
+              ordered character descriptions used for that run.
+            when: The user generates and reloads saved metadata
+        tags: []
+        created: 2026-10-07T10:17:43.757Z
+        notes: []
     created: 2026-09-29T23:03:40.541Z
     notes: []
 requirements:
