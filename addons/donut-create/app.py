@@ -27,7 +27,7 @@ from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
 import httpx
 import local_backend
-from dmc_face_detailer import face_prompts as parse_face_plan
+from face_plan import face_prompts as parse_face_plan
 import websockets
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -239,11 +239,9 @@ class Controller:
     def expected_capabilities(self) -> dict[str, Any]:
         if hasattr(self.installer, "expected_capabilities"):
             capabilities = self.installer.expected_capabilities()
-            if self.config["mode"] != "managed":
-                # External backends can keep using their existing single-face
-                # workflows; ordered routing checks its node at submission.
-                capabilities = {**capabilities, "required_nodes": [node for node in capabilities["required_nodes"]
-                                if node != "DMCFaceDetailer"]}
+            # Ordered routing checks this optional capability at submission.
+            capabilities = {**capabilities, "required_nodes": [node for node in capabilities["required_nodes"]
+                            if node != "DMCFaceDetailer"]}
             return capabilities
         manifest = read_json(Path(__file__).with_name("runtime.json"), {})
         profile = self.installer.status().get("profile") or manifest.get("default_profile", "base")
@@ -297,6 +295,7 @@ class Controller:
         result = {"running": False, "ready": False,
                   "owned": self.config["mode"] in {"managed", "local"} and self.backend_owned(),
                   "error": self.backend_error, "missing_nodes": [], "missing_models": []}
+        registered = False
         try:
             info = await self.backend_json(backend, "object_info")
             await self.reattach_backend()
@@ -304,6 +303,7 @@ class Controller:
             if not isinstance(info, dict):
                 raise HTTPException(502, "ComfyUI returned invalid node information.")
             result["running"] = True
+            registered = "DMCFaceDetailer" in info
             capabilities = self.expected_capabilities()
             required = set(capabilities.get("required_nodes", []))
             result["missing_nodes"] = sorted(required - set(info))
@@ -334,6 +334,20 @@ class Controller:
                 result["error"] = f"ComfyUI exited with code {self.process.returncode}. Check the installation and restart it."
         result["controllable"] = self.config["mode"] in {"managed", "local"}
         result["state"] = "running" if result["running"] else "starting" if result["owned"] else "stopped"
+        manifest = read_json(Path(__file__).with_name("runtime.json"), {})
+        required = next((pack.get("commit") for pack in manifest.get("node_packs", [])
+                         if pack.get("directory") == "donutnodes"), None)
+        setup = self.installer.status()
+        update = setup.get("node_update", {})
+        root = str(self.installer.backend_root) if self.config["mode"] == "managed" else self.config.get("comfy_directory")
+        relevant = update.get("target") == root
+        result["face_node"] = {"registered": registered,
+                               "updateable": result["controllable"] and not result["running"] and not result["owned"] and not setup.get("running", False),
+                               "restart_needed": bool(relevant and update.get("restart_needed") and not registered),
+                               "required_commit": required,
+                               "error": update.get("error") if relevant else None}
+        if self.config["mode"] == "existing" and not registered:
+            result["face_node"]["error"] = "Install the required DonutNodes version on the ComfyUI host, then restart ComfyUI."
         return result
 
     async def status(self) -> dict[str, Any]:
@@ -366,6 +380,8 @@ class Controller:
         async with self.backend_lock:
             if self.closing:
                 raise HTTPException(503, "The creator add-on is shutting down.")
+            if self.installer.status().get("running"):
+                raise HTTPException(409, "Wait for setup or the node update to finish before changing the backend.")
             if options["mode"] not in {"managed", "existing", "local"}:
                 raise HTTPException(400, "Choose a supported backend mode.")
             if self.backend_owned():
@@ -405,6 +421,8 @@ class Controller:
             raise HTTPException(503, "The creator add-on is shutting down.")
         if self.config["mode"] not in {"managed", "local"}:
             raise HTTPException(409, "Register a local ComfyUI installation to control it, or use managed ComfyUI.")
+        if self.installer.status().get("operation") == "nodes" and self.installer.status().get("running"):
+            raise HTTPException(409, "Wait for the DonutNodes update to finish before starting ComfyUI.")
         if self.backend_owned():
             return
         if self.config["mode"] == "managed":
@@ -445,6 +463,36 @@ class Controller:
         except OSError:
             self.backend_error = "ComfyUI could not start. Check its installation and Python executable."
             raise HTTPException(502, self.backend_error) from None
+
+    async def update_nodes(self) -> dict[str, Any]:
+        from installer import SetupError
+        async with self.backend_lock:
+            if self.closing:
+                raise HTTPException(503, "The creator add-on is shutting down.")
+            if self.config["mode"] not in {"managed", "local"}:
+                raise HTTPException(409, "Install the required DonutNodes version on the ComfyUI host, then restart ComfyUI.")
+            if self.backend_owned() or (await self.readiness())["running"]:
+                raise HTTPException(409, "Stop ComfyUI before updating DonutNodes.")
+            root = self.installer.backend_root if self.config["mode"] == "managed" else Path(self.config["comfy_directory"])
+            try:
+                await call_installer(self.installer, "start_node_update", root)
+            except SetupError as error:
+                raise HTTPException(409, str(error)) from None
+        return await self.status()
+
+    async def start_setup(self, options: dict[str, Any]) -> Any:
+        from installer import SetupError
+        async with self.backend_lock:
+            if self.closing:
+                raise HTTPException(503, "The creator add-on is shutting down.")
+            if self.config["mode"] != "managed":
+                raise HTTPException(409, "Switch to managed mode to install the backend.")
+            if self.backend_owned() or (await self.readiness())["running"]:
+                raise HTTPException(409, "Stop ComfyUI before running setup.")
+            try:
+                return await call_installer(self.installer, "start", options)
+            except SetupError as error:
+                raise HTTPException(409, str(error)) from None
 
     async def _stop_backend(self) -> None:
         if self.config["mode"] not in {"managed", "local"}:
@@ -1394,7 +1442,7 @@ def create_app(controller: Controller | None = None) -> FastAPI:
             raise HTTPException(409, "Switch to managed mode to install the backend.")
         if body.runtime not in {"cuda", "cpu", "mps"} or body.profile not in {"base", "workflow", "all"}:
             raise HTTPException(400, "Choose a supported runtime and model profile.")
-        return await call_installer(current().installer, "start", body.model_dump(exclude_none=True))
+        return await current().start_setup(body.model_dump(exclude_none=True))
 
     @application.post("/create/cancel-setup")
     async def cancel_setup():
@@ -1403,6 +1451,10 @@ def create_app(controller: Controller | None = None) -> FastAPI:
     @application.post("/create/backend/start")
     async def start_backend():
         return await current().start_backend()
+
+    @application.post("/create/backend/update-nodes")
+    async def update_nodes():
+        return await current().update_nodes()
 
     @application.post("/create/backend/stop")
     async def stop_backend():

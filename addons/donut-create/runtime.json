@@ -13,12 +13,20 @@
     {
       "directory": "donutnodes",
       "repo": "DonutsDelivery/ComfyUI-DonutNodes",
-      "commit": "2806ebe12caada993e6305e3f441ce61ab22a11c",
-      "url": "https://codeload.github.com/DonutsDelivery/ComfyUI-DonutNodes/tar.gz/2806ebe12caada993e6305e3f441ce61ab22a11c",
-      "sha256": "115a901c1c8b63272aeb2b48e13d52b91ac7b91bc054f8dcd19b3e58b8664467",
-      "size": 16179717,
+      "commit": "b70aaf09d768d579d815b214b9971fe1f8ab84d2",
+      "url": "https://codeload.github.com/DonutsDelivery/ComfyUI-DonutNodes/tar.gz/b70aaf09d768d579d815b214b9971fe1f8ab84d2",
+      "sha256": "b9ea53383b380806812b7e573a8e055d0cc531cfcf81d442d14b9b072e163f97",
+      "size": 16215411,
       "optional": false,
-      "required_for_models": []
+      "required_for_models": [],
+      "previous_revisions": [
+        {
+          "commit": "2806ebe12caada993e6305e3f441ce61ab22a11c",
+          "url": "https://codeload.github.com/DonutsDelivery/ComfyUI-DonutNodes/tar.gz/2806ebe12caada993e6305e3f441ce61ab22a11c",
+          "sha256": "115a901c1c8b63272aeb2b48e13d52b91ac7b91bc054f8dcd19b3e58b8664467",
+          "size": 16179717
+        }
+      ]
     },
     {
       "directory": "ComfyUI-bleh",
@@ -406,7 +414,7 @@
       "browser_assets": {
         "assets/base-workflow.json": "3dfd5bf4dd5a52341af08b0ede2b4713f6b8cadfe29008617a3d50f68bed03bc",
         "assets/donut-create.css": "45057b6e702e49117e69bf177205da386f96f0e4d796021ee1062e14a2b57fcb",
-        "assets/donut-create.js": "596434b5a2281b0ed64e1b199cc6c8129742d344da35b5ea2808e1ad196aba83"
+        "assets/donut-create.js": "338d485507bb898cd2eb1907f8859f8ebe148ae6a95e10676cd21243888b44b5"
       }
     }
   },

@@ -81,6 +81,10 @@ export async function restartCreateBackend(signal) {
   return changeBackend('backend/restart', undefined, signal)
 }
 
+export async function updateCreateNodes(signal) {
+  return changeBackend('backend/update-nodes', undefined, signal)
+}
+
 export async function createStudioSession(signal) {
   const response = await apiClient.post(`${CREATE_API}/sessions`, { workspace: true }, { signal })
   checkRequest(signal)

@@ -516,12 +516,20 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.http.get(f"/studio/{sid}/object_info/ExecutePython")).status_code, 403)
 
     # AC: @create-multiple-face-prompts ac-single-face-compatible
-    async def test_owned_face_runtime_is_required_only_for_managed_backend_readiness(self):
+    async def test_native_face_capability_is_separate_from_ordinary_backend_readiness(self):
         with patch.object(self.installer, "expected_capabilities", return_value={
-                "required_nodes": ["DonutText", "DonutImageSave", "DMCFaceDetailer"], "required_models": []}):
-            self.assertTrue((await self.controller.readiness())["ready"])
-            self.controller.config["mode"] = "managed"
-            self.assertIn("DMCFaceDetailer", (await self.controller.readiness())["missing_nodes"])
+                "required_nodes": ["DonutText", "DonutImageSave", "DMCFaceDetailer"], "required_models": []}), \
+                patch.object(self.controller, "backend_owned", return_value=True):
+            for mode in ("existing", "managed", "local"):
+                with self.subTest(mode=mode):
+                    self.controller.config["mode"] = mode
+                    status = await self.controller.readiness()
+                    self.assertTrue(status["ready"])
+                    self.assertNotIn("DMCFaceDetailer", status["missing_nodes"])
+                    self.assertFalse(status["face_node"]["registered"])
+                    self.backend.nodes["DMCFaceDetailer"] = {}
+                    self.assertTrue((await self.controller.readiness())["face_node"]["registered"])
+                    self.backend.nodes.pop("DMCFaceDetailer")
 
     # AC: @create-multiple-face-prompts ac-character-prompts
     # AC: @create-multiple-face-prompts ac-single-face-compatible
@@ -903,6 +911,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
     # AC: @donut-create-plugin ac-setup-recovery
     async def test_setup_tokens_are_not_in_controller_state(self):
         self.controller.config["mode"] = "managed"
+        self.backend.fail = True  # Setup changes sources only while ComfyUI is stopped.
         result = await self.http.post("/create/setup", json={"runtime": "cpu", "profile": "base",
             "hf_token": "synthetic-hf-token", "civitai_api_key": "synthetic-civitai-key"})
         self.assertEqual(result.status_code, 200)

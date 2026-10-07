@@ -363,9 +363,20 @@ class InstallerTests(unittest.TestCase):
         module._atomic_json(self.installer.state_dir / "ready.json", receipt)
         self.assertFalse(self.installer.ready())
         receipt["capability_check"] = True
+        receipt["nodes"].remove("DMCFaceDetailer")
         module._atomic_json(self.installer.state_dir / "ready.json", receipt)
-        self.assertFalse(self.installer.ready(), "Owned face runtime source must also be activated.")
-        self.installer.ensure_owned_nodes()
+        self.assertFalse(self.installer.ready(), "Fresh managed setup must prove native DMCFaceDetailer registration.")
+        receipt["nodes"].append("DMCFaceDetailer")
+        module._atomic_json(self.installer.state_dir / "ready.json", receipt)
+        self.assertTrue(self.installer.ready())
+        native_pack = self.installer.backend_root / "custom_nodes" / "donutnodes"
+        marker = native_pack / ".donut-create-source.json"
+        marker.write_text(json.dumps({"sha256": "0" * 64}))
+        self.assertFalse(self.installer.ready(), "Native DonutNodes must match the required catalog source.")
+        module._atomic_json(marker, {"sha256": self.installer.required_donutnodes()["sha256"]})
+        (native_pack / "__init__.py").unlink()
+        self.assertFalse(self.installer.ready(), "A source receipt alone does not activate native DonutNodes.")
+        (native_pack / "__init__.py").write_text("# synthetic source stand-in")
         self.assertTrue(self.installer.ready())
         first = next(iter(records.values()))
         Path(first["path"]).write_bytes(b"edited")

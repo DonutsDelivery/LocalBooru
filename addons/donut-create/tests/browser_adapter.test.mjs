@@ -1174,6 +1174,23 @@ async function multiFaceFixture() {
   return env;
 }
 
+// AC: @create-multiple-face-prompts ac-existing-backend-node
+test('missing face runtime can recover through Generate in the same studio',async()=>{
+  const env=await multiFaceFixture(),before=env.current();env.missingMultiNode=true;
+  env.app.queuePrompt=async()=>env.api.queuePrompt(0,await env.app.graphToPrompt());
+  const failed=await env.action('generate');assert.equal(failed.ok,false);
+  assert.match(failed.error,/DMCFaceDetailer/);assert.match(failed.error,/Update DonutNodes/);
+  assert.equal(env.queued.length,0);
+  const after=await env.action('snapshot');assert.equal(after.snapshot.ready,true);
+  assert.match(after.snapshot.error,/DMCFaceDetailer/);assert.deepEqual(env.current(),before);
+  env.missingMultiNode=false;
+  const retried=await env.action('generate');assert.equal(retried.ok,true);
+  assert.equal(retried.snapshot.error,undefined);assert.equal(env.queued.length,1);
+  assert.equal(env.queued[0][1].output['1014:984'].class_type,'DMCFaceDetailer');
+  assert.deepEqual(JSON.parse(env.queued[0][1].output['1014:984'].inputs.face_prompts_json),twoFacePlan);
+  assert.deepEqual(env.current(),before);
+});
+
 // AC: @create-multiple-face-prompts ac-character-prompts
 // AC: @create-multiple-face-prompts ac-single-face-compatible
 test('multi-face enhancement submits separate ordered records only in the compiled detailer and run metadata',async()=>{

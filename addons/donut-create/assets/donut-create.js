@@ -803,7 +803,10 @@
       }
     }
     if (missingNodes.size || missingModels.size) {
-      throw new Error(['Missing node types: ' + [...missingNodes].join(', '), 'Missing models: ' + [...missingModels].join(', ')].filter(value => !value.endsWith(': ')).join('. ') + '. Install the selected models and node packs before generating.');
+      const remedy = missingNodes.has('DMCFaceDetailer')
+        ? ' Update DonutNodes for the connected backend from the ComfyUI status menu, then restart ComfyUI and retry Generate. Repairing the enhancer model does not update ComfyUI nodes.'
+        : ' Install the selected models and node packs before generating.';
+      throw new Error(['Missing node types: ' + [...missingNodes].join(', '), 'Missing models: ' + [...missingModels].join(', ')].filter(value => !value.endsWith(': ')).join('. ') + '.' + remedy);
     }
   }
   // Repair recognized stock face routes or add a missing legacy branch. Never

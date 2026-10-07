@@ -27,6 +27,7 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parent
+LEGACY_FACE_NODE_SHA256 = "64f01947595043369e6a9aa70f2ff064a73b991fb1e69ba947d31a8ff5e3b81e"
 
 
 class SetupError(RuntimeError):
@@ -223,13 +224,6 @@ class Installer(VerifiedDownloads):
         self._status.setdefault("downloaded_bytes", 0)
         self._status.setdefault("total_bytes", 0)
         self._status.setdefault("error", None)
-        # Only the managed, receipt-owned backend receives bundled local nodes.
-        # Installation is cheap source activation, with no model downloads.
-        if _read_json(self.backend_root / ".donut-create-source.json", {}).get("sha256") == self.manifest["comfyui"]["sha256"]:
-            try:
-                self.ensure_owned_nodes()
-            except (SetupError, OSError) as error:
-                self._status.update(state="error", phase="source", error=str(error))
         if self._status["state"] in ("installing", "cancelling"):
             self._status.update(state="cancelled", phase="interrupted", error="Setup was interrupted. Retry to reuse verified files and resume downloads.")
         if self._status["state"] == "ready" and not self.ready():
@@ -288,66 +282,86 @@ class Installer(VerifiedDownloads):
             nodes.update(model.get("requires_nodes", []))
         return {"required_nodes": sorted(nodes), "required_models": [{"folder": m["folder"], "filename": m["filename"]} for m in models]}
 
-    def _owned_node_files(self):
-        # One executable file makes source replacement atomic even on Windows.
-        return {"__init__.py": (ROOT / "dmc_face_detailer.py").read_bytes()}
+    def required_donutnodes(self):
+        return next(pack for pack in self.manifest["node_packs"] if pack["directory"] == "donutnodes")
 
-    def _owned_nodes_match(self):
-        target = self.backend_root / "custom_nodes" / "dmc_create"
-        if target.is_symlink():
-            return False
-        marker = target / ".donut-create-owned.json"
-        receipt = _read_json(marker, {})
-        if (marker.is_symlink() or not isinstance(receipt, dict) or receipt.get("owner") != "donut-create"
-                or not isinstance(receipt.get("files"), dict)):
-            return False
-        for name, content in self._owned_node_files().items():
-            path = target / name
-            wanted = hashlib.sha256(content).hexdigest()
-            if path.is_symlink() or not path.is_file() or self._hash(path) != wanted or receipt.get("files", {}).get(name) != wanted:
-                return False
-        return True
+    def start_node_update(self, comfy_root):
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                raise SetupError("Wait for the current setup or node update to finish, or cancel it first.")
+            previous = self._status.get("state", "idle")
+            self._cancel.clear()
+            self._update(state="installing", operation="nodes", phase="nodes", error=None,
+                         node_update={"state": "updating", "target": str(Path(comfy_root)), "restart_needed": False})
+            self._thread = threading.Thread(target=self._update_nodes, args=(Path(comfy_root), previous),
+                                            daemon=True, name="donut-create-node-update")
+            self._thread.start()
+        return self.status()
 
-    def ensure_owned_nodes(self):
-        target = self.backend_root / "custom_nodes" / "dmc_create"
-        marker = target / ".donut-create-owned.json"
-        files = self._owned_node_files()
-        hashes = {name: hashlib.sha256(content).hexdigest() for name, content in files.items()}
-        if not target.exists() and not target.is_symlink():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            stage = Path(tempfile.mkdtemp(prefix=".dmc-owned-", dir=target.parent))
-            try:
-                for name, content in files.items():
-                    (stage / name).write_bytes(content)
-                _atomic_json(stage / marker.name, {"owner": "donut-create", "files": hashes})
-                stage.rename(target)
-            finally:
-                if stage.exists():
-                    shutil.rmtree(stage)
+    def _update_nodes(self, root, previous):
+        try:
+            target = root / "custom_nodes" / "donutnodes"
+            self._safe_node_target(root, target)
+            item = self.required_donutnodes()
+            if (target / ".git").exists():
+                self._update_git_nodes(item, target)
+            else:
+                self._source(item, target, update=True)
+            self._remove_legacy_node(root)
+            if root == self.backend_root and self._ready_files(ignore_manifest=True):
+                receipt = _read_json(self.state_dir / "ready.json")
+                receipt["manifest"] = self._manifest_hash
+                _atomic_json(self.state_dir / "ready.json", receipt)
+                previous = "ready"
+            self._update(state=previous, operation=None, phase="nodes", error=None,
+                         node_update={"state": "complete", "target": str(root), "restart_needed": True})
+        except Exception as error:
+            self._update(state=previous, operation=None, phase="nodes", error=None,
+                         node_update={"state": "cancelled" if isinstance(error, SetupCancelled) else "error",
+                                      "target": str(root), "restart_needed": False, "error": self._redact(str(error))})
+
+    def _safe_node_target(self, root, target):
+        if not (root / "main.py").is_file() or not (root / "comfy").is_dir():
+            raise SetupError("Choose the connected ComfyUI installation before updating DonutNodes.")
+        if root.is_symlink() or target.parent.is_symlink() or target.is_symlink() or (target / ".git").is_symlink():
+            raise SetupError("The DonutNodes source path is a symlink. It was preserved; update it on the ComfyUI host.")
+
+    def _remove_legacy_node(self, root):
+        native = root / "custom_nodes" / "donutnodes" / "dmc_face_detailer.py"
+        legacy = root / "custom_nodes" / "dmc_create"
+        if not native.is_file() or native.is_symlink() or not (legacy.exists() or legacy.is_symlink()):
             return
-        if target.exists() or target.is_symlink():
-            receipt = _read_json(marker, {})
-            if (target.is_symlink() or marker.is_symlink() or not isinstance(receipt, dict)
-                    or receipt.get("owner") != "donut-create" or not isinstance(receipt.get("files"), dict)):
-                raise SetupError("An existing DMC node folder is not owned by this add-on. It was preserved.")
-            for name in files:
-                path = target / name
-                # A crash between source replacement and receipt activation
-                # may leave either the previous or the new owned checksum.
-                if path.is_symlink() or not path.is_file() or self._hash(path) not in {receipt.get("files", {}).get(name), hashes[name]}:
-                    raise SetupError("An existing DMC node source was modified. It was preserved.")
-            if self._owned_nodes_match():
-                return
-        target.mkdir(parents=True, exist_ok=True)
-        for name, content in files.items():
-            descriptor, temporary = tempfile.mkstemp(prefix=".dmc-source-", dir=target)
-            try:
-                with os.fdopen(descriptor, "wb") as handle:
-                    handle.write(content)
-                os.replace(temporary, target / name)
-            finally:
-                Path(temporary).unlink(missing_ok=True)
-        _atomic_json(marker, {"owner": "donut-create", "files": hashes})
+        message = "The legacy dmc_create node folder has unverified or modified files. It was preserved. Move it aside manually before restarting ComfyUI so native DonutNodes can register DMCFaceDetailer."
+        marker = legacy / ".donut-create-owned.json"
+        source = legacy / "__init__.py"
+        if legacy.is_symlink() or marker.is_symlink() or source.is_symlink():
+            raise SetupError(message)
+        receipt = _read_json(marker, {})
+        if receipt.get("owner") != "donut-create" or receipt.get("files") != {"__init__.py": LEGACY_FACE_NODE_SHA256} or not source.is_file() or self._hash(source) != LEGACY_FACE_NODE_SHA256:
+            raise SetupError(message)
+        for path in legacy.rglob("*"):
+            relative = path.relative_to(legacy)
+            cache = len(relative.parts) == 2 and relative.parts[0] == "__pycache__" and path.suffix == ".pyc" and path.is_file()
+            if path.is_symlink() or (relative.as_posix() not in {"__init__.py", ".donut-create-owned.json", "__pycache__"} and not cache):
+                raise SetupError(message)
+        shutil.rmtree(legacy)
+
+    def _update_git_nodes(self, item, target):
+        if not re.fullmatch(r"[0-9a-f]{40}", item["commit"]):
+            raise SetupError("The required DonutNodes commit is invalid.")
+        command = ["git", "-C", str(target), "-c", "core.hooksPath=" + os.devnull]
+        if self._run([*command, "status", "--porcelain", "--untracked-files=all"], timeout=30).strip():
+            raise SetupError("DonutNodes has local changes. They were preserved. Commit or move those changes before updating; if this checkout already has DMCFaceDetailer, restart ComfyUI to register it.")
+        self._run([*command, "fetch", "--no-tags", "https://github.com/" + item["repo"] + ".git", item["commit"]], timeout=180)
+        self._check_cancel()
+        if self._run([*command, "status", "--porcelain", "--untracked-files=all"], timeout=30).strip():
+            raise SetupError("DonutNodes changed during the download. It was preserved. Resolve local changes before updating.")
+        try:
+            self._run([*command, "merge", "--ff-only", "--no-overwrite-ignore", item["commit"]], timeout=30)
+        except SetupCancelled:
+            raise
+        except SetupError:
+            raise SetupError("DonutNodes cannot fast-forward to the required version. Its source and history were preserved. Update this checkout manually to commit " + item["commit"] + ".") from None
 
     def _disk(self, models=None):
         models = models or self._models()
@@ -394,6 +408,8 @@ class Installer(VerifiedDownloads):
         options = dict(options or {})
         with self._lock:
             if self._thread and self._thread.is_alive():
+                if self._status.get("operation") == "nodes":
+                    raise SetupError("Wait for the node update to finish, or cancel it before setup.")
                 return self.status()
             runtime = options.get("runtime") or self.default_runtime()
             profile = options.get("profile", self.manifest["default_profile"])
@@ -410,7 +426,7 @@ class Installer(VerifiedDownloads):
             self._cancel.clear()
             self._tokens = {"hf_token": str(options.get("hf_token") or ""), "civitai_api_key": str(options.get("civitai_api_key") or "")}
             models = self._models(profile)
-            self._update(state="installing", phase="preflight", runtime=runtime, profile=profile, model_root=str(model_root) if model_root else None, progress=0, error=None, downloaded_bytes=0, total_bytes=sum(m["size"] for m in models), completed_files=0, total_files=len(models), current_file=None, missing_nodes=[], missing_models=[])
+            self._update(state="installing", operation="setup", phase="preflight", runtime=runtime, profile=profile, model_root=str(model_root) if model_root else None, progress=0, error=None, downloaded_bytes=0, total_bytes=sum(m["size"] for m in models), completed_files=0, total_files=len(models), current_file=None, missing_nodes=[], missing_models=[])
             self._thread = threading.Thread(target=self._install, args=(runtime, profile, model_root), daemon=True, name="donut-create-setup")
             self._thread.start()
         return self.status()
@@ -425,9 +441,9 @@ class Installer(VerifiedDownloads):
     def ready(self):
         return self._status.get("state") == "ready" and self._ready_files()
 
-    def _ready_files(self):
+    def _ready_files(self, ignore_manifest=False):
         receipt = _read_json(self.state_dir / "ready.json")
-        if not receipt or receipt.get("manifest") != self._manifest_hash or receipt.get("runtime") != self._status.get("runtime") or receipt.get("profile") != self._status.get("profile"):
+        if not receipt or (not ignore_manifest and receipt.get("manifest") != self._manifest_hash) or receipt.get("runtime") != self._status.get("runtime") or receipt.get("profile") != self._status.get("profile"):
             return False
         if not self.python_path.is_file() or not (self.backend_root / "main.py").is_file() or not self.workflow_path.is_file():
             return False
@@ -448,8 +464,6 @@ class Installer(VerifiedDownloads):
         for source, target in self._sources():
             if _read_json(target / ".donut-create-source.json", {}).get("sha256") != source["sha256"] or not (target / "__init__.py" if target != self.backend_root else target / "main.py").is_file():
                 return False
-        if not self._owned_nodes_match():
-            return False
         return receipt.get("capability_check") is True
 
     def _sources(self):
@@ -460,11 +474,44 @@ class Installer(VerifiedDownloads):
                 result.append((pack, self.backend_root / "custom_nodes" / pack["directory"]))
         return result
 
-    def _source(self, item, target):
+    def _source_files(self, target, expected=None):
+        paths = {}
+        for path in target.rglob("*"):
+            if path.is_symlink():
+                raise SetupError("DonutNodes contains a symlink. Its source was preserved.")
+            relative = path.relative_to(target)
+            cache = "__pycache__" in relative.parts and path.suffix == ".pyc"
+            if path.is_file() and relative.as_posix() != ".donut-create-source.json" and not cache:
+                paths[relative.as_posix()] = path
+        if expected is not None and set(paths) != set(expected):
+            raise SetupError("DonutNodes has missing or extra source files. They were preserved. Resolve these changes before updating.")
+        return {name: self._hash(path) for name, path in paths.items()}
+
+    def _source(self, item, target, update=False):
+        receipt = None
+        if target.is_symlink() or (target / ".donut-create-source.json").is_symlink():
+            raise SetupError("The source folder is a symlink. It was preserved.")
         if target.exists():
-            if _read_json(target / ".donut-create-source.json", {}).get("sha256") == item["sha256"]:
+            receipt = _read_json(target / ".donut-create-source.json", {})
+            if receipt.get("sha256") == item["sha256"] and not update:
                 return
-            raise SetupError("An existing source folder conflicts with the pinned runtime: " + target.name + ". It was preserved. Move it aside before Retry.")
+            if update and not isinstance(receipt.get("files"), dict):
+                # Older managed receipts recorded only the archive hash. A
+                # catalog-listed verified archive supplies their baseline;
+                # never construct a download URL from an untrusted receipt.
+                previous = next((revision for revision in item.get("previous_revisions", [])
+                                 if revision.get("sha256") == receipt.get("sha256") and revision.get("commit") == receipt.get("commit")), None)
+                if previous is not None:
+                    with tempfile.TemporaryDirectory(prefix=".donut-baseline-", dir=target.parent) as directory:
+                        baseline = Path(directory) / "source"
+                        self._source(previous, baseline)
+                        receipt = {**receipt, "files": self._source_files(baseline)}
+            if not update or not isinstance(receipt.get("files"), dict) or not receipt["files"]:
+                raise SetupError("An existing source folder is not verified for replacement: " + target.name + ". It was preserved. Update DonutNodes manually to the required commit, or move this folder aside before updating.")
+            if self._source_files(target, expected=receipt["files"]) != receipt["files"]:
+                raise SetupError("DonutNodes has modified or extra source files. They were preserved. Resolve these changes before updating.")
+            if receipt.get("sha256") == item["sha256"]:
+                return
         archive = self._download(item)
         target.parent.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".donut-source-", dir=target.parent))
@@ -478,13 +525,13 @@ class Installer(VerifiedDownloads):
                 for member in members:
                     self._check_cancel()
                     parts = PurePosixPath(member.name).parts
-                    if PurePosixPath(member.name).is_absolute() or not parts or parts[0] != prefix or any(p in ("..", ".") or ":" in p for p in parts) or member.islnk() or not (member.isdir() or member.isfile() or member.issym()):
+                    if "\\" in member.name or "\0" in member.name or PurePosixPath(member.name).is_absolute() or not parts or parts[0] != prefix or any(p in ("..", ".") or ":" in p for p in parts) or member.islnk() or not (member.isdir() or member.isfile() or member.issym()):
                         raise SetupError("The source archive contains an unsafe entry.")
                     relative = Path(*parts[1:])
                     path = stage / relative
                     if member.issym():
                         link = PurePosixPath(member.linkname)
-                        if link.is_absolute() or any(":" in part for part in link.parts):
+                        if "\\" in member.linkname or link.is_absolute() or any(":" in part for part in link.parts):
                             raise SetupError("The source archive contains an unsafe link.")
                         referent = (path.parent / Path(*link.parts)).resolve()
                         if not referent.is_relative_to(stage.resolve()):
@@ -503,9 +550,21 @@ class Installer(VerifiedDownloads):
                         raise SetupError("The source archive contains an unresolved link.")
                     path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(referent, path)
-            _atomic_json(stage / ".donut-create-source.json", {"commit": item["commit"], "sha256": item["sha256"]})
+            _atomic_json(stage / ".donut-create-source.json", {"commit": item["commit"], "sha256": item["sha256"], "files": self._source_files(stage)})
             self._check_cancel()
-            stage.rename(target)
+            if receipt is not None:
+                if self._source_files(target, expected=receipt["files"]) != receipt["files"]:
+                    raise SetupError("DonutNodes changed during the download. It was preserved.")
+                previous = stage.with_name(stage.name + "-previous")
+                target.rename(previous)
+                try:
+                    stage.rename(target)
+                except BaseException:
+                    previous.rename(target)
+                    raise
+                shutil.rmtree(previous)
+            else:
+                stage.rename(target)
         finally:
             if stage.exists():
                 shutil.rmtree(stage)
@@ -771,7 +830,7 @@ print(json.dumps({'frontend':distribution.version, 'prefix_support':True}))
             for item, target in self._sources():
                 self._update(current_file=item.get("directory", "ComfyUI"))
                 self._source(item, target)
-            self.ensure_owned_nodes()
+            self._remove_legacy_node(self.backend_root)
             self._update(phase="environment", progress=0.15, current_file=None)
             self._environment(runtime)
             self._update(phase="dependencies", progress=0.2)

@@ -10,6 +10,7 @@ import {
   startCreateBackend,
   stopCreateBackend,
   restartCreateBackend,
+  updateCreateNodes,
 } from '../services/donutCreate'
 import { toast } from './Toast'
 import './CreateStudio.css'
@@ -248,6 +249,7 @@ export default function CreateSettings({ onStatusChange, backendOnly = false, hi
   const backendCard = active && (
     <div className="create-settings-card">
       <h3>Backend status</h3>
+      {backendOnly && error && <p className="create-message error" role="alert">{error}</p>}
       <p role="status">{action || (status?.backend?.ready ? 'Ready for image creation' : status?.backend?.owned && !status?.backend?.running ? 'ComfyUI is starting… This can take several minutes.' : status?.backend?.running ? 'Checking workflow nodes and models…' : 'Backend is stopped or unavailable')}</p>
       {status?.backend?.error && <p className="create-message error" role="alert">{status.backend.error}</p>}
       {status?.backend?.missing_nodes?.length > 0 && <p>Missing node packs or nodes: {status.backend.missing_nodes.join(', ')}</p>}
@@ -256,6 +258,20 @@ export default function CreateSettings({ onStatusChange, backendOnly = false, hi
         <p>Detect this running installation to enable Start, Stop and Restart. ComfyUI keeps running during discovery.</p>
         <button type="button" disabled={busy || installing || !status?.backend?.running} onClick={manageConnectedBackend}>{action === 'Detecting installation' ? 'Detecting installation…' : 'Manage this ComfyUI'}</button>
       </> : <p>To control ComfyUI, register its local installation on the computer hosting the DMC add-on.</p>)}
+      {status?.backend?.face_node && <div className="create-node-update">
+        {status.backend.face_node.error && <p className="create-message error" role="alert">{status.backend.face_node.error}</p>}
+        {controllable ? <>
+          <p>{status.backend.face_node.restart_needed
+            ? 'DonutNodes is updated. Start ComfyUI again to register the new nodes.'
+            : status.backend.running || status.backend.owned
+              ? 'Stop ComfyUI before updating DonutNodes. The update uses this selected installation.'
+              : 'Update the required DonutNodes version in this selected ComfyUI installation, then start ComfyUI.'}</p>
+          <button type="button" disabled={busy || installing || status.backend.running || status.backend.owned || !status.backend.face_node.updateable} onClick={() => runAction('Updating DonutNodes', updateCreateNodes)}>
+            {action === 'Updating DonutNodes' || (installing && setup.operation === 'nodes') ? 'Updating DonutNodes…' : 'Update DonutNodes'}
+          </button>
+          {installing && setup.operation === 'nodes' && <button type="button" disabled={busy} onClick={() => runAction('Cancelling node update', cancelCreateSetup)}>Cancel node update</button>}
+        </> : <p>Update DonutNodes on the backend host and restart ComfyUI. For a local URL connection, use Manage this ComfyUI to enable updates here.</p>}
+      </div>}
       <div className="create-actions">
         <button type="button" disabled={!controllable || busy || installing || status?.backend?.running || status?.backend?.owned} onClick={() => runAction('Starting backend', startCreateBackend)}>{action === 'Starting backend' ? 'Starting backend…' : 'Start ComfyUI'}</button>
         <button type="button" disabled={!controllable || loading || switchingServer || installing || !status?.backend?.owned || (action !== null && action !== 'Starting backend')} onClick={() => runAction('Stopping backend', stopCreateBackend, true)}>{action === 'Stopping backend' ? 'Stopping backend…' : 'Stop ComfyUI'}</button>
