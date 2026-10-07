@@ -870,7 +870,30 @@
         const slot = updatedBranch.outputs.findIndex(output => output.name === name);
         if (slot < 0) return null;
         updatedBranch.outputs[edge.origin_slot].links = updatedBranch.outputs[edge.origin_slot].links.filter(id => id !== edge.id);
-        edge.origin_slot = slot; updatedBranch.outputs[slot].links.push(edge.id);
+        edge.origin_slot = slot; (updatedBranch.outputs[slot].links ||= []).push(edge.id);
+      }
+      // Earlier stock migrations copied all whole-image widgets into this
+      // branch. Reset only matching inherited set options; retain independent
+      // face sets and every other authored conditioning setting.
+      const defaults = node(bodyTemplate, 1180), names = Object.keys(defaults.widgets_values_named);
+      const setOptions = ['prompt_sets_json', 'prompt_set_index', 'control_after_generate'];
+      const inherited = setOptions.every(name => {
+        const slot = names.indexOf(name), value = branch.widgets_values?.[slot];
+        return value !== undefined && value === whole.widgets_values?.[slot]
+          && [branch, whole].every(item => !Object.hasOwn(item.widgets_values_named || {}, name)
+            || item.widgets_values_named[name] === value);
+      });
+      let hasSets = false;
+      try {
+        const sets = JSON.parse(branch.widgets_values?.[names.indexOf('prompt_sets_json')]);
+        hasSets = Array.isArray(sets) && sets.length > 0;
+      } catch { /* Unrecognized custom set data is preserved. */ }
+      if (inherited && hasSets) {
+        updatedBranch.widgets_values_named ||= {};
+        for (const name of setOptions) {
+          updatedBranch.widgets_values[names.indexOf(name)] = clone(defaults.widgets_values[names.indexOf(name)]);
+          updatedBranch.widgets_values_named[name] = clone(defaults.widgets_values_named[name]);
+        }
       }
       updatedBranch.title = 'Face-only conditioning · separate face instruction';
       return result;
