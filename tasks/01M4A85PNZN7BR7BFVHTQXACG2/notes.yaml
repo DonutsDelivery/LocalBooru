@@ -15,3 +15,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T03:59:40.380Z
+  - _ulid: 01M4A8M17DXMHGQAGN8M29J3Z3
+    content: Tests reproduced overly narrow recognition with stripped release metadata and renumbered v5
+      copies (both failed before repair). Repair now follows prompt/detail controls and executable
+      face routes, handles copied subgraph IDs and allocates free node IDs; custom wiring remains
+      untouched. User explicitly requested factory reset or preset dropdown, superseding earlier
+      rejection of full-reset recovery. Added confirmed fresh preset picker with no generation and
+      scoped bundled preset routes.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T04:05:51.981Z

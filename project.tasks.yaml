@@ -2476,7 +2476,7 @@ tasks:
   - _ulid: 01M4A85PNZN7BR7BFVHTQXACG2
     slugs:
       - create-face-binding-followup
-    title: Repair missing face prompt after real workflow serialization
+    title: Recover face controls and expose fresh workflow presets
     type: bug
     spec_ref: "@create-managed-prompt-enhancer"
     status: in_progress
@@ -2484,7 +2484,7 @@ tasks:
     depends_on: []
     priority: 2
     tags: []
-    notes_count: 2
+    notes_count: 3
     todos_count: 0
     created_at: 2026-10-07T03:58:02.431Z
     started_at: 2026-10-07T03:58:24.274Z
