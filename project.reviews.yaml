@@ -15623,6 +15623,20 @@ reviews:
         runner: run-cargo.sh
         created_at: 2026-10-07T01:35:50.153Z
         completed_at: null
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: c97981a80c3d52883c8c463bf48888c79e30f40c
+        evidence: Pinned CPU runtime verified. MiniCPM and Qwen each processed a synthetic image brief plus
+          face brief, returned valid pair JSON, and released owned helpers. Token preflight passes.
+          Synthetic browser preview retained originals and applied both fields. No private library
+          or comparison page inspected.
+        name: Real model acceptance
+        required: true
+        runner: synthetic local CPU + browser
+        created_at: 2026-10-07T01:35:51.747Z
+        completed_at: 2026-10-07T01:35:51.747Z
     events:
       - _ulid: 01M4A00PJPR8RKW3J1ZN0J6WQ4
         actor: codex-self-review
@@ -15658,6 +15672,13 @@ reviews:
           status: running
           name: Native embedded deployment
         timestamp: 2026-10-07T01:35:50.263Z
+      - _ulid: 01M4A01C1RSRTTS18SNGQ3P3MT
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: Real model acceptance
+        timestamp: 2026-10-07T01:35:51.865Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -15672,5 +15693,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-07T01:35:29.878Z
-    updated_at: 2026-10-07T01:35:50.153Z
+    updated_at: 2026-10-07T01:35:51.747Z
     notes: []
