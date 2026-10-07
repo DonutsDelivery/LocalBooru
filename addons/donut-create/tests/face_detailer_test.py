@@ -146,14 +146,31 @@ class RuntimeTests(unittest.TestCase):
                                 "denoise": .2, "turbo_mode": True}.items():
                 self.assertEqual(inputs[key], wanted)
 
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_horizontal_plans_reject_equal_and_nearly_equal_x_instead_of_using_y_or_index(self):
+        for faces in ([segment(50, 0), segment(50, 40)], [segment(50, 40), segment(50, 0)],
+                      [segment(50, 0), segment(52.5, 40)], [segment(50, 0), segment(52.4, 40)],
+                      [segment(10, 0, 10), segment(5, 40, 20)]):
+            with self.subTest(faces=faces), self.assertRaisesRegex(ValueError, "ambiguous.*above/below"):
+                self.run_faces([faces])
+            self.assertEqual(self.passes, [])
+            self.assertEqual(self.encoded, [])
+
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_later_batch_horizontal_tie_prevents_any_first_image_refinement(self):
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            self.run_faces([[segment(0), segment(40)], [segment(50, 0), segment(50, 40)]])
+        self.assertEqual(self.passes, [])
+        self.assertEqual(self.encoded, [])
+
     # AC: @create-multiple-face-prompts ac-spatial-matching
-    def test_y_and_detection_index_break_equal_x_ties(self):
-        same = [segment(10, 20), segment(10, 0)]
-        self.run_faces([same])
-        self.assertEqual([entry[2][1] for entry in self.passes], [0, 20])
-        self.passes.clear()
-        self.run_faces([[segment(10, 0, 10), segment(5, 0, 20)]])
-        self.assertEqual([entry[2][0] for entry in self.passes], [10, 5])
+    def test_sixteen_ordinal_positions_keep_separate_character_conditioning(self):
+        rows=[{"character": f"Person {index}", "position": position, "face_prompt": f"Face {index} smiles."}
+              for index, position in enumerate(runtime.ORDINALS)]
+        expected=[segment(index*40, (index%3)*20) for index in range(16)]
+        self.run_faces([list(reversed(expected))], rows=rows, max_faces=16)
+        self.assertEqual([entry[2] for entry in self.passes], [seg.bbox for seg in expected])
+        self.assertEqual([entry[3]["positive"][0][0] for entry in self.passes], [row["face_prompt"] for row in rows])
 
     # AC: @create-multiple-face-prompts ac-mismatch
     def test_every_batch_count_is_checked_before_any_sampling_or_encoding(self):
