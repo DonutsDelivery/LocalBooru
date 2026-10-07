@@ -10,8 +10,12 @@ description: Enhancer settings were hidden behind both main and face control ava
 spec_ref: "@create-managed-prompt-enhancer"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: Merged to main at 10b45af6, rebuilt and atomically installed. Exact executable
+  contains verified face repair adapter and passes canonical disposable startup, empty-gallery and
+  cleanup acceptance. Existing recipes keep their authored prompts/settings; face textbox and
+  enhancer routing regressions pass.
 depends_on: []
 context: []
 priority: 2
@@ -71,7 +75,24 @@ history:
         previous: "@create-enhancer-visibility-review"
     command: review-link
     timestamp: 2026-10-07T03:16:57.693Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: Merged to main at 10b45af6, rebuilt and atomically installed. Exact executable contains
+          verified face repair adapter and passes canonical disposable startup, empty-gallery and
+          cleanup acceptance. Existing recipes keep their authored prompts/settings; face textbox
+          and enhancer routing regressions pass.
+        previous: null
+      completed_at:
+        new: 2026-10-07T03:46:27.407Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-07T03:46:27.414Z
 created_at: 2026-10-07T02:58:48.592Z
 started_at: 2026-10-07T02:58:48.772Z
 submitted_at: 2026-10-07T03:01:02.275Z
+completed_at: 2026-10-07T03:46:27.407Z
 todos: []
