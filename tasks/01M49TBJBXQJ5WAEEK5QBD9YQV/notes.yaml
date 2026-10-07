@@ -58,3 +58,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T00:17:27.362Z
+  - _ulid: 01M49VT7WNA45QE3ESVGXBRTGZ
+    content: User clarified Z-Image-Engineer must be skipped too. Removed it from active candidates,
+      backend model allowlist, sidebar checkboxes, and sample comparisons; active set is Qwen,
+      MiniCPM, LFM2.6 with36samples. Original downloaded public metadata/synthetic four-model
+      samples retained outside repo as archive. Existing finished user comparison and browser input
+      draft preserved in memory during owned runner restart. Ten focused tests pass; live API
+      exposes3models/36samples and rejects Z-Engineer, current browser shows3choices/cards. No
+      additional inference or product changes.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T00:22:03.926Z
