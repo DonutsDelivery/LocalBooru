@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getEnhancerStatus, startEnhancer, cancelEnhancer, createErrorMessage, formatCreateBytes } from '../services/donutCreate'
 
 export default function CreatePromptEnhancer({ sessionId, imageBrief, faceBrief, disabled, unavailableReason, onApply, onPauseInstant }) {
+  const modelRoles = { qwen: 'Rewriter', minicpm: 'Preserver' }
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState(null)
   const [model, setModel] = useState('minicpm')
@@ -108,7 +109,7 @@ export default function CreatePromptEnhancer({ sessionId, imageBrief, faceBrief,
     {open && <div>
       <p className="create-control-note">Runs locally on the computer hosting Create. Downloads once, then works offline. Uses both your image and face descriptions. Review before applying.</p>
       <label className="create-field">Enhancer model<select value={model} disabled={working} onChange={event => { setModel(event.target.value); setOriginals(null) }}>
-        {(status?.models || [{ id: 'minicpm', name: 'MiniCPM5-2B · loading…' }]).map(item => <option key={item.id} value={item.id}>{item.name}{item.size ? ` · ${item.quantization} · ${formatCreateBytes(item.size)}` : ''}</option>)}
+        {(status?.models || [{ id: 'minicpm', name: 'MiniCPM5-2B · loading…' }]).map(item => <option key={item.id} value={item.id}>{modelRoles[item.id] ? `${modelRoles[item.id]} · ` : ''}{item.name}{item.size ? ` · ${item.quantization} · ${formatCreateBytes(item.size)}` : ''}</option>)}
       </select></label>
       {unavailableReason && <p role="status" className="create-control-note">{unavailableReason}</p>}
       {status?.supported === false && <p role="alert">The managed enhancer is unavailable on this platform.</p>}
