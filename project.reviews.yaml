@@ -18240,7 +18240,100 @@ reviews:
       - review-create-visible-errors-90d5d882
     title: Independent visible Generate errors review 90d5d882
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 6501234a8c6a5fe445ce32f55923f47c6f65e63e
+          head_commit: 1668de2fecfdc4423f38fdc4a24b157b58033595
+        evidence: Independent final1668de2fecfdc4423f38fdc4a24b157b58033595 Vitest3/3 focused cases pass.
+          Create/Edit bridge errors render beside Generate outside controls-scroll, keep scroll
+          position and original prompt, clear when prop clears, allow actual DOM keyboard focus;
+          invalid Steps draft persists, submits no generation and error clears on correction.
+          /tmp/dmc-visible-review-focused-final.txt
+        name: visible-errors-focused
+        required: true
+        runner: vitest
+        created_at: 2026-10-07T08:04:25.341Z
+        completed_at: 2026-10-07T08:04:25.341Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 6501234a8c6a5fe445ce32f55923f47c6f65e63e
+          head_commit: 1668de2fecfdc4423f38fdc4a24b157b58033595
+        evidence: Independent final ESLint SimpleCreateControls.jsx exits0; git diff --check
+          base6501234a8c6a5fe445ce32f55923f47c6f65e63e..head1668de2fecfdc4423f38fdc4a24b157b58033595
+          clean; clean candidate worktree.
+        name: production-lint-diff
+        required: true
+        runner: eslint/git
+        created_at: 2026-10-07T08:04:25.738Z
+        completed_at: 2026-10-07T08:04:25.738Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 6501234a8c6a5fe445ce32f55923f47c6f65e63e
+          head_commit: 1668de2fecfdc4423f38fdc4a24b157b58033595
+        evidence: Read full AGENTS/HERMES/repository safety/review skill, all3 changed files and
+          finaltabIndex delta, relevant Simple controls generate/commit/stage/upload and Host bridge
+          error set/clear flow. ACbasicstudio/basicedit and relevant mobile/shared-workspace
+          behavior assessed. Alert now outside scroll at fixed footer, error priority preserves
+          local validation, no queue/state logic change. Full-width grid row, bounded min160px/24dvh
+          inner scroll, wrapped whitespace and inherited overflow-wrap. tabIndex0 allows deliberate
+          keyboard focus without moving focus automatically. No source-scanning acceptance tests;
+          zero findings.
+        name: full-diff-and-error-flow
+        required: true
+        runner: manual
+        created_at: 2026-10-07T08:04:26.115Z
+        completed_at: 2026-10-07T08:04:26.115Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 6501234a8c6a5fe445ce32f55923f47c6f65e63e
+          head_commit: 1668de2fecfdc4423f38fdc4a24b157b58033595
+        evidence: "Independently viewed supplied synthetic mobile screenshot
+          /home/user/.t3-hermes/userdata/browser-artifacts/browser-screenshot-127-0-0-1-muxtipa5-a3\
+          9e6186.png: owl-only fixtures, expanded settings, visible bounded multiline error and
+          Generate together at390x844. CSS context inspected for desktop/mobile fixed-footer layout.
+          Worker also reports1280x800 viewport/controlsScrollTop0 measurements. Screenshot geometry
+          precedes finaltabIndex-only change, remains applicable. No private browser/app inspected.
+          Reviewer did not independently rerun browser measurements."
+        name: supplied-synthetic-layout-inspection
+        required: false
+        runner: manual
+        created_at: 2026-10-07T08:04:26.512Z
+        completed_at: 2026-10-07T08:04:26.512Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: 6501234a8c6a5fe445ce32f55923f47c6f65e63e
+          head_commit: 1668de2fecfdc4423f38fdc4a24b157b58033595
+        evidence: "Independent90d5d882 Simple+enhancer24pass/5fail; independently exactbase6501234a
+          Simple13pass/same5fail. Names: nagStrength, sdaStrength and toneStrength retains collapse
+          state and remembered strength across activation changes; compatibility can collapse with
+          its preset off and keeps TAB strength hidden; upscaler disclosure and values stay mounted
+          across Create Edit and Finalize. /tmp/dmc-visible-review-full.txt
+          /tmp/dmc-visible-review-base-simple.txt. Final1668de2f only adds alerttabIndex+focus
+          assertions; focused3 rerun pass. No full-suite pass claimed."
+        name: component-baseline-limitations
+        required: false
+        runner: vitest
+        created_at: 2026-10-07T08:04:26.918Z
+        completed_at: 2026-10-07T08:04:26.918Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: 6501234a8c6a5fe445ce32f55923f47c6f65e63e
+          head_commit: 1668de2fecfdc4423f38fdc4a24b157b58033595
+        evidence: Independent KSPEC_NO_DAEMON=1 kspec validate reports130 preexisting schema errors and
+          verify/SKILL.md missing-description. /tmp/dmc-visible-review-validate.txt. No affected
+          trait coverage warning.
+        name: kspec-validation-existing
+        required: false
+        runner: kspec
+        created_at: 2026-10-07T08:04:27.307Z
+        completed_at: 2026-10-07T08:04:27.307Z
     events:
       - _ulid: 01M4AP5SRVVF5MN76JTAMRK0WW
         actor: DonutsDelivery
@@ -18255,9 +18348,68 @@ reviews:
           new_head: 1668de2fecfdc4423f38fdc4a24b157b58033595
           previous_head: 90d5d88240e561276ad26bb69a11cf24018d7e3d
         timestamp: 2026-10-07T08:03:54.585Z
+      - _ulid: 01M4AP8V70RJD1H0N5F1JERG0V
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: visible-errors-focused
+        timestamp: 2026-10-07T08:04:25.440Z
+      - _ulid: 01M4AP8VKE9FM4QF469STRKVSQ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: production-lint-diff
+        timestamp: 2026-10-07T08:04:25.838Z
+      - _ulid: 01M4AP8VZ286CJD5DBW5DT3WR8
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: full-diff-and-error-flow
+        timestamp: 2026-10-07T08:04:26.210Z
+      - _ulid: 01M4AP8WC1HKM7DFRHNQ9PTJ3B
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: supplied-synthetic-layout-inspection
+        timestamp: 2026-10-07T08:04:26.625Z
+      - _ulid: 01M4AP8WREMHYCNPQGXHDYNR83
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: component-baseline-limitations
+        timestamp: 2026-10-07T08:04:27.022Z
+      - _ulid: 01M4AP8X4FTXT3AMDJBA684PZR
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: kspec-validation-existing
+        timestamp: 2026-10-07T08:04:27.407Z
+      - _ulid: 01M4AP8XGEE6J0PWP5RDNNSAN7
+        actor: independent-create-fix-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 6501234a8c6a5fe445ce32f55923f47c6f65e63e
+            head_commit: 1668de2fecfdc4423f38fdc4a24b157b58033595
+          decision: approve
+        timestamp: 2026-10-07T08:04:27.790Z
+      - _ulid: 01M4AP8XGER5KHY12G1BJNV4RP
+        actor: independent-create-fix-review
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: closed
+        timestamp: 2026-10-07T08:04:27.790Z
     examined_commit: null
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-visible-generation-errors"
     subject:
@@ -18267,7 +18419,15 @@ reviews:
       head_branch: fix/create-visible-errors
       head_commit: 1668de2fecfdc4423f38fdc4a24b157b58033595
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 6501234a8c6a5fe445ce32f55923f47c6f65e63e
+          head_commit: 1668de2fecfdc4423f38fdc4a24b157b58033595
+        decision: approve
+        reviewer: independent-create-fix-review
+        role: reviewer
+        created_at: 2026-10-07T08:04:27.790Z
     created_at: 2026-10-07T08:02:45.659Z
-    updated_at: 2026-10-07T08:03:54.483Z
+    updated_at: 2026-10-07T08:04:27.790Z
     notes: []
