@@ -9,13 +9,21 @@ description: Use pane-relative preview sizing across first pass, upscale and sta
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 2
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: fix/create-preview-fit
+  captured_at: 2026-10-07T04:21:44.205Z
+  commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -27,6 +35,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-07T04:15:36.465Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: fix/create-preview-fit
+          captured_at: 2026-10-07T04:21:44.205Z
+          commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-07T04:21:44.209Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-07T04:21:44.210Z
 created_at: 2026-10-07T04:15:23.701Z
 started_at: 2026-10-07T04:15:36.464Z
+submitted_at: 2026-10-07T04:21:44.209Z
 todos: []

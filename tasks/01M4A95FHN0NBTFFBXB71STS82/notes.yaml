@@ -11,3 +11,22 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T04:15:36.647Z
+  - _ulid: 01M4A9H2XXF5H0EPP4HMA10YMQ
+    content: Implemented and committed 0660b34f. Fit now uses contain layout instead of stale
+      natural-size inline geometry; useLayoutEffect resets new stage/output identity before paint;
+      live dimension changes reset to Fit, same-node same-dimension frames preserve explicit zoom.
+      Host tracks executing node, captures node/prompt before Blob conversion and rejects late
+      obsolete frames. Targeted relevant tests 9 passed (5 new preview, 1 new Host, 3 existing),
+      synthetic differing sizes, resizing, 100%, wheel/keyboard/touch zoom/pan, delayed Blob
+      interleaving. Node suite 215/215; full component suite with external worktree allow config 252
+      passed/7 unchanged failures (5 SimpleCreateControls, 2 Host/CreateSettings, the latter
+      independently confirmed against baseline Host). ESLint reports only two pre-existing Preview
+      refs errors; kspec validate has existing invalid schema records and verify skill
+      missing-description. T3 synthetic harness initial 1024x768 source in 1209x720 pane uses
+      contain at 94%, screenshot
+      /home/user/.t3-hermes/userdata/browser-artifacts/browser-screenshot-127-0-0-1-muxlklpl-a30894c1.png;
+      subsequent browser calls timed out, closed only owned tab and stopped owned Vite server. No
+      user data/profile access, no native build or main merge.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T04:21:43.997Z
