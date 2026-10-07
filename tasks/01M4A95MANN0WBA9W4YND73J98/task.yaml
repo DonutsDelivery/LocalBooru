@@ -7,8 +7,18 @@ description: Synthetic-only request trace and useful expansion without losing co
 spec_ref: "@donut-create-plugin"
 meta_ref: null
 plan_ref: null
-status: pending_review
+status: completed
 blocked_by: []
+closed_reason: "Reviewed and merged into main d0551fc0e4a7f3d62c583017acf87799c9d00271; installed
+  executable SHA-256 6dd5a8d3e1c488f43894907bbc8951dbe595fe6f8085e4e3dc01ee24fc7674b7. Combined
+  canonical app:install finished release build and emitted Installed marker; all owned writers
+  exited and no live Cargo/Rust/Docker/compiler processes remained. Isolated acceptance via exact
+  installed executable and canonical app:test-isolated passed (exit 0): build hash, embedded
+  app.py/adapter JS/enhancer prompt, browser frontend, healthy isolated identity, empty library,
+  disposable profile deletion and port 18791 closure. Evidence:
+  /tmp/dmc-create-final-acceptance-result.json. Focused checks passed in approved reviews; existing
+  controller/frontend/ESLint/kspec baseline failures remain unrelated and were not rerun. No user
+  private data accessed; no push or publication."
 depends_on: []
 context: []
 priority: 3
@@ -61,7 +71,30 @@ history:
         previous: null
     command: review-link
     timestamp: 2026-10-07T04:35:49.474Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: completed
+        previous: pending_review
+      closed_reason:
+        new: "Reviewed and merged into main d0551fc0e4a7f3d62c583017acf87799c9d00271; installed executable
+          SHA-256 6dd5a8d3e1c488f43894907bbc8951dbe595fe6f8085e4e3dc01ee24fc7674b7. Combined
+          canonical app:install finished release build and emitted Installed marker; all owned
+          writers exited and no live Cargo/Rust/Docker/compiler processes remained. Isolated
+          acceptance via exact installed executable and canonical app:test-isolated passed (exit 0):
+          build hash, embedded app.py/adapter JS/enhancer prompt, browser frontend, healthy isolated
+          identity, empty library, disposable profile deletion and port 18791 closure. Evidence:
+          /tmp/dmc-create-final-acceptance-result.json. Focused checks passed in approved reviews;
+          existing controller/frontend/ESLint/kspec baseline failures remain unrelated and were not
+          rerun. No user private data accessed; no push or publication."
+        previous: null
+      completed_at:
+        new: 2026-10-07T05:18:07.141Z
+        previous: null
+    command: task-complete
+    timestamp: 2026-10-07T05:18:07.146Z
 created_at: 2026-10-07T04:15:28.597Z
 started_at: 2026-10-07T04:15:39.035Z
 submitted_at: 2026-10-07T04:34:14.500Z
+completed_at: 2026-10-07T05:18:07.141Z
 todos: []
