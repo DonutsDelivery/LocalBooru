@@ -17148,3 +17148,32 @@ reviews:
     created_at: 2026-10-07T04:35:49.152Z
     updated_at: 2026-10-07T04:36:24.971Z
     notes: []
+  - _ulid: 01M4AEVR3GQ6A9SDM6Z299PKN3
+    slugs:
+      - review-create-quiet-stop-5a1b9ccc
+    title: Independent quiet backend stop review d0551fc0..5a1b9ccc
+    author: DonutsDelivery
+    checks: []
+    events:
+      - _ulid: 01M4AEVR3F80AXA67E2AZS9NM4
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T05:54:56.240Z
+    examined_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
+    external_links: []
+    lifecycle_state: draft
+    related_refs:
+      - "@create-quiet-backend-stop"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: d0551fc0e4a7f3d62c583017acf87799c9d00271
+      head_branch: fix/create-stop-poll
+      head_commit: 5a1b9ccc40dcfce0240af75c95c28a890e46dd1e
+    threads: []
+    verdicts: []
+    created_at: 2026-10-07T05:54:56.240Z
+    updated_at: null
+    notes: []
