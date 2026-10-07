@@ -16809,7 +16809,92 @@ reviews:
       - review-create-preview-0660b34f
     title: Independent preview fit review ed58f12f..0660b34f
     author: DonutsDelivery
-    checks: []
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
+        evidence: Independently full Preview component file5/5 pass. Targeted Preview+Host regression
+          selection7/7 passes. Covers new first-pass/upscale/portrait stages resetting100%zoom,
+          same-stage same-dimension frames retaining intentional zoom, changed live dimensions
+          fitting, pane resize, pan clamping, wheel/keyboard/doubleclick/touch pinch+drag, Host
+          stage identity and deferred Blob from earlier stage discarded without creating object URL.
+          Synthetic fixtures only.
+        name: preview-fit-behavior
+        required: true
+        runner: vitest jsdom synthetic components
+        created_at: 2026-10-07T04:23:44.539Z
+        completed_at: 2026-10-07T04:23:44.539Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
+        evidence: Independently ran full frontend Node suite:215/215 pass on exact candidate.
+        name: node-suite
+        required: true
+        runner: node --test frontend
+        created_at: 2026-10-07T04:23:44.905Z
+        completed_at: 2026-10-07T04:23:44.905Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
+        evidence: Exact base ed58f12f0b80d60e36e54d4310634766ca63830b;
+          head0660b34f6e88033234700cbd7d267ae0fd0e72cc. Every changed file and complete Preview/Host
+          receive lifecycle+stage selection+CSS context read before worker notes. Automatic Fit uses
+          existing absolute100%object-fit contain CSS and clears source-pixel styles; new key resets
+          before paint; explicit zoom retains its geometry. ac-preview-fit has six executable
+          annotations; no source-scanning coverage added, no traits. Diff whitespace clean. No
+          browser/native/private-profile testing performed.
+        name: diff-spec-integration
+        required: true
+        runner: git diff --check and code investigation
+        created_at: 2026-10-07T04:23:45.281Z
+        completed_at: 2026-10-07T04:23:45.281Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
+        evidence: Independent rerun252pass/7fail, no additional errors after external-worktree fs allow. All
+          seven failures independently reproduced on exact base:5SimpleCreateControls remembered
+          disclosure/strength and2Host/CreateSettings existing-backend management wording. Candidate
+          focused Host+Preview45pass/2samefail. Initial default full run additionally hit
+          LICENSE?raw external-worktree access and worker exit; temporary allow config resolved
+          both.
+        name: full-components-baseline
+        required: false
+        runner: vitest full components with external worktree fs allow,maxWorkers2
+        created_at: 2026-10-07T04:23:45.656Z
+        completed_at: 2026-10-07T04:23:45.656Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
+        evidence: Only2Preview react-hooks/refs errors lines15(useState viewRef.current)and71(wheel.current
+          render assignment). Independently reran exact base Preview ESLint and reproduced
+          identical2errors; unchanged lines. Changed Host/tests lint clean.
+        name: eslint-baseline
+        required: false
+        runner: eslint four changed JSX files and baseline Preview
+        created_at: 2026-10-07T04:23:46.029Z
+        completed_at: 2026-10-07T04:23:46.029Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
+        evidence: Independently same130existing schema errors and verify skill missing-description. Code
+          comparison changes no metadata; targetAC read and behavior tests verified.
+        name: registry-validation
+        required: false
+        runner: KSPEC_NO_DAEMON=1 kspec validate
+        created_at: 2026-10-07T04:23:46.400Z
+        completed_at: 2026-10-07T04:23:46.400Z
     events:
       - _ulid: 01M4A9HN97SKTEM36P7Z7S2J5Z
         actor: DonutsDelivery
@@ -16817,9 +16902,75 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T04:22:02.791Z
+      - _ulid: 01M4A9MRC12JR26WPS4JME7ZKW
+        actor: DonutsDelivery
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T04:23:44.257Z
+      - _ulid: 01M4A9MRQWJKE25P7SSMBP8847
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: preview-fit-behavior
+        timestamp: 2026-10-07T04:23:44.636Z
+      - _ulid: 01M4A9MS36FRAWR7K0BV51W26Y
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: node-suite
+        timestamp: 2026-10-07T04:23:44.998Z
+      - _ulid: 01M4A9MSF2TAKHY3TWGBYA22F8
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: diff-spec-integration
+        timestamp: 2026-10-07T04:23:45.378Z
+      - _ulid: 01M4A9MSV4647230PN8GWF3S13
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: full-components-baseline
+        timestamp: 2026-10-07T04:23:45.765Z
+      - _ulid: 01M4A9MT6CATWWNP60WJJ97BTZ
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: eslint-baseline
+        timestamp: 2026-10-07T04:23:46.124Z
+      - _ulid: 01M4A9MTJ0VRYR7FN7BTG62JEY
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: registry-validation
+        timestamp: 2026-10-07T04:23:46.496Z
+      - _ulid: 01M4A9MTWVJA01KM71809S0ZHV
+        actor: independent-create-reviewer
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+            head_commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
+          decision: approve
+        timestamp: 2026-10-07T04:23:46.843Z
+      - _ulid: 01M4A9MTWVMPKV0KXT6A0S45H7
+        actor: independent-create-reviewer
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T04:23:46.843Z
     examined_commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
     external_links: []
-    lifecycle_state: draft
+    lifecycle_state: closed
     related_refs:
       - "@create-preview-fit"
     subject:
@@ -16829,7 +16980,15 @@ reviews:
       head_branch: fix/create-preview-fit
       head_commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
     threads: []
-    verdicts: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: ed58f12f0b80d60e36e54d4310634766ca63830b
+          head_commit: 0660b34f6e88033234700cbd7d267ae0fd0e72cc
+        decision: approve
+        reviewer: independent-create-reviewer
+        role: reviewer
+        created_at: 2026-10-07T04:23:46.843Z
     created_at: 2026-10-07T04:22:02.791Z
-    updated_at: null
+    updated_at: 2026-10-07T04:23:46.843Z
     notes: []
