@@ -7,6 +7,26 @@ vi.mock('../services/donutCreate', () => ({ getEnhancerStatus: vi.fn(), startEnh
 const idle = { models: [{ id: 'minicpm', name: 'MiniCPM5-2B', ready: true }, { id: 'qwen', name: 'Qwen3.5-4B', ready: true }], supported: true, busy: false }
 beforeEach(() => { vi.clearAllMocks(); getEnhancerStatus.mockResolvedValue(idle); cancelEnhancer.mockResolvedValue(idle) })
 afterEach(cleanup)
+// AC: @create-multiple-face-prompts ac-character-prompts
+test('shows separate character prompts in resolved spatial order', async () => {
+  const face_prompts = [{character:'Older pilot',position:'left',face_prompt:'The older pilot smiles.'},{character:'Younger pilot',position:'right',face_prompt:'The younger pilot frowns.'}]
+  render(<CreatePromptEnhancer sessionId="synthetic" config={{enabled:true,model:'minicpm',lastRun:{seed:73,model:'minicpm',main_prompt:'Two pilots.',face_prompt:'',face_prompts}}} onConfigure={vi.fn()} />)
+  fireEvent.click(screen.getByText('Prompt enhancer'))
+  const prompts = await screen.findAllByRole('textbox', {name:/Enhanced face prompt for/})
+  expect(prompts.map(prompt => prompt.value)).toEqual(['The older pilot smiles.','The younger pilot frowns.'])
+  expect(prompts.every(prompt => prompt.readOnly)).toBe(true)
+  expect(screen.getByText('Older pilot · left')).toBeTruthy()
+  expect(screen.getByText('Younger pilot · right')).toBeTruthy()
+  expect(screen.queryByLabelText('Enhanced face prompt')).toBeNull()
+  expect(screen.queryByText('This run used an empty face prompt.')).toBeNull()
+  expect(startEnhancer).not.toHaveBeenCalled()
+})
+// AC: @create-multiple-face-prompts ac-mismatch
+test('states when no face plan was resolved instead of implying a character association', async () => {
+  render(<CreatePromptEnhancer sessionId="synthetic" config={{enabled:true,model:'minicpm',lastRun:{seed:73,model:'minicpm',main_prompt:'Two pilots.',face_prompt:'',face_prompts:[]}}} onConfigure={vi.fn()} />)
+  fireEvent.click(screen.getByText('Prompt enhancer'))
+  expect(await screen.findByText('No face plan was resolved for this run.')).toBeTruthy()
+})
 // AC: @create-managed-prompt-enhancer ac-infer-empty-face
 test('explains how an empty face brief derives a visible face while preserving overrides', async () => {
   render(<CreatePromptEnhancer sessionId="synthetic" config={{enabled:true,model:'minicpm'}} onConfigure={vi.fn()} />)
