@@ -15876,6 +15876,145 @@ reviews:
           status: fail
           name: Existing surrounding suite failures
         timestamp: 2026-10-07T02:03:09.778Z
+      - _ulid: 01M4A27E1HPB0CHAWJK5CV8W5F
+        actor: codex-self-review
+        event_type: thread_created
+        payload:
+          kind: nit
+          thread_ulid: 01M4A27DYN7SJHHRD2Y0PHSRZF
+        timestamp: 2026-10-07T02:14:07.665Z
+      - _ulid: 01M4A27ECRP5XAENYB6GE331V2
+        actor: codex-self-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T02:14:08.024Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: closed
+    related_refs:
+      - "@integrate-create-prompt-enhancer"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: db118f74
+      head_branch: feat/create-managed-enhancer
+      head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+    threads:
+      - _ulid: 01M4A27DYN7SJHHRD2Y0PHSRZF
+        entries:
+          - _ulid: 01M4A27DYPPD4BFT3RV9VMZW56
+            author: codex-self-review
+            body: Superseded by a clean final verification record. The initial batch used required=false, which
+              omits the option and therefore retained Commander default required=true for the
+              informational baseline failure. The record is preserved; no passing-suite claim or
+              approval is made here. Final checks bind to bfb5f520.
+            created_at: 2026-10-07T02:14:07.574Z
+        kind: nit
+    verdicts: []
+    created_at: 2026-10-07T01:35:29.878Z
+    updated_at: 2026-10-07T02:14:07.930Z
+    notes: []
+  - _ulid: 01M4A27EHQK1RRQ8X001DXP1W8
+    slugs:
+      - create-enhancer-final-review
+    title: Managed Create enhancer final verification
+    author: codex-self-review
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        evidence: 34 focused checks rerun and passed on bfb5f520, including both inputs, owner isolation,
+          context bounds, verified downloads, cleanup and native environment sanitation.
+        name: Focused Python
+        required: true
+        runner: unittest
+        created_at: 2026-10-07T02:14:09.119Z
+        completed_at: 2026-10-07T02:14:09.119Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        evidence: 4 UI and 12 adapter checks passed; UI/adapter sources are unchanged by the subsequent
+          documentation and native environment commits.
+        name: UI and graph adapter
+        required: true
+        runner: vitest + node
+        created_at: 2026-10-07T02:14:09.438Z
+        completed_at: 2026-10-07T02:14:09.438Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        evidence: "Both pinned models passed again with the isolated helper environment: MiniCPM 7.44s, Qwen
+          15.74s. Both received separate synthetic main/face inputs, preserved face details,
+          returned valid JSON and released helpers. Earlier synthetic browser preview/apply passed
+          on unchanged UI."
+        name: Real model acceptance
+        required: true
+        runner: synthetic CPU + browser
+        created_at: 2026-10-07T02:14:09.760Z
+        completed_at: 2026-10-07T02:14:09.760Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
+        evidence: Unchanged main reproduces seven old UI expectation failures and one controller error-text
+          assertion failure. No new surrounding failure. Existing malformed kspec records also
+          remain outside scope.
+        name: Existing surrounding suite failures
+        required: false
+        runner: baseline comparison
+        created_at: 2026-10-07T02:14:10.103Z
+        completed_at: 2026-10-07T02:14:10.103Z
+    events:
+      - _ulid: 01M4A27EHQ5JM9E67XKC86JR5A
+        actor: codex-self-review
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T02:14:08.183Z
+      - _ulid: 01M4A27F73M7AYAHX412HZ7FGJ
+        actor: codex-self-review
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T02:14:08.867Z
+      - _ulid: 01M4A27FHM3W19RFSZ2BW56CFX
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: pass
+          name: Focused Python
+        timestamp: 2026-10-07T02:14:09.204Z
+      - _ulid: 01M4A27FVKQ2T6W685XS9MNAQQ
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: pass
+          name: UI and graph adapter
+        timestamp: 2026-10-07T02:14:09.523Z
+      - _ulid: 01M4A27G5RWJADV2N4EFYAFJXX
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: pass
+          name: Real model acceptance
+        timestamp: 2026-10-07T02:14:09.848Z
+      - _ulid: 01M4A27GGCVMX8PQ09DR99XK1G
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: fail
+          name: Existing surrounding suite failures
+        timestamp: 2026-10-07T02:14:10.188Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -15889,6 +16028,6 @@ reviews:
       head_commit: bfb5f5204955419ef008118a78801dc40da6aa83
     threads: []
     verdicts: []
-    created_at: 2026-10-07T01:35:29.878Z
-    updated_at: 2026-10-07T02:03:09.697Z
+    created_at: 2026-10-07T02:14:08.183Z
+    updated_at: 2026-10-07T02:14:10.103Z
     notes: []

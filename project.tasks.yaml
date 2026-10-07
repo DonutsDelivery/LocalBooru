@@ -2429,7 +2429,7 @@ tasks:
     depends_on: []
     priority: 2
     tags: []
-    review_ref: "@create-enhancer-review"
+    review_ref: "@create-enhancer-final-review"
     notes_count: 5
     todos_count: 0
     created_at: 2026-10-07T01:09:54.587Z
