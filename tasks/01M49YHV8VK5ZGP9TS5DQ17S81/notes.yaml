@@ -13,3 +13,12 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T01:09:54.947Z
+  - _ulid: 01M49YWXHRMT3BSV39AS6FBWWD
+    content: User additionally requires feeding the existing user-written face prompt to the LLM. Send
+      main and face briefs as distinct named inputs, retain both originals in the preview, preserve
+      explicitly supplied face details and subject association; stale checks cover changes to either
+      field. A supplied targeted face brief takes precedence over automatic extraction/empty-face
+      fallback.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T01:15:57.368Z

@@ -1229,11 +1229,12 @@ features:
               errors, permits cancellation and retry without losing completed verified downloads,
               and becomes ready without external model-server setup.
             when: They install or repair that enhancer
-          - given: An authorized studio user supplies an image brief and an installed enhancer model
+          - given: An authorized studio user supplies a main image brief, an optional existing face prompt and
+              an installed enhancer model
             id: ac-enhance-preview
             then: The studio presents a complete scene description and a separate face description generated
-              using the supplied preservation rules; the original brief remains available and
-              generation does not start automatically.
+              using both supplied inputs and preservation rules; the original main and face inputs
+              remain available and generation does not start automatically.
             when: They request enhancement
           - given: A completed enhancer preview contains valid scene and face descriptions
             id: ac-apply-routing
