@@ -591,6 +591,15 @@
   background: var(--bg-secondary);
 }
 
+.create-generate-footer .create-generation-error {
+  grid-column: 1 / -1;
+  margin: 0 0 10px;
+  max-height: min(160px, 24dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+}
+
 .create-studio-dialog .create-generate {
   width: 100%;
   display: flex;

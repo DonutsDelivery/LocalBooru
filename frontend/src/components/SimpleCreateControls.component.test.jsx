@@ -269,3 +269,38 @@ test('preset selection preserves the draft until reset is explicitly confirmed',
   expect(initial.onGenerate).not.toHaveBeenCalled();
   expect(initial.onPatch).not.toHaveBeenCalled();
 });
+
+// AC: @donut-create-plugin ac-basic-edit
+test.each(['create', 'edit'])('keeps %s generation failures beside Generate outside the scrolling controls', async activeTab => {
+  const initial = { ...props({ prompt: { kind: 'text', value: 'Synthetic owl.' }, editPrompt: { kind: 'text', value: 'Synthetic owl.' }, referenceA: { kind: 'image', value: `donutref:${'a'.repeat(64)}` } }), activeTab }
+  const view = render(<SimpleCreateControls {...initial} />)
+  const controls = screen.getByRole('tabpanel')
+  controls.scrollTop = 400
+  view.rerender(<SimpleCreateControls {...initial} error="Synthetic generation failed. Repair the model and retry." />)
+  const alert = await screen.findByRole('alert')
+  expect(alert.closest('.create-generate-footer')).toBeTruthy()
+  expect(controls.contains(alert)).toBe(false)
+  expect(alert.tabIndex).toBe(0)
+  alert.focus(); expect(document.activeElement).toBe(alert)
+  expect(controls.scrollTop).toBe(400)
+  expect(screen.getByLabelText('Describe your image').value).toBe('Synthetic owl.')
+  view.rerender(<SimpleCreateControls {...initial} error="" />)
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+// AC: @donut-create-plugin ac-basic-studio
+test('keeps invalid generation input visible beside Generate and preserves the draft without queuing', async () => {
+  const initial = props({ prompt: { kind: 'text', value: 'Synthetic owl.' }, steps: { kind: 'number', value: 12, min: 1, max: 100, step: 1 } })
+  render(<SimpleCreateControls {...initial} />)
+  fireEvent.click(screen.getByText('Sampling'))
+  fireEvent.change(screen.getByLabelText('Steps'), { target: { value: '999' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Generate image', exact: true }))
+  const alert = await screen.findByRole('alert')
+  expect(alert.textContent).toBe('Steps must be at most 100.')
+  expect(alert.closest('.create-generate-footer')).toBeTruthy()
+  expect(alert.closest('.create-controls-scroll')).toBeNull()
+  expect(screen.getByLabelText('Steps').value).toBe('999')
+  expect(initial.onGenerate).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('Steps'), { target: { value: '24' } })
+  expect(screen.queryByRole('alert')).toBeNull()
+})
