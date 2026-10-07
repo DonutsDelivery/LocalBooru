@@ -87,8 +87,11 @@ node-pack version; DMC does not deploy a separate ComfyUI detailer implementatio
 Managed setup installs that pack. For a registered existing local backend, open
 the **ComfyUI** status menu, stop ComfyUI, choose **Update DonutNodes**, and start
 ComfyUI again. The update targets the selected backend's custom-nodes folder.
-Dirty Git checkouts, modified owned sources, unowned folders and symlinks are
-preserved with an actionable error. URL-only remote backends must be updated on
+Dirty Git checkouts, modified owned sources, unowned folders and unverified links are
+preserved with an actionable error. A linked Git checkout is supported when its
+repository root and origin identify the required DonutNodes source; the link
+stays in place and the same local-change safeguards apply. Unverified linked
+folders are preserved. URL-only remote backends must be updated on
 their host. Ordinary workflows remain usable while the face runtime is missing;
 enhanced face routing reports the node requirement before image submission. Multi-face identity editing/references, detailer wildcards and custom
 conditioning hooks currently report an unsupported-mode error; there is no
