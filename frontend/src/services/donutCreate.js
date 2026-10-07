@@ -2,6 +2,7 @@ import { apiClient, getApiUrl, invalidateDirectoriesCache } from '../api'
 
 const CREATE_API = '/addons/donut-create/api/create'
 let backendStatusRevision = 0
+let backendSuspensions = 0
 
 function checkRequest(signal) {
   if (signal?.aborted) throw new DOMException('The server connection changed.', 'AbortError')
@@ -9,23 +10,38 @@ function checkRequest(signal) {
 
 export async function getCreateStatus(signal) {
   const revision = backendStatusRevision
-  const response = await apiClient.get(`${CREATE_API}/status`, { signal })
-  checkRequest(signal)
-  if (revision !== backendStatusRevision) throw new DOMException('Backend status was superseded.', 'AbortError')
-  return response.data
+  try {
+    return (await apiClient.get(`${CREATE_API}/status`, { signal, background: true })).data
+  } finally {
+    checkRequest(signal)
+    if (revision !== backendStatusRevision) throw new DOMException('Backend status was superseded.', 'AbortError')
+  }
 }
 
 // All status readers share the lifecycle epoch, including polls in separate views.
 async function changeBackend(path, body, signal) {
   const revision = ++backendStatusRevision
+  const suspendsStudio = ['backend/stop', 'backend/restart'].includes(path)
+  if (suspendsStudio) {
+    backendSuspensions += 1
+    window.dispatchEvent(new CustomEvent('donut-create-backend-lifecycle', { detail: { changing: true } }))
+  }
+  let status
   try {
     const response = await apiClient.post(`${CREATE_API}/${path}`, body, { signal })
     checkRequest(signal)
     if (revision !== backendStatusRevision) throw new DOMException('Backend action was superseded.', 'AbortError')
-    return response.data
+    status = response.data
+    return status
   } finally {
     // Also discard polls begun while the action was still changing the backend.
-    if (revision === backendStatusRevision) backendStatusRevision += 1
+    if (revision === backendStatusRevision) {
+      backendStatusRevision += 1
+    }
+    if (suspendsStudio) {
+      backendSuspensions -= 1
+      window.dispatchEvent(new CustomEvent('donut-create-backend-lifecycle', { detail: { changing: backendSuspensions > 0, status: revision + 1 === backendStatusRevision ? status : undefined } }))
+    }
   }
 }
 
@@ -66,7 +82,7 @@ export async function createStudioSession(signal) {
 }
 
 export async function getStudioSession(sessionId, signal) {
-  const response = await apiClient.get(`${CREATE_API}/sessions/${encodeURIComponent(sessionId)}`, { signal })
+  const response = await apiClient.get(`${CREATE_API}/sessions/${encodeURIComponent(sessionId)}`, { signal, background: true })
   checkRequest(signal)
   return response.data
 }

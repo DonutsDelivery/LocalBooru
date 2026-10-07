@@ -1,3 +1,8 @@
+// Background reads report through their owning view rather than global popups.
+export function shouldSuppressBackgroundError(config) {
+  return config?.background === true && config?.method?.toLowerCase() === 'get'
+}
+
 export function shouldSuppressOptionalNotFound(config, status) {
   return config?.suppressErrorToast === true && status === 404
 }
