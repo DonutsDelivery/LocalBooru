@@ -2619,3 +2619,17 @@ tasks:
     started_at: 2026-10-07T07:57:01.759Z
     submitted_at: 2026-10-07T08:01:18.151Z
     completed_at: 2026-10-07T08:50:34.453Z
+  - _ulid: 01M4AXC2B41PARJE2RE47V1GGA
+    slugs:
+      - create-face-only-conditioning
+    title: Repair face-only conditioning in Create workflows
+    type: bug
+    spec_ref: "@donut-create-plugin"
+    status: pending
+    blocked_by: []
+    depends_on: []
+    priority: 1
+    tags: []
+    notes_count: 0
+    todos_count: 0
+    created_at: 2026-10-07T10:08:31.074Z

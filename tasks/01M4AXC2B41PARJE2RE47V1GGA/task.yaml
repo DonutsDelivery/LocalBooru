@@ -1,0 +1,20 @@
+_ulid: 01M4AXC2B41PARJE2RE47V1GGA
+slugs:
+  - create-face-only-conditioning
+title: Repair face-only conditioning in Create workflows
+type: bug
+description: Trace and correct bundled and recognized saved workflows that route the whole-image
+  brief into face-detail conditioning; preserve original prompts/settings and custom wiring; verify
+  executable face text and positive conditioning are face-only.
+spec_ref: "@donut-create-plugin"
+meta_ref: null
+plan_ref: null
+status: pending
+blocked_by: []
+depends_on: []
+context: []
+priority: 1
+tags: []
+vcs_refs: []
+created_at: 2026-10-07T10:08:31.074Z
+todos: []
