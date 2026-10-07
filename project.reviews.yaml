@@ -18248,6 +18248,13 @@ reviews:
         payload:
           to: draft
         timestamp: 2026-10-07T08:02:45.659Z
+      - _ulid: 01M4AP7X2RARK9KY488VKMHST3
+        actor: DonutsDelivery
+        event_type: subject_refreshed
+        payload:
+          new_head: 1668de2fecfdc4423f38fdc4a24b157b58033595
+          previous_head: 90d5d88240e561276ad26bb69a11cf24018d7e3d
+        timestamp: 2026-10-07T08:03:54.585Z
     examined_commit: null
     external_links: []
     lifecycle_state: draft
@@ -18258,9 +18265,9 @@ reviews:
       base_branch: main
       base_commit: 6501234a8c6a5fe445ce32f55923f47c6f65e63e
       head_branch: fix/create-visible-errors
-      head_commit: 90d5d88240e561276ad26bb69a11cf24018d7e3d
+      head_commit: 1668de2fecfdc4423f38fdc4a24b157b58033595
     threads: []
     verdicts: []
     created_at: 2026-10-07T08:02:45.659Z
-    updated_at: null
+    updated_at: 2026-10-07T08:03:54.483Z
     notes: []
