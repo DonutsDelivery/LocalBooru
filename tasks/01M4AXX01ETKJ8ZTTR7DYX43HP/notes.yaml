@@ -1,1 +1,13 @@
-notes: []
+notes:
+  - _ulid: 01M4AY4K64QNWP3TTV3J0202T4
+    content: Pinned detailer uses area sorting/shared conditioning; hook cannot see bbox or intercept
+      identity edit text. Plan owned DMC wrapper detects once, sorts bbox x/y deterministically,
+      validates exact intended face count before sampling, independently encodes/passes each face
+      prompt with current composited image. Preserve variance metadata/settings and single-face
+      delegation. Enhancer/adapter/UI add bounded ordered records, with spatial positions distinct
+      from gaze. Initial multi mode rejects identity references/custom conditioning-replacing hooks;
+      upstream reference clamping cannot safely map identities. Three isolated workers own runtime,
+      schema/panel, adapter.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T10:21:54.756Z
