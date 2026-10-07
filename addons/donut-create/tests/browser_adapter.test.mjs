@@ -1300,3 +1300,82 @@ test('disabled known face detail retains new single-face metadata without requir
   assert.equal(env.queued.length,1);assert.equal(env.queued[0][1].output['1014:984'],undefined);
   assert.equal(env.queued[0][1].workflow.extra.dmc_prompt_enhancement.face_prompt,'Blue eyes and freckles');
 });
+
+const familyFacePlan=[
+  {character:'Upper left',position:{left_of:['Upper middle'],above:['Lower left']},face_prompt:'Freckles and blue eyes.'},
+  {character:'Upper middle',position:{left_of:['Upper right'],above:['Lower middle']},face_prompt:'Brown eyes and a smile.'},
+  {character:'Upper right',position:{left_of:[],above:['Lower right']},face_prompt:'Green eyes and dimples.'},
+  {character:'Lower left',position:{left_of:['Lower middle'],above:[]},face_prompt:'Round cheeks and a calm expression.'},
+  {character:'Lower middle',position:{left_of:['Lower right'],above:[]},face_prompt:'Hazel eyes and a serious expression.'},
+  {character:'Lower right',position:{left_of:[],above:[]},face_prompt:'Grey eyes and an open smile.'},
+];
+const raggedFacePlan=[
+  {character:'Top',position:{left_of:[],above:['Bottom left','Bottom right']},face_prompt:'Blue eyes.'},
+  {character:'Bottom right',position:{left_of:[],above:[]},face_prompt:'Green eyes.'},
+  {character:'Bottom left',position:{left_of:['Bottom right'],above:[]},face_prompt:'Brown eyes.'},
+];
+
+// AC: @create-multiple-face-prompts ac-character-prompts
+test('relative face plans retain two-axis and ragged layouts in compiled routing and metadata regardless of array order',async()=>{
+  for(const plan of [copy(familyFacePlan).reverse(),raggedFacePlan,[{character:'Top',position:{left_of:[],above:['Bottom']},face_prompt:'Blue eyes.'},{character:'Bottom',position:{left_of:[],above:[]},face_prompt:'Brown eyes.'}]]) {
+    const env=await multiFaceFixture(),before=env.current(),compile=env.app.graphToPrompt;
+    env.app.graphToPrompt=async()=>{const compiled=await compile();compiled.output['1014:984'].inputs.max_faces=16;return compiled;};
+    env.jobChange=job=>({...job,result:{main_prompt:'Placed family scene',face_prompt:'',face_prompts:copy(plan)}});
+    const originalSeed=(await env.app.graphToPrompt()).output.sample.inputs.seed;
+    await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    const submitted=env.queued[0][1];
+    assert.deepEqual(JSON.parse(submitted.output['1014:984'].inputs.face_prompts_json),plan);
+    assert.equal(submitted.output['1014:984'].class_type,'DMCFaceDetailer');
+    assert.equal(submitted.output['1014:984'].inputs.seed,originalSeed);
+    assert.equal(env.requests[0].seed,originalSeed);
+    assert.deepEqual(submitted.workflow.extra.dmc_prompt_enhancement.face_prompts,plan);
+    assert.deepEqual(env.current(),before);
+    await env.app.loadGraphData(submitted.workflow);
+    assert.deepEqual(copy((await env.action('snapshot')).snapshot.enhancer.lastRun.face_prompts),plan);
+    await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    assert.equal(env.requests[1].image_brief,env.requests[0].image_brief);
+    assert.deepEqual(JSON.parse(env.queued[1][1].output['1014:984'].inputs.face_prompts_json),plan);
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-mismatch
+test('invalid relative face schemas and axis cycles fail before compiled face submission',async()=>{
+  const cases=[
+    position=>{position.left_of=['Upper left'];},
+    position=>{position.left_of=['Unknown character'];},
+    position=>{position.left_of=['upper middle'];},
+    position=>{position.left_of=['Upper middle','Upper middle'];},
+    position=>{position.left_of=Array(16).fill('Upper middle');},
+    position=>{position.left_of='Upper middle';},
+    position=>{position.above=null;},
+    position=>{position.above=[1];},
+    position=>{delete position.above;},
+    position=>{position.row=1;},
+  ].map(change=>{const plan=copy(familyFacePlan);change(plan[0].position);return plan;});
+  const horizontal=copy(familyFacePlan);horizontal[2].position.left_of=['Upper left'];cases.push(horizontal);
+  const vertical=copy(familyFacePlan);vertical[3].position.above=['Upper left'];cases.push(vertical);
+  const mixed=copy(familyFacePlan);mixed[0].position='left';cases.push(mixed);
+  const duplicate=copy(familyFacePlan);duplicate[1].character='UPPER LEFT';cases.push(duplicate);
+  for(const plan of cases) {
+    const env=await multiFaceFixture(),before=env.current();
+    env.jobChange=job=>({...job,result:{main_prompt:'Family scene',face_prompt:'',face_prompts:plan}});
+    await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/incomplete|ambiguous/i);
+    assert.equal(env.queued.length,0);assert.deepEqual(env.current(),before);
+  }
+});
+
+// AC: @create-multiple-face-prompts ac-mismatch
+test('tampered cyclic run metadata is not exposed or reused as an executable face plan',async()=>{
+  const env=await multiFaceFixture(),compile=env.app.graphToPrompt;
+  env.app.graphToPrompt=async()=>{const compiled=await compile();compiled.output['1014:984'].inputs.max_faces=16;return compiled;};
+  env.jobChange=job=>({...job,result:{main_prompt:'Family scene',face_prompt:'',face_prompts:copy(familyFacePlan)}});
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  const saved=copy(env.queued[0][1].workflow),bad=saved.extra.dmc_prompt_enhancement.face_prompts;
+  bad[2].position.left_of=['Upper left'];
+  await env.app.loadGraphData(saved);
+  assert.equal((await env.action('snapshot')).snapshot.enhancer.lastRun,undefined);
+  const before=env.current();
+  env.jobChange=job=>({...job,result:{main_prompt:'Tampered family scene',face_prompt:'',face_prompts:bad}});
+  await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/incomplete|ambiguous/i);
+  assert.equal(env.queued.length,1);assert.deepEqual(env.current(),before);
+});

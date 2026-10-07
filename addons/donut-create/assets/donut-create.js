@@ -1419,15 +1419,41 @@
     if (shared !== '') return false;
     const spatial = ['left', 'center', 'right'];
     const ordinal = ['1st', '2nd', '3rd', ...Array.from({length: 13}, (_, index) => (index + 4) + 'th')];
-    const labels = new Set(); let family = null, previous = -1;
-    return value.every(entry => {
+    const labels = new Set();
+    if (!value.every(entry => {
       if (!object(entry) || Object.keys(entry).length !== 3 || typeof entry.character !== 'string'
         || !entry.character.trim() || entry.character.length > 200 || typeof entry.face_prompt !== 'string'
         || !entry.face_prompt.trim() || entry.face_prompt.length > 8000) return false;
-      const label = entry.character.trim().toLowerCase(), kind = spatial.includes(entry.position) ? 'spatial' : 'ordinal';
+      const label = entry.character.trim().toLowerCase();
+      if (labels.has(label)) return false;
+      labels.add(label); return true;
+    })) return false;
+    if (value.some(entry => object(entry.position))) {
+      const entries = new Map(value.map(entry => [entry.character, entry]));
+      if (!value.every(entry => object(entry.position) && Object.keys(entry.position).length === 2
+        && ['left_of', 'above'].every(axis => Array.isArray(entry.position[axis]) && entry.position[axis].length <= 15
+          && new Set(entry.position[axis]).size === entry.position[axis].length
+          && entry.position[axis].every(label => label !== entry.character && entries.has(label))))) return false;
+      // Relations apply independently on each axis. Record order does not
+      // describe rows, columns, or the runtime's detected-face traversal order.
+      return ['left_of', 'above'].every(axis => {
+        const active = new Set(), visited = new Set();
+        const visit = label => {
+          if (active.has(label)) return false;
+          if (visited.has(label)) return true;
+          active.add(label);
+          if (!entries.get(label).position[axis].every(visit)) return false;
+          active.delete(label); visited.add(label); return true;
+        };
+        return value.every(entry => visit(entry.character));
+      });
+    }
+    let family = null, previous = -1;
+    return value.every(entry => {
+      const kind = spatial.includes(entry.position) ? 'spatial' : 'ordinal';
       const rank = (kind === 'spatial' ? spatial : ordinal).indexOf(entry.position);
-      if (labels.has(label) || rank < 0 || family && family !== kind || rank <= previous) return false;
-      labels.add(label); family = kind; previous = rank; return true;
+      if (rank < 0 || family && family !== kind || rank <= previous) return false;
+      family = kind; previous = rank; return true;
     });
   }
   function routeFacePrompts(output, entries, binding, detailBinding, requireSingle = false) {
