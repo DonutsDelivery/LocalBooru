@@ -19,3 +19,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T07:32:03.558Z
+  - _ulid: 01M4AMP054DSWGQFKMJVGC4GCM
+    content: Adapter fda1bc52 covers compiled execution seed in Create/Edit/Advanced and before/after
+      widget hooks, persisted config, original-source preservation and actual output metadata; 37
+      browser behavioral cases. Frontend removes manual apply workflow, configures Enhance every run
+      once, displays actual pair/model/seed, cancels pending work on close/Stop including Advanced,
+      permits turning off unavailable enhancer. Changed production ESLint clean, Node216/216,
+      Python17/17, targeted frontend10/10; full Host/UI has only2 independently reproduced base
+      failures. Synthetic data only; no user library or prompts accessed.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T07:36:39.332Z
