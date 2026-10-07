@@ -1245,6 +1245,62 @@ describe('Donut Create default output', () => {
     expect(request.mock.calls.filter(([action]) => action === 'generate')).toHaveLength(1)
   })
 
+  // AC: @create-managed-prompt-enhancer ac-next-draft-editing
+  // AC: @donut-create-plugin ac-default-save-output
+  test.each(['next brief', 'next enhancer settings', 'stop', 'save settings', 'server'])('keeps captured Run Instant ownership during held output preparation after %s', async change => {
+    vi.useFakeTimers()
+    session.jobs = []; session.outputs = []
+    const directory = deferred()
+    const snapshot = { ready: true, enhancer: { enabled: true, model: 'minicpm', timing: 'always' }, fields: {
+      prompt: { kind: 'text', value: 'Captured synthetic owl.' }, facePrompt: { kind: 'text', value: '' },
+    } }
+    const captured = []
+    const request = vi.fn(async (action, payload) => {
+      if (action === 'generate') captured.push(structuredClone(snapshot))
+      return action === 'enhancer-config' ? { ...snapshot, enhancer: payload, mutationChanged: true }
+        : action === 'generate' ? { ...snapshot, lastQueuedPromptIds: ['prepared-synthetic-job'] } : snapshot
+    })
+    bridgeFixture.current = { dispose: vi.fn(), request }
+    const original = api.apiClient.post.getMockImplementation()
+    api.apiClient.post.mockImplementation((url, ...args) => url === '/create/output-directory' ? directory.promise : original(url, ...args))
+    render(<CreateStudioHost />); openStudio()
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Run Instant' }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(650) })
+    expect(api.apiClient.post.mock.calls.filter(([url]) => url === '/create/output-directory')).toHaveLength(1)
+    expect(captured).toHaveLength(0)
+    expect(screen.getByLabelText('Describe your image').disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText('Describe your image'), { target: { value: 'Next synthetic fox.' } })
+    fireEvent.blur(screen.getByLabelText('Describe your image'))
+    if (change === 'next enhancer settings') {
+      fireEvent.click(screen.getByText('Prompt enhancer'))
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      fireEvent.change(screen.getByLabelText('Timing'), { target: { value: 'changed' } })
+    }
+    if (change === 'stop') await act(async () => { await stopCreateBackend() })
+    if (change === 'save settings') {
+      fireEvent.click(screen.getByRole('tab', { name: 'Finalize' }))
+      fireEvent.click(screen.getByRole('switch', { name: 'Save output' }))
+    }
+    if (change === 'server') serverEvent('donut-create-server-changing')
+    expect(request.mock.calls.some(([action]) => action === 'patch' || action === 'enhancer-config')).toBe(false)
+    await resolveDirectory(directory)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    const shouldQueue = ['next brief', 'next enhancer settings'].includes(change)
+    expect(captured).toHaveLength(shouldQueue ? 1 : 0)
+    if (shouldQueue) {
+      expect(captured[0].fields.prompt.value).toBe('Captured synthetic owl.')
+      expect(captured[0].enhancer.timing).toBe('always')
+      expect(screen.getByLabelText('Describe your image').value).toBe('Next synthetic fox.')
+      expect(request.mock.calls.some(([action]) => action === 'cancel-generation')).toBe(false)
+      if (change === 'next enhancer settings') expect(request).toHaveBeenCalledWith('enhancer-config', { enabled: true, model: 'minicpm', timing: 'changed' }, expect.any(Object))
+    } else if (change !== 'server') {
+      expect(screen.getByLabelText('Describe your image').value).toBe('Next synthetic fox.')
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+    expect(captured).toHaveLength(shouldQueue ? 1 : 0)
+  })
+
   // AC: @donut-create-plugin ac-default-save-output
   test('times out output preparation and ignores its late directory result', async () => {
     vi.useFakeTimers(); readyBridge()

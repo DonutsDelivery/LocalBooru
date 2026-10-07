@@ -123,7 +123,6 @@ export default function CreateStudioHost() {
   const pendingActions = useRef(0)
   const actionErrorVisible = useRef(false)
   const instantEnabled = useRef(false)
-  const instantEpoch = useRef(0)
   const authoredRevision = useRef(0)
   const instantVersion = useRef(null)
   const draftsWaiting = useRef(false)
@@ -143,7 +142,6 @@ export default function CreateStudioHost() {
 
   const stopInstant = useCallback(() => {
     instantEnabled.current = false
-    instantEpoch.current += 1
     setRunInstant(false)
   }, [])
 
@@ -717,7 +715,6 @@ export default function CreateStudioHost() {
   const generateImage = useCallback(async (instantRequest) => {
     if (generateLock.current) throw new Error('An image is already being added to the queue.')
     const requestGeneration = generation.current
-    const epoch = instantEpoch.current
     const version = authoredRevision.current
     const isInstant = instantRequest === true
     const navigationRevision = workspaceNavigationRevision.current
@@ -729,8 +726,9 @@ export default function CreateStudioHost() {
       const saveRevision = saveSettingsRevision.current
       const ownsRequest = () => generation.current === requestGeneration && !generationCancelled.current
         && saveSettingsRevision.current === saveRevision && authoredRevision.current === version && visible.current
-        && (!isInstant || instantEnabled.current && instantEpoch.current === epoch && !draftsWaiting.current
-          && !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)))
+        // Local next drafts and pausing future Instant runs do not revoke this captured request.
+        // Explicit stop, save changes and session changes use the ownership guards above.
+        && (!isInstant || !acknowledgedPrompts.current.size && !(sessionRef.current?.jobs || []).some(job => ['queued', 'running'].includes(job.status)))
       const output = await prepareOutput()
       if (!ownsRequest()) throw new DOMException('The image run was cancelled before submission.', 'AbortError')
       const nextSnapshot = await studioAction('generate', { outputDestination: output }, ownsRequest)
@@ -935,7 +933,6 @@ export default function CreateStudioHost() {
 
   function changeRunInstant(enabled) {
     if (!enabled && instantEnabled.current) cancelGeneration()
-    instantEpoch.current += 1
     instantEnabled.current = enabled
     instantVersion.current = null
     setRunInstant(enabled)
