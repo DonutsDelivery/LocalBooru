@@ -1595,6 +1595,7 @@
 .create-result-viewport:active { cursor: grabbing; }
 .create-result-viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .create-result-image { position: absolute; max-width: none; max-height: none; transform: translate(-50%, -50%); user-select: none; pointer-events: none; }
+.create-result-viewport > .create-preview-image { user-select: none; pointer-events: none; }
 @media (min-width: 941px) {
   .create-lower-pane { overflow: hidden; }
   .create-simple-workspace:not(.create-lower-expanded) .create-lower-scroll { display: none; }
