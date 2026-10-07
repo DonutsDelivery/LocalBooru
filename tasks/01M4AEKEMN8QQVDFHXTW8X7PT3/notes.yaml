@@ -8,3 +8,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T05:50:24.774Z
+  - _ulid: 01M4AESGBRHT77JMPFE0QHJAAS
+    content: Regression tests reproduced all three bugs before implementation. Seven new
+      integration/component cases pass, including the real Axios interceptor, in-flight
+      cancellation, stop/restart overlap, failed-stop recovery and unchanged studio/results with no
+      generation. Node suite216/216 and focused changed-source ESLint pass. Full Host44 pass/2 fail;
+      both failures were established on unchanged main during previous acceptance (model cache list
+      and backend capabilities). Candidate ready for exact-source independent review.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T05:53:42.777Z
