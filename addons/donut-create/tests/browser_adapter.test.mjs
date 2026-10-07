@@ -44,12 +44,19 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
   const models = Object.fromEntries([...new Set(catalog.models.map(model => model.folder))].map(folder => [folder,catalog.models.filter(model => model.folder === folder).map(model => model.filename)]));
   function liveNodes() {
     if (!livePrompts) return current.nodes;
-    const nodes = [1126, 1178].filter(id => nodeAt(current, id)).map(id => ({ id, type: 'DF_Text_Box', widgets: [{ name: 'Text',
-      get value() { return nodeAt(current, id).widgets_values[0]; },
-      set value(value) { nodeAt(current, id).widgets_values[0] = value; },
-      callback() { if (id === 1178 && failFace) throw new Error('Synthetic face callback failure'); },
-    }] }));
-    return [...current.nodes.filter(node => node.id !== 1138), { id: 1138, subgraph: { _nodes: nodes } }];
+    function build(graph) {
+      return graph.nodes.map(node => {
+        const subgraph = current.definitions?.subgraphs?.find(item => item.id === node.type);
+        if (subgraph) return { ...node, subgraph: { _nodes: build(subgraph) } };
+        if (node.type !== 'DF_Text_Box') return node;
+        return { ...node, widgets: [{ name: 'Text',
+          get value() { return node.widgets_values[0]; },
+          set value(value) { node.widgets_values[0] = value; },
+          callback() { if (node.properties?.dmc_prompt_role === 'face' && failFace) throw new Error('Synthetic face callback failure'); },
+        }] };
+      });
+    }
+    return build(current);
   }
   const app = {
     canvas:{draw() {}}, registerExtension() {},
@@ -92,7 +99,7 @@ function fixture({initial = {nodes:[],links:[]}, store = new Map(), backend = 's
     setInterval(fn, delay) { const timer={fn,delay,active:true}; timers.push(timer); return timer; },clearInterval(timer) { timer.active=false; },
     setTimeout(fn, delay) { const timer={fn,delay,active:true}; timers.push(timer); return timer; },requestAnimationFrame() {},
     addEventListener(name,fn) { events.set(name,fn); },
-    fetch:async url=>({ok:new URL(url).pathname.endsWith('/workflow.json'),json:async()=>copy(preset)}),
+    fetch:async url=>{ fetched.push(String(url)); return {ok:new URL(url).pathname.endsWith('/workflow.json'),json:async()=>copy(preset)}; },
   });
   context.window=context;
   const imports = new Map();
@@ -350,6 +357,8 @@ test('legacy face detail gains an editable, wired face prompt without replacing 
   }
   const snapshot = (await action('snapshot')).snapshot;
   assert.equal(snapshot.fields.facePrompt.available,true);
+  assert.equal(snapshot.fields.faceDetail.available,true);
+  assert.equal(snapshot.fields.faceDetail.value,true);
   const response = await action('enhance-prompts',{fields:{prompt:'A synthetic owl gazes left.',facePrompt:'The owl gazes left.'},expected:{prompt:snapshot.fields.prompt.value,facePrompt:''}});
   assert.equal(response.ok,true);
   assert.equal(faceInstruction(env.current()),'The owl gazes left.');
@@ -404,5 +413,111 @@ test('face upgrade allocates fresh links and preserves unrelated custom nodes an
   assert.equal(new Set(added).size,added.length);
   assert.ok(added.every(id => id > 2000000));
   assert.equal(faceInstruction(upgraded),'');
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+// AC: @create-managed-prompt-enhancer ac-apply-routing
+test('legacy face repair recognizes executable wiring when release metadata is absent',async()=>{
+  const working = legacyFaceRecipe();
+  delete working.extra.donut_workflow;
+  const env = fixture({initial:working,livePrompts:true}); await env.boot();
+  assert.equal(faceInstruction(env.current()),'');
+  assert.equal(nodeAt(env.current(),1126).widgets_values[0],nodeAt(working,1126).widgets_values[0]);
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+test('face repair follows control paths and connections in a renumbered copy of v5',async()=>{
+  const working = legacyFaceRecipe();
+  const graphs = [working,...working.definitions.subgraphs];
+  const remap = id => id >= 0 ? id + 5000 : id;
+  for (const graph of graphs) {
+    for (const node of graph.nodes) {
+      node.id = remap(node.id);
+      for (const group of node.properties?.donut_app_controls?.groups || [])
+        for (const control of group.controls || []) control.path = control.path.map(remap);
+    }
+    for (const edge of graph.links) {
+      if (Array.isArray(edge)) { edge[1] = remap(edge[1]); edge[3] = remap(edge[3]); }
+      else { edge.origin_id = remap(edge.origin_id); edge.target_id = remap(edge.target_id); }
+    }
+  }
+  const subgraphIds = new Map(working.definitions.subgraphs.map(graph => [graph.id,'synthetic-copy-'+graph.id]));
+  for (const graph of graphs) {
+    if (subgraphIds.has(graph.id)) graph.id = subgraphIds.get(graph.id);
+    for (const node of graph.nodes) if (subgraphIds.has(node.type)) node.type = subgraphIds.get(node.type);
+  }
+  const env = fixture({initial:working,livePrompts:true}); await env.boot();
+  const upgraded = env.current();
+  const face = upgraded.definitions.subgraphs.flatMap(g=>g.nodes).find(n=>n.properties?.dmc_prompt_role==='face' && n.type==='DF_Text_Box');
+  assert.ok(face,'Copied workflows must gain their own face text field');
+  const detail = nodeAt(upgraded,5984);
+  const body = upgraded.definitions.subgraphs.find(g=>g.nodes.includes(detail));
+  const edge = body.links.find(e=>e.target_id===5984 && detail.inputs[e.target_slot].name==='edit_prompt');
+  assert.equal(nodeAt(upgraded,edge.origin_id).properties.dmc_prompt_role,'face');
+  assert.equal(nodeAt(upgraded,6126).widgets_values[0],nodeAt(working,6126).widgets_values[0]);
+  const replies = [], parent = {postMessage:value=>replies.push(value)}; env.context.parent = parent;
+  async function action(action,payload) {
+    env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'copy-'+replies.length,action,payload}});
+    await env.settle(); return replies.at(-1);
+  }
+  const snapshot = (await action('snapshot')).snapshot;
+  assert.equal(snapshot.fields.facePrompt.available,true);
+  assert.equal(snapshot.fields.faceDetail.available,true);
+  assert.equal(snapshot.fields.faceDetail.value,true);
+  const response = await action('enhance-prompts',{fields:{prompt:'A synthetic owl.',facePrompt:'The owl gazes left.'},expected:{prompt:snapshot.fields.prompt.value,facePrompt:''}});
+  assert.equal(response.ok,true);
+  assert.equal(nodeAt(env.current(),face.id).widgets_values[0],'The owl gazes left.');
+  const reopened = fixture({initial:env.current(),livePrompts:true}); await reopened.boot();
+  assert.equal(reopened.loaded.length,0);
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+test('face repair allocates new node IDs when a custom node already occupies the old reserved face ID',async()=>{
+  const working = legacyFaceRecipe();
+  working.nodes.push({id:1178,type:'SyntheticCustomNode',widgets_values:['Keep this setting'],inputs:[],outputs:[]});
+  const env = fixture({initial:working,livePrompts:true}); await env.boot();
+  const upgraded = env.current();
+  assert.deepEqual(nodeAt(upgraded,1178),nodeAt(working,1178));
+  const face = upgraded.definitions.subgraphs.flatMap(graph=>graph.nodes).find(node=>node.type==='DF_Text_Box' && node.properties?.dmc_prompt_role==='face');
+  assert.ok(face);
+  assert.notEqual(face.id,1178);
+  assert.equal(new Set([upgraded,...upgraded.definitions.subgraphs].flatMap(graph=>graph.nodes.map(node=>node.id))).size,
+    [upgraded,...upgraded.definitions.subgraphs].reduce((count,graph)=>count+graph.nodes.length,0));
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @donut-create-plugin ac-basic-studio
+test('explicit preset reset fetches the selected bundled preset and exposes both prompt controls',async()=>{
+  const working = legacyFaceRecipe();
+  const env = fixture({initial:working,livePrompts:true}); await env.boot();
+  const replies=[],parent={postMessage:value=>replies.push(value)};env.context.parent=parent;
+  env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'connect-reset',action:'snapshot'}});
+  await env.settle();
+  env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'reset',action:'load-preset',payload:{preset:'base'}}});
+  await env.settle();
+  assert.equal(replies.at(-1).ok,true);
+  assert.ok(env.fetched.some(url=>url.endsWith('/workflow.json?preset=base')));
+  assert.equal(replies.at(-1).snapshot.fields.facePrompt.available,true);
+  assert.equal(faceInstruction(env.current()),'');
+  assert.equal(env.queued.length,0);
+});
+
+// AC: @donut-create-plugin ac-workflow-state
+test('failed explicit preset reset rolls back the entire working draft without generating',async()=>{
+  const working = copy(preset); nodeAt(working,1126).widgets_values[0]='A synthetic saved owl.';
+  const env = fixture({initial:working,livePrompts:true,failFaceUpgrade:true}); await env.boot();
+  const replies=[],parent={postMessage:value=>replies.push(value)};env.context.parent=parent;
+  async function action(action,payload) {
+    env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'rollback-'+replies.length,action,payload}});
+    await env.settle();return replies.at(-1);
+  }
+  await action('snapshot');
+  const reply = await action('load-preset',{preset:'base'});
+  assert.equal(reply.ok,false);
+  assert.match(reply.error,/setup workflow could not be loaded/);
+  assert.deepEqual(env.current(),working);
   assert.equal(env.queued.length,0);
 });

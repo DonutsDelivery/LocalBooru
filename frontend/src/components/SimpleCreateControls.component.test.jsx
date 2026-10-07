@@ -247,3 +247,25 @@ test('sidebar and History keyboard resizing retain central space and relocated c
   expect(Number(form.style.getPropertyValue('--create-lower-size').replace('px', ''))).toBeGreaterThan(160)
   vi.restoreAllMocks()
 })
+
+// AC: @donut-create-plugin ac-basic-studio
+// AC: @donut-create-plugin ac-basic-advanced-sync
+test('preset selection preserves the draft until reset is explicitly confirmed', async () => {
+  const initial = props({ prompt: { kind:'text', value:'A synthetic owl.' } });
+  const onLoadPreset = vi.fn().mockResolvedValue(undefined);
+  render(<SimpleCreateControls {...initial} onLoadPreset={onLoadPreset} />);
+  fireEvent.click(screen.getByText('Workflow preset'));
+  fireEvent.change(screen.getByLabelText('Fresh workflow preset'), { target:{value:'workflow'} });
+  expect(onLoadPreset).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'Reset workflow',exact:true}));
+  expect(screen.getByText(/Replace current prompts, references, and workflow settings/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'Keep current workflow'}));
+  expect(onLoadPreset).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Describe your image').value).toBe('A synthetic owl.');
+  fireEvent.click(screen.getByRole('button',{name:'Reset workflow',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Confirm reset'}));
+  await waitFor(()=>expect(onLoadPreset).toHaveBeenCalledWith('workflow'));
+  expect(initial.onRunInstantChange).toHaveBeenCalledWith(false);
+  expect(initial.onGenerate).not.toHaveBeenCalled();
+  expect(initial.onPatch).not.toHaveBeenCalled();
+});

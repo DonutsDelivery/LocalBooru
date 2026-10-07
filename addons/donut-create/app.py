@@ -1435,7 +1435,11 @@ def create_app(controller: Controller | None = None) -> FastAPI:
         if route.startswith("api/") and not route.startswith("api/jobs"):
             route = route[4:]
         if route in {"workflow.json", "donut-create.js", "donut-create.css"} and request.method in {"GET", "HEAD"}:
-            path = Path(ctrl.installer.workflow_path) if route == "workflow.json" else Path(ctrl.installer.assets_root) / route
+            preset_id = request.query_params.get("preset") if route == "workflow.json" else None
+            if preset_id is not None and preset_id not in {"base", "workflow"}:
+                raise HTTPException(400, "Choose an available workflow preset.")
+            path = (Path(__file__).parent / "assets" / "base-workflow.json" if preset_id == "base" else Path(__file__).with_name("workflow.json")) if preset_id else (
+                Path(ctrl.installer.workflow_path) if route == "workflow.json" else Path(ctrl.installer.assets_root) / route)
             if not path.is_file():
                 raise HTTPException(503, "The bundled studio assets are unavailable. Reinstall Donut Create.")
             return Response(path.read_bytes(), media_type={"workflow.json": "application/json", "donut-create.js": "text/javascript", "donut-create.css": "text/css"}[route],

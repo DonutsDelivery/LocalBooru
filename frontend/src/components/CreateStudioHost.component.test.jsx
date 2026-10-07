@@ -198,6 +198,29 @@ describe('Donut Create studio', () => {
     await screen.findByTitle('DonutUI creation studio')
   })
 
+  // AC: @donut-create-plugin ac-basic-advanced-sync
+  test('confirmed preset reset uses the mounted studio and refreshes face controls without generating', async () => {
+    session.jobs = []; session.outputs = [];
+    const old = { ready:true, fields:{prompt:{kind:'text',value:'A synthetic owl.',available:true}, faceDetail:{kind:'boolean',value:true},facePrompt:{kind:'text',available:false}} };
+    const fresh = { ready:true, fields:{prompt:{kind:'text',value:'A fresh synthetic scene.',available:true}, faceDetail:{kind:'boolean',value:true},facePrompt:{kind:'text',value:'',available:true}} };
+    let current = old;
+    const request = vi.fn(async action => { if (action === 'load-preset') current = fresh; return current; });
+    bridgeFixture.current = {dispose:vi.fn(),request};
+    render(<CreateStudioHost />); openStudio();
+    const reset = await screen.findByRole('button',{name:'Reset workflow',exact:true,hidden:true});
+    await waitFor(()=>expect(reset.disabled).toBe(false));
+    fireEvent.click(screen.getByText('Workflow preset'));
+    fireEvent.change(screen.getByLabelText('Fresh workflow preset'),{target:{value:'base'}});
+    expect(request.mock.calls.some(([action])=>action==='load-preset')).toBe(false);
+    fireEvent.click(reset);
+    fireEvent.click(screen.getByRole('button',{name:'Confirm reset'}));
+    await waitFor(()=>expect(request).toHaveBeenCalledWith('load-preset',{preset:'base'},expect.any(Object)));
+    await waitFor(()=>expect(screen.getByLabelText('Describe only the face').value).toBe(''));
+    expect(screen.getByLabelText('Describe your image').value).toBe('A fresh synthetic scene.');
+    expect(request.mock.calls.some(([action])=>action==='generate')).toBe(false);
+    expect(api.apiClient.post.mock.calls.some(([url])=>url.endsWith('/cancel'))).toBe(false);
+  });
+
   test('shows an acknowledged queue submission before the next session poll', async () => {
     session.jobs = []
     session.outputs = []

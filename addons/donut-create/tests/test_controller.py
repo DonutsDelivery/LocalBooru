@@ -167,6 +167,23 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["prompt_id"]
 
+    # AC: @donut-create-plugin ac-basic-studio
+    async def test_fresh_preset_choices_are_bundled_scoped_and_not_forwarded_to_backend(self):
+        sid = await self.new_session()
+        for preset in ("base", "workflow"):
+            response = await self.http.get(f"/studio/{sid}/workflow.json?preset={preset}")
+            self.assertEqual(response.status_code, 200, response.text)
+            workflow = response.json()
+            self.assertEqual(workflow["extra"]["donut_workflow"]["controls_revision"], 1)
+            face = [node for graph in workflow["definitions"]["subgraphs"] for node in graph["nodes"]
+                    if node.get("properties", {}).get("dmc_prompt_role") == "face" and node["type"] == "DF_Text_Box"]
+            self.assertEqual(len(face), 1)
+            self.assertEqual(face[0]["widgets_values"], [""])
+            self.assertEqual(response.headers["cache-control"], "private, no-store")
+        self.assertEqual((await self.http.get(f"/studio/{sid}/workflow.json?preset=../private")).status_code, 400)
+        self.assertEqual((await self.http.get("/studio/not-a-capability/workflow.json?preset=base")).status_code, 404)
+        self.assertFalse(any("workflow.json" in entry[1] for entry in self.backend.requests))
+
     # AC: @create-managed-prompt-enhancer ac-owned-private
     async def test_enhancer_capability_routes_are_local_and_owner_scoped(self):
         owner, other = await self.new_session(), await self.new_session()
