@@ -16183,3 +16183,108 @@ reviews:
     created_at: 2026-10-07T03:01:02.401Z
     updated_at: 2026-10-07T03:01:03.796Z
     notes: []
+  - _ulid: 01M4A5TFE9ZG061M52DCAMPH1F
+    slugs:
+      - create-face-prompt-repair-review
+    title: Face prompt in-place repair self-review
+    author: codex-self-review
+    checks:
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 7f52f0f9
+          head_commit: 0e380e79e731bc54ad659d880e211300a8dd05dd
+        evidence: "17 adapter tests: initial/explicit legacy load, actual graph route from editable face
+          text to face-detailer text and positive conditioning, guarded pair update, settings
+          preserved, idempotent reopen, custom wiring untouched, load rollback, fresh links. 7 real
+          React enhancer tests including Face detail enabled textbox and written draft passed to
+          enhancement. 11 enhancer Python tests, syntax/lint and whitespace pass. Genuine historical
+          public v5 graph also passed temporary acceptance. Primary self-review of complete diff and
+          pinned ComfyUI subgraph binding source; not an independent review."
+        name: Face routing and preservation regressions
+        required: true
+        runner: node VM + vitest + Python unittest + ESLint
+        created_at: 2026-10-07T03:16:58.370Z
+        completed_at: 2026-10-07T03:16:58.370Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: 7f52f0f9
+          head_commit: 0e380e79e731bc54ad659d880e211300a8dd05dd
+        evidence: Controller occupied-port error assertion still expects numeric port in an intentionally
+          generic message (same on unchanged main). 47 other controller tests pass. Existing global
+          kspec schema and missing skill description failures remain outside this change.
+        name: Existing broader baseline failures
+        required: false
+        runner: controller + kspec validate
+        created_at: 2026-10-07T03:16:58.712Z
+        completed_at: 2026-10-07T03:16:58.712Z
+    events:
+      - _ulid: 01M4A5TFE9KREMYRAQ5TSHR3JW
+        actor: codex-self-review
+        event_type: lifecycle_change
+        payload:
+          to: draft
+        timestamp: 2026-10-07T03:16:57.417Z
+      - _ulid: 01M4A5TG41R7VE1JWYQ27GGX36
+        actor: codex-self-review
+        event_type: lifecycle_change
+        payload:
+          from: draft
+          to: open
+        timestamp: 2026-10-07T03:16:58.113Z
+      - _ulid: 01M4A5TGETSZ4MRDNH0JEDSFB7
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: pass
+          name: Face routing and preservation regressions
+        timestamp: 2026-10-07T03:16:58.458Z
+      - _ulid: 01M4A5TGSDZ0VJEJC6XBMMC8SX
+        actor: codex-self-review
+        event_type: check_added
+        payload:
+          status: fail
+          name: Existing broader baseline failures
+        timestamp: 2026-10-07T03:16:58.797Z
+      - _ulid: 01M4A5TH3N1R9CYFYDJAXN1QJ7
+        actor: codex-self-review
+        event_type: verdict_submitted
+        payload:
+          applies_to_version:
+            type: code_compare
+            base_commit: 7f52f0f9
+            head_commit: 0e380e79e731bc54ad659d880e211300a8dd05dd
+          decision: approve
+        timestamp: 2026-10-07T03:16:59.125Z
+      - _ulid: 01M4A5TH3NF2DPPC7W0MH5C2HD
+        actor: codex-self-review
+        event_type: lifecycle_change
+        payload:
+          from: open
+          to: closed
+        timestamp: 2026-10-07T03:16:59.125Z
+    examined_commit: null
+    external_links: []
+    lifecycle_state: closed
+    related_refs:
+      - "@fix-create-enhancer-visibility"
+    subject:
+      type: code
+      base_branch: main
+      base_commit: 7f52f0f9
+      head_branch: fix/create-enhancer-visibility
+      head_commit: 0e380e79e731bc54ad659d880e211300a8dd05dd
+    threads: []
+    verdicts:
+      - applies_to_version:
+          type: code_compare
+          base_commit: 7f52f0f9
+          head_commit: 0e380e79e731bc54ad659d880e211300a8dd05dd
+        decision: approve
+        reviewer: codex-self-review
+        role: reviewer
+        created_at: 2026-10-07T03:16:59.125Z
+    created_at: 2026-10-07T03:16:57.417Z
+    updated_at: 2026-10-07T03:16:59.125Z
+    notes: []

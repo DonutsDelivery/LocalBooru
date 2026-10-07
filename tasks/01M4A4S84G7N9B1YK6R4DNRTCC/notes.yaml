@@ -18,3 +18,16 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T03:01:02.066Z
+  - _ulid: 01M4A5TF9V78K596FK10FDPBA9
+    content: User clarified Face detail enabled must expose its face prompt. Reverted the proposed
+      recipe-reset action. Recognized public pre-face v5 recipes now gain only the missing
+      textbox/expansion/face conditioning branch in place. Keeps authored scene/style/settings, no
+      generation; custom/partial wiring untouched, failed graph load rolls back. Behavioral adapter
+      17/17, enhancer UI 7/7, Python enhancer 11/11 and lint pass. Also exercised the genuine public
+      historical recipe from git in a temporary synthetic acceptance fixture (15/15). Controller
+      47/48 retains the same existing occupied-port error wording assertion; global kspec validation
+      has unrelated pre-existing schema/skill issues. No private profile, prompt lab, or user
+      browser inspected.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T03:16:57.275Z

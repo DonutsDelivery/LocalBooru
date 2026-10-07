@@ -2447,8 +2447,8 @@ tasks:
     depends_on: []
     priority: 2
     tags: []
-    review_ref: "@create-enhancer-visibility-review"
-    notes_count: 2
+    review_ref: "@create-face-prompt-repair-review"
+    notes_count: 3
     todos_count: 0
     created_at: 2026-10-07T02:58:48.592Z
     started_at: 2026-10-07T02:58:48.772Z
