@@ -3,8 +3,9 @@
 Donut Create is an optional Images add-on. Its small Python controller runs
 separately from a managed ComfyUI installation. Setup puts ComfyUI, its own
 Python environment, the node packs, download cache, and models under the
-add-on's private state directory. It does not install into another ComfyUI
-installation or the system Python environment.
+add-on's private state directory. A registered existing local backend can also
+update its required DonutNodes source pack through the ComfyUI status menu. This
+updates the selected installation without replacing its models or Python environment.
 
 The controller uses port **18009**. Managed ComfyUI listens on
 **127.0.0.1:18010**, independently of the usual ComfyUI port 8188. An occupied
@@ -18,8 +19,9 @@ For an existing URL-only connection, the **ComfyUI** status menu offers **Manage
 this ComfyUI**. Discovery does not stop or restart the backend. It identifies the
 same-user Python process listening on that port, verifies its `main.py` and
 `comfy` folder, and privately saves its Python executable, working directory,
-launch arguments and relevant Python/GPU environment. Nothing is copied and no
-packages or models are installed into that ComfyUI environment. Start and Restart
+launch arguments and relevant Python/GPU environment. Discovery installs nothing.
+The separate **Update DonutNodes** action changes only the required node-pack
+source after ComfyUI has been stopped. Start and Restart
 reuse the original port and launch options. Stop and Restart target only the
 verified process identity; an unrelated port owner is never terminated.
 
@@ -80,9 +82,15 @@ relationships or a face-count mismatch stop refinement before any character
 prompt is applied. Left/right-only descriptions retain their existing ordering.
 Newly inferred single-face runs also require exactly one detected face. Gaze direction does not determine screen position.
 
-Managed setup installs the owned detailer automatically. Existing external
-backends retain ordinary workflows but need the DMC detailer for new inferred
-face routing. Multi-face identity editing/references, detailer wildcards and custom
+The face runtime belongs to DonutNodes and is downloaded with the required
+node-pack version; DMC does not deploy a separate ComfyUI detailer implementation.
+Managed setup installs that pack. For a registered existing local backend, open
+the **ComfyUI** status menu, stop ComfyUI, choose **Update DonutNodes**, and start
+ComfyUI again. The update targets the selected backend's custom-nodes folder.
+Dirty Git checkouts, modified owned sources, unowned folders and symlinks are
+preserved with an actionable error. URL-only remote backends must be updated on
+their host. Ordinary workflows remain usable while the face runtime is missing;
+enhanced face routing reports the node requirement before image submission. Multi-face identity editing/references, detailer wildcards and custom
 conditioning hooks currently report an unsupported-mode error; there is no
 implicit identity-reference matching. Original prompts stay editable and the
 ordered descriptions used by a run remain in its workflow metadata.
