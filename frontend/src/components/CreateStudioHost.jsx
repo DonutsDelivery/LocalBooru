@@ -117,8 +117,15 @@ export default function CreateStudioHost() {
   const draftsWaiting = useRef(false)
   const draftSources = useRef(new Set())
   const generateLock = useRef(false)
+  const generationCancelled = useRef(false)
   const acknowledgedPrompts = useRef(new Set())
   const studioSessionId = session?.id
+
+  const cancelGeneration = useCallback((includeAdvanced = false) => {
+    if (!includeAdvanced && (!generateLock.current || generationCancelled.current)) return
+    if (generateLock.current) generationCancelled.current = true
+    bridge.current?.request('cancel-generation', {}, { timeout: 5000 }).catch(() => {})
+  }, [])
 
   const stopInstant = useCallback(() => {
     instantEnabled.current = false
@@ -151,6 +158,7 @@ export default function CreateStudioHost() {
     window.addEventListener('donut-create-open', openStudio)
     window.addEventListener('donut-create-load-workflow', loadWorkflow)
     return () => {
+      cancelGeneration(true)
       mounted.current = false
       generation.current += 1
       requests.current.abort()
@@ -158,9 +166,10 @@ export default function CreateStudioHost() {
       window.removeEventListener('donut-create-open', openStudio)
       window.removeEventListener('donut-create-load-workflow', loadWorkflow)
     }
-  }, [stopInstant])
+  }, [stopInstant, cancelGeneration])
 
   function closeStudio() {
+    cancelGeneration(true)
     stopInstant()
     visible.current = false
     pendingWorkflow.current = null
@@ -179,6 +188,7 @@ export default function CreateStudioHost() {
     closeButton.current?.focus()
     const escape = event => {
       if (event.key === 'Escape') {
+        cancelGeneration(true)
         stopInstant()
         visible.current = false
         pendingWorkflow.current = null
@@ -192,9 +202,10 @@ export default function CreateStudioHost() {
       siblings.forEach(({ element, inert }) => { element.inert = inert })
       trigger.current?.focus?.()
     }
-  }, [opened, stopInstant])
+  }, [opened, stopInstant, cancelGeneration])
 
   const invalidateSession = useCallback(message => {
+    cancelGeneration(true)
     stopInstant()
     generation.current += 1
     requests.current.abort()
@@ -249,7 +260,7 @@ export default function CreateStudioHost() {
     setMobilePane('controls')
     setShowSetup(true)
     setError(message)
-  }, [stopInstant])
+  }, [stopInstant, cancelGeneration])
 
   const launchStudio = useCallback(async () => {
     if (openingLock.current || serverChanging.current) return
@@ -289,20 +300,21 @@ export default function CreateStudioHost() {
     if (serverChanging.current) return
     if (backendChanging.current) return
     backendReady.current = !!nextStatus?.backend?.ready
-    if (!backendReady.current) stopInstant()
+    if (!backendReady.current) { cancelGeneration(); stopInstant() }
     setStatus(nextStatus)
     setConnectionFailed(false)
     const current = sessionRef.current
     if (current?.backend_url && nextStatus?.backend_url && current.backend_url !== nextStatus.backend_url) {
       invalidateSession('The backend changed. Open a new studio session to continue.')
     }
-  }, [invalidateSession, stopInstant])
+  }, [invalidateSession, stopInstant, cancelGeneration])
 
   useEffect(() => {
     const lifecycle = event => {
       backendChanging.current = event.detail.changing
       if (backendChanging.current) {
         pollRequest.current?.abort()
+        cancelGeneration(true)
         backendReady.current = false
         stopInstant()
         setStatus(previous => previous ? { ...previous, backend: { ...previous.backend, ready: false } } : null)
@@ -344,7 +356,7 @@ export default function CreateStudioHost() {
       window.removeEventListener('donut-create-server-changing', changingServer)
       window.removeEventListener('donut-create-server-changed', changedServer)
     }
-  }, [invalidateSession, handleStatus, stopInstant])
+  }, [invalidateSession, handleStatus, stopInstant, cancelGeneration])
 
   useEffect(() => {
     if (!started) return
@@ -541,10 +553,10 @@ export default function CreateStudioHost() {
         setBridgeBusy(action)
         actionErrorVisible.current = false
         setBridgeError('')
-        const nextSnapshot = await currentBridge.request(action, payload, { timeout: ['upload-reference', 'upload-mask', 'drop-file'].includes(action) ? 120000 : ['generate', 'load-workflow'].includes(action) ? 60000 : 15000 })
+        const nextSnapshot = await currentBridge.request(action, payload, { timeout: action === 'generate' && snapshotRef.current?.enhancer?.enabled ? 600000 : ['upload-reference', 'upload-mask', 'drop-file'].includes(action) ? 120000 : ['generate', 'load-workflow'].includes(action) ? 60000 : 15000 })
         if (!mounted.current || generation.current !== requestGeneration || bridge.current !== currentBridge) throw new DOMException('The studio session changed.', 'AbortError')
         acceptSnapshot(nextSnapshot)
-        if (['patch', 'enhance-prompts', 'upload-reference', 'upload-mask', 'drop-file'].includes(action) && nextSnapshot.mutationChanged === true) {
+        if (['patch', 'enhance-prompts', 'enhancer-config', 'upload-reference', 'upload-mask', 'drop-file'].includes(action) && nextSnapshot.mutationChanged === true) {
           authoredRevision.current += 1
           setGraphRevision(authoredRevision.current)
         }
@@ -555,6 +567,7 @@ export default function CreateStudioHost() {
         if (action === 'generate') setAnnouncement('Image added to your studio queue.')
         return nextSnapshot
       } catch (actionError) {
+        if (action === 'generate' && generationCancelled.current) throw new DOMException('Image generation was cancelled.', 'AbortError')
         if (mounted.current && generation.current === requestGeneration && actionError.name !== 'AbortError') {
           stopInstant()
           actionErrorVisible.current = true
@@ -597,6 +610,7 @@ export default function CreateStudioHost() {
   const patchStudio = useCallback((patch, expected) => expected
     ? studioAction('enhance-prompts', { fields: patch, expected })
     : studioAction('patch', patch), [studioAction])
+  const configureEnhancer = useCallback(config => studioAction('enhancer-config', config), [studioAction])
   const generateImage = useCallback(async (instantRequest) => {
     if (generateLock.current) throw new Error('An image is already being added to the queue.')
     const requestGeneration = generation.current
@@ -604,6 +618,7 @@ export default function CreateStudioHost() {
     const version = authoredRevision.current
     const isInstant = instantRequest === true
     generateLock.current = true
+    generationCancelled.current = false
     instantVersion.current = version
     try {
       const ownsRequest = isInstant ? () => instantEnabled.current && instantEpoch.current === epoch
@@ -803,6 +818,7 @@ export default function CreateStudioHost() {
   const reportCanvasDrafts = useCallback(pending => reportDrafts(pending, 'canvas'), [reportDrafts])
 
   function changeRunInstant(enabled) {
+    if (!enabled && instantEnabled.current) cancelGeneration()
     instantEpoch.current += 1
     instantEnabled.current = enabled
     instantVersion.current = null
@@ -1289,7 +1305,7 @@ export default function CreateStudioHost() {
           {session && <div className="create-controls-slot" hidden={!simpleView}>
             <SimpleCreateControls key={session.id + ':' + controlsRevision} sessionId={session.id} snapshot={snapshot} activeTab={controlTab} onTabChange={changeControlTab}
               connected={connected} connecting={bridgeConnecting} busy={workflowPending ? bridgeBusy || 'load-workflow' : dropPending ? bridgeBusy || 'drop-file' : bridgeBusy} error={bridgeError} mobilePane={mobilePane}
-              onPatch={patchStudio} onGenerate={generateImage} onLoadPreset={loadUpdatedV5} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio}
+              onPatch={patchStudio} onGenerate={generateImage} onEnhancerConfig={configureEnhancer} onLoadPreset={loadUpdatedV5} onUpload={uploadReference} onUploadMask={uploadSubjectMask} onRetry={retryConnection} onAdvanced={showAdvancedStudio}
               runInstant={runInstant} onRunInstantChange={changeRunInstant} onDraftChange={reportControlDrafts} referenceUrls={referenceUrls} onReferenceTools={openReferenceTools} historyContent={simpleView ? historyContent : null} jobsContent={simpleView ? jobsContent : null} finalizeContent={simpleView ? finalizeContent : null}
               exitNavigation={simpleView ? exitNavigation : null} modeNavigation={simpleView ? modeNavigation : null} navigation={simpleView ? workspaceNavigation : null} mobileNavigation={simpleView ? mobileNavigation : null}>
               {simpleView ? resultsContent : null}
