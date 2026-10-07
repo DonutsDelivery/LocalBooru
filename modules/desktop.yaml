@@ -1251,19 +1251,19 @@ features:
               errors, permits cancellation and retry without losing completed verified downloads,
               and becomes ready without external model-server setup.
             when: They install or repair that enhancer
-          - given: An authorized studio user supplies a main image brief, an optional existing face prompt and
-              an installed enhancer model
+          - given: An authorized studio user has enabled per-run enhancement and supplied scene and optional
+              face briefs
             id: ac-enhance-preview
-            then: The studio presents a complete scene description and a separate face description generated
-              using both supplied inputs and preservation rules; the original main and face inputs
-              remain available and generation does not start automatically.
-            when: They request enhancement
-          - given: A completed enhancer preview contains valid scene and face descriptions
+            then: The studio shows that run actual scene and separate face prompts, selected model and image
+              seed; reading the result starts no additional generation and the original editable
+              briefs remain intact.
+            when: They inspect a submitted run
+          - given: A per-run enhancement returns a valid scene and face pair
             id: ac-apply-routing
-            then: Both descriptions update their respective existing studio controls together; a blank face
-              description remains blank, unrelated settings remain intact, and edits made since the
-              request require a new enhancement rather than being overwritten.
-            when: The user applies it
+            then: The pair conditions its respective generation inputs together without replacing source
+              controls; blank face output stays blank, unrelated settings remain intact, and
+              cancelled or stale edited drafts cannot submit or overwrite the current workflow.
+            when: The run is submitted
           - given: An enhancement or enhancer installation is running for one studio
             id: ac-owned-private
             then: Only the owning authorized studio can read its results or cancel its work; cancellation stops
