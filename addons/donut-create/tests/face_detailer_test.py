@@ -1,8 +1,10 @@
 """Executable wrapper/installer fixtures; no ComfyUI, models, GPU or user data."""
 import importlib.util
+import itertools
 import json
 from pathlib import Path
 import sys
+import random
 import tempfile
 import types
 import unittest
@@ -56,6 +58,11 @@ class Detector:
 def segment(x, y=0, width=10, mask=1):
     return types.SimpleNamespace(bbox=(x, y, x + width, y + 10), crop_region=(x, y, x + width, y + 10),
                                  cropped_mask=mask, cropped_image="stale original crop")
+
+
+def relative_rows(names, left=None, above=None):
+    return [{"character": name, "position": {"left_of": (left or {}).get(name, []),
+            "above": (above or {}).get(name, [])}, "face_prompt": name + " has a distinct expression."} for name in names]
 
 
 class RuntimeTests(unittest.TestCase):
@@ -175,10 +182,9 @@ class RuntimeTests(unittest.TestCase):
                          [(0, 0, 0, 42), (0, 1, 50, 43), (1, 0, 20, 43), (1, 1, 80, 44)])
 
     # AC: @create-multiple-face-prompts ac-single-face-compatible
-    def test_empty_and_single_row_delegate_without_rejecting_legacy_options(self):
-        for rows in ([], ROWS[:1]):
-            self.assertEqual(self.run_faces(rows=rows, edit_mode=True, face_reference=Image(), wildcard="legacy"), ("legacy",) * 6)
-        self.assertEqual(len(self.legacy), 2)
+    def test_empty_plan_delegates_without_rejecting_legacy_options(self):
+        self.assertEqual(self.run_faces(rows=[], edit_mode=True, face_reference=Image(), wildcard="legacy"), ("legacy",) * 6)
+        self.assertEqual(len(self.legacy), 1)
         self.assertEqual(self.passes, [])
         self.assertEqual(runtime.DMCFaceDetailer.INPUT_TYPES()["optional"]["face_prompts_json"][1]["default"], "[]")
 
@@ -213,7 +219,7 @@ class RuntimeTests(unittest.TestCase):
 
     # AC: @create-multiple-face-prompts ac-mismatch
     def test_strict_character_and_position_schema(self):
-        for invalid in ([{**ROWS[0], "position": "order"}, ROWS[1]], [ROWS[1], ROWS[0]],
+        for invalid in (ROWS[:1], [{**ROWS[0], "position": "order"}, ROWS[1]], [ROWS[1], ROWS[0]],
                         [ROWS[0], {**ROWS[1], "position": "left"}], [ROWS[0], {**ROWS[1], "character": "ada"}],
                         [{**ROWS[0], "position": "1st"}, ROWS[1]], [{**ROWS[0], "face_prompt": ""}, ROWS[1]]):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
@@ -223,6 +229,125 @@ class RuntimeTests(unittest.TestCase):
         maximum = [{"character": "Character " + str(index), "position": position, "face_prompt": "\u263a" * 8000}
                    for index, position in enumerate(runtime.ORDINALS)]
         self.assertEqual(len(runtime.face_prompts(json.dumps(maximum))), 16)
+
+    # AC: @create-multiple-face-prompts ac-spatial-matching
+    def test_relative_above_and_left_chains_follow_relations_in_arbitrary_record_order(self):
+        for axis, detections in (("above", [segment(50, 80), segment(20, 0), segment(0, 40)]),
+                                 ("left_of", [segment(80, 0), segment(0, 50), segment(40, 20)])):
+            rows=relative_rows(["BottomOrRight", "TopOrLeft", "Middle"])
+            by_name={row["character"]: row for row in rows}
+            by_name["TopOrLeft"]["position"][axis]=["Middle"]
+            by_name["Middle"]["position"][axis]=["BottomOrRight"]
+            self.run_faces([detections], rows=rows)
+            self.assertEqual([entry[2] for entry in self.passes], [detections[0].bbox, detections[1].bbox, detections[2].bbox])
+            self.assertEqual([entry[3]["positive"][0][0] for entry in self.passes], [row["face_prompt"] for row in rows])
+            self.passes.clear()
+
+    # AC: @create-multiple-face-prompts ac-spatial-matching
+    def test_relative_family_and_six_people_work_without_fixed_grid_cells(self):
+        names=["Father", "Son", "Mother", "Daughter"]
+        rows=relative_rows(names, {"Father": ["Mother", "Daughter"], "Son": ["Mother", "Daughter"]},
+                           {"Father": ["Son"], "Mother": ["Daughter"]})
+        # Uneven rows and columns still satisfy the explicitly stated relations.
+        expected=[segment(0, 0), segment(25, 45), segment(80, 8), segment(110, 80)]
+        self.run_faces([[expected[3], expected[0], expected[2], expected[1]]], rows=rows)
+        self.assertEqual([entry[2] for entry in self.passes], [seg.bbox for seg in expected])
+        self.passes.clear()
+        names=["A", "B", "C", "D", "E", "F"]
+        rows=relative_rows(names, {"A": ["C", "D", "E", "F"], "B": ["C", "D", "E", "F"],
+                                  "C": ["E", "F"], "D": ["E", "F"]},
+                           {"A": ["B"], "C": ["D"], "E": ["F"]})
+        expected=[segment(0, 0), segment(10, 40), segment(50, 5), segment(60, 50), segment(100, 0), segment(110, 70)]
+        self.run_faces([[expected[index] for index in (5, 3, 0, 4, 1, 2)]], rows=rows)
+        self.assertEqual([entry[2] for entry in self.passes], [seg.bbox for seg in expected])
+        self.assertEqual([entry[3]["edit_prompt"] for entry in self.passes], [row["face_prompt"] for row in rows])
+
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_relative_ambiguity_and_near_ties_fail_entire_batch_before_conditioning(self):
+        unconstrained=relative_rows(["A", "B"])
+        above=relative_rows(["A", "B"], above={"A": ["B"]})
+        left=relative_rows(["A", "B"], left={"A": ["B"]})
+        cases=[(unconstrained, [[segment(0), segment(40)]]),
+               (above, [[segment(0, 0), segment(40, 2.5)]]),
+               (left, [[segment(0), segment(2.4)]]),
+               (above, [[segment(0, 0), segment(0, 40)], [segment(0, 0), segment(20, 0)]]),
+               (above, [[segment(0, 0)]])]
+        for rows, detections in cases:
+            with self.subTest(rows=rows, detections=detections), self.assertRaisesRegex(ValueError, "ambiguous|cannot match|routing mismatch"):
+                self.run_faces(detections, rows=rows)
+            self.assertEqual(self.passes, [])
+            self.assertEqual(self.encoded, [])
+
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_relative_schema_rejects_unknown_self_cycles_and_mixed_positions(self):
+        bad=[relative_rows(["A", "B"], left={"A": ["Unknown"]}),
+             relative_rows(["A", "B"], above={"A": ["A"]}),
+             relative_rows(["A", "B"], above={"A": ["B"], "B": ["A"]}),
+             relative_rows(["A", "B"], left={"A": ["B", "B"]}),
+             [relative_rows(["A"])[0], ROWS[1]],
+             [{**ROWS[0], "position": {"column": 1, "row": 1}}, ROWS[1]]]
+        for rows in bad:
+            with self.subTest(rows=rows), self.assertRaises(ValueError):
+                runtime.face_prompts(json.dumps(rows))
+        # Cross-axis references can describe a valid diagonal, not an axis cycle.
+        self.assertEqual(len(runtime.face_prompts(json.dumps(relative_rows(["A", "B"],
+            left={"A": ["B"]}, above={"B": ["A"]})))), 2)
+
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_relative_search_budget_exhaustion_never_claims_unique_mapping(self):
+        rows=relative_rows(["A", "B"])
+        for budget in range(1, 12):
+            with self.subTest(budget=budget), self.assertRaisesRegex(ValueError, "search limit|ambiguous"):
+                runtime.relative_faces([segment(0), segment(40)], rows, budget=budget)
+
+    # AC: @create-multiple-face-prompts ac-spatial-matching
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_relative_solver_agrees_with_independent_exhaustive_bijections(self):
+        rng=random.Random(1946)
+        for case in range(40):
+            names=["A", "B", "C", "D"]
+            rows=relative_rows(names)
+            for index, row in enumerate(rows):
+                for axis in ("left_of", "above"):
+                    row["position"][axis]=[name for name in names[index+1:] if rng.random()<.4]
+            segments=[segment(rng.randrange(0, 100), rng.randrange(0, 100), rng.randrange(5, 25)) for _ in names]
+            expected=[]
+            for assignment in itertools.permutations(segments):
+                by_name=dict(zip(names, assignment))
+                matched=True
+                for row in rows:
+                    own=by_name[row["character"]].bbox
+                    for axis, coordinate in (("left_of", 0), ("above", 1)):
+                        for name in row["position"][axis]:
+                            other=by_name[name].bbox
+                            gap=(other[coordinate]+other[coordinate+2]-own[coordinate]-own[coordinate+2])/2
+                            margin=.25*min(own[coordinate+2]-own[coordinate], other[coordinate+2]-other[coordinate])
+                            matched=matched and gap>margin
+                if matched:
+                    expected.append(assignment)
+            with self.subTest(case=case):
+                if len(expected)==1:
+                    self.assertEqual(runtime.relative_faces(segments, rows), list(expected[0]))
+                else:
+                    with self.assertRaisesRegex(ValueError, "cannot match|ambiguous"):
+                        runtime.relative_faces(segments, rows)
+
+    # AC: @create-multiple-face-prompts ac-spatial-matching
+    def test_relative_margin_is_invariant_under_scaling_and_translation(self):
+        rows=relative_rows(["A", "B", "C"], above={"A": ["B"], "B": ["C"]})
+        for scale in (.1, 1, 100):
+            segments=[segment(80, 80), segment(10, 0), segment(20, 40)]
+            for seg in segments:
+                seg.bbox=tuple(value*scale+123 for value in seg.bbox)
+            self.assertEqual(runtime.relative_faces(segments, rows), [segments[1], segments[2], segments[0]])
+
+    # AC: @create-multiple-face-prompts ac-spatial-matching
+    def test_relative_sixteen_character_chain_proves_unique_mapping_within_budget(self):
+        names=[f"Person {index}" for index in range(16)]
+        rows=relative_rows(names, left={name: [names[index+1]] for index, name in enumerate(names[:-1])})
+        expected=[segment(index*40, index*3) for index in range(16)]
+        self.run_faces([list(reversed(expected))], rows=rows, max_faces=16)
+        self.assertEqual([entry[2] for entry in self.passes], [seg.bbox for seg in expected])
 
 
 class OwnedInstallerTests(unittest.TestCase):
