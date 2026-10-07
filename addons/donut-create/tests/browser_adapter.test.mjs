@@ -701,9 +701,13 @@ async function enhancerFixture(options = {}) {
     env.events.get('message')({source:parent,origin:'http://parent.test',data:{channel:'donut-create-basic-v1',sessionId:'synthetic-session',requestId:'run-'+replies.length,action,payload}});
     await env.settle(); return replies.at(-1);
   };
-  env.requests=[]; env.cancels=[];
+  env.requests=[]; env.cancels=[]; env.expansions=[];
   const fetch=env.api.fetchApi;
   env.api.fetchApi=async (route,options)=>{
+    if (route==='/donut/wildcards/preview') {
+      const request=JSON.parse(options.body); env.expansions.push(request);
+      return env.onExpand ? env.onExpand(request) : {ok:true,json:async()=>({text:request.text})};
+    }
     if (route==='/dmc/enhancer/cancel') {env.cancels.push(JSON.parse(options.body)); return {ok:true,json:async()=>({})};}
     if (route!=='/dmc/enhancer') return fetch(route,options);
     let job;
@@ -1493,4 +1497,104 @@ test('tampered cyclic run metadata is not exposed or reused as an executable fac
   env.jobChange=job=>({...job,result:{main_prompt:'Tampered family scene',face_prompt:'',face_prompts:bad}});
   await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),/incomplete|ambiguous/i);
   assert.equal(env.queued.length,1);assert.deepEqual(env.current(),before);
+});
+
+
+// AC: @create-managed-prompt-enhancer ac-wildcards-before-enhancement
+test('wildcards resolve before the LLM with the executed seed, preserving original alternatives',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  const scene='{A clockwork bird in {a garden|a workshop}|A paper boat on a pond}';
+  const face='{Bright eyes|Closed eyes}';env.editPrompt(scene);env.editFace(face);
+  const before=env.current();
+  env.onExpand=async ({text,seed})=>({ok:true,json:async()=>({text:text===scene
+    ?(seed===0?'A clockwork bird in a workshop':'A paper boat on a pond'):(seed===0?'Bright eyes':'Closed eyes')})});
+  env.onEnhance=async ()=>assert.equal(env.expansions.length,2*(env.requests.length));
+  for(const seed of [0,0,1]) {
+    env.editSeed(seed);await env.api.queuePrompt(0,await env.app.graphToPrompt());
+    const request=env.requests.at(-1);
+    assert.equal(request.image_brief,seed===0?'A clockwork bird in a workshop':'A paper boat on a pond');
+    assert.equal(request.face_brief,seed===0?'Bright eyes':'Closed eyes');
+    assert.equal(request.seed,seed);
+    assert.deepEqual(env.expansions.slice(-2),[{text:scene,seed},{text:face,seed}]);
+    assert.equal(nodeAt(env.current(),1126).widgets_values[0],scene);
+    assert.equal(nodeAt(env.current(),1178).widgets_values[0],face);
+    assert.equal(env.queued.at(-1)[1].output['text:scene'].inputs.Text,'Scene for '+seed);
+    assert.equal(nodeAt(env.queued.at(-1)[1].workflow,1126).widgets_values[0],scene);
+  }
+  env.editSeed(nodeAt(before,1137).widgets_values[0]);assert.deepEqual(env.current(),before);
+});
+
+// AC: @create-managed-prompt-enhancer ac-wildcards-before-enhancement
+test('a long list supplies only its selected scene and keeps blank face available for inference',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  const scenes=Array.from({length:12},(_,i)=>'An adult character in synthetic scene '+i);
+  env.editPrompt('{'+scenes.join('|')+'}');env.editFace('');env.editSeed(91);
+  env.onExpand=async ({seed})=>({ok:true,json:async()=>({text:scenes[seed%scenes.length]})});
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.expansions.length,1);assert.equal(env.requests[0].image_brief,scenes[7]);
+  assert.equal(env.requests[0].face_brief,'');assert.equal(env.queued.length,1);
+});
+
+// AC: @create-managed-prompt-enhancer ac-wildcards-before-enhancement
+test('failed, incomplete or oversized expansion never calls the LLM or queues an image',async()=>{
+  for(const mode of ['http','malformed','empty','oversized','unresolved','throw','face']) {
+    const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+    env.editPrompt('{A vase|A bowl}');env.editFace('{Eyes open|Eyes closed}');const before=env.current();
+    env.onExpand=async ({text})=>{
+      if(mode==='throw')throw new Error('Synthetic backend disconnected');
+      if(mode==='face')return {ok:true,json:async()=>({text:text.includes('Eyes')?'x'.repeat(8001):'A vase'})};
+      return {ok:mode!=='http',json:async()=>mode==='malformed'?{}:{text:mode==='empty'?'':mode==='oversized'?'x'.repeat(16001):mode==='unresolved'?'{A vase|A bowl}':'A vase'}};
+    };
+    await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()),undefined,mode);
+    assert.equal(env.requests.length,0,mode);assert.equal(env.queued.length,0,mode);assert.deepEqual(env.current(),before,mode);
+  }
+});
+
+// AC: @create-managed-prompt-enhancer ac-wildcards-before-enhancement
+// AC: @create-managed-prompt-enhancer ac-owned-private
+test('cancel and stale edits while resolving wildcards cannot start enhancement or submit',async()=>{
+  for(const mode of ['cancel','edit']) {
+    const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+    env.editPrompt('{A vase|A bowl}');
+    env.onExpand=async ()=>{
+      if(mode==='cancel')await env.action('cancel-generation');else env.editPrompt('Changed synthetic brief');
+      return {ok:true,json:async()=>({text:'A bowl'})};
+    };
+    await assert.rejects(env.api.queuePrompt(0,await env.app.graphToPrompt()));
+    assert.equal(env.requests.length,0);assert.equal(env.queued.length,0);
+    assert.equal(nodeAt(env.current(),1126).widgets_values[0],mode==='edit'?'Changed synthetic brief':'{A vase|A bowl}');
+  }
+});
+
+
+// AC: @create-managed-prompt-enhancer ac-wildcards-before-enhancement
+test('an intentionally empty face alternative reaches inference without a spurious face-plan error',async()=>{
+  const env=await enhancerFixture();await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  env.editPrompt('{A silhouette|A landscape}');env.editFace('{|Eyes closed}');
+  env.onExpand=async ({text})=>({ok:true,json:async()=>({text:text.includes('silhouette')?'A landscape':''})});
+  env.jobChange=job=>({...job,result:{main_prompt:'A mountain landscape',face_prompt:'',face_prompts:[]}});
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.requests[0].face_brief,'');assert.equal(env.queued.length,1);
+  assert.equal(nodeAt(env.current(),1178).widgets_values[0],'{|Eyes closed}');
+});
+
+// AC: @create-managed-prompt-enhancer ac-wildcards-before-enhancement
+test('Edit resolves its active edit brief, and disabling enhancement leaves the existing image pipeline alone',async()=>{
+  const initial=copy(preset);nodeAt(initial,881).properties.donut_shared_prompt=false;
+  const env=await enhancerFixture({initial});await env.action('enhancer-config',{enabled:true,model:'qwen'});
+  env.editPrompt('Unused scene brief');env.editFace('');env.editMode(true);
+  assert.equal((await env.action('patch',{editPrompt:'{A silver cup|A copper cup}'})).ok,true);
+  const compile=env.app.graphToPrompt;
+  env.app.graphToPrompt=async()=>{
+    const value=await compile(),node=nodeAt(env.current(),881),index=node.properties.donut_widget_order.indexOf('prompt');
+    value.output.edit={class_type:'DonutEditStudio',inputs:{prompt:node.widgets_values[index]}};return value;
+  };
+  env.onExpand=async ({text})=>{assert.equal(text,'{A silver cup|A copper cup}');return {ok:true,json:async()=>({text:'A copper cup'})};};
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.requests[0].image_brief,'A copper cup');assert.equal(env.queued[0][1].output.edit.inputs.prompt,'Scene for '+env.requests[0].seed);
+  await env.action('enhancer-config',{enabled:false,model:'qwen'});
+  env.onExpand=()=>{throw new Error('Disabled enhancer must not pre-process briefs');};
+  await env.api.queuePrompt(0,await env.app.graphToPrompt());
+  assert.equal(env.expansions.length,1);assert.equal(env.requests.length,1);assert.equal(env.queued.length,2);
+  assert.equal(env.queued[1][1].output.edit.inputs.prompt,'{A silver cup|A copper cup}');
 });
