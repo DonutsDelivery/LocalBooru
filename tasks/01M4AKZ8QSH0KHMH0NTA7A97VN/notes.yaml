@@ -9,3 +9,13 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T07:24:14.826Z
+  - _ulid: 01M4AMDJV68K8GHV7N5Z4H327Z
+    content: Backend slice88f54961 implemented full image seed validation/threading and deterministic
+      llama32bit mapping, temperature0.7, scoped creative instructions. Enhancer17/17 behavioral
+      tests pass; combined93 =89pass/3 opt-in model skips/1 occupied-port assertion reproduced on
+      exactbase. No downloads/private input access. Root UI tests reproduced removedmanualflow
+      regressions, now10/10 targeted UI/Host pass; per-run review preserves sourcebriefs,
+      configpersists, cancel-generation sent onclose/Stop, longseededrun timeout.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T07:32:03.558Z
