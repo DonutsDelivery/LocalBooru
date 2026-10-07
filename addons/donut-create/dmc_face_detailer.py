@@ -64,7 +64,7 @@ def ordered_faces(module, image, inputs, expected):
     detector.setAux("face")
     try:
         segs = detector.detect(image, inputs["bbox_threshold"], inputs["bbox_dilation"],
-                               inputs["bbox_crop_factor"], inputs["drop_size"], detailer_hook=None)
+                               inputs["bbox_crop_factor"], inputs["drop_size"], detailer_hook=inputs.get("detailer_hook"))
     finally:
         detector.setAux(None)
     if inputs.get("sam_model_opt") is not None:
@@ -76,7 +76,9 @@ def ordered_faces(module, image, inputs, expected):
         segmenter = inputs["segm_detector_opt"]
         masks = segmenter.detect(image, inputs["bbox_threshold"], inputs["bbox_dilation"],
                                  inputs["bbox_crop_factor"], inputs["drop_size"])
-        segs = masks if getattr(segmenter, "override_bbox_by_segm", False) else module.core.segs_bitwise_and_mask(
+        override = getattr(segmenter, "override_bbox_by_segm", False) and not (
+            inputs.get("detailer_hook") is not None and not hasattr(inputs["detailer_hook"], "override_bbox_by_segm"))
+        segs = masks if override else module.core.segs_bitwise_and_mask(
             segs, module.core.segs_to_combined_mask(masks))
     faces = []
     for index, seg in enumerate(segs[1]):
@@ -89,6 +91,8 @@ def ordered_faces(module, image, inputs, expected):
             raise ValueError("A detected face has invalid coordinates; character routing was not applied.")
         faces.append(((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2, index, seg))
     if len(faces) != expected:
+        if expected == 1:
+            raise ValueError(f"A single face prompt cannot be matched to {len(faces)} detected faces. Provide separate character descriptions or turn off Face detail. No face prompts were applied.")
         raise ValueError(f"Face routing mismatch: expected {expected} characters but detected {len(faces)} faces. No character prompts were applied.")
     return segs[0], [item[3] for item in sorted(faces, key=lambda item: item[:3])]
 
@@ -109,17 +113,27 @@ class DMCFaceDetailer:
     def INPUT_TYPES(cls):
         result = copy.deepcopy(cls.upstream().INPUT_TYPES())
         result.setdefault("optional", {})["face_prompts_json"] = ("STRING", {"default": "[]", "multiline": True, "dynamicPrompts": False})
+        result["optional"]["require_single_face"] = ("BOOLEAN", {"default": False})
         return result
 
-    def doit(self, *args, face_prompts_json="[]", **kwargs):
+    def doit(self, *args, face_prompts_json="[]", require_single_face=False, **kwargs):
+        if type(require_single_face) is not bool:
+            raise ValueError("The single-face routing option must be a boolean.")
         rows = face_prompts(face_prompts_json)
         upstream = self.upstream()
-        if len(rows) <= 1:
+        if len(rows) <= 1 and not require_single_face:
             return upstream().doit(*args, **kwargs)
         bound = inspect.signature(upstream().doit).bind(*args, **kwargs)
         bound.apply_defaults()
         inputs = dict(bound.arguments)
         inputs.update(inputs.pop("nag_options", {}))
+        if len(rows) <= 1:
+            module = sys.modules[upstream.__module__]
+            module._ensure_impact()
+            module.offload_model_for_auxiliary_stage(inputs["model"], module.comfy.model_management)
+            for image in inputs["image"]:
+                ordered_faces(module, image.unsqueeze(0), inputs, 1)
+            return upstream().doit(*args, **kwargs)
         if inputs.get("edit_mode") or any(inputs.get(key) is not None for key in ("face_reference", "face_reference_b")):
             raise ValueError("Multi-face identity editing and identity references are not supported. Use a single face description or disable identity editing.")
         if inputs.get("wildcard", "").strip() or inputs.get("detailer_hook") is not None:

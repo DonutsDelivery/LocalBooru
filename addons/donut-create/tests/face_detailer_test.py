@@ -81,6 +81,7 @@ class RuntimeTests(unittest.TestCase):
                      face_reference=None, vary_seed_per_face=False, turbo_mode=True,
                      face_reference_b=None, vae_damage_correction=True, vae_damage_strength=.8, **nag_options):
                 fixture.legacy.append((image, nag_options))
+                fixture.delegated = locals()
                 return ("legacy",) * 6
 
             @staticmethod
@@ -180,6 +181,35 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(len(self.legacy), 2)
         self.assertEqual(self.passes, [])
         self.assertEqual(runtime.DMCFaceDetailer.INPUT_TYPES()["optional"]["face_prompts_json"][1]["default"], "[]")
+
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_strict_single_face_rejects_multi_faces_and_batch_mismatch_before_delegation(self):
+        for detections in ([[segment(0), segment(20)]], [[segment(0)], [segment(0), segment(20)]],
+                           [[segment(0, mask=0)]]):
+            with self.subTest(detections=detections), self.assertRaisesRegex(ValueError, "single face prompt"):
+                self.run_faces(detections=detections, rows=[], require_single_face=True)
+            self.assertEqual(self.legacy, [])
+            self.assertEqual(self.passes, [])
+            self.assertEqual(self.encoded, [])
+
+    # AC: @create-multiple-face-prompts ac-single-face-compatible
+    def test_strict_single_face_preserves_original_edit_reference_and_sampling_inputs(self):
+        reference, hook = Image(), object()
+        result = self.run_faces(detections=[[segment(0)], [segment(20)]], rows=[], require_single_face=True,
+            edit_mode=True, face_reference=reference, face_reference_b=reference, detailer_hook=hook,
+            edit_prompt="Only Ada's face", wildcard="legacy", seed=123, cycle=3, nag_alpha=4.5)
+        self.assertEqual(result, ("legacy",) * 6)
+        self.assertEqual(len(self.legacy), 1)
+        self.assertEqual(self.delegated["face_reference"], reference)
+        self.assertEqual(self.delegated["face_reference_b"], reference)
+        self.assertEqual(self.delegated["detailer_hook"], hook)
+        self.assertTrue(self.delegated["edit_mode"])
+        self.assertEqual(self.delegated["edit_prompt"], "Only Ada's face")
+        self.assertEqual(self.delegated["wildcard"], "legacy")
+        self.assertEqual(self.delegated["seed"], 123)
+        self.assertEqual(self.delegated["cycle"], 3)
+        self.assertEqual(self.legacy[0][1], {"nag_alpha": 4.5})
+        self.assertEqual(runtime.DMCFaceDetailer.INPUT_TYPES()["optional"]["require_single_face"], ("BOOLEAN", {"default": False}))
 
     # AC: @create-multiple-face-prompts ac-mismatch
     def test_strict_character_and_position_schema(self):
