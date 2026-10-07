@@ -9,13 +9,21 @@ description: Implement ordered per-character enhancer outputs, review display an
 spec_ref: "@create-multiple-face-prompts"
 meta_ref: null
 plan_ref: null
-status: in_progress
+status: pending_review
 blocked_by: []
 depends_on: []
 context: []
 priority: 2
 tags: []
 vcs_refs: []
+submission_linkage:
+  review_url: null
+  branch: fix/create-face-integration
+  captured_at: 2026-10-07T10:51:51.385Z
+  commit: 5b195f7159af3c9422e74a319d59f4858acd0d81
+  remote: null
+  remote_url: null
+  upstream_ref: null
 history:
   - author: DonutsDelivery
     changes:
@@ -27,6 +35,27 @@ history:
         previous: null
     command: task-start
     timestamp: 2026-10-07T10:19:24.844Z
+  - author: DonutsDelivery
+    changes:
+      status:
+        new: pending_review
+        previous: in_progress
+      submission_linkage:
+        new:
+          review_url: null
+          branch: fix/create-face-integration
+          captured_at: 2026-10-07T10:51:51.385Z
+          commit: 5b195f7159af3c9422e74a319d59f4858acd0d81
+          remote: null
+          remote_url: null
+          upstream_ref: null
+        previous: null
+      submitted_at:
+        new: 2026-10-07T10:51:51.389Z
+        previous: null
+    command: task-submit
+    timestamp: 2026-10-07T10:51:51.390Z
 created_at: 2026-10-07T10:17:45.774Z
 started_at: 2026-10-07T10:19:24.844Z
+submitted_at: 2026-10-07T10:51:51.389Z
 todos: []
