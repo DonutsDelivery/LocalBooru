@@ -23,6 +23,55 @@ from test_installer import Opener
 
 class OutputTests(unittest.TestCase):
     # AC: @create-multiple-face-prompts ac-character-prompts
+    def test_relative_two_axis_plan_keeps_arbitrary_stable_character_order(self):
+        plan = [
+            {'character': 'Son', 'position': {'left_of': ['Daughter'], 'above': []}, 'face_prompt': 'The son smiles.'},
+            {'character': 'Mother', 'position': {'left_of': [], 'above': ['Daughter']}, 'face_prompt': "The mother's face."},
+            {'character': 'Father', 'position': {'left_of': ['Mother'], 'above': ['Son']}, 'face_prompt': "The father's face."},
+            {'character': 'Daughter', 'position': {'left_of': [], 'above': []}, 'face_prompt': "The daughter's face."},
+        ]
+        result = {'main_prompt': 'Father above son, mother above daughter; father left of mother and son left of daughter.', 'face_prompt': '', 'face_prompts': plan}
+        self.assertEqual(parse_result(json.dumps(result), 'stop', True), result)
+        # An edge in each direction across different axes is not an axis cycle.
+        cross_axis = [
+            {'character': 'Father', 'position': {'left_of': ['Son'], 'above': []}, 'face_prompt': "The father's face."},
+            {'character': 'Son', 'position': {'left_of': [], 'above': ['Father']}, 'face_prompt': "The son's face."},
+        ]
+        self.assertEqual(parse_result(json.dumps({**result, 'face_prompts': cross_axis}), 'stop')['face_prompts'], cross_axis)
+
+    # AC: @create-multiple-face-prompts ac-mismatch
+    def test_relative_references_and_axis_cycles_are_rejected(self):
+        plan = [
+            {'character': 'Father', 'position': {'left_of': ['Mother'], 'above': ['Son']}, 'face_prompt': "The father's face."},
+            {'character': 'Mother', 'position': {'left_of': [], 'above': []}, 'face_prompt': "The mother's face."},
+            {'character': 'Son', 'position': {'left_of': [], 'above': []}, 'face_prompt': "The son's face."},
+        ]
+        for index, position in (
+            (0, {'left_of': ['Unknown'], 'above': []}),
+            (0, {'left_of': ['mother'], 'above': []}),
+            (0, {'left_of': ['Father'], 'above': []}),
+            (0, {'left_of': ['Mother', 'Mother'], 'above': []}),
+            (0, {'left_of': [True], 'above': []}),
+            (0, {'left_of': []}),
+            (0, {'left_of': [], 'above': [], 'extra': []}),
+            (0, {'left_of': 'Mother', 'above': []}),
+            (0, {'left_of': [], 'above': None}),
+            (0, {'left_of': ['Mother'] * 16, 'above': []}),
+            (0, {'column': 1, 'row': 1}),
+            (1, {'left_of': ['Father'], 'above': []}),
+            (2, {'left_of': [], 'above': ['Father']}),
+            (2, 'right'),
+        ):
+            with self.subTest(index=index, position=position), self.assertRaises(ValueError):
+                modified = [dict(record) for record in plan]
+                modified[index]['position'] = position
+                parse_result(json.dumps({'main_prompt': 'Three family members.', 'face_prompt': '', 'face_prompts': modified}), 'stop')
+        cycle = [{**record, 'position': {'left_of': [plan[(index + 1) % 3]['character']], 'above': []}}
+                 for index, record in enumerate(plan)]
+        with self.assertRaises(ValueError):
+            parse_result(json.dumps({'main_prompt': 'Three family members.', 'face_prompt': '', 'face_prompts': cycle}), 'stop')
+
+    # AC: @create-multiple-face-prompts ac-character-prompts
     # AC: @create-multiple-face-prompts ac-single-face-compatible
     def test_ordered_face_plan_and_legacy_single_face_are_preserved(self):
         plan = [
@@ -165,8 +214,15 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(record['additionalProperties'])
             self.assertEqual(record['properties']['character']['maxLength'], 200)
             self.assertEqual(record['properties']['face_prompt']['maxLength'], 8000)
-            self.assertEqual(record['properties']['position']['enum'][:3], ['left', 'center', 'right'])
-            self.assertEqual(record['properties']['position']['enum'][-1], '16th')
+            positions = record['properties']['position']['oneOf']
+            self.assertEqual(positions[0]['enum'][:3], ['left', 'center', 'right'])
+            self.assertEqual(positions[0]['enum'][-1], '16th')
+            self.assertEqual(positions[1]['required'], ['left_of', 'above'])
+            self.assertFalse(positions[1]['additionalProperties'])
+            for axis in ('left_of', 'above'):
+                self.assertEqual(positions[1]['properties'][axis]['maxItems'], 15)
+                self.assertTrue(positions[1]['properties'][axis]['uniqueItems'])
+                self.assertEqual(positions[1]['properties'][axis]['items']['maxLength'], 200)
             self.assertGreaterEqual(data['temperature'], 0.6)
             self.assertFalse(data['cache_prompt'])
             return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(output)}}]})
@@ -265,8 +321,16 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
         left = {'character': 'Alice', 'position': 'left', 'face_prompt': 'Alice smiles, looking right.'}
         right = {'character': 'Bob', 'position': 'right', 'face_prompt': 'Bob frowns, looking left.'}
         positioned = 'Bob on the right frowns, looking left; Alice on the left smiles, looking right. Trigger SYNTH_PAIR. A sign says "Keep out—".'
+        family = 'Father above son, mother above daughter; father left of mother and son left of daughter. All four faces are visible.'
         fixtures = [
             (positioned, '', {'main_prompt': positioned, 'face_prompt': '', 'face_prompts': [left, right]}, 'complete'),
+            (family, 'Father smiles, eyes closed.',
+             {'main_prompt': family + ' Father smiles with eyes closed.', 'face_prompt': '', 'face_prompts': [
+                 {'character': 'Son', 'position': {'left_of': ['Daughter'], 'above': []}, 'face_prompt': "The son's face."},
+                 {'character': 'Father', 'position': {'left_of': ['Mother'], 'above': ['Son']}, 'face_prompt': 'Father smiles, eyes closed.'},
+                 {'character': 'Daughter', 'position': {'left_of': [], 'above': []}, 'face_prompt': "The daughter's face."},
+                 {'character': 'Mother', 'position': {'left_of': [], 'above': ['Daughter']}, 'face_prompt': "The mother's face."},
+             ]}, 'complete'),
             ('Bob is on the right; Alice is on the left. Both faces are visible.', 'Alice smiles, eyes closed.',
              {'main_prompt': 'Bob is on the right; Alice is on the left, smiling with eyes closed. Both faces are visible.', 'face_prompt': '',
               'face_prompts': [{'character': 'Alice', 'position': 'left', 'face_prompt': 'Alice smiles, eyes closed.'},
@@ -276,6 +340,8 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
               'face_prompts': [{**left, 'position': '1st'}, {**right, 'position': '2nd'}]}, 'complete'),
             ('Alice looks left; Bob looks right. Neither has a specified position.', '',
              {'main_prompt': 'Alice looks left; Bob looks right. Neither has a specified position.', 'face_prompt': '', 'face_prompts': []}, 'complete'),
+            ('Father is above son; mother is also visible, with no relationship specified for her.', '',
+             {'main_prompt': 'Father is above son; mother is also visible, with no relationship specified for her.', 'face_prompt': '', 'face_prompts': []}, 'complete'),
             ('Alice and Bob pose for a portrait.', 'Alice smiles; Bob frowns. No order is specified.',
              {'main_prompt': 'Alice smiles; Bob frowns, in a portrait.', 'face_prompt': '', 'face_prompts': []}, 'error'),
             ('Alice and Bob pose together, both faces visible. Their positions are unspecified.', 'Alice smiles, eyes closed.',
