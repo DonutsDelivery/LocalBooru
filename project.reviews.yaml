@@ -15598,6 +15598,19 @@ reviews:
         runner: unittest
         created_at: 2026-10-07T01:35:47.021Z
         completed_at: 2026-10-07T01:35:47.021Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: db118f74
+          head_commit: c97981a80c3d52883c8c463bf48888c79e30f40c
+        evidence: 4 focused UI checks and 12 graph adapter checks, including hidden face input, single
+          guarded pair patch, stale edit rejection, rollback, no generation and owner-only
+          cancellation.
+        name: UI and graph adapter
+        required: true
+        runner: vitest + node
+        created_at: 2026-10-07T01:35:48.577Z
+        completed_at: 2026-10-07T01:35:48.577Z
     events:
       - _ulid: 01M4A00PJPR8RKW3J1ZN0J6WQ4
         actor: codex-self-review
@@ -15619,6 +15632,13 @@ reviews:
           status: pass
           name: Focused Python
         timestamp: 2026-10-07T01:35:47.135Z
+      - _ulid: 01M4A018YFRNW5THJHCCA3CJYS
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: UI and graph adapter
+        timestamp: 2026-10-07T01:35:48.688Z
     examined_commit: null
     external_links: []
     lifecycle_state: open
@@ -15633,5 +15653,5 @@ reviews:
     threads: []
     verdicts: []
     created_at: 2026-10-07T01:35:29.878Z
-    updated_at: 2026-10-07T01:35:47.021Z
+    updated_at: 2026-10-07T01:35:48.577Z
     notes: []
