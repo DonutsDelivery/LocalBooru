@@ -69,3 +69,14 @@ notes:
     supersedes: null
     author: DonutsDelivery
     created_at: 2026-10-07T00:22:03.926Z
+  - _ulid: 01M49VXFHYMEB2JNHHQ13G5393
+    content: User confirmed that only Krea-2-Engineer was to be skipped; Z-Image-Engineer belongs in the
+      comparison. Restored Z from the retained verified candidate metadata and12complete synthetic
+      sample outputs. Active set is Qwen, MiniCPM, LFM2.6, Z-Image-Engineer;48responses
+      across12prompts. Restored model checkbox/layout in existing page without resetting the user
+      draft. Owned controller restarted with finished comparison transferred solely in memory. Ten
+      focused tests passed; live API and UI expose4models and API serves48complete samples.
+      Krea-2-Engineer remains excluded.
+    supersedes: null
+    author: DonutsDelivery
+    created_at: 2026-10-07T00:23:50.078Z
