@@ -65,4 +65,3 @@ def face_prompts(value):
                     family.index(left) >= family.index(right) for left, right in zip(positions, positions[1:])):
                 raise ValueError("Face positions must use one strictly increasing left-to-right order.")
     return rows
-
