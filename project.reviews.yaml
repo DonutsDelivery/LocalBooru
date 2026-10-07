@@ -17715,6 +17715,69 @@ reviews:
         runner: manual
         created_at: 2026-10-07T07:44:58.662Z
         completed_at: 2026-10-07T07:44:58.662Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 083883709d6a8054ecf40c653beca9fef2b42769
+        evidence: "Candidate full Host/panel: 58 passed/2 failed. Independently reproduced both failures on
+          exact base56785c5e2bea66d85b7023d30bb9f052a83b73a3: shows disabled backend actions and
+          management instructions for a URL-only connection; connects to an existing backend without
+          requesting managed downloads. /tmp/dmc-per-run-review-components.txt and
+          /tmp/dmc-per-run-review-base-host.txt. No full frontend suite claim."
+        name: host-panel-full-baseline
+        required: false
+        runner: vitest
+        created_at: 2026-10-07T07:45:27.770Z
+        completed_at: 2026-10-07T07:45:27.770Z
+      - status: pass
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 083883709d6a8054ecf40c653beca9fef2b42769
+        evidence: "Inspected public ComfyUI_frontend v1.53.6 app.ts1754-1769/1970-1974: queue hooks surround
+          initial compilation/API acceptance; graphToPrompt does not rerun hooks.
+          executionUtil.ts53-178 awaits live widget serializeValue and recompiles flattened inputs.
+          ExecutableNodeDTO.ts92-93 exposes live widgets; nested IDs join colon segments.
+          https://github.com/Comfy-Org/ComfyUI_frontend/blob/v1.53.6/src/scripts/app.ts ;
+          https://github.com/Comfy-Org/ComfyUI_frontend/blob/v1.53.6/src/utils/executionUtil.ts ;
+          https://github.com/Comfy-Org/ComfyUI_frontend/blob/v1.53.6/src/lib/litegraph/src/subgraph\
+          /ExecutableNodeDTO.ts . Owned copies /tmp/dmc-review-public-app-1.53.6.ts,
+          /tmp/dmc-review-public-executionUtil-1.53.6.ts,
+          /tmp/dmc-review-public-ExecutableNodeDTO.ts. No installed/private ComfyUI inspected."
+        name: public-pinned-compiler-inspection
+        required: false
+        runner: manual
+        created_at: 2026-10-07T07:45:28.157Z
+        completed_at: 2026-10-07T07:45:28.157Z
+      - status: fail
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 083883709d6a8054ecf40c653beca9fef2b42769
+        evidence: Independent KSPEC_NO_DAEMON=1 kspec validate reports existing 130 schema errors and
+          verify/SKILL.md missing-description; same previously independently verified baseline.
+          /tmp/dmc-per-run-review-validate.txt.
+        name: kspec-validation
+        required: false
+        runner: kspec
+        created_at: 2026-10-07T07:45:28.528Z
+        completed_at: 2026-10-07T07:45:28.528Z
+      - status: skipped
+        applies_to_version:
+          type: code_compare
+          base_commit: 56785c5e2bea66d85b7023d30bb9f052a83b73a3
+          head_commit: 083883709d6a8054ecf40c653beca9fef2b42769
+        evidence: No model download or inference allowed for this review. Seed test proves identical
+          production request parameters, not real-model deterministic text or creative quality.
+          Reviewed preservation-first scoped creative policy and full unchanged input/output
+          transport; no canned production fallback. Existing opt-in real model tests are outside
+          this scoped review.
+        name: actual-model-semantic-validation
+        required: false
+        runner: manual
+        created_at: 2026-10-07T07:45:28.889Z
+        completed_at: 2026-10-07T07:45:28.889Z
     events:
       - _ulid: 01M4AMWG0DA4354VGVFVTRYBAC
         actor: DonutsDelivery
@@ -17823,6 +17886,34 @@ reviews:
           from: draft
           to: closed
         timestamp: 2026-10-07T07:44:59.479Z
+      - _ulid: 01M4AN649XQEJZ8HWRVJX5DFY6
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: host-panel-full-baseline
+        timestamp: 2026-10-07T07:45:27.869Z
+      - _ulid: 01M4AN64P411KZF6MQ2S9PWRAS
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: pass
+          name: public-pinned-compiler-inspection
+        timestamp: 2026-10-07T07:45:28.260Z
+      - _ulid: 01M4AN651FYN1BNW13AEGC2AAF
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: fail
+          name: kspec-validation
+        timestamp: 2026-10-07T07:45:28.623Z
+      - _ulid: 01M4AN65CVD4RTW5XBY9JCVV7K
+        actor: DonutsDelivery
+        event_type: check_added
+        payload:
+          status: skipped
+          name: actual-model-semantic-validation
+        timestamp: 2026-10-07T07:45:28.987Z
     examined_commit: null
     external_links: []
     lifecycle_state: closed
@@ -17868,5 +17959,5 @@ reviews:
         role: reviewer
         created_at: 2026-10-07T07:44:59.479Z
     created_at: 2026-10-07T07:40:12.174Z
-    updated_at: 2026-10-07T07:44:59.479Z
+    updated_at: 2026-10-07T07:45:28.889Z
     notes: []
